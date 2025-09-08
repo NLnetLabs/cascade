@@ -38,9 +38,6 @@ log-level = "info"
 # '/dev/stdout' or '/dev/stderr' for standard output and error, respectively.
 # If it is a terminal, ANSI escape codes may be used to style the output.
 log-target = { type = "syslog" }
-
-# The path to the state file to maintain.
-state-file = "/var/cascade/state.db"
 #
 # The path to a PID file to maintain.
 #

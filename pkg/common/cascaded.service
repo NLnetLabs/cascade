@@ -4,7 +4,7 @@ Documentation=man:cascade(1)
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/cascaded --config=/etc/cascade/config.toml
+ExecStart=/usr/bin/cascaded --state=/var/cascade/state.db --config=/etc/cascade/config.toml
 Type=exec
 Restart=on-failure
 User=cascade
