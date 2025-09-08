@@ -97,12 +97,12 @@ impl Spec {
 
     /// The default value for `zone_state_dir`.
     fn zone_state_dir_default() -> Box<Utf8Path> {
-        "/var/db/cascade/zone-state".into()
+        "/var/lib/cascade/zone-state".into()
     }
 
     /// The default value for `tsig_store_path`.
     fn tsig_store_path_default() -> Box<Utf8Path> {
-        "/var/db/cascade/tsig-keys.db".into()
+        "/var/lib/cascade/tsig-keys.db".into()
     }
 
     /// The default value for `dnst_binary_path`.

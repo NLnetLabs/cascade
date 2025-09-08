@@ -14,7 +14,12 @@ if [ $1 -eq 1 ] ; then
     if ! id ${USER_ID} > /dev/null 2>&1; then
         # According to the CentOS 7 useradd man page:
         # --user-group causes a group by the same name as the user to be created
-        useradd --system --user-group ${USER_ID}
+        useradd --system --user-group ${USER_ID} --home-dir /var/${USER_ID} --create-home
+
+        # Create the empty default policy directory as Cascade will fail to
+        # start without it.
+        mkdir /etc/cascade/policies
+        chown ${USER_ID}: /etc/cascade/policies
     fi
 
     # Run commands equivalent to what the RPM systemd macros would do
@@ -44,6 +49,6 @@ if [ $1 -ge 1 ] ; then
     systemd_postun_with_restart cascaded.service
     systemd_triggers
 
-    # TODO: Remove the user account?
+    # TODO: Remove the user account and home dir?
 fi
 '''

@@ -63,9 +63,9 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             policy_dir: "/etc/cascade/policies".into(),
-            zone_state_dir: "/var/db/cascade/zone-state.db".into(),
-            tsig_store_path: "/var/db/cascade/tsig-keys.db".into(),
-            keys_dir: "/var/db/cascade/keys".into(),
+            zone_state_dir: "/var/lib/cascade/zone-state.db".into(),
+            tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
+            keys_dir: "/var/lib/cascade/keys".into(),
             dnst_binary_path: "dnst".into(),
             daemon: Default::default(),
             loader: Default::default(),
@@ -182,7 +182,7 @@ pub struct DaemonConfig {
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
-            state_file: Setting::new("/var/db/cascade/state.db".into()),
+            state_file: Setting::new("/var/lib/cascade/state.db".into()),
             logging: LoggingConfig::default(),
             config_file: Setting::new("/etc/cascade/config.toml".into()),
             daemonize: Setting::new(false),
