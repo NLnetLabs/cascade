@@ -84,7 +84,6 @@ pub fn spawn(
     let unit = ZoneServerUnit {
         center: center.clone(),
         _xfr_out: HashMap::from([(zone_name.clone(), xfr_out)]),
-        hooks: vec![String::from("/tmp/approve_or_deny.sh")],
         mode: zone_server::Mode::Prepublish,
         source: zone_server::Source::UnsignedZones,
         http_api_path: Arc::new(String::from("/_unit/rs/")),
@@ -122,7 +121,6 @@ pub fn spawn(
         center: center.clone(),
         http_api_path: Arc::new(String::from("/_unit/rs2/")),
         _xfr_out: HashMap::from([(zone_name.clone(), "127.0.0.1:8055 KEY sec1-key".into())]),
-        hooks: vec![String::from("/tmp/approve_or_deny_signed.sh")],
         mode: zone_server::Mode::Prepublish,
         source: zone_server::Source::SignedZones,
     };
@@ -136,7 +134,6 @@ pub fn spawn(
         center: center.clone(),
         http_api_path: Arc::new(String::from("/_unit/ps/")),
         _xfr_out: HashMap::from([(zone_name, "127.0.0.1:8055".into())]),
-        hooks: vec![],
         mode: zone_server::Mode::Publish,
         source: zone_server::Source::PublishedZones,
     };

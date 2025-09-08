@@ -88,8 +88,6 @@ pub struct ZoneServerUnit {
     /// XFR out per zone: Allow XFR to, and when with a port also send NOTIFY to.
     pub _xfr_out: HashMap<StoredName, String>,
 
-    pub hooks: Vec<String>,
-
     pub mode: Mode,
 
     pub source: Source,
@@ -189,7 +187,6 @@ impl ZoneServerUnit {
             self.http_api_path,
             self.mode,
             self.source,
-            self.hooks,
             addrs,
             zones,
         )
@@ -247,7 +244,6 @@ struct ZoneServer {
     center: Arc<Center>,
     mode: Mode,
     source: Source,
-    hooks: Vec<String>,
     listen: Vec<ListenAddr>,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
@@ -263,7 +259,6 @@ impl ZoneServer {
         http_api_path: Arc<String>,
         mode: Mode,
         source: Source,
-        hooks: Vec<String>,
         listen: Vec<ListenAddr>,
         zones: XfrDataProvidingZonesWrapper,
     ) -> Self {
@@ -273,7 +268,6 @@ impl ZoneServer {
             center,
             mode,
             source,
-            hooks,
             pending_approvals: Default::default(),
             last_approvals: Default::default(),
             listen,
@@ -435,7 +429,20 @@ impl ZoneServer {
             trace!("Skipping approval request for already approved {zone_type} zone '{zone_name}' at serial {zone_serial}.");
             return Some(Ok(()));
         }
-        if self.hooks.is_empty() {
+
+        let hook = {
+            let state = self.center.state.lock().unwrap();
+            let zone = state.zones.get(&zone_name).unwrap();
+            let zone_state = zone.0.state.lock().unwrap();
+            let policy = zone_state.policy.as_ref().unwrap();
+            match self.source {
+                Source::UnsignedZones => policy.loader.review.cmd_hook.clone(),
+                Source::SignedZones => policy.signer.review.cmd_hook.clone(),
+                Source::PublishedZones => None,
+            }
+        };
+
+        let Some(hook) = hook else {
             // Approve immediately.
             match self.source {
                 Source::UnsignedZones => {
@@ -456,42 +463,42 @@ impl ZoneServer {
                 }
                 Source::PublishedZones => unreachable!(),
             }
-        }
+
+            return None;
+        };
+
         info!("[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}.");
 
         // Only if not already approved...
+        let approval_token = Uuid::new_v4();
+        info!("[{unit_name}]: Generated approval token '{approval_token}' for {zone_type} zone '{zone_name}' at serial {zone_serial}.");
 
-        for hook in &self.hooks {
-            let approval_token = Uuid::new_v4();
-            info!("[{unit_name}]: Generated approval token '{approval_token}' for {zone_type} zone '{zone_name}' at serial {zone_serial}.");
+        self.pending_approvals
+            .write()
+            .await
+            .entry((zone_name.clone(), zone_serial))
+            .and_modify(|e| e.push(approval_token))
+            .or_insert(vec![approval_token]);
 
-            self.pending_approvals
-                .write()
-                .await
-                .entry((zone_name.clone(), zone_serial))
-                .and_modify(|e| e.push(approval_token))
-                .or_insert(vec![approval_token]);
-
-            match Command::new(hook)
-                .arg(format!("{zone_name}"))
-                .arg(format!("{zone_serial}"))
-                .arg(format!("{approval_token}"))
-                .spawn()
-            {
-                Ok(_) => {
-                    info!("[{unit_name}]: Executed hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}");
-                    info!("[{unit_name}]: Confirm with HTTP GET {}approve/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
-                    info!("[{unit_name}]: Reject with HTTP GET {}reject/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
-                }
-                Err(err) => {
-                    error!(
-                                    "[{unit_name}]: Failed to execute hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}: {err}",
-                                );
-                    self.pending_approvals
-                        .write()
-                        .await
-                        .remove(&(zone_name.clone(), zone_serial));
-                }
+        match Command::new(&hook)
+            .arg(format!("{zone_name}"))
+            .arg(format!("{zone_serial}"))
+            .arg(format!("{approval_token}"))
+            .spawn()
+        {
+            Ok(_) => {
+                info!("[{unit_name}]: Executed hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}");
+                info!("[{unit_name}]: Confirm with HTTP GET {}approve/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+                info!("[{unit_name}]: Reject with HTTP GET {}reject/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+            }
+            Err(err) => {
+                error!(
+                                "[{unit_name}]: Failed to execute hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}: {err}",
+                            );
+                self.pending_approvals
+                    .write()
+                    .await
+                    .remove(&(zone_name.clone(), zone_serial));
             }
         }
         None
