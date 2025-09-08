@@ -5,6 +5,11 @@ USER_ID="cascade"
 create_user() {
     if id ${USER_ID} > /dev/null 2>&1; then return; fi
     adduser --system --home /var/cascade --group ${USER_ID}
+
+    # Create the empty default policy directory as Cascade will fail to start
+    # without it.
+    mkdir /etc/cascade/policies
+    chown ${USER_ID}: /etc/cascade/policies
 }
 
 case "$1" in
