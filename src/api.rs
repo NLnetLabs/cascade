@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{self, Display};
 use std::net::{IpAddr, SocketAddr};
 
 use bytes::Bytes;
@@ -19,6 +19,23 @@ pub struct ZoneAdd {
 pub struct ZoneAddResult {
     pub name: Name<Bytes>,
     pub status: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneAddError {
+    AlreadyExists,
+    NoSuchPolicy,
+    PolicyMidDeletion,
+}
+
+impl fmt::Display for ZoneAddError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::AlreadyExists => "a zone of this name already exists",
+            Self::NoSuchPolicy => "no policy with that name exists",
+            Self::PolicyMidDeletion => "the specified policy is being deleted",
+        })
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
