@@ -9,10 +9,10 @@ version = "v1"
 policy-dir = "/etc/cascade/policies"
 
 # The directory storing per-zone state files.
-zone-state-dir = "/var/cascade/zone-state"
+zone-state-dir = "/var/lib/cascade/zone-state"
 
 # The file storing TSIG key secrets.
-tsig-store-path = "/var/cascade/tsig-keys.db"
+tsig-store-path = "/var/lib/cascade/tsig-keys.db"
 
 # Configuring the Cascade daemon.
 #
