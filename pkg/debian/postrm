@@ -10,6 +10,8 @@ purge)
     if [ -e ${CONFIG_FILE_PATH} ]; then
         rm ${CONFIG_FILE_PATH}
     fi
+
+    # TODO: Remove the user account and home dir?
     ;;
 esac
 
