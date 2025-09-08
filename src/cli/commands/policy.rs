@@ -23,6 +23,7 @@ pub enum PolicyCommand {
     Show { name: String },
 
     /// Reload all the policies from the files
+    #[command(name = "reload")]
     Reload,
 }
 

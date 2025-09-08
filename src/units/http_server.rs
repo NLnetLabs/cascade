@@ -224,12 +224,33 @@ impl HttpServer {
         Ok(Json(ZoneReloadResult { name: payload }))
     }
 
-    async fn policy_list() -> Json<PolicyListResult> {
-        todo!()
+    async fn policy_list(State(state): State<Arc<HttpServerState>>) -> Json<PolicyListResult> {
+        let state = state.center.state.lock().unwrap();
+
+        let mut policies: Vec<String> = state
+            .policies
+            .keys()
+            .map(|s| String::from(s.as_ref()))
+            .collect();
+
+        // We don't _have_ to sort, but seems useful for consistent output
+        policies.sort();
+
+        Json(PolicyListResult { policies })
     }
 
-    async fn policy_reload() -> Json<PolicyReloadResult> {
-        todo!()
+    async fn policy_reload(State(state): State<Arc<HttpServerState>>) -> Json<PolicyReloadResult> {
+        let mut state = state.center.state.lock().unwrap();
+
+        // TODO: This clone is a bit unfortunate. Looks like that's necessary because of the
+        // mutex guard. We could make `reload_all` a function that takes the whole state to fix
+        // this.
+        let mut policies = state.policies.clone();
+        crate::policy::reload_all(&mut policies, &state.config).unwrap();
+        state.policies = policies;
+
+        // TODO: Ideally, this would return some information about what changed.
+        Json(PolicyReloadResult {})
     }
 
     async fn policy_show() -> Json<PolicyShowResult> {
