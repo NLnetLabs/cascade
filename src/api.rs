@@ -1,5 +1,6 @@
 use std::fmt::{self, Display};
 use std::net::{IpAddr, SocketAddr};
+use std::time::Duration;
 
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -111,4 +112,63 @@ pub struct PolicyListResult {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct PolicyShowResult {}
+pub struct PolicyInfo {
+    pub name: Box<str>,
+    pub zones: Vec<Name<Bytes>>,
+    pub loader: LoaderPolicyInfo,
+    pub key_manager: KeyManagerPolicyInfo,
+    pub signer: SignerPolicyInfo,
+    pub server: ServerPolicyInfo,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct LoaderPolicyInfo {
+    pub review: ReviewPolicyInfo,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KeyManagerPolicyInfo {}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ReviewPolicyInfo {
+    pub required: bool,
+    pub cmd_hook: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct SignerPolicyInfo {
+    pub serial_policy: SignerSerialPolicyInfo,
+    pub sig_inception_offset: Duration,
+    pub sig_validity_offset: Duration,
+    pub denial: SignerDenialPolicyInfo,
+    pub review: ReviewPolicyInfo,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum SignerSerialPolicyInfo {
+    Keep,
+    Counter,
+    UnixTime,
+    DateCounter,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum SignerDenialPolicyInfo {
+    NSec,
+    NSec3 { opt_out: Nsec3OptOutPolicyInfo },
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum Nsec3OptOutPolicyInfo {
+    Disabled,
+    FlagOnly,
+    Enabled,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ServerPolicyInfo {}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum PolicyInfoError {
+    PolicyDoesNotExist,
+}

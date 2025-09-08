@@ -22,10 +22,19 @@ use log::{debug, error, info};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
+use crate::api::KeyManagerPolicyInfo;
+use crate::api::LoaderPolicyInfo;
+use crate::api::Nsec3OptOutPolicyInfo;
+use crate::api::PolicyInfo;
+use crate::api::PolicyInfoError;
 use crate::api::PolicyListResult;
 use crate::api::PolicyReloadResult;
-use crate::api::PolicyShowResult;
+use crate::api::ReviewPolicyInfo;
+use crate::api::ServerPolicyInfo;
 use crate::api::ServerStatusResult;
+use crate::api::SignerDenialPolicyInfo;
+use crate::api::SignerPolicyInfo;
+use crate::api::SignerSerialPolicyInfo;
 use crate::api::ZoneAdd;
 use crate::api::ZoneAddError;
 use crate::api::ZoneAddResult;
@@ -38,6 +47,9 @@ use crate::api::ZonesListResult;
 use crate::center;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
+use crate::policy::Nsec3OptOutPolicy;
+use crate::policy::SignerDenialPolicy;
+use crate::policy::SignerSerialPolicy;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -121,7 +133,7 @@ impl HttpServer {
             .route("/zone/{name}/reload", post(Self::zone_reload))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/list", get(Self::policy_list))
-            .route("/policy/{name}", post(Self::policy_show))
+            .route("/policy/{name}", get(Self::policy_show))
             .with_state(state);
 
         axum::serve(sock, app).await.map_err(|e| {
@@ -253,8 +265,57 @@ impl HttpServer {
         Json(PolicyReloadResult {})
     }
 
-    async fn policy_show() -> Json<PolicyShowResult> {
-        todo!()
+    async fn policy_show(
+        State(state): State<Arc<HttpServerState>>,
+        Path(name): Path<Box<str>>,
+    ) -> Json<Result<PolicyInfo, PolicyInfoError>> {
+        let state = state.center.state.lock().unwrap();
+        let Some(p) = state.policies.get(&name) else {
+            return Json(Err(PolicyInfoError::PolicyDoesNotExist));
+        };
+
+        let zones = p.zones.iter().cloned().collect();
+        let loader = LoaderPolicyInfo {
+            review: ReviewPolicyInfo {
+                required: p.latest.loader.review.required,
+                cmd_hook: p.latest.loader.review.cmd_hook.clone(),
+            },
+        };
+
+        let signer = SignerPolicyInfo {
+            serial_policy: match p.latest.signer.serial_policy {
+                SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
+                SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
+                SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
+                SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
+            },
+            sig_inception_offset: p.latest.signer.sig_inception_offset,
+            sig_validity_offset: p.latest.signer.sig_validity_time,
+            denial: match p.latest.signer.denial {
+                SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
+                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 {
+                    opt_out: match opt_out {
+                        Nsec3OptOutPolicy::Disabled => Nsec3OptOutPolicyInfo::Disabled,
+                        Nsec3OptOutPolicy::FlagOnly => Nsec3OptOutPolicyInfo::FlagOnly,
+                        Nsec3OptOutPolicy::Enabled => Nsec3OptOutPolicyInfo::Enabled,
+                    },
+                },
+            },
+            review: ReviewPolicyInfo {
+                required: p.latest.signer.review.required,
+                cmd_hook: p.latest.signer.review.cmd_hook.clone(),
+            },
+        };
+        let server = ServerPolicyInfo {};
+
+        Json(Ok(PolicyInfo {
+            name: p.latest.name.clone(),
+            zones,
+            loader,
+            key_manager: KeyManagerPolicyInfo {},
+            signer,
+            server,
+        }))
     }
 
     async fn status() -> Json<ServerStatusResult> {
