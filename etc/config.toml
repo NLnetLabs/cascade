@@ -5,9 +5,6 @@
 # - 'v1': This format.
 version = "v1"
 
-# The location of the state file.
-state-file = "/var/cascade/state.db"
-
 # The directory storing zone policies.
 policy-dir = "/etc/cascade/policies"
 
@@ -41,6 +38,9 @@ log-level = "info"
 # '/dev/stdout' or '/dev/stderr' for standard output and error, respectively.
 # If it is a terminal, ANSI escape codes may be used to style the output.
 log-target = { type = "file", path = "/dev/stdout" }
+
+# The path to the state file to main.
+state-file = "/var/cascade/state.db"
 #
 # The path to a PID file to maintain.
 #
