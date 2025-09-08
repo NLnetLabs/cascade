@@ -5,6 +5,9 @@
 # - 'v1': This format.
 version = "v1"
 
+# The location of the state file.
+state-file = "/var/cascade/state.db"
+
 # The directory storing zone policies.
 policy-dir = "/etc/cascade/policies"
 
