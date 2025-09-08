@@ -51,6 +51,7 @@ use crate::common::net::ListenAddr;
 use crate::common::tsig::TsigKeyStore;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
+use crate::config::SocketConfig;
 use crate::payload::Update;
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -84,13 +85,8 @@ pub struct ZoneServerUnit {
     /// The relative path at which we should listen for HTTP query API requests
     pub http_api_path: Arc<String>,
 
-    /// Addresses and protocols to listen on.
-    pub listen: Vec<ListenAddr>,
-
     /// XFR out per zone: Allow XFR to, and when with a port also send NOTIFY to.
     pub _xfr_out: HashMap<StoredName, String>,
-
-    pub hooks: Vec<String>,
 
     pub mode: Mode,
 
@@ -99,7 +95,7 @@ pub struct ZoneServerUnit {
 
 impl ZoneServerUnit {
     pub async fn run(
-        mut self,
+        self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
     ) -> Result<(), Terminated> {
         let unit_name = match (self.mode, self.source) {
@@ -145,25 +141,44 @@ impl ZoneServerUnit {
         let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
         let svc = Arc::new(svc);
 
-        let listen_strings = self
-            .listen
-            .iter()
-            .filter_map(|addr| match addr {
-                ListenAddr::Udp(socket_addr) => Some(socket_addr.to_string()),
-                ListenAddr::Tcp(socket_addr) => Some(socket_addr.to_string()),
-                ListenAddr::UdpSocket(_) | ListenAddr::TcpListener(_) => None,
-            })
-            .collect();
+        // TODO: Should this reload when the config changes?
+        let servers = {
+            let state = self.center.state.lock().unwrap();
+            let config = &state.config;
+            let servers = match self.source {
+                Source::UnsignedZones => &config.loader.review.servers,
+                Source::SignedZones => &config.signer.review.servers,
+                Source::PublishedZones => &config.server.servers,
+            };
+            servers.clone()
+        };
 
-        for addr in self.listen.drain(..) {
+        let mut addrs = Vec::new();
+
+        for addr in servers {
             info!("[{unit_name}]: Binding on {addr:?}");
-            let svc = svc.clone();
-            let unit_name: Box<str> = unit_name.into();
-            tokio::spawn(async move {
-                if let Err(err) = Self::server(addr, svc).await {
-                    error!("[{unit_name}]: {err}");
-                }
-            });
+
+            if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = addr {
+                let unit_name: Box<str> = unit_name.into();
+                let svc = svc.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = Self::server(ListenAddr::Udp(addr), svc).await {
+                        error!("[{unit_name}]: {err}");
+                    }
+                });
+                addrs.push(addr.to_string());
+            }
+
+            if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = addr {
+                let unit_name: Box<str> = unit_name.into();
+                let svc = svc.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = Self::server(ListenAddr::Tcp(addr), svc).await {
+                        error!("[{unit_name}]: {err}");
+                    }
+                });
+                addrs.push(addr.to_string());
+            }
         }
 
         let update_tx = self.center.update_tx.clone();
@@ -172,8 +187,7 @@ impl ZoneServerUnit {
             self.http_api_path,
             self.mode,
             self.source,
-            self.hooks,
-            listen_strings,
+            addrs,
             zones,
         )
         .run(unit_name, update_tx, cmd_rx)
@@ -253,7 +267,6 @@ struct ZoneServer {
     center: Arc<Center>,
     mode: Mode,
     source: Source,
-    hooks: Vec<String>,
     listen: Vec<String>,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
@@ -269,7 +282,6 @@ impl ZoneServer {
         http_api_path: Arc<String>,
         mode: Mode,
         source: Source,
-        hooks: Vec<String>,
         listen: Vec<String>,
         zones: XfrDataProvidingZonesWrapper,
     ) -> Self {
@@ -279,7 +291,6 @@ impl ZoneServer {
             center,
             mode,
             source,
-            hooks,
             pending_approvals: Default::default(),
             last_approvals: Default::default(),
             listen,
@@ -441,7 +452,20 @@ impl ZoneServer {
             trace!("Skipping approval request for already approved {zone_type} zone '{zone_name}' at serial {zone_serial}.");
             return Some(Ok(()));
         }
-        if self.hooks.is_empty() {
+
+        let hook = {
+            let state = self.center.state.lock().unwrap();
+            let zone = state.zones.get(&zone_name).unwrap();
+            let zone_state = zone.0.state.lock().unwrap();
+            let policy = zone_state.policy.as_ref().unwrap();
+            match self.source {
+                Source::UnsignedZones => policy.loader.review.cmd_hook.clone(),
+                Source::SignedZones => policy.signer.review.cmd_hook.clone(),
+                Source::PublishedZones => None,
+            }
+        };
+
+        let Some(hook) = hook else {
             // Approve immediately.
             match self.source {
                 Source::UnsignedZones => {
@@ -462,42 +486,42 @@ impl ZoneServer {
                 }
                 Source::PublishedZones => unreachable!(),
             }
-        }
+
+            return None;
+        };
+
         info!("[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}.");
 
         // Only if not already approved...
+        let approval_token = Uuid::new_v4();
+        info!("[{unit_name}]: Generated approval token '{approval_token}' for {zone_type} zone '{zone_name}' at serial {zone_serial}.");
 
-        for hook in &self.hooks {
-            let approval_token = Uuid::new_v4();
-            info!("[{unit_name}]: Generated approval token '{approval_token}' for {zone_type} zone '{zone_name}' at serial {zone_serial}.");
+        self.pending_approvals
+            .write()
+            .await
+            .entry((zone_name.clone(), zone_serial))
+            .and_modify(|e| e.push(approval_token))
+            .or_insert(vec![approval_token]);
 
-            self.pending_approvals
-                .write()
-                .await
-                .entry((zone_name.clone(), zone_serial))
-                .and_modify(|e| e.push(approval_token))
-                .or_insert(vec![approval_token]);
-
-            match Command::new(hook)
-                .arg(format!("{zone_name}"))
-                .arg(format!("{zone_serial}"))
-                .arg(format!("{approval_token}"))
-                .spawn()
-            {
-                Ok(_) => {
-                    info!("[{unit_name}]: Executed hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}");
-                    info!("[{unit_name}]: Confirm with HTTP GET {}approve/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
-                    info!("[{unit_name}]: Reject with HTTP GET {}reject/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
-                }
-                Err(err) => {
-                    error!(
-                                    "[{unit_name}]: Failed to execute hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}: {err}",
-                                );
-                    self.pending_approvals
-                        .write()
-                        .await
-                        .remove(&(zone_name.clone(), zone_serial));
-                }
+        match Command::new(&hook)
+            .arg(format!("{zone_name}"))
+            .arg(format!("{zone_serial}"))
+            .arg(format!("{approval_token}"))
+            .spawn()
+        {
+            Ok(_) => {
+                info!("[{unit_name}]: Executed hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}");
+                info!("[{unit_name}]: Confirm with HTTP GET {}approve/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+                info!("[{unit_name}]: Reject with HTTP GET {}reject/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+            }
+            Err(err) => {
+                error!(
+                                "[{unit_name}]: Failed to execute hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}: {err}",
+                            );
+                self.pending_approvals
+                    .write()
+                    .await
+                    .remove(&(zone_name.clone(), zone_serial));
             }
         }
         None

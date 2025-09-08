@@ -35,6 +35,12 @@ pub struct Config {
     /// The file storing TSIG keys.
     pub tsig_store_path: Box<Utf8Path>,
 
+    /// Path to the dnst binary that Cascade should use.
+    pub dnst_binary_path: Box<Utf8Path>,
+
+    /// Path to the directory where the keys should be stored.
+    pub keys_dir: Box<Utf8Path>,
+
     /// Daemon-related configuration.
     pub daemon: DaemonConfig,
 
@@ -57,8 +63,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             policy_dir: "/etc/cascade/policies".into(),
-            zone_state_dir: "/var/db/cascade/zone-state.db".into(),
-            tsig_store_path: "/var/db/cascade/tsig-keys.db".into(),
+            zone_state_dir: "/var/lib/cascade/zone-state.db".into(),
+            tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
+            keys_dir: "/var/lib/cascade/keys".into(),
+            dnst_binary_path: "dnst".into(),
             daemon: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
@@ -174,7 +182,7 @@ pub struct DaemonConfig {
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
-            state_file: Setting::new("/var/db/cascade/state.db".into()),
+            state_file: Setting::new("/var/lib/cascade/state.db".into()),
             logging: LoggingConfig::default(),
             config_file: Setting::new("/etc/cascade/config.toml".into()),
             daemonize: Setting::new(false),

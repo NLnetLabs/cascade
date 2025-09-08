@@ -16,7 +16,7 @@ use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManagerUnit;
 use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServerUnit};
-use crate::units::zone_signer::{KmipServerConnectionSettings, TomlDenialConfig, ZoneSignerUnit};
+use crate::units::zone_signer::{KmipServerConnectionSettings, ZoneSignerUnit};
 use domain::zonetree::StoredName;
 
 /// Spawn all targets.
@@ -84,12 +84,7 @@ pub fn spawn(
     log::info!("Starting unit 'RS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
-        listen: vec![
-            "tcp:127.0.0.1:8056".parse().unwrap(),
-            "udp:127.0.0.1:8056".parse().unwrap(),
-        ],
         _xfr_out: HashMap::from([(zone_name.clone(), xfr_out)]),
-        hooks: vec![String::from("/tmp/approve_or_deny.sh")],
         mode: zone_server::Mode::Prepublish,
         source: zone_server::Source::UnsignedZones,
         http_api_path: Arc::new(String::from("/_unit/rs/")),
@@ -102,8 +97,6 @@ pub fn spawn(
     log::info!("Starting unit 'KM'");
     let unit = KeyManagerUnit {
         center: center.clone(),
-        dnst_keyset_bin_path: "/tmp/dnst".into(),
-        dnst_keyset_data_dir: "/tmp".into(),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     tokio::spawn(unit.run(cmd_rx));
@@ -117,11 +110,7 @@ pub fn spawn(
         max_concurrent_operations: 1,
         max_concurrent_rrsig_generation_tasks: 32,
         use_lightweight_zone_tree: false,
-        denial_config: TomlDenialConfig::default(), //Nsec3(NonEmpty::new(TomlNsec3Config::default())),
-        rrsig_inception_offset_secs: 60 * 90,
-        rrsig_expiration_offset_secs: 60 * 60 * 24 * 14,
         kmip_server_conn_settings,
-        dnst_keyset_data_dir: "/tmp".into(),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     tokio::spawn(unit.run(cmd_rx));
@@ -132,12 +121,7 @@ pub fn spawn(
     let unit = ZoneServerUnit {
         center: center.clone(),
         http_api_path: Arc::new(String::from("/_unit/rs2/")),
-        listen: vec![
-            "tcp:127.0.0.1:8057".parse().unwrap(),
-            "udp:127.0.0.1:8057".parse().unwrap(),
-        ],
         _xfr_out: HashMap::from([(zone_name.clone(), "127.0.0.1:8055 KEY sec1-key".into())]),
-        hooks: vec![String::from("/tmp/approve_or_deny_signed.sh")],
         mode: zone_server::Mode::Prepublish,
         source: zone_server::Source::SignedZones,
     };
@@ -145,23 +129,11 @@ pub fn spawn(
     tokio::spawn(unit.run(cmd_rx));
     unit_tx_slots.insert("RS2".into(), cmd_tx);
 
-    // Spawn the published zone server.
-    // Use system provided sockets/listeners in preference to listen addresses
-    // from configuration.
-    let mut listen = get_system_provided_sockets();
-
-    if listen.is_empty() {
-        listen.push("tcp:127.0.0.1:8058".parse().unwrap());
-        listen.push("udp:127.0.0.1:8058".parse().unwrap());
-    }
-
     log::info!("Starting unit 'PS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
         http_api_path: Arc::new(String::from("/_unit/ps/")),
-        listen,
         _xfr_out: HashMap::from([(zone_name, "127.0.0.1:8055".into())]),
-        hooks: vec![],
         mode: zone_server::Mode::Publish,
         source: zone_server::Source::PublishedZones,
     };
@@ -179,20 +151,6 @@ pub fn spawn(
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     tokio::spawn(unit.run(cmd_rx));
     unit_tx_slots.insert("HS".into(), cmd_tx);
-}
-
-fn get_system_provided_sockets() -> Vec<ListenAddr> {
-    let mut listen_addr = vec![];
-    let mut provided = listenfd::ListenFd::from_env();
-    for idx in 0..provided.len() {
-        if let Ok(Some(sock)) = provided.take_udp_socket(idx) {
-            // Found a system provided UDP socket.
-            listen_addr.push(ListenAddr::UdpSocket(sock))
-        } else if let Ok(Some(listener)) = provided.take_tcp_listener(idx) {
-            listen_addr.push(ListenAddr::TcpListener(listener));
-        }
-    }
-    listen_addr
 }
 
 /// Forward application commands.

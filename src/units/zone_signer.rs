@@ -1,13 +1,11 @@
-use core::ops::Add;
-
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
-use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use camino::Utf8Path;
 use domain::base::iana::Class;
 use domain::base::name::FlattenInto;
 use domain::base::{CanonicalOrd, Record, Rtype, Serial, Ttl};
@@ -49,6 +47,7 @@ use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::payload::Update;
+use crate::policy::{Nsec3OptOutPolicy, PolicyVersion, SignerDenialPolicy};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
@@ -57,12 +56,6 @@ use core::sync::atomic::AtomicBool;
 #[derive(Debug)]
 pub struct ZoneSignerUnit {
     pub center: Arc<Center>,
-
-    pub rrsig_inception_offset_secs: u32,
-
-    pub rrsig_expiration_offset_secs: u32,
-
-    pub denial_config: TomlDenialConfig,
 
     pub treat_single_keys_as_csks: bool,
 
@@ -73,20 +66,10 @@ pub struct ZoneSignerUnit {
     pub max_concurrent_rrsig_generation_tasks: usize,
 
     pub kmip_server_conn_settings: HashMap<String, KmipServerConnectionSettings>,
-
-    pub dnst_keyset_data_dir: PathBuf,
 }
 
 #[allow(dead_code)]
 impl ZoneSignerUnit {
-    fn default_rrsig_inception_offset_secs() -> u32 {
-        60 * 90 // 90 minutes ala Knot
-    }
-
-    fn default_rrsig_expiration_offset_secs() -> u32 {
-        60 * 60 * 24 * 14 // 14 days ala Knot
-    }
-
     fn default_max_concurrent_operations() -> usize {
         1
     }
@@ -157,15 +140,11 @@ impl ZoneSignerUnit {
 
         ZoneSigner::new(
             self.center,
-            self.rrsig_inception_offset_secs,
-            self.rrsig_expiration_offset_secs,
-            self.denial_config,
             self.use_lightweight_zone_tree,
             self.max_concurrent_operations,
             self.max_concurrent_rrsig_generation_tasks,
             self.treat_single_keys_as_csks,
             kmip_servers,
-            self.dnst_keyset_data_dir,
         )
         .run(cmd_rx)
         .await?;
@@ -221,44 +200,38 @@ impl ZoneSignerUnit {
 
 struct ZoneSigner {
     center: Arc<Center>,
-    inception_offset_secs: u32,
-    expiration_offset: u32,
-    denial_config: TomlDenialConfig,
     use_lightweight_zone_tree: bool,
     concurrent_operation_permits: Semaphore,
     max_concurrent_rrsig_generation_tasks: usize,
     signer_status: Arc<RwLock<ZoneSignerStatus>>,
     treat_single_keys_as_csks: bool,
     kmip_servers: HashMap<String, SyncConnPool>,
-    dnst_keyset_data_dir: PathBuf,
+    keys_dir: Box<Utf8Path>,
 }
 
 impl ZoneSigner {
     #[allow(clippy::too_many_arguments)]
     fn new(
         center: Arc<Center>,
-        inception_offset_secs: u32,
-        expiration_offset: u32,
-        denial_config: TomlDenialConfig,
         use_lightweight_zone_tree: bool,
         max_concurrent_operations: usize,
         max_concurrent_rrsig_generation_tasks: usize,
         treat_single_keys_as_csks: bool,
         kmip_servers: HashMap<String, SyncConnPool>,
-        dnst_keyset_data_dir: PathBuf,
     ) -> Self {
+        let state = center.state.lock().unwrap();
+        let keys_dir = state.config.keys_dir.clone();
+        drop(state);
+
         Self {
             center,
-            inception_offset_secs,
-            expiration_offset,
-            denial_config,
             use_lightweight_zone_tree,
             concurrent_operation_permits: Semaphore::new(max_concurrent_operations),
             max_concurrent_rrsig_generation_tasks,
             signer_status: Default::default(),
             treat_single_keys_as_csks,
             kmip_servers,
-            dnst_keyset_data_dir,
+            keys_dir,
         }
     }
 
@@ -346,7 +319,14 @@ impl ZoneSigner {
         //
         // Create a signing configuration.
         //
-        let signing_config = self.signing_config();
+        // Ensure that the Mutexes are locked only in this block;
+        let policy = {
+            let state = self.center.state.lock().unwrap();
+            let zone = state.zones.get(zone_name).unwrap();
+            let zone_state = zone.0.state.lock().unwrap();
+            zone_state.policy.clone()
+        };
+        let signing_config = self.signing_config(&policy.unwrap());
         let rrsig_cfg =
             GenerateRrsigConfig::new(signing_config.inception, signing_config.expiration);
 
@@ -381,8 +361,9 @@ impl ZoneSigner {
         trace!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
         // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
         let apex_name = zone.apex_name().to_string();
-        let state_path = self.dnst_keyset_data_dir.join(format!("{apex_name}.state"));
-        let state = std::fs::read_to_string(&state_path).map_err(|err| format!("Unable to read `dnst keyset` state file '{}' while signing zone {zone_name}: {err}", state_path.display()))?;
+        let state_path = self.keys_dir.join(format!("{apex_name}.state"));
+        let state = std::fs::read_to_string(&state_path)
+            .map_err(|err| format!("Unable to read `dnst keyset` state file '{state_path}' while signing zone {zone_name}: {err}"))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();
         for dnskey_rr in state.dnskey_rrset {
             let mut zonefile = Zonefile::new();
@@ -716,33 +697,19 @@ impl ZoneSigner {
             })
     }
 
-    fn signing_config(&self) -> SigningConfig<Bytes, MultiThreadedSorter> {
-        let denial = match &self.denial_config {
-            TomlDenialConfig::Nsec => DenialConfig::Nsec(Default::default()),
-            TomlDenialConfig::Nsec3(nsec3) => {
-                assert_eq!(
-                    1,
-                    nsec3.len().get(),
-                    "Multiple NSEC3 configurations per zone is not yet supported"
-                );
-                let first = parse_nsec3_config(&nsec3[0]);
+    fn signing_config(&self, policy: &PolicyVersion) -> SigningConfig<Bytes, MultiThreadedSorter> {
+        let denial = match &policy.signer.denial {
+            SignerDenialPolicy::NSec => DenialConfig::Nsec(Default::default()),
+            SignerDenialPolicy::NSec3 { opt_out } => {
+                let first = parse_nsec3_config(opt_out);
                 DenialConfig::Nsec3(first)
             }
-            TomlDenialConfig::TransitioningToNsec3(
-                _toml_nsec3_config,
-                _toml_nsec_to_nsec3_transition_state,
-            ) => todo!(),
-            TomlDenialConfig::TransitioningFromNsec3(
-                _toml_nsec3_config,
-                _toml_nsec3_to_nsec_transition_state,
-            ) => todo!(),
         };
 
-        let _add_used_dnskeys = true;
         let now = Timestamp::now().into_int();
-        let inception = now.sub(self.inception_offset_secs).into();
-        let expiration = now.add(self.expiration_offset).into();
-        SigningConfig::new(denial, inception, expiration)
+        let inception = now.wrapping_sub(policy.signer.sig_inception_offset.as_secs() as u32);
+        let expiration = now.wrapping_add(policy.signer.sig_validity_time.as_secs() as u32);
+        SigningConfig::new(denial, inception.into(), expiration.into())
     }
 }
 
@@ -923,21 +890,21 @@ fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
     records
 }
 
-fn parse_nsec3_config(config: &TomlNsec3Config) -> GenerateNsec3Config<Bytes, MultiThreadedSorter> {
+fn parse_nsec3_config(
+    opt_out: &Nsec3OptOutPolicy,
+) -> GenerateNsec3Config<Bytes, MultiThreadedSorter> {
     let mut params = Nsec3param::default();
     if matches!(
-        config.opt_out,
-        TomlNsec3OptOut::OptOut | TomlNsec3OptOut::OptOutFlagOnly
+        opt_out,
+        Nsec3OptOutPolicy::FlagOnly | Nsec3OptOutPolicy::Enabled
     ) {
         params.set_opt_out_flag()
     }
-    let ttl_mode = match config.nsec3_param_ttl_mode {
-        TomlNsec3ParamTtlMode::Fixed(ttl) => Nsec3ParamTtlMode::Fixed(ttl),
-        TomlNsec3ParamTtlMode::Soa => Nsec3ParamTtlMode::Soa,
-        TomlNsec3ParamTtlMode::SoaMinimum => Nsec3ParamTtlMode::SoaMinimum,
-    };
+
+    // TODO: support other ttl_modes? Seems missing from the config right now
+    let ttl_mode = Nsec3ParamTtlMode::Soa;
     let mut nsec3_config = GenerateNsec3Config::new(params).with_ttl_mode(ttl_mode);
-    if matches!(config.opt_out, TomlNsec3OptOut::OptOutFlagOnly) {
+    if matches!(opt_out, Nsec3OptOutPolicy::FlagOnly) {
         nsec3_config = nsec3_config.without_opt_out_excluding_owner_names_of_unsigned_delegations();
     }
     nsec3_config
