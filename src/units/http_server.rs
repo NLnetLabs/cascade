@@ -61,7 +61,7 @@ impl HttpServer {
     ) -> Result<(), Terminated> {
         // Setup listener
         let sock = TcpListener::bind(self.listen_addr).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {}", e);
+            error!("[{HTTP_UNIT_NAME}]: {e}");
             Terminated
         })?;
 
@@ -126,7 +126,7 @@ impl HttpServer {
             .with_state(state);
 
         axum::serve(sock, app).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {}", e);
+            error!("[{HTTP_UNIT_NAME}]: {e}");
             Terminated
         })
     }
@@ -418,6 +418,7 @@ impl HttpServer {
         let res = rx.recv().await;
         let Some(res) = res else {
             // Failed to receive response... When would that happen?
+            error!("[{HTTP_UNIT_NAME}]: Failed to receive response from unit {unit} while handling HTTP request: {uri}");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         };
 
@@ -426,9 +427,7 @@ impl HttpServer {
             Err(_) => Err(StatusCode::BAD_REQUEST),
         };
 
-        // TODO: make debug when setting log level is fixed
-        warn!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
-        // debug!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
+        debug!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
 
         ret
     }
