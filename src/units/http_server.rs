@@ -61,7 +61,7 @@ impl HttpServer {
     ) -> Result<(), Terminated> {
         // Setup listener
         let sock = TcpListener::bind(self.listen_addr).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {}", e);
+            error!("[{HTTP_UNIT_NAME}]: {e}");
             Terminated
         })?;
 
@@ -126,7 +126,7 @@ impl HttpServer {
             .with_state(state);
 
         axum::serve(sock, app).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {}", e);
+            error!("[{HTTP_UNIT_NAME}]: {e}");
             Terminated
         })
     }
