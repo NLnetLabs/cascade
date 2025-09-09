@@ -339,7 +339,6 @@ dependencies = [
  "hyper-util",
  "indoc",
  "layout-rs",
- "listenfd",
  "log",
  "nix 0.22.3",
  "non-empty-vec",
@@ -531,7 +530,7 @@ dependencies = [
 [[package]]
 name = "daemonbase"
 version = "0.1.3"
-source = "git+https://github.com/NLnetLabs/daemonbase?rev=3f58c89938bbbddb3c7f15035f4f550795cf7751#3f58c89938bbbddb3c7f15035f4f550795cf7751"
+source = "git+https://github.com/NLnetLabs/daemonbase?branch=add-systemd-socket-via-env-support#14936e13bd8ce967ba750a0d2e7ca091032ae81b"
 dependencies = [
  "chrono",
  "clap",
@@ -1422,17 +1421,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
 
 [[package]]
-name = "listenfd"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b87bc54a4629b4294d0b3ef041b64c40c611097a677d9dc07b2c67739fe39dba"
-dependencies = [
- "libc",
- "uuid",
- "winapi",
-]
-
-[[package]]
 name = "litemap"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1509,6 +1497,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1566,7 +1563,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "libc",
- "memoffset",
+ "memoffset 0.6.5",
 ]
 
 [[package]]
@@ -1579,6 +1576,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+ "memoffset 0.9.1",
 ]
 
 [[package]]

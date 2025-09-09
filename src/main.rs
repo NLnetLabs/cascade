@@ -237,16 +237,18 @@ fn daemonize(config: &DaemonConfig) -> Result<(), String> {
 
     let mut process = Process::from_config(daemon_config);
 
-    log::debug!("Becoming daemon process");
     if *config.daemonize.value() {
+        log::debug!("Becoming daemon process");
         if process.setup_daemon(true).is_err() {
             return Err("Failed to become daemon process: unknown error".to_string());
         }
     }
 
-    log::debug!("Dropping privileges");
-    if process.drop_privileges().is_err() {
-        return Err("Failed to drop privileges: unknown error".to_string());
+    if config.identity.is_some() {
+        log::debug!("Dropping privileges");
+        if process.drop_privileges().is_err() {
+            return Err("Failed to drop privileges: unknown error".to_string());
+        }
     }
 
     Ok(())
