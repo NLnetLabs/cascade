@@ -173,20 +173,23 @@ impl ZoneServerUnit {
             }
         }
 
-        // Also listen on any remainnig UDP and TCP sockets provided by the O/S.
-        while let Some(sock) = env_sockets.lock().unwrap().pop_udp() {
-            if let Ok(addr) = sock.local_addr() {
-                addrs.push(addr.to_string());
+        if unit_name == "PS" {
+            // Also listen on any remainnig UDP and TCP sockets provided by
+            // the O/S.
+            while let Some(sock) = env_sockets.lock().unwrap().pop_udp() {
+                if let Ok(addr) = sock.local_addr() {
+                    addrs.push(addr.to_string());
+                }
+                let listen_addr = ListenAddr::UdpSocket(sock);
+                Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
             }
-            let listen_addr = ListenAddr::UdpSocket(sock);
-            Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
-        }
-        while let Some(sock) = env_sockets.lock().unwrap().pop_tcp() {
-            if let Ok(addr) = sock.local_addr() {
-                addrs.push(addr.to_string());
+            while let Some(sock) = env_sockets.lock().unwrap().pop_tcp() {
+                if let Ok(addr) = sock.local_addr() {
+                    addrs.push(addr.to_string());
+                }
+                let listen_addr = ListenAddr::TcpListener(sock);
+                Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
             }
-            let listen_addr = ListenAddr::TcpListener(sock);
-            Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
         }
 
         let update_tx = self.center.update_tx.clone();
