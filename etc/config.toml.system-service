@@ -15,7 +15,7 @@ zone-state-dir = "/var/lib/cascade/zone-state"
 tsig-store-path = "/var/lib/cascade/tsig-keys.db"
 
 # The directory storing the keys.
-keys-dir = "/var/db/cascade/keys"
+keys-dir = "/var/lib/cascade/keys"
 
 # The path to the dnst binary Cascade should use.
 dnst-binary-path = "dnst"
