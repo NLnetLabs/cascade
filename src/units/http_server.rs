@@ -418,6 +418,7 @@ impl HttpServer {
         let res = rx.recv().await;
         let Some(res) = res else {
             // Failed to receive response... When would that happen?
+            error!("[{HTTP_UNIT_NAME}]: Failed to receive response from unit {unit} while handling HTTP request: {uri}");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         };
 
