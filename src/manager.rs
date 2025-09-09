@@ -26,6 +26,8 @@ pub fn spawn(
     center_tx_slot: &mut Option<mpsc::UnboundedSender<TargetCommand>>,
     unit_tx_slots: &mut foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
 ) {
+    // Acquire information about any sockets passed to us via the environment,
+    // e.g. using SystemD socket activation.
     let env_sockets = Arc::new(Mutex::new(EnvSockets::from_env(true)));
 
     // Spawn the central command.
