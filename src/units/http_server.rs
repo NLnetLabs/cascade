@@ -427,9 +427,7 @@ impl HttpServer {
             Err(_) => Err(StatusCode::BAD_REQUEST),
         };
 
-        // TODO: make debug when setting log level is fixed
-        warn!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
-        // debug!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
+        debug!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
 
         ret
     }
