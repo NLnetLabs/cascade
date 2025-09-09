@@ -6,7 +6,7 @@ use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 
-use crate::config::Config;
+use crate::{api::PolicyChange, config::Config};
 
 pub mod file;
 
@@ -47,10 +47,16 @@ impl Policy {
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
-) -> io::Result<()> {
+) -> io::Result<foldhash::HashMap<Box<str>, PolicyChange>> {
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
     let mut new_policies = foldhash::HashMap::<_, _>::default();
+
+    // Keep track of the changes to report to the user
+    let mut changes: foldhash::HashMap<_, _> = policies
+        .keys()
+        .map(|p| (p.clone(), PolicyChange::Unchanged))
+        .collect();
 
     // Traverse all objects in the policy directory.
     for entry in fs::read_dir(&*config.policy_dir)? {
@@ -103,11 +109,16 @@ pub fn reload_all(
             .file_stem()
             .expect("this path points to a readable file, so it must have a file name");
         let policy = if let Some(mut policy) = policies.remove(name) {
+            let old_policy = policy.clone();
             spec.parse_into(&mut policy);
+            if old_policy != policy {
+                log::info!("Updated policy '{name}'");
+                changes.insert(policy.latest.name.clone(), PolicyChange::Updated);
+            }
             policy
         } else {
             log::info!("Loaded new policy '{name}'");
-
+            changes.insert(name.into(), PolicyChange::Added);
             spec.parse(name)
         };
 
@@ -128,13 +139,14 @@ pub fn reload_all(
             );
         } else {
             log::info!("Forgetting now-removed policy '{name}'");
+            changes.insert(name, PolicyChange::Removed);
         }
     }
 
     // Update the set of policies.
     *policies = new_policies;
 
-    Ok(())
+    Ok(changes)
 }
 
 //----------- PolicyVersion ----------------------------------------------------

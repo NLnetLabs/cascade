@@ -258,11 +258,14 @@ impl HttpServer {
         // mutex guard. We could make `reload_all` a function that takes the whole state to fix
         // this.
         let mut policies = state.policies.clone();
-        crate::policy::reload_all(&mut policies, &state.config).unwrap();
+        let changes = crate::policy::reload_all(&mut policies, &state.config).unwrap();
+        let mut changes: Vec<_> = changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
+        changes.sort_by_key(|x: &(String, _)| x.0.clone());
+
         state.policies = policies;
 
         // TODO: Ideally, this would return some information about what changed.
-        Json(PolicyReloadResult {})
+        Json(PolicyReloadResult { changes })
     }
 
     async fn policy_show(

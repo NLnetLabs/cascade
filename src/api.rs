@@ -104,7 +104,9 @@ pub struct ServerStatusResult {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct PolicyReloadResult {}
+pub struct PolicyReloadResult {
+    pub changes: Vec<(String, PolicyChange)>,
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PolicyListResult {
@@ -171,4 +173,12 @@ pub struct ServerPolicyInfo {}
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum PolicyInfoError {
     PolicyDoesNotExist,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum PolicyChange {
+    Added,
+    Removed,
+    Updated,
+    Unchanged,
 }

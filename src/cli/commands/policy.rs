@@ -3,8 +3,8 @@ use log::error;
 
 use crate::{
     api::{
-        Nsec3OptOutPolicyInfo, PolicyInfo, PolicyInfoError, PolicyListResult, PolicyReloadResult,
-        ReviewPolicyInfo, SignerDenialPolicyInfo, SignerSerialPolicyInfo,
+        Nsec3OptOutPolicyInfo, PolicyChange, PolicyInfo, PolicyInfoError, PolicyListResult,
+        PolicyReloadResult, ReviewPolicyInfo, SignerDenialPolicyInfo, SignerSerialPolicyInfo,
     },
     cli::client::CascadeApiClient,
 };
@@ -28,6 +28,21 @@ pub enum PolicyCommand {
     /// Reload all the policies from the files
     #[command(name = "reload")]
     Reload,
+}
+
+#[allow(unused)]
+mod ansi {
+    pub const BLACK: &str = "\x1b[0;30m";
+    pub const RED: &str = "\x1b[0;31m";
+    pub const GREEN: &str = "\x1b[0;32m";
+    pub const YELLOW: &str = "\x1b[0;33m";
+    pub const BLUE: &str = "\x1b[0;34m";
+    pub const PURPLE: &str = "\x1b[0;35m";
+    pub const CYAN: &str = "\x1b[0;36m";
+    pub const WHITE: &str = "\x1b[0;37m";
+    pub const GRAY: &str = "\x1b[38;5;248m";
+    pub const RESET: &str = "\x1b[0m";
+    pub const ITALIC: &str = "\x1b[3m";
 }
 
 impl Policy {
@@ -68,7 +83,7 @@ impl Policy {
                 print_policy(&p);
             }
             PolicyCommand::Reload => {
-                let _res: PolicyReloadResult = client
+                let res: PolicyReloadResult = client
                     .post("policy/reload")
                     .send()
                     .and_then(|r| r.json())
@@ -77,7 +92,33 @@ impl Policy {
                         error!("HTTP request failed: {e}");
                     })?;
 
-                println!("Policies reloaded");
+                println!("Policies reloaded:");
+
+                let max_width = res.changes.iter().map(|(s, _)| s.len()).max().unwrap_or(0);
+
+                for p in res.changes {
+                    let name = p.0;
+
+                    let change = match p.1 {
+                        PolicyChange::Added => "added",
+                        PolicyChange::Removed => "removed",
+                        PolicyChange::Updated => "updated",
+                        PolicyChange::Unchanged => "unchanged",
+                    };
+
+                    let color = match p.1 {
+                        PolicyChange::Added => ansi::GREEN,
+                        PolicyChange::Removed => ansi::RED,
+                        PolicyChange::Updated => ansi::BLUE,
+                        PolicyChange::Unchanged => ansi::GRAY,
+                    };
+
+                    println!(
+                        "{color} - {name:<width$} {change}{reset}",
+                        width = max_width,
+                        reset = ansi::RESET
+                    );
+                }
             }
         }
         Ok(())
