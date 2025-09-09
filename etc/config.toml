@@ -24,13 +24,49 @@ dnst-binary-path = "dnst"
 #
 # This controls Cascade's behaviour as a daemon, i.e. how it interacts with the
 # external system.
+#
+# Note: These settings may not be needed when using a serivce manager
+# like SystemD which is able to offer such functionality on behalf of the
+# application.
 [daemon]
 #
 # Whether or not to fork the process and apply the pid-file, chroot and
 # identity settings.
-# 
-daemonize = false
 #
+# Note: When running Cascade as a SystemD service use the Type=exec option
+# instead.
+# See: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Type=
+# 
+# Explanation: Forking is typically used to run initially as root and bind to
+# privileged ports then subsequently switch to running as a less privileged
+# user. With SystemD this is not necessary as this can be achieved by using
+# socket activation instead whereby SystemD binds to the desired ports and
+# passes the sockets to the application. Cascade supports receiving such
+# sockets via the SystemD LISTEN_FDS environment variable. To use this
+# functionalty create a SystemD unit named e.g. cascaded.socket with content
+# such as:
+#
+# [Unit]
+# Description=Cascaded Socket
+#
+# [Socket]
+# ListenDatagram=0.0.0.0:53
+# ListenStream=0.0.0.0:53
+# Accept=no
+#
+# [Install]
+# WantedBy=sockets.target
+#
+# And then in the cascaded.service unit:
+#
+# [Unit]
+# Requires=cascaded.socket
+#
+# [Service]
+# CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID
+# AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID
+daemonize = false
+
 # The minimum severity of the messages logged by the daemon.
 #
 # Messages at or above the specified severity level will be logged.  The
@@ -42,14 +78,14 @@ daemonize = false
 # - 'error': Something went wrong (but Cascade can recover).
 # - 'critical': Something went wrong and Cascade can't function at all.
 log-level = "info"
-#
+
 # The location the daemon writes logs to.
 #
 # Logs are appended line-by-line to the specified file path.  It can be set to
 # '/dev/stdout' or '/dev/stderr' for standard output and error, respectively.
 # If it is a terminal, ANSI escape codes may be used to style the output.
 log-target = { type = "file", path = "/dev/stdout" }
-#
+
 # The path to a PID file to maintain.
 #
 # If specified, Cascade will maintain a PID file at this location; it will be a
@@ -57,7 +93,7 @@ log-target = { type = "file", path = "/dev/stdout" }
 #
 # Only applied if daemonize = true.
 #pid-file = "/var/run/cascade.pid"
-#
+
 # A directory to chroot into after startup.
 #
 # Cascade will chroot into the specified directory after initialization.  Note
@@ -67,9 +103,13 @@ log-target = { type = "file", path = "/dev/stdout" }
 # aren't within the chroot - do we just fail?  Or do we interpret all paths here
 # relative to the chroot?
 #
+# Note: When running Cascade as a SystemD service you may want to use the
+# RootDirectory= instead.
+# See: https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#RootDirectory=
+#
 # Only applied if daemonize = true.
 #chroot = "/var/run/cascade"
-#
+
 # An identity (user and group) to assume after startup.
 #
 # Cascade will assume the specified identity after initialization.  Note that
@@ -91,6 +131,11 @@ log-target = { type = "file", path = "/dev/stdout" }
 #
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  An empty array will disable listening entirely.
+#
+# Note: When running Cascade as a SystemD service, if using socket activation
+# if sockets for one or more of these addresses is provided by SystemD to the
+# application it will use the pre-bound socket instead of trying to bind to
+# it again.
 notif-listeners = ["127.0.0.1:8050"] # TODO: Pick a good default port
 
 # Configuring whether and how loaded zones are reviewed.
@@ -102,6 +147,11 @@ notif-listeners = ["127.0.0.1:8050"] # TODO: Pick a good default port
 #
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  An empty array will disable serving entirely.
+# 
+# Note: When running Cascade as a SystemD service, if using socket activation
+# if sockets for one or more of these addresses is provided by SystemD to the
+# application it will use the pre-bound socket instead of trying to bind to
+# it again.
 servers = ["127.0.0.1:8051"] # TODO: Pick a good default port
 
 # Configuring how zones are signed.
@@ -116,6 +166,11 @@ servers = ["127.0.0.1:8051"] # TODO: Pick a good default port
 #
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  An empty array will disable serving entirely.
+# 
+# Note: When running Cascade as a SystemD service, if using socket activation
+# if sockets for one or more of these addresses is provided by SystemD to the
+# application it will use the pre-bound socket instead of trying to bind to
+# it again.
 servers = ["127.0.0.1:8052"] # TODO: Pick a good default port.
 
 # Configuring DNSSEC key management.
@@ -130,4 +185,10 @@ servers = ["127.0.0.1:8052"] # TODO: Pick a good default port.
 #
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  At least one address must be specified.
+# 
+# Note: When running Cascade as a SystemD service, if using socket activation
+# if sockets for one or more of these addresses is provided by SystemD to the
+# application it will use the pre-bound socket instead of trying to bind to
+# it again. Additionally, any unused SystemD provided pre-bound sockets will
+# also be associated with this server instance.
 servers = ["127.0.0.1:8053"] # TODO: Pick a good default port.
