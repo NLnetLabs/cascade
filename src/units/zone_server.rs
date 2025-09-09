@@ -275,7 +275,7 @@ impl ZoneServerUnit {
 fn acquire_udp_socket(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
     match env_sockets.lock().unwrap().take_udp(&addr) {
         Some(socket) => {
-            info!(
+            debug!(
                 "Pre-bound UDP socket on {:?} acquired via environment settings",
                 socket.local_addr()
             );
@@ -289,7 +289,7 @@ fn acquire_udp_socket(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAdd
 fn acquire_tcp_listener(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
     match env_sockets.lock().unwrap().take_tcp(&addr) {
         Some(listener) => {
-            info!(
+            debug!(
                 "Pre-bound TCP listener on {:?} acquired via environment settings",
                 listener.local_addr()
             );
