@@ -161,14 +161,12 @@ impl ZoneServerUnit {
             info!("[{unit_name}]: Binding on {sock_cfg:?}");
 
             if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-                info!("XIMON A");
                 let listen_addr = acquire_udp_socket(&env_sockets, addr);
                 Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
                 addrs.push(addr.to_string());
             }
 
             if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-                info!("XIMON B");
                 let listen_addr = acquire_tcp_listener(&env_sockets, addr);
                 Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
                 addrs.push(addr.to_string());
@@ -177,7 +175,6 @@ impl ZoneServerUnit {
 
         // Also listen on any remainnig UDP and TCP sockets provided by the O/S.
         while let Some(sock) = env_sockets.lock().unwrap().pop_udp() {
-            info!("XIMON C");
             if let Ok(addr) = sock.local_addr() {
                 addrs.push(addr.to_string());
             }
@@ -185,7 +182,6 @@ impl ZoneServerUnit {
             Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
         }
         while let Some(sock) = env_sockets.lock().unwrap().pop_tcp() {
-            info!("XIMON D");
             if let Ok(addr) = sock.local_addr() {
                 addrs.push(addr.to_string());
             }
@@ -272,6 +268,7 @@ impl ZoneServerUnit {
     }
 }
 
+/// Use a matching pre-bound UDP socket if available, bind otherwise.
 fn acquire_udp_socket(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
     match env_sockets.lock().unwrap().take_udp(&addr) {
         Some(socket) => {
@@ -285,6 +282,7 @@ fn acquire_udp_socket(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAdd
     }
 }
 
+/// Use a matching pre-bound TCP socket if available, bind otherwise.
 fn acquire_tcp_listener(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
     match env_sockets.lock().unwrap().take_tcp(&addr) {
         Some(listener) => {
