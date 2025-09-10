@@ -245,6 +245,7 @@ impl ZoneServerUnit {
                 serve_on_udp(svc, buf, sock).await;
             }
             ListenAddr::UdpSocket(sock) => {
+                sock.set_nonblocking(true)?;
                 let sock = UdpSocket::from_std(sock)?;
                 serve_on_udp(svc, buf, sock).await;
             }
