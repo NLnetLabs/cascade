@@ -63,8 +63,8 @@ pub struct ZoneState {
     /// new save operation should be enqueued.
     pub enqueued_save: Option<tokio::task::JoinHandle<()>>,
 
-    /// The last serial number we published for this zone
-    pub last_published_serial: Option<Serial>,
+    /// The last serial number we signed for this zone
+    pub last_signed_serial: Option<Serial>,
     //
     // TODO:
     // - A log?

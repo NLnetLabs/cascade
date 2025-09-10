@@ -84,10 +84,10 @@ impl Spec {
         match self {
             Self::V1(v1::Spec {
                 policy,
-                last_published_serial,
+                last_signed_serial,
             }) => {
                 state.policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
-                state.last_published_serial = last_published_serial;
+                state.last_signed_serial = last_signed_serial;
             }
         }
     }

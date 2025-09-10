@@ -25,8 +25,8 @@ pub struct Spec {
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
 
-    /// The last serial number we published for this zone
-    pub last_published_serial: Option<Serial>,
+    /// The last serial number we signed for this zone
+    pub last_signed_serial: Option<Serial>,
 }
 
 //--- Conversion
@@ -36,7 +36,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
-            last_published_serial: zone.last_published_serial,
+            last_signed_serial: zone.last_signed_serial,
         }
     }
 }
