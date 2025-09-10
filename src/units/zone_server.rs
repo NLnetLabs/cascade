@@ -298,7 +298,7 @@ fn acquire_tcp_listener(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketA
             );
             ListenAddr::TcpListener(listener)
         }
-        None => ListenAddr::Udp(addr),
+        None => ListenAddr::Tcp(addr),
     }
 }
 
