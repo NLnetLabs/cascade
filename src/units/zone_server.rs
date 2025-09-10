@@ -213,8 +213,9 @@ impl ZoneServerUnit {
     {
         let unit_name: Box<str> = unit_name.into();
         tokio::spawn(async move {
+            let listen_str = format!("{listen_addr}");
             if let Err(err) = Self::server(listen_addr, svc).await {
-                error!("[{unit_name}]: {err}");
+                error!("[{unit_name}]: Failed to listen for UDP connections on {listen_str}: {err}");
             }
         });
     }
@@ -225,8 +226,9 @@ impl ZoneServerUnit {
     {
         let unit_name: Box<str> = unit_name.into();
         tokio::spawn(async move {
+            let listen_str = format!("{listen_addr}");
             if let Err(err) = Self::server(listen_addr, svc).await {
-                error!("[{unit_name}]: {err}");
+                error!("[{unit_name}]: Failed to listen for TCP connections on {listen_str}: {err}");
             }
         });
     }
@@ -235,6 +237,7 @@ impl ZoneServerUnit {
     where
         Svc: Service<Vec<u8>, ()> + Clone,
     {
+        debug!("Spawning zone server on address {addr}");
         let buf = VecBufSource;
         match addr {
             ListenAddr::Udp(addr) => {
