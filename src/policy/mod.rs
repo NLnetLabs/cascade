@@ -6,7 +6,10 @@ use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 
-use crate::{api::PolicyChange, config::Config};
+use crate::{
+    api::{PolicyChange, PolicyReloadError},
+    config::Config,
+};
 
 pub mod file;
 
@@ -47,7 +50,7 @@ impl Policy {
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
-) -> io::Result<foldhash::HashMap<Box<str>, PolicyChange>> {
+) -> Result<foldhash::HashMap<Box<str>, PolicyChange>, PolicyReloadError> {
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
     let mut new_policies = foldhash::HashMap::<_, _>::default();
@@ -59,8 +62,11 @@ pub fn reload_all(
         .collect();
 
     // Traverse all objects in the policy directory.
-    for entry in fs::read_dir(&*config.policy_dir)? {
-        let entry = entry?;
+    for entry in fs::read_dir(&*config.policy_dir)
+        .map_err(|e| PolicyReloadError::Io(config.policy_dir.clone().into(), e.to_string()))?
+    {
+        let entry = entry
+            .map_err(|e| PolicyReloadError::Io(config.policy_dir.clone().into(), e.to_string()))?;
 
         // Filter for UTF-8 paths.
         let Ok(path) = Utf8PathBuf::from_path_buf(entry.path()) else {
@@ -101,7 +107,7 @@ pub fn reload_all(
                 log::warn!("Ignoring potential policy '{path}'; policies must be files");
                 continue;
             }
-            Err(err) => return Err(err),
+            Err(err) => return Err(PolicyReloadError::Io(path, err.to_string())),
         };
 
         // Build a new policy or merge an existing one.
@@ -113,7 +119,7 @@ pub fn reload_all(
             spec.parse_into(&mut policy);
             if old_policy != policy {
                 log::info!("Updated policy '{name}'");
-                changes.insert(policy.latest.name.clone(), PolicyChange::Updated);
+                changes.insert(name.into(), PolicyChange::Updated);
             }
             policy
         } else {

@@ -104,7 +104,19 @@ pub struct ServerStatusResult {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct PolicyReloadResult {
+pub enum PolicyReloadError {
+    Io(Utf8PathBuf, String),
+}
+
+impl Display for PolicyReloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let PolicyReloadError::Io(p, e) = self;
+        format!("{p}: {e}").fmt(f)
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct PolicyChanges {
     pub changes: Vec<(String, PolicyChange)>,
 }
 

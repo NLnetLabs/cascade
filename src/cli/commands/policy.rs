@@ -3,8 +3,9 @@ use log::error;
 
 use crate::{
     api::{
-        Nsec3OptOutPolicyInfo, PolicyChange, PolicyInfo, PolicyInfoError, PolicyListResult,
-        PolicyReloadResult, ReviewPolicyInfo, SignerDenialPolicyInfo, SignerSerialPolicyInfo,
+        Nsec3OptOutPolicyInfo, PolicyChange, PolicyChanges, PolicyInfo, PolicyInfoError,
+        PolicyListResult, PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo,
+        SignerSerialPolicyInfo,
     },
     cli::client::CascadeApiClient,
 };
@@ -75,7 +76,7 @@ impl Policy {
                 let p = match res {
                     Ok(p) => p,
                     Err(e) => {
-                        eprintln!("{e:?}");
+                        error!("{e:?}");
                         return Err(());
                     }
                 };
@@ -83,7 +84,7 @@ impl Policy {
                 print_policy(&p);
             }
             PolicyCommand::Reload => {
-                let res: PolicyReloadResult = client
+                let res: Result<PolicyChanges, PolicyReloadError> = client
                     .post("policy/reload")
                     .send()
                     .and_then(|r| r.json())
@@ -91,6 +92,14 @@ impl Policy {
                     .map_err(|e| {
                         error!("HTTP request failed: {e}");
                     })?;
+
+                let res = match res {
+                    Ok(res) => res,
+                    Err(err) => {
+                        error!("{err}");
+                        return Err(());
+                    }
+                };
 
                 println!("Policies reloaded:");
 

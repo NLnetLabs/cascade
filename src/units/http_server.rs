@@ -25,10 +25,11 @@ use tokio::sync::mpsc;
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
 use crate::api::Nsec3OptOutPolicyInfo;
+use crate::api::PolicyChanges;
 use crate::api::PolicyInfo;
 use crate::api::PolicyInfoError;
 use crate::api::PolicyListResult;
-use crate::api::PolicyReloadResult;
+use crate::api::PolicyReloadError;
 use crate::api::ReviewPolicyInfo;
 use crate::api::ServerPolicyInfo;
 use crate::api::ServerStatusResult;
@@ -251,21 +252,28 @@ impl HttpServer {
         Json(PolicyListResult { policies })
     }
 
-    async fn policy_reload(State(state): State<Arc<HttpServerState>>) -> Json<PolicyReloadResult> {
+    async fn policy_reload(
+        State(state): State<Arc<HttpServerState>>,
+    ) -> Json<Result<PolicyChanges, PolicyReloadError>> {
         let mut state = state.center.state.lock().unwrap();
 
         // TODO: This clone is a bit unfortunate. Looks like that's necessary because of the
         // mutex guard. We could make `reload_all` a function that takes the whole state to fix
         // this.
         let mut policies = state.policies.clone();
-        let changes = crate::policy::reload_all(&mut policies, &state.config).unwrap();
+        let res = crate::policy::reload_all(&mut policies, &state.config);
+        let changes = match res {
+            Ok(c) => c,
+            Err(e) => {
+                return Json(Err(e));
+            }
+        };
         let mut changes: Vec<_> = changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
         changes.sort_by_key(|x: &(String, _)| x.0.clone());
 
         state.policies = policies;
 
-        // TODO: Ideally, this would return some information about what changed.
-        Json(PolicyReloadResult { changes })
+        Json(Ok(PolicyChanges { changes }))
     }
 
     async fn policy_show(
