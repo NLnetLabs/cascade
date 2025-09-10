@@ -174,7 +174,7 @@ impl ZoneServerUnit {
         }
 
         if unit_name == "PS" {
-            // Also listen on any remainnig UDP and TCP sockets provided by
+            // Also listen on any remaining UDP and TCP sockets provided by
             // the O/S.
             while let Some(sock) = env_sockets.lock().unwrap().pop_udp() {
                 if let Ok(addr) = sock.local_addr() {
