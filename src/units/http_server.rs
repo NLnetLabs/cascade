@@ -22,11 +22,22 @@ use log::{debug, error, info};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
+use crate::api::KeyManagerPolicyInfo;
+use crate::api::LoaderPolicyInfo;
+use crate::api::Nsec3OptOutPolicyInfo;
+use crate::api::PolicyChanges;
+use crate::api::PolicyInfo;
+use crate::api::PolicyInfoError;
 use crate::api::PolicyListResult;
-use crate::api::PolicyReloadResult;
-use crate::api::PolicyShowResult;
+use crate::api::PolicyReloadError;
+use crate::api::ReviewPolicyInfo;
+use crate::api::ServerPolicyInfo;
 use crate::api::ServerStatusResult;
+use crate::api::SignerDenialPolicyInfo;
+use crate::api::SignerPolicyInfo;
+use crate::api::SignerSerialPolicyInfo;
 use crate::api::ZoneAdd;
+use crate::api::ZoneAddError;
 use crate::api::ZoneAddResult;
 use crate::api::ZoneReloadResult;
 use crate::api::ZoneRemoveResult;
@@ -37,8 +48,9 @@ use crate::api::ZonesListResult;
 use crate::center;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
-use crate::zone;
-// use crate::zone::Zones;
+use crate::policy::Nsec3OptOutPolicy;
+use crate::policy::SignerDenialPolicy;
+use crate::policy::SignerSerialPolicy;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -61,7 +73,7 @@ impl HttpServer {
     ) -> Result<(), Terminated> {
         // Setup listener
         let sock = TcpListener::bind(self.listen_addr).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {}", e);
+            error!("[{HTTP_UNIT_NAME}]: {e}");
             Terminated
         })?;
 
@@ -122,11 +134,11 @@ impl HttpServer {
             .route("/zone/{name}/reload", post(Self::zone_reload))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/list", get(Self::policy_list))
-            .route("/policy/{name}", post(Self::policy_show))
+            .route("/policy/{name}", get(Self::policy_show))
             .with_state(state);
 
         axum::serve(sock, app).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {}", e);
+            error!("[{HTTP_UNIT_NAME}]: {e}");
             Terminated
         })
     }
@@ -134,14 +146,18 @@ impl HttpServer {
     async fn zone_add(
         State(state): State<Arc<HttpServerState>>,
         Json(zone_register): Json<ZoneAdd>,
-    ) -> Json<ZoneAddResult> {
-        // TODO: Use the result.
-        let _ = center::add_zone(&state.center, zone_register.name.clone());
-        let _ = zone::change_policy(
+    ) -> Json<Result<ZoneAddResult, ZoneAddError>> {
+        if let Err(e) = center::add_zone(
             &state.center,
             zone_register.name.clone(),
             zone_register.policy.clone().into(),
-        );
+        ) {
+            return Json(Err(match e {
+                center::ZoneAddError::AlreadyExists => ZoneAddError::AlreadyExists,
+                center::ZoneAddError::NoSuchPolicy => ZoneAddError::NoSuchPolicy,
+                center::ZoneAddError::PolicyMidDeletion => ZoneAddError::PolicyMidDeletion,
+            }));
+        }
 
         let zone_name = zone_register.name.clone();
         state
@@ -165,10 +181,11 @@ impl HttpServer {
                 },
             ))
             .unwrap();
-        Json(ZoneAddResult {
+
+        Json(Ok(ZoneAddResult {
             name: zone_name,
             status: "Submitted".to_string(),
-        })
+        }))
     }
 
     async fn zone_remove(
@@ -220,16 +237,96 @@ impl HttpServer {
         Ok(Json(ZoneReloadResult { name: payload }))
     }
 
-    async fn policy_list() -> Json<PolicyListResult> {
-        todo!()
+    async fn policy_list(State(state): State<Arc<HttpServerState>>) -> Json<PolicyListResult> {
+        let state = state.center.state.lock().unwrap();
+
+        let mut policies: Vec<String> = state
+            .policies
+            .keys()
+            .map(|s| String::from(s.as_ref()))
+            .collect();
+
+        // We don't _have_ to sort, but seems useful for consistent output
+        policies.sort();
+
+        Json(PolicyListResult { policies })
     }
 
-    async fn policy_reload() -> Json<PolicyReloadResult> {
-        todo!()
+    async fn policy_reload(
+        State(state): State<Arc<HttpServerState>>,
+    ) -> Json<Result<PolicyChanges, PolicyReloadError>> {
+        let mut state = state.center.state.lock().unwrap();
+
+        // TODO: This clone is a bit unfortunate. Looks like that's necessary because of the
+        // mutex guard. We could make `reload_all` a function that takes the whole state to fix
+        // this.
+        let mut policies = state.policies.clone();
+        let res = crate::policy::reload_all(&mut policies, &state.config);
+        let changes = match res {
+            Ok(c) => c,
+            Err(e) => {
+                return Json(Err(e));
+            }
+        };
+        let mut changes: Vec<_> = changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
+        changes.sort_by_key(|x: &(String, _)| x.0.clone());
+
+        state.policies = policies;
+
+        Json(Ok(PolicyChanges { changes }))
     }
 
-    async fn policy_show() -> Json<PolicyShowResult> {
-        todo!()
+    async fn policy_show(
+        State(state): State<Arc<HttpServerState>>,
+        Path(name): Path<Box<str>>,
+    ) -> Json<Result<PolicyInfo, PolicyInfoError>> {
+        let state = state.center.state.lock().unwrap();
+        let Some(p) = state.policies.get(&name) else {
+            return Json(Err(PolicyInfoError::PolicyDoesNotExist));
+        };
+
+        let zones = p.zones.iter().cloned().collect();
+        let loader = LoaderPolicyInfo {
+            review: ReviewPolicyInfo {
+                required: p.latest.loader.review.required,
+                cmd_hook: p.latest.loader.review.cmd_hook.clone(),
+            },
+        };
+
+        let signer = SignerPolicyInfo {
+            serial_policy: match p.latest.signer.serial_policy {
+                SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
+                SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
+                SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
+                SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
+            },
+            sig_inception_offset: p.latest.signer.sig_inception_offset,
+            sig_validity_offset: p.latest.signer.sig_validity_time,
+            denial: match p.latest.signer.denial {
+                SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
+                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 {
+                    opt_out: match opt_out {
+                        Nsec3OptOutPolicy::Disabled => Nsec3OptOutPolicyInfo::Disabled,
+                        Nsec3OptOutPolicy::FlagOnly => Nsec3OptOutPolicyInfo::FlagOnly,
+                        Nsec3OptOutPolicy::Enabled => Nsec3OptOutPolicyInfo::Enabled,
+                    },
+                },
+            },
+            review: ReviewPolicyInfo {
+                required: p.latest.signer.review.required,
+                cmd_hook: p.latest.signer.review.cmd_hook.clone(),
+            },
+        };
+        let server = ServerPolicyInfo {};
+
+        Json(Ok(PolicyInfo {
+            name: p.latest.name.clone(),
+            zones,
+            loader,
+            key_manager: KeyManagerPolicyInfo {},
+            signer,
+            server,
+        }))
     }
 
     async fn status() -> Json<ServerStatusResult> {
@@ -418,6 +515,7 @@ impl HttpServer {
         let res = rx.recv().await;
         let Some(res) = res else {
             // Failed to receive response... When would that happen?
+            error!("[{HTTP_UNIT_NAME}]: Failed to receive response from unit {unit} while handling HTTP request: {uri}");
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         };
 
@@ -426,9 +524,7 @@ impl HttpServer {
             Err(_) => Err(StatusCode::BAD_REQUEST),
         };
 
-        // TODO: make debug when setting log level is fixed
-        warn!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
-        // debug!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
+        debug!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
 
         ret
     }
