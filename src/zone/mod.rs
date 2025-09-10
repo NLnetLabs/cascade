@@ -75,7 +75,6 @@ pub struct ZoneState {
 
     /// The last serial number we signed for this zone
     pub last_signed_serial: Option<Serial>,
-
     //
     // TODO:
     // - A log?
