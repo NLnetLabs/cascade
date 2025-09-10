@@ -12,7 +12,7 @@ use std::{
 
 use bytes::Bytes;
 use domain::{
-    base::{iana::Class, Name},
+    base::{iana::Class, Name, Serial},
     zonetree::{self, ZoneBuilder},
 };
 
@@ -62,6 +62,9 @@ pub struct ZoneState {
     /// duration of time.  If the field is `None`, and the state is changed, a
     /// new save operation should be enqueued.
     pub enqueued_save: Option<tokio::task::JoinHandle<()>>,
+
+    /// The last serial number we published for this zone
+    pub last_published_serial: Option<Serial>,
     //
     // TODO:
     // - A log?

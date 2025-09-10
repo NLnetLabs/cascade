@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use domain::base::Serial;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -23,6 +24,9 @@ pub struct Spec {
     /// The full details of the policy are stored here, as there may be a newer
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
+
+    /// The last serial number we published for this zone
+    pub last_published_serial: Option<Serial>,
 }
 
 //--- Conversion
@@ -32,6 +36,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
+            last_published_serial: zone.last_published_serial,
         }
     }
 }
