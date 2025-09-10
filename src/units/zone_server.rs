@@ -477,6 +477,21 @@ impl ZoneServer {
         zone_serial: Serial,
     ) {
         info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.");
+
+        // Move next_min_expiration to min_expiration.
+        {
+            // Use a block to make sure that the mutex is clearly dropped.
+            let state = self.center.state.lock().unwrap();
+            let zone = state.zones.get(&zone_name).unwrap();
+            let mut zone_state = zone.0.state.lock().unwrap();
+
+            // Save as next_min_expiration. After the signed zone is approved
+            // this value should be move to min_expiration.
+            zone_state.min_expiration = zone_state.next_min_expiration;
+            zone_state.next_min_expiration = None;
+            zone.0.mark_dirty(&mut zone_state, &self.center);
+        }
+
         // Move the zone from the signed collection to the published collection.
         // TODO: Bump the zone serial?
         let signed_zones = self.center.signed_zones.load();

@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -624,6 +625,40 @@ impl ZoneSigner {
             .saturating_add(insert_start.elapsed())
             .as_secs();
 
+        let reader = zone.read();
+        let apex_name = zone_name.clone();
+        let min_expiration = Arc::new(MinTimestamp::new());
+        let saved_min_expiration = min_expiration.clone();
+        reader.walk(Box::new(move |name, rrset, _cut| {
+            for r in rrset.data() {
+                if let ZoneRecordData::Rrsig(rrsig) = r {
+                    if name == apex_name
+                        && (rrsig.type_covered() == Rtype::DNSKEY
+                            || rrsig.type_covered() == Rtype::CDS
+                            || rrsig.type_covered() == Rtype::CDNSKEY)
+                    {
+                        // These types come from the key manager.
+                        continue;
+                    }
+
+                    min_expiration.add(rrsig.expiration());
+                }
+            }
+        }));
+
+        // Save the minimum of the expiration times.
+        {
+            // Use a block to make sure that the mutex is clearly dropped.
+            let state = self.center.state.lock().unwrap();
+            let zone = state.zones.get(zone_name).unwrap();
+            let mut zone_state = zone.0.state.lock().unwrap();
+
+            // Save as next_min_expiration. After the signed zone is approved
+            // this value should be move to min_expiration.
+            zone_state.next_min_expiration = saved_min_expiration.get();
+            zone.0.mark_dirty(&mut zone_state, &self.center);
+        }
+
         let total_time = rrsig_start.elapsed().as_secs();
         let rrsig_avg = if rrsig_time == 0 {
             rrsig_count
@@ -710,6 +745,28 @@ impl ZoneSigner {
         let inception = now.wrapping_sub(policy.signer.sig_inception_offset.as_secs() as u32);
         let expiration = now.wrapping_add(policy.signer.sig_validity_time.as_secs() as u32);
         SigningConfig::new(denial, inception.into(), expiration.into())
+    }
+}
+
+struct MinTimestamp(Mutex<Option<Timestamp>>);
+
+impl MinTimestamp {
+    fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+    fn add(&self, ts: Timestamp) {
+        let mut min_ts = self.0.lock().expect("should not fail");
+        if let Some(curr_min) = *min_ts {
+            if ts < curr_min {
+                *min_ts = Some(ts);
+            }
+        } else {
+            *min_ts = Some(ts);
+        }
+    }
+    fn get(&self) -> Option<Timestamp> {
+        let min_ts = self.0.lock().expect("should not fail");
+        *min_ts
     }
 }
 
