@@ -215,7 +215,9 @@ impl ZoneServerUnit {
         tokio::spawn(async move {
             let listen_str = format!("{listen_addr}");
             if let Err(err) = Self::server(unit_name.clone(), listen_addr, svc).await {
-                error!("[{unit_name}]: Failed to listen for UDP connections on {listen_str}: {err}");
+                error!(
+                    "[{unit_name}]: Failed to listen for UDP connections on {listen_str}: {err}"
+                );
             }
         });
     }
@@ -228,12 +230,18 @@ impl ZoneServerUnit {
         tokio::spawn(async move {
             let listen_str = format!("{listen_addr}");
             if let Err(err) = Self::server(unit_name.clone(), listen_addr, svc).await {
-                error!("[{unit_name}]: Failed to listen for TCP connections on {listen_str}: {err}");
+                error!(
+                    "[{unit_name}]: Failed to listen for TCP connections on {listen_str}: {err}"
+                );
             }
         });
     }
 
-    async fn server<Svc>(unit_name: Box<str>, addr: ListenAddr, svc: Svc) -> Result<(), std::io::Error>
+    async fn server<Svc>(
+        unit_name: Box<str>,
+        addr: ListenAddr,
+        svc: Svc,
+    ) -> Result<(), std::io::Error>
     where
         Svc: Service<Vec<u8>, ()> + Clone,
     {
@@ -276,7 +284,11 @@ impl ZoneServerUnit {
 }
 
 /// Use a matching pre-bound UDP socket if available, bind otherwise.
-fn acquire_udp_socket(unit_name: &str, env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
+fn acquire_udp_socket(
+    unit_name: &str,
+    env_sockets: &Mutex<EnvSockets>,
+    addr: std::net::SocketAddr,
+) -> ListenAddr {
     match env_sockets.lock().unwrap().take_udp(&addr) {
         Some(socket) => {
             debug!(
@@ -290,7 +302,11 @@ fn acquire_udp_socket(unit_name: &str, env_sockets: &Mutex<EnvSockets>, addr: st
 }
 
 /// Use a matching pre-bound TCP socket if available, bind otherwise.
-fn acquire_tcp_listener(unit_name: &str, env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
+fn acquire_tcp_listener(
+    unit_name: &str,
+    env_sockets: &Mutex<EnvSockets>,
+    addr: std::net::SocketAddr,
+) -> ListenAddr {
     match env_sockets.lock().unwrap().take_tcp(&addr) {
         Some(listener) => {
             debug!(
