@@ -11,6 +11,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use domain::rdata::dnssec::Timestamp;
 use domain::{
     base::{iana::Class, Name},
     zonetree::{self, ZoneBuilder},
@@ -62,6 +63,15 @@ pub struct ZoneState {
     /// duration of time.  If the field is `None`, and the state is changed, a
     /// new save operation should be enqueued.
     pub enqueued_save: Option<tokio::task::JoinHandle<()>>,
+
+    /// The minimum expiration time in the signed zone we are serving from
+    /// the publication server.
+    pub min_expiration: Option<Timestamp>,
+
+    /// The minimum expiration time in the most recently signed zone. This
+    /// value should be move to min_expiration after the signed zone is
+    /// approved.
+    pub next_min_expiration: Option<Timestamp>,
     //
     // TODO:
     // - A log?

@@ -11,6 +11,7 @@ use crate::{
     },
     zone::ZoneState,
 };
+use domain::rdata::dnssec::Timestamp;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -23,6 +24,15 @@ pub struct Spec {
     /// The full details of the policy are stored here, as there may be a newer
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
+
+    /// The minimum expiration time in the signed zone we are serving from
+    /// the publication server.
+    pub min_expiration: Option<Timestamp>,
+
+    /// The minimum expiration time in the most recently signed zone. This
+    /// value should be move to min_expiration after the signed zone is
+    /// approved.
+    pub next_min_expiration: Option<Timestamp>,
 }
 
 //--- Conversion
@@ -32,6 +42,8 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
+            min_expiration: zone.min_expiration,
+            next_min_expiration: zone.next_min_expiration,
         }
     }
 }
