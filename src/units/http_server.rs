@@ -27,6 +27,7 @@ use crate::api::PolicyReloadResult;
 use crate::api::PolicyShowResult;
 use crate::api::ServerStatusResult;
 use crate::api::ZoneAdd;
+use crate::api::ZoneAddError;
 use crate::api::ZoneAddResult;
 use crate::api::ZoneReloadResult;
 use crate::api::ZoneRemoveResult;
@@ -37,8 +38,6 @@ use crate::api::ZonesListResult;
 use crate::center;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
-use crate::zone;
-// use crate::zone::Zones;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -134,14 +133,18 @@ impl HttpServer {
     async fn zone_add(
         State(state): State<Arc<HttpServerState>>,
         Json(zone_register): Json<ZoneAdd>,
-    ) -> Json<ZoneAddResult> {
-        // TODO: Use the result.
-        let _ = center::add_zone(&state.center, zone_register.name.clone());
-        let _ = zone::change_policy(
+    ) -> Json<Result<ZoneAddResult, ZoneAddError>> {
+        if let Err(e) = center::add_zone(
             &state.center,
             zone_register.name.clone(),
             zone_register.policy.clone().into(),
-        );
+        ) {
+            return Json(Err(match e {
+                center::ZoneAddError::AlreadyExists => ZoneAddError::AlreadyExists,
+                center::ZoneAddError::NoSuchPolicy => ZoneAddError::NoSuchPolicy,
+                center::ZoneAddError::PolicyMidDeletion => ZoneAddError::PolicyMidDeletion,
+            }));
+        }
 
         let zone_name = zone_register.name.clone();
         state
@@ -165,10 +168,11 @@ impl HttpServer {
                 },
             ))
             .unwrap();
-        Json(ZoneAddResult {
+
+        Json(Ok(ZoneAddResult {
             name: zone_name,
             status: "Submitted".to_string(),
-        })
+        }))
     }
 
     async fn zone_remove(

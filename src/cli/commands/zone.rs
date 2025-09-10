@@ -4,7 +4,7 @@ use futures::TryFutureExt;
 use log::error;
 
 use crate::api::{
-    ZoneAdd, ZoneAddResult, ZoneSource, ZoneStage, ZoneStatusResult, ZonesListResult,
+    ZoneAdd, ZoneAddError, ZoneAddResult, ZoneSource, ZoneStage, ZoneStatusResult, ZonesListResult,
 };
 use crate::cli::client::CascadeApiClient;
 
@@ -70,7 +70,7 @@ impl Zone {
                 source,
                 policy,
             } => {
-                let res: ZoneAddResult = client
+                let res: Result<ZoneAddResult, ZoneAddError> = client
                     .post("zone/add")
                     .json(&ZoneAdd {
                         name,
@@ -84,7 +84,16 @@ impl Zone {
                         error!("HTTP request failed: {e}");
                     })?;
 
-                println!("Registered zone {}", res.name);
+                match res {
+                    Ok(res) => {
+                        println!("Added zone {}", res.name);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to add zone: {e}");
+                        Err(())
+                    }
+                }
             }
             ZoneCommand::Remove { name } => {
                 let res: ZoneAddResult = client
@@ -97,6 +106,7 @@ impl Zone {
                     })?;
 
                 println!("Removed zone {}", res.name);
+                Ok(())
             }
             ZoneCommand::List => {
                 let response: ZonesListResult = client
@@ -117,6 +127,7 @@ impl Zone {
                     };
                     println!("{name}\t{stage}");
                 }
+                Ok(())
             }
             ZoneCommand::Reload { zone } => {
                 let url = format!("zone/{zone}/reload");
@@ -130,6 +141,7 @@ impl Zone {
                     })?;
 
                 println!("Success: Sent zone reload command for {}", zone);
+                Ok(())
             }
             ZoneCommand::Status { zone } => {
                 // TODO: move to function that can be called by the general
@@ -145,8 +157,8 @@ impl Zone {
                     })?;
 
                 println!("Server status: {:?}", response);
+                Ok(())
             }
         }
-        Ok(())
     }
 }

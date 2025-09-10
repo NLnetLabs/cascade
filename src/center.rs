@@ -54,11 +54,39 @@ pub struct Center {
 //--- Actions
 
 /// Add a zone.
-pub fn add_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneAddError> {
+pub fn add_zone(
+    center: &Arc<Center>,
+    name: Name<Bytes>,
+    policy: Box<str>,
+) -> Result<(), ZoneAddError> {
     let zone = Arc::new(Zone::new(name.clone()));
+
     {
         let mut state = center.state.lock().unwrap();
-        if !state.zones.insert(ZoneByName(zone.clone())) {
+
+        // We check whether the state contains this zone, because
+        // this is the most useful error to report.
+        let zone_by_name = ZoneByName(zone.clone());
+        if state.zones.contains(&zone_by_name) {
+            return Err(ZoneAddError::AlreadyExists);
+        }
+
+        let policy = state
+            .policies
+            .get_mut(&policy)
+            .ok_or(ZoneAddError::NoSuchPolicy)?;
+        if policy.mid_deletion {
+            return Err(ZoneAddError::PolicyMidDeletion);
+        }
+
+        let mut zone_state = zone.state.lock().unwrap();
+        zone_state.policy = Some(policy.latest.clone());
+        policy.zones.insert(name.clone());
+
+        // Actually insert the zone now. This shouldn't fail since we've done
+        // the `contains` check above and we hold a lock to the state, but it
+        // doesn't hurt to have proper error handling here just in case.
+        if !state.zones.insert(zone_by_name) {
             return Err(ZoneAddError::AlreadyExists);
         }
 
@@ -242,6 +270,10 @@ pub enum Change {
 pub enum ZoneAddError {
     /// A zone of the same name already exists.
     AlreadyExists,
+    /// No policy with that name exists.
+    NoSuchPolicy,
+    /// The specified policy is being deleted.
+    PolicyMidDeletion,
 }
 
 impl std::error::Error for ZoneAddError {}
@@ -250,6 +282,8 @@ impl fmt::Display for ZoneAddError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::AlreadyExists => "a zone of this name already exists",
+            Self::NoSuchPolicy => "no policy with that name exists",
+            Self::PolicyMidDeletion => "the specified policy is being deleted",
         })
     }
 }
