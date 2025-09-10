@@ -82,8 +82,14 @@ impl Spec {
         }
 
         match self {
-            Self::V1(v1::Spec { policy }) => {
+            Self::V1(v1::Spec {
+                policy,
+                min_expiration,
+                next_min_expiration,
+            }) => {
                 state.policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
+                state.min_expiration = min_expiration;
+                state.next_min_expiration = next_min_expiration;
             }
         }
     }
