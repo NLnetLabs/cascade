@@ -161,13 +161,13 @@ impl ZoneServerUnit {
             info!("[{unit_name}]: Binding on {sock_cfg:?}");
 
             if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-                let listen_addr = acquire_udp_socket(&env_sockets, addr);
+                let listen_addr = acquire_udp_socket(unit_name, &env_sockets, addr);
                 Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
                 addrs.push(addr.to_string());
             }
 
             if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-                let listen_addr = acquire_tcp_listener(&env_sockets, addr);
+                let listen_addr = acquire_tcp_listener(unit_name, &env_sockets, addr);
                 Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
                 addrs.push(addr.to_string());
             }
@@ -214,7 +214,7 @@ impl ZoneServerUnit {
         let unit_name: Box<str> = unit_name.into();
         tokio::spawn(async move {
             let listen_str = format!("{listen_addr}");
-            if let Err(err) = Self::server(listen_addr, svc).await {
+            if let Err(err) = Self::server(unit_name.clone(), listen_addr, svc).await {
                 error!("[{unit_name}]: Failed to listen for UDP connections on {listen_str}: {err}");
             }
         });
@@ -227,17 +227,17 @@ impl ZoneServerUnit {
         let unit_name: Box<str> = unit_name.into();
         tokio::spawn(async move {
             let listen_str = format!("{listen_addr}");
-            if let Err(err) = Self::server(listen_addr, svc).await {
+            if let Err(err) = Self::server(unit_name.clone(), listen_addr, svc).await {
                 error!("[{unit_name}]: Failed to listen for TCP connections on {listen_str}: {err}");
             }
         });
     }
 
-    async fn server<Svc>(addr: ListenAddr, svc: Svc) -> Result<(), std::io::Error>
+    async fn server<Svc>(unit_name: Box<str>, addr: ListenAddr, svc: Svc) -> Result<(), std::io::Error>
     where
         Svc: Service<Vec<u8>, ()> + Clone,
     {
-        debug!("Spawning zone server on address {addr}");
+        debug!("[{unit_name}]: Spawning zone server on address {addr}");
         let buf = VecBufSource;
         match addr {
             ListenAddr::Udp(addr) => {
@@ -275,11 +275,11 @@ impl ZoneServerUnit {
 }
 
 /// Use a matching pre-bound UDP socket if available, bind otherwise.
-fn acquire_udp_socket(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
+fn acquire_udp_socket(unit_name: &str, env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
     match env_sockets.lock().unwrap().take_udp(&addr) {
         Some(socket) => {
             debug!(
-                "Pre-bound UDP socket on {:?} acquired via environment settings",
+                "[{unit_name}]: Pre-bound UDP socket on {:?} acquired via environment settings",
                 socket.local_addr()
             );
             ListenAddr::UdpSocket(socket)
@@ -289,11 +289,11 @@ fn acquire_udp_socket(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAdd
 }
 
 /// Use a matching pre-bound TCP socket if available, bind otherwise.
-fn acquire_tcp_listener(env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
+fn acquire_tcp_listener(unit_name: &str, env_sockets: &Mutex<EnvSockets>, addr: std::net::SocketAddr) -> ListenAddr {
     match env_sockets.lock().unwrap().take_tcp(&addr) {
         Some(listener) => {
             debug!(
-                "Pre-bound TCP listener on {:?} acquired via environment settings",
+                "[{unit_name}]: Pre-bound TCP listener on {:?} acquired via environment settings",
                 listener.local_addr()
             );
             ListenAddr::TcpListener(listener)
