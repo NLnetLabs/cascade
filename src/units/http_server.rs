@@ -22,10 +22,20 @@ use log::{debug, error, info};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
+use crate::api::KeyManagerPolicyInfo;
+use crate::api::LoaderPolicyInfo;
+use crate::api::Nsec3OptOutPolicyInfo;
+use crate::api::PolicyChanges;
+use crate::api::PolicyInfo;
+use crate::api::PolicyInfoError;
 use crate::api::PolicyListResult;
-use crate::api::PolicyReloadResult;
-use crate::api::PolicyShowResult;
+use crate::api::PolicyReloadError;
+use crate::api::ReviewPolicyInfo;
+use crate::api::ServerPolicyInfo;
 use crate::api::ServerStatusResult;
+use crate::api::SignerDenialPolicyInfo;
+use crate::api::SignerPolicyInfo;
+use crate::api::SignerSerialPolicyInfo;
 use crate::api::ZoneAdd;
 use crate::api::ZoneAddError;
 use crate::api::ZoneAddResult;
@@ -38,6 +48,9 @@ use crate::api::ZonesListResult;
 use crate::center;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
+use crate::policy::Nsec3OptOutPolicy;
+use crate::policy::SignerDenialPolicy;
+use crate::policy::SignerSerialPolicy;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -121,7 +134,7 @@ impl HttpServer {
             .route("/zone/{name}/reload", post(Self::zone_reload))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/list", get(Self::policy_list))
-            .route("/policy/{name}", post(Self::policy_show))
+            .route("/policy/{name}", get(Self::policy_show))
             .with_state(state);
 
         axum::serve(sock, app).await.map_err(|e| {
@@ -224,16 +237,96 @@ impl HttpServer {
         Ok(Json(ZoneReloadResult { name: payload }))
     }
 
-    async fn policy_list() -> Json<PolicyListResult> {
-        todo!()
+    async fn policy_list(State(state): State<Arc<HttpServerState>>) -> Json<PolicyListResult> {
+        let state = state.center.state.lock().unwrap();
+
+        let mut policies: Vec<String> = state
+            .policies
+            .keys()
+            .map(|s| String::from(s.as_ref()))
+            .collect();
+
+        // We don't _have_ to sort, but seems useful for consistent output
+        policies.sort();
+
+        Json(PolicyListResult { policies })
     }
 
-    async fn policy_reload() -> Json<PolicyReloadResult> {
-        todo!()
+    async fn policy_reload(
+        State(state): State<Arc<HttpServerState>>,
+    ) -> Json<Result<PolicyChanges, PolicyReloadError>> {
+        let mut state = state.center.state.lock().unwrap();
+
+        // TODO: This clone is a bit unfortunate. Looks like that's necessary because of the
+        // mutex guard. We could make `reload_all` a function that takes the whole state to fix
+        // this.
+        let mut policies = state.policies.clone();
+        let res = crate::policy::reload_all(&mut policies, &state.config);
+        let changes = match res {
+            Ok(c) => c,
+            Err(e) => {
+                return Json(Err(e));
+            }
+        };
+        let mut changes: Vec<_> = changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
+        changes.sort_by_key(|x: &(String, _)| x.0.clone());
+
+        state.policies = policies;
+
+        Json(Ok(PolicyChanges { changes }))
     }
 
-    async fn policy_show() -> Json<PolicyShowResult> {
-        todo!()
+    async fn policy_show(
+        State(state): State<Arc<HttpServerState>>,
+        Path(name): Path<Box<str>>,
+    ) -> Json<Result<PolicyInfo, PolicyInfoError>> {
+        let state = state.center.state.lock().unwrap();
+        let Some(p) = state.policies.get(&name) else {
+            return Json(Err(PolicyInfoError::PolicyDoesNotExist));
+        };
+
+        let zones = p.zones.iter().cloned().collect();
+        let loader = LoaderPolicyInfo {
+            review: ReviewPolicyInfo {
+                required: p.latest.loader.review.required,
+                cmd_hook: p.latest.loader.review.cmd_hook.clone(),
+            },
+        };
+
+        let signer = SignerPolicyInfo {
+            serial_policy: match p.latest.signer.serial_policy {
+                SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
+                SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
+                SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
+                SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
+            },
+            sig_inception_offset: p.latest.signer.sig_inception_offset,
+            sig_validity_offset: p.latest.signer.sig_validity_time,
+            denial: match p.latest.signer.denial {
+                SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
+                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 {
+                    opt_out: match opt_out {
+                        Nsec3OptOutPolicy::Disabled => Nsec3OptOutPolicyInfo::Disabled,
+                        Nsec3OptOutPolicy::FlagOnly => Nsec3OptOutPolicyInfo::FlagOnly,
+                        Nsec3OptOutPolicy::Enabled => Nsec3OptOutPolicyInfo::Enabled,
+                    },
+                },
+            },
+            review: ReviewPolicyInfo {
+                required: p.latest.signer.review.required,
+                cmd_hook: p.latest.signer.review.cmd_hook.clone(),
+            },
+        };
+        let server = ServerPolicyInfo {};
+
+        Json(Ok(PolicyInfo {
+            name: p.latest.name.clone(),
+            zones,
+            loader,
+            key_manager: KeyManagerPolicyInfo {},
+            signer,
+            server,
+        }))
     }
 
     async fn status() -> Json<ServerStatusResult> {
