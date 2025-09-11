@@ -1,10 +1,14 @@
 //! Zone policy.
 
+use std::fmt::{Display, Formatter};
 use std::{fs, io, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
+use domain::base::Ttl;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::{
     api::{PolicyChange, PolicyReloadError},
@@ -189,7 +193,57 @@ pub struct LoaderPolicy {
 
 /// Policy for zone key management.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeyManagerPolicy {}
+pub struct KeyManagerPolicy {
+    /// Whether to use a CSK (if true) or a KSK and a ZSK.
+    pub use_csk: bool,
+
+    /// Algorithm and other parameters for key generation.
+    pub algorithm: KeyParameters,
+
+    /// Validity of KSKs.
+    pub ksk_validity: Option<u64>,
+    /// Validity of ZSKs.
+    pub zsk_validity: Option<u64>,
+    /// Validity of CSKs.
+    pub csk_validity: Option<u64>,
+
+    /// Configuration variable for automatic KSK rolls.
+    pub auto_ksk: AutoConfig,
+    /// Configuration variable for automatic ZSK rolls.
+    pub auto_zsk: AutoConfig,
+    /// Configuration variable for automatic CSK rolls.
+    pub auto_csk: AutoConfig,
+    /// Configuration variable for automatic algorithm rolls.
+    pub auto_algorithm: AutoConfig,
+
+    /// DNSKEY signature inception offset (positive values are subtracted
+    ///from the current time).
+    pub dnskey_inception_offset: u64,
+
+    /// DNSKEY signature lifetime
+    pub dnskey_signature_lifetime: u64,
+
+    /// The required remaining signature lifetime.
+    pub dnskey_remain_time: u64,
+
+    /// CDS/CDNSKEY signature inception offset
+    pub cds_inception_offset: u64,
+
+    /// CDS/CDNSKEY signature lifetime
+    pub cds_signature_lifetime: u64,
+
+    /// The required remaining signature lifetime.
+    pub cds_remain_time: u64,
+
+    /// The DS hash algorithm.
+    pub ds_algorithm: DsAlgorithm,
+
+    /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
+    pub default_ttl: Ttl,
+
+    /// Automatically remove keys that are no long in use.
+    pub autoremove: bool,
+}
 
 //----------- SignerPolicy -----------------------------------------------------
 
@@ -307,3 +361,72 @@ pub struct ReviewPolicy {
 /// Policy for serving zones.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerPolicy {}
+
+//----------- KeyParameters ---------------------------------------------------
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum KeyParameters {
+    /// The RSASHA256 algorithm with the key length in bits.
+    RsaSha256(usize),
+    /// The RSASHA512 w algorithmith the key length in bits.
+    RsaSha512(usize),
+    /// The ECDSAP256SHA256 algorithm.
+    #[default]
+    EcdsaP256Sha256,
+    /// The ECDSAP384SHA384 algorithm.
+    EcdsaP384Sha384,
+    /// The ED25519 algorithm.
+    Ed25519,
+    /// The ED448 algorithm.
+    Ed448,
+}
+
+impl Display for KeyParameters {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            KeyParameters::RsaSha256(bits) => write!(fmt, "RSASHA256 {bits} bits"),
+            KeyParameters::RsaSha512(bits) => write!(fmt, "RSASHA512 {bits} bits"),
+            KeyParameters::EcdsaP256Sha256 => write!(fmt, "ECDSAP256SHA256"),
+            KeyParameters::EcdsaP384Sha384 => write!(fmt, "ECDSAP384SHA384"),
+            KeyParameters::Ed25519 => write!(fmt, "ED25519"),
+            KeyParameters::Ed448 => write!(fmt, "ED448"),
+        }
+    }
+}
+
+//----------- AutoConfig ------------------------------------------------------
+
+// derive Default means that by default automation is off. Do we want it on
+// by default?
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AutoConfig {
+    /// Whether to start a key roll automatically.
+    pub start: bool,
+    /// Whether to handle the Report actions automatically.
+    pub report: bool,
+    /// Whether to handle the cache expire step automatically.
+    pub expire: bool,
+    /// Whether to handle the done step automatically.
+    pub done: bool,
+}
+
+//----------- DsAlgorithm -----------------------------------------------------
+
+/// The hash algorithm to use for DS records.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum DsAlgorithm {
+    /// Hash the public key using SHA-256.
+    #[default]
+    Sha256,
+    /// Hash the public key using SHA-384.
+    Sha384,
+}
+
+impl Display for DsAlgorithm {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            DsAlgorithm::Sha256 => write!(fmt, "SHA-256"),
+            DsAlgorithm::Sha384 => write!(fmt, "SHA-384"),
+        }
+    }
+}
