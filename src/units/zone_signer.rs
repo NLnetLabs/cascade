@@ -25,11 +25,13 @@ use domain::dnssec::sign::signatures::rrsigs::{sign_sorted_zone_records, Generat
 use domain::dnssec::sign::traits::SignableZoneInPlace;
 use domain::dnssec::sign::SigningConfig;
 use domain::rdata::dnssec::Timestamp;
-use domain::rdata::{Dnskey, Nsec3param, Rrsig, ZoneRecordData};
+use domain::rdata::{Dnskey, Nsec3param, Rrsig, Soa, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
 use domain::zonetree::types::{StoredRecordData, ZoneUpdate};
 use domain::zonetree::update::ZoneUpdater;
 use domain::zonetree::{StoredName, StoredRecord, Zone, ZoneBuilder};
+use jiff::tz::TimeZone;
+use jiff::{Timestamp as JiffTimestamp, Zoned};
 use log::warn;
 use log::{debug, error, info, trace};
 use non_empty_vec::NonEmpty;
@@ -48,7 +50,7 @@ use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::payload::Update;
-use crate::policy::{Nsec3OptOutPolicy, PolicyVersion, SignerDenialPolicy};
+use crate::policy::{Nsec3OptOutPolicy, PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
@@ -306,6 +308,89 @@ impl ZoneSigner {
             return Err(format!("SOA not found for zone '{zone_name}'"));
         };
 
+        let last_signed_serial = {
+            // Use a block to make sure that the mutex is clearly dropped.
+            let state = self.center.state.lock().unwrap();
+            let zone = state.zones.get(zone_name).unwrap();
+            let zone_state = zone.0.state.lock().unwrap();
+
+            zone_state.last_signed_serial
+        };
+
+        // Ensure that the Mutexes are locked only in this block;
+        let policy = {
+            let state = self.center.state.lock().unwrap();
+            let zone = state.zones.get(zone_name).unwrap();
+            let zone_state = zone.0.state.lock().unwrap();
+            zone_state.policy.clone()
+        }
+        .unwrap();
+
+        let serial = match policy.signer.serial_policy {
+            SignerSerialPolicy::Keep => {
+                if let Some(previous_serial) = last_signed_serial {
+                    if soa.serial() <= previous_serial {
+                        return Err(
+                            "Serial policy is Keep but upstream serial did not increase".into()
+                        );
+                    }
+                }
+
+                soa.serial()
+            }
+            SignerSerialPolicy::Counter => {
+                let mut serial = soa.serial();
+                if let Some(previous_serial) = last_signed_serial {
+                    if serial <= previous_serial {
+                        serial = previous_serial.add(1);
+                    }
+                }
+                serial
+            }
+            SignerSerialPolicy::UnixTime => {
+                let mut serial = Serial::now();
+                if let Some(previous_serial) = last_signed_serial {
+                    if serial <= previous_serial {
+                        serial = previous_serial.add(1);
+                    }
+                }
+
+                serial
+            }
+            SignerSerialPolicy::DateCounter => {
+                let ts = JiffTimestamp::now();
+                let zone = Zoned::new(ts, TimeZone::UTC);
+                let serial = ((zone.year() as u32 * 100 + zone.month() as u32) * 100
+                    + zone.day() as u32)
+                    * 100;
+                let mut serial: Serial = serial.into();
+
+                if let Some(previous_serial) = last_signed_serial {
+                    if serial <= previous_serial {
+                        serial = previous_serial.add(1);
+                    }
+                }
+
+                serial
+            }
+        };
+        let new_soa = ZoneRecordData::Soa(Soa::new(
+            soa.mname().clone(),
+            soa.rname().clone(),
+            serial,
+            soa.refresh(),
+            soa.retry(),
+            soa.expire(),
+            soa.minimum(),
+        ));
+
+        let soa_rr = Record::new(
+            soa_rr.owner().clone(),
+            soa_rr.class(),
+            soa_rr.ttl(),
+            new_soa,
+        );
+
         self.signer_status
             .write()
             .await
@@ -338,6 +423,8 @@ impl ZoneSigner {
         let walk_start = Instant::now();
         let passed_zone = unsigned_zone.clone();
         let mut records = spawn_blocking(|| collect_zone(passed_zone)).await.unwrap();
+        records.push(soa_rr.clone());
+
         let walk_time = walk_start.elapsed().as_secs();
         let unsigned_rr_count = records.len();
 
@@ -619,6 +706,17 @@ impl ZoneSigner {
             unreachable!();
         };
         let zone_serial = soa_data.serial();
+
+        // Store the serial in the state.
+        {
+            // Use a block to make sure that the mutex is clearly dropped.
+            let state = self.center.state.lock().unwrap();
+            let zone = state.zones.get(zone_name).unwrap();
+            let mut zone_state = zone.0.state.lock().unwrap();
+
+            zone_state.last_signed_serial = Some(zone_serial);
+            zone.0.mark_dirty(&mut zone_state, &self.center);
+        }
 
         updater.apply(ZoneUpdate::Finished(soa_rr)).await.unwrap();
         let insertion_time = insertion_time
@@ -917,7 +1015,8 @@ fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
 
             // SKIP DNSSEC records that should be generated by the signing
             // process (these will be present if re-signing a published signed
-            // zone rather than signing an unsigned zone)
+            // zone rather than signing an unsigned zone). Skip The SOA as
+            // well. A new SOA will be added later.
             if matches!(
                 rrset.rtype(),
                 Rtype::DNSKEY
@@ -926,6 +1025,7 @@ fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
                     | Rtype::NSEC3
                     | Rtype::CDS
                     | Rtype::CDNSKEY
+                    | Rtype::SOA
             ) {
                 return;
             }

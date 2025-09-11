@@ -86,10 +86,12 @@ impl Spec {
                 policy,
                 min_expiration,
                 next_min_expiration,
+                last_signed_serial,
             }) => {
                 state.policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
                 state.min_expiration = min_expiration;
                 state.next_min_expiration = next_min_expiration;
+                state.last_signed_serial = last_signed_serial;
             }
         }
     }
