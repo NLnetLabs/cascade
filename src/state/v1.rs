@@ -142,6 +142,12 @@ pub struct ConfigSpec {
     /// Path to the dnst binary that Cascade should use.
     pub dnst_binary_path: Box<Utf8Path>,
 
+    /// The file storing KMIP credentials.
+    pub kmip_credentials_store_path: Box<Utf8Path>,
+
+    /// The directory storing KMIP server state files.
+    pub kmip_server_state_dir: Box<Utf8Path>,
+
     /// Daemon-related configuration.
     pub daemon: DaemonConfigSpec,
 
@@ -183,6 +189,8 @@ impl ConfigSpec {
             tsig_store_path: config.tsig_store_path.clone(),
             keys_dir: config.keys_dir.clone(),
             dnst_binary_path: config.dnst_binary_path.clone(),
+            kmip_credentials_store_path: config.kmip_credentials_store_path.clone(),
+            kmip_server_state_dir: config.kmip_server_state_dir.clone(),
             daemon: DaemonConfigSpec::build(&config.daemon),
             loader: LoaderConfigSpec::build(&config.loader),
             signer: SignerConfigSpec::build(&config.signer),

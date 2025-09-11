@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::OriginalUri;
 use axum::extract::Path;
@@ -19,10 +20,15 @@ use domain::base::Name;
 use domain::base::Serial;
 use log::warn;
 use log::{debug, error, info};
+use serde::Deserialize;
+use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use crate::api::KeyManagerPolicyInfo;
+use crate::api::KmipServerAdd;
+use crate::api::KmipServerAddError;
+use crate::api::KmipServerAddResult;
 use crate::api::LoaderPolicyInfo;
 use crate::api::Nsec3OptOutPolicyInfo;
 use crate::api::PolicyChanges;
@@ -51,6 +57,9 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::policy::Nsec3OptOutPolicy;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::units::key_manager::KmipClientCredentials;
+use crate::units::key_manager::KmipClientCredentialsFile;
+use crate::units::key_manager::KmipServerCredentialsFileMode;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -135,6 +144,7 @@ impl HttpServer {
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/list", get(Self::policy_list))
             .route("/policy/{name}", get(Self::policy_show))
+            .route("/kmip", post(Self::kmip_server_add))
             .with_state(state);
 
         axum::serve(sock, app).await.map_err(|e| {
@@ -331,6 +341,85 @@ impl HttpServer {
 
     async fn status() -> Json<ServerStatusResult> {
         Json(ServerStatusResult {})
+    }
+}
+
+//------------ HttpServer Handler for /kmip ----------------------------------
+
+/// Non-sensitive KMIP server settings to be persisted.
+///
+/// Sensitive details such as certificates and credentials should be stored
+/// separately.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KmipServerState {
+    pub server_id: String,
+    pub ip_host_or_fqdn: String,
+    pub port: u16,
+    pub insecure: bool,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub max_response_bytes: u32,
+    pub key_label_prefix: Option<String>,
+    pub key_label_max_bytes: u8,
+    pub has_credentials: bool,
+}
+
+impl From<KmipServerAdd> for KmipServerState {
+    fn from(srv: KmipServerAdd) -> Self {
+        KmipServerState {
+            server_id: srv.server_id,
+            ip_host_or_fqdn: srv.ip_host_or_fqdn,
+            port: srv.port,
+            insecure: srv.insecure,
+            connect_timeout: srv.connect_timeout,
+            read_timeout: srv.read_timeout,
+            write_timeout: srv.write_timeout,
+            max_response_bytes: srv.max_response_bytes,
+            key_label_prefix: srv.key_label_prefix,
+            key_label_max_bytes: srv.key_label_max_bytes,
+            has_credentials: srv.username.is_some(),
+        }
+    }
+}
+
+impl HttpServer {
+    async fn kmip_server_add(
+        State(state): State<Arc<HttpServerState>>,
+        Json(req): Json<KmipServerAdd>,
+    ) -> Json<Result<KmipServerAddResult, KmipServerAddError>> {
+        // TODO: Write the given certificates to disk.
+        // TODO: Create a single common way to store secrets.
+        let server_id = req.server_id.clone();
+        let state = state.center.state.lock().unwrap();
+        let kmip_server_state_file = state.config.kmip_server_state_dir.join(server_id.clone());
+        let kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
+        drop(state);
+
+        // Extract just the settings that do not need to be
+        // stored separately.
+        let username = req.username.clone();
+        let password = req.password.clone();
+        let kmip_state = KmipServerState::from(req);
+
+        info!("Writing to KMIP server file '{kmip_server_state_file}");
+        let f = std::fs::File::create_new(kmip_server_state_file).unwrap();
+        serde_json::to_writer_pretty(&f, &kmip_state).unwrap();
+        drop(f);
+
+        // Add any credentials to the credentials store.
+        if let Some(username) = username {
+            let creds = KmipClientCredentials { username, password };
+            let mut creds_file = KmipClientCredentialsFile::new(
+                kmip_credentials_store_path.as_std_path(),
+                KmipServerCredentialsFileMode::CreateReadWrite,
+            )
+            .unwrap();
+            let _ = creds_file.insert(server_id, creds);
+            creds_file.save().unwrap();
+        }
+
+        Json(Ok(KmipServerAddResult))
     }
 }
 

@@ -14,6 +14,7 @@ pub struct ZoneAdd {
     pub name: Name<Bytes>,
     pub source: ZoneSource,
     pub policy: String,
+    pub kmip_server_id: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -194,3 +195,29 @@ pub enum PolicyChange {
     Updated,
     Unchanged,
 }
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KmipServerAdd {
+    pub server_id: String,
+    pub ip_host_or_fqdn: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub client_cert: Option<Vec<u8>>,
+    pub client_key: Option<Vec<u8>>,
+    pub insecure: bool,
+    pub server_cert: Option<Vec<u8>>,
+    pub ca_cert: Option<Vec<u8>>,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub max_response_bytes: u32,
+    pub key_label_prefix: Option<String>,
+    pub key_label_max_bytes: u8,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KmipServerAddResult;
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KmipServerAddError;

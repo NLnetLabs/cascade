@@ -1,5 +1,6 @@
 //! The commands of _cascade_.
 
+pub mod kmip;
 pub mod policy;
 pub mod status;
 pub mod zone;
@@ -34,17 +35,19 @@ pub enum Command {
     // Signer(self::signer::Signer),
     // - Command: add/remove/modify a zone // TODO: ask Arya what we meant by that
     // - Command: resign a zone immediately (optionally with custom config)
-
+    #[command(name = "kmip")]
+    Kmip(self::kmip::Kmip),
     // /// Show the manual pages
     // Help(self::help::Help),
 }
 
 impl Command {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
             Self::Zone(zone) => zone.execute(client).await,
             Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,
+            Self::Kmip(kmip) => kmip.execute(client).await,
             // Self::Help(help) => help.execute(),
         }
     }

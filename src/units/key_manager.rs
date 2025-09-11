@@ -1,15 +1,18 @@
 use crate::center::Center;
+use crate::cli::commands::kmip::Error;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
+use crate::units::http_server::KmipServerState;
 use camino::Utf8Path;
 use core::time::Duration;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use log::error;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::Display;
-use std::fs::metadata;
-use std::path::Path;
+use std::fmt::{Display, Formatter};
+use std::fs::{metadata, File, OpenOptions};
+use std::io::{BufReader, BufWriter, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use tokio::select;
@@ -83,7 +86,12 @@ impl KeyManager {
         match cmd {
             Some(ApplicationCommand::Terminate) | None => Err(Terminated),
             Some(ApplicationCommand::RegisterZone {
-                register: crate::api::ZoneAdd { name, .. },
+                register:
+                    crate::api::ZoneAdd {
+                        name,
+                        kmip_server_id,
+                        ..
+                    },
             }) => {
                 let state_path = self.keys_dir.join(format!("{name}.state"));
 
@@ -97,9 +105,104 @@ impl KeyManager {
 
                 log::info!("Running {cmd:?}");
 
-                if let Err(e) = cmd.output() {
-                    error!("[KM]: Error creating keyset: {e}");
-                    return Err(Terminated);
+                match cmd.output() {
+                    Err(err) => {
+                        error!("[KM]: Error creating keyset for zone '{name}': {err}");
+                        // TODO: Is this the right thing to return? We
+                        // don't want to terminate the whole unit!
+                        return Err(Terminated);
+                    }
+                    Ok(output) => {
+                        if !output.status.success() {
+                            let exit_code = output.status.code();
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            error!("[KM]: Error creating keyset for zone '{name}': exit code: {exit_code:?}, stderr: {stderr}");
+                            return Err(Terminated);
+                        }
+                    }
+                }
+
+                if let Some(kmip_server_id) = kmip_server_id {
+                    let state = self.center.state.lock().unwrap();
+                    let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
+                    let kmip_credentials_store_path =
+                        state.config.kmip_credentials_store_path.clone();
+                    drop(state);
+
+                    let p = kmip_server_state_dir.join(kmip_server_id);
+                    log::info!("Reading KMIP server state from '{p}'");
+                    let f = std::fs::File::open(p).unwrap();
+                    let kmip_server: KmipServerState = serde_json::from_reader(f).unwrap();
+                    let KmipServerState {
+                        server_id,
+                        ip_host_or_fqdn,
+                        port,
+                        insecure,
+                        connect_timeout,
+                        read_timeout,
+                        write_timeout,
+                        max_response_bytes,
+                        key_label_prefix,
+                        key_label_max_bytes,
+                        has_credentials,
+                    } = kmip_server;
+
+                    let mut cmd = self.keyset_cmd(&name);
+
+                    // TODO: This command should get issued _after_ keyset create
+                    // but _before_ keyset init, both of which are issued above.
+                    cmd.arg("kmip")
+                        .arg("add-server")
+                        .arg(server_id.clone())
+                        .arg(ip_host_or_fqdn)
+                        .arg("--port")
+                        .arg(port.to_string())
+                        .arg("--connect-timeout")
+                        .arg(format!("{}s", connect_timeout.as_secs()))
+                        .arg("--read-timeout")
+                        .arg(format!("{}s", read_timeout.as_secs()))
+                        .arg("--write-timeout")
+                        .arg(format!("{}s", write_timeout.as_secs()))
+                        .arg("--max-response-bytes")
+                        .arg(max_response_bytes.to_string())
+                        .arg("--key-label-max-bytes")
+                        .arg(key_label_max_bytes.to_string());
+
+                    if insecure {
+                        cmd.arg("--insecure");
+                    }
+
+                    if has_credentials {
+                        cmd.arg("--credential-store")
+                            .arg(kmip_credentials_store_path.as_str());
+                    }
+
+                    if let Some(key_label_prefix) = key_label_prefix {
+                        cmd.arg("--key-label-prefix").arg(key_label_prefix);
+                    }
+
+                    // TODO: --client-cert, --client-key, --server-cert and --ca-cert
+
+                    log::info!("Running {cmd:?}");
+
+                    match cmd.output() {
+                        Err(err) => {
+                            error!(
+                            "[KM]: Error adding KMIP server '{server_id}' for zone '{name}': {err}"
+                        );
+                            // TODO: Is this the right thing to return? We
+                            // don't want to terminate the whole unit!
+                            return Err(Terminated);
+                        }
+                        Ok(output) => {
+                            if !output.status.success() {
+                                let exit_code = output.status.code();
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                error!("[KM]: Error adding KMIP server '{server_id}' for zone '{name}': exit code: {exit_code:?}, stderr: {stderr}");
+                                return Err(Terminated);
+                            }
+                        }
+                    }
                 }
 
                 // TODO: This should not happen immediately after
@@ -111,9 +214,21 @@ impl KeyManager {
 
                 log::info!("Running {cmd:?}");
 
-                if let Err(e) = cmd.output() {
-                    error!("[KM]: Error initializing keyset: {e}");
-                    return Err(Terminated);
+                match cmd.output() {
+                    Err(err) => {
+                        error!("[KM]: Error initializing keyset for zone '{name}': {err}");
+                        // TODO: Is this the right thing to return? We
+                        // don't want to terminate the whole unit!
+                        return Err(Terminated);
+                    }
+                    Ok(output) => {
+                        if !output.status.success() {
+                            let exit_code = output.status.code();
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            error!("[KM]: Error initializing keyset for zone '{name}': exit code: {exit_code:?}, stderr: {stderr}");
+                            return Err(Terminated);
+                        }
+                    }
                 }
 
                 Ok(())
@@ -295,5 +410,248 @@ fn get_keyset_info(state_path: impl AsRef<Path>) -> KeySetInfo {
         keyset_state_modified,
         cron_next: state.cron_next,
         retries: 0,
+    }
+}
+
+//============ KMIP Credential Management ====================================
+// Copied from dnst keyset. TODO: Share the code via a separate Rust crate.
+
+//------------ KmipClientCredentialsConfig -----------------------------------
+
+/// Optional disk file based credentials for connecting to a KMIP server.
+pub struct KmipClientCredentialsConfig {
+    pub credentials_store_path: PathBuf,
+    pub credentials: Option<KmipClientCredentials>,
+}
+
+//------------ KmipClientCredentials -----------------------------------------
+
+/// Credentials for connecting to a KMIP server.
+///
+/// Intended to be read from a JSON file stored separately to the main
+/// configuration so that separate security policy can be applied to sensitive
+/// credentials.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct KmipClientCredentials {
+    /// KMIP username credential.
+    ///
+    /// Mandatory if the KMIP "Credential Type" is "Username and Password".
+    ///
+    /// See: https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458
+    pub username: String,
+
+    /// KMIP password credential.
+    ///
+    /// Optional when KMIP "Credential Type" is "Username and Password".
+    ///
+    /// See: https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub password: Option<String>,
+}
+
+//------------ KmipClientCredentialSet ---------------------------------------
+
+/// A set of KMIP server credentials.
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct KmipClientCredentialsSet(HashMap<String, KmipClientCredentials>);
+
+//------------ KmipClientCredentialsFileMode ---------------------------------
+
+/// The access mode to use when accessing a credentials file.
+#[derive(Debug)]
+pub enum KmipServerCredentialsFileMode {
+    /// Open an existing credentials file for reading. Saving will fail.
+    ReadOnly,
+
+    /// Open an existing credentials file for reading and writing.
+    ReadWrite,
+
+    /// Open or create the credentials file for reading and writing.
+    CreateReadWrite,
+}
+
+//--- impl Display
+
+impl std::fmt::Display for KmipServerCredentialsFileMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KmipServerCredentialsFileMode::ReadOnly => write!(f, "read-only"),
+            KmipServerCredentialsFileMode::ReadWrite => write!(f, "read-write"),
+            KmipServerCredentialsFileMode::CreateReadWrite => write!(f, "create-read-write"),
+        }
+    }
+}
+
+//------------ KmipServerCredentialsFile -------------------------------------
+
+/// A KMIP server credential set file.
+#[derive(Debug)]
+pub struct KmipClientCredentialsFile {
+    /// The file from which the credentials were loaded, and will be saved
+    /// back to.
+    file: File,
+
+    /// The path from which the file was loaded. Used for generating error
+    /// messages.
+    path: PathBuf,
+
+    /// The actual set of loaded credentials.
+    credentials: KmipClientCredentialsSet,
+
+    /// The read/write/create mode.
+    #[allow(dead_code)]
+    mode: KmipServerCredentialsFileMode,
+}
+
+impl KmipClientCredentialsFile {
+    /// Load credentials from disk.
+    ///
+    /// Optionally:
+    ///   - Create the file if missing.
+    ///   - Keep the file open for writing back changes. See ['Self::save()`].
+    pub fn new(path: &Path, mode: KmipServerCredentialsFileMode) -> Result<Self, Error> {
+        let read;
+        let write;
+        let create;
+
+        match mode {
+            KmipServerCredentialsFileMode::ReadOnly => {
+                read = true;
+                write = false;
+                create = false;
+            }
+            KmipServerCredentialsFileMode::ReadWrite => {
+                read = true;
+                write = true;
+                create = false;
+            }
+            KmipServerCredentialsFileMode::CreateReadWrite => {
+                read = true;
+                write = true;
+                create = true;
+            }
+        }
+
+        let file = OpenOptions::new()
+            .read(read)
+            .write(write)
+            .create(create)
+            .truncate(false)
+            .open(path)
+            .map_err::<Error, _>(|e| {
+                format!(
+                    "unable to open KMIP credentials file {} in {mode} mode: {e}",
+                    path.display()
+                )
+                .into()
+            })?;
+
+        // Determine the length of the file as JSON parsing fails if the file
+        // is completely empty.
+        let len = file.metadata().map(|m| m.len()).map_err::<Error, _>(|e| {
+            format!(
+                "unable to query metadata of KMIP credentials file {}: {e}",
+                path.display()
+            )
+            .into()
+        })?;
+
+        // Buffer reading as apparently JSON based file reading is extremely
+        // slow without buffering, even for small files.
+        let mut reader = BufReader::new(&file);
+
+        // Load or create the credential set.
+        let credentials: KmipClientCredentialsSet = if len > 0 {
+            serde_json::from_reader(&mut reader).map_err::<Error, _>(|e| {
+                format!(
+                    "error loading KMIP credentials file {:?}: {e}\n",
+                    path.display()
+                )
+                .into()
+            })?
+        } else {
+            KmipClientCredentialsSet::default()
+        };
+
+        // Save the path for use in generating error messages.
+        let path = path.to_path_buf();
+
+        Ok(KmipClientCredentialsFile {
+            file,
+            path,
+            credentials,
+            mode,
+        })
+    }
+
+    /// Write the credential set back to the file it was loaded from.
+    pub fn save(&mut self) -> Result<(), Error> {
+        // Ensure that writing happens at the start of the file.
+        self.file.seek(SeekFrom::Start(0))?;
+
+        // Use a buffered writer as writing JSON to a file directly is
+        // apparently very slow, even for small files.
+        //
+        // Enclose the use of the BufWriter in a block so that it is
+        // definitely no longer using the file when we next act on it.
+        {
+            let mut writer = BufWriter::new(&self.file);
+            serde_json::to_writer_pretty(&mut writer, &self.credentials).map_err::<Error, _>(
+                |e| {
+                    format!(
+                        "error writing KMIP credentials file {}: {e}",
+                        self.path.display()
+                    )
+                    .into()
+                },
+            )?;
+
+            // Ensure that the BufWriter is flushed as advised by the
+            // BufWriter docs.
+            writer.flush()?;
+        }
+
+        // Truncate the file to the length of data we just wrote..
+        let pos = self.file.stream_position()?;
+        self.file.set_len(pos)?;
+
+        // Ensure that any write buffers are flushed.
+        self.file.flush()?;
+
+        Ok(())
+    }
+
+    /// Does this credential set include credentials for the specified KMIP
+    /// server.
+    pub fn contains(&self, server_id: &str) -> bool {
+        self.credentials.0.contains_key(server_id)
+    }
+
+    #[allow(dead_code)]
+    fn get(&self, server_id: &str) -> Option<&KmipClientCredentials> {
+        self.credentials.0.get(server_id)
+    }
+
+    /// Add credentials for the specified KMIP server, replacing any that
+    /// previously existed for the same server.-
+    ///
+    /// Returns any previous configuration if found.
+    pub fn insert(
+        &mut self,
+        server_id: String,
+        credentials: KmipClientCredentials,
+    ) -> Option<KmipClientCredentials> {
+        self.credentials.0.insert(server_id, credentials)
+    }
+
+    /// Remove any existing configuration for the specified KMIP server.
+    ///
+    /// Returns any previous configuration if found.
+    pub fn remove(&mut self, server_id: &str) -> Option<KmipClientCredentials> {
+        self.credentials.0.remove(server_id)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.credentials.0.is_empty()
     }
 }

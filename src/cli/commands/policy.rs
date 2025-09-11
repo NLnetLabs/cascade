@@ -1,5 +1,4 @@
 use futures::TryFutureExt;
-use log::error;
 
 use crate::{
     api::{
@@ -47,7 +46,7 @@ mod ansi {
 }
 
 impl Policy {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             PolicyCommand::List => {
                 let res: PolicyListResult = client
@@ -55,9 +54,7 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 for policy in res.policies {
                     println!("{policy}");
@@ -69,15 +66,12 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 let p = match res {
                     Ok(p) => p,
                     Err(e) => {
-                        error!("{e:?}");
-                        return Err(());
+                        return Err(format!("{e:?}"));
                     }
                 };
 
@@ -89,15 +83,12 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 let res = match res {
                     Ok(res) => res,
                     Err(err) => {
-                        error!("{err}");
-                        return Err(());
+                        return Err(err.to_string());
                     }
                 };
 
