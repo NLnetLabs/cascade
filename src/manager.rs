@@ -1,10 +1,11 @@
 //! Controlling the entire operation.
 
+use daemonbase::process::EnvSockets;
 use log::debug;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{self};
 
 use crate::center::Center;
@@ -25,6 +26,10 @@ pub fn spawn(
     center_tx_slot: &mut Option<mpsc::UnboundedSender<TargetCommand>>,
     unit_tx_slots: &mut foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
 ) {
+    // Acquire information about any sockets passed to us via the environment,
+    // e.g. using SystemD socket activation.
+    let env_sockets = Arc::new(Mutex::new(EnvSockets::from_env(true)));
+
     // Spawn the central command.
     log::info!("Starting target 'CC'");
     let target = CentralCommand {
@@ -89,7 +94,7 @@ pub fn spawn(
         http_api_path: Arc::new(String::from("/_unit/rs/")),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    tokio::spawn(unit.run(cmd_rx, env_sockets.clone()));
     unit_tx_slots.insert("RS".into(), cmd_tx);
 
     // Spawn the key manager.
@@ -125,10 +130,9 @@ pub fn spawn(
         source: zone_server::Source::SignedZones,
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    tokio::spawn(unit.run(cmd_rx, env_sockets.clone()));
     unit_tx_slots.insert("RS2".into(), cmd_tx);
 
-    // Spawn the published zone server.
     log::info!("Starting unit 'PS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
@@ -138,7 +142,7 @@ pub fn spawn(
         source: zone_server::Source::PublishedZones,
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    tokio::spawn(unit.run(cmd_rx, env_sockets.clone()));
     unit_tx_slots.insert("PS".into(), cmd_tx);
 
     // Spawn the HTTP server.

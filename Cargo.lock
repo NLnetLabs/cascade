@@ -327,6 +327,7 @@ dependencies = [
  "chrono",
  "clap",
  "crossbeam-utils",
+ "daemonbase",
  "dirs",
  "domain",
  "flate2",
@@ -340,7 +341,7 @@ dependencies = [
  "jiff",
  "layout-rs",
  "log",
- "nix",
+ "nix 0.22.3",
  "non-empty-vec",
  "octseq",
  "parking_lot 0.11.2",
@@ -381,6 +382,12 @@ name = "cfg-if"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fd1289c04a9ea8cb22300a459a72a385d7c73d3259e2ed7dcb2af674838cfa9"
+
+[[package]]
+name = "cfg_aliases"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
@@ -522,6 +529,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "daemonbase"
+version = "0.1.3"
+source = "git+https://github.com/NLnetLabs/daemonbase?branch=add-systemd-socket-via-env-support#74501483de4b04ca843b2e3f84f5b840679b60ca"
+dependencies = [
+ "chrono",
+ "clap",
+ "log",
+ "nix 0.29.0",
+ "serde",
+ "syslog",
+ "toml_edit",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -616,7 +637,7 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.11.1-dev"
-source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#7268eb36b850959b67f52d94940462181f4b3fd7"
+source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#289f2c1130b01e427635bc0dfd53e06eeb81839e"
 dependencies = [
  "arc-swap",
  "bcder",
@@ -651,7 +672,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.11.1-dev"
-source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#7268eb36b850959b67f52d94940462181f4b3fd7"
+source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#289f2c1130b01e427635bc0dfd53e06eeb81839e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1518,6 +1539,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1575,7 +1605,20 @@ dependencies = [
  "cc",
  "cfg-if",
  "libc",
- "memoffset",
+ "memoffset 0.6.5",
+]
+
+[[package]]
+name = "nix"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+dependencies = [
+ "bitflags 2.9.3",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+ "memoffset 0.9.1",
 ]
 
 [[package]]

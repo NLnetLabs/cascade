@@ -6,11 +6,12 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Command;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
+use daemonbase::process::EnvSockets;
 use domain::base::iana::{Class, Rcode};
 use domain::base::Name;
 use domain::base::{Serial, ToName};
@@ -97,6 +98,7 @@ impl ZoneServerUnit {
     pub async fn run(
         self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        env_sockets: Arc<Mutex<EnvSockets>>,
     ) -> Result<(), Terminated> {
         let unit_name = match (self.mode, self.source) {
             (Mode::Prepublish, Source::UnsignedZones) => "RS",
@@ -118,6 +120,8 @@ impl ZoneServerUnit {
         };
 
         let max_concurrency = std::thread::available_parallelism().unwrap().get() / 2;
+        let max_concurrency = max_concurrency.clamp(1, 16);
+        info!("[{unit_name}]: Allowing at most {max_concurrency} concurrent XFRs");
 
         // TODO: Pass xfr_out to XfrDataProvidingZonesWrapper for enforcement.
         let zones = XfrDataProvidingZonesWrapper {
@@ -155,29 +159,38 @@ impl ZoneServerUnit {
 
         let mut addrs = Vec::new();
 
-        for addr in servers {
-            info!("[{unit_name}]: Binding on {addr:?}");
+        for sock_cfg in servers {
+            info!("[{unit_name}]: Binding on {sock_cfg:?}");
 
-            if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = addr {
-                let unit_name: Box<str> = unit_name.into();
-                let svc = svc.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = Self::server(ListenAddr::Udp(addr), svc).await {
-                        error!("[{unit_name}]: {err}");
-                    }
-                });
-                addrs.push(ListenAddr::Udp(addr));
+            if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
+                let listen_addr = acquire_udp_socket(unit_name, &env_sockets, addr);
+                Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
+                addrs.push(addr.to_string());
             }
 
-            if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = addr {
-                let unit_name: Box<str> = unit_name.into();
-                let svc = svc.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = Self::server(ListenAddr::Tcp(addr), svc).await {
-                        error!("[{unit_name}]: {err}");
-                    }
-                });
-                addrs.push(ListenAddr::Tcp(addr));
+            if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
+                let listen_addr = acquire_tcp_listener(unit_name, &env_sockets, addr);
+                Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
+                addrs.push(addr.to_string());
+            }
+        }
+
+        if unit_name == "PS" {
+            // Also listen on any remaining UDP and TCP sockets provided by
+            // the O/S.
+            while let Some(sock) = env_sockets.lock().unwrap().pop_udp() {
+                if let Ok(addr) = sock.local_addr() {
+                    addrs.push(addr.to_string());
+                }
+                let listen_addr = ListenAddr::UdpSocket(sock);
+                Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
+            }
+            while let Some(sock) = env_sockets.lock().unwrap().pop_tcp() {
+                if let Ok(addr) = sock.local_addr() {
+                    addrs.push(addr.to_string());
+                }
+                let listen_addr = ListenAddr::TcpListener(sock);
+                Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
             }
         }
 
@@ -196,28 +209,64 @@ impl ZoneServerUnit {
         Ok(())
     }
 
-    async fn server<Svc>(addr: ListenAddr, svc: Svc) -> Result<(), std::io::Error>
+    fn spawn_udp_server<Svc>(unit_name: &'static str, svc: Svc, listen_addr: ListenAddr)
     where
         Svc: Service<Vec<u8>, ()> + Clone,
     {
+        let unit_name: Box<str> = unit_name.into();
+        tokio::spawn(async move {
+            let listen_str = format!("{listen_addr}");
+            if let Err(err) = Self::server(unit_name.clone(), listen_addr, svc).await {
+                error!(
+                    "[{unit_name}]: Failed to listen for UDP connections on {listen_str}: {err}"
+                );
+            }
+        });
+    }
+
+    fn spawn_tcp_server<Svc>(unit_name: &'static str, svc: Svc, listen_addr: ListenAddr)
+    where
+        Svc: Service<Vec<u8>, ()> + Clone,
+    {
+        let unit_name: Box<str> = unit_name.into();
+        tokio::spawn(async move {
+            let listen_str = format!("{listen_addr}");
+            if let Err(err) = Self::server(unit_name.clone(), listen_addr, svc).await {
+                error!(
+                    "[{unit_name}]: Failed to listen for TCP connections on {listen_str}: {err}"
+                );
+            }
+        });
+    }
+
+    async fn server<Svc>(
+        unit_name: Box<str>,
+        addr: ListenAddr,
+        svc: Svc,
+    ) -> Result<(), std::io::Error>
+    where
+        Svc: Service<Vec<u8>, ()> + Clone,
+    {
+        debug!("[{unit_name}]: Spawning zone server on address {addr}");
         let buf = VecBufSource;
         match addr {
             ListenAddr::Udp(addr) => {
                 let sock = UdpSocket::bind(addr).await?;
-                let config = dgram::Config::new();
-                let srv = DgramServer::<_, _, _>::with_config(sock, buf, svc, config);
-                let srv = Arc::new(srv);
-                srv.run().await;
+                serve_on_udp(svc, buf, sock).await;
+            }
+            ListenAddr::UdpSocket(sock) => {
+                sock.set_nonblocking(true)?;
+                let sock = UdpSocket::from_std(sock)?;
+                serve_on_udp(svc, buf, sock).await;
             }
             ListenAddr::Tcp(addr) => {
                 let sock = tokio::net::TcpListener::bind(addr).await?;
-                let mut conn_config = ConnectionConfig::new();
-                conn_config.set_max_queued_responses(10000);
-                let mut config = stream::Config::new();
-                config.set_connection_config(conn_config);
-                let srv = StreamServer::with_config(sock, buf, svc, config);
-                let srv = Arc::new(srv);
-                srv.run().await;
+                serve_on_tcp(svc, buf, sock).await;
+            }
+            ListenAddr::TcpListener(listener) => {
+                listener.set_nonblocking(true)?;
+                let listener = tokio::net::TcpListener::from_std(listener)?;
+                serve_on_tcp(svc, buf, listener).await;
             } // #[cfg(feature = "tls")]
               // ListenAddr::Tls(addr, config) => {
               //     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
@@ -236,6 +285,65 @@ impl ZoneServerUnit {
     }
 }
 
+/// Use a matching pre-bound UDP socket if available, bind otherwise.
+fn acquire_udp_socket(
+    unit_name: &str,
+    env_sockets: &Mutex<EnvSockets>,
+    addr: std::net::SocketAddr,
+) -> ListenAddr {
+    match env_sockets.lock().unwrap().take_udp(&addr) {
+        Some(socket) => {
+            debug!(
+                "[{unit_name}]: Pre-bound UDP socket on {:?} acquired via environment settings",
+                socket.local_addr()
+            );
+            ListenAddr::UdpSocket(socket)
+        }
+        None => ListenAddr::Udp(addr),
+    }
+}
+
+/// Use a matching pre-bound TCP socket if available, bind otherwise.
+fn acquire_tcp_listener(
+    unit_name: &str,
+    env_sockets: &Mutex<EnvSockets>,
+    addr: std::net::SocketAddr,
+) -> ListenAddr {
+    match env_sockets.lock().unwrap().take_tcp(&addr) {
+        Some(listener) => {
+            debug!(
+                "[{unit_name}]: Pre-bound TCP listener on {:?} acquired via environment settings",
+                listener.local_addr()
+            );
+            ListenAddr::TcpListener(listener)
+        }
+        None => ListenAddr::Tcp(addr),
+    }
+}
+
+async fn serve_on_udp<Svc>(svc: Svc, buf: VecBufSource, sock: UdpSocket)
+where
+    Svc: Service<Vec<u8>, ()> + Clone,
+{
+    let config = dgram::Config::new();
+    let srv = DgramServer::<_, _, _>::with_config(sock, buf, svc, config);
+    let srv = Arc::new(srv);
+    srv.run().await;
+}
+
+async fn serve_on_tcp<Svc>(svc: Svc, buf: VecBufSource, sock: tokio::net::TcpListener)
+where
+    Svc: Service<Vec<u8>, ()> + Clone,
+{
+    let mut conn_config = ConnectionConfig::new();
+    conn_config.set_max_queued_responses(10000);
+    let mut config = stream::Config::new();
+    config.set_connection_config(conn_config);
+    let srv = StreamServer::with_config(sock, buf, svc, config);
+    let srv = Arc::new(srv);
+    srv.run().await;
+}
+
 //------------ ZoneServer ----------------------------------------------------
 
 struct ZoneServer {
@@ -244,7 +352,7 @@ struct ZoneServer {
     center: Arc<Center>,
     mode: Mode,
     source: Source,
-    listen: Vec<ListenAddr>,
+    listen: Vec<String>,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
     #[allow(clippy::type_complexity)]
@@ -259,7 +367,7 @@ impl ZoneServer {
         http_api_path: Arc<String>,
         mode: Mode,
         source: Source,
-        listen: Vec<ListenAddr>,
+        listen: Vec<String>,
         zones: XfrDataProvidingZonesWrapper,
     ) -> Self {
         Self {
@@ -786,7 +894,7 @@ struct ZoneReviewApi {
     zones: XfrDataProvidingZonesWrapper,
     mode: Mode,
     source: Source,
-    listen: Vec<ListenAddr>,
+    listen: Vec<String>,
 }
 
 impl ZoneReviewApi {
@@ -798,7 +906,7 @@ impl ZoneReviewApi {
         zones: XfrDataProvidingZonesWrapper,
         mode: Mode,
         source: Source,
-        listen: Vec<ListenAddr>,
+        listen: Vec<String>,
     ) -> Self {
         Self {
             update_tx,
