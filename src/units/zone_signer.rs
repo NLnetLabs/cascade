@@ -326,7 +326,7 @@ impl ZoneSigner {
         }
         .unwrap();
 
-        let new_soa = match policy.signer.serial_policy {
+        let serial = match policy.signer.serial_policy {
             SignerSerialPolicy::Keep => {
                 if let Some(previous_serial) = last_signed_serial {
                     if soa.serial() <= previous_serial {
@@ -336,27 +336,16 @@ impl ZoneSigner {
                     }
                 }
 
-                soa_rr.data().clone()
+                soa.serial()
             }
             SignerSerialPolicy::Counter => {
-                let mut new_soa = soa_rr.data().clone();
                 let mut serial = soa.serial();
                 if let Some(previous_serial) = last_signed_serial {
                     if serial <= previous_serial {
                         serial = previous_serial.add(1);
-
-                        new_soa = ZoneRecordData::Soa(Soa::new(
-                            soa.mname().clone(),
-                            soa.rname().clone(),
-                            serial,
-                            soa.refresh(),
-                            soa.retry(),
-                            soa.expire(),
-                            soa.minimum(),
-                        ));
                     }
                 }
-                new_soa
+                serial
             }
             SignerSerialPolicy::UnixTime => {
                 let mut serial = Serial::now();
@@ -366,16 +355,7 @@ impl ZoneSigner {
                     }
                 }
 
-                let new_soa = ZoneRecordData::Soa(Soa::new(
-                    soa.mname().clone(),
-                    soa.rname().clone(),
-                    serial,
-                    soa.refresh(),
-                    soa.retry(),
-                    soa.expire(),
-                    soa.minimum(),
-                ));
-                new_soa
+                serial
             }
             SignerSerialPolicy::DateCounter => {
                 let ts = JiffTimestamp::now();
@@ -391,19 +371,19 @@ impl ZoneSigner {
                     }
                 }
 
-                let new_soa = ZoneRecordData::Soa(Soa::new(
-                    soa.mname().clone(),
-                    soa.rname().clone(),
-                    serial,
-                    soa.refresh(),
-                    soa.retry(),
-                    soa.expire(),
-                    soa.minimum(),
-                ));
-
-                new_soa
+                serial
             }
         };
+        let new_soa = ZoneRecordData::Soa(Soa::new(
+            soa.mname().clone(),
+            soa.rname().clone(),
+            serial,
+            soa.refresh(),
+            soa.retry(),
+            soa.expire(),
+            soa.minimum(),
+        ));
+
         let soa_rr = Record::new(
             soa_rr.owner().clone(),
             soa_rr.class(),
