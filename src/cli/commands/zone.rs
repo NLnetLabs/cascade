@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use domain::base::Name;
 use futures::TryFutureExt;
-use log::error;
 
 use crate::api::{
     ZoneAdd, ZoneAddError, ZoneAddResult, ZoneSource, ZoneStage, ZoneStatusResult, ZonesListResult,
@@ -29,6 +28,10 @@ pub enum ZoneCommand {
         /// Policy to use for this zone
         #[arg(long = "policy")]
         policy: String,
+
+        /// KMIP server id to use for generating keys for this zone.
+        #[arg(long = "kmip-server-id")]
+        kmip_server_id: Option<String>,
     },
 
     /// Remove a zone
@@ -63,12 +66,13 @@ pub enum ZoneCommand {
 // - reload zone (i.e. from file)
 
 impl Zone {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             ZoneCommand::Add {
                 name,
                 source,
                 policy,
+                kmip_server_id,
             } => {
                 let res: Result<ZoneAddResult, ZoneAddError> = client
                     .post("zone/add")
@@ -76,23 +80,19 @@ impl Zone {
                         name,
                         source,
                         policy,
+                        kmip_server_id,
                     })
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 match res {
                     Ok(res) => {
                         println!("Added zone {}", res.name);
                         Ok(())
                     }
-                    Err(e) => {
-                        eprintln!("Failed to add zone: {e}");
-                        Err(())
-                    }
+                    Err(e) => Err(format!("Failed to add zone: {e}")),
                 }
             }
             ZoneCommand::Remove { name } => {
@@ -101,9 +101,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Removed zone {}", res.name);
                 Ok(())
@@ -114,9 +112,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 for zone in response.zones {
                     let name = zone.name;
@@ -136,9 +132,7 @@ impl Zone {
                     .send()
                     .and_then(|r| async { r.error_for_status() })
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Success: Sent zone reload command for {}", zone);
                 Ok(())
@@ -152,9 +146,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Server status: {:?}", response);
                 Ok(())

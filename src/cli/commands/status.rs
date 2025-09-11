@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use domain::base::Name;
 use futures::TryFutureExt;
-use log::error;
 
 use crate::api::{ServerStatusResult, ZoneStatusResult};
 use crate::cli::client::CascadeApiClient;
@@ -29,7 +28,7 @@ pub enum StatusCommand {
 //   - maybe have it both on server level status command (so here) and in the zone command?
 
 impl Status {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             Some(StatusCommand::Zone { name }) => {
                 // TODO: move to function that can be called by the general
@@ -40,9 +39,7 @@ impl Status {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Success: Sent zone reload command for {}", name)
             }
@@ -53,9 +50,7 @@ impl Status {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Server status: {:?}", response)
             }
