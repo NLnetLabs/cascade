@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use domain::base::Serial;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -33,6 +34,9 @@ pub struct Spec {
     /// value should be move to min_expiration after the signed zone is
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
+
+    /// The last serial number we signed for this zone
+    pub last_signed_serial: Option<Serial>,
 }
 
 //--- Conversion
@@ -44,6 +48,7 @@ impl Spec {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
+            last_signed_serial: zone.last_signed_serial,
         }
     }
 }
