@@ -365,9 +365,16 @@ where
                     .await;
             }
 
-            // TODO
-            // Event::ZoneRemoved(_key) => {
-            // }
+            Event::ZoneRemoved(id) => {
+                let _ = self.pending_zones.write().await.remove(&id);
+                let _ = time_tracking.write().await.remove(&id);
+                // NOTE: We can't remove the matching refresh timer,
+                // so we'll just leave it in there.  If a zone with
+                // the same ID is added again, we'll overwrite it;
+                // and if the timer gets activated before then, we
+                // will ignore it.
+            }
+
             Event::ZoneRefreshRequested { zone_id, at, cause } => {
                 Self::refresh_zone_at(cause, zone_id, at, refresh_timers);
             }
@@ -516,6 +523,8 @@ where
 
         tokio::spawn(async move {
             // Are we actively managing refreshing of this zone?
+            //
+            // NOTE: If the zone is removed, this is 'false'.
             let known = { time_tracking.read().await.contains_key(&timer_info.zone_id) };
             // let mut tt = time_tracking.write().await;
             // if let Some(zone_refresh_info) = tt.get_mut(&timer_info.zone_id) {
@@ -572,6 +581,30 @@ where
                 }
             }
         });
+    }
+
+    /// Remove a zone, if it exists.
+    ///
+    /// Returns `true` if the zone was found and removed.
+    pub async fn remove_zone(&self, zone: ZoneId) -> bool {
+        // Create a deep copy of the set of zones.
+        let mut new_zones = Arc::unwrap_or_clone(self.zones());
+
+        match new_zones.remove_zone(&zone.name, zone.class) {
+            Ok(()) => {
+                // Update the active zone state.
+                self.member_zones.store(Arc::new(new_zones));
+                self.update_lodaded_arc();
+
+                // Update state within the runner.
+                let _ = self.event_tx.send(Event::ZoneRemoved(zone)).await;
+
+                true
+            }
+
+            // The zone did not exist.
+            Err(_) => false,
+        }
     }
 
     async fn insert_active_zone(&self, zone: Zone) -> Result<(), ZoneTreeModificationError> {
@@ -706,7 +739,7 @@ where
         apex_name: StoredName,
         notify_set: impl Iterator<Item = &SocketAddr>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
-        zone_info: &ZoneInfo,
+        _zone_info: &ZoneInfo,
     ) {
         let mut dgram_config = dgram::Config::new();
         dgram_config.set_max_parallel(1);
@@ -720,27 +753,29 @@ where
         msg.push((apex_name, Rtype::SOA)).unwrap();
 
         let loaded_config = config.load();
-        let readable_key_store = &loaded_config.key_store;
+        let _readable_key_store = &loaded_config.key_store;
 
         for nameserver_addr in notify_set {
             let dgram_config = dgram_config.clone();
             let req = RequestMessage::new(msg.clone()).unwrap();
             let nameserver_addr = *nameserver_addr;
 
-            let tsig_key = zone_info
-                .config
-                .send_notify_to
-                .dst(&nameserver_addr)
-                .and_then(|cfg| cfg.tsig_key.as_ref())
-                .and_then(|(name, alg)| readable_key_store.get_key(name, *alg));
-
-            if let Some(key) = tsig_key.as_ref() {
-                debug!(
-                    "Found TSIG key '{}' (algorith {}) for NOTIFY to {nameserver_addr}",
-                    key.as_ref().name(),
-                    key.as_ref().algorithm()
-                );
-            }
+            // NOTE: We're not using NOTIFY out from the zone maintainer.
+            //
+            // let tsig_key = zone_info
+            //     .config
+            //     .send_notify_to
+            //     .dst(&nameserver_addr)
+            //     .and_then(|cfg| cfg.tsig_key.as_ref())
+            //     .and_then(|(name, alg)| readable_key_store.get_key(name, *alg));
+            //
+            // if let Some(key) = tsig_key.as_ref() {
+            //     debug!(
+            //         "Found TSIG key '{}' (algorith {}) for NOTIFY to {nameserver_addr}",
+            //         key.as_ref().name(),
+            //         key.as_ref().algorithm()
+            //     );
+            // }
 
             tokio::spawn(async move {
                 // TODO: Use the connection factory here.
@@ -760,12 +795,13 @@ where
                 //
                 // TODO: We have no retry queue at the moment. Do we need one?
 
-                let res = if let Some(key) = tsig_key {
-                    let client = net::client::tsig::Connection::new(key.clone(), client);
-                    client.send_request(req.clone()).get_response().await
-                } else {
-                    client.send_request(req.clone()).get_response().await
-                };
+                // let res = if let Some(key) = tsig_key {
+                //     let client = net::client::tsig::Connection::new(key.clone(), client);
+                //     client.send_request(req.clone()).get_response().await
+                // } else {
+                //     client.send_request(req.clone()).get_response().await
+                // };
+                let res = client.send_request(req.clone()).get_response().await;
 
                 if let Err(err) = res {
                     warn!("Unable to send NOTIFY to nameserver {nameserver_addr}: {err}");
@@ -1311,11 +1347,8 @@ where
         // constructed if a key is specified and available.
 
         let loaded_config = config.load();
-        let readable_key_store = &loaded_config.key_store;
-        let key = xfr_config
-            .tsig_key
-            .as_ref()
-            .and_then(|(name, alg)| readable_key_store.get_key(name, *alg));
+        let _readable_key_store = &loaded_config.key_store;
+        let key = xfr_config.tsig_key.as_ref().map(|key| key.inner.clone());
 
         // Query the SOA serial of the primary.
         let Some(udp_client) = loaded_config
@@ -1324,7 +1357,7 @@ where
             .await
             .map_err(|err| {
                 let key = key
-                    .clone()
+                    .as_ref()
                     .map(|key| format!("{key}"))
                     .unwrap_or("NOKEY".to_string());
                 ZoneMaintainerError::ConnectionError(format!(
@@ -1419,7 +1452,7 @@ where
                 zone,
                 primary_addr,
                 rtype,
-                key.clone(),
+                key.as_deref().cloned(),
                 config.clone(),
                 time_tracking.clone(),
             )
@@ -1485,7 +1518,7 @@ where
         zone: &Zone,
         primary_addr: SocketAddr,
         xfr_type: Rtype,
-        key: Option<<<KS as Deref>::Target as KeyStore>::Key>,
+        key: Option<Key>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
     ) -> Result<Soa<Name<Bytes>>, ZoneMaintainerError> {
@@ -2380,7 +2413,7 @@ where
                     )?;
 
                     let expected_tsig_key_name =
-                        xfr_config.tsig_key.as_ref().map(|(name, _alg)| name);
+                        xfr_config.tsig_key.as_ref().map(|key| key.inner.name());
                     let tsig_key_mismatch = match (expected_tsig_key_name, key_name.as_ref()) {
                         (None, Some(actual)) => {
                             Some(format!(

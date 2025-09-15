@@ -138,6 +138,7 @@ impl From<NewKeyError> for KeyParseError {
     }
 }
 
+#[allow(unused)] // may be useful for the CLI
 pub fn parse_key_strings(name: &str, alg_and_hex_key_bytes: &str) -> Result<Key, KeyParseError> {
     let key_parts: Vec<String> = alg_and_hex_key_bytes
         .split(':')

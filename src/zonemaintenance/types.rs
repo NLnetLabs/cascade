@@ -24,8 +24,10 @@ use domain::base::iana::Class;
 use domain::base::net::IpAddr;
 use domain::base::{CanonicalOrd, Name, Serial, Ttl};
 use domain::rdata::Soa;
-use domain::tsig::{self, Algorithm, Key, KeyName};
+use domain::tsig::{Algorithm, Key, KeyName};
 use domain::zonetree::{InMemoryZoneDiff, StoredName, Zone};
+
+use crate::tsig::TsigKey;
 
 //------------ Constants -----------------------------------------------------
 
@@ -202,10 +204,6 @@ pub enum CompatibilityMode {
     BackwardCompatible,
 }
 
-//------------ TsigKey -------------------------------------------------------
-
-pub type TsigKey = (tsig::KeyName, tsig::Algorithm);
-
 //------------ XfrConfig -----------------------------------------------------
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -214,7 +212,7 @@ pub struct XfrConfig {
     pub ixfr_transport: TransportStrategy,
     pub compatibility_mode: CompatibilityMode,
     #[serde(skip)]
-    pub tsig_key: Option<TsigKey>,
+    pub tsig_key: Option<Arc<TsigKey>>,
 }
 
 //------------ NotifyConfig --------------------------------------------------
@@ -222,7 +220,7 @@ pub struct XfrConfig {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct NotifyConfig {
     #[serde(skip)]
-    pub tsig_key: Option<TsigKey>,
+    pub tsig_key: Option<Arc<TsigKey>>,
 }
 
 //------------ Type Aliases --------------------------------------------------
@@ -1066,6 +1064,6 @@ pub(super) enum Event {
     ZoneChanged(ZoneChangedMsg),
 
     ZoneAdded(ZoneId),
-    // TODO?
-    //ZoneRemoved(ZoneId),
+
+    ZoneRemoved(ZoneId),
 }
