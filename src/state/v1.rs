@@ -422,7 +422,7 @@ impl From<GroupId> for config::GroupId {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LoaderConfigSpec {
     /// Where to listen for zone update notifications.
-    pub notif_listeners: Vec<SocketConfigSpec>,
+    pub notify_listeners: Vec<SocketConfigSpec>,
 
     /// Configuration for reviewing loaded zones.
     pub review: ReviewConfigSpec,
@@ -434,7 +434,11 @@ impl LoaderConfigSpec {
     /// Parse from this specification.
     pub fn parse(self) -> config::LoaderConfig {
         config::LoaderConfig {
-            notif_listeners: self.notif_listeners.into_iter().map(|v| v.into()).collect(),
+            notify_listeners: self
+                .notify_listeners
+                .into_iter()
+                .map(|v| v.into())
+                .collect(),
             review: self.review.parse(),
         }
     }
@@ -442,8 +446,8 @@ impl LoaderConfigSpec {
     /// Build this state specification.
     pub fn build(config: &config::LoaderConfig) -> Self {
         Self {
-            notif_listeners: config
-                .notif_listeners
+            notify_listeners: config
+                .notify_listeners
                 .iter()
                 .map(|v| v.clone().into())
                 .collect(),

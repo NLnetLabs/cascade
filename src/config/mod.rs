@@ -298,7 +298,7 @@ impl std::fmt::Display for GroupId {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LoaderConfig {
     /// Where to listen for zone update notifications.
-    pub notif_listeners: Vec<SocketConfig>,
+    pub notify_listeners: Vec<SocketConfig>,
 
     /// Configuration for reviewing loaded zones.
     pub review: ReviewConfig,
