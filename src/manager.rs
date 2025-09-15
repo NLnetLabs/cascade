@@ -28,7 +28,7 @@ pub fn spawn(
 ) {
     // Acquire information about any sockets passed to us via the environment,
     // e.g. using SystemD socket activation.
-    let env_sockets = Arc::new(Mutex::new(EnvSockets::from_env(true)));
+    let env_sockets = Arc::new(Mutex::new(EnvSockets::from_env(None).unwrap()));
 
     // Spawn the central command.
     log::info!("Starting target 'CC'");
