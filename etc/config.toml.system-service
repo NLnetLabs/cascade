@@ -26,24 +26,24 @@ dnst-binary-path = "dnst"
 # external system.
 #
 # Note: These settings may not be needed when using a serivce manager
-# like SystemD which is able to offer such functionality on behalf of the
+# like systemd which is able to offer such functionality on behalf of the
 # application.
 [daemon]
 #
 # Whether or not to fork the process and apply the pid-file, chroot and
 # identity settings.
 #
-# Note: When running Cascade as a SystemD service use the Type=exec option
+# Note: When running Cascade as a systemd service use the Type=exec option
 # instead.
 # See: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Type=
 # 
 # Explanation: Forking is typically used to run initially as root and bind to
 # privileged ports then subsequently switch to running as a less privileged
-# user. With SystemD this is not necessary as this can be achieved by using
-# socket activation instead whereby SystemD binds to the desired ports and
+# user. With systemd this is not necessary as this can be achieved by using
+# socket activation instead whereby systemd binds to the desired ports and
 # passes the sockets to the application. Cascade supports receiving such
-# sockets via the SystemD LISTEN_FDS environment variable. To use this
-# functionalty create a SystemD unit named e.g. cascaded.socket with content
+# sockets via the systemd LISTEN_FDS environment variable. To use this
+# functionalty create a systemd unit named e.g. cascaded.socket with content
 # such as:
 #
 # [Unit]
@@ -103,7 +103,7 @@ pid-file = "/var/run/cascade.pid"
 # aren't within the chroot - do we just fail?  Or do we interpret all paths here
 # relative to the chroot?
 #
-# Note: When running Cascade as a SystemD service you may want to use the
+# Note: When running Cascade as a systemd service you may want to use the
 # RootDirectory= instead.
 # See: https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#RootDirectory=
 #
@@ -119,7 +119,7 @@ pid-file = "/var/run/cascade.pid"
 # latter case, the identically named/numbered group will be used.  Both the user
 # and group can be specified as a numeric ID or a name.
 #
-# Note: When running Cascade as a SystemD service use the User= and Group= SystemD
+# Note: When running Cascade as a systemd service use the User= and Group= systemd
 # options instead.
 # See: https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#User= 
 # 
@@ -136,8 +136,8 @@ pid-file = "/var/run/cascade.pid"
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  An empty array will disable listening entirely.
 # 
-# Note: When running Cascade as a SystemD service, if using socket activation
-# if sockets for one or more of these addresses is provided by SystemD to the
+# Note: When running Cascade as a systemd service, if using socket activation
+# if sockets for one or more of these addresses is provided by systemd to the
 # application it will use the pre-bound socket instead of trying to bind to
 # it again.
 notif-listeners = ["127.0.0.1:8050"] # TODO: Pick a good default port
@@ -152,8 +152,8 @@ notif-listeners = ["127.0.0.1:8050"] # TODO: Pick a good default port
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  An empty array will disable serving entirely.
 # 
-# Note: When running Cascade as a SystemD service, if using socket activation
-# if sockets for one or more of these addresses is provided by SystemD to the
+# Note: When running Cascade as a systemd service, if using socket activation
+# if sockets for one or more of these addresses is provided by systemd to the
 # application it will use the pre-bound socket instead of trying to bind to
 # it again.
 servers = ["127.0.0.1:8051"] # TODO: Pick a good default port
@@ -171,8 +171,8 @@ servers = ["127.0.0.1:8051"] # TODO: Pick a good default port
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  An empty array will disable serving entirely.
 # 
-# Note: When running Cascade as a SystemD service, if using socket activation
-# if sockets for one or more of these addresses is provided by SystemD to the
+# Note: When running Cascade as a systemd service, if using socket activation
+# if sockets for one or more of these addresses is provided by systemd to the
 # application it will use the pre-bound socket instead of trying to bind to
 # it again.
 servers = ["127.0.0.1:8052"] # TODO: Pick a good default port.
@@ -190,9 +190,9 @@ servers = ["127.0.0.1:8052"] # TODO: Pick a good default port.
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  At least one address must be specified.
 # 
-# Note: When running Cascade as a SystemD service, if using socket activation
-# if sockets for one or more of these addresses is provided by SystemD to the
+# Note: When running Cascade as a systemd service, if using socket activation
+# if sockets for one or more of these addresses is provided by systemd to the
 # application it will use the pre-bound socket instead of trying to bind to
-# it again. Additionally, any unused SystemD provided pre-bound sockets will
+# it again. Additionally, any unused systemd provided pre-bound sockets will
 # also be associated with this server instance.
 servers = ["127.0.0.1:8053"] # TODO: Pick a good default port.

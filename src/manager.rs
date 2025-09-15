@@ -65,7 +65,7 @@ pub async fn spawn(
     unit_tx_slots: &mut foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
 ) -> Result<(), Error> {
     // Acquire information about any sockets passed to us via the environment,
-    // e.g. using SystemD socket activation.
+    // e.g. using systemd socket activation.
     let mut env_sockets = None;
 
     match EnvSockets::from_env(Some(MAX_SYSTEMD_FD_SOCKETS)) {
