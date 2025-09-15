@@ -1,0 +1,30 @@
+# Configuration for kmip2pkcs11 when run as a system service.
+# ============================================================================
+
+# The PKCS#11 module to use to communicate with an HSM.
+# TODO: Set this to the actual path to the PKCS#11 module to use.
+lib_path = "/usr/lib64/pkcs11/libsofthsm2.so"
+
+# The target for logging (stderr, syslog or file).
+log_target = "syslog"
+
+# When logging to syslog, the syslog facility to use.
+log_facility = "daemon"
+
+# When logging to file, the path to write to.
+log_file = "/srv/cascade/kmip2pkcs11/kmip2pkcs11-relay.log"
+
+# The minimum log level to output (error, warn, info, debug, or trace).
+log_level = "info"
+
+# The network address and port to listen on for incoming KMIP TLS requests.
+# Note: If SystemD supplies a socket to listen on via socket activation that
+# will be used instead of these settings.
+addr = "127.0.0.1"
+port = 1060
+
+# Optional path to ia TLS certificate and key to use (in PEM format).
+# When one or both settings are NOT specified  a self-signed TLS certificate
+# will be generated automatically.
+# cert_path = "/path/to/cert/file"
+# key_path = "/path/to/key/file"

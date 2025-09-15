@@ -1,0 +1,10 @@
+$ORIGIN cascade.nlnetlabs.nl.
+$TTL 240
+@	IN  SOA rusty.nlnetlabs.nl. hostmaster.nlnetlabs.nl. 3 28800 7200 604800 240
+
+@	IN  NS  rusty.nlnetlabs.nl.
+@	IN  TXT "Stichting NLnet Labs Cascade DNSSEC signer zone"
+
+; rusty public interface
+@	IN  A   185.49.141.18
+; @	IN  AAAA 2a04:b900:0:100::18
