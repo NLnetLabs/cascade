@@ -163,7 +163,8 @@ ttl = 3600 # TODO: "1h"
 # into the past.
 #
 # Independent offsets can be set for each record.  An integer value is
-# intepreted as seconds; inception times will be calculated as 'now - offset'.
+# intepreted as seconds; inception times will be calculated as 'now - offset'
+# at the time of signing.
 dnskey.signature-inception-offset = 86400 # TODO: "1d"
 cds.signature-inception-offset = 86400
 
@@ -253,7 +254,8 @@ serial-policy = "date-counter"
 # To prevent such cases, this setting allows the inception time to be offset
 # into the past.
 #
-# An integer value is interpreted as seconds.
+# An integer value is interpreted as seconds; inception times will be calculated
+# as 'now - offset' at the time of signing.
 signature-inception-offset = 86400 # TODO: "1d"
 
 # The lifetime of generated signatures.
@@ -275,9 +277,7 @@ signature-lifetime = 1209600 # TODO: "2w"
 # setting.
 #
 # An integer value is interpreted as seconds.
-#
-# TODO: Is this supported yet?
-#signature-remain-time = 604800 # TODO: "1w"
+signature-remain-time = 604800 # TODO: "1w"
 
 # How denial-of-existence records are generated.
 [signer.denial]
