@@ -113,7 +113,13 @@ impl Hsm {
                     .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 match res {
-                    Ok(res) => print_server(&res.server),
+                    Ok(res) => {
+                        // TODO: Find out which policies are using the server,
+                        // except currently there is no link between zone
+                        // policy and zone HSM usage, which should probably be
+                        // changed.
+                        print_server(&res.server)
+                    }
                     Err(()) => return Err(format!("HSM '{server_id}' not known.")),
                 }
             }
