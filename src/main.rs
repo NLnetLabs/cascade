@@ -160,10 +160,14 @@ fn main() -> ExitCode {
         let mut unit_txs = Default::default();
         if let Err(err) = manager::spawn(&center, update_rx, &mut center_tx, &mut unit_txs) {
             match err {
-                EnvSocketsError::NotForUs => { /* No problem, ignore. */ },
-                EnvSocketsError::NotAvailable => { /* No problem, ignore. */ },
-                EnvSocketsError::Malformed => log::warn!("Ignoring malformed systemd LISTEN_PID/LISTEN_FDS environment variable value"),
-                EnvSocketsError::Unusable => log::warn!("Ignoring unusable systemd LISTEN_FDS environment variable socket(s)"),
+                EnvSocketsError::NotForUs => { /* No problem, ignore. */ }
+                EnvSocketsError::NotAvailable => { /* No problem, ignore. */ }
+                EnvSocketsError::Malformed => log::warn!(
+                    "Ignoring malformed systemd LISTEN_PID/LISTEN_FDS environment variable value"
+                ),
+                EnvSocketsError::Unusable => log::warn!(
+                    "Ignoring unusable systemd LISTEN_FDS environment variable socket(s)"
+                ),
             }
         }
 

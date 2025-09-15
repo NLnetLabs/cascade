@@ -31,6 +31,10 @@ pub fn spawn(
     // Acquire information about any sockets passed to us via the environment,
     // e.g. using SystemD socket activation.
     let env_sockets = EnvSockets::from_env(Some(MAX_SYSTEMD_FD_SOCKETS))?;
+    if !env_sockets.is_empty() {
+        log::info!("Received one or more sockets via systemd socket activation");
+    }
+
     let env_sockets = Arc::new(Mutex::new(env_sockets));
 
     // Spawn the central command.
