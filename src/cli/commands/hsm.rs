@@ -464,16 +464,6 @@ pub fn parse_duration(value: &str) -> Result<Duration, Error> {
     Duration::try_from(signeddur).map_err(|e| format!("unable to convert duration: {e}\n").into())
 }
 
-/// Parse an optional duration from a string but also allow 'off' to signal
-/// no duration.
-fn parse_opt_duration(value: &str) -> Result<Option<Duration>, Error> {
-    if value == "off" {
-        return Ok(None);
-    }
-    let duration = parse_duration(value)?;
-    Ok(Some(duration))
-}
-
 #[derive(Clone, Debug)]
 pub struct Error(String);
 
