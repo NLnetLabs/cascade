@@ -90,58 +90,6 @@ impl ZoneSignerUnit {
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
 
-        // Create KMIP server connection pools.
-        // Warning: This will block until the pools have established their
-        // minimum number of connections or timed out.
-        // let expected_kmip_server_conn_pools = self.kmip_server_conn_settings.len();
-
-        // let kmip_servers: HashMap<String, SyncConnPool> = self.kmip_server_conn_settings.drain().filter_map(|(server_id, conn_settings)| {
-        //     let _host_and_port = (conn_settings.server_addr.clone(), conn_settings.server_port);
-
-        //     match ConnectionManager::create_connection_pool(
-        //         server_id.clone(),
-        //         Arc::new(conn_settings.clone().into()),
-        //         10,
-        //         Some(Duration::from_secs(60)),
-        //         Some(Duration::from_secs(60)),
-        //     ) {
-        //         Ok(kmip_conn_pool) => {
-        //             match kmip_conn_pool.get() {
-        //                 Ok(conn) => {
-        //                     match conn.query() {
-        //                         Ok(q) => {
-        //                             // TODO: Check if the server meets our
-        //                             // needs. We can't assume domain will do
-        //                             // that for us because domain doesn't know
-        //                             // which functions we need.
-        //                             info!("Established connection pool for KMIP server '{server_id}' reporting as '{}'", q.vendor_identification.unwrap_or_default());
-        //                             Some((server_id, kmip_conn_pool))
-        //                         }
-        //                         Err(err) => {
-        //                             error!("Failed to create usable connection pool for KMIP server '{server_id}': {err}");
-        //                             None
-        //                         }
-        //                     }
-        //                 }
-        //                 Err(err) => {
-        //                     error!("Failed to create usable connection pool for KMIP server '{server_id}': {err}");
-        //                     None
-        //                 }
-        //             }
-        //         }
-
-        //         Err(err) => {
-        //             error!("Failed to create connection pool for KMIP server '{server_id}': {err}");
-        //             None
-        //         }
-        //     }
-        // }).collect();
-
-        // if kmip_servers.len() != expected_kmip_server_conn_pools {
-        //     // TODO: This is a bit severe. There should be a cleaner way to abort.
-        //     std::process::exit(1);
-        // }
-
         ZoneSigner::new(
             self.center,
             self.use_lightweight_zone_tree,
