@@ -1,6 +1,6 @@
 //! The commands of _cascade_.
 
-pub mod kmip;
+pub mod hsm;
 pub mod policy;
 pub mod status;
 pub mod zone;
@@ -35,8 +35,11 @@ pub enum Command {
     // Signer(self::signer::Signer),
     // - Command: add/remove/modify a zone // TODO: ask Arya what we meant by that
     // - Command: resign a zone immediately (optionally with custom config)
-    #[command(name = "kmip")]
-    Kmip(self::kmip::Kmip),
+
+    /// Manage HSMs
+    #[command(name = "hsm")]
+    Hsm(self::hsm::Hsm),
+
     // /// Show the manual pages
     // Help(self::help::Help),
 }
@@ -47,7 +50,7 @@ impl Command {
             Self::Zone(zone) => zone.execute(client).await,
             Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,
-            Self::Kmip(kmip) => kmip.execute(client).await,
+            Self::Hsm(hsm) => hsm.execute(client).await,
             // Self::Help(help) => help.execute(),
         }
     }

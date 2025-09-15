@@ -82,34 +82,37 @@ impl ZoneLoader {
                 .with_zone_tree(self.center.unsigned_zones.clone()),
         );
 
-        // Load primary zones.
-        // Create secondary zones.
-        for (zone_name, zone_path) in self.zones.iter() {
-            let zone = if !zone_path.is_empty() {
-                Self::register_primary_zone(
-                    zone_name.clone(),
-                    zone_path,
-                    &self.center.old_tsig_key_store,
-                    None,
-                    &self.xfr_out,
-                    &zone_updated_tx,
-                )
-                .await?
-            } else {
-                info!("[ZL]: Adding secondary zone '{zone_name}'",);
-                Self::register_secondary_zone(
-                    zone_name.clone(),
-                    &self.center.old_tsig_key_store,
-                    None,
-                    &self.xfr_in,
-                    zone_updated_tx.clone(),
-                )?
-            };
+        // We used to load zones from config, but not any longer. This should begin empty.
+        assert!(self.zones.is_empty());
 
-            if let Err(err) = zone_maintainer.insert_zone(zone).await {
-                error!("[ZL]: Error: Failed to insert zone '{zone_name}': {err}")
-            }
-        }
+        // // Load primary zones.
+        // // Create secondary zones.
+        // for (zone_name, zone_path) in self.zones.iter() {
+        //     let zone = if !zone_path.is_empty() {
+        //         Self::register_primary_zone(
+        //             zone_name.clone(),
+        //             zone_path,
+        //             &self.center.old_tsig_key_store,
+        //             None,
+        //             &self.xfr_out,
+        //             &zone_updated_tx,
+        //         )
+        //         .await?
+        //     } else {
+        //         info!("[ZL]: Adding secondary zone '{zone_name}'",);
+        //         Self::register_secondary_zone(
+        //             zone_name.clone(),
+        //             &self.center.old_tsig_key_store,
+        //             None,
+        //             &self.xfr_in,
+        //             zone_updated_tx.clone(),
+        //         )?
+        //     };
+
+        //     if let Err(err) = zone_maintainer.insert_zone(zone).await {
+        //         error!("[ZL]: Error: Failed to insert zone '{zone_name}': {err}")
+        //     }
+        // }
 
         let zone_maintainer_clone = zone_maintainer.clone();
         tokio::spawn(async move { zone_maintainer_clone.run().await });
@@ -401,6 +404,7 @@ async fn load_file_into_zone(zone_name: &StoredName, zone_path: &str) -> Result<
         })
         .map_err(|_| Terminated)?
         .len();
+
     let mut buf = inplace::Zonefile::with_capacity(zone_file_len as usize).writer();
     std::io::copy(&mut zone_file, &mut buf)
         .inspect_err(|err| {

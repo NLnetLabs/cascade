@@ -51,6 +51,8 @@ use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::payload::Update;
 use crate::policy::{Nsec3OptOutPolicy, PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::units::http_server::KmipServerState;
+use crate::units::key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
@@ -67,8 +69,7 @@ pub struct ZoneSignerUnit {
     pub max_concurrent_operations: usize,
 
     pub max_concurrent_rrsig_generation_tasks: usize,
-
-    pub kmip_server_conn_settings: HashMap<String, KmipServerConnectionSettings>,
+    // pub kmip_server_conn_settings: HashMap<String, KmipServerConnectionSettings>,
 }
 
 #[allow(dead_code)]
@@ -84,7 +85,7 @@ impl ZoneSignerUnit {
 
 impl ZoneSignerUnit {
     pub async fn run(
-        mut self,
+        self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
@@ -92,54 +93,54 @@ impl ZoneSignerUnit {
         // Create KMIP server connection pools.
         // Warning: This will block until the pools have established their
         // minimum number of connections or timed out.
-        let expected_kmip_server_conn_pools = self.kmip_server_conn_settings.len();
+        // let expected_kmip_server_conn_pools = self.kmip_server_conn_settings.len();
 
-        let kmip_servers: HashMap<String, SyncConnPool> = self.kmip_server_conn_settings.drain().filter_map(|(server_id, conn_settings)| {
-            let _host_and_port = (conn_settings.server_addr.clone(), conn_settings.server_port);
+        // let kmip_servers: HashMap<String, SyncConnPool> = self.kmip_server_conn_settings.drain().filter_map(|(server_id, conn_settings)| {
+        //     let _host_and_port = (conn_settings.server_addr.clone(), conn_settings.server_port);
 
-            match ConnectionManager::create_connection_pool(
-                server_id.clone(),
-                Arc::new(conn_settings.clone().into()),
-                10,
-                Some(Duration::from_secs(60)),
-                Some(Duration::from_secs(60)),
-            ) {
-                Ok(kmip_conn_pool) => {
-                    match kmip_conn_pool.get() {
-                        Ok(conn) => {
-                            match conn.query() {
-                                Ok(q) => {
-                                    // TODO: Check if the server meets our
-                                    // needs. We can't assume domain will do
-                                    // that for us because domain doesn't know
-                                    // which functions we need.
-                                    info!("Established connection pool for KMIP server '{server_id}' reporting as '{}'", q.vendor_identification.unwrap_or_default());
-                                    Some((server_id, kmip_conn_pool))
-                                }
-                                Err(err) => {
-                                    error!("Failed to create usable connection pool for KMIP server '{server_id}': {err}");
-                                    None
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            error!("Failed to create usable connection pool for KMIP server '{server_id}': {err}");
-                            None
-                        }
-                    }
-                }
+        //     match ConnectionManager::create_connection_pool(
+        //         server_id.clone(),
+        //         Arc::new(conn_settings.clone().into()),
+        //         10,
+        //         Some(Duration::from_secs(60)),
+        //         Some(Duration::from_secs(60)),
+        //     ) {
+        //         Ok(kmip_conn_pool) => {
+        //             match kmip_conn_pool.get() {
+        //                 Ok(conn) => {
+        //                     match conn.query() {
+        //                         Ok(q) => {
+        //                             // TODO: Check if the server meets our
+        //                             // needs. We can't assume domain will do
+        //                             // that for us because domain doesn't know
+        //                             // which functions we need.
+        //                             info!("Established connection pool for KMIP server '{server_id}' reporting as '{}'", q.vendor_identification.unwrap_or_default());
+        //                             Some((server_id, kmip_conn_pool))
+        //                         }
+        //                         Err(err) => {
+        //                             error!("Failed to create usable connection pool for KMIP server '{server_id}': {err}");
+        //                             None
+        //                         }
+        //                     }
+        //                 }
+        //                 Err(err) => {
+        //                     error!("Failed to create usable connection pool for KMIP server '{server_id}': {err}");
+        //                     None
+        //                 }
+        //             }
+        //         }
 
-                Err(err) => {
-                    error!("Failed to create connection pool for KMIP server '{server_id}': {err}");
-                    None
-                }
-            }
-        }).collect();
+        //         Err(err) => {
+        //             error!("Failed to create connection pool for KMIP server '{server_id}': {err}");
+        //             None
+        //         }
+        //     }
+        // }).collect();
 
-        if kmip_servers.len() != expected_kmip_server_conn_pools {
-            // TODO: This is a bit severe. There should be a cleaner way to abort.
-            std::process::exit(1);
-        }
+        // if kmip_servers.len() != expected_kmip_server_conn_pools {
+        //     // TODO: This is a bit severe. There should be a cleaner way to abort.
+        //     std::process::exit(1);
+        // }
 
         ZoneSigner::new(
             self.center,
@@ -147,7 +148,7 @@ impl ZoneSignerUnit {
             self.max_concurrent_operations,
             self.max_concurrent_rrsig_generation_tasks,
             self.treat_single_keys_as_csks,
-            kmip_servers,
+            // kmip_servers,
         )
         .run(cmd_rx)
         .await?;
@@ -208,7 +209,7 @@ struct ZoneSigner {
     max_concurrent_rrsig_generation_tasks: usize,
     signer_status: Arc<RwLock<ZoneSignerStatus>>,
     treat_single_keys_as_csks: bool,
-    kmip_servers: HashMap<String, SyncConnPool>,
+    kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
     keys_dir: Box<Utf8Path>,
 }
 
@@ -220,7 +221,7 @@ impl ZoneSigner {
         max_concurrent_operations: usize,
         max_concurrent_rrsig_generation_tasks: usize,
         treat_single_keys_as_csks: bool,
-        kmip_servers: HashMap<String, SyncConnPool>,
+        // kmip_servers: HashMap<String, SyncConnPool>,
     ) -> Self {
         let state = center.state.lock().unwrap();
         let keys_dir = state.config.keys_dir.clone();
@@ -233,7 +234,7 @@ impl ZoneSigner {
             max_concurrent_rrsig_generation_tasks,
             signer_status: Default::default(),
             treat_single_keys_as_csks,
-            kmip_servers,
+            kmip_servers: Default::default(),
             keys_dir,
         }
     }
@@ -308,23 +309,20 @@ impl ZoneSigner {
             return Err(format!("SOA not found for zone '{zone_name}'"));
         };
 
-        let last_signed_serial = {
+        let (last_signed_serial, policy, kmip_server_state_dir, kmip_credentials_store_path) = {
             // Use a block to make sure that the mutex is clearly dropped.
             let state = self.center.state.lock().unwrap();
             let zone = state.zones.get(zone_name).unwrap();
             let zone_state = zone.0.state.lock().unwrap();
-
-            zone_state.last_signed_serial
+            let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
+            let kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
+            (
+                zone_state.last_signed_serial,
+                zone_state.policy.clone().unwrap(),
+                kmip_server_state_dir,
+                kmip_credentials_store_path,
+            )
         };
-
-        // Ensure that the Mutexes are locked only in this block;
-        let policy = {
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let zone_state = zone.0.state.lock().unwrap();
-            zone_state.policy.clone()
-        }
-        .unwrap();
 
         let serial = match policy.signer.serial_policy {
             SignerSerialPolicy::Keep => {
@@ -504,9 +502,73 @@ impl ZoneSigner {
                         let priv_key_url = KeyUrl::try_from(priv_url).map_err(|err| format!("Invalid KMIP URL for private key: {err}"))?;
                         let pub_key_url = KeyUrl::try_from(pub_url).map_err(|err| format!("Invalid KMIP URL for public key: {err}"))?;
 
-                        let kmip_conn_pool = self.kmip_servers
-                            .get(priv_key_url.server_id())
-                            .ok_or(format!("No connection pool available for KMIP server '{}'", priv_key_url.server_id()))?;
+                        // TODO: Replace the connection pool if the persisted KMIP server settings
+                        // were updated more recently than the pool was created.
+
+                        let mut kmip_servers = self.kmip_servers.lock().unwrap();
+                        let kmip_conn_pool = match kmip_servers
+                            .entry(priv_key_url.server_id().to_string()) {
+                                std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+                                std::collections::hash_map::Entry::Vacant(e) => {
+                                    // Try and load the KMIP server settings.
+                                    let p = kmip_server_state_dir.join(priv_key_url.server_id());
+                                    log::info!("Reading KMIP server state from '{p}'");
+                                    let f = std::fs::File::open(p).unwrap();
+                                    let kmip_server: KmipServerState = serde_json::from_reader(f).unwrap();
+                                    let KmipServerState {
+                                        server_id,
+                                        ip_host_or_fqdn: host,
+                                        port,
+                                        insecure,
+                                        connect_timeout,
+                                        read_timeout,
+                                        write_timeout,
+                                        max_response_bytes,
+                                        has_credentials,
+                                        ..
+                                    } = kmip_server;
+
+                                    let mut username = None;
+                                    let mut password = None;
+                                    if has_credentials {
+                                        let creds_file = KmipClientCredentialsFile::new(
+                                            kmip_credentials_store_path.as_std_path(),
+                                            KmipServerCredentialsFileMode::ReadOnly)
+                                        .unwrap();
+
+                                        let creds = creds_file.get(&server_id)
+                                            .ok_or(format!("Missing credentials for KMIP server '{server_id}'"))?;
+
+                                        username = Some(creds.username.clone());
+                                        password = creds.password.clone();
+                                    }
+
+                                    let conn_settings = ConnectionSettings {
+                                        host,
+                                        port,
+                                        username,
+                                        password,
+                                        insecure,
+                                        client_cert: None, // TODO
+                                        server_cert: None, // TODO
+                                        ca_cert: None, // TODO
+                                        connect_timeout: Some(connect_timeout),
+                                        read_timeout: Some(read_timeout),
+                                        write_timeout: Some(write_timeout),
+                                        max_response_bytes: Some(max_response_bytes),
+                                    };
+
+                                    let pool = ConnectionManager::create_connection_pool(
+                                        server_id.clone(),
+                                        Arc::new(conn_settings.clone().into()),
+                                        10,
+                                        Some(Duration::from_secs(60)),
+                                        Some(Duration::from_secs(60)),
+                                    ).map_err(|err| format!("Failed to create connection pool for KMIP server '{server_id}': {err}"))?;
+
+                                    e.insert(pool)
+                                }
+                            };
 
                         let _flags = priv_key_url.flags();
 

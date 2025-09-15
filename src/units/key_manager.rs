@@ -1,5 +1,5 @@
 use crate::center::Center;
-use crate::cli::commands::kmip::Error;
+use crate::cli::commands::hsm::Error;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
 use crate::units::http_server::KmipServerState;
@@ -627,8 +627,7 @@ impl KmipClientCredentialsFile {
         self.credentials.0.contains_key(server_id)
     }
 
-    #[allow(dead_code)]
-    fn get(&self, server_id: &str) -> Option<&KmipClientCredentials> {
+    pub fn get(&self, server_id: &str) -> Option<&KmipClientCredentials> {
         self.credentials.0.get(server_id)
     }
 

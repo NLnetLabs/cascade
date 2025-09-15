@@ -9,7 +9,7 @@ use futures::TryFutureExt;
 use jiff::{Span, SpanRelativeTo};
 
 use crate::{
-    api::{KmipServerAdd, KmipServerAddResult},
+    api::{HsmServerAdd, HsmServerAddResult, HsmServerGetResult, HsmServerListResult},
     cli::client::CascadeApiClient,
 };
 
@@ -21,15 +21,15 @@ const DEF_KMIP_PORT: u16 = 5696;
 const ONE_MEGABYTE: u64 = 1024 * 1024;
 
 #[derive(Clone, Debug, clap::Args)]
-pub struct Kmip {
+pub struct Hsm {
     #[command(subcommand)]
-    command: KmipCommand,
+    command: HsmCommand,
 }
 
-impl Kmip {
+impl Hsm {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
-            KmipCommand::AddServer {
+            HsmCommand::AddServer {
                 server_id,
                 ip_host_or_fqdn,
                 port,
@@ -56,9 +56,9 @@ impl Kmip {
                     read_binary_file(server_cert_path.as_ref()).map_err(|e| e.to_string())?;
                 let ca_cert = read_binary_file(ca_cert_path.as_ref()).map_err(|e| e.to_string())?;
 
-                let _res: KmipServerAddResult = client
+                let _res: HsmServerAddResult = client
                     .post("kmip")
-                    .json(&KmipServerAdd {
+                    .json(&HsmServerAdd {
                         server_id,
                         ip_host_or_fqdn,
                         port,
@@ -83,6 +83,29 @@ impl Kmip {
 
                 println!("Success: Sent add KMIP server command");
             }
+
+            HsmCommand::ListServers => {
+                let res: HsmServerListResult = client
+                    .get("kmip")
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+
+                for server in res.servers {
+                    println!("{server}");
+                }
+            }
+
+            HsmCommand::GetServer { server_id } => {
+                let res: HsmServerGetResult = client
+                    .get(&format!("kmip/{server_id}"))
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                println!("{:?}", res.server);
+            }
         }
         Ok(())
     }
@@ -102,12 +125,12 @@ fn read_binary_file(p: Option<&PathBuf>) -> std::io::Result<Option<Vec<u8>>> {
     Ok(Some(buf))
 }
 
-//------------ KmipCommands --------------------------------------------------
+//------------ HsmCommand ----------------------------------------------------
 
 /// Commands for configuring the use of KMIP compatible HSMs.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Subcommand)]
-pub enum KmipCommand {
+pub enum HsmCommand {
     /// Disable use of KMIP for generating new keys.
     ///
     /// Existing KMIP keys will still work as normal, but any new keys will
@@ -373,14 +396,14 @@ pub enum KmipCommand {
     //     server_id: String,
     // },
 
-    // /// Get the details of an existing KMIP server.
-    // GetServer {
-    //     /// The identifier of the KMIP server to get.
-    //     server_id: String,
-    // },
+    /// Get the details of an existing KMIP server.
+    GetServer {
+        /// The identifier of the KMIP server to get.
+        server_id: String,
+    },
 
-    // /// List all configured KMIP servers.
-    // ListServers,
+    /// List all configured KMIP servers.
+    ListServers,
 }
 
 /// Parse a duration from a string with suffixes like 'm', 'h', 'w', etc.

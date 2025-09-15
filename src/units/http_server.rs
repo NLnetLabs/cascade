@@ -25,10 +25,12 @@ use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
+use crate::api::HsmServerAdd;
+use crate::api::HsmServerAddError;
+use crate::api::HsmServerAddResult;
+use crate::api::HsmServerGetResult;
+use crate::api::HsmServerListResult;
 use crate::api::KeyManagerPolicyInfo;
-use crate::api::KmipServerAdd;
-use crate::api::KmipServerAddError;
-use crate::api::KmipServerAddResult;
 use crate::api::LoaderPolicyInfo;
 use crate::api::Nsec3OptOutPolicyInfo;
 use crate::api::PolicyChanges;
@@ -145,6 +147,8 @@ impl HttpServer {
             .route("/policy/list", get(Self::policy_list))
             .route("/policy/{name}", get(Self::policy_show))
             .route("/kmip", post(Self::kmip_server_add))
+            .route("/kmip", get(Self::kmip_server_list))
+            .route("/kmip/{server_id}", get(Self::hsm_server_get))
             .with_state(state);
 
         axum::serve(sock, app).await.map_err(|e| {
@@ -365,8 +369,8 @@ pub struct KmipServerState {
     pub has_credentials: bool,
 }
 
-impl From<KmipServerAdd> for KmipServerState {
-    fn from(srv: KmipServerAdd) -> Self {
+impl From<HsmServerAdd> for KmipServerState {
+    fn from(srv: HsmServerAdd) -> Self {
         KmipServerState {
             server_id: srv.server_id,
             ip_host_or_fqdn: srv.ip_host_or_fqdn,
@@ -386,8 +390,8 @@ impl From<KmipServerAdd> for KmipServerState {
 impl HttpServer {
     async fn kmip_server_add(
         State(state): State<Arc<HttpServerState>>,
-        Json(req): Json<KmipServerAdd>,
-    ) -> Json<Result<KmipServerAddResult, KmipServerAddError>> {
+        Json(req): Json<HsmServerAdd>,
+    ) -> Json<Result<HsmServerAddResult, HsmServerAddError>> {
         // TODO: Write the given certificates to disk.
         // TODO: Create a single common way to store secrets.
         let server_id = req.server_id.clone();
@@ -396,16 +400,9 @@ impl HttpServer {
         let kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
         drop(state);
 
-        // Extract just the settings that do not need to be
-        // stored separately.
+        // Copy the username and password as we consume the req object below.
         let username = req.username.clone();
         let password = req.password.clone();
-        let kmip_state = KmipServerState::from(req);
-
-        info!("Writing to KMIP server file '{kmip_server_state_file}");
-        let f = std::fs::File::create_new(kmip_server_state_file).unwrap();
-        serde_json::to_writer_pretty(&f, &kmip_state).unwrap();
-        drop(f);
 
         // Add any credentials to the credentials store.
         if let Some(username) = username {
@@ -419,7 +416,61 @@ impl HttpServer {
             creds_file.save().unwrap();
         }
 
-        Json(Ok(KmipServerAddResult))
+        // Extract just the settings that do not need to be
+        // stored separately.
+        let kmip_state = KmipServerState::from(req);
+
+        info!("Writing to KMIP server file '{kmip_server_state_file}");
+        let f = std::fs::File::create_new(kmip_server_state_file).unwrap();
+        serde_json::to_writer_pretty(&f, &kmip_state).unwrap();
+        drop(f);
+
+        Json(Ok(HsmServerAddResult))
+    }
+
+    async fn kmip_server_list(
+        State(state): State<Arc<HttpServerState>>,
+    ) -> Json<HsmServerListResult> {
+        let state = state.center.state.lock().unwrap();
+        let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
+        drop(state);
+
+        let mut servers = Vec::<String>::new();
+
+        if let Ok(entries) = std::fs::read_dir(kmip_server_state_dir.as_std_path()) {
+            for entry in entries {
+                let Ok(entry) = entry else { continue };
+
+                if let Ok(f) = std::fs::File::open(entry.path()) {
+                    if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
+                        servers.push(server.server_id);
+                    }
+                }
+            }
+        }
+
+        // We don't _have_ to sort, but seems useful for consistent output
+        servers.sort();
+
+        Json(HsmServerListResult { servers })
+    }
+
+    async fn hsm_server_get(
+        State(state): State<Arc<HttpServerState>>,
+        Path(name): Path<Box<str>>,
+    ) -> Json<Result<HsmServerGetResult, ()>> {
+        let state = state.center.state.lock().unwrap();
+        let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
+        drop(state);
+
+        let p = kmip_server_state_dir.as_std_path().join(&*name);
+        if let Ok(f) = std::fs::File::open(p) {
+            if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
+                return Json(Ok(HsmServerGetResult { server }));
+            }
+        }
+
+        Json(Err(()))
     }
 }
 

@@ -7,6 +7,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use domain::base::Name;
 use serde::{Deserialize, Serialize};
 
+use crate::units::http_server::KmipServerState;
+
 const DEFAULT_AXFR_PORT: u16 = 53;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -197,7 +199,7 @@ pub enum PolicyChange {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct KmipServerAdd {
+pub struct HsmServerAdd {
     pub server_id: String,
     pub ip_host_or_fqdn: String,
     pub port: u16,
@@ -217,7 +219,17 @@ pub struct KmipServerAdd {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct KmipServerAddResult;
+pub struct HsmServerAddResult;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct KmipServerAddError;
+pub struct HsmServerAddError;
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerListResult {
+    pub servers: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerGetResult {
+    pub server: KmipServerState,
+}
