@@ -196,6 +196,7 @@ pub enum HsmCommand {
     /// KMIP server.
     ///
     /// Use 'kmip set-default-server' to change the default KMIP server.
+    #[command(name = "add")]
     AddServer {
         /// An identifier to refer to the KMIP server by.
         ///
@@ -440,14 +441,15 @@ pub enum HsmCommand {
     //     /// The identifier of the KMIP server to use as the default.
     //     server_id: String,
     // },
-
     /// Get the details of an existing KMIP server.
+    #[command(name = "show")]
     GetServer {
         /// The identifier of the KMIP server to get.
         server_id: String,
     },
 
     /// List all configured KMIP servers.
+    #[command(name = "list")]
     ListServers,
 }
 
