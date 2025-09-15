@@ -123,6 +123,14 @@ impl Hsm {
                     Err(()) => return Err(format!("HSM '{server_id}' not known.")),
                 }
             }
+
+            // HsmCommand::RemoveServer { server_id } => {
+            //     // To remove a server we need to know what is using it, but
+            //     // we don't track that anywhere currently. Probably HSMs
+            //     // should be defined as part of policy and linked there, and
+            //     // then zones use policies which refer to HSMs.
+            //     todo!();
+            // }
         }
         Ok(())
     }
@@ -435,8 +443,7 @@ pub enum HsmCommand {
     // },
 
     // /// Remove an existing non-default KMIP server.
-    // ///
-    // /// To remove the default KMIP server use `kmip disable` first.
+    // #[command(name = "remove")]
     // RemoveServer {
     //     /// The identifier of the KMIP server to remove.
     //     server_id: String,
