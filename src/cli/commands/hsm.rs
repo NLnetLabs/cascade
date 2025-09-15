@@ -14,6 +14,7 @@ use crate::{
         HsmServerListResult,
     },
     cli::client::CascadeApiClient,
+    units::http_server::KmipServerState,
 };
 
 /// The default TCP port on which to connect to a KMIP server as defined by
@@ -110,11 +111,49 @@ impl Hsm {
                     .and_then(|r| r.json())
                     .await
                     .map_err(|e| format!("HTTP request failed: {e}"))?;
-                println!("{:?}", res.server);
+
+                match res {
+                    Ok(res) => print_server(&res.server),
+                    Err(()) => return Err(format!("HSM '{server_id}' not known.")),
+                }
             }
         }
         Ok(())
     }
+}
+
+fn print_server(
+    KmipServerState {
+        server_id,
+        ip_host_or_fqdn,
+        port,
+        insecure,
+        connect_timeout,
+        read_timeout,
+        write_timeout,
+        max_response_bytes,
+        key_label_prefix,
+        key_label_max_bytes,
+        has_credentials,
+    }: &KmipServerState,
+) {
+    let none = "<none>".to_string();
+    println!("{server_id}:");
+    println!("  address: {ip_host_or_fqdn}");
+    println!("  port: {port}");
+    println!("  insecure: {}", if *insecure { "yes" } else { "no" });
+    println!("  limits:");
+    println!("    connect timeout: {}s", connect_timeout.as_secs());
+    println!("    read timeout: {}s", read_timeout.as_secs());
+    println!("    write timeout: {}s", write_timeout.as_secs());
+    println!("    max response size: {max_response_bytes} bytes");
+    println!("  key label:");
+    println!("    prefix: {}", key_label_prefix.as_ref().unwrap_or(&none));
+    println!("    max size: {key_label_max_bytes} bytes");
+    println!(
+        "  has credentials: {}",
+        if *has_credentials { "yes" } else { "no " }
+    );
 }
 
 fn read_binary_file(p: Option<&PathBuf>) -> std::io::Result<Option<Vec<u8>>> {
