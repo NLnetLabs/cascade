@@ -164,11 +164,10 @@ pub async fn spawn(
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let (ready_tx, ready_rx) = oneshot::channel();
     unit_ready_rxs.push(ready_rx);
-    unit_join_handles.insert("RS", tokio::spawn(unit.run(
-        cmd_rx,
-        ready_tx,
-        env_sockets.clone(),
-    )));
+    unit_join_handles.insert(
+        "RS",
+        tokio::spawn(unit.run(cmd_rx, ready_tx, env_sockets.clone())),
+    );
     unit_tx_slots.insert("RS".into(), cmd_tx);
 
     // Spawn the key manager.
@@ -210,11 +209,10 @@ pub async fn spawn(
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let (ready_tx, ready_rx) = oneshot::channel();
     unit_ready_rxs.push(ready_rx);
-    unit_join_handles.insert("RS2", tokio::spawn(unit.run(
-        cmd_rx,
-        ready_tx,
-        env_sockets.clone(),
-    )));
+    unit_join_handles.insert(
+        "RS2",
+        tokio::spawn(unit.run(cmd_rx, ready_tx, env_sockets.clone())),
+    );
     unit_tx_slots.insert("RS2".into(), cmd_tx);
 
     // Wait for the units above to signal they are ready before starting the
@@ -222,7 +220,10 @@ pub async fn spawn(
     join_all(unit_ready_rxs).await;
 
     // None of the units above should have exited already.
-    if let Some(failed_unit) = unit_join_handles.iter().find_map(|(unit, handle)| handle.is_finished().then_some(unit)) {
+    if let Some(failed_unit) = unit_join_handles
+        .iter()
+        .find_map(|(unit, handle)| handle.is_finished().then_some(unit))
+    {
         log::error!("Unit '{failed_unit}' terminated unexpectedly. Aborting.");
         return Err(Terminated.into());
     }

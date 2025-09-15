@@ -160,7 +160,7 @@ fn main() -> ExitCode {
         let mut unit_txs = Default::default();
         if let Err(err) = manager::spawn(&center, update_rx, &mut center_tx, &mut unit_txs).await {
             log::error!("Failed to spawn units: {err}");
-            return ExitCode::FAILURE
+            return ExitCode::FAILURE;
         }
 
         let result = loop {
