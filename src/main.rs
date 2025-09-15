@@ -7,7 +7,7 @@ use cascade::{
     policy,
 };
 use clap::{crate_authors, crate_version};
-use daemonbase::process::Process;
+use daemonbase::process::{EnvSocketsError, Process};
 use std::{
     io,
     process::ExitCode,
@@ -159,7 +159,12 @@ fn main() -> ExitCode {
         let mut center_tx = None;
         let mut unit_txs = Default::default();
         if let Err(err) = manager::spawn(&center, update_rx, &mut center_tx, &mut unit_txs) {
-            return ExitCode::FAILURE;
+            match err {
+                EnvSocketsError::NotForUs => { /* No problem, ignore. */ },
+                EnvSocketsError::NotAvailable => { /* No problem, ignore. */ },
+                EnvSocketsError::Malformed => log::warn!("Ignoring malformed systemd LISTEN_PID/LISTEN_FDS environment variable value"),
+                EnvSocketsError::Unusable => log::warn!("Ignoring unusable systemd LISTEN_FDS environment variable socket(s)"),
+            }
         }
 
         let result = loop {
