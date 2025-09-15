@@ -429,14 +429,17 @@ impl ReviewSpec {
 /// Configuring DNSSEC key management.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct KeyManagerSpec {}
+pub struct KeyManagerSpec {
+    /// Whether and which HSM server is being used.
+    pub hsm_server_id: Option<String>,
+}
 
 //--- Conversion
 
 impl KeyManagerSpec {
     /// Parse from this specification.
     pub fn parse_into(self, config: &mut KeyManagerConfig) {
-        let KeyManagerConfig {} = *config;
+        config.hsm_server_id = self.hsm_server_id;
     }
 }
 

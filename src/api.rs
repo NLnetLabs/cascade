@@ -16,7 +16,6 @@ pub struct ZoneAdd {
     pub name: Name<Bytes>,
     pub source: ZoneSource,
     pub policy: String,
-    pub kmip_server_id: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -144,7 +143,9 @@ pub struct LoaderPolicyInfo {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct KeyManagerPolicyInfo {}
+pub struct KeyManagerPolicyInfo {
+    pub hsm_server_id: Option<String>,
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ReviewPolicyInfo {
@@ -222,7 +223,13 @@ pub struct HsmServerAdd {
 pub struct HsmServerAddResult;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct HsmServerAddError;
+pub enum HsmServerAddError {
+    UnableToConnect,
+    CredentialsFileCouldNotBeOpenedForWriting,
+    CredentialsFileCouldNotBeSaved,
+    KmipServerStateFileCouldNotBeCreated,
+    KmipServerStateFileCouldNotBeSaved,
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct HsmServerListResult {

@@ -134,20 +134,26 @@ impl LoaderPolicySpec {
 /// Policy for zone key management.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct KeyManagerPolicySpec {}
+pub struct KeyManagerPolicySpec {
+    /// Whether and which HSM server is being used.
+    pub hsm_server_id: Option<String>,
+}
 
 //--- Conversion
 
 impl KeyManagerPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> KeyManagerPolicy {
-        KeyManagerPolicy {}
+        KeyManagerPolicy {
+            hsm_server_id: self.hsm_server_id,
+        }
     }
 
     /// Build into this specification.
     pub fn build(policy: &KeyManagerPolicy) -> Self {
-        let KeyManagerPolicy {} = policy;
-        Self {}
+        Self {
+            hsm_server_id: policy.hsm_server_id.clone(),
+        }
     }
 }
 

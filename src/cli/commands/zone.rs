@@ -28,10 +28,6 @@ pub enum ZoneCommand {
         /// Policy to use for this zone
         #[arg(long = "policy")]
         policy: String,
-
-        /// KMIP server id to use for generating keys for this zone.
-        #[arg(long = "kmip-server-id")]
-        kmip_server_id: Option<String>,
     },
 
     /// Remove a zone
@@ -72,7 +68,6 @@ impl Zone {
                 name,
                 source,
                 policy,
-                kmip_server_id,
             } => {
                 let res: Result<ZoneAddResult, ZoneAddError> = client
                     .post("zone/add")
@@ -80,7 +75,6 @@ impl Zone {
                         name,
                         source,
                         policy,
-                        kmip_server_id,
                     })
                     .send()
                     .and_then(|r| r.json())

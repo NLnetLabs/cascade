@@ -1,3 +1,13 @@
+/// Commands to manage HSM (KMIP) servers used by Cascade.
+///
+/// Uses HSM as the user facing term rather than KMIP as most users likely
+/// know the term HSM better than the term KMIP.
+///
+/// We offer subcommands to manage HSM servers because configuring HSMs via
+/// configuration instead would require Cascade to be restarted to change
+/// HSM settings and it is unclear how Cascade should then proceed if the
+/// HSM cannot be connected to or is not usable, and fixing the issue might
+/// require yet more restarts.
 use std::{
     io::{self, Read},
     path::PathBuf,
@@ -11,7 +21,7 @@ use jiff::{Span, SpanRelativeTo};
 use crate::{
     api::{
         HsmServerAdd, HsmServerAddError, HsmServerAddResult, HsmServerGetResult,
-        HsmServerListResult,
+        HsmServerListResult, PolicyInfo, PolicyInfoError, PolicyListResult,
     },
     cli::client::CascadeApiClient,
     units::http_server::KmipServerState,
@@ -114,26 +124,59 @@ impl Hsm {
 
                 match res {
                     Ok(res) => {
-                        // TODO: Find out which policies are using the server,
-                        // except currently there is no link between zone
-                        // policy and zone HSM usage, which should probably be
-                        // changed.
-                        print_server(&res.server)
+                        print_server(&res.server);
+                        println!("Policies using this HSM:");
+                        for policy_name in get_policy_names_using_hsm(client, &server_id).await? {
+                            println!("  - {policy_name}");
+                        }
                     }
                     Err(()) => return Err(format!("HSM '{server_id}' not known.")),
                 }
-            }
-
-            // HsmCommand::RemoveServer { server_id } => {
-            //     // To remove a server we need to know what is using it, but
-            //     // we don't track that anywhere currently. Probably HSMs
-            //     // should be defined as part of policy and linked there, and
-            //     // then zones use policies which refer to HSMs.
-            //     todo!();
-            // }
+            } // HsmCommand::RemoveServer { server_id } => {
+              //     // To remove a server we need to know that it is not in
+              //     // use. To know that we have to enumerate the policies
+              //     // looking for those that use this server id, and
+              //     // check if the policy is itself in use by any zones.
+              //     todo!();
+              // }
         }
         Ok(())
     }
+}
+
+async fn get_policy_names_using_hsm(
+    client: CascadeApiClient,
+    server_id: &String,
+) -> Result<Vec<String>, String> {
+    let mut policies_using_hsm = vec![];
+    let res: PolicyListResult = client
+        .get("policy/list")
+        .send()
+        .and_then(|r| r.json())
+        .await
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
+    for policy_name in res.policies {
+        let res: Result<PolicyInfo, PolicyInfoError> = client
+            .get(&format!("policy/{policy_name}"))
+            .send()
+            .and_then(|r| r.json())
+            .await
+            .map_err(|e| format!("HTTP request failed: {e}"))?;
+
+        let p = match res {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(format!("Unable to inspect policy '{policy_name}': {e:?}"));
+            }
+        };
+
+        if let Some(hsm_server_id) = &p.key_manager.hsm_server_id {
+            if hsm_server_id == server_id {
+                policies_using_hsm.push(policy_name);
+            }
+        }
+    }
+    Ok(policies_using_hsm)
 }
 
 fn print_server(

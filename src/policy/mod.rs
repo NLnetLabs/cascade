@@ -189,7 +189,10 @@ pub struct LoaderPolicy {
 
 /// Policy for zone key management.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeyManagerPolicy {}
+pub struct KeyManagerPolicy {
+    /// Whether and which HSM is being used by the key manager.
+    pub hsm_server_id: Option<String>,
+}
 
 //----------- SignerPolicy -----------------------------------------------------
 

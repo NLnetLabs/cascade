@@ -18,6 +18,8 @@ use axum::Router;
 use bytes::Bytes;
 use domain::base::Name;
 use domain::base::Serial;
+use domain::crypto::kmip::ConnectionSettings;
+use domain::dep::kmip::client::pool::ConnectionManager;
 use log::warn;
 use log::{debug, error, info};
 use serde::Deserialize;
@@ -331,13 +333,18 @@ impl HttpServer {
                 cmd_hook: p.latest.signer.review.cmd_hook.clone(),
             },
         };
+
+        let key_manager = KeyManagerPolicyInfo {
+            hsm_server_id: p.latest.key_manager.hsm_server_id.clone(),
+        };
+
         let server = ServerPolicyInfo {};
 
         Json(Ok(PolicyInfo {
             name: p.latest.name.clone(),
             zones,
             loader,
-            key_manager: KeyManagerPolicyInfo {},
+            key_manager,
             signer,
             server,
         }))
@@ -387,6 +394,38 @@ impl From<HsmServerAdd> for KmipServerState {
     }
 }
 
+impl From<HsmServerAdd> for ConnectionSettings {
+    fn from(
+        HsmServerAdd {
+            ip_host_or_fqdn,
+            port,
+            username,
+            password,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            ..
+        }: HsmServerAdd,
+    ) -> Self {
+        ConnectionSettings {
+            host: ip_host_or_fqdn,
+            port,
+            username,
+            password,
+            insecure,
+            client_cert: None, // TODO
+            server_cert: None, // TODO
+            ca_cert: None,     // TODO
+            connect_timeout: Some(connect_timeout),
+            read_timeout: Some(read_timeout),
+            write_timeout: Some(write_timeout),
+            max_response_bytes: Some(max_response_bytes),
+        }
+    }
+}
+
 impl HttpServer {
     async fn kmip_server_add(
         State(state): State<Arc<HttpServerState>>,
@@ -400,6 +439,25 @@ impl HttpServer {
         let kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
         drop(state);
 
+        // Test the connection before using the HSM.
+        let conn_settings = ConnectionSettings::from(req.clone());
+
+        let pool = match ConnectionManager::create_connection_pool(
+            server_id.clone(),
+            Arc::new(conn_settings.clone()),
+            10,
+            Some(Duration::from_secs(60)),
+            Some(Duration::from_secs(60)),
+        ) {
+            Ok(pool) => pool,
+            Err(_err) => return Json(Err(HsmServerAddError::UnableToConnect)),
+        };
+
+        // Test the connectivity (but not the HSM capabilities).
+        if let Err(_err) = pool.get() {
+            return Json(Err(HsmServerAddError::UnableToConnect));
+        }
+
         // Copy the username and password as we consume the req object below.
         let username = req.username.clone();
         let password = req.password.clone();
@@ -407,13 +465,21 @@ impl HttpServer {
         // Add any credentials to the credentials store.
         if let Some(username) = username {
             let creds = KmipClientCredentials { username, password };
-            let mut creds_file = KmipClientCredentialsFile::new(
+            let mut creds_file = match KmipClientCredentialsFile::new(
                 kmip_credentials_store_path.as_std_path(),
                 KmipServerCredentialsFileMode::CreateReadWrite,
-            )
-            .unwrap();
+            ) {
+                Ok(creds_file) => creds_file,
+                Err(_err) => {
+                    return Json(Err(
+                        HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting,
+                    ))
+                }
+            };
             let _ = creds_file.insert(server_id, creds);
-            creds_file.save().unwrap();
+            if creds_file.save().is_err() {
+                return Json(Err(HsmServerAddError::CredentialsFileCouldNotBeSaved));
+            }
         }
 
         // Extract just the settings that do not need to be
@@ -421,8 +487,13 @@ impl HttpServer {
         let kmip_state = KmipServerState::from(req);
 
         info!("Writing to KMIP server file '{kmip_server_state_file}");
-        let f = std::fs::File::create_new(kmip_server_state_file).unwrap();
-        serde_json::to_writer_pretty(&f, &kmip_state).unwrap();
+        let f = match std::fs::File::create_new(kmip_server_state_file) {
+            Ok(f) => f,
+            Err(_err) => return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeCreated)),
+        };
+        if let Err(_err) = serde_json::to_writer_pretty(&f, &kmip_state) {
+            return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeSaved));
+        }
         drop(f);
 
         Json(Ok(HsmServerAddResult))

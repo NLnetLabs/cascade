@@ -126,6 +126,7 @@ impl Policy {
 }
 
 fn print_policy(p: &PolicyInfo) {
+    let none = "<none>".to_string();
     let name = &p.name;
 
     let zones: Vec<_> = p.zones.iter().map(|z| format!("{}", z)).collect();
@@ -133,7 +134,7 @@ fn print_policy(p: &PolicyInfo) {
     let zones = if !zones.is_empty() {
         zones.join(", ")
     } else {
-        "<none>".into()
+        none.clone()
     };
 
     let serial_policy = match p.signer.serial_policy {
@@ -155,6 +156,8 @@ fn print_policy(p: &PolicyInfo) {
         },
     };
 
+    let hsm_server_id = p.key_manager.hsm_server_id.as_ref().unwrap_or(&none);
+
     fn print_review(r: &ReviewPolicyInfo) {
         println!("    review:");
         println!("      required: {}", r.required);
@@ -168,7 +171,8 @@ fn print_policy(p: &PolicyInfo) {
     println!("  zones: {zones}");
     println!("  loader:");
     print_review(&p.loader.review);
-    println!("  key manager: <unimplemented>");
+    println!("  key manager:");
+    println!("    hsm server: {hsm_server_id}");
     println!("  signer:");
     println!("    serial policy: {serial_policy}");
     println!("    signature inception offset: {inc} seconds",);

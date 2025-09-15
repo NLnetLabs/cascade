@@ -86,12 +86,7 @@ impl KeyManager {
         match cmd {
             Some(ApplicationCommand::Terminate) | None => Err(Terminated),
             Some(ApplicationCommand::RegisterZone {
-                register:
-                    crate::api::ZoneAdd {
-                        name,
-                        kmip_server_id,
-                        ..
-                    },
+                register: crate::api::ZoneAdd { name, .. },
             }) => {
                 let state_path = self.keys_dir.join(format!("{name}.state"));
 
@@ -122,13 +117,28 @@ impl KeyManager {
                     }
                 }
 
-                if let Some(kmip_server_id) = kmip_server_id {
+                // Lookup the policy for the zone to see if it uses a KMIP
+                // server.
+                let (kmip_server_id, kmip_server_state_dir, kmip_credentials_store_path) = {
                     let state = self.center.state.lock().unwrap();
+                    let zone = state.zones.get(&name).unwrap();
+                    let zone_state = zone.0.state.lock().unwrap();
+                    let kmip_server_id = if let Some(policy) = &zone_state.policy {
+                        policy.key_manager.hsm_server_id.clone()
+                    } else {
+                        None
+                    };
                     let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
                     let kmip_credentials_store_path =
                         state.config.kmip_credentials_store_path.clone();
-                    drop(state);
+                    (
+                        kmip_server_id,
+                        kmip_server_state_dir,
+                        kmip_credentials_store_path,
+                    )
+                };
 
+                if let Some(kmip_server_id) = kmip_server_id {
                     let p = kmip_server_state_dir.join(kmip_server_id);
                     log::info!("Reading KMIP server state from '{p}'");
                     let f = std::fs::File::open(p).unwrap();
