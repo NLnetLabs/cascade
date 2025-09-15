@@ -96,7 +96,9 @@ impl Hsm {
                     .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 match res {
-                    Ok(HsmServerAddResult { vendor_id }) => println!("Added KMIP server '{vendor_id}."),
+                    Ok(HsmServerAddResult { vendor_id }) => {
+                        println!("Added KMIP server '{vendor_id}.")
+                    }
                     Err(err) => return Err(format!("Add KMIP server command failed: {err:?}")),
                 }
             }
