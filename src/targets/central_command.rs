@@ -159,10 +159,17 @@ impl CentralCommand {
                 );
 
                 if let Some(zone) = get_zone(&self.center, &zone_name) {
-                    if let Ok(zone_state) = zone.state.lock() {
-                        if matches!(zone_state.pipeline_mode, PipelineMode::HardHalt(_)) {
-                            warn!("[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted");
-                            return;
+                    if let Ok(mut zone_state) = zone.state.lock() {
+                        match zone_state.pipeline_mode.clone() {
+                            PipelineMode::Running => {}
+                            PipelineMode::SoftHalt(message) => {
+                                info!("[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running");
+                                zone_state.resume();
+                            }
+                            PipelineMode::HardHalt(_) => {
+                                warn!("[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted");
+                                return;
+                            }
                         }
                     }
                 }

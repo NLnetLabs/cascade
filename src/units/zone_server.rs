@@ -278,6 +278,7 @@ impl ZoneServer {
 
         // Setup approval API endpoint
         self.zone_review_api = Some(ZoneReviewApi::new(
+            self.center.clone(),
             update_tx.clone(),
             self.pending_approvals.clone(),
             self.last_approvals.clone(),
@@ -754,13 +755,34 @@ impl ZoneReviewApi {
 
         if approve {
             let (zone_type, event) = match self.source {
-                Source::UnsignedZones => (
-                    "unsigned",
-                    Update::UnsignedZoneApprovedEvent {
-                        zone_name: zone_name.clone(),
-                        zone_serial,
-                    },
-                ),
+                Source::UnsignedZones => {
+                    let unsigned_zones = self.center.unsigned_zones.load();
+                    let Some(zone) = unsigned_zones.get_zone(&zone_name, Class::IN) else {
+                        debug!("Couldn't find the approved zone");
+                        return Err(ZoneReviewError::NotUnderReview);
+                    };
+
+                    let signable_zones = self.center.signable_zones.load();
+
+                    // Create a deep copy of the set of unsigned zones. We will add
+                    // the new zone to that copied set and then replace the original
+                    // set with the new set.
+                    info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
+                    let mut new_signable_zones = Arc::unwrap_or_clone(signable_zones.clone());
+                    let _ = new_signable_zones.remove_zone(&zone_name, Class::IN);
+                    new_signable_zones.insert_zone(zone.clone()).unwrap();
+                    self.center
+                        .signable_zones
+                        .store(Arc::new(new_signable_zones));
+
+                    (
+                        "unsigned",
+                        Update::UnsignedZoneApprovedEvent {
+                            zone_name: zone_name.clone(),
+                            zone_serial,
+                        },
+                    )
+                }
                 Source::SignedZones => (
                     "signed",
                     Update::SignedZoneApprovedEvent {
@@ -808,6 +830,7 @@ impl ZoneReviewApi {
 //------------ ZoneReviewApi -------------------------------------------------
 
 struct ZoneReviewApi {
+    center: Arc<Center>,
     update_tx: mpsc::UnboundedSender<Update>,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<foldhash::HashSet<(Name<Bytes>, Serial)>>>,
@@ -819,12 +842,14 @@ struct ZoneReviewApi {
 impl ZoneReviewApi {
     #[allow(clippy::type_complexity)]
     fn new(
+        center: Arc<Center>,
         update_tx: mpsc::UnboundedSender<Update>,
         pending_approvals: Arc<RwLock<foldhash::HashSet<(Name<Bytes>, Serial)>>>,
         last_approvals: Arc<RwLock<foldhash::HashMap<(Name<Bytes>, Serial), Instant>>>,
         source: Source,
     ) -> Self {
         Self {
+            center,
             update_tx,
             pending_approvals,
             last_approvals,

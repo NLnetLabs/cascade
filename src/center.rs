@@ -41,6 +41,9 @@ pub struct Center {
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
 
+    /// The latest ready-to-sign contents of all zones.
+    pub signable_zones: Arc<ArcSwap<ZoneTree>>,
+
     /// The latest signed contents of all zones.
     pub signed_zones: Arc<ArcSwap<ZoneTree>>,
 
