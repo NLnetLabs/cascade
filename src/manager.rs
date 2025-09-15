@@ -1,12 +1,9 @@
 //! Controlling the entire operation.
 
-use daemonbase::process::EnvSockets;
-use log::debug;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc::{self};
 
 use crate::center::Center;
 use crate::comms::ApplicationCommand;
@@ -17,7 +14,12 @@ use crate::units::key_manager::KeyManagerUnit;
 use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServerUnit};
 use crate::units::zone_signer::{KmipServerConnectionSettings, ZoneSignerUnit};
+use daemonbase::process::{EnvSockets, EnvSocketsError};
 use domain::zonetree::StoredName;
+use log::debug;
+use tokio::sync::mpsc::{self};
+
+const MAX_SYSTEMD_FD_SOCKETS: usize = 32;
 
 /// Spawn all targets.
 pub fn spawn(
@@ -25,10 +27,11 @@ pub fn spawn(
     update_rx: mpsc::UnboundedReceiver<Update>,
     center_tx_slot: &mut Option<mpsc::UnboundedSender<TargetCommand>>,
     unit_tx_slots: &mut foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
-) {
+) -> Result<(), EnvSocketsError> {
     // Acquire information about any sockets passed to us via the environment,
     // e.g. using SystemD socket activation.
-    let env_sockets = Arc::new(Mutex::new(EnvSockets::from_env(None).unwrap()));
+    let env_sockets = EnvSockets::from_env(Some(MAX_SYSTEMD_FD_SOCKETS))?;
+    let env_sockets = Arc::new(Mutex::new(env_sockets));
 
     // Spawn the central command.
     log::info!("Starting target 'CC'");
@@ -155,6 +158,8 @@ pub fn spawn(
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     tokio::spawn(unit.run(cmd_rx));
     unit_tx_slots.insert("HS".into(), cmd_tx);
+
+    Ok(())
 }
 
 /// Forward application commands.

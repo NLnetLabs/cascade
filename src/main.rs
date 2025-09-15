@@ -158,7 +158,9 @@ fn main() -> ExitCode {
         // Spawn Cascade's units.
         let mut center_tx = None;
         let mut unit_txs = Default::default();
-        manager::spawn(&center, update_rx, &mut center_tx, &mut unit_txs);
+        if let Err(err) = manager::spawn(&center, update_rx, &mut center_tx, &mut unit_txs) {
+            return ExitCode::FAILURE;
+        }
 
         let result = loop {
             tokio::select! {
