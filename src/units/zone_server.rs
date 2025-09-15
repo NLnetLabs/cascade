@@ -329,7 +329,7 @@ fn with_env_sockets<F, R>(env_sockets: &Mutex<Option<EnvSockets>>, cb: F) -> Opt
 where
     F: Fn(&mut EnvSockets) -> Option<R>,
 {
-    env_sockets.lock().unwrap().as_mut().map(cb).flatten()
+    env_sockets.lock().unwrap().as_mut().and_then(cb)
 }
 
 // fn take_tcp(env_sockets: &Mutex<Option<EnvSockets>>, addr: SoicketAddr) -> Option<TcpListener> {
