@@ -454,9 +454,17 @@ impl HttpServer {
         };
 
         // Test the connectivity (but not the HSM capabilities).
-        if let Err(_err) = pool.get() {
+        let Ok(conn) = pool.get() else {
             return Json(Err(HsmServerAddError::UnableToConnect));
-        }
+        };
+
+        let Ok(query_res) = conn.query() else {
+            return Json(Err(HsmServerAddError::UnableToQuery));
+        };
+
+        let vendor_id = query_res
+            .vendor_identification
+            .unwrap_or("Anonymous HSM vendor".to_string());
 
         // Copy the username and password as we consume the req object below.
         let username = req.username.clone();
@@ -496,7 +504,7 @@ impl HttpServer {
         }
         drop(f);
 
-        Json(Ok(HsmServerAddResult))
+        Json(Ok(HsmServerAddResult { vendor_id }))
     }
 
     async fn kmip_server_list(

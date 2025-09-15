@@ -220,11 +220,14 @@ pub struct HsmServerAdd {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct HsmServerAddResult;
+pub struct HsmServerAddResult {
+    pub vendor_id: String,
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum HsmServerAddError {
     UnableToConnect,
+    UnableToQuery,
     CredentialsFileCouldNotBeOpenedForWriting,
     CredentialsFileCouldNotBeSaved,
     KmipServerStateFileCouldNotBeCreated,
