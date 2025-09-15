@@ -47,10 +47,10 @@ pub enum Command {
 impl Command {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
-            Self::Zone(zone) => zone.execute(client).await,
-            Self::Status(status) => status.execute(client).await,
-            Self::Policy(policy) => policy.execute(client).await,
-            Self::Hsm(hsm) => hsm.execute(client).await,
+            Self::Zone(zone) => zone.execute(client).await.map_err(|err| format!("zone command failed: {err}")),
+            Self::Status(status) => status.execute(client).await.map_err(|err| format!("status command failed: {err}")),
+            Self::Policy(policy) => policy.execute(client).await.map_err(|err| format!("policy command failed: {err}")),
+            Self::Hsm(hsm) => hsm.execute(client).await.map_err(|err| format!("hsm command failed: {err}")),
             // Self::Help(help) => help.execute(),
         }
     }

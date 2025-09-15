@@ -9,7 +9,10 @@ use futures::TryFutureExt;
 use jiff::{Span, SpanRelativeTo};
 
 use crate::{
-    api::{HsmServerAdd, HsmServerAddResult, HsmServerGetResult, HsmServerListResult},
+    api::{
+        HsmServerAdd, HsmServerAddError, HsmServerAddResult, HsmServerGetResult,
+        HsmServerListResult,
+    },
     cli::client::CascadeApiClient,
 };
 
@@ -56,7 +59,7 @@ impl Hsm {
                     read_binary_file(server_cert_path.as_ref()).map_err(|e| e.to_string())?;
                 let ca_cert = read_binary_file(ca_cert_path.as_ref()).map_err(|e| e.to_string())?;
 
-                let _res: HsmServerAddResult = client
+                let res: Result<HsmServerAddResult, HsmServerAddError> = client
                     .post("kmip")
                     .json(&HsmServerAdd {
                         server_id,
@@ -81,7 +84,10 @@ impl Hsm {
                     .await
                     .map_err(|e| format!("HTTP request failed: {e}"))?;
 
-                println!("Success: Sent add KMIP server command");
+                match res {
+                    Ok(_) => println!("Add KMIP server command sent."),
+                    Err(err) => return Err(format!("Add KMIP server command failed: {err:?}")),
+                }
             }
 
             HsmCommand::ListServers => {
@@ -98,7 +104,7 @@ impl Hsm {
             }
 
             HsmCommand::GetServer { server_id } => {
-                let res: HsmServerGetResult = client
+                let res: Result<HsmServerGetResult, ()> = client
                     .get(&format!("kmip/{server_id}"))
                     .send()
                     .and_then(|r| r.json())

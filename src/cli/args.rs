@@ -30,10 +30,6 @@ pub struct Args {
 impl Args {
     pub async fn execute(self) -> Result<(), String> {
         let client = CascadeApiClient::new(format!("http://{}", self.server));
-        if let Err(err) = self.command.execute(client).await {
-            Err(format!("Error: {err}"))
-        } else {
-            Ok(())
-        }
+        self.command.execute(client).await
     }
 }
