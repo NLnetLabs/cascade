@@ -21,6 +21,7 @@ use log::warn;
 use log::{debug, error, info};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
@@ -70,6 +71,7 @@ impl HttpServer {
     pub async fn run(
         self,
         mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // Setup listener
         let sock = TcpListener::bind(self.listen_addr).await.map_err(|e| {
@@ -136,6 +138,9 @@ impl HttpServer {
             .route("/policy/list", get(Self::policy_list))
             .route("/policy/{name}", get(Self::policy_show))
             .with_state(state);
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
 
         axum::serve(sock, app).await.map_err(|e| {
             error!("[{HTTP_UNIT_NAME}]: {e}");

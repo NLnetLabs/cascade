@@ -2,7 +2,7 @@ use core::future::ready;
 
 use std::collections::HashMap;
 use std::marker::Sync;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::process::Command;
 use std::str::FromStr;
@@ -42,7 +42,7 @@ use log::{debug, error, info, trace};
 use serde::Deserialize;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, Sender};
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
@@ -98,7 +98,8 @@ impl ZoneServerUnit {
     pub async fn run(
         self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-        env_sockets: Arc<Mutex<EnvSockets>>,
+        ready_tx: oneshot::Sender<bool>,
+        env_sockets: Arc<Mutex<Option<EnvSockets>>>,
     ) -> Result<(), Terminated> {
         let unit_name = match (self.mode, self.source) {
             (Mode::Prepublish, Source::UnsignedZones) => "RS",
@@ -178,14 +179,14 @@ impl ZoneServerUnit {
         if unit_name == "PS" {
             // Also listen on any remaining UDP and TCP sockets provided by
             // the O/S.
-            while let Some(sock) = env_sockets.lock().unwrap().pop_udp() {
+            while let Some(sock) = with_env_sockets(&env_sockets, EnvSockets::pop_udp) {
                 if let Ok(addr) = sock.local_addr() {
                     addrs.push(addr.to_string());
                 }
                 let listen_addr = ListenAddr::UdpSocket(sock);
                 Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
             }
-            while let Some(sock) = env_sockets.lock().unwrap().pop_tcp() {
+            while let Some(sock) = with_env_sockets(&env_sockets, EnvSockets::pop_tcp) {
                 if let Ok(addr) = sock.local_addr() {
                     addrs.push(addr.to_string());
                 }
@@ -193,6 +194,9 @@ impl ZoneServerUnit {
                 Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
             }
         }
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
 
         let update_tx = self.center.update_tx.clone();
         ZoneServer::new(
@@ -288,10 +292,10 @@ impl ZoneServerUnit {
 /// Use a matching pre-bound UDP socket if available, bind otherwise.
 fn acquire_udp_socket(
     unit_name: &str,
-    env_sockets: &Mutex<EnvSockets>,
-    addr: std::net::SocketAddr,
+    env_sockets: &Mutex<Option<EnvSockets>>,
+    addr: SocketAddr,
 ) -> ListenAddr {
-    match env_sockets.lock().unwrap().take_udp(&addr) {
+    match with_env_sockets(env_sockets, |v| v.take_udp(&addr)) {
         Some(socket) => {
             debug!(
                 "[{unit_name}]: Pre-bound UDP socket on {:?} acquired via environment settings",
@@ -306,10 +310,10 @@ fn acquire_udp_socket(
 /// Use a matching pre-bound TCP socket if available, bind otherwise.
 fn acquire_tcp_listener(
     unit_name: &str,
-    env_sockets: &Mutex<EnvSockets>,
-    addr: std::net::SocketAddr,
+    env_sockets: &Mutex<Option<EnvSockets>>,
+    addr: SocketAddr,
 ) -> ListenAddr {
-    match env_sockets.lock().unwrap().take_tcp(&addr) {
+    match with_env_sockets(env_sockets, |v| v.take_tcp(&addr)) {
         Some(listener) => {
             debug!(
                 "[{unit_name}]: Pre-bound TCP listener on {:?} acquired via environment settings",
@@ -320,6 +324,17 @@ fn acquire_tcp_listener(
         None => ListenAddr::Tcp(addr),
     }
 }
+
+fn with_env_sockets<F, R>(env_sockets: &Mutex<Option<EnvSockets>>, cb: F) -> Option<R>
+where
+    F: Fn(&mut EnvSockets) -> Option<R>,
+{
+    env_sockets.lock().unwrap().as_mut().map(cb).flatten()
+}
+
+// fn take_tcp(env_sockets: &Mutex<Option<EnvSockets>>, addr: SoicketAddr) -> Option<TcpListener> {
+
+// }
 
 async fn serve_on_udp<Svc>(svc: Svc, buf: VecBufSource, sock: UdpSocket)
 where

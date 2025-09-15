@@ -38,7 +38,7 @@ use non_empty_vec::NonEmpty;
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{oneshot, RwLock, Semaphore};
 use tokio::task::spawn_blocking;
 use tokio::time::Instant;
 #[cfg(feature = "tls")]
@@ -86,6 +86,7 @@ impl ZoneSignerUnit {
     pub async fn run(
         mut self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
 
@@ -137,9 +138,12 @@ impl ZoneSignerUnit {
         }).collect();
 
         if kmip_servers.len() != expected_kmip_server_conn_pools {
-            // TODO: This is a bit severe. There should be a cleaner way to abort.
-            std::process::exit(1);
+            let _ = ready_tx.send(false);
+            return Err(Terminated);
         }
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
 
         ZoneSigner::new(
             self.center,
