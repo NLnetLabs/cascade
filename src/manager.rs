@@ -60,20 +60,12 @@ pub fn spawn(
     let zone_name =
         StoredName::from_str(&std::env::var("ZL_IN_ZONE").unwrap_or("example.com.".to_string()))
             .unwrap();
-    let xfr_in = std::env::var("ZL_XFR_IN").unwrap_or("127.0.0.1:8055 KEY sec1-key".into());
     let xfr_out = std::env::var("PS_XFR_OUT").unwrap_or("127.0.0.1:8055 KEY sec1-key".into());
-    let tsig_key_name = std::env::var("ZL_TSIG_KEY_NAME").unwrap_or("sec1-key".into());
-    let tsig_key = std::env::var("ZL_TSIG_KEY")
-        .unwrap_or("hmac-sha256:zlCZbVJPIhobIs1gJNQfrsS3xCxxsR9pMUrGwG8OgG8=".into());
 
     // Spawn the zone loader.
     log::info!("Starting unit 'ZL'");
     let unit = ZoneLoader {
         center: center.clone(),
-        zones: Default::default(),
-        xfr_in: Arc::new(HashMap::from([(zone_name.clone(), xfr_in)])),
-        xfr_out: Arc::new(HashMap::from([(zone_name.clone(), xfr_out.clone())])),
-        tsig_keys: HashMap::from([(tsig_key_name, tsig_key)]),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     tokio::spawn(unit.run(cmd_rx));
