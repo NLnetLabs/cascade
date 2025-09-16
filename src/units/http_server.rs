@@ -143,7 +143,7 @@ impl HttpServer {
                 let sock = socket_provider
                     .lock()
                     .unwrap()
-                    .take_tcp(&addr)
+                    .take_tcp(addr)
                     .ok_or_else(|| {
                         error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}");
                         Terminated
