@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
+use crate::daemon::SocketProvider;
 use crate::payload::Update;
 use crate::targets::central_command::CentralCommand;
 use crate::units::http_server::HttpServer;
@@ -14,15 +15,13 @@ use crate::units::key_manager::KeyManagerUnit;
 use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServerUnit};
 use crate::units::zone_signer::{KmipServerConnectionSettings, ZoneSignerUnit};
-use daemonbase::process::{EnvSockets, EnvSocketsError};
+use daemonbase::process::EnvSocketsError;
 use domain::zonetree::StoredName;
 use futures::future::join_all;
 use log::debug;
 use tokio::sync::mpsc::{self};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::RecvError;
-
-const MAX_SYSTEMD_FD_SOCKETS: usize = 32;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -63,36 +62,10 @@ pub async fn spawn(
     update_rx: mpsc::UnboundedReceiver<Update>,
     center_tx_slot: &mut Option<mpsc::UnboundedSender<TargetCommand>>,
     unit_tx_slots: &mut foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
+    socket_provider: SocketProvider,
 ) -> Result<(), Error> {
-    // Acquire information about any sockets passed to us via the environment,
-    // e.g. using systemd socket activation.
-    let mut env_sockets = None;
+    let socket_provider = Arc::new(Mutex::new(socket_provider));
 
-    match EnvSockets::from_env(Some(MAX_SYSTEMD_FD_SOCKETS)) {
-        Ok(v) => {
-            env_sockets = Some(v);
-        }
-        Err(EnvSocketsError::NotForUs) => { /* No problem, ignore */ }
-        Err(EnvSocketsError::NotAvailable) => { /* No problem, ignore */ }
-        Err(EnvSocketsError::Malformed) => {
-            log::warn!(
-                "Ignoring malformed systemd LISTEN_PID/LISTEN_FDS environment variable value"
-            );
-        }
-        Err(EnvSocketsError::Unusable) => {
-            log::warn!("Ignoring unusable systemd LISTEN_FDS environment variable socket(s)");
-        }
-    }
-
-    if let Some(env_sockets) = &env_sockets {
-        if !env_sockets.is_empty() {
-            log::info!("Received one or more sockets via systemd socket activation");
-        }
-    }
-
-    let env_sockets = Arc::new(Mutex::new(env_sockets));
-
-    // Spawn the central command.
     log::info!("Starting target 'CC'");
     let target = CentralCommand {
         center: center.clone(),
@@ -166,7 +139,7 @@ pub async fn spawn(
     unit_ready_rxs.push(ready_rx);
     unit_join_handles.insert(
         "RS",
-        tokio::spawn(unit.run(cmd_rx, ready_tx, env_sockets.clone())),
+        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
     );
     unit_tx_slots.insert("RS".into(), cmd_tx);
 
@@ -211,7 +184,7 @@ pub async fn spawn(
     unit_ready_rxs.push(ready_rx);
     unit_join_handles.insert(
         "RS2",
-        tokio::spawn(unit.run(cmd_rx, ready_tx, env_sockets.clone())),
+        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
     );
     unit_tx_slots.insert("RS2".into(), cmd_tx);
 
@@ -232,12 +205,10 @@ pub async fn spawn(
     log::info!("Starting unit 'HS'");
     let unit = HttpServer {
         center: center.clone(),
-        // TODO: config/argument option
-        listen_addr: "127.0.0.1:8950".parse().unwrap(),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let (ready_tx, ready_rx) = oneshot::channel();
-    let join_handle = tokio::spawn(unit.run(cmd_rx, ready_tx));
+    let join_handle = tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone()));
     unit_tx_slots.insert("HS".into(), cmd_tx);
 
     // Wait for the HTTP server to be ready, then we know that all systemd
@@ -260,7 +231,7 @@ pub async fn spawn(
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let (ready_tx, ready_rx) = oneshot::channel();
-    let _join_handle = tokio::spawn(unit.run(cmd_rx, ready_tx, env_sockets.clone()));
+    let _join_handle = tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone()));
     unit_tx_slots.insert("PS".into(), cmd_tx);
 
     ready_rx.await?;

@@ -2,7 +2,7 @@ use core::future::ready;
 
 use std::collections::HashMap;
 use std::marker::Sync;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Command;
 use std::str::FromStr;
@@ -11,7 +11,6 @@ use std::time::Instant;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
-use daemonbase::process::EnvSockets;
 use domain::base::iana::{Class, Rcode};
 use domain::base::Name;
 use domain::base::{Serial, ToName};
@@ -40,7 +39,6 @@ use indoc::formatdoc;
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::Deserialize;
-use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::{oneshot, RwLock};
 #[cfg(feature = "tls")]
@@ -48,11 +46,11 @@ use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
 
 use crate::center::Center;
-use crate::common::net::ListenAddr;
 use crate::common::tsig::TsigKeyStore;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::config::SocketConfig;
+use crate::daemon::SocketProvider;
 use crate::payload::Update;
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -99,7 +97,7 @@ impl ZoneServerUnit {
         self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
         ready_tx: oneshot::Sender<bool>,
-        env_sockets: Arc<Mutex<Option<EnvSockets>>>,
+        socket_provider: Arc<Mutex<SocketProvider>>,
     ) -> Result<(), Terminated> {
         let unit_name = match (self.mode, self.source) {
             (Mode::Prepublish, Source::UnsignedZones) => "RS",
@@ -158,42 +156,9 @@ impl ZoneServerUnit {
             servers.clone()
         };
 
-        let mut addrs = Vec::new();
-
-        for sock_cfg in servers {
-            info!("[{unit_name}]: Binding on {sock_cfg:?}");
-
-            if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-                let listen_addr = acquire_udp_socket(unit_name, &env_sockets, addr);
-                Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
-                addrs.push(addr.to_string());
-            }
-
-            if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-                let listen_addr = acquire_tcp_listener(unit_name, &env_sockets, addr);
-                Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
-                addrs.push(addr.to_string());
-            }
-        }
-
-        if unit_name == "PS" {
-            // Also listen on any remaining UDP and TCP sockets provided by
-            // the O/S.
-            while let Some(sock) = with_env_sockets(&env_sockets, EnvSockets::pop_udp) {
-                if let Ok(addr) = sock.local_addr() {
-                    addrs.push(addr.to_string());
-                }
-                let listen_addr = ListenAddr::UdpSocket(sock);
-                Self::spawn_udp_server(unit_name, svc.clone(), listen_addr);
-            }
-            while let Some(sock) = with_env_sockets(&env_sockets, EnvSockets::pop_tcp) {
-                if let Ok(addr) = sock.local_addr() {
-                    addrs.push(addr.to_string());
-                }
-                let listen_addr = ListenAddr::TcpListener(sock);
-                Self::spawn_tcp_server(unit_name, svc.clone(), listen_addr);
-            }
-        }
+        let addrs = spawn_servers(socket_provider, unit_name, svc, servers)
+            .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
+            .map_err(|_| Terminated)?;
 
         // Notify the manager that we are ready.
         ready_tx.send(true).map_err(|_| Terminated)?;
@@ -212,131 +177,60 @@ impl ZoneServerUnit {
 
         Ok(())
     }
-
-    fn spawn_udp_server<Svc>(unit_name: &'static str, svc: Svc, listen_addr: ListenAddr)
-    where
-        Svc: Service<Vec<u8>, ()> + Clone,
-    {
-        let unit_name: Box<str> = unit_name.into();
-        tokio::spawn(async move {
-            let listen_str = format!("{listen_addr}");
-            if let Err(err) = Self::server(unit_name.clone(), listen_addr, svc).await {
-                error!(
-                    "[{unit_name}]: Failed to listen for UDP connections on {listen_str}: {err}"
-                );
-            }
-        });
-    }
-
-    fn spawn_tcp_server<Svc>(unit_name: &'static str, svc: Svc, listen_addr: ListenAddr)
-    where
-        Svc: Service<Vec<u8>, ()> + Clone,
-    {
-        let unit_name: Box<str> = unit_name.into();
-        tokio::spawn(async move {
-            let listen_str = format!("{listen_addr}");
-            if let Err(err) = Self::server(unit_name.clone(), listen_addr, svc).await {
-                error!(
-                    "[{unit_name}]: Failed to listen for TCP connections on {listen_str}: {err}"
-                );
-            }
-        });
-    }
-
-    async fn server<Svc>(
-        unit_name: Box<str>,
-        addr: ListenAddr,
-        svc: Svc,
-    ) -> Result<(), std::io::Error>
-    where
-        Svc: Service<Vec<u8>, ()> + Clone,
-    {
-        debug!("[{unit_name}]: Spawning zone server on address {addr}");
-        let buf = VecBufSource;
-        match addr {
-            ListenAddr::Udp(addr) => {
-                let sock = UdpSocket::bind(addr).await?;
-                serve_on_udp(svc, buf, sock).await;
-            }
-            ListenAddr::UdpSocket(sock) => {
-                sock.set_nonblocking(true)?;
-                let sock = UdpSocket::from_std(sock)?;
-                serve_on_udp(svc, buf, sock).await;
-            }
-            ListenAddr::Tcp(addr) => {
-                let sock = tokio::net::TcpListener::bind(addr).await?;
-                serve_on_tcp(svc, buf, sock).await;
-            }
-            ListenAddr::TcpListener(listener) => {
-                listener.set_nonblocking(true)?;
-                let listener = tokio::net::TcpListener::from_std(listener)?;
-                serve_on_tcp(svc, buf, listener).await;
-            } // #[cfg(feature = "tls")]
-              // ListenAddr::Tls(addr, config) => {
-              //     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
-              //     let sock = TcpListener::bind(addr).await?;
-              //     let sock = tls::RustlsTcpListener::new(sock, acceptor);
-              //     let mut conn_config = ConnectionConfig::new();
-              //     conn_config.set_max_queued_responses(10000);
-              //     let mut config = stream::Config::new();
-              //     config.set_connection_config(conn_config);
-              //     let srv = StreamServer::with_config(sock, buf, svc, config);
-              //     let srv = Arc::new(srv);
-              //     srv.run().await;
-              // }
-        }
-        Ok(())
-    }
 }
 
-/// Use a matching pre-bound UDP socket if available, bind otherwise.
-fn acquire_udp_socket(
-    unit_name: &str,
-    env_sockets: &Mutex<Option<EnvSockets>>,
-    addr: SocketAddr,
-) -> ListenAddr {
-    match with_env_sockets(env_sockets, |v| v.take_udp(&addr)) {
-        Some(socket) => {
-            debug!(
-                "[{unit_name}]: Pre-bound UDP socket on {:?} acquired via environment settings",
-                socket.local_addr()
-            );
-            ListenAddr::UdpSocket(socket)
-        }
-        None => ListenAddr::Udp(addr),
-    }
-}
-
-/// Use a matching pre-bound TCP socket if available, bind otherwise.
-fn acquire_tcp_listener(
-    unit_name: &str,
-    env_sockets: &Mutex<Option<EnvSockets>>,
-    addr: SocketAddr,
-) -> ListenAddr {
-    match with_env_sockets(env_sockets, |v| v.take_tcp(&addr)) {
-        Some(listener) => {
-            debug!(
-                "[{unit_name}]: Pre-bound TCP listener on {:?} acquired via environment settings",
-                listener.local_addr()
-            );
-            ListenAddr::TcpListener(listener)
-        }
-        None => ListenAddr::Tcp(addr),
-    }
-}
-
-fn with_env_sockets<F, R>(env_sockets: &Mutex<Option<EnvSockets>>, cb: F) -> Option<R>
+fn spawn_servers<Svc>(
+    socket_provider: Arc<Mutex<SocketProvider>>,
+    unit_name: &'static str,
+    svc: Svc,
+    servers: Vec<SocketConfig>,
+) -> Result<Vec<String>, String>
 where
-    F: Fn(&mut EnvSockets) -> Option<R>,
+    Svc: Service<Vec<u8>, ()> + Clone,
 {
-    env_sockets.lock().unwrap().as_mut().and_then(cb)
+    let mut addrs = Vec::new();
+    let mut socket_provider = socket_provider.lock().unwrap();
+    for sock_cfg in servers {
+        if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
+            info!("[{unit_name}]: Obtaining UDP socket for address {addr}");
+            let sock = socket_provider
+                .take_udp(&addr)
+                .ok_or(format!("No socket available for UDP {addr}"))?;
+            tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
+
+        if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
+            info!("[{unit_name}]: Obtaining TCP listener for address {addr}");
+            let sock = socket_provider
+                .take_tcp(&addr)
+                .ok_or(format!("No socket available for TCP {addr}"))?;
+            tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
+    }
+
+    if unit_name == "PS" {
+        // Also listen on any remaining UDP and TCP sockets provided by
+        // the O/S.
+        while let Some(sock) = socket_provider.pop_udp() {
+            let addr = sock.local_addr().map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
+            info!("[{unit_name}]: Receieved additional UDP socket {addr}");
+            tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
+        while let Some(sock) = socket_provider.pop_tcp() {
+            let addr = sock.local_addr().map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
+            info!("[{unit_name}]: Receieved additional TCP listener {addr}");
+            tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
+    }
+
+    Ok(addrs)
 }
 
-// fn take_tcp(env_sockets: &Mutex<Option<EnvSockets>>, addr: SoicketAddr) -> Option<TcpListener> {
-
-// }
-
-async fn serve_on_udp<Svc>(svc: Svc, buf: VecBufSource, sock: UdpSocket)
+async fn serve_on_udp<Svc>(svc: Svc, buf: VecBufSource, sock: tokio::net::UdpSocket)
 where
     Svc: Service<Vec<u8>, ()> + Clone,
 {

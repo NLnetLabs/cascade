@@ -142,6 +142,9 @@ pub struct ConfigSpec {
     /// Path to the dnst binary that Cascade should use.
     pub dnst_binary_path: Box<Utf8Path>,
 
+    /// HTTP interface related configuration.
+    pub http: HttpConfigSpec,
+
     /// Daemon-related configuration.
     pub daemon: DaemonConfigSpec,
 
@@ -168,6 +171,7 @@ impl ConfigSpec {
         update_value(&mut config.tsig_store_path, self.tsig_store_path, changed);
         update_value(&mut config.keys_dir, self.keys_dir, changed);
         update_value(&mut config.dnst_binary_path, self.dnst_binary_path, changed);
+        update_value(&mut config.http, self.http.parse(), changed);
         self.daemon.parse_into(&mut config.daemon, changed);
         update_value(&mut config.loader, self.loader.parse(), changed);
         update_value(&mut config.signer, self.signer.parse(), changed);
@@ -183,11 +187,41 @@ impl ConfigSpec {
             tsig_store_path: config.tsig_store_path.clone(),
             keys_dir: config.keys_dir.clone(),
             dnst_binary_path: config.dnst_binary_path.clone(),
+            http: HttpConfigSpec::build(&config.http),
             daemon: DaemonConfigSpec::build(&config.daemon),
             loader: LoaderConfigSpec::build(&config.loader),
             signer: SignerConfigSpec::build(&config.signer),
             key_manager: KeyManagerConfigSpec::build(&config.key_manager),
             server: ServerConfigSpec::build(&config.server),
+        }
+    }
+}
+
+//----------- HttpConfigSpec ---------------------------------------------------
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct HttpConfigSpec {
+    /// Where to serve HTTP from, e.g. for the HTTP API.
+    ///
+    /// To support systems where it is not possible to bind simultaneously to
+    /// both IPv4 and IPv6 more than one address can be provided if needed.
+    pub servers: Vec<SocketAddr>,
+}
+
+//--- Conversion
+
+impl HttpConfigSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> config::HttpConfig {
+        config::HttpConfig {
+            servers: self.servers.clone(),
+        }
+    }
+
+    /// Build this state specification.
+    pub fn build(config: &config::HttpConfig) -> Self {
+        Self {
+            servers: config.servers.clone(),
         }
     }
 }
@@ -215,6 +249,9 @@ pub struct DaemonConfigSpec {
 
     /// The identity to assume after startup.
     pub identity: Option<(UserId, GroupId)>,
+
+    /// Whether or not to accept sockets provided by systemd.
+    pub accept_systemd_sockets: bool,
 }
 
 //--- Conversion
@@ -243,6 +280,7 @@ impl DaemonConfigSpec {
             pid_file: config.pid_file.clone(),
             chroot: config.chroot.clone(),
             identity: config.identity.clone().map(|(u, g)| (u.into(), g.into())),
+            accept_systemd_sockets: config.accept_systemd_sockets,
         }
     }
 }

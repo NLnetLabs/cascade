@@ -6,8 +6,7 @@ use camino::Utf8Path;
 use serde::Deserialize;
 
 use crate::config::{
-    Config, DaemonConfig, GroupId, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
-    ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
+    Config, DaemonConfig, GroupId, HttpConfig, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget, ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId
 };
 
 //----------- Spec -------------------------------------------------------------
@@ -36,6 +35,9 @@ pub struct Spec {
     #[serde(default = "Spec::dnst_binary_path_default")]
     pub dnst_binary_path: Box<Utf8Path>,
 
+    /// HTTP interface related configuration.
+    pub http: HttpSpec,
+
     /// Configuring the Cascade daemon.
     pub daemon: DaemonSpec,
 
@@ -62,6 +64,7 @@ impl Spec {
         config.tsig_store_path = self.tsig_store_path;
         config.keys_dir = self.keys_dir;
         config.dnst_binary_path = self.dnst_binary_path;
+        self.http.parse_into(&mut config.http);
         self.daemon.parse_into(&mut config.daemon);
         self.loader.parse_into(&mut config.loader);
         self.signer.parse_into(&mut config.signer);
@@ -80,6 +83,7 @@ impl Default for Spec {
             tsig_store_path: Self::tsig_store_path_default(),
             keys_dir: Self::keys_dir_default(),
             dnst_binary_path: Self::dnst_binary_path_default(),
+            http: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
@@ -116,6 +120,30 @@ impl Spec {
     }
 }
 
+//----------- HttpSpec ---------------------------------------------------------
+
+/// HTTP-related configuration for Cascade.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct HttpSpec {
+    /// Where to serve HTTP from, e.g. for the HTTP API.
+    ///
+    /// To support systems where it is not possible to bind simultaneously to
+    /// both IPv4 and IPv6 more than one address can be provided if needed.
+    pub servers: Vec<SocketAddr>,
+}
+
+//--- Conversion
+
+
+impl HttpSpec {
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut HttpConfig) {
+        config.servers = self.servers.clone();
+    }
+}
+
+
 //----------- DaemonSpec -------------------------------------------------------
 
 /// Configuring the Cascade daemon.
@@ -139,6 +167,9 @@ pub struct DaemonSpec {
 
     /// The identity to assume after startup.
     pub identity: Option<IdentitySpec>,
+
+    /// Whether or not to accept sockets provided by systemd.
+    pub accept_systemd_sockets: bool,
 }
 
 //--- Conversion
@@ -152,6 +183,7 @@ impl DaemonSpec {
         config.pid_file = self.pid_file;
         config.chroot = self.chroot;
         config.identity = self.identity.map(|v| v.parse());
+        config.accept_systemd_sockets = self.accept_systemd_sockets;
     }
 }
 

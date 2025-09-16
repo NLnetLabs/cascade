@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use axum::extract::OriginalUri;
 use axum::extract::Path;
@@ -19,9 +19,9 @@ use domain::base::Name;
 use domain::base::Serial;
 use log::warn;
 use log::{debug, error, info};
-use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio::task::JoinSet;
 
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
@@ -49,6 +49,7 @@ use crate::api::ZonesListResult;
 use crate::center;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
+use crate::daemon::SocketProvider;
 use crate::policy::Nsec3OptOutPolicy;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
@@ -60,7 +61,6 @@ const HTTP_UNIT_NAME: &str = "HS";
 
 pub struct HttpServer {
     pub center: Arc<Center>,
-    pub listen_addr: SocketAddr,
 }
 
 struct HttpServerState {
@@ -72,13 +72,9 @@ impl HttpServer {
         self,
         mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
         ready_tx: oneshot::Sender<bool>,
+        socket_provider: Arc<Mutex<SocketProvider>>,
     ) -> Result<(), Terminated> {
-        // Setup listener
-        let sock = TcpListener::bind(self.listen_addr).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {e}");
-            Terminated
-        })?;
-
+        // Spawn the application command handler
         tokio::task::spawn(async move {
             loop {
                 let cmd = cmd_rx.recv().await;
@@ -137,15 +133,44 @@ impl HttpServer {
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/list", get(Self::policy_list))
             .route("/policy/{name}", get(Self::policy_show))
-            .with_state(state);
+            .with_state(state.clone());
+
+        // Setup listen sockets
+        let mut socks = vec![];
+        {
+            let state = state.center.state.lock().unwrap();
+            for addr in &state.config.http.servers {
+                let sock = socket_provider
+                    .lock()
+                    .unwrap()
+                    .take_tcp(&addr)
+                    .ok_or_else(|| {
+                        error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}");
+                        Terminated
+                    })?;
+                socks.push(sock);
+            }
+        }
 
         // Notify the manager that we are ready.
         ready_tx.send(true).map_err(|_| Terminated)?;
 
-        axum::serve(sock, app).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {e}");
-            Terminated
-        })
+        // Serve our HTTP endpoints on each listener that has been configured.
+        let mut set = JoinSet::new();
+        for sock in socks {
+            let app = app.clone();
+            set.spawn(async move { axum::serve(sock, app).await });
+        }
+
+        // Wait for each future in the order they complete.
+        while let Some(res) = set.join_next().await {
+            if let Err(err) = res {
+                error!("[{HTTP_UNIT_NAME}]: {err}");
+                return Err(Terminated);
+            }
+        }
+
+        Ok(())
     }
 
     async fn zone_add(

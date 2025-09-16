@@ -1,19 +1,21 @@
-use camino::Utf8Path;
 use cascade::{
     center::{self, Center},
     comms::ApplicationCommand,
-    config::{Config, DaemonConfig, GroupId, UserId},
+    config::{Config, SocketConfig},
+    daemon::{daemonize, SocketProvider},
     manager::{self, TargetCommand},
     policy,
 };
 use clap::{crate_authors, crate_version};
-use daemonbase::process::Process;
 use std::{
     io,
+    net::SocketAddr,
     process::ExitCode,
     sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc;
+
+const MAX_SYSTEMD_FD_SOCKETS: usize = 32;
 
 fn main() -> ExitCode {
     // Initialize the logger in fallback mode.
@@ -122,6 +124,53 @@ fn main() -> ExitCode {
             .unwrap(),
     );
 
+    let mut socket_provider = SocketProvider::new();
+
+    if state.config.daemon.accept_systemd_sockets {
+        socket_provider.init_from_env(Some(MAX_SYSTEMD_FD_SOCKETS));
+    }
+
+    fn pre_bind_server_sockets<'a, T: Iterator<Item = &'a SocketConfig>>(
+        socket_provider: &mut SocketProvider,
+        socket_configs: T,
+    ) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
+        for socket_config in socket_configs {
+            match socket_config {
+                SocketConfig::UDP { addr } => socket_provider.pre_bind_udp(*addr)?,
+                SocketConfig::TCP { addr } => socket_provider.pre_bind_tcp(*addr)?,
+                SocketConfig::TCPUDP { addr } => {
+                    socket_provider.pre_bind_udp(*addr)?;
+                    socket_provider.pre_bind_tcp(*addr)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let http_tcp_sock_addrs: Vec<_> = state
+        .config
+        .http
+        .servers
+        .iter()
+        .map(|&addr| SocketConfig::TCP { addr }).collect();
+
+    let socket_configs = state
+        .config
+        .loader
+        .review
+        .servers
+        .iter()
+        .chain(state.config.signer.review.servers.iter())
+        .chain(state.config.server.servers.iter())
+        .chain(http_tcp_sock_addrs.iter());
+
+    if let Err((socket_type, addr, err)) =
+        pre_bind_server_sockets(&mut socket_provider, socket_configs)
+    {
+        log::error!("Failed to pre-bind to {socket_type} {addr} before daemonizing: {err}");
+        return ExitCode::FAILURE;
+    }
+
     if let Err(err) = daemonize(&state.config.daemon) {
         log::error!("Failed to daemonize: {err}");
         return ExitCode::FAILURE;
@@ -158,7 +207,15 @@ fn main() -> ExitCode {
         // Spawn Cascade's units.
         let mut center_tx = None;
         let mut unit_txs = Default::default();
-        if let Err(err) = manager::spawn(&center, update_rx, &mut center_tx, &mut unit_txs).await {
+        if let Err(err) = manager::spawn(
+            &center,
+            update_rx,
+            &mut center_tx,
+            &mut unit_txs,
+            socket_provider,
+        )
+        .await
+        {
             log::error!("Failed to spawn units: {err}");
             return ExitCode::FAILURE;
         }
@@ -206,58 +263,4 @@ fn main() -> ExitCode {
 
         result
     })
-}
-
-fn daemonize(config: &DaemonConfig) -> Result<(), String> {
-    let mut daemon_config = daemonbase::process::Config::default();
-
-    if let Some((user_id, group_id)) = &config.identity {
-        match (user_id, group_id) {
-            (UserId::Named(user), GroupId::Named(group)) => {
-                daemon_config = daemon_config
-                    .with_user(user)
-                    .map_err(|err| format!("Invalid user name: {err}"))?
-                    .with_group(group)
-                    .map_err(|err| format!("Invalid group name: {err}"))?;
-            }
-            _ => {
-                // daemonbase doesn't support configuration from user id or
-                // group id.
-                return Err(
-                    "Failed to drop privileges: user and group must be names, not IDs".to_string(),
-                );
-            }
-        }
-    }
-
-    if let Some(chroot) = &config.chroot {
-        daemon_config = daemon_config.with_chroot(into_daemon_path(chroot.clone()));
-    }
-
-    if let Some(pid_file) = &config.pid_file {
-        daemon_config = daemon_config.with_pid_file(into_daemon_path(pid_file.clone()));
-    }
-
-    let mut process = Process::from_config(daemon_config);
-
-    if *config.daemonize.value() {
-        log::debug!("Becoming daemon process");
-        if process.setup_daemon(true).is_err() {
-            return Err("Failed to become daemon process: unknown error".to_string());
-        }
-    }
-
-    if config.identity.is_some() {
-        log::debug!("Dropping privileges");
-        if process.drop_privileges().is_err() {
-            return Err("Failed to drop privileges: unknown error".to_string());
-        }
-    }
-
-    Ok(())
-}
-
-fn into_daemon_path(p: Box<Utf8Path>) -> daemonbase::config::ConfigPath {
-    let p = p.into_path_buf().into_std_path_buf();
-    daemonbase::config::ConfigPath::from(p)
 }

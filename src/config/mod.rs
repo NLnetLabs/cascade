@@ -41,6 +41,9 @@ pub struct Config {
     /// Path to the directory where the keys should be stored.
     pub keys_dir: Box<Utf8Path>,
 
+    /// HTTP interface related configuration.
+    pub http: HttpConfig,
+
     /// Daemon-related configuration.
     pub daemon: DaemonConfig,
 
@@ -67,6 +70,7 @@ impl Default for Config {
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
             dnst_binary_path: "dnst".into(),
+            http: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
@@ -152,6 +156,26 @@ pub fn reload(center: &Center) -> Result<(), file::FileError> {
     Ok(())
 }
 
+//----------- HttpConfig -------------------------------------------------------
+
+/// HTTP-related configuration for Cascade.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HttpConfig {
+    /// Where to serve HTTP from, e.g. for the HTTP API.
+    ///
+    /// To support systems where it is not possible to bind simultaneously to
+    /// both IPv4 and IPv6 more than one address can be provided if needed.
+    pub servers: Vec<SocketAddr>,
+}
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        Self {
+            servers: vec![SocketAddr::from(([127, 0, 0, 1], 8950))],
+        }
+    }
+}
+
 //----------- DaemonConfig -----------------------------------------------------
 
 /// Daemon-related configuration for Cascade.
@@ -177,6 +201,9 @@ pub struct DaemonConfig {
 
     /// The identity to assume after startup.
     pub identity: Option<(UserId, GroupId)>,
+
+    /// Whether or not to accept sockets provided by systemd.
+    pub accept_systemd_sockets: bool,
 }
 
 impl Default for DaemonConfig {
@@ -189,6 +216,7 @@ impl Default for DaemonConfig {
             pid_file: None,
             chroot: None,
             identity: None,
+            accept_systemd_sockets: false,
         }
     }
 }
@@ -230,6 +258,15 @@ pub enum UserId {
     Named(Box<str>),
 }
 
+impl std::fmt::Display for UserId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UserId::Numeric(id) => write!(f, "UID {id}"),
+            UserId::Named(name) => write!(f, "user {name}"),
+        }
+    }
+}
+
 //----------- GroupId ----------------------------------------------------------
 
 /// A numeric or named group ID.
@@ -240,6 +277,15 @@ pub enum GroupId {
 
     /// A group name.
     Named(Box<str>),
+}
+
+impl std::fmt::Display for GroupId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GroupId::Numeric(id) => write!(f, "GID {id}"),
+            GroupId::Named(name) => write!(f, "group {name}"),
+        }
+    }
 }
 
 //----------- LoaderConfig -----------------------------------------------------
