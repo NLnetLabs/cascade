@@ -6,7 +6,8 @@ use camino::Utf8Path;
 use serde::Deserialize;
 
 use crate::config::{
-    Config, DaemonConfig, GroupId, HttpConfig, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget, ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId
+    Config, DaemonConfig, GroupId, HttpConfig, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
+    ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
 };
 
 //----------- Spec -------------------------------------------------------------
@@ -135,14 +136,12 @@ pub struct HttpSpec {
 
 //--- Conversion
 
-
 impl HttpSpec {
     /// Parse from this specification.
     pub fn parse_into(self, config: &mut HttpConfig) {
         config.servers = self.servers.clone();
     }
 }
-
 
 //----------- DaemonSpec -------------------------------------------------------
 

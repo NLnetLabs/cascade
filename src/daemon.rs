@@ -98,7 +98,10 @@ impl SocketProvider {
         }
     }
 
-    pub fn pre_bind_udp(&mut self, addr: SocketAddr) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
+    pub fn pre_bind_udp(
+        &mut self,
+        addr: SocketAddr,
+    ) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
         if !self.env_sockets.has_udp(&addr) {
             let socket = UdpSocket::bind(addr).map_err(|err| ("UDP", addr, err))?;
             let _ = self.own_udp_sockets.insert(addr, socket);
@@ -106,7 +109,10 @@ impl SocketProvider {
         Ok(())
     }
 
-    pub fn pre_bind_tcp(&mut self, addr: SocketAddr) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
+    pub fn pre_bind_tcp(
+        &mut self,
+        addr: SocketAddr,
+    ) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
         if !self.env_sockets.has_tcp(&addr) {
             let listener = TcpListener::bind(addr).map_err(|err| ("TCP", addr, err))?;
             let _ = self.own_tcp_listeners.insert(addr, listener);

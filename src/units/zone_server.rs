@@ -214,13 +214,17 @@ where
         // Also listen on any remaining UDP and TCP sockets provided by
         // the O/S.
         while let Some(sock) = socket_provider.pop_udp() {
-            let addr = sock.local_addr().map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
+            let addr = sock
+                .local_addr()
+                .map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
             info!("[{unit_name}]: Receieved additional UDP socket {addr}");
             tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
             addrs.push(addr.to_string());
         }
         while let Some(sock) = socket_provider.pop_tcp() {
-            let addr = sock.local_addr().map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
+            let addr = sock
+                .local_addr()
+                .map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
             info!("[{unit_name}]: Receieved additional TCP listener {addr}");
             tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
             addrs.push(addr.to_string());

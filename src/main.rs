@@ -152,7 +152,8 @@ fn main() -> ExitCode {
         .http
         .servers
         .iter()
-        .map(|&addr| SocketConfig::TCP { addr }).collect();
+        .map(|&addr| SocketConfig::TCP { addr })
+        .collect();
 
     let socket_configs = state
         .config
