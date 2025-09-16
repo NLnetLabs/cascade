@@ -18,6 +18,7 @@ use domain::{
 };
 
 use crate::{
+    api::ZoneSource,
     center::{Center, Change},
     config::Config,
     payload::Update,
@@ -56,6 +57,9 @@ pub struct Zone {
 pub struct ZoneState {
     /// The policy (version) used by the zone.
     pub policy: Option<Arc<PolicyVersion>>,
+
+    /// Source that the zone should be loaded from
+    pub source: Option<ZoneSource>,
 
     /// An enqueued save of this state.
     ///

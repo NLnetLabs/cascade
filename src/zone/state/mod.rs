@@ -84,11 +84,13 @@ impl Spec {
         match self {
             Self::V1(v1::Spec {
                 policy,
+                source,
                 min_expiration,
                 next_min_expiration,
                 last_signed_serial,
             }) => {
                 state.policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
+                state.source = source.map(|s| s.parse());
                 state.min_expiration = min_expiration;
                 state.next_min_expiration = next_min_expiration;
                 state.last_signed_serial = last_signed_serial;
