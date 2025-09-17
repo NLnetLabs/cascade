@@ -135,9 +135,6 @@ pid-file = "/var/run/cascade.pid"
 # Only applied if daemonize = true.
 #identity = "cascade:cascade"
 
-# Whether or not to accept sockets provided by systemd.
-#accept-systemd-sockets = false
-
 # Configuring how zones are loaded.
 [loader]
 # Where to listen for zone change notifications.

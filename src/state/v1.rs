@@ -249,9 +249,6 @@ pub struct DaemonConfigSpec {
 
     /// The identity to assume after startup.
     pub identity: Option<(UserId, GroupId)>,
-
-    /// Whether or not to accept sockets provided by systemd.
-    pub accept_systemd_sockets: bool,
 }
 
 //--- Conversion
@@ -280,7 +277,6 @@ impl DaemonConfigSpec {
             pid_file: config.pid_file.clone(),
             chroot: config.chroot.clone(),
             identity: config.identity.clone().map(|(u, g)| (u.into(), g.into())),
-            accept_systemd_sockets: config.accept_systemd_sockets,
         }
     }
 }

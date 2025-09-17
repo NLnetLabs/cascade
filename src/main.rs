@@ -231,10 +231,7 @@ fn main() -> ExitCode {
 /// bound.
 fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvider, ()> {
     let mut socket_provider = SocketProvider::new();
-
-    if state.config.daemon.accept_systemd_sockets {
-        socket_provider.init_from_env(Some(MAX_SYSTEMD_FD_SOCKETS));
-    }
+    socket_provider.init_from_env(Some(MAX_SYSTEMD_FD_SOCKETS));
 
     // Convert the TCP only listen addresses used by the HTTP server into
     // the same form used by all other units that listen, as the other units

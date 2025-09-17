@@ -201,9 +201,6 @@ pub struct DaemonConfig {
 
     /// The identity to assume after startup.
     pub identity: Option<(UserId, GroupId)>,
-
-    /// Whether or not to accept sockets provided by systemd.
-    pub accept_systemd_sockets: bool,
 }
 
 impl Default for DaemonConfig {
@@ -216,7 +213,6 @@ impl Default for DaemonConfig {
             pid_file: None,
             chroot: None,
             identity: None,
-            accept_systemd_sockets: false,
         }
     }
 }
