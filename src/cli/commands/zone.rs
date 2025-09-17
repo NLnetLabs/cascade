@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use domain::base::Name;
 use futures::TryFutureExt;
-use log::error;
 
 use crate::api::{
     ZoneAdd, ZoneAddError, ZoneAddResult, ZoneSource, ZoneStatus, ZoneStatusError, ZonesListResult,
@@ -63,7 +62,7 @@ pub enum ZoneCommand {
 // - reload zone (i.e. from file)
 
 impl Zone {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             ZoneCommand::Add {
                 name,
@@ -80,19 +79,14 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 match res {
                     Ok(res) => {
                         println!("Added zone {}", res.name);
                         Ok(())
                     }
-                    Err(e) => {
-                        eprintln!("Failed to add zone: {e}");
-                        Err(())
-                    }
+                    Err(e) => Err(format!("Failed to add zone: {e}")),
                 }
             }
             ZoneCommand::Remove { name } => {
@@ -101,9 +95,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Removed zone {}", res.name);
                 Ok(())
@@ -114,9 +106,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 for zone in response.zones {
                     Self::print_zone_status(zone);
@@ -130,9 +120,7 @@ impl Zone {
                     .send()
                     .and_then(|r| async { r.error_for_status() })
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Success: Sent zone reload command for {}", zone);
                 Ok(())
@@ -141,7 +129,7 @@ impl Zone {
         }
     }
 
-    async fn status(client: CascadeApiClient, zone: Name<Bytes>) -> Result<(), ()> {
+    async fn status(client: CascadeApiClient, zone: Name<Bytes>) -> Result<(), String> {
         // TODO: move to function that can be called by the general
         // status command with a zone arg?
         let url = format!("zone/{}/status", zone);
@@ -150,19 +138,14 @@ impl Zone {
             .send()
             .and_then(|r| r.json())
             .await
-            .map_err(|e| {
-                error!("HTTP request failed: {e}");
-            })?;
+            .map_err(|e| format!("HTTP request failed: {e}"))?;
 
         match response {
             Ok(status) => {
                 Self::print_zone_status(status);
                 Ok(())
             }
-            Err(ZoneStatusError::ZoneDoesNotExist) => {
-                println!("zone `{zone}` does not exist");
-                Err(())
-            }
+            Err(ZoneStatusError::ZoneDoesNotExist) => Err(format!("zone `{zone}` does not exist")),
         }
     }
 

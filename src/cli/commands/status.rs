@@ -1,5 +1,4 @@
 use futures::TryFutureExt;
-use log::error;
 
 use crate::api::ServerStatusResult;
 use crate::cli::client::CascadeApiClient;
@@ -23,7 +22,7 @@ pub enum StatusCommand {
 //   - maybe have it both on server level status command (so here) and in the zone command?
 
 impl Status {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             Some(_) => todo!(),
             None => {
@@ -32,9 +31,7 @@ impl Status {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Server status: {:?}", response)
             }

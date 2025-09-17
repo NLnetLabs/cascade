@@ -24,6 +24,9 @@ async fn main() -> ExitCode {
 
     match args.execute().await {
         Ok(_) => ExitCode::SUCCESS,
-        Err(_) => ExitCode::FAILURE,
+        Err(err) => {
+            log::error!("Error: {err}");
+            ExitCode::FAILURE
+        }
     }
 }

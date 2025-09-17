@@ -193,6 +193,9 @@ pub struct LoaderPolicy {
 /// Policy for zone key management.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyManagerPolicy {
+    /// Whether and which HSM is being used by the key manager.
+    pub hsm_server_id: Option<String>,
+
     /// Whether to use a CSK (if true) or a KSK and a ZSK.
     pub use_csk: bool,
 
