@@ -1,8 +1,13 @@
 //! Version 1 of the zone state file.
 
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
-use domain::base::Serial;
+use bytes::Bytes;
+use camino::Utf8Path;
+use domain::{
+    base::{Name, Serial},
+    rdata::dnssec::Timestamp,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -10,9 +15,8 @@ use crate::{
         KeyManagerPolicy, LoaderPolicy, Nsec3OptOutPolicy, PolicyVersion, ReviewPolicy,
         ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
     },
-    zone::ZoneState,
+    zone::{ZoneLoadSource, ZoneState},
 };
-use domain::rdata::dnssec::Timestamp;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -25,6 +29,9 @@ pub struct Spec {
     /// The full details of the policy are stored here, as there may be a newer
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
+
+    /// The source of the zone.
+    pub source: ZoneLoadSourceSpec,
 
     /// The minimum expiration time in the signed zone we are serving from
     /// the publication server.
@@ -46,6 +53,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
+            source: ZoneLoadSourceSpec::build(&zone.source),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
             last_signed_serial: zone.last_signed_serial,
@@ -101,11 +109,11 @@ impl PolicySpec {
     }
 }
 
-//----------- LoaderSpec -------------------------------------------------------
+//----------- LoaderPolicySpec -------------------------------------------------
 
 /// Policy for loading zones.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LoaderPolicySpec {
     /// Reviewing loaded zones.
     pub review: ReviewPolicySpec,
@@ -132,8 +140,8 @@ impl LoaderPolicySpec {
 //----------- KeyManagerSpec ---------------------------------------------------
 
 /// Policy for zone key management.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct KeyManagerPolicySpec {
     /// Whether and which HSM server is being used.
     pub hsm_server_id: Option<String>,
@@ -160,8 +168,8 @@ impl KeyManagerPolicySpec {
 //----------- SignerPolicySpec -------------------------------------------------
 
 /// Policy for signing zones.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SignerPolicySpec {
     /// The serial number generation policy.
     pub serial_policy: SignerSerialPolicySpec,
@@ -208,14 +216,13 @@ impl SignerPolicySpec {
 //----------- SignerSerialPolicySpec -------------------------------------------
 
 /// Policy for generating serial numbers.
-#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum SignerSerialPolicySpec {
     /// Use the same serial number as the unsigned zone.
     Keep,
 
     /// Increment the serial number on every change.
-    #[default]
     Counter,
 
     /// Use the current Unix time, in seconds.
@@ -304,11 +311,10 @@ impl Default for SignerDenialPolicySpec {
 //----------- Nsec3OptOutPolicySpec --------------------------------------------
 
 /// Spec for the NSEC3 Opt-Out mechanism.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
 pub enum Nsec3OptOutPolicySpec {
     /// Do not enable Opt-Out.
-    #[default]
     Disabled,
 
     /// Only set the Opt-Out flag.
@@ -340,11 +346,11 @@ impl Nsec3OptOutPolicySpec {
     }
 }
 
-//----------- ReviewSpec -------------------------------------------------------
+//----------- ReviewPolicySpec -------------------------------------------------
 
 /// Policy for reviewing loaded/signed zones.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReviewPolicySpec {
     /// Whether review is required.
     pub required: bool,
@@ -373,11 +379,11 @@ impl ReviewPolicySpec {
     }
 }
 
-//----------- ServerSpec -------------------------------------------------------
+//----------- ServerPolicySpec -------------------------------------------------
 
 /// Policy for serving zones.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ServerPolicySpec {}
 
 //--- Conversion
@@ -392,5 +398,63 @@ impl ServerPolicySpec {
     pub fn build(policy: &ServerPolicy) -> Self {
         let ServerPolicy {} = policy;
         Self {}
+    }
+}
+
+//----------- ZoneLoadSourceSpec -----------------------------------------------
+
+/// Where to load a zone from.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ZoneLoadSourceSpec {
+    /// Don't load the zone at all.
+    None,
+
+    /// Load from a zonefile on a disk.
+    Zonefile {
+        /// The path to the zonefile.
+        path: Box<Utf8Path>,
+    },
+
+    /// Load from a DNS server via XFR.
+    Server {
+        /// The TCP/UDP address of the server.
+        addr: SocketAddr,
+
+        /// The TSIG key to use, if any.
+        tsig_key: Option<Name<Bytes>>,
+    },
+}
+
+//--- Conversion
+
+impl ZoneLoadSourceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> ZoneLoadSource {
+        match self {
+            Self::None => ZoneLoadSource::None,
+            Self::Zonefile { path } => ZoneLoadSource::Zonefile { path },
+            // TODO: Look up the TSIG key in the key store.
+            Self::Server { addr, tsig_key: _ } => ZoneLoadSource::Server {
+                addr,
+                tsig_key: None,
+            },
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(source: &ZoneLoadSource) -> Self {
+        match source.clone() {
+            ZoneLoadSource::None => Self::None,
+            ZoneLoadSource::Zonefile { path } => Self::Zonefile { path },
+            ZoneLoadSource::Server { addr, tsig_key } => Self::Server {
+                addr,
+                tsig_key: tsig_key.map(|key| {
+                    let bytes = key.name().as_slice();
+                    let bytes = Bytes::copy_from_slice(bytes);
+                    Name::from_octets(bytes).unwrap()
+                }),
+            },
+        }
     }
 }

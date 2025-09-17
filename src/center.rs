@@ -12,13 +12,14 @@ use domain::{base::Name, zonetree::ZoneTree};
 use tokio::sync::mpsc;
 
 use crate::{
+    api,
     comms::ApplicationCommand,
     config::Config,
     log::Logger,
     payload::Update,
     policy::{Policy, PolicyVersion},
     tsig::TsigStore,
-    zone::{Zone, ZoneByName},
+    zone::{Zone, ZoneByName, ZoneLoadSource},
 };
 
 //----------- Center -----------------------------------------------------------
@@ -58,6 +59,7 @@ pub fn add_zone(
     center: &Arc<Center>,
     name: Name<Bytes>,
     policy: Box<str>,
+    source: api::ZoneSource,
 ) -> Result<(), ZoneAddError> {
     let zone = Arc::new(Zone::new(name.clone()));
 
@@ -99,8 +101,14 @@ pub fn add_zone(
     }
 
     {
-        let mut state = zone.state.lock().unwrap();
-        zone.mark_dirty(&mut state, center);
+        match crate::zone::change_source(center, name.clone(), source) {
+            Ok(()) => {}
+            Err(crate::zone::ChangeSourceError::NoSuchZone) => unreachable!(),
+            // NOTE: When proper TSIG support is added, it should be checked
+            //       for _before_ the zone is added.
+        }
+
+        // NOTE: The zone is marked as dirty by the above operation.
     }
 
     log::info!("Added zone '{name}'");
@@ -258,6 +266,9 @@ pub enum Change {
 
     /// The policy of a zone has changed.
     ZonePolicyChanged(Name<Bytes>, Arc<PolicyVersion>),
+
+    /// The source of a zone has changed.
+    ZoneSourceChanged(Name<Bytes>, ZoneLoadSource),
 
     /// A zone has been removed.
     ZoneRemoved(Name<Bytes>),
