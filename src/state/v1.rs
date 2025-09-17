@@ -809,7 +809,7 @@ pub struct KeyManagerPolicySpec {
     default_ttl: Ttl,
 
     /// Automatically remove keys that are no long in use.
-    autoremove: bool,
+    auto_remove: bool,
 }
 
 //--- Conversion
@@ -835,7 +835,7 @@ impl KeyManagerPolicySpec {
             cds_remain_time: self.cds_remain_time,
             ds_algorithm: self.ds_algorithm,
             default_ttl: self.default_ttl,
-            autoremove: self.autoremove,
+            auto_remove: self.auto_remove,
         }
     }
 
@@ -859,7 +859,7 @@ impl KeyManagerPolicySpec {
             cds_remain_time: policy.cds_remain_time,
             ds_algorithm: policy.ds_algorithm.clone(),
             default_ttl: policy.default_ttl,
-            autoremove: policy.autoremove,
+            auto_remove: policy.auto_remove,
         }
     }
 }

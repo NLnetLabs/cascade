@@ -242,7 +242,7 @@ pub struct KeyManagerPolicy {
     pub default_ttl: Ttl,
 
     /// Automatically remove keys that are no long in use.
-    pub autoremove: bool,
+    pub auto_remove: bool,
 }
 
 //----------- SignerPolicy -----------------------------------------------------
@@ -371,6 +371,10 @@ pub enum KeyParameters {
     /// The RSASHA512 w algorithmith the key length in bits.
     RsaSha512(usize),
     /// The ECDSAP256SHA256 algorithm.
+    ///
+    /// Note that RFC 8624 Section 3.2 recommends the use of ECDSAP256SHA256
+    /// for new deployments and that other users SHOULD upgrade. So it is
+    /// the default.
     #[default]
     EcdsaP256Sha256,
     /// The ECDSAP384SHA384 algorithm.
@@ -398,7 +402,7 @@ impl Display for KeyParameters {
 
 // derive Default means that by default automation is off. Do we want it on
 // by default?
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AutoConfig {
     /// Whether to start a key roll automatically.
     pub start: bool,
@@ -410,9 +414,29 @@ pub struct AutoConfig {
     pub done: bool,
 }
 
+// Turn key roll automation on by default. This should be safe except when
+// the zone is served by an anycast cluster and propagation is slow.
+// It also requires network access to the zone's nameservers and the
+// nameservers of the parent zone to check propagation.
+impl Default for AutoConfig {
+    fn default() -> Self {
+        AutoConfig {
+            start: true,
+            report: true,
+            expire: true,
+            done: true,
+        }
+    }
+}
+
 //----------- DsAlgorithm -----------------------------------------------------
 
 /// The hash algorithm to use for DS records.
+///
+/// Note the RFC 8624 has (for DNSSEC delegation use) a MUST for SHA-256,
+/// a MAY for SHA-384 and a MUST NOT for SHA-1 and GOST R 34.11-94.
+/// Therefore, we only support SHA-256 and SHA-384 and the default is
+/// SHA-256.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum DsAlgorithm {
     /// Hash the public key using SHA-256.

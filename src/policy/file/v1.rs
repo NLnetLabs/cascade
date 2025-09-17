@@ -96,11 +96,11 @@ pub struct KeyManagerSpec {
     /// Algorithm and other parameters for key generation.
     algorithm: KeyParameters,
 
-    /// Validity of KSKs.
+    /// Validity of KSKs in seconds.
     ksk_validity: Option<u64>,
-    /// Validity of ZSKs.
+    /// Validity of ZSKs in seconds.
     zsk_validity: Option<u64>,
-    /// Validity of CSKs.
+    /// Validity of CSKs in seconds.
     csk_validity: Option<u64>,
 
     /// Configuration variable for automatic KSK rolls.
@@ -112,23 +112,23 @@ pub struct KeyManagerSpec {
     /// Configuration variable for automatic algorithm rolls.
     auto_algorithm: AutoConfig,
 
-    /// DNSKEY signature inception offset (positive values are subtracted
-    /// from the current time).
+    /// DNSKEY signature inception offset in seconds (positive values are
+    /// subtracted from the current time).
     dnskey_inception_offset: u64,
 
-    /// DNSKEY signature lifetime
+    /// DNSKEY signature lifetime in seconds.
     dnskey_signature_lifetime: u64,
 
-    /// The required remaining signature lifetime.
+    /// The required remaining signature time in seconds.
     dnskey_remain_time: u64,
 
-    /// CDS/CDNSKEY signature inception offset
+    /// CDS/CDNSKEY signature inception offset in seconds.
     cds_inception_offset: u64,
 
-    /// CDS/CDNSKEY signature lifetime
+    /// CDS/CDNSKEY signature lifetime in seconds.
     cds_signature_lifetime: u64,
 
-    /// The required remaining signature lifetime.
+    /// The required remaining signature time in seconds.
     cds_remain_time: u64,
 
     /// The DS hash algorithm.
@@ -138,7 +138,7 @@ pub struct KeyManagerSpec {
     default_ttl: Ttl,
 
     /// Automatically remove keys that are no long in use.
-    autoremove: bool,
+    auto_remove: bool,
 }
 
 //--- Conversion
@@ -164,7 +164,7 @@ impl KeyManagerSpec {
             cds_remain_time: self.cds_remain_time,
             ds_algorithm: self.ds_algorithm,
             default_ttl: self.default_ttl,
-            autoremove: self.autoremove,
+            auto_remove: self.auto_remove,
         }
     }
 
@@ -188,7 +188,7 @@ impl KeyManagerSpec {
             cds_remain_time: policy.cds_remain_time,
             ds_algorithm: policy.ds_algorithm.clone(),
             default_ttl: policy.default_ttl,
-            autoremove: policy.autoremove,
+            auto_remove: policy.auto_remove,
         }
     }
 }
@@ -218,7 +218,7 @@ impl Default for KeyManagerSpec {
 
             ds_algorithm: Default::default(),
             default_ttl: Ttl::from_secs(3600), // Reference?
-            autoremove: false,                 // Is this correct?
+            auto_remove: true,                 // Note, no auto_remove_delay at the moment.
         }
     }
 }

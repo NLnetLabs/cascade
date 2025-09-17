@@ -100,11 +100,11 @@ impl KeyManager {
                 log::info!("Running {cmd:?}");
 
                 let output = cmd.output().map_err(|e| {
-                    error!("[KM]: Error creating keyset: {e}");
+                    error!("[KM]: Error creating keyset for {name}: {e}");
                     Terminated
                 })?;
                 if !output.status.success() {
-                    error!("[KM]: Create command failed with: {}", output.status);
+                    error!("[KM]: Create command failed for {name}: {}", output.status);
                     error!(
                         "[KM]: Create stdout {}",
                         String::from_utf8_lossy(&output.stdout)
@@ -129,11 +129,11 @@ impl KeyManager {
                     log::info!("Running {cmd:?}");
 
                     let output = cmd.output().map_err(|e| {
-                        error!("[KM]: keyset command failed: {e}");
+                        error!("[KM]: keyset command failed for {name}: {e}");
                         Terminated
                     })?;
                     if !output.status.success() {
-                        error!("[KM]: set command failed with: {}", output.status);
+                        error!("[KM]: set command failed for {name}: {}", output.status);
                         error!(
                             "[KM]: Create stdout {}",
                             String::from_utf8_lossy(&output.stdout)
@@ -156,11 +156,11 @@ impl KeyManager {
                 log::info!("Running {cmd:?}");
 
                 let output = cmd.output().map_err(|e| {
-                    error!("[KM]: Error initializing keyset: {e}");
+                    error!("[KM]: Error initializing keyset for {name}: {e}");
                     Terminated
                 })?;
                 if !output.status.success() {
-                    error!("[KM]: init command failed with: {}", output.status);
+                    error!("[KM]: init command failed for {name}: {}", output.status);
                     error!(
                         "[KM]: Create stdout {}",
                         String::from_utf8_lossy(&output.stdout)
@@ -272,8 +272,7 @@ impl KeyManager {
                     };
                     if new_info.retries >= CRON_MAX_RETRIES {
                         error!(
-                            "The command 'dnst keyset cron' failed to update state file {}",
-                            state_path
+                            "The command 'dnst keyset cron' failed to update state file {state_path}", 
                         );
 
                         // Clear cron_next.
@@ -450,6 +449,6 @@ fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<Strin
             "default-ttl".to_string(),
             km.default_ttl.as_secs().to_string(),
         ],
-        vec!["autoremove".to_string(), km.autoremove.to_string()],
+        vec!["autoremove".to_string(), km.auto_remove.to_string()],
     ]
 }
