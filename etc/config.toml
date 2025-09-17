@@ -30,7 +30,7 @@ servers = ["127.0.0.1:8950"]
 # This controls Cascade's behaviour as a daemon, i.e. how it interacts with the
 # external system.
 #
-# Note: These settings may not be needed when using a serivce manager
+# Note: These settings may not be needed when using a service manager
 # like systemd which is able to offer such functionality on behalf of the
 # application.
 [daemon]
