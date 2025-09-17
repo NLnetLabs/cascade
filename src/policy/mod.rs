@@ -7,8 +7,7 @@ use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 use domain::base::Ttl;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     api::{PolicyChange, PolicyReloadError},
@@ -400,8 +399,6 @@ impl Display for KeyParameters {
 
 //----------- AutoConfig ------------------------------------------------------
 
-// derive Default means that by default automation is off. Do we want it on
-// by default?
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AutoConfig {
     /// Whether to start a key roll automatically.
