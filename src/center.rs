@@ -12,6 +12,7 @@ use domain::{base::Name, zonetree::ZoneTree};
 use tokio::sync::mpsc;
 
 use crate::{
+    api::ZoneSource,
     comms::ApplicationCommand,
     config::Config,
     log::Logger,
@@ -57,9 +58,15 @@ pub struct Center {
 pub fn add_zone(
     center: &Arc<Center>,
     name: Name<Bytes>,
+    source: ZoneSource,
     policy: Box<str>,
 ) -> Result<(), ZoneAddError> {
     let zone = Arc::new(Zone::new(name.clone()));
+
+    {
+        let mut state = zone.state.lock().unwrap();
+        state.source = Some(source);
+    }
 
     {
         let mut state = center.state.lock().unwrap();
