@@ -303,7 +303,7 @@ impl LoggingConfigSpec {
 
 /// A numeric or named user ID.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, untagged)]
 pub enum UserId {
     /// A numeric ID.
     Numeric(u32),
@@ -336,7 +336,7 @@ impl From<UserId> for config::UserId {
 
 /// A numeric or named group ID.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, untagged)]
 pub enum GroupId {
     /// A numeric ID.
     Numeric(u32),
