@@ -20,6 +20,11 @@ keys-dir = "/var/db/cascade/keys"
 # The path to the dnst binary Cascade should use.
 dnst-binary-path = "dnst"
 
+# Configure the Cascade HTTP server.
+[http]
+# Where to serve our HTTP endpoints from, e.g. for use by the Cascade client..
+servers = ["127.0.0.1:8950"]
+
 # Configuring the Cascade daemon.
 #
 # This controls Cascade's behaviour as a daemon, i.e. how it interacts with the
@@ -121,6 +126,9 @@ log-target = { type = "file", path = "/dev/stdout" }
 #
 # Only applied if daemonize = true.
 #identity = "cascade:cascade"
+
+# Whether or not to accept sockets provided by systemd.
+#accept-systemd-sockets = false
 
 # Configuring how zones are loaded.
 [loader]
