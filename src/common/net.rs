@@ -59,7 +59,7 @@ impl TcpStreamWrapper for StandardTcpStream {
 //------------ ListenAddr ----------------------------------------------------
 
 /// An address and the protocol to serve queries on.
-#[derive(Debug, DeserializeFromStr)]
+#[derive(Clone, Debug, DeserializeFromStr)]
 pub enum ListenAddr {
     /// Plain, unencrypted UDP.
     Udp(SocketAddr),
