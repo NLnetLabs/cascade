@@ -79,8 +79,8 @@ impl std::fmt::Display for ListenAddr {
         match self {
             ListenAddr::Udp(addr) => write!(f, "Udp({addr})"),
             ListenAddr::Tcp(addr) => write!(f, "Tcp({addr})"),
-            ListenAddr::UdpSocket(socket) => write!(f, "UdpSocket{:?}", socket.local_addr()),
-            ListenAddr::TcpListener(socket) => write!(f, "TcpListener{:?}", socket.local_addr()),
+            ListenAddr::UdpSocket(socket) => write!(f, "UdpSocket({:?})", socket.local_addr()),
+            ListenAddr::TcpListener(socket) => write!(f, "TcpListener({:?})", socket.local_addr()),
         }
     }
 }
