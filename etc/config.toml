@@ -38,8 +38,12 @@ servers = ["127.0.0.1:8950"]
 # Whether or not to fork the process and apply the pid-file, chroot and
 # identity settings.
 #
-# Note: When running Cascade as a systemd service use the Type=exec option
-# instead.
+# Note: When running Cascade as a systemd service use systemd to run Cascade as
+# the desired unprivileged user and group and to bind to privileged ports on
+# behalf of Cascade, rather than having Cascade fork to drop root privileges.
+# This can be done by setting daemonize = false in this file and setting
+# Type=exec in  the Cascade systemd service file.
+# 
 # See: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Type=
 # 
 # Explanation: Forking is typically used to run initially as root and bind to
