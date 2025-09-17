@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::net::SocketAddr;
@@ -8,6 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use bytes::{BufMut, Bytes};
+use camino::Utf8Path;
 use domain::base::iana::{Class, Rcode};
 use domain::base::{Name, Rtype, Serial};
 use domain::net::server::middleware::notify::Notifiable;
@@ -27,36 +27,22 @@ use tokio::time::Instant;
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 
-use crate::api::ZoneSource;
-use crate::center::Center;
+use crate::center::{Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
-use crate::common::tsig::{parse_key_strings, TsigKeyStore};
-use crate::common::xfr::parse_xfr_acl;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
+use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::{
     Config, ConnectionFactory, DefaultConnFactory, TypedZone, ZoneMaintainer,
 };
 use crate::zonemaintenance::types::{
-    NotifyConfig, TransportStrategy, XfrConfig, XfrStrategy, ZoneConfig,
+    NotifyConfig, TransportStrategy, XfrConfig, XfrStrategy, ZoneConfig, ZoneId,
 };
 
 #[derive(Debug)]
 pub struct ZoneLoader {
     /// The center.
     pub center: Arc<Center>,
-
-    /// The zone names and (if primary) corresponding zone file paths to load.
-    pub zones: Arc<HashMap<StoredName, String>>,
-
-    /// XFR in per secondary zone: Allow NOTIFY from, and when with a port also request XFR from.
-    pub xfr_in: Arc<HashMap<StoredName, String>>,
-
-    /// XFR out per primary zone: Allow XFR from, and when with a port also send NOTIFY to.
-    pub xfr_out: Arc<HashMap<StoredName, String>>,
-
-    /// TSIG keys.
-    pub tsig_keys: HashMap<String, String>,
 }
 
 impl ZoneLoader {
@@ -69,14 +55,6 @@ impl ZoneLoader {
 
         let (zone_updated_tx, mut zone_updated_rx) = tokio::sync::mpsc::channel(10);
 
-        for (key_name, opt_alg_and_hex_bytes) in self.tsig_keys.iter() {
-            let key = parse_key_strings(key_name, opt_alg_and_hex_bytes).map_err(|err| {
-                error!("[ZL]: Failed to parse TSIG key '{key_name}': {err}",);
-                Terminated
-            })?;
-            self.center.old_tsig_key_store.insert(key);
-        }
-
         let maintainer_config =
             Config::<_, DefaultConnFactory>::new(self.center.old_tsig_key_store.clone());
         let zone_maintainer = Arc::new(
@@ -86,30 +64,33 @@ impl ZoneLoader {
 
         // Load primary zones.
         // Create secondary zones.
-        for (zone_name, zone_path) in self.zones.iter() {
-            let zone = if !zone_path.is_empty() {
-                Self::register_primary_zone(
-                    zone_name.clone(),
-                    zone_path,
-                    &self.center.old_tsig_key_store,
-                    None,
-                    &self.xfr_out,
-                    &zone_updated_tx,
-                )
-                .await?
-            } else {
-                info!("[ZL]: Adding secondary zone '{zone_name}'",);
-                Self::register_secondary_zone(
-                    zone_name.clone(),
-                    &self.center.old_tsig_key_store,
-                    None,
-                    &self.xfr_in,
-                    zone_updated_tx.clone(),
-                )?
+        let zones = {
+            let state = self.center.state.lock().unwrap();
+            state
+                .zones
+                .iter()
+                .map(|zone| {
+                    let state = zone.0.state.lock().unwrap();
+                    (zone.0.name.clone(), state.source.clone())
+                })
+                .collect::<Vec<_>>()
+        };
+        for (name, source) in zones {
+            info!("[ZL]: Adding zone '{name}' with source '{source:?}'",);
+            let zone = match source {
+                ZoneLoadSource::None => continue,
+
+                ZoneLoadSource::Zonefile { path } => {
+                    Self::register_primary_zone(name.clone(), &path, &zone_updated_tx).await?
+                }
+
+                ZoneLoadSource::Server { addr, tsig_key: _ } => {
+                    Self::register_secondary_zone(name.clone(), addr, zone_updated_tx.clone())?
+                }
             };
 
             if let Err(err) = zone_maintainer.insert_zone(zone).await {
-                error!("[ZL]: Error: Failed to insert zone '{zone_name}': {err}")
+                error!("[ZL]: Error: Failed to insert zone '{name}': {err}")
             }
         }
 
@@ -126,7 +107,7 @@ impl ZoneLoader {
                 }
 
                 cmd = cmd_rx.recv() => {
-                    self.on_command(cmd, &self.center.old_tsig_key_store, &zone_maintainer, zone_updated_tx.clone()).await?;
+                    self.on_command(cmd, &zone_maintainer, zone_updated_tx.clone()).await?;
                 }
             }
         }
@@ -149,7 +130,6 @@ impl ZoneLoader {
     async fn on_command<KS, CF>(
         &self,
         cmd: Option<ApplicationCommand>,
-        tsig_key_store: &TsigKeyStore,
         zone_maintainer: &ZoneMaintainer<KS, CF>,
         zone_updated_tx: Sender<(StoredName, Serial)>,
     ) -> Result<(), Terminated>
@@ -166,50 +146,37 @@ impl ZoneLoader {
                 return Err(Terminated);
             }
 
-            Some(ApplicationCommand::RegisterZone { register }) => {
-                let res = match register.source {
-                    ZoneSource::Zonefile {
-                        path, /* Lacks XFR out settings */
-                    } => {
-                        Self::register_primary_zone(
-                            register.name.clone(),
-                            &path.to_string(),
-                            tsig_key_store,
-                            None,
-                            &self.xfr_out,
-                            &zone_updated_tx,
-                        )
-                        .await
+            Some(ApplicationCommand::Changed(Change::ZoneSourceChanged(name, source))) => {
+                // Just remove and re-insert the zone.
+                let id = ZoneId {
+                    name: name.clone(),
+                    class: Class::IN,
+                };
+                zone_maintainer.remove_zone(id).await;
+
+                let zone = match source {
+                    ZoneLoadSource::None => return Ok(()),
+
+                    ZoneLoadSource::Zonefile { path } => {
+                        Self::register_primary_zone(name.clone(), &path, &zone_updated_tx).await?
                     }
-                    ZoneSource::Server {
-                        addr, /* Lacks TSIG key name */
-                    } => {
-                        // Use any existing XFR inbound ACL that has been
-                        // defined for this zone from this source.
-                        Self::register_secondary_zone(
-                            register.name.clone(),
-                            tsig_key_store,
-                            Some(addr),
-                            &self.xfr_in,
-                            zone_updated_tx.clone(),
-                        )
+
+                    ZoneLoadSource::Server { addr, tsig_key: _ } => {
+                        Self::register_secondary_zone(name.clone(), addr, zone_updated_tx)?
                     }
                 };
 
-                match res {
-                    Err(_) => {
-                        error!("[ZL]: Error: Failed to register zone '{}'", register.name);
-                    }
+                // TODO: Handle (or iron out) potential errors here.
+                let _ = zone_maintainer.insert_zone(zone).await;
+            }
 
-                    Ok(zone) => {
-                        if let Err(err) = zone_maintainer.insert_zone(zone).await {
-                            error!(
-                                "[ZL]: Error: Failed to insert zone '{}': {err}",
-                                register.name
-                            );
-                        }
-                    }
-                }
+            Some(ApplicationCommand::Changed(Change::ZoneRemoved(name))) => {
+                // Remove the zone if it was tracked.
+                let id = ZoneId {
+                    name: name.clone(),
+                    class: Class::IN,
+                };
+                zone_maintainer.remove_zone(id).await;
             }
 
             Some(ApplicationCommand::RefreshZone {
@@ -241,10 +208,7 @@ impl ZoneLoader {
 
     async fn register_primary_zone(
         zone_name: StoredName,
-        zone_path: &str,
-        tsig_key_store: &TsigKeyStore,
-        dest: Option<SocketAddr>,
-        xfr_out: &HashMap<StoredName, String>,
+        zone_path: &Utf8Path,
         zone_updated_tx: &Sender<(Name<Bytes>, Serial)>,
     ) -> Result<TypedZone, Terminated> {
         let zone = load_file_into_zone(&zone_name, zone_path).await?;
@@ -253,7 +217,7 @@ impl ZoneLoader {
             return Err(Terminated);
         };
 
-        let zone_cfg = Self::determine_primary_zone_cfg(&zone_name, xfr_out, dest, tsig_key_store)?;
+        let zone_cfg = ZoneConfig::new();
         zone_updated_tx
             .send((zone.apex_name().clone(), serial))
             .await
@@ -262,67 +226,12 @@ impl ZoneLoader {
         Ok(TypedZone::new(zone, zone_cfg))
     }
 
-    fn determine_primary_zone_cfg(
-        zone_name: &StoredName,
-        xfr_out: &HashMap<StoredName, String>,
-        dest: Option<SocketAddr>,
-        tsig_key_store: &TsigKeyStore,
-    ) -> Result<ZoneConfig, Terminated> {
-        let mut zone_cfg = ZoneConfig::new();
-
-        if let Some(xfr_out) = xfr_out.get(zone_name) {
-            let mut notify_cfg = NotifyConfig::default();
-
-            let mut xfr_cfg = XfrConfig {
-                strategy: XfrStrategy::IxfrWithAxfrFallback,
-                ixfr_transport: TransportStrategy::Tcp,
-                ..Default::default()
-            };
-
-            let dst = parse_xfr_acl(xfr_out, &mut xfr_cfg, &mut notify_cfg, tsig_key_store)
-                .map_err(|_| {
-                    error!("[ZL]: Error parsing XFR ACL");
-                    Terminated
-                })?;
-
-            info!("[ZL]: Adding XFR secondary {dst} for zone '{zone_name}'",);
-
-            if Some(dst) != dest {
-                // Don't use any settings we found for this zone, they were
-                // for a different source. Instead use default settings for
-                // NOTIFY and XFR, i.e. send NOTIFY and request XFR, but
-                // don't use TSIG and no special restrictions over the XFR
-                // transport/protocol to use.
-                notify_cfg = NotifyConfig::default();
-                xfr_cfg = XfrConfig::default();
-            }
-
-            zone_cfg.provide_xfr_to.add_src(dst.ip(), xfr_cfg.clone());
-
-            if dst.port() != 0 {
-                info!(
-                    "[ZL]: Allowing NOTIFY to {} for zone '{zone_name}'",
-                    dst.ip()
-                );
-                zone_cfg.send_notify_to.add_dst(dst, notify_cfg.clone());
-            }
-        } else {
-            // Local primary zone that has no known secondary, so no
-            // nameserver to permit XFR from or send NOTIFY to.
-        }
-
-        Ok(zone_cfg)
-    }
-
     fn register_secondary_zone(
         zone_name: Name<Bytes>,
-        tsig_key_store: &TsigKeyStore,
-        source: Option<SocketAddr>,
-        xfr_in: &HashMap<StoredName, String>,
+        source: SocketAddr,
         zone_updated_tx: Sender<(Name<Bytes>, Serial)>,
     ) -> Result<TypedZone, Terminated> {
-        let zone_cfg =
-            Self::determine_secondary_zone_cfg(&zone_name, source, xfr_in, tsig_key_store)?;
+        let zone_cfg = Self::determine_secondary_zone_cfg(&zone_name, source)?;
         let zone = Zone::new(LightWeightZone::new(zone_name, true));
         let zone = Zone::new(NotifyOnWriteZone::new(zone, zone_updated_tx));
         Ok(TypedZone::new(zone, zone_cfg))
@@ -330,51 +239,30 @@ impl ZoneLoader {
 
     fn determine_secondary_zone_cfg(
         zone_name: &StoredName,
-        source: Option<SocketAddr>,
-        xfr_in: &HashMap<StoredName, String>,
-        tsig_key_store: &TsigKeyStore,
+        source: SocketAddr,
     ) -> Result<ZoneConfig, Terminated> {
         let mut zone_cfg = ZoneConfig::new();
 
-        if let Some(xfr_in) = xfr_in.get(zone_name) {
-            let mut notify_cfg = NotifyConfig::default();
+        let notify_cfg = NotifyConfig::default();
 
-            let mut xfr_cfg = XfrConfig {
-                strategy: XfrStrategy::IxfrWithAxfrFallback,
-                ixfr_transport: TransportStrategy::Tcp,
-                ..Default::default()
-            };
+        let xfr_cfg = XfrConfig {
+            strategy: XfrStrategy::IxfrWithAxfrFallback,
+            ixfr_transport: TransportStrategy::Tcp,
+            compatibility_mode: Default::default(),
+            tsig_key: None,
+        };
 
-            let src = parse_xfr_acl(xfr_in, &mut xfr_cfg, &mut notify_cfg, tsig_key_store)
-                .map_err(|_| {
-                    error!("[ZL]: Error parsing XFR ACL");
-                    Terminated
-                })?;
+        info!(
+            "[ZL]: Allowing NOTIFY from {} for zone '{zone_name}'",
+            source.ip()
+        );
 
-            info!(
-                "[ZL]: Allowing NOTIFY from {} for zone '{zone_name}'",
-                src.ip()
-            );
+        zone_cfg
+            .allow_notify_from
+            .add_src(source.ip(), notify_cfg.clone());
 
-            if Some(src) != source {
-                // Don't use any settings we found for this zone, they were
-                // for a different source. Instead use default settings for
-                // NOTIFY and XFR, i.e. send NOTIFY and request XFR, but
-                // don't use TSIG and no special restrictions over the XFR
-                // transport/protocol to use.
-                notify_cfg = NotifyConfig::default();
-                xfr_cfg = XfrConfig::default();
-            }
-
-            zone_cfg
-                .allow_notify_from
-                .add_src(src.ip(), notify_cfg.clone());
-
-            if src.port() != 0 {
-                info!("[ZL]: Adding XFR primary {src} for zone '{zone_name}'",);
-                zone_cfg.request_xfr_from.add_dst(src, xfr_cfg.clone());
-            }
-        }
+        info!("[ZL]: Adding XFR primary {source} for zone '{zone_name}'",);
+        zone_cfg.request_xfr_from.add_dst(source, xfr_cfg.clone());
 
         Ok(zone_cfg)
     }
@@ -393,7 +281,10 @@ async fn get_zone_serial(apex_name: Name<Bytes>, zone: &Zone) -> Option<Serial> 
     None
 }
 
-async fn load_file_into_zone(zone_name: &StoredName, zone_path: &str) -> Result<Zone, Terminated> {
+async fn load_file_into_zone(
+    zone_name: &StoredName,
+    zone_path: &Utf8Path,
+) -> Result<Zone, Terminated> {
     let before = Instant::now();
     info!("[ZL]: Loading primary zone '{zone_name}' from '{zone_path}'..",);
     let mut zone_file = File::open(zone_path)

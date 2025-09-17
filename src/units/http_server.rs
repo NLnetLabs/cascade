@@ -24,6 +24,7 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
+use crate::api;
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
 use crate::api::Nsec3OptOutPolicyInfo;
@@ -181,28 +182,13 @@ impl HttpServer {
         if let Err(e) = center::add_zone(
             &state.center,
             zone_register.name.clone(),
-            zone_register.source.clone(),
             zone_register.policy.clone().into(),
+            zone_register.source.clone(),
         ) {
-            return Json(Err(match e {
-                center::ZoneAddError::AlreadyExists => ZoneAddError::AlreadyExists,
-                center::ZoneAddError::NoSuchPolicy => ZoneAddError::NoSuchPolicy,
-                center::ZoneAddError::PolicyMidDeletion => ZoneAddError::PolicyMidDeletion,
-            }));
+            return Json(Err(e.into()));
         }
 
         let zone_name = zone_register.name.clone();
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "ZL".into(),
-                ApplicationCommand::RegisterZone {
-                    register: zone_register.clone(),
-                },
-            ))
-            .unwrap();
-
         state
             .center
             .app_cmd_tx
@@ -264,7 +250,14 @@ impl HttpServer {
         let zone_state = zone.0.state.lock().unwrap();
 
         // TODO: Needs some info from the zone loader?
-        let source = zone_state.source.clone().unwrap();
+        let source = match zone_state.source.clone() {
+            crate::zone::ZoneLoadSource::None => api::ZoneSource::None,
+            crate::zone::ZoneLoadSource::Zonefile { path } => api::ZoneSource::Zonefile { path },
+            crate::zone::ZoneLoadSource::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
+                addr,
+                tsig_key: None,
+            },
+        };
 
         let policy = zone_state
             .policy
