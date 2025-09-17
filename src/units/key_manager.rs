@@ -1,8 +1,10 @@
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
+use bytes::Bytes;
 use camino::Utf8Path;
 use core::time::Duration;
+use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use log::error;
 use serde::Deserialize;
@@ -97,9 +99,51 @@ impl KeyManager {
 
                 log::info!("Running {cmd:?}");
 
-                if let Err(e) = cmd.output() {
-                    error!("[KM]: Error creating keyset: {e}");
+                let output = cmd.output().map_err(|e| {
+                    error!("[KM]: Error creating keyset for {name}: {e}");
+                    Terminated
+                })?;
+                if !output.status.success() {
+                    error!("[KM]: Create command failed for {name}: {}", output.status);
+                    error!(
+                        "[KM]: Create stdout {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                    error!(
+                        "[KM]: Create stderr {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
                     return Err(Terminated);
+                }
+
+                // Set config
+                let config_commands = policy_to_commands(&self.center, &name);
+                for c in config_commands {
+                    let mut cmd = self.keyset_cmd(&name);
+
+                    cmd.arg("set");
+                    for a in c {
+                        cmd.arg(a);
+                    }
+
+                    log::info!("Running {cmd:?}");
+
+                    let output = cmd.output().map_err(|e| {
+                        error!("[KM]: keyset command failed for {name}: {e}");
+                        Terminated
+                    })?;
+                    if !output.status.success() {
+                        error!("[KM]: set command failed for {name}: {}", output.status);
+                        error!(
+                            "[KM]: Create stdout {}",
+                            String::from_utf8_lossy(&output.stdout)
+                        );
+                        error!(
+                            "[KM]: Create stderr {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                        return Err(Terminated);
+                    }
                 }
 
                 // TODO: This should not happen immediately after
@@ -111,8 +155,20 @@ impl KeyManager {
 
                 log::info!("Running {cmd:?}");
 
-                if let Err(e) = cmd.output() {
-                    error!("[KM]: Error initializing keyset: {e}");
+                let output = cmd.output().map_err(|e| {
+                    error!("[KM]: Error initializing keyset for {name}: {e}");
+                    Terminated
+                })?;
+                if !output.status.success() {
+                    error!("[KM]: init command failed for {name}: {}", output.status);
+                    error!(
+                        "[KM]: Create stdout {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                    error!(
+                        "[KM]: Create stderr {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
                     return Err(Terminated);
                 }
 
@@ -216,8 +272,7 @@ impl KeyManager {
                     };
                     if new_info.retries >= CRON_MAX_RETRIES {
                         error!(
-                            "The command 'dnst keyset cron' failed to update state file {}",
-                            state_path
+                            "The command 'dnst keyset cron' failed to update state file {state_path}", 
                         );
 
                         // Clear cron_next.
@@ -296,4 +351,104 @@ fn get_keyset_info(state_path: impl AsRef<Path>) -> KeySetInfo {
         cron_next: state.cron_next,
         retries: 0,
     }
+}
+
+fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<String>> {
+    // Ensure that the mutexes are locked only in this block;
+    let policy = {
+        let state = center.state.lock().unwrap();
+        let zone = state.zones.get(zone_name).unwrap();
+        let zone_state = zone.0.state.lock().unwrap();
+        zone_state.policy.clone()
+    }
+    .unwrap();
+
+    let km = &policy.key_manager;
+
+    vec![
+        vec!["use-csk".to_string(), km.use_csk.to_string()],
+        vec!["algorithm".to_string(), km.algorithm.to_string()],
+        vec![
+            "ksk-validity".to_string(),
+            if let Some(validity) = km.ksk_validity {
+                validity.to_string() + "s"
+            } else {
+                "off".to_string()
+            },
+        ],
+        vec![
+            "zsk-validity".to_string(),
+            if let Some(validity) = km.zsk_validity {
+                validity.to_string() + "s"
+            } else {
+                "off".to_string()
+            },
+        ],
+        vec![
+            "csk-validity".to_string(),
+            if let Some(validity) = km.csk_validity {
+                validity.to_string() + "s"
+            } else {
+                "off".to_string()
+            },
+        ],
+        vec![
+            "auto-ksk".to_string(),
+            km.auto_ksk.start.to_string(),
+            km.auto_ksk.report.to_string(),
+            km.auto_ksk.expire.to_string(),
+            km.auto_ksk.done.to_string(),
+        ],
+        vec![
+            "auto-zsk".to_string(),
+            km.auto_zsk.start.to_string(),
+            km.auto_zsk.report.to_string(),
+            km.auto_zsk.expire.to_string(),
+            km.auto_zsk.done.to_string(),
+        ],
+        vec![
+            "auto-csk".to_string(),
+            km.auto_csk.start.to_string(),
+            km.auto_csk.report.to_string(),
+            km.auto_csk.expire.to_string(),
+            km.auto_csk.done.to_string(),
+        ],
+        vec![
+            "auto-algorithm".to_string(),
+            km.auto_algorithm.start.to_string(),
+            km.auto_algorithm.report.to_string(),
+            km.auto_algorithm.expire.to_string(),
+            km.auto_algorithm.done.to_string(),
+        ],
+        vec![
+            "dnskey-inception-offset".to_string(),
+            km.dnskey_inception_offset.to_string() + "s",
+        ],
+        vec![
+            "dnskey-lifetime".to_string(),
+            km.dnskey_signature_lifetime.to_string() + "s",
+        ],
+        vec![
+            "dnskey-remain-time".to_string(),
+            km.dnskey_remain_time.to_string() + "s",
+        ],
+        vec![
+            "cds-inception-offset".to_string(),
+            km.cds_inception_offset.to_string() + "s",
+        ],
+        vec![
+            "cds-lifetime".to_string(),
+            km.cds_signature_lifetime.to_string() + "s",
+        ],
+        vec![
+            "cds-remain-time".to_string(),
+            km.cds_remain_time.to_string() + "s",
+        ],
+        vec!["ds-algorithm".to_string(), km.ds_algorithm.to_string()],
+        vec![
+            "default-ttl".to_string(),
+            km.default_ttl.as_secs().to_string(),
+        ],
+        vec!["autoremove".to_string(), km.auto_remove.to_string()],
+    ]
 }
