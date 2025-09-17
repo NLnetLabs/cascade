@@ -117,7 +117,11 @@ impl ZoneServerUnit {
             Source::PublishedZones => self.center.published_zones.clone(),
         };
 
+        // Avoid a concurrency of zero (and a divide by zero in later code!)
+        // by ensuring that max_concurrency is at least one.
         let max_concurrency = std::thread::available_parallelism().unwrap().get() / 2;
+        let max_concurrency = max_concurrency.clamp(1, 16);
+        info!("[{unit_name}]: Allowing at most {max_concurrency} concurrent XFRs");
 
         // TODO: Pass xfr_out to XfrDataProvidingZonesWrapper for enforcement.
         let zones = XfrDataProvidingZonesWrapper {
