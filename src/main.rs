@@ -254,6 +254,7 @@ fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvi
         .review
         .servers
         .iter()
+        .chain(state.config.loader.notif_listeners.iter())
         .chain(state.config.signer.review.servers.iter())
         .chain(state.config.server.servers.iter())
         .chain(http_tcp_sock_addrs.iter());
