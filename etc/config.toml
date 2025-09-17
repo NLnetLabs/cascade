@@ -22,7 +22,7 @@ dnst-binary-path = "dnst"
 
 # Configure the Cascade HTTP server.
 [http]
-# Where to serve our HTTP endpoints from, e.g. for use by the Cascade client..
+# Where to serve our HTTP endpoints from, e.g. for use by the Cascade client.
 servers = ["127.0.0.1:8950"]
 
 # Configuring the Cascade daemon.
