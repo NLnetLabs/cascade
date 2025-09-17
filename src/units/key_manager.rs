@@ -197,22 +197,25 @@ impl KeyManager {
 
                     log::info!("Running {cmd:?}");
 
-                let output = cmd.output().map_err(|e| {
-                    error!("[KM]: Error adding KMIP server '{server_id}' for {name}: {e}");
-                    Terminated
-                })?;
-                if !output.status.success() {
-                    error!("[KM]: Add KMIP server command failed for {name}: {}", output.status);
-                    error!(
-                        "[KM]: Create stdout {}",
-                        String::from_utf8_lossy(&output.stdout)
-                    );
-                    error!(
-                        "[KM]: Create stderr {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    return Err(Terminated);
-                }
+                    let output = cmd.output().map_err(|e| {
+                        error!("[KM]: Error adding KMIP server '{server_id}' for {name}: {e}");
+                        Terminated
+                    })?;
+                    if !output.status.success() {
+                        error!(
+                            "[KM]: Add KMIP server command failed for {name}: {}",
+                            output.status
+                        );
+                        error!(
+                            "[KM]: Create stdout {}",
+                            String::from_utf8_lossy(&output.stdout)
+                        );
+                        error!(
+                            "[KM]: Create stderr {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                        return Err(Terminated);
+                    }
                 }
 
                 // Set config
