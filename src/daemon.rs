@@ -1,3 +1,10 @@
+//! Functionality relating to daemon mode applications.
+//!
+//! A daemon is typically an application that runs as a long lived service
+//! in the background, often with restricted access to the host system and
+//! able to run initially as a privileged user to, for example, bind to
+//! restricted ports (<1024) and then switch to running as a non-privileged
+//! user once the privileged access is no longer required.
 use std::{
     collections::BTreeMap,
     net::{SocketAddr, TcpListener, UdpSocket},
@@ -8,6 +15,8 @@ use daemonbase::process::{EnvSockets, EnvSocketsError, Process};
 
 use crate::config::{DaemonConfig, GroupId, UserId};
 
+/// Apply changes to the identity and access rights of the running application
+/// in accordance with the provided settings.
 pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
     let mut daemon_config = daemonbase::process::Config::default();
 
@@ -64,12 +73,23 @@ fn into_daemon_path(p: Box<Utf8Path>) -> daemonbase::config::ConfigPath {
 
 //------------ SocketProvider ------------------------------------------------
 
+/// A wrapper around [`EnvSockets`] for also offering directly bound sockets.
+///
+/// Can bind directly to listen addresses/and expose the alternate (systemd
+/// provided sockets vs directly bound sockets) or combined (systemd provided
+/// sockets and directly bound sockets) set of sockets to the application via
+/// a single interface.
+///
+/// See: [`EnvSockets`]
 #[derive(Debug, Default)]
 pub struct SocketProvider {
+    /// Sockets received from systemd, if any.
     env_sockets: EnvSockets,
 
+    /// Directly bound UDP sockets, if any.
     own_udp_sockets: BTreeMap<SocketAddr, UdpSocket>,
 
+    /// Directly bound TCP sockets, if any.
     own_tcp_listeners: BTreeMap<SocketAddr, TcpListener>,
 }
 
