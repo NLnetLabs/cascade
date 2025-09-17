@@ -7,6 +7,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use domain::base::Name;
 use serde::{Deserialize, Serialize};
 
+use crate::center;
+
 const DEFAULT_AXFR_PORT: u16 = 53;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -39,28 +41,62 @@ impl fmt::Display for ZoneAddError {
     }
 }
 
+impl From<center::ZoneAddError> for ZoneAddError {
+    fn from(value: center::ZoneAddError) -> Self {
+        match value {
+            center::ZoneAddError::AlreadyExists => Self::AlreadyExists,
+            center::ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
+            center::ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneRemoveResult {}
 
+/// How to load the contents of a zone.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ZoneSource {
-    Zonefile { path: Box<Utf8Path> },
-    Server { addr: SocketAddr },
+    /// Don't load the zone at all.
+    None,
+
+    /// From a zonefile on disk.
+    Zonefile {
+        /// The path to the zonefile.
+        path: Box<Utf8Path>,
+    },
+
+    /// From a DNS server via XFR.
+    Server {
+        /// The address of the server.
+        addr: SocketAddr,
+
+        /// The name of a TSIG key, if any.
+        tsig_key: Option<String>,
+    },
 }
 
 impl Display for ZoneSource {
-    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZoneSource::None => f.write_str("<none>"),
+            ZoneSource::Zonefile { path } => path.fmt(f),
+            ZoneSource::Server { addr, tsig_key: _ } => addr.fmt(f),
+        }
     }
 }
 
 impl From<&str> for ZoneSource {
     fn from(s: &str) -> Self {
         if let Ok(addr) = s.parse::<SocketAddr>() {
-            ZoneSource::Server { addr }
+            ZoneSource::Server {
+                addr,
+                tsig_key: None,
+            }
         } else if let Ok(addr) = s.parse::<IpAddr>() {
             ZoneSource::Server {
                 addr: SocketAddr::new(addr, DEFAULT_AXFR_PORT),
+                tsig_key: None,
             }
         } else {
             ZoneSource::Zonefile {
@@ -72,13 +108,7 @@ impl From<&str> for ZoneSource {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZonesListResult {
-    pub zones: Vec<ZonesListEntry>,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ZonesListEntry {
-    pub name: Name<Bytes>,
-    pub stage: ZoneStage,
+    pub zones: Vec<ZoneStatus>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -88,9 +118,29 @@ pub enum ZoneStage {
     Published,
 }
 
+impl Display for ZoneStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            ZoneStage::Unsigned => "unsigned",
+            ZoneStage::Signed => "signed",
+            ZoneStage::Published => "published",
+        };
+        f.write_str(str)
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ZoneStatusResult {
+pub enum ZoneStatusError {
+    ZoneDoesNotExist,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneStatus {
     pub name: Name<Bytes>,
+    pub source: ZoneSource,
+    pub policy: String,
+    pub stage: ZoneStage,
+    pub key_status: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

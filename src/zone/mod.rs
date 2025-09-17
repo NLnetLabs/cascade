@@ -5,19 +5,22 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
-    io,
+    io, mem,
+    net::SocketAddr,
     sync::{Arc, Mutex},
     time::Duration,
 };
 
 use bytes::Bytes;
-use domain::rdata::dnssec::Timestamp;
+use camino::Utf8Path;
 use domain::{
     base::{iana::Class, Name, Serial},
     zonetree::{self, ZoneBuilder},
 };
+use domain::{rdata::dnssec::Timestamp, tsig};
 
 use crate::{
+    api,
     center::{Center, Change},
     config::Config,
     payload::Update,
@@ -64,6 +67,9 @@ pub struct ZoneState {
     /// new save operation should be enqueued.
     pub enqueued_save: Option<tokio::task::JoinHandle<()>>,
 
+    /// Where to load the contents of the zone from.
+    pub source: ZoneLoadSource,
+
     /// The minimum expiration time in the signed zone we are serving from
     /// the publication server.
     pub min_expiration: Option<Timestamp>,
@@ -84,6 +90,29 @@ pub struct ZoneState {
     // - Key manager state
     // - Signer state
     // - Server state
+}
+
+/// How to load the contents of a zone.
+#[derive(Clone, Debug, Default)]
+pub enum ZoneLoadSource {
+    /// Don't load the zone at all.
+    #[default]
+    None,
+
+    /// Load the zone from a zonefile on disk.
+    Zonefile {
+        /// The path to the zonefile.
+        path: Box<Utf8Path>,
+    },
+
+    /// Load the zone from a DNS server via XFR.
+    Server {
+        /// The TCP/UDP address of the server.
+        addr: SocketAddr,
+
+        /// A TSIG key to communicate with the server, if any.
+        tsig_key: Option<Arc<tsig::Key>>,
+    },
 }
 
 impl Zone {
@@ -270,6 +299,52 @@ pub fn change_policy(
     Ok(())
 }
 
+/// Change the source of the zone.
+pub fn change_source(
+    center: &Arc<Center>,
+    name: Name<Bytes>,
+    source: api::ZoneSource,
+) -> Result<(), ChangeSourceError> {
+    // Find the zone.
+    let zone = {
+        let state = center.state.lock().unwrap();
+        state
+            .zones
+            .get(&name)
+            .ok_or(ChangeSourceError::NoSuchZone)?
+            .0
+            .clone()
+    };
+
+    // Set the source in the zone.
+    let mut state = zone.state.lock().unwrap();
+    let new_source = match source {
+        api::ZoneSource::None => ZoneLoadSource::None,
+
+        api::ZoneSource::Zonefile { path } => ZoneLoadSource::Zonefile { path },
+
+        // TODO: Look up the TSIG key.
+        api::ZoneSource::Server { addr, tsig_key: _ } => ZoneLoadSource::Server {
+            addr,
+            tsig_key: None,
+        },
+    };
+    let old_source = mem::replace(&mut state.source, new_source.clone());
+
+    center
+        .update_tx
+        .send(Update::Changed(Change::ZoneSourceChanged(
+            name.clone(),
+            state.source.clone(),
+        )))
+        .unwrap();
+
+    zone.mark_dirty(&mut state, center);
+
+    log::info!("Set source of zone '{name}' from '{old_source:?}' to '{new_source:?}'");
+    Ok(())
+}
+
 //----------- ZoneByName -------------------------------------------------------
 
 /// A [`Zone`] keyed by its name.
@@ -377,6 +452,25 @@ impl fmt::Display for ChangePolicyError {
             Self::NoSuchZone => "the specified zone does not exist",
             Self::NoSuchPolicy => "the specified policy does not exist",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+        })
+    }
+}
+
+//----------- ChangeSourceError ------------------------------------------------
+
+/// An error in changing the source of a zone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChangeSourceError {
+    /// The specified zone does not exist.
+    NoSuchZone,
+}
+
+impl std::error::Error for ChangeSourceError {}
+
+impl fmt::Display for ChangeSourceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NoSuchZone => "the specified zone does not exist",
         })
     }
 }
