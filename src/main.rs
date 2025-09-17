@@ -117,6 +117,7 @@ fn main() -> ExitCode {
         }
     }
 
+    // Activate the configured logging setup.
     logger.apply(
         logger
             .prepare(&state.config.daemon.logging)
@@ -124,53 +125,10 @@ fn main() -> ExitCode {
             .unwrap(),
     );
 
-    let mut socket_provider = SocketProvider::new();
-
-    if state.config.daemon.accept_systemd_sockets {
-        socket_provider.init_from_env(Some(MAX_SYSTEMD_FD_SOCKETS));
-    }
-
-    fn pre_bind_server_sockets<'a, T: Iterator<Item = &'a SocketConfig>>(
-        socket_provider: &mut SocketProvider,
-        socket_configs: T,
-    ) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
-        for socket_config in socket_configs {
-            match socket_config {
-                SocketConfig::UDP { addr } => socket_provider.pre_bind_udp(*addr)?,
-                SocketConfig::TCP { addr } => socket_provider.pre_bind_tcp(*addr)?,
-                SocketConfig::TCPUDP { addr } => {
-                    socket_provider.pre_bind_udp(*addr)?;
-                    socket_provider.pre_bind_tcp(*addr)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    let http_tcp_sock_addrs: Vec<_> = state
-        .config
-        .http
-        .servers
-        .iter()
-        .map(|&addr| SocketConfig::TCP { addr })
-        .collect();
-
-    let socket_configs = state
-        .config
-        .loader
-        .review
-        .servers
-        .iter()
-        .chain(state.config.signer.review.servers.iter())
-        .chain(state.config.server.servers.iter())
-        .chain(http_tcp_sock_addrs.iter());
-
-    if let Err((socket_type, addr, err)) =
-        pre_bind_server_sockets(&mut socket_provider, socket_configs)
-    {
-        log::error!("Failed to pre-bind to {socket_type} {addr} before daemonizing: {err}");
+    // Bind to listen addresses before daemonizing.
+    let Ok(socket_provider) = bind_to_listen_sockets_as_needed(&state) else {
         return ExitCode::FAILURE;
-    }
+    };
 
     if let Err(err) = daemonize(&state.config.daemon) {
         log::error!("Failed to daemonize: {err}");
@@ -264,4 +222,70 @@ fn main() -> ExitCode {
 
         result
     })
+}
+
+/// Bind to all listen addresses that are referred to our by the Cascade
+/// configuration.
+///
+/// Sockets provided to us by systemd will be skipped as they are already
+/// bound.
+fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvider, ()> {
+    let mut socket_provider = SocketProvider::new();
+
+    if state.config.daemon.accept_systemd_sockets {
+        socket_provider.init_from_env(Some(MAX_SYSTEMD_FD_SOCKETS));
+    }
+
+    // Convert the TCP only listen addresses used by the HTTP server into
+    // the same form used by all other units that listen, as the other units
+    // use a type that also supports UDP which the HTTP server doesn't need.
+    let http_tcp_sock_addrs: Vec<_> = state
+        .config
+        .http
+        .servers
+        .iter()
+        .map(|&addr| SocketConfig::TCP { addr })
+        .collect();
+
+    // Make an iterator over all of the SocketConfig instances we know about.
+    let socket_configs = state
+        .config
+        .loader
+        .review
+        .servers
+        .iter()
+        .chain(state.config.signer.review.servers.iter())
+        .chain(state.config.server.servers.iter())
+        .chain(http_tcp_sock_addrs.iter());
+
+    // Bind to each of the specified sockets if needed.
+    if let Err((socket_type, addr, err)) =
+        pre_bind_server_sockets_as_needed(&mut socket_provider, socket_configs)
+    {
+        log::error!("Failed to pre-bind to {socket_type} {addr}: {err}");
+        return Err(());
+    }
+
+    Ok(socket_provider)
+}
+
+/// Bind to the specified sockets if needed.
+///
+/// Sockets provided to us by systemd will be skipped as they are already
+/// bound.
+fn pre_bind_server_sockets_as_needed<'a, T: Iterator<Item = &'a SocketConfig>>(
+    socket_provider: &mut SocketProvider,
+    socket_configs: T,
+) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
+    for socket_config in socket_configs {
+        match socket_config {
+            SocketConfig::UDP { addr } => socket_provider.pre_bind_udp(*addr)?,
+            SocketConfig::TCP { addr } => socket_provider.pre_bind_tcp(*addr)?,
+            SocketConfig::TCPUDP { addr } => {
+                socket_provider.pre_bind_udp(*addr)?;
+                socket_provider.pre_bind_tcp(*addr)?;
+            }
+        }
+    }
+    Ok(())
 }
