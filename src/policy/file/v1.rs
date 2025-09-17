@@ -113,7 +113,7 @@ pub struct KeyManagerSpec {
     auto_algorithm: AutoConfig,
 
     /// DNSKEY signature inception offset (positive values are subtracted
-    ///from the current time).
+    /// from the current time).
     dnskey_inception_offset: u64,
 
     /// DNSKEY signature lifetime
