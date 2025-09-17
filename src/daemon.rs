@@ -39,9 +39,11 @@ pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
         }
     }
 
-    if let Some(chroot) = &config.chroot {
-        daemon_config = daemon_config.with_chroot(into_daemon_path(chroot.clone()));
-    }
+    // TODO: implement chroot fully, i.e. make use of daemonbase::config::ConfigPathi
+    // to ensure that paths are correct for the chroot.
+    // if let Some(chroot) = &config.chroot {
+    //     daemon_config = daemon_config.with_chroot(into_daemon_path(chroot.clone()));
+    // }
 
     if let Some(pid_file) = &config.pid_file {
         daemon_config = daemon_config.with_pid_file(into_daemon_path(pid_file.clone()));

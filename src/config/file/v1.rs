@@ -161,9 +161,6 @@ pub struct DaemonSpec {
     /// The path to a PID file to maintain.
     pub pid_file: Option<Box<Utf8Path>>,
 
-    /// The directory to chroot into after startup.
-    pub chroot: Option<Box<Utf8Path>>,
-
     /// The identity to assume after startup.
     pub identity: Option<IdentitySpec>,
 }
@@ -177,7 +174,6 @@ impl DaemonSpec {
         config.logging.target.file = self.log_target.map(|v| v.parse());
         config.daemonize.file = self.daemonize;
         config.pid_file = self.pid_file;
-        config.chroot = self.chroot;
         config.identity = self.identity.map(|v| v.parse());
     }
 }

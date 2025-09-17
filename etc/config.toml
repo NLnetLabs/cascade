@@ -35,8 +35,8 @@ servers = ["127.0.0.1:8950"]
 # application.
 [daemon]
 #
-# Whether or not to fork the process and apply the pid-file, chroot and
-# identity settings.
+# Whether or not to fork the process and apply the pid-file and  identity
+# settings.
 #
 # Note: When running Cascade as a systemd service use systemd to run Cascade as
 # the desired unprivileged user and group and to bind to privileged ports on
@@ -102,22 +102,6 @@ log-target = { type = "file", path = "/dev/stdout" }
 #
 # Only applied if daemonize = true.
 #pid-file = "/var/run/cascade.pid"
-
-# A directory to chroot into after startup.
-#
-# Cascade will chroot into the specified directory after initialization.  Note
-# that this will fail if Cascade is started without administrator privileges.
-# 
-# TODO: How will this affect the paths Cascade interacts with?  What if files
-# aren't within the chroot - do we just fail?  Or do we interpret all paths here
-# relative to the chroot?
-#
-# Note: When running Cascade as a systemd service you may want to use the
-# RootDirectory= instead.
-# See: https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#RootDirectory=
-#
-# Only applied if daemonize = true.
-#chroot = "/var/run/cascade"
 
 # An identity (user and group) to assume after startup.
 #

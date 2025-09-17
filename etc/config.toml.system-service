@@ -35,7 +35,7 @@ servers = ["127.0.0.1:8950"]
 # application.
 [daemon]
 #
-# Whether or not to fork the process and apply the pid-file, chroot and
+# Whether or not to fork the process and apply the pid-file and
 # identity settings.
 #
 # Note: When running Cascade as a systemd service use systemd to run Cascade as
@@ -103,7 +103,7 @@ log-target = { type = "syslog" }
 # Only applied if daemonize = true.
 pid-file = "/var/run/cascade.pid"
 
-# A directory to chroot into after startup.
+u:cc# A directory to chroot into after startup.
 #
 # Cascade will chroot into the specified directory after initialization.  Note
 # that this will fail if Cascade is started without administrator privileges.
