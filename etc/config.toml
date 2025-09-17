@@ -15,7 +15,7 @@ zone-state-dir = "/var/lib/cascade/zone-state"
 tsig-store-path = "/var/lib/cascade/tsig-keys.db"
 
 # The directory storing the keys.
-keys-dir = "/var/db/cascade/keys"
+keys-dir = "/var/lib/cascade/keys"
 
 # The path to the dnst binary Cascade should use.
 dnst-binary-path = "dnst"
@@ -128,6 +128,10 @@ log-target = { type = "file", path = "/dev/stdout" }
 # latter case, the identically named group will be used.  Both the user
 # and group must be specified as a name, numeric IDs are NOT supported.
 #
+# Note: When running Cascade as a systemd service use the User= and Group= systemd
+# options instead.
+# See: https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#User= 
+#
 # Only applied if daemonize = true.
 #identity = "cascade:cascade"
 
@@ -195,10 +199,8 @@ servers = ["127.0.0.1:8052"] # TODO: Pick a good default port.
 # Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
 # be served over UDP and TCP.  At least one address must be specified.
 # 
-# Note: When running Cascade as a systemd service, if using socket activation
-# if sockets for one or more of these addresses is provided by systemd to the
-# application it will use the pre-bound socket instead of trying to bind to
-# it again.. Additionally, any unused systemd provided sockets (i.e. those that
-# do not match with a listen address defined in this configuration file) will
-# also be used to publish zones..
+# Note: When running Cascade as a systemd service, Cascade will only bind
+# to listen addresses for which a socket has not already been received from
+# systemd. Additionally, any unused systemd provided pre-bound sockets will
+# also be associated with this server instance.
 servers = ["127.0.0.1:8053"] # TODO: Pick a good default port.
