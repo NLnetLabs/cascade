@@ -355,7 +355,7 @@ fn get_keyset_info(state_path: impl AsRef<Path>) -> KeySetInfo {
 }
 
 fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<String>> {
-    // Ensure that the Mutexes are locked only in this block;
+    // Ensure that the mutexes are locked only in this block;
     let policy = {
         let state = center.state.lock().unwrap();
         let zone = state.zones.get(zone_name).unwrap();
