@@ -508,7 +508,7 @@ impl ZoneSigner {
 
                                     let pool = ConnectionManager::create_connection_pool(
                                         server_id.clone(),
-                                        Arc::new(conn_settings.clone().into()),
+                                        Arc::new(conn_settings.clone()),
                                         10,
                                         Some(Duration::from_secs(60)),
                                         Some(Duration::from_secs(60)),
