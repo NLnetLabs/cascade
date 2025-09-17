@@ -119,8 +119,6 @@ impl ZoneServerUnit {
         };
 
         let max_concurrency = std::thread::available_parallelism().unwrap().get() / 2;
-        let max_concurrency = max_concurrency.clamp(1, 16);
-        info!("[{unit_name}]: Allowing at most {max_concurrency} concurrent XFRs");
 
         // TODO: Pass xfr_out to XfrDataProvidingZonesWrapper for enforcement.
         let zones = XfrDataProvidingZonesWrapper {
