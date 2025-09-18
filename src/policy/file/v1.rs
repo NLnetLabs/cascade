@@ -336,7 +336,7 @@ pub enum SignerSerialPolicySpec {
     ///
     /// Set the default to a human readable serial number. Counter would be
     /// a good default for zone recevied through XFR. For zones that are
-    /// recevied may not have a usable serial number.
+    /// received we may not have a usable serial number.
     #[default]
     DateCounter,
 }
