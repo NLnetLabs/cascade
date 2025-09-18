@@ -20,9 +20,9 @@ keys-dir = "/var/lib/cascade/keys"
 # The path to the dnst binary Cascade should use.
 dnst-binary-path = "dnst"
 
-# Configure the Cascade HTTP server.
-[http]
-# Where to serve our HTTP endpoints from, e.g. for use by the Cascade client.
+# Configure the Cascade remote-control server.
+[remote-control]
+# Where to serve our HTTP API from, e.g. for the Cascade client.
 servers = ["127.0.0.1:8950"]
 
 # Configuring the Cascade daemon.

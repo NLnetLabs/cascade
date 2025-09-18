@@ -235,9 +235,9 @@ fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvi
     // Convert the TCP only listen addresses used by the HTTP server into
     // the same form used by all other units that listen, as the other units
     // use a type that also supports UDP which the HTTP server doesn't need.
-    let http_tcp_sock_addrs: Vec<_> = state
+    let remote_control_servers: Vec<_> = state
         .config
-        .http
+        .remote_control
         .servers
         .iter()
         .map(|&addr| SocketConfig::TCP { addr })
@@ -253,7 +253,7 @@ fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvi
         .chain(state.config.loader.notif_listeners.iter())
         .chain(state.config.signer.review.servers.iter())
         .chain(state.config.server.servers.iter())
-        .chain(http_tcp_sock_addrs.iter());
+        .chain(remote_control_servers.iter());
 
     // Bind to each of the specified sockets if needed.
     if let Err(err) = pre_bind_server_sockets_as_needed(&mut socket_provider, socket_configs) {

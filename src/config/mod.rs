@@ -41,8 +41,8 @@ pub struct Config {
     /// Path to the directory where the keys should be stored.
     pub keys_dir: Box<Utf8Path>,
 
-    /// HTTP interface related configuration.
-    pub http: HttpConfig,
+    /// Remote control configuration.
+    pub remote_control: RemoteControlConfig,
 
     /// Daemon-related configuration.
     pub daemon: DaemonConfig,
@@ -70,7 +70,7 @@ impl Default for Config {
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
             dnst_binary_path: "dnst".into(),
-            http: Default::default(),
+            remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
@@ -156,19 +156,19 @@ pub fn reload(center: &Center) -> Result<(), file::FileError> {
     Ok(())
 }
 
-//----------- HttpConfig -------------------------------------------------------
+//----------- RemoteControlConfig --------------------------------------------
 
-/// HTTP-related configuration for Cascade.
+/// Remote control configuration for Cascade.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HttpConfig {
-    /// Where to serve HTTP from, e.g. for the HTTP API.
+pub struct RemoteControlConfig {
+    /// Where to serve our HTTP API from, e.g. for the Cascade client.
     ///
     /// To support systems where it is not possible to bind simultaneously to
     /// both IPv4 and IPv6 more than one address can be provided if needed.
     pub servers: Vec<SocketAddr>,
 }
 
-impl Default for HttpConfig {
+impl Default for RemoteControlConfig {
     fn default() -> Self {
         Self {
             servers: vec![SocketAddr::from(([127, 0, 0, 1], 8950))],

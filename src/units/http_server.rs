@@ -141,7 +141,7 @@ impl HttpServer {
         let mut socks = vec![];
         {
             let state = state.center.state.lock().unwrap();
-            for addr in &state.config.http.servers {
+            for addr in &state.config.remote_control.servers {
                 let sock = socket_provider
                     .lock()
                     .unwrap()

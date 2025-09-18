@@ -6,7 +6,7 @@ use camino::Utf8Path;
 use serde::Deserialize;
 
 use crate::config::{
-    Config, DaemonConfig, GroupId, HttpConfig, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
+    Config, DaemonConfig, GroupId, RemoteControlConfig, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
     ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
 };
 
@@ -36,8 +36,8 @@ pub struct Spec {
     #[serde(default = "Spec::dnst_binary_path_default")]
     pub dnst_binary_path: Box<Utf8Path>,
 
-    /// HTTP interface related configuration.
-    pub http: HttpSpec,
+    /// Remote control configuration.
+    pub remote_control: RemoteControlSpec,
 
     /// Configuring the Cascade daemon.
     pub daemon: DaemonSpec,
@@ -65,7 +65,7 @@ impl Spec {
         config.tsig_store_path = self.tsig_store_path;
         config.keys_dir = self.keys_dir;
         config.dnst_binary_path = self.dnst_binary_path;
-        self.http.parse_into(&mut config.http);
+        self.remote_control.parse_into(&mut config.remote_control);
         self.daemon.parse_into(&mut config.daemon);
         self.loader.parse_into(&mut config.loader);
         self.signer.parse_into(&mut config.signer);
@@ -84,7 +84,7 @@ impl Default for Spec {
             tsig_store_path: Self::tsig_store_path_default(),
             keys_dir: Self::keys_dir_default(),
             dnst_binary_path: Self::dnst_binary_path_default(),
-            http: Default::default(),
+            remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
@@ -121,32 +121,32 @@ impl Spec {
     }
 }
 
-//----------- HttpSpec ---------------------------------------------------------
+//----------- RemoteControlSpec ----------------------------------------------
 
-/// HTTP-related configuration for Cascade.
+/// Remote control configuration for Cascade.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct HttpSpec {
-    /// Where to serve HTTP from, e.g. for the HTTP API.
+pub struct RemoteControlSpec {
+    /// Where to serve our HTTP API from, e.g. for the Cascade client.
     ///
     /// To support systems where it is not possible to bind simultaneously to
     /// both IPv4 and IPv6 more than one address can be provided if needed.
-    #[serde(default = "HttpSpec::servers_default")]
+    #[serde(default = "RemoteControlSpec::servers_default")]
     pub servers: Vec<SocketAddr>,
 }
 
 //--- Conversion
 
-impl HttpSpec {
+impl RemoteControlSpec {
     /// Parse from this specification.
-    pub fn parse_into(self, config: &mut HttpConfig) {
+    pub fn parse_into(self, config: &mut RemoteControlConfig) {
         config.servers = self.servers.clone();
     }
 }
 
 //--- Defaults
 
-impl Default for HttpSpec {
+impl Default for RemoteControlSpec {
     fn default() -> Self {
         Self {
             servers: Self::servers_default(),
@@ -154,7 +154,7 @@ impl Default for HttpSpec {
     }
 }
 
-impl HttpSpec {
+impl RemoteControlSpec {
     /// The default value for `servers`.
     fn servers_default() -> Vec<SocketAddr> {
         vec![SocketAddr::from(([127, 0, 0, 1], 8950))]
