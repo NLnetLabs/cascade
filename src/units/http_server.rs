@@ -26,7 +26,6 @@ use tokio::sync::mpsc;
 use crate::api;
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
-use crate::api::Nsec3OptOutPolicyInfo;
 use crate::api::PolicyChanges;
 use crate::api::PolicyInfo;
 use crate::api::PolicyInfoError;
@@ -50,7 +49,6 @@ use crate::api::ZonesListResult;
 use crate::center;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
-use crate::policy::Nsec3OptOutPolicy;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 
@@ -347,13 +345,7 @@ impl HttpServer {
             sig_validity_offset: p.latest.signer.sig_validity_time,
             denial: match p.latest.signer.denial {
                 SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
-                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 {
-                    opt_out: match opt_out {
-                        Nsec3OptOutPolicy::Disabled => Nsec3OptOutPolicyInfo::Disabled,
-                        Nsec3OptOutPolicy::FlagOnly => Nsec3OptOutPolicyInfo::FlagOnly,
-                        Nsec3OptOutPolicy::Enabled => Nsec3OptOutPolicyInfo::Enabled,
-                    },
-                },
+                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 { opt_out },
             },
             review: ReviewPolicyInfo {
                 required: p.latest.signer.review.required,

@@ -13,8 +13,8 @@ use crate::{
     center::{Change, State},
     config::{self, Config},
     policy::{
-        KeyManagerPolicy, LoaderPolicy, Nsec3OptOutPolicy, Policy, PolicyVersion, ReviewPolicy,
-        ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+        KeyManagerPolicy, LoaderPolicy, Policy, PolicyVersion, ReviewPolicy, ServerPolicy,
+        SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
     },
     util::update_value,
     zone::{Zone, ZoneByName},
@@ -968,8 +968,8 @@ pub enum SignerDenialPolicySpec {
 
     /// Generate NSEC3 records.
     NSec3 {
-        /// Whether and how to enable NSEC3 Opt-Out.
-        opt_out: Nsec3OptOutPolicySpec,
+        /// Whether to enable NSEC3 Opt-Out.
+        opt_out: bool,
     },
 }
 
@@ -980,9 +980,7 @@ impl SignerDenialPolicySpec {
     pub fn parse(self) -> SignerDenialPolicy {
         match self {
             SignerDenialPolicySpec::NSec => SignerDenialPolicy::NSec,
-            SignerDenialPolicySpec::NSec3 { opt_out } => SignerDenialPolicy::NSec3 {
-                opt_out: opt_out.parse(),
-            },
+            SignerDenialPolicySpec::NSec3 { opt_out } => SignerDenialPolicy::NSec3 { opt_out },
         }
     }
 
@@ -990,47 +988,7 @@ impl SignerDenialPolicySpec {
     pub fn build(policy: &SignerDenialPolicy) -> Self {
         match *policy {
             SignerDenialPolicy::NSec => SignerDenialPolicySpec::NSec,
-            SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicySpec::NSec3 {
-                opt_out: Nsec3OptOutPolicySpec::build(opt_out),
-            },
-        }
-    }
-}
-
-//----------- Nsec3OptOutPolicySpec --------------------------------------------
-
-/// Spec for the NSEC3 Opt-Out mechanism.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
-pub enum Nsec3OptOutPolicySpec {
-    /// Do not enable Opt-Out.
-    Disabled,
-
-    /// Only set the Opt-Out flag.
-    FlagOnly,
-
-    /// Enable Opt-Out and omit the corresponding NSEC3 records.
-    Enabled,
-}
-
-//--- Conversion
-
-impl Nsec3OptOutPolicySpec {
-    /// Parse from this specification.
-    pub fn parse(self) -> Nsec3OptOutPolicy {
-        match self {
-            Nsec3OptOutPolicySpec::Disabled => Nsec3OptOutPolicy::Disabled,
-            Nsec3OptOutPolicySpec::FlagOnly => Nsec3OptOutPolicy::FlagOnly,
-            Nsec3OptOutPolicySpec::Enabled => Nsec3OptOutPolicy::Enabled,
-        }
-    }
-
-    /// Build into this specification.
-    pub fn build(policy: Nsec3OptOutPolicy) -> Self {
-        match policy {
-            Nsec3OptOutPolicy::Disabled => Nsec3OptOutPolicySpec::Disabled,
-            Nsec3OptOutPolicy::FlagOnly => Nsec3OptOutPolicySpec::FlagOnly,
-            Nsec3OptOutPolicy::Enabled => Nsec3OptOutPolicySpec::Enabled,
+            SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicySpec::NSec3 { opt_out },
         }
     }
 }

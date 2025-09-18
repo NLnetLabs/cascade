@@ -316,43 +316,9 @@ pub enum SignerDenialPolicy {
 
     /// Generate NSEC3 records.
     NSec3 {
-        /// Whether and how to enable NSEC3 Opt-Out.
-        opt_out: Nsec3OptOutPolicy,
+        /// Whether to enable NSEC3 Opt-Out.
+        opt_out: bool,
     },
-}
-
-//----------- Nsec3OptOutPolicy ------------------------------------------------
-
-/// Policy for the NSEC3 Opt-Out mechanism.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Nsec3OptOutPolicy {
-    /// Do not enable Opt-Out.
-    Disabled,
-
-    /// Only set the Opt-Out flag.
-    FlagOnly,
-
-    /// Enable Opt-Out and omit the corresponding NSEC3 records.
-    Enabled,
-}
-
-//----------- ReviewPolicy -----------------------------------------------------
-
-/// Policy for reviewing loaded/signed zones.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReviewPolicy {
-    /// Whether review is required.
-    ///
-    /// If this is `false`, zones under this policy will not wait for external
-    /// approval of new versions when they are loaded / signed.
-    pub required: bool,
-
-    /// A command hook for reviewing a new version of the zone.
-    ///
-    /// When a new loaded / signed version of the zone is prepared, this hook
-    /// (if [`Some`]) will be spawned to verify the zone.  If review is required
-    /// and the hook fails, the zone will not be propagated.
-    pub cmd_hook: Option<String>,
 }
 
 //----------- ServerPolicy -----------------------------------------------------

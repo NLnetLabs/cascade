@@ -6,8 +6,8 @@ use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 
 use crate::policy::{
-    KeyManagerPolicy, LoaderPolicy, Nsec3OptOutPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
-    SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+    KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy, SignerDenialPolicy,
+    SignerPolicy, SignerSerialPolicy,
 };
 
 use super::super::{AutoConfig, DsAlgorithm, KeyParameters};
@@ -198,27 +198,43 @@ impl Default for KeyManagerSpec {
         const ONE_DAY: u64 = 86400;
         const FOUR_WEEKS: u64 = 2419200;
         Self {
+            // Default to KSK plus ZSK. CSK key rolls are more complex.
+            // No official reference.
             use_csk: false,
+
             algorithm: Default::default(),
-            ksk_validity: None, // Is this correct?
-            zsk_validity: None,
-            csk_validity: None,
+
+            // Roll a KSK once a year. No official reference.
+            ksk_validity: Some(365 * 24 * 3600),
+
+            // Roll a ZSK once a month. No official reference.
+            zsk_validity: Some(30 * 24 * 3600),
+
+            // Roll a CSK once a year just like a KSK. Assume that the DS
+            // record may need to be updated to hand.
+            csk_validity: Some(365 * 24 * 3600),
+
             auto_ksk: Default::default(),
             auto_zsk: Default::default(),
             auto_csk: Default::default(),
             auto_algorithm: Default::default(),
 
-            // Do we have a reference for this following durations?
-            dnskey_inception_offset: ONE_DAY,
-            dnskey_signature_lifetime: FOUR_WEEKS,
-            dnskey_remain_time: FOUR_WEEKS / 2,
-            cds_inception_offset: ONE_DAY,
-            cds_signature_lifetime: FOUR_WEEKS,
-            cds_remain_time: FOUR_WEEKS / 2,
+            // The following have roughly the same defaults as used for
+            // signing the zone.
+            dnskey_inception_offset: 24 * 3600,
+            dnskey_signature_lifetime: 14 * 24 * 3600,
+            dnskey_remain_time: 14 * 24 * 3600 / 2,
+            cds_inception_offset: 24 * 3600,
+            cds_signature_lifetime: 14 * 24 * 3600,
+            cds_remain_time: 14 * 24 * 3600 / 2,
 
             ds_algorithm: Default::default(),
+
+            // It would be best to default to the SOA minimum. However,
+            // keyset doesn't have access to that. No official reference.
             default_ttl: Ttl::from_secs(3600), // Reference?
-            auto_remove: true,                 // Note, no auto_remove_delay at the moment.
+
+            auto_remove: true, // Note, no auto_remove_delay at the moment.
         }
     }
 }
@@ -226,7 +242,7 @@ impl Default for KeyManagerSpec {
 //----------- SignerSpec -------------------------------------------------------
 
 /// Policy for signing zones.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct SignerSpec {
     /// The serial number generation policy.
@@ -274,6 +290,33 @@ impl SignerSpec {
     }
 }
 
+impl Default for SignerSpec {
+    fn default() -> Self {
+        Self {
+            serial_policy: Default::default(),
+
+            // There is small risk that either the signer or a validator
+            // has the wrong time zone settings. Back dating signatures by
+            // one day should solve that problem and not introduce any
+            // security risks. No official reference.
+            sig_inception_offset: 24 * 3600,
+
+            // .com SOA: 7 days
+            // .nl SOA: 14 days
+            // .net SOA: 7 days
+            // .org SOA: 21 days
+            // No official reference.
+            sig_validity_time: 14 * 24 * 3600,
+
+            // Missing: sig_remain_time
+            // Set this to 7 days.
+            denial: Default::default(),
+
+            review: Default::default(),
+        }
+    }
+}
+
 //----------- SignerSerialPolicySpec -------------------------------------------
 
 /// Policy for generating serial numbers.
@@ -284,7 +327,6 @@ pub enum SignerSerialPolicySpec {
     Keep,
 
     /// Increment the serial number on every change.
-    #[default]
     Counter,
 
     /// Use the current Unix time, in seconds.
@@ -293,6 +335,11 @@ pub enum SignerSerialPolicySpec {
     UnixTime,
 
     /// Set the serial number to `<YYYY><MM><DD><xx>`.
+    ///
+    /// Set the default to a human readable serial number. Counter would be
+    /// a good default for zone recevied through XFR. For zones that are
+    /// recevied may not have a usable serial number.
+    #[default]
     DateCounter,
 }
 
@@ -322,17 +369,42 @@ impl SignerSerialPolicySpec {
 
 //----------- SignerDenialSpec -------------------------------------------------
 
+// Missing here is the TTL of the NSEC/NSEC3/NSEC3PARAMS records.
+// Make the ttl Option<u64>. None means use the SOA minimum.
+// Turn SignerDenialSpec into a struct.
+
 /// Spec for generating denial-of-existence records.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
 pub enum SignerDenialSpec {
     /// Generate NSEC records.
+    ///
+    /// RFC 9276 Section 3.1 recommends NSEC. Therefore it is the default.
+    #[default]
     NSec,
 
     /// Generate NSEC3 records.
     NSec3 {
         /// Whether and how to enable NSEC3 Opt-Out.
-        opt_out: Nsec3OptOutSpec,
+        // From RFC 9276:
+        // In general, NSEC3 with the Opt-Out flag enabled should only be
+        // used in large, highly dynamic zones with a small percentage of
+        // signed delegations. Operationally, this allows for fewer signature
+        // creations when new delegations are inserted into a zone. This is
+        // typically only necessary for extremely large registration points
+        // providing zone updates faster than real-time signing allows or
+        // when using memory-constrained hardware. Operators considering
+        // the use of NSEC3 are advised to carefully weigh the costs and
+        // benefits of choosing NSEC3 over NSEC. Smaller zones, or large
+        // but relatively static zones, are encouraged to not use the
+        // opt-opt flag and to take advantage of DNSSEC's authenticated
+        // denial of existence.
+        opt_out: bool,
+        // Missing fields:
+        // - salt
+        // - iterations
+        // RFC 9276 Section 3.1 recommends an iteration count of 0.
+        // RFC 9276 Section 3.1 recommends an empty salt.
     },
 }
 
@@ -343,9 +415,7 @@ impl SignerDenialSpec {
     pub fn parse(self) -> SignerDenialPolicy {
         match self {
             SignerDenialSpec::NSec => SignerDenialPolicy::NSec,
-            SignerDenialSpec::NSec3 { opt_out } => SignerDenialPolicy::NSec3 {
-                opt_out: opt_out.parse(),
-            },
+            SignerDenialSpec::NSec3 { opt_out } => SignerDenialPolicy::NSec3 { opt_out },
         }
     }
 
@@ -353,58 +423,7 @@ impl SignerDenialSpec {
     pub fn build(policy: &SignerDenialPolicy) -> Self {
         match *policy {
             SignerDenialPolicy::NSec => SignerDenialSpec::NSec,
-            SignerDenialPolicy::NSec3 { opt_out } => SignerDenialSpec::NSec3 {
-                opt_out: Nsec3OptOutSpec::build(opt_out),
-            },
-        }
-    }
-}
-
-//--- Default
-
-impl Default for SignerDenialSpec {
-    fn default() -> Self {
-        Self::NSec3 {
-            opt_out: Nsec3OptOutSpec::Disabled,
-        }
-    }
-}
-
-//----------- Nsec3OptOutSpec --------------------------------------------------
-
-/// Spec for the NSEC3 Opt-Out mechanism.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
-pub enum Nsec3OptOutSpec {
-    /// Do not enable Opt-Out.
-    #[default]
-    Disabled,
-
-    /// Only set the Opt-Out flag.
-    FlagOnly,
-
-    /// Enable Opt-Out and omit the corresponding NSEC3 records.
-    Enabled,
-}
-
-//--- Conversion
-
-impl Nsec3OptOutSpec {
-    /// Parse from this specification.
-    pub fn parse(self) -> Nsec3OptOutPolicy {
-        match self {
-            Nsec3OptOutSpec::Disabled => Nsec3OptOutPolicy::Disabled,
-            Nsec3OptOutSpec::FlagOnly => Nsec3OptOutPolicy::FlagOnly,
-            Nsec3OptOutSpec::Enabled => Nsec3OptOutPolicy::Enabled,
-        }
-    }
-
-    /// Build into this specification.
-    pub fn build(policy: Nsec3OptOutPolicy) -> Self {
-        match policy {
-            Nsec3OptOutPolicy::Disabled => Nsec3OptOutSpec::Disabled,
-            Nsec3OptOutPolicy::FlagOnly => Nsec3OptOutSpec::FlagOnly,
-            Nsec3OptOutPolicy::Enabled => Nsec3OptOutSpec::Enabled,
+            SignerDenialPolicy::NSec3 { opt_out } => SignerDenialSpec::NSec3 { opt_out },
         }
     }
 }

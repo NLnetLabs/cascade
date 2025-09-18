@@ -50,7 +50,7 @@ use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::payload::Update;
-use crate::policy::{Nsec3OptOutPolicy, PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
@@ -834,7 +834,7 @@ impl ZoneSigner {
         let denial = match &policy.signer.denial {
             SignerDenialPolicy::NSec => DenialConfig::Nsec(Default::default()),
             SignerDenialPolicy::NSec3 { opt_out } => {
-                let first = parse_nsec3_config(opt_out);
+                let first = parse_nsec3_config(*opt_out);
                 DenialConfig::Nsec3(first)
             }
         };
@@ -1047,24 +1047,15 @@ fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
     records
 }
 
-fn parse_nsec3_config(
-    opt_out: &Nsec3OptOutPolicy,
-) -> GenerateNsec3Config<Bytes, MultiThreadedSorter> {
+fn parse_nsec3_config(opt_out: bool) -> GenerateNsec3Config<Bytes, MultiThreadedSorter> {
     let mut params = Nsec3param::default();
-    if matches!(
-        opt_out,
-        Nsec3OptOutPolicy::FlagOnly | Nsec3OptOutPolicy::Enabled
-    ) {
+    if opt_out {
         params.set_opt_out_flag()
     }
 
     // TODO: support other ttl_modes? Seems missing from the config right now
     let ttl_mode = Nsec3ParamTtlMode::Soa;
-    let mut nsec3_config = GenerateNsec3Config::new(params).with_ttl_mode(ttl_mode);
-    if matches!(opt_out, Nsec3OptOutPolicy::FlagOnly) {
-        nsec3_config = nsec3_config.without_opt_out_excluding_owner_names_of_unsigned_delegations();
-    }
-    nsec3_config
+    GenerateNsec3Config::new(params).with_ttl_mode(ttl_mode)
 }
 
 impl std::fmt::Debug for ZoneSigner {
