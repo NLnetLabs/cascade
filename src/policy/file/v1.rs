@@ -2,12 +2,15 @@
 
 use std::time::Duration;
 
+use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 
 use crate::policy::{
     KeyManagerPolicy, LoaderPolicy, Nsec3OptOutPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
     SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
 };
+
+use super::super::{AutoConfig, DsAlgorithm, KeyParameters};
 
 //----------- Spec -------------------------------------------------------------
 
@@ -84,22 +87,139 @@ impl LoaderSpec {
 //----------- KeyManagerSpec ---------------------------------------------------
 
 /// Policy for zone key management.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct KeyManagerSpec {}
+pub struct KeyManagerSpec {
+    /// Whether to use a CSK (if true) or a KSK and a ZSK.
+    use_csk: bool,
+
+    /// Algorithm and other parameters for key generation.
+    algorithm: KeyParameters,
+
+    /// Validity of KSKs in seconds.
+    ksk_validity: Option<u64>,
+    /// Validity of ZSKs in seconds.
+    zsk_validity: Option<u64>,
+    /// Validity of CSKs in seconds.
+    csk_validity: Option<u64>,
+
+    /// Configuration variable for automatic KSK rolls.
+    auto_ksk: AutoConfig,
+    /// Configuration variable for automatic ZSK rolls.
+    auto_zsk: AutoConfig,
+    /// Configuration variable for automatic CSK rolls.
+    auto_csk: AutoConfig,
+    /// Configuration variable for automatic algorithm rolls.
+    auto_algorithm: AutoConfig,
+
+    /// DNSKEY signature inception offset in seconds (positive values are
+    /// subtracted from the current time).
+    dnskey_inception_offset: u64,
+
+    /// DNSKEY signature lifetime in seconds.
+    dnskey_signature_lifetime: u64,
+
+    /// The required remaining signature time in seconds.
+    dnskey_remain_time: u64,
+
+    /// CDS/CDNSKEY signature inception offset in seconds.
+    cds_inception_offset: u64,
+
+    /// CDS/CDNSKEY signature lifetime in seconds.
+    cds_signature_lifetime: u64,
+
+    /// The required remaining signature time in seconds.
+    cds_remain_time: u64,
+
+    /// The DS hash algorithm.
+    ds_algorithm: DsAlgorithm,
+
+    /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
+    default_ttl: Ttl,
+
+    /// Automatically remove keys that are no long in use.
+    auto_remove: bool,
+}
 
 //--- Conversion
 
 impl KeyManagerSpec {
     /// Parse from this specification.
     pub fn parse(self) -> KeyManagerPolicy {
-        KeyManagerPolicy {}
+        KeyManagerPolicy {
+            use_csk: self.use_csk,
+            algorithm: self.algorithm,
+            ksk_validity: self.ksk_validity,
+            zsk_validity: self.zsk_validity,
+            csk_validity: self.csk_validity,
+            auto_ksk: self.auto_ksk,
+            auto_zsk: self.auto_zsk,
+            auto_csk: self.auto_csk,
+            auto_algorithm: self.auto_algorithm,
+            dnskey_inception_offset: self.dnskey_inception_offset,
+            dnskey_signature_lifetime: self.dnskey_signature_lifetime,
+            dnskey_remain_time: self.dnskey_remain_time,
+            cds_inception_offset: self.cds_inception_offset,
+            cds_signature_lifetime: self.cds_signature_lifetime,
+            cds_remain_time: self.cds_remain_time,
+            ds_algorithm: self.ds_algorithm,
+            default_ttl: self.default_ttl,
+            auto_remove: self.auto_remove,
+        }
     }
 
     /// Build into this specification.
     pub fn build(policy: &KeyManagerPolicy) -> Self {
-        let KeyManagerPolicy {} = policy;
-        Self {}
+        Self {
+            use_csk: policy.use_csk,
+            algorithm: policy.algorithm.clone(),
+            ksk_validity: policy.ksk_validity,
+            zsk_validity: policy.zsk_validity,
+            csk_validity: policy.csk_validity,
+            auto_ksk: policy.auto_ksk.clone(),
+            auto_zsk: policy.auto_zsk.clone(),
+            auto_csk: policy.auto_csk.clone(),
+            auto_algorithm: policy.auto_algorithm.clone(),
+            dnskey_inception_offset: policy.dnskey_inception_offset,
+            dnskey_signature_lifetime: policy.dnskey_signature_lifetime,
+            dnskey_remain_time: policy.dnskey_remain_time,
+            cds_inception_offset: policy.cds_inception_offset,
+            cds_signature_lifetime: policy.cds_signature_lifetime,
+            cds_remain_time: policy.cds_remain_time,
+            ds_algorithm: policy.ds_algorithm.clone(),
+            default_ttl: policy.default_ttl,
+            auto_remove: policy.auto_remove,
+        }
+    }
+}
+
+impl Default for KeyManagerSpec {
+    fn default() -> Self {
+        const ONE_DAY: u64 = 86400;
+        const FOUR_WEEKS: u64 = 2419200;
+        Self {
+            use_csk: false,
+            algorithm: Default::default(),
+            ksk_validity: None, // Is this correct?
+            zsk_validity: None,
+            csk_validity: None,
+            auto_ksk: Default::default(),
+            auto_zsk: Default::default(),
+            auto_csk: Default::default(),
+            auto_algorithm: Default::default(),
+
+            // Do we have a reference for this following durations?
+            dnskey_inception_offset: ONE_DAY,
+            dnskey_signature_lifetime: FOUR_WEEKS,
+            dnskey_remain_time: FOUR_WEEKS / 2,
+            cds_inception_offset: ONE_DAY,
+            cds_signature_lifetime: FOUR_WEEKS,
+            cds_remain_time: FOUR_WEEKS / 2,
+
+            ds_algorithm: Default::default(),
+            default_ttl: Ttl::from_secs(3600), // Reference?
+            auto_remove: true,                 // Note, no auto_remove_delay at the moment.
+        }
     }
 }
 
