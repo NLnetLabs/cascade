@@ -209,7 +209,7 @@ impl Default for KeyManagerSpec {
             zsk_validity: Some(30 * 24 * 3600),
 
             // Roll a CSK once a year just like a KSK. Assume that the DS
-            // record may need to be updated to hand.
+            // record may need to be updated by hand.
             csk_validity: Some(365 * 24 * 3600),
 
             auto_ksk: Default::default(),
