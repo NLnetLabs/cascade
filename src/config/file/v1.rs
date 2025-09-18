@@ -157,7 +157,6 @@ impl Default for HttpSpec {
 impl HttpSpec {
     /// The default value for `servers`.
     fn servers_default() -> Vec<SocketAddr> {
-        log::info!("DEFAULT INVOKED");
         vec![SocketAddr::from(([127, 0, 0, 1], 8950))]
     }
 }
