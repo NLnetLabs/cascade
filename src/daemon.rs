@@ -180,14 +180,6 @@ impl SocketProvider {
         Ok(())
     }
 
-    pub fn has_udp(&self, addr: &SocketAddr) -> bool {
-        self.env_sockets.has_udp(addr) || self.own_udp_sockets.contains_key(addr)
-    }
-
-    pub fn has_tcp(&self, addr: &SocketAddr) -> bool {
-        self.env_sockets.has_tcp(addr) || self.own_tcp_listeners.contains_key(addr)
-    }
-
     /// Returns a UDP socket that was pre-bound to the specified local
     /// address, whether supplied via the environment or bound directly, if
     /// available.
