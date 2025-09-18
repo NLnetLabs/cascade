@@ -531,7 +531,7 @@ dependencies = [
 [[package]]
 name = "daemonbase"
 version = "0.1.3"
-source = "git+https://github.com/NLnetLabs/daemonbase?branch=add-systemd-socket-via-env-support#068205a61a22a3a6565733695a4513d2acebcc1f"
+source = "git+https://github.com/NLnetLabs/daemonbase#c4d445658612f9e7495a4aeb5ade3db2824a08d4"
 dependencies = [
  "chrono",
  "clap",
@@ -726,7 +726,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1351,7 +1351,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2164,7 +2164,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2575,7 +2575,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
