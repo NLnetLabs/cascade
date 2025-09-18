@@ -124,13 +124,14 @@ impl Spec {
 //----------- HttpSpec ---------------------------------------------------------
 
 /// HTTP-related configuration for Cascade.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct HttpSpec {
     /// Where to serve HTTP from, e.g. for the HTTP API.
     ///
     /// To support systems where it is not possible to bind simultaneously to
     /// both IPv4 and IPv6 more than one address can be provided if needed.
+    #[serde(default = "HttpSpec::servers_default")]
     pub servers: Vec<SocketAddr>,
 }
 
@@ -140,6 +141,24 @@ impl HttpSpec {
     /// Parse from this specification.
     pub fn parse_into(self, config: &mut HttpConfig) {
         config.servers = self.servers.clone();
+    }
+}
+
+//--- Defaults
+
+impl Default for HttpSpec {
+    fn default() -> Self {
+        Self {
+            servers: Self::servers_default(),
+        }
+    }
+}
+
+impl HttpSpec {
+    /// The default value for `servers`.
+    fn servers_default() -> Vec<SocketAddr> {
+        log::info!("DEFAULT INVOKED");
+        vec![SocketAddr::from(([127, 0, 0, 1], 8950))]
     }
 }
 
