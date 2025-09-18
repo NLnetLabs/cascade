@@ -66,6 +66,7 @@ pub async fn spawn(
 ) -> Result<(), Error> {
     let socket_provider = Arc::new(Mutex::new(socket_provider));
 
+    // Spawn the central command.
     log::info!("Starting target 'CC'");
     let target = CentralCommand {
         center: center.clone(),
