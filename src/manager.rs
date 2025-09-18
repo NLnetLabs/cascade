@@ -180,8 +180,23 @@ pub async fn spawn(
     );
     unit_tx_slots.insert("RS2".into(), cmd_tx);
 
-    // Wait for the units above to signal they are ready before starting the
-    // HTTP server, so that we don't receive requests before we are ready.
+    // Spawn the HTTP server.
+    log::info!("Starting unit 'HS'");
+    let unit = HttpServer {
+        center: center.clone(),
+    };
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+    let (ready_tx, ready_rx) = oneshot::channel();
+    unit_ready_rxs.push(ready_rx);
+    unit_join_handles.insert(
+        "HS",
+        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
+    );
+    unit_tx_slots.insert("HS".into(), cmd_tx);
+
+    // Wait for the units above to be ready, then we know that all systemd
+    // activation sockets that are needed by the units above have been taken
+    // and can reliably let the PS unit take any remaining sockets.
     join_all(unit_ready_rxs).await;
 
     // None of the units above should have exited already.
@@ -190,26 +205,6 @@ pub async fn spawn(
         .find_map(|(unit, handle)| handle.is_finished().then_some(unit))
     {
         log::error!("Unit '{failed_unit}' terminated unexpectedly. Aborting.");
-        return Err(Terminated.into());
-    }
-
-    // Spawn the HTTP server.
-    log::info!("Starting unit 'HS'");
-    let unit = HttpServer {
-        center: center.clone(),
-    };
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    let join_handle = tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone()));
-    unit_tx_slots.insert("HS".into(), cmd_tx);
-
-    // Wait for the HTTP server to be ready, then we know that all systemd
-    // activation sockets that are needed by the units above have been taken
-    // and can reliably let the PS unit take any remaining sockets.
-    ready_rx.await?;
-
-    if join_handle.is_finished() {
-        log::error!("The HTTP server unit terminated unexpectedly. Aborting.");
         return Err(Terminated.into());
     }
 
