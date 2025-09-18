@@ -171,7 +171,11 @@ impl ConfigSpec {
         update_value(&mut config.tsig_store_path, self.tsig_store_path, changed);
         update_value(&mut config.keys_dir, self.keys_dir, changed);
         update_value(&mut config.dnst_binary_path, self.dnst_binary_path, changed);
-        update_value(&mut config.remote_control, self.remote_control.parse(), changed);
+        update_value(
+            &mut config.remote_control,
+            self.remote_control.parse(),
+            changed,
+        );
         self.daemon.parse_into(&mut config.daemon, changed);
         update_value(&mut config.loader, self.loader.parse(), changed);
         update_value(&mut config.signer, self.signer.parse(), changed);

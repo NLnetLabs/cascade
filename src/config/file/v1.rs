@@ -6,8 +6,8 @@ use camino::Utf8Path;
 use serde::Deserialize;
 
 use crate::config::{
-    Config, DaemonConfig, GroupId, RemoteControlConfig, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
-    ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
+    Config, DaemonConfig, GroupId, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
+    RemoteControlConfig, ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
 };
 
 //----------- Spec -------------------------------------------------------------
