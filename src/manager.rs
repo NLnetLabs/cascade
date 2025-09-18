@@ -1,14 +1,13 @@
 //! Controlling the entire operation.
 
-use log::debug;
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::mpsc::{self};
+use std::sync::{Arc, Mutex};
 
 use crate::center::Center;
-use crate::comms::ApplicationCommand;
+use crate::comms::{ApplicationCommand, Terminated};
+use crate::daemon::SocketProvider;
 use crate::payload::Update;
 use crate::targets::central_command::CentralCommand;
 use crate::units::http_server::HttpServer;
@@ -16,15 +15,57 @@ use crate::units::key_manager::KeyManagerUnit;
 use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServerUnit};
 use crate::units::zone_signer::{KmipServerConnectionSettings, ZoneSignerUnit};
+use daemonbase::process::EnvSocketsError;
 use domain::zonetree::StoredName;
+use futures::future::join_all;
+use log::debug;
+use tokio::sync::mpsc::{self};
+use tokio::sync::oneshot;
+use tokio::sync::oneshot::error::RecvError;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Error {
+    EnvSockets(EnvSocketsError),
+    Terminated,
+}
+
+impl From<EnvSocketsError> for Error {
+    fn from(err: EnvSocketsError) -> Self {
+        Error::EnvSockets(err)
+    }
+}
+
+impl From<Terminated> for Error {
+    fn from(_: Terminated) -> Self {
+        Error::Terminated
+    }
+}
+
+impl From<RecvError> for Error {
+    fn from(_err: RecvError) -> Self {
+        Error::Terminated
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::EnvSockets(err) => err.fmt(f),
+            Error::Terminated => Terminated.fmt(f),
+        }
+    }
+}
 
 /// Spawn all targets.
-pub fn spawn(
+pub async fn spawn(
     center: &Arc<Center>,
     update_rx: mpsc::UnboundedReceiver<Update>,
     center_tx_slot: &mut Option<mpsc::UnboundedSender<TargetCommand>>,
     unit_tx_slots: &mut foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
-) {
+    socket_provider: SocketProvider,
+) -> Result<(), Error> {
+    let socket_provider = Arc::new(Mutex::new(socket_provider));
+
     // Spawn the central command.
     log::info!("Starting target 'CC'");
     let target = CentralCommand {
@@ -62,13 +103,19 @@ pub fn spawn(
             .unwrap();
     let xfr_out = std::env::var("PS_XFR_OUT").unwrap_or("127.0.0.1:8055 KEY sec1-key".into());
 
+    // Collate oneshot unit ready signal receivers by unit name.
+    let mut unit_ready_rxs = vec![];
+    let mut unit_join_handles = HashMap::new();
+
     // Spawn the zone loader.
     log::info!("Starting unit 'ZL'");
     let unit = ZoneLoader {
         center: center.clone(),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    let (ready_tx, ready_rx) = oneshot::channel();
+    unit_ready_rxs.push(ready_rx);
+    unit_join_handles.insert("ZL", tokio::spawn(unit.run(cmd_rx, ready_tx)));
     unit_tx_slots.insert("ZL".into(), cmd_tx);
 
     // Spawn the unsigned zone review server.
@@ -81,7 +128,12 @@ pub fn spawn(
         http_api_path: Arc::new(String::from("/_unit/rs/")),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    let (ready_tx, ready_rx) = oneshot::channel();
+    unit_ready_rxs.push(ready_rx);
+    unit_join_handles.insert(
+        "RS",
+        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
+    );
     unit_tx_slots.insert("RS".into(), cmd_tx);
 
     // Spawn the key manager.
@@ -90,7 +142,9 @@ pub fn spawn(
         center: center.clone(),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    let (ready_tx, ready_rx) = oneshot::channel();
+    unit_ready_rxs.push(ready_rx);
+    unit_join_handles.insert("KM", tokio::spawn(unit.run(cmd_rx, ready_tx)));
     unit_tx_slots.insert("KM".into(), cmd_tx);
 
     // Spawn the zone signer.
@@ -104,7 +158,9 @@ pub fn spawn(
         kmip_server_conn_settings,
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    let (ready_tx, ready_rx) = oneshot::channel();
+    unit_ready_rxs.push(ready_rx);
+    unit_join_handles.insert("ZS", tokio::spawn(unit.run(cmd_rx, ready_tx)));
     unit_tx_slots.insert("ZS".into(), cmd_tx);
 
     // Spawn the signed zone review server.
@@ -117,10 +173,42 @@ pub fn spawn(
         source: zone_server::Source::SignedZones,
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    let (ready_tx, ready_rx) = oneshot::channel();
+    unit_ready_rxs.push(ready_rx);
+    unit_join_handles.insert(
+        "RS2",
+        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
+    );
     unit_tx_slots.insert("RS2".into(), cmd_tx);
 
-    // Spawn the published zone server.
+    // Spawn the HTTP server.
+    log::info!("Starting unit 'HS'");
+    let unit = HttpServer {
+        center: center.clone(),
+    };
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+    let (ready_tx, ready_rx) = oneshot::channel();
+    unit_ready_rxs.push(ready_rx);
+    unit_join_handles.insert(
+        "HS",
+        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
+    );
+    unit_tx_slots.insert("HS".into(), cmd_tx);
+
+    // Wait for the units above to be ready, then we know that all systemd
+    // activation sockets that are needed by the units above have been taken
+    // and can reliably let the PS unit take any remaining sockets.
+    join_all(unit_ready_rxs).await;
+
+    // None of the units above should have exited already.
+    if let Some(failed_unit) = unit_join_handles
+        .iter()
+        .find_map(|(unit, handle)| handle.is_finished().then_some(unit))
+    {
+        log::error!("Unit '{failed_unit}' terminated unexpectedly. Aborting.");
+        return Err(Terminated.into());
+    }
+
     log::info!("Starting unit 'PS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
@@ -130,19 +218,15 @@ pub fn spawn(
         source: zone_server::Source::PublishedZones,
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let _join_handle = tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone()));
     unit_tx_slots.insert("PS".into(), cmd_tx);
 
-    // Spawn the HTTP server.
-    log::info!("Starting unit 'HS'");
-    let unit = HttpServer {
-        center: center.clone(),
-        // TODO: config/argument option
-        listen_addr: "127.0.0.1:8950".parse().unwrap(),
-    };
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    tokio::spawn(unit.run(cmd_rx));
-    unit_tx_slots.insert("HS".into(), cmd_tx);
+    ready_rx.await?;
+
+    log::info!("All units report ready.");
+
+    Ok(())
 }
 
 /// Forward application commands.
