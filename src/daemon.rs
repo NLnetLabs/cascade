@@ -77,12 +77,12 @@ fn into_daemon_path(p: Box<Utf8Path>) -> daemonbase::config::ConfigPath {
 
 /// A wrapper around [`EnvSockets`] for also offering directly bound sockets.
 ///
-/// Can bind directly to listen addresses/and expose the alternate (systemd
-/// provided sockets vs directly bound sockets) or combined (systemd provided
-/// sockets and directly bound sockets) set of sockets to the application via
-/// a single interface.
+/// Can bind directly to listen addresses as well as expose the alternate
+/// (systemd provided) sockets, allowing the caller to take the desired socket
+/// irrespective of whether it was bound by us or systemd via a single common
+/// interface.
 ///
-/// See: [`EnvSockets`]
+/// See: [`daemonbase::process::EnvSockets`]
 #[derive(Debug, Default)]
 pub struct SocketProvider {
     /// Sockets received from systemd, if any.
@@ -96,10 +96,32 @@ pub struct SocketProvider {
 }
 
 impl SocketProvider {
+    /// Create an empty provider.
+    ///
+    /// Attempts to take/pop tcp/udp will fail until either
+    /// [`init_from_env()`], [`pre_bind_udp()`] or [`pre_bind_tcp()`] have
+    /// been called to add at least one socket to the set managed by this
+    /// provider.
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// Capture socket file descriptors from environment variables.
+    ///
+    /// Uses the following environment variables per [`sd_listen_fds()``]:
+    ///   - LISTEN_PID: Must match our own PID.
+    ///   - LISTEN_FDS: The number of FDs being passed to the application.
+    ///
+    /// Only sockets of type AF_INET UDP and AF_INET TCP, whose address can
+    /// be determined, will be captured by this function. Other socket file
+    /// descriptors will be ignored.
+    ///
+    /// If needed one can restrict the set of number of file descriptors
+    /// to be obtained from the environment to a maximum via the
+    /// [`max_fds_to_process`] argument, which may be useful if expecting a
+    /// fixed number or not intending to bind an excessive number of sockets.
+    ///
+    /// [`sd_listen_fds()`]: https://www.man7.org/linux/man-pages/man3/sd_listen_fds.3.html#NOTES
     pub fn init_from_env(&mut self, max_fds_to_process: Option<usize>) {
         if let Err(err) = self.env_sockets.init_from_env(max_fds_to_process) {
             match err {
@@ -124,6 +146,14 @@ impl SocketProvider {
         &mut self,
         addr: SocketAddr,
     ) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
+    /// Bind a UDP socket for use later.
+    ///
+    /// Will silently succeed if a socket of the same type and address has
+    /// already been bound, either by the application or systemd. This allows
+    /// an application to attempt to bind to the port but not do so (as it
+    /// would fail if attempted) if the port was already bound by systemd.
+    //
+    // TODO: Should we also support being passed existing bound sockets?
         if !self.env_sockets.has_udp(&addr) {
             let socket = UdpSocket::bind(addr).map_err(|err| ("UDP", addr, err))?;
             let _ = self.own_udp_sockets.insert(addr, socket);
@@ -135,6 +165,14 @@ impl SocketProvider {
         &mut self,
         addr: SocketAddr,
     ) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
+    /// Bind a TCP socket for use later.
+    ///
+    /// Will silently succeed if a socket of the same type and address has
+    /// already been bound, either by the application or systemd. This allows
+    /// an application to attempt to bind to the port but not do so (as it
+    /// would fail if attempted) if the port was already bound by systemd.
+    //
+    // TODO: Should we also support being passed existing bound sockets?
         if !self.env_sockets.has_tcp(&addr) {
             let listener = TcpListener::bind(addr).map_err(|err| ("TCP", addr, err))?;
             let _ = self.own_tcp_listeners.insert(addr, listener);
@@ -150,6 +188,12 @@ impl SocketProvider {
         self.env_sockets.has_tcp(addr) || self.own_tcp_listeners.contains_key(addr)
     }
 
+    /// Returns a UDP socket that was pre-bound to the specified local
+    /// address, whether supplied via the environment or bound directly, if
+    /// available.
+    ///
+    /// Subsequent attempts to remove the same UDP socket, or any other
+    /// non-existing socket, will return None.
     pub fn take_udp(&mut self, local_addr: &SocketAddr) -> Option<tokio::net::UdpSocket> {
         self.env_sockets
             .take_udp(local_addr)
@@ -157,6 +201,13 @@ impl SocketProvider {
             .and_then(Self::prepare_udp_socket)
     }
 
+    /// Returns the first available UDP socket from those received via the
+    /// environment or registered directly.
+    ///
+    /// Available sockets are those received via [`init_from_env()`] or
+    /// [`pre_bind`] and not yet removed via [`pop_udp()`] or [`take_udp()`].
+    ///
+    /// Returns None if no more UDP sockets are available.
     pub fn pop_udp(&mut self) -> Option<tokio::net::UdpSocket> {
         self.env_sockets
             .pop_udp()
@@ -164,6 +215,12 @@ impl SocketProvider {
             .and_then(Self::prepare_udp_socket)
     }
 
+    /// Returns a TCP socket that was pre-bound to the specified local
+    /// address, whether supplied via the environment or bound directly, if
+    /// available.
+    ///
+    /// Subsequent attempts to remove the same TCP socket, or any other
+    /// non-existing socket, will return None.
     pub fn take_tcp(&mut self, local_addr: &SocketAddr) -> Option<tokio::net::TcpListener> {
         self.env_sockets
             .take_tcp(local_addr)
@@ -171,6 +228,13 @@ impl SocketProvider {
             .and_then(Self::prepare_tcp_listener)
     }
 
+    /// Returns the first available TCP socket from those received via the
+    /// environment or registered directly.
+    ///
+    /// Available sockets are those received via [`init_from_env()`] or
+    /// [`pre_bind`] and not yet removed via [`pop_tcp()`] or [`take_tcp()`].
+    ///
+    /// Returns None if no more TCP sockets are available.
     pub fn pop_tcp(&mut self) -> Option<tokio::net::TcpListener> {
         self.env_sockets
             .pop_tcp()
@@ -178,6 +242,10 @@ impl SocketProvider {
             .and_then(Self::prepare_tcp_listener)
     }
 
+    /// Ensure the given UDP socket is ready for use by the application.
+    ///
+    /// Set to non-blocking to avoid blocking Tokio when interacting with
+    /// the socket and convert it into a Tokio type.
     fn prepare_udp_socket(sock: UdpSocket) -> Option<tokio::net::UdpSocket> {
         if let Err(err) = sock.set_nonblocking(true) {
             log::debug!("Cannot use UDP socket as setting it to non-blocking failed: {err}");
@@ -191,6 +259,10 @@ impl SocketProvider {
             .ok()
     }
 
+    /// Ensure the given TCP listener is ready for use by the application.
+    ///
+    /// Set to non-blocking to avoid blocking Tokio when interacting with
+    /// the socket and convert it into a Tokio type.
     fn prepare_tcp_listener(listener: TcpListener) -> Option<tokio::net::TcpListener> {
         if let Err(err) = listener.set_nonblocking(true) {
             log::debug!("Cannot use TCP listener as setting it to non-blocking failed: {err}");
