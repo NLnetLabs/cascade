@@ -2,14 +2,13 @@ use cascade::{
     center::{self, Center},
     comms::ApplicationCommand,
     config::{Config, SocketConfig},
-    daemon::{daemonize, SocketProvider},
+    daemon::{daemonize, PreBindError, SocketProvider},
     manager::{self, TargetCommand},
     policy,
 };
 use clap::{crate_authors, crate_version};
 use std::{
     io,
-    net::SocketAddr,
     process::ExitCode,
     sync::{Arc, Mutex},
 };
@@ -257,10 +256,9 @@ fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvi
         .chain(http_tcp_sock_addrs.iter());
 
     // Bind to each of the specified sockets if needed.
-    if let Err((socket_type, addr, err)) =
-        pre_bind_server_sockets_as_needed(&mut socket_provider, socket_configs)
+    if let Err(err) = pre_bind_server_sockets_as_needed(&mut socket_provider, socket_configs)
     {
-        log::error!("Failed to pre-bind to {socket_type} {addr}: {err}");
+        log::error!("{err}");
         return Err(());
     }
 
@@ -274,7 +272,7 @@ fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvi
 fn pre_bind_server_sockets_as_needed<'a, T: Iterator<Item = &'a SocketConfig>>(
     socket_provider: &mut SocketProvider,
     socket_configs: T,
-) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
+) -> Result<(), PreBindError> {
     for socket_config in socket_configs {
         match socket_config {
             SocketConfig::UDP { addr } => socket_provider.pre_bind_udp(*addr)?,

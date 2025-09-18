@@ -73,6 +73,69 @@ fn into_daemon_path(p: Box<Utf8Path>) -> daemonbase::config::ConfigPath {
     daemonbase::config::ConfigPath::from(p)
 }
 
+//------------ SocketType ----------------------------------------------------
+
+/// The type of a socket.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SocketType {
+    Udp,
+    Tcp,
+}
+
+impl std::fmt::Display for SocketType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SocketType::Udp => f.write_str("UDP"),
+            SocketType::Tcp => f.write_str("TCP"),
+        }
+    }
+}
+
+//------------ PreBindError --------------------------------------------------
+
+/// An error occurred while attepmting to pre-bind to a socket address.
+#[derive(Debug)]
+pub struct PreBindError {
+    /// The type of socket which could not be bound.
+    socket_type: SocketType,
+
+    /// The address which could not be bound to.
+    socket_addr: SocketAddr,
+
+    /// The actual error that occurred.
+    error: std::io::Error,
+}
+
+impl std::fmt::Display for PreBindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} could not be bound: {}",
+            self.socket_type, self.socket_addr, self.error
+        )
+    }
+}
+
+impl PreBindError {
+    /// Create a [`PreBindError`] for a UDP socket binding failure.
+    fn udp(socket_addr: SocketAddr, error: std::io::Error) -> Self {
+        Self {
+            socket_type: SocketType::Udp,
+            socket_addr,
+            error,
+        }
+    }
+
+    /// Create a [`PreBindError`] for a TCP socket binding failure.
+    fn tcp(socket_addr: SocketAddr, error: std::io::Error) -> Self {
+        Self {
+            socket_type: SocketType::Tcp,
+            socket_addr,
+            error,
+        }
+    }
+}
+
 //------------ SocketProvider ------------------------------------------------
 
 /// A wrapper around [`EnvSockets`] for also offering directly bound sockets.
@@ -142,10 +205,6 @@ impl SocketProvider {
         }
     }
 
-    pub fn pre_bind_udp(
-        &mut self,
-        addr: SocketAddr,
-    ) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
     /// Bind a UDP socket for use later.
     ///
     /// Will silently succeed if a socket of the same type and address has
@@ -154,17 +213,14 @@ impl SocketProvider {
     /// would fail if attempted) if the port was already bound by systemd.
     //
     // TODO: Should we also support being passed existing bound sockets?
+    pub fn pre_bind_udp(&mut self, addr: SocketAddr) -> Result<(), PreBindError> {
         if !self.env_sockets.has_udp(&addr) {
-            let socket = UdpSocket::bind(addr).map_err(|err| ("UDP", addr, err))?;
+            let socket = UdpSocket::bind(addr).map_err(|err| PreBindError::udp(addr, err))?;
             let _ = self.own_udp_sockets.insert(addr, socket);
         }
         Ok(())
     }
 
-    pub fn pre_bind_tcp(
-        &mut self,
-        addr: SocketAddr,
-    ) -> Result<(), (&'static str, SocketAddr, std::io::Error)> {
     /// Bind a TCP socket for use later.
     ///
     /// Will silently succeed if a socket of the same type and address has
@@ -173,8 +229,9 @@ impl SocketProvider {
     /// would fail if attempted) if the port was already bound by systemd.
     //
     // TODO: Should we also support being passed existing bound sockets?
+    pub fn pre_bind_tcp(&mut self, addr: SocketAddr) -> Result<(), PreBindError> {
         if !self.env_sockets.has_tcp(&addr) {
-            let listener = TcpListener::bind(addr).map_err(|err| ("TCP", addr, err))?;
+            let listener = TcpListener::bind(addr).map_err(|err| PreBindError::tcp(addr, err))?;
             let _ = self.own_tcp_listeners.insert(addr, listener);
         }
         Ok(())
