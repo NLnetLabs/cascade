@@ -256,8 +256,7 @@ fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvi
         .chain(http_tcp_sock_addrs.iter());
 
     // Bind to each of the specified sockets if needed.
-    if let Err(err) = pre_bind_server_sockets_as_needed(&mut socket_provider, socket_configs)
-    {
+    if let Err(err) = pre_bind_server_sockets_as_needed(&mut socket_provider, socket_configs) {
         log::error!("{err}");
         return Err(());
     }
