@@ -195,8 +195,6 @@ impl KeyManagerSpec {
 
 impl Default for KeyManagerSpec {
     fn default() -> Self {
-        const ONE_DAY: u64 = 86400;
-        const FOUR_WEEKS: u64 = 2419200;
         Self {
             // Default to KSK plus ZSK. CSK key rolls are more complex.
             // No official reference.
