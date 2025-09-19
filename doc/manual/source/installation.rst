@@ -78,13 +78,13 @@ to get started.
        
        .. code-block:: bash 
        
-          sudo systemctl status cascade
+          sudo systemctl status cascaded
        
        You can view the logs with: 
        
        .. code-block:: bash
        
-          sudo journalctl --unit=cascade
+          sudo journalctl --unit=cascaded
 
    .. group-tab:: Ubuntu
 
@@ -146,13 +146,13 @@ to get started.
        
        .. code-block:: bash 
        
-          sudo systemctl status cascade
+          sudo systemctl status cascaded
        
        You can view the logs with: 
        
        .. code-block:: bash
        
-          sudo journalctl --unit=Cascade
+          sudo journalctl --unit=cascaded
 
    .. group-tab:: RHEL
 
@@ -182,20 +182,36 @@ to get started.
 
           sudo yum install -y cascade
 
-       After installation Cascade will run immediately as the user
-       *Cascade* and be configured to start at boot. 
+       If you want to use a PKCS#11-based HSM, also install the KMIP to PKCS#11
+       relay with:
+
+       .. code-block:: bash
+
+          sudo yum install -y kmip2pkcs11
+
+       Then you can start Cascade with:
+
+       .. code-block:: bash
+
+          sudo systemctl start cascaded
+
+       You can also configure Cascade to start at boot:
+
+       .. code-block:: bash
+
+          sudo systemctl enable cascaded
        
        You can check the status of Cascade with:
        
        .. code-block:: bash 
        
-          sudo systemctl status cascade
+          sudo systemctl status cascaded
        
        You can view the logs with: 
        
        .. code-block:: bash
        
-          sudo journalctl --unit=cascade
+          sudo journalctl --unit=cascaded
        
    .. group-tab:: Docker
 
