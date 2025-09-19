@@ -94,7 +94,7 @@ impl ZoneStore for LightWeightZone {
 
     fn write(
         self: Arc<Self>,
-    ) -> Pin<Box<(dyn Future<Output = Box<(dyn WritableZone + 'static)>> + Send + Sync + 'static)>>
+    ) -> Pin<Box<dyn Future<Output = Box<dyn WritableZone + 'static>> + Send + Sync + 'static>>
     {
         trace!("WRITE");
         Box::pin(ready(Box::new(self.inner.clone()) as Box<dyn WritableZone>))

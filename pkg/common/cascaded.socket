@@ -1,0 +1,10 @@
+[Unit]
+Description=Cascaded Sockets
+
+[Socket]
+ListenDatagram=0.0.0.0:53
+ListenStream=0.0.0.0:53
+Accept=no
+
+[Install]
+WantedBy=sockets.target

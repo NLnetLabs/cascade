@@ -6,7 +6,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Command;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use arc_swap::ArcSwap;
@@ -39,19 +39,18 @@ use indoc::formatdoc;
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::Deserialize;
-use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, Sender};
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
 
 use crate::center::Center;
-use crate::common::net::ListenAddr;
 use crate::common::tsig::TsigKeyStore;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::config::SocketConfig;
+use crate::daemon::SocketProvider;
 use crate::payload::Update;
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -97,6 +96,8 @@ impl ZoneServerUnit {
     pub async fn run(
         self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
+        socket_provider: Arc<Mutex<SocketProvider>>,
     ) -> Result<(), Terminated> {
         let unit_name = match (self.mode, self.source) {
             (Mode::Prepublish, Source::UnsignedZones) => "RS",
@@ -153,33 +154,12 @@ impl ZoneServerUnit {
             servers.clone()
         };
 
-        let mut addrs = Vec::new();
+        let addrs = spawn_servers(socket_provider, unit_name, svc, servers)
+            .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
+            .map_err(|_| Terminated)?;
 
-        for addr in servers {
-            info!("[{unit_name}]: Binding on {addr:?}");
-
-            if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = addr {
-                let unit_name: Box<str> = unit_name.into();
-                let svc = svc.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = Self::server(ListenAddr::Udp(addr), svc).await {
-                        error!("[{unit_name}]: {err}");
-                    }
-                });
-                addrs.push(ListenAddr::Udp(addr));
-            }
-
-            if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = addr {
-                let unit_name: Box<str> = unit_name.into();
-                let svc = svc.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = Self::server(ListenAddr::Tcp(addr), svc).await {
-                        error!("[{unit_name}]: {err}");
-                    }
-                });
-                addrs.push(ListenAddr::Tcp(addr));
-            }
-        }
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
 
         let update_tx = self.center.update_tx.clone();
         ZoneServer::new(
@@ -195,45 +175,84 @@ impl ZoneServerUnit {
 
         Ok(())
     }
+}
 
-    async fn server<Svc>(addr: ListenAddr, svc: Svc) -> Result<(), std::io::Error>
-    where
-        Svc: Service<Vec<u8>, ()> + Clone,
-    {
-        let buf = VecBufSource;
-        match addr {
-            ListenAddr::Udp(addr) => {
-                let sock = UdpSocket::bind(addr).await?;
-                let config = dgram::Config::new();
-                let srv = DgramServer::<_, _, _>::with_config(sock, buf, svc, config);
-                let srv = Arc::new(srv);
-                srv.run().await;
-            }
-            ListenAddr::Tcp(addr) => {
-                let sock = tokio::net::TcpListener::bind(addr).await?;
-                let mut conn_config = ConnectionConfig::new();
-                conn_config.set_max_queued_responses(10000);
-                let mut config = stream::Config::new();
-                config.set_connection_config(conn_config);
-                let srv = StreamServer::with_config(sock, buf, svc, config);
-                let srv = Arc::new(srv);
-                srv.run().await;
-            } // #[cfg(feature = "tls")]
-              // ListenAddr::Tls(addr, config) => {
-              //     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
-              //     let sock = TcpListener::bind(addr).await?;
-              //     let sock = tls::RustlsTcpListener::new(sock, acceptor);
-              //     let mut conn_config = ConnectionConfig::new();
-              //     conn_config.set_max_queued_responses(10000);
-              //     let mut config = stream::Config::new();
-              //     config.set_connection_config(conn_config);
-              //     let srv = StreamServer::with_config(sock, buf, svc, config);
-              //     let srv = Arc::new(srv);
-              //     srv.run().await;
-              // }
+fn spawn_servers<Svc>(
+    socket_provider: Arc<Mutex<SocketProvider>>,
+    unit_name: &'static str,
+    svc: Svc,
+    servers: Vec<SocketConfig>,
+) -> Result<Vec<String>, String>
+where
+    Svc: Service<Vec<u8>, ()> + Clone,
+{
+    let mut addrs = Vec::new();
+    let mut socket_provider = socket_provider.lock().unwrap();
+    for sock_cfg in servers {
+        if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
+            info!("[{unit_name}]: Obtaining UDP socket for address {addr}");
+            let sock = socket_provider
+                .take_udp(&addr)
+                .ok_or(format!("No socket available for UDP {addr}"))?;
+            tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
         }
-        Ok(())
+
+        if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
+            info!("[{unit_name}]: Obtaining TCP listener for address {addr}");
+            let sock = socket_provider
+                .take_tcp(&addr)
+                .ok_or(format!("No socket available for TCP {addr}"))?;
+            tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
     }
+
+    if unit_name == "PS" {
+        // Also listen on any remaining UDP and TCP sockets provided by
+        // the O/S.
+        while let Some(sock) = socket_provider.pop_udp() {
+            let addr = sock
+                .local_addr()
+                .map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
+            info!("[{unit_name}]: Receieved additional UDP socket {addr}");
+            tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
+        while let Some(sock) = socket_provider.pop_tcp() {
+            let addr = sock
+                .local_addr()
+                .map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
+            info!("[{unit_name}]: Receieved additional TCP listener {addr}");
+            tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
+    }
+
+    Ok(addrs)
+}
+
+async fn serve_on_udp<Svc>(svc: Svc, buf: VecBufSource, sock: tokio::net::UdpSocket)
+where
+    Svc: Service<Vec<u8>, ()> + Clone,
+{
+    let config = dgram::Config::new();
+    let srv = DgramServer::<_, _, _>::with_config(sock, buf, svc, config);
+    let srv = Arc::new(srv);
+    srv.run().await;
+}
+
+async fn serve_on_tcp<Svc>(svc: Svc, buf: VecBufSource, sock: tokio::net::TcpListener)
+where
+    Svc: Service<Vec<u8>, ()> + Clone,
+{
+    let mut conn_config = ConnectionConfig::new();
+    conn_config.set_max_queued_responses(10000);
+    let mut config = stream::Config::new();
+    config.set_connection_config(conn_config);
+    let srv = StreamServer::with_config(sock, buf, svc, config);
+    let srv = Arc::new(srv);
+    srv.run().await;
 }
 
 //------------ ZoneServer ----------------------------------------------------
@@ -244,7 +263,7 @@ struct ZoneServer {
     center: Arc<Center>,
     mode: Mode,
     source: Source,
-    listen: Vec<ListenAddr>,
+    listen: Vec<String>,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
     #[allow(clippy::type_complexity)]
@@ -259,7 +278,7 @@ impl ZoneServer {
         http_api_path: Arc<String>,
         mode: Mode,
         source: Source,
-        listen: Vec<ListenAddr>,
+        listen: Vec<String>,
         zones: XfrDataProvidingZonesWrapper,
     ) -> Self {
         Self {
@@ -786,7 +805,7 @@ struct ZoneReviewApi {
     zones: XfrDataProvidingZonesWrapper,
     mode: Mode,
     source: Source,
-    listen: Vec<ListenAddr>,
+    listen: Vec<String>,
 }
 
 impl ZoneReviewApi {
@@ -798,7 +817,7 @@ impl ZoneReviewApi {
         zones: XfrDataProvidingZonesWrapper,
         mode: Mode,
         source: Source,
-        listen: Vec<ListenAddr>,
+        listen: Vec<String>,
     ) -> Self {
         Self {
             update_tx,

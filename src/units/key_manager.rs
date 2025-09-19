@@ -15,7 +15,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use tokio::select;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::MissedTickBehavior;
 
 #[derive(Debug)]
@@ -27,10 +27,16 @@ impl KeyManagerUnit {
     pub async fn run(
         self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
 
-        KeyManager::new(self.center).run(cmd_rx).await?;
+        let km = KeyManager::new(self.center);
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
+
+        km.run(cmd_rx).await?;
 
         Ok(())
     }
