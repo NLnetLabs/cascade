@@ -1,6 +1,7 @@
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
+use crate::policy::KeyParameters;
 use bytes::Bytes;
 use camino::Utf8Path;
 use core::time::Duration;
@@ -371,9 +372,27 @@ fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<Strin
 
     let km = &policy.key_manager;
 
+    let mut algorithm_cmd = vec!["algorithm".to_string()];
+    match km.algorithm {
+        KeyParameters::RsaSha256(bits) => {
+            algorithm_cmd.push("RSASHA256".to_string());
+            algorithm_cmd.push("-b".to_string());
+            algorithm_cmd.push(bits.to_string());
+        }
+        KeyParameters::RsaSha512(bits) => {
+            algorithm_cmd.push("RSASHA512".to_string());
+            algorithm_cmd.push("-b".to_string());
+            algorithm_cmd.push(bits.to_string());
+        }
+        KeyParameters::EcdsaP256Sha256
+        | KeyParameters::EcdsaP384Sha384
+        | KeyParameters::Ed25519
+        | KeyParameters::Ed448 => algorithm_cmd.push(km.algorithm.to_string()),
+    }
+
     vec![
         vec!["use-csk".to_string(), km.use_csk.to_string()],
-        vec!["algorithm".to_string(), km.algorithm.to_string()],
+        algorithm_cmd,
         vec![
             "ksk-validity".to_string(),
             if let Some(validity) = km.ksk_validity {
