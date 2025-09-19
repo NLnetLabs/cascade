@@ -2,7 +2,10 @@ use futures::TryFutureExt;
 use log::error;
 
 use crate::{
-    api::{PolicyListResult, PolicyReloadResult},
+    api::{
+        PolicyChange, PolicyChanges, PolicyInfo, PolicyInfoError, PolicyListResult,
+        PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo, SignerSerialPolicyInfo,
+    },
     cli::client::CascadeApiClient,
 };
 
@@ -23,7 +26,23 @@ pub enum PolicyCommand {
     Show { name: String },
 
     /// Reload all the policies from the files
+    #[command(name = "reload")]
     Reload,
+}
+
+#[allow(unused)]
+mod ansi {
+    pub const BLACK: &str = "\x1b[0;30m";
+    pub const RED: &str = "\x1b[0;31m";
+    pub const GREEN: &str = "\x1b[0;32m";
+    pub const YELLOW: &str = "\x1b[0;33m";
+    pub const BLUE: &str = "\x1b[0;34m";
+    pub const PURPLE: &str = "\x1b[0;35m";
+    pub const CYAN: &str = "\x1b[0;36m";
+    pub const WHITE: &str = "\x1b[0;37m";
+    pub const GRAY: &str = "\x1b[38;5;248m";
+    pub const RESET: &str = "\x1b[0m";
+    pub const ITALIC: &str = "\x1b[3m";
 }
 
 impl Policy {
@@ -44,7 +63,7 @@ impl Policy {
                 }
             }
             PolicyCommand::Show { name } => {
-                let res: PolicyListResult = client
+                let res: Result<PolicyInfo, PolicyInfoError> = client
                     .get(&format!("policy/{name}"))
                     .send()
                     .and_then(|r| r.json())
@@ -53,10 +72,18 @@ impl Policy {
                         error!("HTTP request failed: {e}");
                     })?;
 
-                println!("Policy info: {res:?}");
+                let p = match res {
+                    Ok(p) => p,
+                    Err(e) => {
+                        error!("{e:?}");
+                        return Err(());
+                    }
+                };
+
+                print_policy(&p);
             }
             PolicyCommand::Reload => {
-                let _res: PolicyReloadResult = client
+                let res: Result<PolicyChanges, PolicyReloadError> = client
                     .post("policy/reload")
                     .send()
                     .and_then(|r| r.json())
@@ -65,9 +92,95 @@ impl Policy {
                         error!("HTTP request failed: {e}");
                     })?;
 
-                println!("Policies reloaded");
+                let res = match res {
+                    Ok(res) => res,
+                    Err(err) => {
+                        error!("{err}");
+                        return Err(());
+                    }
+                };
+
+                println!("Policies reloaded:");
+
+                let max_width = res.changes.iter().map(|(s, _)| s.len()).max().unwrap_or(0);
+
+                for p in res.changes {
+                    let name = p.0;
+
+                    let change = match p.1 {
+                        PolicyChange::Added => "added",
+                        PolicyChange::Removed => "removed",
+                        PolicyChange::Updated => "updated",
+                        PolicyChange::Unchanged => "unchanged",
+                    };
+
+                    let color = match p.1 {
+                        PolicyChange::Added => ansi::GREEN,
+                        PolicyChange::Removed => ansi::RED,
+                        PolicyChange::Updated => ansi::BLUE,
+                        PolicyChange::Unchanged => ansi::GRAY,
+                    };
+
+                    println!(
+                        "{color} - {name:<width$} {change}{reset}",
+                        width = max_width,
+                        reset = ansi::RESET
+                    );
+                }
             }
         }
         Ok(())
     }
+}
+
+fn print_policy(p: &PolicyInfo) {
+    let name = &p.name;
+
+    let zones: Vec<_> = p.zones.iter().map(|z| format!("{}", z)).collect();
+
+    let zones = if !zones.is_empty() {
+        zones.join(", ")
+    } else {
+        "<none>".into()
+    };
+
+    let serial_policy = match p.signer.serial_policy {
+        SignerSerialPolicyInfo::Keep => "keep",
+        SignerSerialPolicyInfo::Counter => "counter",
+        SignerSerialPolicyInfo::UnixTime => "unix time",
+        SignerSerialPolicyInfo::DateCounter => "date counter",
+    };
+
+    let inc = p.signer.sig_inception_offset.as_secs();
+    let val = p.signer.sig_validity_offset.as_secs();
+
+    let denial = match &p.signer.denial {
+        SignerDenialPolicyInfo::NSec => "NSEC",
+        SignerDenialPolicyInfo::NSec3 { opt_out } => match opt_out {
+            true => "NSEC3 (opt-out: disabled)",
+            false => "NSEC3 (opt-out: enabled)",
+        },
+    };
+
+    fn print_review(r: &ReviewPolicyInfo) {
+        println!("    review:");
+        println!("      required: {}", r.required);
+        println!(
+            "      cmd_hook: {}",
+            r.cmd_hook.as_ref().cloned().unwrap_or("<none>".into())
+        );
+    }
+
+    println!("{name}:");
+    println!("  zones: {zones}");
+    println!("  loader:");
+    print_review(&p.loader.review);
+    println!("  key manager: <unimplemented>");
+    println!("  signer:");
+    println!("    serial policy: {serial_policy}");
+    println!("    signature inception offset: {inc} seconds",);
+    println!("    signature validity offset: {val} seconds",);
+    println!("    denial: {denial}");
+    print_review(&p.signer.review);
+    println!("  server: <unimplemented>");
 }

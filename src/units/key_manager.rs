@@ -1,43 +1,42 @@
-use super::Unit;
-use crate::comms::{ApplicationCommand, GraphStatus, Terminated};
-use crate::manager::Component;
-use crate::metrics;
+use crate::center::Center;
+use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
-use core::fmt::Display;
+use bytes::Bytes;
+use camino::Utf8Path;
 use core::time::Duration;
+use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
-use domain::zonetree::Zone;
-use log::{error, info};
+use log::error;
 use serde::Deserialize;
-use serde_with::serde_as;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::metadata;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::select;
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::MissedTickBehavior;
 
 #[derive(Debug)]
 pub struct KeyManagerUnit {
-    pub dnst_keyset_bin_path: PathBuf,
-    pub dnst_keyset_data_dir: PathBuf,
-    pub update_tx: mpsc::UnboundedSender<Update>,
-    pub cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+    pub center: Arc<Center>,
 }
 
 impl KeyManagerUnit {
-    pub async fn run(self, component: Component) -> Result<(), Terminated> {
+    pub async fn run(
+        self,
+        cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
+    ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
 
-        KeyManager::new(
-            component,
-            self.dnst_keyset_bin_path,
-            self.dnst_keyset_data_dir,
-            self.update_tx,
-        )
-        .run(self.cmd_rx)
-        .await?;
+        let km = KeyManager::new(self.center);
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
+
+        km.run(cmd_rx).await?;
 
         Ok(())
     }
@@ -46,51 +45,159 @@ impl KeyManagerUnit {
 //------------ KeyManager ----------------------------------------------------
 
 struct KeyManager {
-    component: Component,
-    dnst_keyset_bin_path: PathBuf,
-    dnst_keyset_data_dir: PathBuf,
-    update_tx: mpsc::UnboundedSender<Update>,
+    center: Arc<Center>,
     ks_info: Mutex<HashMap<String, KeySetInfo>>,
+    dnst_binary_path: Box<Utf8Path>,
+    keys_dir: Box<Utf8Path>,
 }
 
 impl KeyManager {
-    fn new(
-        component: Component,
-        dnst_keyset_bin_path: PathBuf,
-        dnst_keyset_data_dir: PathBuf,
-        update_tx: mpsc::UnboundedSender<Update>,
-    ) -> Self {
+    fn new(center: Arc<Center>) -> Self {
+        let state = center.state.lock().unwrap();
+        let dnst_binary_path = state.config.dnst_binary_path.clone();
+        let keys_dir = state.config.keys_dir.clone();
+        drop(state);
+
         Self {
-            component,
-            dnst_keyset_bin_path,
-            dnst_keyset_data_dir,
-            update_tx,
+            center,
             ks_info: Mutex::new(HashMap::new()),
+            dnst_binary_path,
+            keys_dir,
         }
     }
 
     async fn run(
         self,
-        cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
     ) -> Result<(), crate::comms::Terminated> {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-        // NOTE: We are not expecting any application commands right now.
-        let _ = cmd_rx;
-
         loop {
-            interval.tick().await;
-            self.tick().await;
+            select! {
+                _ = interval.tick() => {
+                    self.tick().await;
+                }
+                cmd = cmd_rx.recv() => {
+                    self.run_cmd(cmd)?;
+                }
+            }
         }
     }
 
+    fn run_cmd(&self, cmd: Option<ApplicationCommand>) -> Result<(), Terminated> {
+        log::info!("[KM] Received command: {cmd:?}");
+
+        match cmd {
+            Some(ApplicationCommand::Terminate) | None => Err(Terminated),
+            Some(ApplicationCommand::RegisterZone {
+                register: crate::api::ZoneAdd { name, .. },
+            }) => {
+                let state_path = self.keys_dir.join(format!("{name}.state"));
+
+                let mut cmd = self.keyset_cmd(&name);
+
+                cmd.arg("create")
+                    .arg("-n")
+                    .arg(name.to_string())
+                    .arg("-s")
+                    .arg(&state_path);
+
+                log::info!("Running {cmd:?}");
+
+                let output = cmd.output().map_err(|e| {
+                    error!("[KM]: Error creating keyset for {name}: {e}");
+                    Terminated
+                })?;
+                if !output.status.success() {
+                    error!("[KM]: Create command failed for {name}: {}", output.status);
+                    error!(
+                        "[KM]: Create stdout {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                    error!(
+                        "[KM]: Create stderr {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    return Err(Terminated);
+                }
+
+                // Set config
+                let config_commands = policy_to_commands(&self.center, &name);
+                for c in config_commands {
+                    let mut cmd = self.keyset_cmd(&name);
+
+                    cmd.arg("set");
+                    for a in c {
+                        cmd.arg(a);
+                    }
+
+                    log::info!("Running {cmd:?}");
+
+                    let output = cmd.output().map_err(|e| {
+                        error!("[KM]: keyset command failed for {name}: {e}");
+                        Terminated
+                    })?;
+                    if !output.status.success() {
+                        error!("[KM]: set command failed for {name}: {}", output.status);
+                        error!(
+                            "[KM]: Create stdout {}",
+                            String::from_utf8_lossy(&output.stdout)
+                        );
+                        error!(
+                            "[KM]: Create stderr {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                        return Err(Terminated);
+                    }
+                }
+
+                // TODO: This should not happen immediately after
+                // `keyset create` but only once the zone is enabled.
+                // We currently do not have a good mechanism for that
+                // so we init the key immediately.
+                let mut cmd = self.keyset_cmd(&name);
+                cmd.arg("init");
+
+                log::info!("Running {cmd:?}");
+
+                let output = cmd.output().map_err(|e| {
+                    error!("[KM]: Error initializing keyset for {name}: {e}");
+                    Terminated
+                })?;
+                if !output.status.success() {
+                    error!("[KM]: init command failed for {name}: {}", output.status);
+                    error!(
+                        "[KM]: Create stdout {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                    error!(
+                        "[KM]: Create stderr {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    return Err(Terminated);
+                }
+
+                Ok(())
+            }
+            Some(_) => Ok(()), // not for us
+        }
+    }
+
+    /// Create a keyset command with the config file for the given zone
+    fn keyset_cmd(&self, name: impl Display) -> Command {
+        let cfg_path = self.keys_dir.join(format!("{name}.cfg"));
+        let mut cmd = Command::new(self.dnst_binary_path.as_std_path());
+        cmd.arg("keyset").arg("-c").arg(&cfg_path);
+        cmd
+    }
+
     async fn tick(&self) {
-        let zone_tree = self.component.unsigned_zones();
+        let zone_tree = &self.center.unsigned_zones;
         let mut ks_info = self.ks_info.lock().await;
         for zone in zone_tree.load().iter_zones() {
             let apex_name = zone.apex_name().to_string();
-            let state_path = Path::new("/tmp/").join(format!("{apex_name}.state"));
+            let state_path = self.keys_dir.join(format!("{apex_name}.state"));
             if !state_path.exists() {
                 continue;
             }
@@ -108,7 +215,8 @@ impl KeyManager {
                 // signal the signer to re-sign the zone.
                 let new_info = get_keyset_info(&state_path);
                 let _ = ks_info.insert(apex_name, new_info);
-                self.update_tx
+                self.center
+                    .update_tx
                     .send(Update::ResignZoneEvent {
                         zone_name: zone.apex_name().clone(),
                     })
@@ -121,19 +229,11 @@ impl KeyManager {
             };
 
             if *cron_next < UnixTime::now() {
-                // Run cron
-                let cfg_path = self.dnst_keyset_data_dir.join(format!("{apex_name}.cfg"));
-                let mut args = vec!["keyset", "-c"];
-                args.push(cfg_path.to_str().unwrap());
-                args.push("cron");
-                println!(
-                    "Invoking keyset cron for zone {apex_name} with {}",
-                    args.join(" ")
-                );
-                let Ok(res) = Command::new(&self.dnst_keyset_bin_path).args(args).output() else {
+                println!("Invoking keyset cron for zone {apex_name}");
+                let Ok(res) = self.keyset_cmd(&apex_name).arg("cron").output() else {
                     error!(
                         "Failed to invoke keyset binary at '{}",
-                        self.dnst_keyset_bin_path.display()
+                        self.dnst_binary_path
                     );
 
                     // Clear cron_next.
@@ -158,7 +258,8 @@ impl KeyManager {
                         // signer.
                         let new_info = get_keyset_info(&state_path);
                         let _ = ks_info.insert(apex_name, new_info);
-                        self.update_tx
+                        self.center
+                            .update_tx
                             .send(Update::ResignZoneEvent {
                                 zone_name: zone.apex_name().clone(),
                             })
@@ -177,7 +278,7 @@ impl KeyManager {
                     };
                     if new_info.retries >= CRON_MAX_RETRIES {
                         error!(
-                            "The command 'dnst keyset cron' for config {} failed to update state file {}", cfg_path.display(), state_path.display()
+                            "The command 'dnst keyset cron' failed to update state file {state_path}", 
                         );
 
                         // Clear cron_next.
@@ -256,4 +357,104 @@ fn get_keyset_info(state_path: impl AsRef<Path>) -> KeySetInfo {
         cron_next: state.cron_next,
         retries: 0,
     }
+}
+
+fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<String>> {
+    // Ensure that the mutexes are locked only in this block;
+    let policy = {
+        let state = center.state.lock().unwrap();
+        let zone = state.zones.get(zone_name).unwrap();
+        let zone_state = zone.0.state.lock().unwrap();
+        zone_state.policy.clone()
+    }
+    .unwrap();
+
+    let km = &policy.key_manager;
+
+    vec![
+        vec!["use-csk".to_string(), km.use_csk.to_string()],
+        vec!["algorithm".to_string(), km.algorithm.to_string()],
+        vec![
+            "ksk-validity".to_string(),
+            if let Some(validity) = km.ksk_validity {
+                validity.to_string() + "s"
+            } else {
+                "off".to_string()
+            },
+        ],
+        vec![
+            "zsk-validity".to_string(),
+            if let Some(validity) = km.zsk_validity {
+                validity.to_string() + "s"
+            } else {
+                "off".to_string()
+            },
+        ],
+        vec![
+            "csk-validity".to_string(),
+            if let Some(validity) = km.csk_validity {
+                validity.to_string() + "s"
+            } else {
+                "off".to_string()
+            },
+        ],
+        vec![
+            "auto-ksk".to_string(),
+            km.auto_ksk.start.to_string(),
+            km.auto_ksk.report.to_string(),
+            km.auto_ksk.expire.to_string(),
+            km.auto_ksk.done.to_string(),
+        ],
+        vec![
+            "auto-zsk".to_string(),
+            km.auto_zsk.start.to_string(),
+            km.auto_zsk.report.to_string(),
+            km.auto_zsk.expire.to_string(),
+            km.auto_zsk.done.to_string(),
+        ],
+        vec![
+            "auto-csk".to_string(),
+            km.auto_csk.start.to_string(),
+            km.auto_csk.report.to_string(),
+            km.auto_csk.expire.to_string(),
+            km.auto_csk.done.to_string(),
+        ],
+        vec![
+            "auto-algorithm".to_string(),
+            km.auto_algorithm.start.to_string(),
+            km.auto_algorithm.report.to_string(),
+            km.auto_algorithm.expire.to_string(),
+            km.auto_algorithm.done.to_string(),
+        ],
+        vec![
+            "dnskey-inception-offset".to_string(),
+            km.dnskey_inception_offset.to_string() + "s",
+        ],
+        vec![
+            "dnskey-lifetime".to_string(),
+            km.dnskey_signature_lifetime.to_string() + "s",
+        ],
+        vec![
+            "dnskey-remain-time".to_string(),
+            km.dnskey_remain_time.to_string() + "s",
+        ],
+        vec![
+            "cds-inception-offset".to_string(),
+            km.cds_inception_offset.to_string() + "s",
+        ],
+        vec![
+            "cds-lifetime".to_string(),
+            km.cds_signature_lifetime.to_string() + "s",
+        ],
+        vec![
+            "cds-remain-time".to_string(),
+            km.cds_remain_time.to_string() + "s",
+        ],
+        vec!["ds-algorithm".to_string(), km.ds_algorithm.to_string()],
+        vec![
+            "default-ttl".to_string(),
+            km.default_ttl.as_secs().to_string(),
+        ],
+        vec!["autoremove".to_string(), km.auto_remove.to_string()],
+    ]
 }

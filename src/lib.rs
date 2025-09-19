@@ -1,17 +1,24 @@
 //! Cascade
 
 pub mod api;
+pub mod center;
 pub mod cli;
-mod common;
-mod comms;
+pub mod common;
+pub mod comms;
 pub mod config;
+pub mod daemon;
 pub mod log;
 pub mod manager;
 pub mod metrics;
-mod payload;
-mod targets;
-mod units;
-mod zonemaintenance;
+pub mod payload;
+pub mod policy;
+pub mod state;
+pub mod targets;
+pub mod tsig;
+pub mod units;
+pub mod util;
+pub mod zone;
+pub mod zonemaintenance;
 
 #[cfg(test)]
 pub mod tests;
