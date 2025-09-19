@@ -71,8 +71,17 @@ to get started.
 
           sudo apt install cascade
 
-       After installation Cascade will run immediately as the user
-       *cascade* and be configured to start at boot. 
+       Then you can start Cascade with:
+
+       .. code-block:: bash
+
+          sudo systemctl start cascaded
+
+       You can also configure Cascade to start at boot:
+
+       .. code-block:: bash
+
+          sudo systemctl enable cascaded
        
        You can check the status of Cascade with:
        
@@ -139,8 +148,24 @@ to get started.
 
           sudo apt install cascade
 
-       After installation Cascade will run immediately as the user
-       *cascade* and be configured to start at boot. 
+       If you want to use a PKCS#11-based HSM, also install the KMIP to PKCS#11
+       relay with:
+
+       .. code-block:: bash
+
+          sudo apt install kmip2pkcs11
+
+       Then you can start Cascade with:
+
+       .. code-block:: bash
+
+          sudo systemctl start cascaded
+
+       You can also configure Cascade to start at boot:
+
+       .. code-block:: bash
+
+          sudo systemctl enable cascaded
        
        You can check the status of Cascade with:
        

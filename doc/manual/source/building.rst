@@ -12,6 +12,9 @@ To get started, you need a C toolchain because the cryptographic primitives
 used by Cascade require it. You also need Rust because that’s the programming
 language that Cascade has been written in.
 
+Additionally, you need a few tools used by Cascade. However, they are
+installed together with Cascade in the steps below.
+
 C Toolchain
 """""""""""
 
@@ -36,7 +39,7 @@ Support`_ page provides an overview of the various support levels.
 
 While some system distributions include Rust as system packages, Cascade
 relies on a relatively new version of Rust, currently |rustversion| or newer.
-We therefore suggest to use the canonical Rust installation via a tool called
+We therefore suggest using the canonical Rust installation via a tool called
 :program:`rustup`.
 
 Assuming you already have :program:`curl` installed, you can install
@@ -59,19 +62,52 @@ packages to declare their various dependencies and ensure that you’ll always
 get a repeatable build. 
 
 Cargo fetches and builds Cascade’s dependencies into an executable binary
-for your platform. By default you install from crates.io, but you can for
+for your platform. By default, you install from crates.io, but you can for
 example also install from a specific Git URL, as explained below.
 
-Installing the latest Cascade release from crates.io is as simple as
+Installing the latest Cascade (and dnst, a runtime dependency) is as simple as
 running:
+
+.. Installing the latest Cascade (and dnst, a runtime dependency) release from
+.. crates.io is as simple as running:
+
+.. Commented out until released
+.. .. code-block:: text
+
+  cargo install --locked cascade dnst
 
 .. code-block:: text
 
   cargo install --locked cascade
+  cargo install --locked --branch keyset --git https://github.com/nlnetlabs/dnst
 
 The command will build Cascade and install it in the same directory that
 Cargo itself lives in, likely ``$HOME/.cargo/bin``. Ensure this directory is
 in your PATH so you can run Cascade immediately.
+
+If you want to use a PKCS#11-based HSM with your Cascade instance, also
+install the KMIP to PKCS#11 relay with:
+
+.. Commented out until released
+.. .. code-block:: text
+
+  cargo install --locked kmip2pkcs11
+
+.. code-block:: text
+
+  cargo install --locked --git https://github.com/nlnetlabs/kmip2pkcs11
+
+Finally, before running Cascade you will need to create a few directories and
+Cascade's config file. Create the directory where you want to store the config
+(let's say ``./cascade`` for this example), fetch an up-to-date example
+config file, and create the ``policies`` and ``keys`` directories:
+
+.. code-block:: text
+
+  mkdir -p ./cascade/{policies,keys}
+  curl -sS -o ./cascade/config.toml https://raw.githubusercontent.com/NLnetLabs/cascade/refs/heads/main/etc/config.toml
+
+Then update the ``config.toml`` to use the appropriate paths.
 
 Updating
 """"""""
@@ -89,6 +125,15 @@ Cascade release:
 .. code-block:: text
 
     cargo install --locked --force cascade
+    cargo install --locked --force --branch keyset --git https://github.com/nlnetlabs/dnst
+..  cargo install --locked --force cascade dnst
+
+Also for the KMIP to PKCS#11 relay if you are using it:
+
+.. code-block:: text
+
+    cargo install --locked --force --git https://github.com/nlnetlabs/kmip2pkcs11
+..  cargo install --locked --force kmip2pkcs11
 
 Installing Specific Versions
 """"""""""""""""""""""""""""
@@ -100,6 +145,8 @@ use the ``--force`` option to overwrite an existing version:
 .. code-block:: text
 
     cargo install --locked --force cascade --version 0.1.0-rc1
+
+Make sure to install a compatible version of ``dnst``.
 
 All new features of Cascade are built on a branch and merged via a `pull
 request <https://github.com/NLnetLabs/Cascade/pulls>`_, allowing you to
