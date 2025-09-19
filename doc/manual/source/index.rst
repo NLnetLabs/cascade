@@ -14,7 +14,7 @@ Sensible defaults
    best practices. 
 
 Controllability
-   Cascade hives you tight control over the DNSSEC signing process and
+   Cascade gives you tight control over the DNSSEC signing process and
    and offers validation hooks at each stage of the process. 
 
 Observability
