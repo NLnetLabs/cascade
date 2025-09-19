@@ -12,6 +12,27 @@ use crate::policy::{
 
 use super::super::{AutoConfig, DsAlgorithm, KeyParameters};
 
+// Defaults for signatures.
+//
+// Signature lifetimes for a few TLDs:
+// .com SOA: 7 days
+// .nl SOA: 14 days
+// .net SOA: 7 days
+// .org SOA: 21 days
+// No official reference.
+const SIGNATURE_VALIDITY_TIME: u64 = 14 * 24 * 3600;
+
+// Set the remain time to half of the validity time. Note that the maximum
+// TTL should be taken into account. Assume that the maximum TTL is small
+// compared to the remain time and can be ignored. No official reference.
+const SIGNATURE_REMAIN_TIME: u64 = SIGNATURE_VALIDITY_TIME / 2;
+
+// There is small risk that either the signer or a validator
+// has the wrong time zone settings. Back dating signatures by
+// one day should solve that problem and not introduce any
+// security risks. No official reference.
+const SIGNATURE_INCEPTION_OFFSET: u64 = 24 * 3600;
+
 //----------- Spec -------------------------------------------------------------
 
 /// A policy file.
@@ -217,14 +238,14 @@ impl Default for KeyManagerSpec {
             auto_csk: Default::default(),
             auto_algorithm: Default::default(),
 
-            // The following have roughly the same defaults as used for
+            // The following have the same defaults as used for
             // signing the zone.
-            dnskey_inception_offset: 24 * 3600,
-            dnskey_signature_lifetime: 14 * 24 * 3600,
-            dnskey_remain_time: 14 * 24 * 3600 / 2,
-            cds_inception_offset: 24 * 3600,
-            cds_signature_lifetime: 14 * 24 * 3600,
-            cds_remain_time: 14 * 24 * 3600 / 2,
+            dnskey_inception_offset: SIGNATURE_INCEPTION_OFFSET,
+            dnskey_signature_lifetime: SIGNATURE_VALIDITY_TIME,
+            dnskey_remain_time: SIGNATURE_REMAIN_TIME,
+            cds_inception_offset: SIGNATURE_INCEPTION_OFFSET,
+            cds_signature_lifetime: SIGNATURE_VALIDITY_TIME,
+            cds_remain_time: SIGNATURE_REMAIN_TIME,
 
             ds_algorithm: Default::default(),
 
@@ -297,17 +318,16 @@ impl Default for SignerSpec {
             // has the wrong time zone settings. Back dating signatures by
             // one day should solve that problem and not introduce any
             // security risks. No official reference.
-            sig_inception_offset: 24 * 3600,
+            sig_inception_offset: SIGNATURE_INCEPTION_OFFSET,
 
             // .com SOA: 7 days
             // .nl SOA: 14 days
             // .net SOA: 7 days
             // .org SOA: 21 days
             // No official reference.
-            sig_validity_time: 14 * 24 * 3600,
+            sig_validity_time: SIGNATURE_VALIDITY_TIME,
 
             // Missing: sig_remain_time
-            // Set this to 7 days.
             denial: Default::default(),
 
             review: Default::default(),
