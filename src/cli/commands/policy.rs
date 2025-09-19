@@ -3,9 +3,8 @@ use log::error;
 
 use crate::{
     api::{
-        Nsec3OptOutPolicyInfo, PolicyChange, PolicyChanges, PolicyInfo, PolicyInfoError,
-        PolicyListResult, PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo,
-        SignerSerialPolicyInfo,
+        PolicyChange, PolicyChanges, PolicyInfo, PolicyInfoError, PolicyListResult,
+        PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo, SignerSerialPolicyInfo,
     },
     cli::client::CascadeApiClient,
 };
@@ -158,9 +157,8 @@ fn print_policy(p: &PolicyInfo) {
     let denial = match &p.signer.denial {
         SignerDenialPolicyInfo::NSec => "NSEC",
         SignerDenialPolicyInfo::NSec3 { opt_out } => match opt_out {
-            Nsec3OptOutPolicyInfo::Disabled => "NSEC3 (opt-out: disabled)",
-            Nsec3OptOutPolicyInfo::Enabled => "NSEC3 (opt-out: enabled)",
-            Nsec3OptOutPolicyInfo::FlagOnly => "NSEC3 (opt-out: flag-only)",
+            true => "NSEC3 (opt-out: disabled)",
+            false => "NSEC3 (opt-out: enabled)",
         },
     };
 

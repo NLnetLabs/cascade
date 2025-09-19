@@ -316,24 +316,9 @@ pub enum SignerDenialPolicy {
 
     /// Generate NSEC3 records.
     NSec3 {
-        /// Whether and how to enable NSEC3 Opt-Out.
-        opt_out: Nsec3OptOutPolicy,
+        /// Whether to enable NSEC3 Opt-Out.
+        opt_out: bool,
     },
-}
-
-//----------- Nsec3OptOutPolicy ------------------------------------------------
-
-/// Policy for the NSEC3 Opt-Out mechanism.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Nsec3OptOutPolicy {
-    /// Do not enable Opt-Out.
-    Disabled,
-
-    /// Only set the Opt-Out flag.
-    FlagOnly,
-
-    /// Enable Opt-Out and omit the corresponding NSEC3 records.
-    Enabled,
 }
 
 //----------- ReviewPolicy -----------------------------------------------------

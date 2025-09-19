@@ -219,7 +219,7 @@ pub enum SignerSerialPolicyInfo {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum SignerDenialPolicyInfo {
     NSec,
-    NSec3 { opt_out: Nsec3OptOutPolicyInfo },
+    NSec3 { opt_out: bool },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
