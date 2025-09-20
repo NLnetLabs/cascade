@@ -285,6 +285,11 @@ impl ZoneSigner {
     ) -> Result<(), String> {
         // TODO: Implement serial bumping (per policy, e.g. ODS 'keep', 'counter', etc.?)
 
+        // TODO: The signer_status mechanism is broken, as it is limited to
+        // 100 slots so that if too many sign_zone() invocations occur the
+        // newest will overwrite the oldest. When the permit is then finally
+        // acquired, further down where start() is invoked it will fail
+        // because the enqueued status item will no longer exist...
         info!("[ZS]: Waiting to start signing operation for zone '{zone_name}'.");
         self.signer_status.write().await.enqueue(zone_name.clone());
 
