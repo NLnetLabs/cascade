@@ -35,7 +35,6 @@ use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
 use domain::zonetree::{StoredName, ZoneTree};
 use futures::Future;
-use indoc::formatdoc;
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::Deserialize;
@@ -154,7 +153,7 @@ impl ZoneServerUnit {
             servers.clone()
         };
 
-        let addrs = spawn_servers(socket_provider, unit_name, svc, servers)
+        let _addrs = spawn_servers(socket_provider, unit_name, svc, servers)
             .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
             .map_err(|_| Terminated)?;
 
@@ -165,10 +164,7 @@ impl ZoneServerUnit {
         ZoneServer::new(
             self.center,
             self.http_api_path,
-            self.mode,
             self.source,
-            addrs,
-            zones,
         )
         .run(unit_name, update_tx, cmd_rx)
         .await?;
@@ -261,14 +257,11 @@ struct ZoneServer {
     http_api_path: Arc<String>,
     zone_review_api: Option<ZoneReviewApi>,
     center: Arc<Center>,
-    mode: Mode,
     source: Source,
-    listen: Vec<String>,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
     #[allow(clippy::type_complexity)]
     last_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Instant>>>,
-    zones: XfrDataProvidingZonesWrapper,
 }
 
 impl ZoneServer {
@@ -276,21 +269,15 @@ impl ZoneServer {
     fn new(
         center: Arc<Center>,
         http_api_path: Arc<String>,
-        mode: Mode,
         source: Source,
-        listen: Vec<String>,
-        zones: XfrDataProvidingZonesWrapper,
     ) -> Self {
         Self {
             zone_review_api: Default::default(),
             http_api_path,
             center,
-            mode,
             source,
             pending_approvals: Default::default(),
             last_approvals: Default::default(),
-            listen,
-            zones,
         }
     }
 
@@ -307,10 +294,7 @@ impl ZoneServer {
             update_tx.clone(),
             self.pending_approvals.clone(),
             self.last_approvals.clone(),
-            self.zones.clone(),
-            self.mode,
             self.source,
-            self.listen.clone(),
         ));
 
         // status_reporter.listener_listening(&listen_addr.to_string());
@@ -359,9 +343,6 @@ impl ZoneServer {
                 .await;
             }
 
-            ApplicationCommand::HandleZoneReviewApiStatus { http_tx } => {
-                self.on_zone_review_api_status_cmd(http_tx).await;
-            }
 
             ApplicationCommand::SeekApprovalForUnsignedZone { .. }
             | ApplicationCommand::SeekApprovalForSignedZone { .. } => {
@@ -536,19 +517,6 @@ impl ZoneServer {
             }
         }
         None
-    }
-
-    async fn on_zone_review_api_status_cmd(&self, http_tx: Sender<String>) {
-        http_tx
-            .send(
-                self.zone_review_api
-                    .as_ref()
-                    .expect("This should have been setup on startup.")
-                    .build_status_response()
-                    .await,
-            )
-            .await
-            .expect("TODO: Should this always succeed?");
     }
 
     async fn on_zone_review_api_cmd(
@@ -802,10 +770,7 @@ struct ZoneReviewApi {
     pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
     #[allow(clippy::type_complexity)]
     last_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Instant>>>,
-    zones: XfrDataProvidingZonesWrapper,
-    mode: Mode,
     source: Source,
-    listen: Vec<String>,
 }
 
 impl ZoneReviewApi {
@@ -814,95 +779,13 @@ impl ZoneReviewApi {
         update_tx: mpsc::UnboundedSender<Update>,
         pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
         last_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Instant>>>,
-        zones: XfrDataProvidingZonesWrapper,
-        mode: Mode,
         source: Source,
-        listen: Vec<String>,
     ) -> Self {
         Self {
             update_tx,
             pending_approvals,
             last_approvals,
-            zones,
-            mode,
             source,
-            listen,
         }
-    }
-}
-
-impl ZoneReviewApi {
-    pub async fn build_status_response(&self) -> String {
-        let mut response_body = self.build_response_header().await;
-
-        self.build_status_response_body(&mut response_body).await;
-
-        self.build_response_footer(&mut response_body);
-
-        response_body
-    }
-
-    async fn build_response_header(&self) -> String {
-        let intro = match (self.mode, self.source) {
-            (Mode::Prepublish, Source::UnsignedZones) => {
-                "Pre-publication review server for unsigned zones"
-            }
-            (Mode::Prepublish, Source::SignedZones) => {
-                "Pre-publication review server for signed zones"
-            }
-            (Mode::Prepublish, Source::PublishedZones) => {
-                "Pre-publication review server for published zones"
-            }
-            (Mode::Publish, Source::UnsignedZones) => "Publication server for unsigned zones",
-            (Mode::Publish, Source::SignedZones) => "Publication server for signed zones",
-            (Mode::Publish, Source::PublishedZones) => "Publication server for published zones",
-        };
-
-        formatdoc! {
-            r#"
-            <!DOCTYPE html>
-            <html lang="en">
-                <head>
-                  <meta charset="UTF-8">
-                </head>
-                <body>
-                <pre>{intro}
-
-            "#,
-        }
-    }
-
-    async fn build_status_response_body(&self, response_body: &mut String) {
-        let num_zones = self.zones.zones.load().iter_zones().count();
-        response_body.push_str(&format!("Serving {num_zones} zones on:\n"));
-
-        for addr in &self.listen {
-            response_body.push_str(&format!("  - {addr}\n"));
-        }
-        response_body.push('\n');
-
-        for zone in self.zones.zones.load().iter_zones() {
-            response_body.push_str(&format!("zone:   {}\n", zone.apex_name()));
-            if self.mode == Mode::Prepublish {
-                for ((_zone_name, zone_serial), pending_approvals) in self
-                    .pending_approvals
-                    .read()
-                    .await
-                    .iter()
-                    .filter(|((zone_name, _), _)| zone_name == zone.apex_name())
-                {
-                    response_body.push_str(&format!(
-                        "        pending approvals for serial {zone_serial}: {}\n",
-                        pending_approvals.len()
-                    ));
-                }
-            }
-        }
-    }
-
-    fn build_response_footer(&self, response_body: &mut String) {
-        response_body.push_str("    </pre>\n");
-        response_body.push_str("  </body>\n");
-        response_body.push_str("</html>\n");
     }
 }
