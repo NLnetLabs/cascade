@@ -161,13 +161,9 @@ impl ZoneServerUnit {
         ready_tx.send(true).map_err(|_| Terminated)?;
 
         let update_tx = self.center.update_tx.clone();
-        ZoneServer::new(
-            self.center,
-            self.http_api_path,
-            self.source,
-        )
-        .run(unit_name, update_tx, cmd_rx)
-        .await?;
+        ZoneServer::new(self.center, self.http_api_path, self.source)
+            .run(unit_name, update_tx, cmd_rx)
+            .await?;
 
         Ok(())
     }
@@ -266,11 +262,7 @@ struct ZoneServer {
 
 impl ZoneServer {
     #[allow(clippy::too_many_arguments)]
-    fn new(
-        center: Arc<Center>,
-        http_api_path: Arc<String>,
-        source: Source,
-    ) -> Self {
+    fn new(center: Arc<Center>, http_api_path: Arc<String>, source: Source) -> Self {
         Self {
             zone_review_api: Default::default(),
             http_api_path,
@@ -342,7 +334,6 @@ impl ZoneServer {
                 )
                 .await;
             }
-
 
             ApplicationCommand::SeekApprovalForUnsignedZone { .. }
             | ApplicationCommand::SeekApprovalForSignedZone { .. } => {
