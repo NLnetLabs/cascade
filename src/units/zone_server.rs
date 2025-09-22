@@ -359,8 +359,12 @@ impl ZoneServer {
                 .await;
             }
 
-            ApplicationCommand::HandleZoneReviewApiStatus { http_tx } => {
-                self.on_zone_review_api_status_cmd(http_tx).await;
+            ApplicationCommand::IsZonePendingApproval { zone_name, tx } => {
+                let locked = self.pending_approvals.read().await;
+                let pending = locked
+                    .iter()
+                    .any(|((name, _serial), tokens)| zone_name == name && !tokens.is_empty());
+                let _ = tx.send(pending).ok();
             }
 
             ApplicationCommand::SeekApprovalForUnsignedZone { .. }

@@ -355,6 +355,16 @@ pub enum SocketConfig {
     // TODO: TLS
 }
 
+impl SocketConfig {
+    pub fn addr(&self) -> SocketAddr {
+        match self {
+            SocketConfig::UDP { addr } => *addr,
+            SocketConfig::TCP { addr } => *addr,
+            SocketConfig::TCPUDP { addr } => *addr,
+        }
+    }
+}
+
 //----------- LogLevel ---------------------------------------------------------
 
 /// A severity level for logging.

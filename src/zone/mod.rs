@@ -324,7 +324,7 @@ pub fn change_source(
         api::ZoneSource::Zonefile { path } => ZoneLoadSource::Zonefile { path },
 
         // TODO: Look up the TSIG key.
-        api::ZoneSource::Server { addr, tsig_key: _ } => ZoneLoadSource::Server {
+        api::ZoneSource::Server { addr, .. } => ZoneLoadSource::Server {
             addr,
             tsig_key: None,
         },

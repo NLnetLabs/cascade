@@ -828,7 +828,7 @@ where
         match time_tracking.write().await.entry(zone_id) {
             Vacant(e) => {
                 let read = zone.read();
-                if let Ok(Some((soa, _))) = Self::read_soa(&read, apex_name).await {
+                if let Ok(Some((soa, _))) = read_soa(&read, apex_name).await {
                     e.insert(ZoneRefreshState::new(&soa));
                     Ok(Some(soa.refresh()))
                 } else {
@@ -1257,7 +1257,7 @@ where
         // the primary is higher. If the zone is a new secondary it will not
         // have a SOA RR and any available data for the zone available at a
         // primary should be accepted.
-        let soa = Self::read_soa(&zone.read(), zone.apex_name().clone())
+        let soa = read_soa(&zone.read(), zone.apex_name().clone())
             .await
             .map_err(|_out_of_zone_err| {
                 ZoneMaintainerError::InternalError(
@@ -1536,7 +1536,7 @@ where
         let msg = if xfr_type == Rtype::IXFR {
             let mut msg = msg.authority();
             let read = zone.read();
-            let Ok(Some((soa, ttl))) = Self::read_soa(&read, zone.apex_name().clone()).await else {
+            let Ok(Some((soa, ttl))) = read_soa(&read, zone.apex_name().clone()).await else {
                 trace!(
                     "Internal error - missing SOA for zone '{}'",
                     zone.apex_name()
@@ -1754,7 +1754,7 @@ where
             }
         }
 
-        let soa_and_ttl = Self::read_soa(&zone.read(), zone.apex_name().clone())
+        let soa_and_ttl = read_soa(&zone.read(), zone.apex_name().clone())
             .await
             .map_err(|_out_of_zone_err| {
                 ZoneMaintainerError::InternalError("Unable to read SOA for zone post XFR in")
@@ -1767,25 +1767,6 @@ where
         };
 
         Ok(soa)
-    }
-
-    #[allow(clippy::borrowed_box)]
-    async fn read_soa(
-        read: &Box<dyn ReadableZone>,
-        qname: Name<Bytes>,
-    ) -> Result<Option<(Soa<Name<Bytes>>, Ttl)>, OutOfZone> {
-        let answer = match read.is_async() {
-            true => read.query_async(qname, Rtype::SOA).await,
-            false => read.query(qname, Rtype::SOA),
-        }?;
-
-        if let AnswerContent::Data(rrset) = answer.content() {
-            if let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data() {
-                return Ok(Some((soa.clone(), rrset.ttl())));
-            }
-        }
-
-        Ok(None)
     }
 
     #[allow(clippy::borrowed_box)]
@@ -1840,7 +1821,7 @@ where
 
         let read = zone.read();
 
-        let Some((soa, _)) = Self::read_soa(&read, zone.apex_name().clone())
+        let Some((soa, _)) = read_soa(&read, zone.apex_name().clone())
             .await
             .map_err(|_| ())?
         else {
@@ -1995,6 +1976,25 @@ where
             };
         }
     }
+}
+
+#[allow(clippy::borrowed_box)]
+pub async fn read_soa(
+    read: &Box<dyn ReadableZone>,
+    qname: Name<Bytes>,
+) -> Result<Option<(Soa<Name<Bytes>>, Ttl)>, OutOfZone> {
+    let answer = match read.is_async() {
+        true => read.query_async(qname, Rtype::SOA).await,
+        false => read.query(qname, Rtype::SOA),
+    }?;
+
+    if let AnswerContent::Data(rrset) = answer.content() {
+        if let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data() {
+            return Ok(Some((soa.clone(), rrset.ttl())));
+        }
+    }
+
+    Ok(None)
 }
 
 struct XfrProgressReporter {
@@ -2279,9 +2279,7 @@ where
 
         if let Some(diff_from) = diff_from {
             let read = zone.read();
-            if let Ok(Some((soa, _ttl))) =
-                ZoneMaintainer::<KS, CF>::read_soa(&read, zone.apex_name().to_owned()).await
-            {
+            if let Ok(Some((soa, _ttl))) = read_soa(&read, zone.apex_name().to_owned()).await {
                 diffs = zone_info.diffs_for_range(diff_from, soa.serial()).await;
             }
         }

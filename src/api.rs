@@ -4,10 +4,11 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
-use domain::base::Name;
+use domain::base::{Name, Serial};
 use serde::{Deserialize, Serialize};
 
 use crate::center;
+use crate::zonemaintenance::types::ZoneRefreshStatus;
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
@@ -73,6 +74,9 @@ pub enum ZoneSource {
 
         /// The name of a TSIG key, if any.
         tsig_key: Option<String>,
+
+        /// The XFR status of the zone.
+        xfr_status: ZoneRefreshStatus,
     },
 }
 
@@ -81,7 +85,7 @@ impl Display for ZoneSource {
         match self {
             ZoneSource::None => f.write_str("<none>"),
             ZoneSource::Zonefile { path } => path.fmt(f),
-            ZoneSource::Server { addr, tsig_key: _ } => addr.fmt(f),
+            ZoneSource::Server { addr, .. } => addr.fmt(f),
         }
     }
 }
@@ -92,11 +96,13 @@ impl From<&str> for ZoneSource {
             ZoneSource::Server {
                 addr,
                 tsig_key: None,
+                xfr_status: Default::default(),
             }
         } else if let Ok(addr) = s.parse::<IpAddr>() {
             ZoneSource::Server {
                 addr: SocketAddr::new(addr, DEFAULT_AXFR_PORT),
                 tsig_key: None,
+                xfr_status: Default::default(),
             }
         } else {
             ZoneSource::Zonefile {
@@ -141,6 +147,19 @@ pub struct ZoneStatus {
     pub policy: String,
     pub stage: ZoneStage,
     pub key_status: Option<String>,
+    pub approval_status: Option<ZoneApprovalStatus>,
+    pub unsigned_serial: Option<Serial>,
+    pub signed_serial: Option<Serial>,
+    pub published_serial: Option<Serial>,
+    pub unsigned_review_addr: Option<SocketAddr>,
+    pub signed_review_addr: Option<SocketAddr>,
+    pub publish_addr: SocketAddr,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneApprovalStatus {
+    PendingUnsignedApproval,
+    PendingSignedApproval,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

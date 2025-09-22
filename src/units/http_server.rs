@@ -41,6 +41,7 @@ use crate::api::SignerSerialPolicyInfo;
 use crate::api::ZoneAdd;
 use crate::api::ZoneAddError;
 use crate::api::ZoneAddResult;
+use crate::api::ZoneApprovalStatus;
 use crate::api::ZoneReloadResult;
 use crate::api::ZoneRemoveResult;
 use crate::api::ZoneStage;
@@ -53,6 +54,9 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::zone::ZoneLoadSource;
+use crate::zonemaintenance::maintainer::read_soa;
+use crate::zonemaintenance::types::ZoneReportDetails;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -215,14 +219,22 @@ impl HttpServer {
     }
 
     async fn zones_list(State(http_state): State<Arc<HttpServerState>>) -> Json<ZonesListResult> {
-        let state = http_state.center.state.lock().unwrap();
-        let names: Vec<_> = state.zones.iter().map(|z| z.0.name.clone()).collect();
-        drop(state);
+        let names;
+        {
+            let state = http_state.center.state.lock().unwrap();
+            names = state
+                .zones
+                .iter()
+                .map(|z| z.0.name.clone())
+                .collect::<Vec<_>>();
+        }
 
-        let zones = names
-            .iter()
-            .filter_map(|z| Self::get_zone_status(http_state.clone(), z).ok())
-            .collect();
+        let mut zones = Vec::with_capacity(names.len());
+        for name in names {
+            if let Ok(zone_status) = Self::get_zone_status(http_state.clone(), name.clone()).await {
+                zones.push(zone_status);
+            }
+        }
 
         Json(ZonesListResult { zones })
     }
@@ -231,67 +243,152 @@ impl HttpServer {
         State(state): State<Arc<HttpServerState>>,
         Path(name): Path<Name<Bytes>>,
     ) -> Json<Result<ZoneStatus, ZoneStatusError>> {
-        Json(Self::get_zone_status(state, &name))
+        Json(Self::get_zone_status(state, name).await)
     }
 
-    fn get_zone_status(
+    async fn get_zone_status(
         state: Arc<HttpServerState>,
-        name: &Name<Bytes>,
+        name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
-        let center = &state.center;
-
-        let state = center.state.lock().unwrap();
-        let zone = state
-            .zones
-            .get(name)
-            .ok_or(ZoneStatusError::ZoneDoesNotExist)?;
-        let zone_state = zone.0.state.lock().unwrap();
-
-        // TODO: Needs some info from the zone loader?
-        let source = match zone_state.source.clone() {
-            crate::zone::ZoneLoadSource::None => api::ZoneSource::None,
-            crate::zone::ZoneLoadSource::Zonefile { path } => api::ZoneSource::Zonefile { path },
-            crate::zone::ZoneLoadSource::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
-                addr,
-                tsig_key: None,
-            },
-        };
-
-        let policy = zone_state
-            .policy
-            .as_ref()
-            .map_or("<none>".into(), |p| p.name.to_string());
+        let dnst_binary_path;
+        let cfg_path;
+        let app_cmd_tx;
+        let policy;
+        let mut source;
+        let unsigned_review_addr;
+        let signed_review_addr;
+        let publish_addr;
+        {
+            let locked_state = state.center.state.lock().unwrap();
+            dnst_binary_path = locked_state.config.dnst_binary_path.clone();
+            let keys_dir = &locked_state.config.keys_dir;
+            cfg_path = keys_dir.join(format!("{name}.cfg"));
+            app_cmd_tx = state.center.app_cmd_tx.clone();
+            let zone = locked_state
+                .zones
+                .get(&name)
+                .ok_or(ZoneStatusError::ZoneDoesNotExist)?;
+            let zone_state = zone.0.state.lock().unwrap();
+            policy = zone_state
+                .policy
+                .as_ref()
+                .map_or("<none>".into(), |p| p.name.to_string());
+            // TODO: Needs some info from the zone loader?
+            source = match zone_state.source.clone() {
+                ZoneLoadSource::None => api::ZoneSource::None,
+                ZoneLoadSource::Zonefile { path } => api::ZoneSource::Zonefile { path },
+                ZoneLoadSource::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
+                    addr,
+                    tsig_key: None,
+                    xfr_status: Default::default(),
+                },
+            };
+            unsigned_review_addr = locked_state.config.loader.review.servers.get(0).map(|v| v.addr());
+            signed_review_addr = locked_state.config.signer.review.servers.get(0).map(|v| v.addr());
+            publish_addr = locked_state.config.server.servers.get(0).expect("Server must have a publish address").addr();
+        }
 
         // TODO: We need to show multiple versions here
-        let stage = if center
-            .published_zones
-            .load()
-            .get_zone(&name, Class::IN)
-            .is_some()
-        {
+        let unsigned_zones = state.center.unsigned_zones.load();
+        let signed_zones = state.center.signed_zones.load();
+        let published_zones = state.center.published_zones.load();
+        let unsigned_zone = unsigned_zones.get_zone(&name, Class::IN);
+        let signed_zone = signed_zones.get_zone(&name, Class::IN);
+        let published_zone = published_zones.get_zone(&name, Class::IN);
+
+        // Determine the highest stage the zone has progressed to.
+        let stage = if published_zone.is_some() {
             ZoneStage::Published
-        } else if center
-            .signed_zones
-            .load()
-            .get_zone(&name, Class::IN)
-            .is_some()
-        {
+        } else if signed_zone.is_some() {
             ZoneStage::Signed
         } else {
             ZoneStage::Unsigned
         };
 
-        let dnst_binary = &state.config.dnst_binary_path;
-        let keys_dir = &state.config.keys_dir;
-        let cfg = keys_dir.join(format!("{name}.cfg"));
-        let key_status = Command::new(dnst_binary.as_std_path())
-            .arg("keyset")
-            .arg("-c")
-            .arg(cfg)
-            .arg("status")
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
+        // Query zone serials
+        let mut unsigned_serial = None;
+        if let Some(zone) = unsigned_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                unsigned_serial = Some(soa.serial());
+            }
+        }
+        let mut signed_serial = None;
+        if let Some(zone) = signed_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                signed_serial = Some(soa.serial());
+            }
+        }
+        let mut published_serial = None;
+        if let Some(zone) = published_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                published_serial = Some(soa.serial());
+            }
+        }
+
+        // Query key status
+        let key_status = {
+            Command::new(dnst_binary_path.as_std_path())
+                .arg("keyset")
+                .arg("-c")
+                .arg(cfg_path)
+                .arg("status")
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        };
+
+        // Query XFR status
+        let (tx, rx) = oneshot::channel();
+        app_cmd_tx
+            .send((
+                "ZL".to_owned(),
+                ApplicationCommand::GetZoneReport {
+                    zone_name: name.clone(),
+                    report_tx: tx,
+                },
+            ))
+            .ok();
+        if let Ok(zone_loader_report) = rx.await {
+            match zone_loader_report.details() {
+                ZoneReportDetails::Primary => { /* Nothing to do */ }
+                ZoneReportDetails::PendingSecondary(s) | ZoneReportDetails::Secondary(s) => {
+                    match &mut source {
+                        api::ZoneSource::None|api::ZoneSource::Zonefile { .. } => { /* Nothing to do */ }
+                        api::ZoneSource::Server { xfr_status, .. } => *xfr_status = s.status(),
+                    }
+                }
+            }
+        }
+
+        // Query approval status
+        let mut approval_status = None;
+        let (tx, rx) = oneshot::channel();
+        app_cmd_tx
+            .send((
+                "RS".to_owned(),
+                ApplicationCommand::IsZonePendingApproval {
+                    zone_name: name.clone(),
+                    tx,
+                },
+            ))
+            .ok();
+        if matches!(rx.await, Ok(true)) {
+            approval_status = Some(ZoneApprovalStatus::PendingUnsignedApproval);
+        }
+
+        let (tx, rx) = oneshot::channel();
+        app_cmd_tx
+            .send((
+                "RS2".to_owned(),
+                ApplicationCommand::IsZonePendingApproval {
+                    zone_name: name.clone(),
+                    tx,
+                },
+            ))
+            .ok();
+        if matches!(rx.await, Ok(true)) {
+            approval_status = Some(ZoneApprovalStatus::PendingSignedApproval);
+        }
 
         Ok(ZoneStatus {
             name: name.clone(),
@@ -299,6 +396,13 @@ impl HttpServer {
             policy,
             stage,
             key_status,
+            approval_status,
+            unsigned_serial,
+            signed_serial,
+            published_serial,
+            unsigned_review_addr,
+            signed_review_addr,
+            publish_addr,
         })
     }
 

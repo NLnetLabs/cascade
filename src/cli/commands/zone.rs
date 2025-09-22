@@ -4,7 +4,8 @@ use futures::TryFutureExt;
 use log::error;
 
 use crate::api::{
-    ZoneAdd, ZoneAddError, ZoneAddResult, ZoneSource, ZoneStatus, ZoneStatusError, ZonesListResult,
+    PolicyInfo, PolicyInfoError, ZoneAdd, ZoneAddError, ZoneAddResult, ZoneSource, ZoneStatus,
+    ZoneStatusError, ZonesListResult,
 };
 use crate::cli::client::CascadeApiClient;
 
@@ -119,7 +120,7 @@ impl Zone {
                     })?;
 
                 for zone in response.zones {
-                    Self::print_zone_status(zone);
+                    Self::print_zone_status(client.clone(), zone).await?;
                 }
                 Ok(())
             }
@@ -155,10 +156,7 @@ impl Zone {
             })?;
 
         match response {
-            Ok(status) => {
-                Self::print_zone_status(status);
-                Ok(())
-            }
+            Ok(status) => Self::print_zone_status(client, status).await,
             Err(ZoneStatusError::ZoneDoesNotExist) => {
                 println!("zone `{zone}` does not exist");
                 Err(())
@@ -166,19 +164,85 @@ impl Zone {
         }
     }
 
-    fn print_zone_status(zone: ZoneStatus) {
-        println!("{}", zone.name);
-        println!("  source: {}", zone.source);
-        println!("  policy: {}", zone.policy);
-        println!("  stage: {}", zone.stage);
+    async fn print_zone_status(client: CascadeApiClient, zone: ZoneStatus) -> Result<(), ()> {
+        let url = format!("policy/{}", zone.policy);
+        let response: Result<PolicyInfo, PolicyInfoError> = client
+            .get(&url)
+            .send()
+            .and_then(|r| r.json())
+            .await
+            .map_err(|e| {
+                error!("HTTP request failed: {e}");
+            })?;
 
+        let policy = match response {
+            Ok(policy) => policy,
+            Err(PolicyInfoError::PolicyDoesNotExist) => {
+                println!(
+                    "policy `{}` used by zone `{}` does not exist",
+                    zone.policy, zone.name
+                );
+                return Err(());
+            }
+        };
+
+        println!("Zone: {}", zone.name);
+        println!("Stage: {}", zone.stage);
+        println!("Policy: {}", zone.policy);
+
+        println!("Latest input:");
+        println!(
+            "  Serial: {}",
+            zone.unsigned_serial
+                .map(|s| s.to_string())
+                .unwrap_or("Unknown".to_string())
+        );
+        match &zone.source {
+            ZoneSource::None => println!("  No source configured"),
+            ZoneSource::Zonefile { path } => println!("  Loaded from the zonefile '{path}'"),
+            ZoneSource::Server { addr, .. } => println!("  Received from {addr}"),
+        }
+        println!("  Loaded at ? (? minutes ago)");
+        match (policy.loader.review.required, policy.loader.review.cmd_hook) {
+            (true, None) => println!("  Configured for manual review"),
+            (true, Some(path)) => println!("  Configured for automatic review by '{path}'"),
+            (false, _) => println!("  Not configured for review"),
+        }
+        match &zone.source {
+            ZoneSource::None => { /* Nothing to do */ }
+            ZoneSource::Zonefile { .. } => {
+                // Zonefile watching is not implemented yet.
+                println!("  Waiting for zone reload command to receive changes");
+            }
+            ZoneSource::Server {
+                addr, xfr_status, ..
+            } => {
+                println!("  XFR from {addr} {xfr_status}");
+            }
+        }
+        if let Some(addr) = zone.unsigned_review_addr {
+            println!("  Unsigned zone available on {addr}");
+        }
+
+        println!("Latest output:");
+        if let Some(serial) = zone.signed_serial {
+            println!("  Signed serial: {serial}");
+            if let Some(addr) = zone.signed_review_addr {
+                println!("  Signed zone available on {addr}");
+            }
+        }
+        if let Some(serial) = zone.published_serial {
+            println!("  Published serial: {serial}");
+            println!("  Published zone available on {}", zone.publish_addr);
+        }
+        println!("  Re-signing scheduled at ? (in ?)");
+
+        println!("DNSSEC keys:");
         if let Some(key_status) = zone.key_status {
-            println!("  key:");
             for line in key_status.lines() {
                 println!("    {line}");
             }
-        } else {
-            println!("  key: <none>");
         }
+        Ok(())
     }
 }
