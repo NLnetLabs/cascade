@@ -68,7 +68,7 @@ use core::sync::atomic::AtomicBool;
 // - When the sleep is done, loop over all unsigned zones, and for each zone
 //   check if the zone needs to be re-signed now. If so, send a message to
 //   central command and add the zone the resign_busy. After that
-//   recompute when the first zone eneds to be re-signed.
+//   recompute when the first zone needs to be re-signed.
 // - central command forwards PublishSignedZone messages. When such a message
 //   is received, recompute when the first zone eneds to be re-signed.
 
