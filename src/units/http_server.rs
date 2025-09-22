@@ -281,20 +281,20 @@ impl HttpServer {
                 .loader
                 .review
                 .servers
-                .get(0)
+                .first()
                 .map(|v| v.addr());
             signed_review_addr = locked_state
                 .config
                 .signer
                 .review
                 .servers
-                .get(0)
+                .first()
                 .map(|v| v.addr());
             publish_addr = locked_state
                 .config
                 .server
                 .servers
-                .get(0)
+                .first()
                 .expect("Server must have a publish address")
                 .addr();
         }
@@ -338,6 +338,8 @@ impl HttpServer {
 
         // Query key status
         let key_status = {
+            // TODO: Move this into key manager as that is the component that knows
+            // about dnst?
             if let Some(stdout) = Command::new(dnst_binary_path.as_std_path())
                 .arg("keyset")
                 .arg("-c")
@@ -366,7 +368,7 @@ impl HttpServer {
                         // CLI should not need to know or care what internal
                         // dnst config files are being used).
                         let mut parts = line.split(' ');
-                        if let Some(_) = parts.find(|part| *part == "-c") {
+                        if parts.find(|part| *part == "-c").is_some() {
                             if let Some(dnst_config_path) = parts.next() {
                                 let sanitized_line = line.replace(
                                     &format!("dnst keyset -c {dnst_config_path}"),

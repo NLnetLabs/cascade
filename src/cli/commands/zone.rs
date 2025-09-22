@@ -198,7 +198,7 @@ impl Zone {
                 }
             }
         }
-        println!("");
+        println!();
         println!("Policy: {}", zone.policy);
 
         println!("Latest input:");
