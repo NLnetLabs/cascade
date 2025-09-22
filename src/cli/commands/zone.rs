@@ -4,7 +4,8 @@ use futures::TryFutureExt;
 use log::error;
 
 use crate::api::{
-    PolicyInfo, PolicyInfoError, ZoneAdd, ZoneAddError, ZoneAddResult, ZoneApprovalStatus, ZoneSource, ZoneStatus, ZoneStatusError, ZonesListResult
+    PolicyInfo, PolicyInfoError, ZoneAdd, ZoneAddError, ZoneAddResult, ZoneApprovalStatus,
+    ZoneSource, ZoneStatus, ZoneStatusError, ZonesListResult,
 };
 use crate::cli::client::CascadeApiClient;
 
@@ -190,7 +191,9 @@ impl Zone {
         if policy.loader.review.required || policy.signer.review.required {
             if let Some(approval_status) = zone.approval_status {
                 match approval_status {
-                    ZoneApprovalStatus::PendingUnsignedApproval => print!("pending unsigned review"),
+                    ZoneApprovalStatus::PendingUnsignedApproval => {
+                        print!("pending unsigned review")
+                    }
                     ZoneApprovalStatus::PendingSignedApproval => print!("pending signed review"),
                 }
             }

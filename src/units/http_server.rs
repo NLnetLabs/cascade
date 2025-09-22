@@ -276,9 +276,27 @@ impl HttpServer {
                     xfr_status: Default::default(),
                 },
             };
-            unsigned_review_addr = locked_state.config.loader.review.servers.get(0).map(|v| v.addr());
-            signed_review_addr = locked_state.config.signer.review.servers.get(0).map(|v| v.addr());
-            publish_addr = locked_state.config.server.servers.get(0).expect("Server must have a publish address").addr();
+            unsigned_review_addr = locked_state
+                .config
+                .loader
+                .review
+                .servers
+                .get(0)
+                .map(|v| v.addr());
+            signed_review_addr = locked_state
+                .config
+                .signer
+                .review
+                .servers
+                .get(0)
+                .map(|v| v.addr());
+            publish_addr = locked_state
+                .config
+                .server
+                .servers
+                .get(0)
+                .expect("Server must have a publish address")
+                .addr();
         }
 
         // TODO: We need to show multiple versions here
@@ -386,7 +404,8 @@ impl HttpServer {
                 ZoneReportDetails::Primary => { /* Nothing to do */ }
                 ZoneReportDetails::PendingSecondary(s) | ZoneReportDetails::Secondary(s) => {
                     match &mut source {
-                        api::ZoneSource::None|api::ZoneSource::Zonefile { .. } => { /* Nothing to do */ }
+                        api::ZoneSource::None | api::ZoneSource::Zonefile { .. } => { /* Nothing to do */
+                        }
                         api::ZoneSource::Server { xfr_status, .. } => *xfr_status = s.status(),
                     }
                 }

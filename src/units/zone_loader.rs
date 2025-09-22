@@ -198,7 +198,10 @@ impl ZoneLoader {
                 }
             }
 
-            Some(ApplicationCommand::GetZoneReport { zone_name, report_tx }) => {
+            Some(ApplicationCommand::GetZoneReport {
+                zone_name,
+                report_tx,
+            }) => {
                 if let Ok(report) = zone_maintainer.zone_status(&zone_name, Class::IN).await {
                     report_tx.send(report).unwrap();
                 }
