@@ -9,7 +9,7 @@ use bytes::Bytes;
 use camino::Utf8Path;
 use domain::base::iana::Class;
 use domain::base::name::FlattenInto;
-use domain::base::{CanonicalOrd, Record, Rtype, Serial, Ttl};
+use domain::base::{CanonicalOrd, Record, Rtype, Serial};
 use domain::crypto::kmip::KeyUrl;
 use domain::crypto::kmip::{self, ClientCertificate, ConnectionSettings};
 use domain::crypto::sign::{KeyPair, SecretKeyBytes, SignRaw};
@@ -34,7 +34,6 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use log::warn;
 use log::{debug, error, info, trace};
-use non_empty_vec::NonEmpty;
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -1312,70 +1311,6 @@ impl Default for ZoneSignerStatus {
             zones_being_signed: VecDeque::with_capacity(MAX_SIGNING_HISTORY),
         }
     }
-}
-
-//------------ DenialConfig --------------------------------------------------
-
-// See: domain::sign::denial::config::DenialConfig
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlDenialConfig {
-    #[default]
-    Nsec,
-
-    Nsec3(NonEmpty<TomlNsec3Config>),
-
-    TransitioningToNsec3(TomlNsec3Config, TomlNsecToNsec3TransitionState),
-
-    TransitioningFromNsec3(TomlNsec3Config, TomlNsec3ToNsecTransitionState),
-}
-
-// See: domain::sign::denial::config::GenerateNsec3Config
-// Note: We don't allow configuration of NSEC3 salt, iterations or algorithm
-// as they are fixed to best practice values.
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct TomlNsec3Config {
-    pub opt_out: TomlNsec3OptOut,
-    pub nsec3_param_ttl_mode: TomlNsec3ParamTtlMode,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlNsec3OptOut {
-    #[default]
-    NoOptOut,
-    OptOut,
-    OptOutFlagOnly,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlNsec3ParamTtlMode {
-    Fixed(Ttl),
-    #[default]
-    Soa,
-    SoaMinimum,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlNsecToNsec3TransitionState {
-    #[default]
-    TransitioningDnsKeys,
-    AddingNsec3Records,
-    RemovingNsecRecords,
-    Transitioned,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlNsec3ToNsecTransitionState {
-    #[default]
-    AddingNsecRecords,
-    RemovingNsec3ParamdRecord,
-    RemovingNsec3Records,
-    TransitioningDnsKeys,
-    Transitioned,
 }
 
 //------------ MultiThreadedSorter -------------------------------------------
