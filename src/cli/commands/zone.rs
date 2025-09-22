@@ -231,6 +231,11 @@ impl Zone {
                 println!("  Signed zone available on {addr}");
             }
         }
+        match (policy.signer.review.required, policy.signer.review.cmd_hook) {
+            (true, None) => println!("  Configured for manual review"),
+            (true, Some(path)) => println!("  Configured for automatic review by '{path}'"),
+            (false, _) => println!("  Not configured for review"),
+        }
         if let Some(serial) = zone.published_serial {
             println!("  Published serial: {serial}");
             println!("  Published zone available on {}", zone.publish_addr);
