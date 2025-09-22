@@ -72,8 +72,9 @@ use core::sync::atomic::AtomicBool;
 // - central command forwards PublishSignedZone messages. When such a message
 //   is received, recompute when the first zone eneds to be re-signed.
 
-// A default poll interval in case no zones need to be resigned.
-// This simplifies code. Just a high value to avoid extra overhead.
+/// A default poll interval in case no zones need to be resigned.
+///
+/// This simplifies code. Just a high value to avoid extra overhead.
 const IDLE_RESIGNER_POLL_INTERVAL: Duration = Duration::from_secs(24 * 3600);
 
 #[derive(Debug)]
