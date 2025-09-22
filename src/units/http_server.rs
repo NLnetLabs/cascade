@@ -368,7 +368,7 @@ impl HttpServer {
                         // CLI should not need to know or care what internal
                         // dnst config files are being used).
                         let mut parts = line.split(' ');
-                        if parts.find(|part| *part == "-c").is_some() {
+                        if parts.any(|part| part == "-c") {
                             if let Some(dnst_config_path) = parts.next() {
                                 let sanitized_line = line.replace(
                                     &format!("dnst keyset -c {dnst_config_path}"),
