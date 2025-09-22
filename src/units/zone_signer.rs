@@ -949,7 +949,7 @@ impl ZoneSigner {
             // better way?
 
             // We are computing a timeout value. If the timeout is in the
-            // past ten we can just as well use zero.
+            // past then we can just as well use zero.
             let since_now = t
                 .duration_since(SystemTime::now())
                 .unwrap_or(Duration::ZERO);
