@@ -278,33 +278,49 @@ impl ZoneSigner {
             }
             opt_cmd = cmd_rx.recv() => {
                 let Some(cmd) = opt_cmd else { break };
-                info!("[ZS]: Received command: {cmd:?}");
-                match &cmd {
-                ApplicationCommand::Terminate => {
-                // self.status_reporter.terminated();
-                return Ok(());
-                }
-
-                ApplicationCommand::SignZone {
-                zone_name,
-                zone_serial, // TODO: the serial number is ignored, but is that okay?
-                } => {
-                if let Err(err) = self.sign_zone(zone_name,
-                zone_serial.is_none()).await {
-                error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
-                }
-                }
-                ApplicationCommand::PublishSignedZone { .. } => {
-                trace!("[ZS]: a zone is published, recompute next time to re-sign");
-                next_resign_time = self.next_resign_time().unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
-                }
-                _ => { /* Not for us */ }
+                if !self.handle_command(cmd, &mut next_resign_time).await {
+                break;
                 }
             }
-                }
+            }
         }
 
         Ok(())
+    }
+
+    /// Handle incoming requests.
+    ///
+    /// Return true if the caller should continue, false when a Terminate
+    /// command is received.
+    async fn handle_command(
+        &self,
+        cmd: ApplicationCommand,
+        next_resign_time: &mut Instant,
+    ) -> bool {
+        info!("[ZS]: Received command: {cmd:?}");
+        match &cmd {
+            ApplicationCommand::Terminate => {
+                // self.status_reporter.terminated();
+                return false;
+            }
+
+            ApplicationCommand::SignZone {
+                zone_name,
+                zone_serial, // TODO: the serial number is ignored, but is that okay?
+            } => {
+                if let Err(err) = self.sign_zone(zone_name, zone_serial.is_none()).await {
+                    error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+                }
+            }
+            ApplicationCommand::PublishSignedZone { .. } => {
+                trace!("[ZS]: a zone is published, recompute next time to re-sign");
+                *next_resign_time = self
+                    .next_resign_time()
+                    .unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
+            }
+            _ => { /* Not for us */ }
+        }
+        true
     }
 
     /// Signs zone_name from the Manager::unsigned_zones zone collection,
