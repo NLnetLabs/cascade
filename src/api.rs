@@ -8,6 +8,7 @@ use domain::base::{Name, Serial};
 use serde::{Deserialize, Serialize};
 
 use crate::center;
+use crate::units::zone_loader::ZoneReceiptInfo;
 use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
@@ -156,6 +157,7 @@ pub struct ZoneStatus {
     pub signed_review_addr: Option<SocketAddr>,
     pub publish_addr: SocketAddr,
     pub signing_report: Option<SigningReport>,
+    pub receipt_report: Option<ZoneReceiptInfo>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

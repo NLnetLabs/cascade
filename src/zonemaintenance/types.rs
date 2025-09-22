@@ -514,6 +514,8 @@ pub struct ZoneRefreshMetrics {
     ///
     /// The SOA SERIAL of the last commit made to this zone.
     pub last_refresh_succeeded_serial: Option<Serial>,
+
+    pub last_refresh_succeeded_bytes: Option<usize>,
 }
 
 impl Default for ZoneRefreshMetrics {
@@ -526,6 +528,7 @@ impl Default for ZoneRefreshMetrics {
             last_soa_serial_check_serial: Default::default(),
             last_refreshed_at: Default::default(),
             last_refresh_succeeded_serial: Default::default(),
+            last_refresh_succeeded_bytes: Default::default(),
         }
     }
 }
@@ -600,12 +603,13 @@ impl ZoneRefreshState {
             .unwrap_or_default()
     }
 
-    pub fn refresh_succeeded(&mut self, new_soa: &Soa<Name<Bytes>>) {
+    pub fn refresh_succeeded(&mut self, new_soa: &Soa<Name<Bytes>>, bytes: usize) {
         self.refresh = new_soa.refresh();
         self.retry = new_soa.retry();
         self.expire = new_soa.expire();
         self.metrics.last_refreshed_at = Some(Instant::now());
         self.metrics.last_refresh_succeeded_serial = Some(new_soa.serial());
+        self.metrics.last_refresh_succeeded_bytes = Some(bytes);
         self.set_status(ZoneRefreshStatus::RefreshPending);
     }
 

@@ -1184,10 +1184,10 @@ where
                 Err(())
             }
 
-            Ok(new_soa) => {
+            Ok((new_soa, bytes)) => {
                 if let Some(new_soa) = new_soa {
                     // Refresh succeeded:
-                    zone_refresh_info.refresh_succeeded(&new_soa);
+                    zone_refresh_info.refresh_succeeded(&new_soa, bytes);
                 } else {
                     // No transfer was required, either because transfer is
                     // not enabled at the primaries for the zone or the zone
@@ -1215,7 +1215,7 @@ where
         initial_xfr_addr: Option<SocketAddr>,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
-    ) -> Result<Option<Soa<Name<Bytes>>>, ZoneMaintainerError> {
+    ) -> Result<(Option<Soa<Name<Bytes>>>, usize), ZoneMaintainerError> {
         let zone_id = ZoneId::from(zone);
         // Was this zone already refreshed recently?
         {
@@ -1229,7 +1229,7 @@ where
                         MIN_DURATION_BETWEEN_ZONE_REFRESHES.as_secs(),
                         age.as_secs()
                     );
-                        return Ok(None);
+                        return Ok((None, 0));
                     }
                 }
             }
@@ -1286,11 +1286,11 @@ where
                 .await;
 
                 match res {
-                    Ok(Some(_)) => {
+                    Ok((Some(_), _bytes)) => {
                         // Success!
                         return res;
                     }
-                    Ok(None) => {
+                    Ok((None, _)) => {
                         // No transfer supported to this primary or this
                         // primary has equal or older data than we already
                         // have. Try the next primary.
@@ -1311,7 +1311,7 @@ where
         }
 
         if num_ok_primaries > 0 {
-            Ok(None)
+            Ok((None, 0))
         } else {
             Err(saved_err.unwrap())
         }
@@ -1324,7 +1324,7 @@ where
         xfr_config: &XfrConfig,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
-    ) -> Result<Option<Soa<Name<Bytes>>>, ZoneMaintainerError> {
+    ) -> Result<(Option<Soa<Name<Bytes>>>, usize), ZoneMaintainerError> {
         // Build the SOA request message
         let msg = MessageBuilder::new_vec();
         let mut msg = msg.question();
@@ -1391,7 +1391,7 @@ where
             if let Some(zone_refresh_info) = tt.get_mut(&zone_id) {
                 if !newer_data_available {
                     zone_refresh_info.soa_serial_check_succeeded(None);
-                    return Ok(None);
+                    return Ok((None, 0));
                 } else {
                     zone_refresh_info.soa_serial_check_succeeded(Some(primary_soa_serial));
                 }
@@ -1410,7 +1410,7 @@ where
                         "Transfer not enabled for possibly outdated secondary zone '{}'",
                         zone.apex_name()
                     );
-                    return Ok(None);
+                    return Ok((None, 0));
                 }
                 XfrStrategy::AxfrOnly => Rtype::AXFR,
                 XfrStrategy::IxfrOnly => Rtype::IXFR,
@@ -1476,19 +1476,19 @@ where
                     continue;
                 }
 
-                Ok(new_soa) => {
+                Ok((new_soa, bytes)) => {
                     let mut tt = time_tracking.write().await;
                     if let Some(zone_refresh_info) = tt.get_mut(&zone_id) {
-                        zone_refresh_info.refresh_succeeded(&new_soa);
+                        zone_refresh_info.refresh_succeeded(&new_soa, bytes);
                     }
-                    return Ok(Some(new_soa));
+                    return Ok((Some(new_soa), bytes));
                 }
 
                 Err(err) => return Err(err),
             }
         }
 
-        Ok(None)
+        Ok((None, 0))
     }
 
     /// Does the primary have a newer serial than us?
@@ -1521,7 +1521,7 @@ where
         key: Option<Key>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
-    ) -> Result<Soa<Name<Bytes>>, ZoneMaintainerError> {
+    ) -> Result<(Soa<Name<Bytes>>, usize), ZoneMaintainerError> {
         // Update the zone from the primary using XFR.
         info!(
             "Zone '{}' is outdated, attempting to sync zone by {xfr_type} from {}",
@@ -1553,6 +1553,7 @@ where
 
         let mut xfr_interpreter = XfrResponseInterpreter::new();
         let mut zone_updater = ZoneUpdater::new(zone.clone(), true).await?;
+        let mut bytes = 0;
 
         match transport {
             TransportStrategy::None => unreachable!(),
@@ -1594,6 +1595,7 @@ where
                 if msg.is_error() {
                     return Err(ZoneMaintainerError::ResponseError(msg.opt_rcode()));
                 }
+                bytes += msg.as_slice().len();
 
                 let it = xfr_interpreter
                     .interpret_response(msg)
@@ -1698,6 +1700,7 @@ where
                         return Err(ZoneMaintainerError::ResponseError(msg.opt_rcode()));
                     }
 
+                    bytes += msg.as_slice().len();
                     num_responses_received += 1;
 
                     let it = xfr_interpreter
@@ -1766,7 +1769,7 @@ where
             ));
         };
 
-        Ok(soa)
+        Ok((soa, bytes))
     }
 
     #[allow(clippy::borrowed_box)]

@@ -170,6 +170,10 @@ impl Zone {
     }
 
     async fn print_zone_status(client: CascadeApiClient, zone: ZoneStatus) -> Result<(), ()> {
+        fn to_rfc3339(v: SystemTime) -> String {
+            DateTime::<Utc>::from(v).to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+        }
+
         let url = format!("policy/{}", zone.policy);
         let response: Result<PolicyInfo, PolicyInfoError> = client
             .get(&url)
@@ -218,7 +222,20 @@ impl Zone {
             ZoneSource::Zonefile { path } => println!("  Loaded from the zonefile '{path}'"),
             ZoneSource::Server { addr, .. } => println!("  Received from {addr}"),
         }
-        println!("  Loaded at ? (? minutes ago)");
+        if let Some(receipt_info) = zone.receipt_report {
+            println!(
+                "  Received {} bytes at {} in {}s",
+                receipt_info.byte_count,
+                to_rfc3339(receipt_info.finished_at),
+                receipt_info
+                    .finished_at
+                    .duration_since(receipt_info.started_at)
+                    .unwrap()
+                    .as_secs()
+            );
+        } else {
+            println!("  Loaded at ? (? minutes ago)");
+        }
         match (policy.loader.review.required, policy.loader.review.cmd_hook) {
             (true, None) => println!("  Configured for manual review"),
             (true, Some(path)) => println!("  Configured for automatic review by '{path}'"),
@@ -238,10 +255,6 @@ impl Zone {
         }
         if let Some(addr) = zone.unsigned_review_addr {
             println!("  Unsigned zone available on {addr}");
-        }
-
-        fn to_rfc3339(v: SystemTime) -> String {
-            DateTime::<Utc>::from(v).to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
         }
 
         fn format_size(v: usize) -> String {

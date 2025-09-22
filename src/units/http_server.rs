@@ -3,6 +3,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::SystemTime;
 
 use axum::extract::OriginalUri;
 use axum::extract::Path;
@@ -23,6 +24,7 @@ use log::{debug, error, info};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
+use tokio::time::Instant;
 
 use crate::api;
 use crate::api::KeyInfo;
@@ -55,6 +57,7 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::units::zone_loader::ZoneReceiptInfo;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::read_soa;
@@ -246,6 +249,10 @@ impl HttpServer {
         state: Arc<HttpServerState>,
         name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
+        let mut zone_loaded_at = None;
+        let mut zone_loaded_in = None;
+        let mut zone_loaded_bytes = 0;
+
         let dnst_binary_path;
         let cfg_path;
         let state_path;
@@ -413,7 +420,21 @@ impl HttpServer {
                     match &mut source {
                         api::ZoneSource::None | api::ZoneSource::Zonefile { .. } => { /* Nothing to do */
                         }
-                        api::ZoneSource::Server { xfr_status, .. } => *xfr_status = s.status(),
+                        api::ZoneSource::Server { xfr_status, .. } => {
+                            *xfr_status = s.status();
+                            let metrics = s.metrics();
+                            let now = Instant::now();
+                            let now_t = SystemTime::now();
+                            if let (Some(checked_at), Some(refreshed_at)) = (
+                                metrics.last_soa_serial_check_succeeded_at,
+                                metrics.last_refreshed_at,
+                            ) {
+                                zone_loaded_in = Some(refreshed_at.duration_since(checked_at));
+                                zone_loaded_at =
+                                    now_t.checked_sub(now.duration_since(refreshed_at));
+                                zone_loaded_bytes = metrics.last_refresh_succeeded_bytes.unwrap();
+                            }
+                        }
                     }
                 }
             }
@@ -492,6 +513,18 @@ impl HttpServer {
             }
         }
 
+        let receipt_report =
+            if let (Some(finished_at), Some(zone_loaded_in)) = (zone_loaded_at, zone_loaded_in) {
+                let started_at = finished_at.checked_sub(zone_loaded_in).unwrap();
+                Some(ZoneReceiptInfo {
+                    started_at,
+                    finished_at,
+                    byte_count: zone_loaded_bytes,
+                })
+            } else {
+                None
+            };
+
         Ok(ZoneStatus {
             name: name.clone(),
             source,
@@ -507,6 +540,7 @@ impl HttpServer {
             signed_review_addr,
             publish_addr,
             signing_report,
+            receipt_report,
         })
     }
 
