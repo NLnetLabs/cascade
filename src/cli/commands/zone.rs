@@ -186,7 +186,7 @@ impl Zone {
         };
 
         println!("Zone: {}", zone.name);
-        print!("Status: At the {} pipeline stage", zone.stage);
+        print!("Status: At the {} pipeline stage ", zone.stage);
         if policy.loader.review.required || policy.signer.review.required {
             if let Some(approval_status) = zone.approval_status {
                 match approval_status {
