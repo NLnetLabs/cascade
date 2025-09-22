@@ -931,7 +931,7 @@ impl ZoneSigner {
                 let state = self.center.state.lock().unwrap();
                 let zone = state.zones.get(zone_name).unwrap();
                 let zone_state = zone.0.state.lock().unwrap();
-                // What if there is no policy?
+                // TODO: what if there is no policy?
                 zone_state.policy.as_ref().unwrap().signer.sig_remain_time
             };
 
