@@ -244,3 +244,88 @@ pub enum PolicyChange {
     Updated,
     Unchanged,
 }
+
+//------------ KeySet API Types ----------------------------------------------
+
+pub mod keyset {
+    use super::*;
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyRoll {
+        pub variant: KeyRollVariant,
+        pub cmd: KeyRollCommand,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyRollResult {
+        pub zone: Name<Bytes>,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub enum KeyRollError {
+        DnstCommandError {
+            status: String,
+            stdout: String,
+            stderr: String,
+        },
+        RxError,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyRemove {
+        pub key: String,
+        pub force: bool,
+        pub continue_flag: bool,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyRemoveResult {
+        pub zone: Name<Bytes>,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub enum KeyRemoveError {
+        DnstCommandError {
+            status: String,
+            stdout: String,
+            stderr: String,
+        },
+        RxError,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub enum KeyRollVariant {
+        /// Apply the subcommand to a KSK roll.
+        Ksk,
+        /// Apply the subcommand to a ZSK roll.
+        Zsk,
+        /// Apply the subcommand to a CSK roll.
+        Csk,
+        /// Apply the subcommand to an algorithm roll.
+        Algorithm,
+    }
+
+    #[derive(Deserialize, Serialize, Clone, Debug, clap::Subcommand)]
+    pub enum KeyRollCommand {
+        /// Start a key roll.
+        StartRoll,
+        /// Report that the first propagation step has completed.
+        Propagation1Complete {
+            /// The TTL that is required to be reported by the Report actions.
+            ttl: u32,
+        },
+        /// Cached information from before Propagation1Complete should have
+        /// expired by now.
+        CacheExpired1,
+        /// Report that the second propagation step has completed.
+        Propagation2Complete {
+            /// The TTL that is required to be reported by the Report actions.
+            ttl: u32,
+        },
+        /// Cached information from before Propagation2Complete should have
+        /// expired by now.
+        CacheExpired2,
+        /// Report that the final changes have propagated and the the roll is done.
+        RollDone,
+    }
+}
