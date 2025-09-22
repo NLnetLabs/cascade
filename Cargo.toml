@@ -41,7 +41,7 @@ tracing        = { version = "0.1.40" }
 # Added for CLI to access HTTP API
 # `default-features = false` was copied from previous import from the Rotonda base
 reqwest				= { version = "0.12", default-features = false, features = ["http2", "json"] }
-axum				= { version = "0.8.4", features = ["http2", "ws"] }
+axum				= { version = "0.8.4", default-features = false, features = ["http2", "query", "original-uri", "json", "tokio"] }
 
 # From Rotonda
 async-trait        = "0.1"
