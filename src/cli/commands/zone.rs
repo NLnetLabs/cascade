@@ -1,12 +1,18 @@
+use std::time::SystemTime;
+
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use domain::base::Name;
 use futures::TryFutureExt;
+use humantime::format_duration;
 use log::error;
 
 use crate::api::{
-    KeyType, PolicyInfo, PolicyInfoError, ZoneAdd, ZoneAddError, ZoneAddResult, ZoneApprovalStatus, ZoneSource, ZoneStatus, ZoneStatusError, ZonesListResult
+    KeyType, PolicyInfo, PolicyInfoError, ZoneAdd, ZoneAddError, ZoneAddResult, ZoneApprovalStatus,
+    ZoneSource, ZoneStage, ZoneStatus, ZoneStatusError, ZonesListResult,
 };
 use crate::cli::client::CascadeApiClient;
+use crate::zonemaintenance::types::SigningReport;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Zone {
@@ -234,9 +240,52 @@ impl Zone {
             println!("  Unsigned zone available on {addr}");
         }
 
+        fn to_rfc3339(v: SystemTime) -> String {
+            DateTime::<Utc>::from(v).to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+        }
+
+        fn format_size(v: usize) -> String {
+            match v {
+                n if n > 1_000_000 => format!("{}M", n / 1_000_000),
+                n if n > 1_000 => format!("{}K", n / 1_000),
+                n => n.to_string(),
+            }
+        }
+
         println!("Latest output:");
-        if let Some(serial) = zone.signed_serial {
-            println!("  Signed serial: {serial}");
+        if let Some(serial) = zone.published_serial {
+            println!("  Serial: {serial}");
+        } else if let Some(serial) = zone.signed_serial {
+            println!("  Serial: {serial}");
+        }
+        if zone.stage >= ZoneStage::Signed {
+            if let Some(report) = zone.signing_report {
+                match report {
+                    SigningReport::Requested(r) => {
+                        println!("  Signing requested at {}", to_rfc3339(r.requested_at));
+                    }
+                    SigningReport::InProgress(r) => {
+                        println!("  Signing started at {}", to_rfc3339(r.started_at));
+                        if let (Some(unsigned_rr_count), Some(total_time)) =
+                            (r.unsigned_rr_count, r.total_time)
+                        {
+                            println!(
+                                "  Signed {} records in {}",
+                                format_size(unsigned_rr_count),
+                                format_duration(total_time)
+                            );
+                        }
+                    }
+                    SigningReport::Finished(r) => {
+                        println!("  Signed at {}", to_rfc3339(r.finished_at));
+                        println!(
+                            "  Signed {} records in {}",
+                            format_size(r.unsigned_rr_count),
+                            format_duration(r.total_time)
+                        );
+                    }
+                }
+            }
             if let Some(addr) = zone.signed_review_addr {
                 println!("  Signed zone available on {addr}");
             }
@@ -246,8 +295,7 @@ impl Zone {
             (true, Some(path)) => println!("  Configured for automatic review by '{path}'"),
             (false, _) => println!("  Not configured for review"),
         }
-        if let Some(serial) = zone.published_serial {
-            println!("  Published serial: {serial}");
+        if zone.stage == ZoneStage::Published {
             println!("  Published zone available on {}", zone.publish_addr);
         }
         println!("  Re-signing scheduled at ? (in ?)");

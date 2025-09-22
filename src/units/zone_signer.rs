@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
 use camino::Utf8Path;
@@ -53,6 +53,7 @@ use crate::payload::Update;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
+    SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
 };
 use core::sync::atomic::AtomicBool;
 
@@ -214,6 +215,7 @@ struct ZoneSigner {
     treat_single_keys_as_csks: bool,
     kmip_servers: HashMap<String, SyncConnPool>,
     keys_dir: Box<Utf8Path>,
+    started_at: (SystemTime, Instant),
 }
 
 impl ZoneSigner {
@@ -239,6 +241,7 @@ impl ZoneSigner {
             treat_single_keys_as_csks,
             kmip_servers,
             keys_dir,
+            started_at: (SystemTime::now(), Instant::now()),
         }
     }
 
@@ -248,7 +251,7 @@ impl ZoneSigner {
     ) -> Result<(), crate::comms::Terminated> {
         while let Some(cmd) = cmd_rx.recv().await {
             info!("[ZS]: Received command: {cmd:?}");
-            match &cmd {
+            match cmd {
                 ApplicationCommand::Terminate => {
                     // self.status_reporter.terminated();
                     return Ok(());
@@ -258,8 +261,19 @@ impl ZoneSigner {
                     zone_name,
                     zone_serial, // TODO: the serial number is ignored, but is that okay?
                 } => {
-                    if let Err(err) = self.sign_zone(zone_name, zone_serial.is_none()).await {
+                    if let Err(err) = self.sign_zone(&zone_name, zone_serial.is_none()).await {
                         error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+                    }
+                }
+
+                ApplicationCommand::GetSigningReport {
+                    zone_name,
+                    report_tx,
+                } => {
+                    if let Some(status) = self.signer_status.read().await.get(&zone_name) {
+                        if let Some(report) = self.mk_signing_report(&status.status) {
+                            let _ = report_tx.send(report).ok();
+                        };
                     }
                 }
 
@@ -268,6 +282,59 @@ impl ZoneSigner {
         }
 
         Ok(())
+    }
+
+    fn as_system_time(&self, instant: Instant) -> Option<SystemTime> {
+        self.started_at
+            .0
+            .checked_add(self.started_at.1.duration_since(instant))
+    }
+
+    fn mk_signing_report(&self, status: &ZoneSigningStatus) -> Option<SigningReport> {
+        match status {
+            ZoneSigningStatus::Requested(s) => {
+                Some(SigningReport::Requested(SigningRequestedReport {
+                    requested_at: self.as_system_time(s.requested_at)?,
+                }))
+            }
+            ZoneSigningStatus::InProgress(s) => {
+                Some(SigningReport::InProgress(SigningInProgressReport {
+                    requested_at: self.as_system_time(s.requested_at)?,
+                    zone_serial: s.zone_serial,
+                    started_at: self.as_system_time(s.started_at)?,
+                    unsigned_rr_count: s.unsigned_rr_count,
+                    walk_time: s.walk_time,
+                    sort_time: s.sort_time,
+                    denial_rr_count: s.denial_rr_count,
+                    denial_time: s.denial_time,
+                    rrsig_count: s.rrsig_count,
+                    rrsig_reused_count: s.rrsig_reused_count,
+                    rrsig_time: s.rrsig_time,
+                    insertion_time: s.insertion_time,
+                    total_time: s.total_time,
+                    threads_used: s.threads_used,
+                }))
+            }
+            ZoneSigningStatus::Finished(s) => {
+                Some(SigningReport::Finished(SigningFinishedReport {
+                    requested_at: self.as_system_time(s.requested_at)?,
+                    zone_serial: s.zone_serial,
+                    started_at: self.as_system_time(s.started_at)?,
+                    unsigned_rr_count: s.unsigned_rr_count,
+                    walk_time: s.walk_time,
+                    sort_time: s.sort_time,
+                    denial_rr_count: s.denial_rr_count,
+                    denial_time: s.denial_time,
+                    rrsig_count: s.rrsig_count,
+                    rrsig_reused_count: s.rrsig_reused_count,
+                    rrsig_time: s.rrsig_time,
+                    insertion_time: s.insertion_time,
+                    total_time: s.total_time,
+                    threads_used: s.threads_used,
+                    finished_at: self.as_system_time(s.finished_at)?,
+                }))
+            }
+        }
     }
 
     /// Signs zone_name from the Manager::unsigned_zones zone collection,

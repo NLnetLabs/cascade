@@ -8,7 +8,7 @@ use domain::base::{Name, Serial};
 use serde::{Deserialize, Serialize};
 
 use crate::center;
-use crate::zonemaintenance::types::ZoneRefreshStatus;
+use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
@@ -117,7 +117,7 @@ pub struct ZonesListResult {
     pub zones: Vec<ZoneStatus>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ZoneStage {
     Unsigned,
     Signed,
@@ -155,6 +155,7 @@ pub struct ZoneStatus {
     pub unsigned_review_addr: Option<SocketAddr>,
     pub signed_review_addr: Option<SocketAddr>,
     pub publish_addr: SocketAddr,
+    pub signing_report: Option<SigningReport>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

@@ -474,6 +474,24 @@ impl HttpServer {
             }
         }
 
+        // Query signing status
+        let mut signing_report = None;
+        if stage >= ZoneStage::Signed {
+            let (report_tx, rx) = oneshot::channel();
+            app_cmd_tx
+                .send((
+                    "ZS".to_owned(),
+                    ApplicationCommand::GetSigningReport {
+                        zone_name: name.clone(),
+                        report_tx,
+                    },
+                ))
+                .ok();
+            if let Ok(report) = rx.await {
+                signing_report = Some(report);
+            }
+        }
+
         Ok(ZoneStatus {
             name: name.clone(),
             source,
@@ -488,6 +506,7 @@ impl HttpServer {
             unsigned_review_addr,
             signed_review_addr,
             publish_addr,
+            signing_report,
         })
     }
 
