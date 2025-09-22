@@ -9,7 +9,6 @@ use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::Html;
 use axum::routing::get;
 use axum::routing::post;
 use axum::Json;
@@ -115,14 +114,8 @@ impl HttpServer {
         // "KM"   KeyManagerUnit
 
         let unit_router = Router::new()
-            .route("/ps/", get(Self::handle_ps_base))
-            .route("/ps/{action}/{token}", get(Self::handle_ps))
-            .route("/rs/", get(Self::handle_rs_base))
             .route("/rs/{action}/{token}", get(Self::handle_rs))
-            .route("/rs2/", get(Self::handle_rs2_base))
             .route("/rs2/{action}/{token}", get(Self::handle_rs2));
-        // .route("/zl/", get(Self::handle_zl_base))
-        // .route("/zs/", get(Self::handle_zs_base));
 
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
@@ -332,6 +325,7 @@ impl HttpServer {
                 .arg("-c")
                 .arg(cfg_path)
                 .arg("status")
+                .arg("-v")
                 .output()
                 .ok()
                 .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
@@ -506,82 +500,7 @@ impl HttpServer {
 //------------ HttpServer Handler for /<unit>/ -------------------------------
 
 impl HttpServer {
-    //--- /ps/
-    async fn handle_ps_base(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-    ) -> Result<Html<String>, StatusCode> {
-        Self::zone_server_unit_api_base_common("PS", uri, state).await
-    }
-
-    async fn handle_ps(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-        Path((action, token)): Path<(String, String)>,
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Result<(), StatusCode> {
-        Self::zone_server_unit_api_common("PS", uri, state, action, token, params).await
-    }
-
-    // //--- /zs/
-    // async fn handle_zs_base(
-    //     uri: OriginalUri,
-    //     State(state): State<Arc<HttpServerState>>,
-    // ) -> Result<Html<String>, StatusCode> {
-    //     Self::zone_server_unit_api_base_common("ZS", uri, state).await
-    // }
-
-    // async fn handle_zs(
-    //     uri: OriginalUri,
-    //     State(state): State<Arc<HttpServerState>>,
-    //     Path((action, token)): Path<(String, String)>,
-    //     Query(params): Query<HashMap<String, String>>,
-    // ) -> Result<(), StatusCode> {
-    //     Self::zone_server_unit_api_common("ZS", uri, state, action, token, params).await
-    // }
-
-    // //--- /zl/
-    // async fn handle_zl_base(
-    //     uri: OriginalUri,
-    //     State(state): State<Arc<HttpServerState>>,
-    // ) -> Result<Html<String>, StatusCode> {
-    //     Self::zone_server_unit_api_base_common("ZL", uri, state).await
-    // }
-
-    // async fn handle_zl(
-    //     uri: OriginalUri,
-    //     State(state): State<Arc<HttpServerState>>,
-    //     Path((action, token)): Path<(String, String)>,
-    //     Query(params): Query<HashMap<String, String>>,
-    // ) -> Result<(), StatusCode> {
-    //     Self::zone_server_unit_api_common("ZL", uri, state, action, token, params).await
-    // }
-
-    //--- /rs2/
-    async fn handle_rs2_base(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-    ) -> Result<Html<String>, StatusCode> {
-        Self::zone_server_unit_api_base_common("RS2", uri, state).await
-    }
-
-    async fn handle_rs2(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-        Path((action, token)): Path<(String, String)>,
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Result<(), StatusCode> {
-        Self::zone_server_unit_api_common("RS2", uri, state, action, token, params).await
-    }
-
     //--- /rs/
-    async fn handle_rs_base(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-    ) -> Result<Html<String>, StatusCode> {
-        Self::zone_server_unit_api_base_common("RS", uri, state).await
-    }
-
     async fn handle_rs(
         uri: OriginalUri,
         State(state): State<Arc<HttpServerState>>,
@@ -591,37 +510,17 @@ impl HttpServer {
         Self::zone_server_unit_api_common("RS", uri, state, action, token, params).await
     }
 
-    //--- common api implementations
-    async fn zone_server_unit_api_base_common(
-        unit: &str,
+    //--- /rs2/
+    async fn handle_rs2(
         uri: OriginalUri,
-        state: Arc<HttpServerState>,
-    ) -> Result<Html<String>, StatusCode> {
-        let (tx, mut rx) = mpsc::channel(10);
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                unit.into(),
-                ApplicationCommand::HandleZoneReviewApiStatus { http_tx: tx },
-            ))
-            .unwrap();
-
-        let res = rx.recv().await;
-        let Some(res) = res else {
-            // Failed to receive response... When would that happen?
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        };
-
-        debug!(
-            "[{HTTP_UNIT_NAME}]: Handled HTTP request: {}",
-            uri.path_and_query()
-                .map(|p| { p.as_str() })
-                .unwrap_or_default()
-        );
-
-        Ok(Html(res))
+        State(state): State<Arc<HttpServerState>>,
+        Path((action, token)): Path<(String, String)>,
+        Query(params): Query<HashMap<String, String>>,
+    ) -> Result<(), StatusCode> {
+        Self::zone_server_unit_api_common("RS2", uri, state, action, token, params).await
     }
+
+    //--- common api implementations
 
     // All ZoneServerUnit's have the same review API
     //

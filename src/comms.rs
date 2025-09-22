@@ -144,9 +144,6 @@ pub enum ApplicationCommand {
         operation: String,
         http_tx: mpsc::Sender<Result<(), ()>>,
     },
-    HandleZoneReviewApiStatus {
-        http_tx: mpsc::Sender<String>,
-    },
     SeekApprovalForUnsignedZone {
         zone_name: StoredName,
         zone_serial: Serial,

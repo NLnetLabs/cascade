@@ -70,7 +70,6 @@ smallvec           = { version = "1.11", features = ["const_generics", "const_ne
 tokio-metrics      = { version = "0.3", default-features = false }
 url                = { version = "2.4", features = ["serde"] }
 uuid               = { version = "1.4", features = ["v4", "fast-rng"] }
-indoc              = "2.0.5"
 rayon = "1.10.0"
 
 # Jiff is used by zone_signer for the DateCounter serial policy.
