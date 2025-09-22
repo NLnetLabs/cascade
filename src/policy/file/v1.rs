@@ -273,6 +273,10 @@ pub struct SignerSpec {
     /// How long record signatures will be valid for, in seconds.
     pub sig_validity_time: u64,
 
+    /// How long before expiration a new signature has to be
+    /// generated, in seconds.
+    pub sig_remain_time: u64,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialSpec,
 
@@ -292,6 +296,7 @@ impl SignerSpec {
             serial_policy: self.serial_policy.parse(),
             sig_inception_offset: Duration::from_secs(self.sig_inception_offset),
             sig_validity_time: Duration::from_secs(self.sig_validity_time),
+            sig_remain_time: Duration::from_secs(self.sig_remain_time),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -303,6 +308,7 @@ impl SignerSpec {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
             sig_inception_offset: policy.sig_inception_offset.as_secs(),
             sig_validity_time: policy.sig_validity_time.as_secs(),
+            sig_remain_time: policy.sig_remain_time.as_secs(),
             denial: SignerDenialSpec::build(&policy.denial),
             review: ReviewSpec::build(&policy.review),
         }
@@ -314,20 +320,10 @@ impl Default for SignerSpec {
         Self {
             serial_policy: Default::default(),
 
-            // There is small risk that either the signer or a validator
-            // has the wrong time zone settings. Back dating signatures by
-            // one day should solve that problem and not introduce any
-            // security risks. No official reference.
             sig_inception_offset: SIGNATURE_INCEPTION_OFFSET,
-
-            // .com SOA: 7 days
-            // .nl SOA: 14 days
-            // .net SOA: 7 days
-            // .org SOA: 21 days
-            // No official reference.
             sig_validity_time: SIGNATURE_VALIDITY_TIME,
+            sig_remain_time: SIGNATURE_REMAIN_TIME,
 
-            // Missing: sig_remain_time
             denial: Default::default(),
 
             review: Default::default(),

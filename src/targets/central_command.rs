@@ -145,14 +145,23 @@ impl CentralCommand {
             Update::SignedZoneApprovedEvent {
                 zone_name,
                 zone_serial,
-            } => (
-                "Instructing publication server to publish the signed zone",
-                "PS",
-                ApplicationCommand::PublishSignedZone {
+            } => {
+                // Send a copy of PublishSignedZone to ZS to trigger a
+                // re-scan of when to re-sign next.
+                let psz = ApplicationCommand::PublishSignedZone {
                     zone_name,
                     zone_serial,
-                },
-            ),
+                };
+                self.center
+                    .app_cmd_tx
+                    .send(("ZS".into(), psz.clone()))
+                    .unwrap();
+                (
+                    "Instructing publication server to publish the signed zone",
+                    "PS",
+                    psz,
+                )
+            }
         };
 
         info!("[CC]: {msg}");

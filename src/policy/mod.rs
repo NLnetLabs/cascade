@@ -266,6 +266,9 @@ pub struct SignerPolicy {
     /// How long record signatures will be valid for.
     pub sig_validity_time: Duration,
 
+    /// How long before expiration a new signature has to be generated.
+    pub sig_remain_time: Duration,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicy,
 
