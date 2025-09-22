@@ -146,6 +146,7 @@ pub struct ZoneStatus {
     pub source: ZoneSource,
     pub policy: String,
     pub stage: ZoneStage,
+    pub keys: Vec<KeyInfo>,
     pub key_status: Option<String>,
     pub approval_status: Option<ZoneApprovalStatus>,
     pub unsigned_serial: Option<Serial>,
@@ -160,6 +161,21 @@ pub struct ZoneStatus {
 pub enum ZoneApprovalStatus {
     PendingUnsignedApproval,
     PendingSignedApproval,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KeyInfo {
+    pub pubref: String,
+    pub key_type: KeyType,
+    pub key_tag: u16,
+    pub signer: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum KeyType {
+    Ksk,
+    Zsk,
+    Csk,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

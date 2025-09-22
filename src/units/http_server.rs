@@ -17,6 +17,7 @@ use bytes::Bytes;
 use domain::base::iana::Class;
 use domain::base::Name;
 use domain::base::Serial;
+use domain::dnssec::sign::keys::keyset::KeyType;
 use log::warn;
 use log::{debug, error, info};
 use tokio::sync::mpsc;
@@ -24,6 +25,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
 use crate::api;
+use crate::api::KeyInfo;
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
 use crate::api::PolicyChanges;
@@ -53,6 +55,7 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::units::zone_signer::KeySetState;
 use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::read_soa;
 use crate::zonemaintenance::types::ZoneReportDetails;
@@ -245,6 +248,7 @@ impl HttpServer {
     ) -> Result<ZoneStatus, ZoneStatusError> {
         let dnst_binary_path;
         let cfg_path;
+        let state_path;
         let app_cmd_tx;
         let policy;
         let mut source;
@@ -256,6 +260,7 @@ impl HttpServer {
             dnst_binary_path = locked_state.config.dnst_binary_path.clone();
             let keys_dir = &locked_state.config.keys_dir;
             cfg_path = keys_dir.join(format!("{name}.cfg"));
+            state_path = keys_dir.join(format!("{name}.state"));
             app_cmd_tx = state.center.app_cmd_tx.clone();
             let zone = locked_state
                 .zones
@@ -444,11 +449,37 @@ impl HttpServer {
             approval_status = Some(ZoneApprovalStatus::PendingSignedApproval);
         }
 
+        // Query zone keys
+        let mut keys = vec![];
+        match std::fs::read_to_string(&state_path) {
+            Ok(json) => {
+                let keyset_state: KeySetState = serde_json::from_str(&json).unwrap();
+                for (pubref, key) in keyset_state.keyset.keys() {
+                    let (key_type, signer) = match key.keytype() {
+                        KeyType::Ksk(s) => (api::KeyType::Ksk, s.signer()),
+                        KeyType::Zsk(s) => (api::KeyType::Zsk, s.signer()),
+                        KeyType::Csk(s1, s2) => (api::KeyType::Csk, s1.signer() || s2.signer()),
+                        KeyType::Include(_) => continue,
+                    };
+                    keys.push(KeyInfo {
+                        pubref: pubref.clone(),
+                        key_type,
+                        key_tag: key.key_tag(),
+                        signer,
+                    });
+                }
+            }
+            Err(err) => {
+                error!("Unable to read `dnst keyset` state file '{state_path}' while querying status of zone {name} for the API: {err}");
+            }
+        }
+
         Ok(ZoneStatus {
             name: name.clone(),
             source,
             policy,
             stage,
+            keys,
             key_status,
             approval_status,
             unsigned_serial,

@@ -4,8 +4,7 @@ use futures::TryFutureExt;
 use log::error;
 
 use crate::api::{
-    PolicyInfo, PolicyInfoError, ZoneAdd, ZoneAddError, ZoneAddResult, ZoneApprovalStatus,
-    ZoneSource, ZoneStatus, ZoneStatusError, ZonesListResult,
+    KeyType, PolicyInfo, PolicyInfoError, ZoneAdd, ZoneAddError, ZoneAddResult, ZoneApprovalStatus, ZoneSource, ZoneStatus, ZoneStatusError, ZonesListResult
 };
 use crate::cli::client::CascadeApiClient;
 
@@ -254,7 +253,20 @@ impl Zone {
         println!("  Re-signing scheduled at ? (in ?)");
 
         println!("DNSSEC keys:");
+        for key in zone.keys {
+            match key.key_type {
+                KeyType::Ksk => print!("  KSK"),
+                KeyType::Zsk => print!("  ZSK"),
+                KeyType::Csk => print!("  CSK"),
+            }
+            println!(" tagged {}:", key.key_tag);
+            println!("    Reference: {}", key.pubref);
+            if key.signer {
+                println!("    Actively used for signing");
+            }
+        }
         if let Some(key_status) = zone.key_status {
+            println!("  Details:");
             for line in key_status.lines() {
                 println!("    {line}");
             }

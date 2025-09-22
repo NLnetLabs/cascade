@@ -442,19 +442,6 @@ impl ZoneSigner {
             s.walk_time = Some(Duration::from_secs(walk_time));
         });
 
-        /// Persistent state for the keyset command.
-        /// Copied frmo the keyset branch of dnst.
-        #[derive(Deserialize, Serialize)]
-        struct KeySetState {
-            /// Domain KeySet state.
-            keyset: KeySet,
-
-            dnskey_rrset: Vec<String>,
-            ds_rrset: Vec<String>,
-            cds_rrset: Vec<String>,
-            ns_rrset: Vec<String>,
-        }
-
         trace!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
         // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
         let apex_name = zone.apex_name().to_string();
@@ -853,6 +840,19 @@ impl ZoneSigner {
         let expiration = now.wrapping_add(policy.signer.sig_validity_time.as_secs() as u32);
         SigningConfig::new(denial, inception.into(), expiration.into())
     }
+}
+
+/// Persistent state for the keyset command.
+/// Copied from the keyset branch of dnst.
+#[derive(Deserialize, Serialize)]
+pub struct KeySetState {
+    /// Domain KeySet state.
+    pub keyset: KeySet,
+
+    pub dnskey_rrset: Vec<String>,
+    pub ds_rrset: Vec<String>,
+    pub cds_rrset: Vec<String>,
+    pub ns_rrset: Vec<String>,
 }
 
 struct MinTimestamp(Mutex<Option<Timestamp>>);
