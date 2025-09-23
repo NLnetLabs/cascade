@@ -303,7 +303,8 @@ async fn load_file_into_zone(
             error!("[ZL]: Error: Failed to read data from file '{zone_path}': {err}",)
         })
         .map_err(|_| Terminated)?;
-    let reader = buf.into_inner();
+    let mut reader = buf.into_inner();
+    reader.set_origin(zone_name.clone());
     let res = Zone::try_from(reader);
     let Ok(zone) = res else {
         let errors = res.unwrap_err();
