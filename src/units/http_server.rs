@@ -57,7 +57,7 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
-use crate::units::zone_loader::ZoneReceiptInfo;
+use crate::units::zone_loader::ZoneLoaderReport;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::read_soa;
@@ -413,28 +413,34 @@ impl HttpServer {
                 },
             ))
             .ok();
-        if let Ok(zone_loader_report) = rx.await {
-            match zone_loader_report.details() {
-                ZoneReportDetails::Primary => { /* Nothing to do */ }
+        if let Ok((zone_maintainer_report, zone_loader_report)) = rx.await {
+            log::info!("ZMR = {zone_maintainer_report:?}");
+            log::info!("ZLR = {zone_loader_report:?}");
+            match zone_maintainer_report.details() {
+                ZoneReportDetails::Primary => {
+                    if let Some(report) = zone_loader_report {
+                        if let Ok(duration) = report.finished_at.duration_since(report.started_at) {
+                            zone_loaded_in = Some(duration);
+                            zone_loaded_at = Some(report.finished_at);
+                            zone_loaded_bytes = report.byte_count;
+                        }
+                    }
+                }
                 ZoneReportDetails::PendingSecondary(s) | ZoneReportDetails::Secondary(s) => {
-                    match &mut source {
-                        api::ZoneSource::None | api::ZoneSource::Zonefile { .. } => { /* Nothing to do */
-                        }
-                        api::ZoneSource::Server { xfr_status, .. } => {
-                            *xfr_status = s.status();
-                            let metrics = s.metrics();
-                            let now = Instant::now();
-                            let now_t = SystemTime::now();
-                            if let (Some(checked_at), Some(refreshed_at)) = (
-                                metrics.last_soa_serial_check_succeeded_at,
-                                metrics.last_refreshed_at,
-                            ) {
-                                zone_loaded_in = Some(refreshed_at.duration_since(checked_at));
-                                zone_loaded_at =
-                                    now_t.checked_sub(now.duration_since(refreshed_at));
-                                zone_loaded_bytes = metrics.last_refresh_succeeded_bytes.unwrap();
-                            }
-                        }
+                    let api::ZoneSource::Server { xfr_status, .. } = &mut source else {
+                        unreachable!("A secondary must have been configured from a server source");
+                    };
+                    *xfr_status = s.status();
+                    let metrics = s.metrics();
+                    let now = Instant::now();
+                    let now_t = SystemTime::now();
+                    if let (Some(checked_at), Some(refreshed_at)) = (
+                        metrics.last_soa_serial_check_succeeded_at,
+                        metrics.last_refreshed_at,
+                    ) {
+                        zone_loaded_in = Some(refreshed_at.duration_since(checked_at));
+                        zone_loaded_at = now_t.checked_sub(now.duration_since(refreshed_at));
+                        zone_loaded_bytes = metrics.last_refresh_succeeded_bytes.unwrap();
                     }
                 }
             }
@@ -516,7 +522,7 @@ impl HttpServer {
         let receipt_report =
             if let (Some(finished_at), Some(zone_loaded_in)) = (zone_loaded_at, zone_loaded_in) {
                 let started_at = finished_at.checked_sub(zone_loaded_in).unwrap();
-                Some(ZoneReceiptInfo {
+                Some(ZoneLoaderReport {
                     started_at,
                     finished_at,
                     byte_count: zone_loaded_bytes,

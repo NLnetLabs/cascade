@@ -111,7 +111,6 @@ pub async fn spawn(
     log::info!("Starting unit 'ZL'");
     let unit = ZoneLoader {
         center: center.clone(),
-        receipt_info: Default::default(),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let (ready_tx, ready_rx) = oneshot::channel();

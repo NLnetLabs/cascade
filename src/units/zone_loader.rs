@@ -19,7 +19,7 @@ use domain::zonetree::{
     AnswerContent, InMemoryZoneDiff, ReadableZone, StoredName, WritableZone, WritableZoneNode,
     Zone, ZoneStore,
 };
-use foldhash::HashMap;
+use foldhash::{HashMap, HashMapExt};
 use futures::Future;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ use crate::zonemaintenance::types::{
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ZoneReceiptInfo {
+pub struct ZoneLoaderReport {
     pub started_at: SystemTime,
     pub finished_at: SystemTime,
     pub byte_count: usize,
@@ -53,18 +53,16 @@ pub struct ZoneReceiptInfo {
 pub struct ZoneLoader {
     /// The center.
     pub center: Arc<Center>,
-
-    /// Zone receipt info.
-    pub receipt_info: HashMap<StoredName, ZoneReceiptInfo>,
 }
 
 impl ZoneLoader {
     pub async fn run(
-        mut self,
+        self,
         mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
         ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
+        let mut receipt_info: HashMap<StoredName, ZoneLoaderReport> = HashMap::new();
 
         let (zone_updated_tx, mut zone_updated_rx) = tokio::sync::mpsc::channel(10);
 
@@ -94,9 +92,9 @@ impl ZoneLoader {
                 ZoneLoadSource::None => continue,
 
                 ZoneLoadSource::Zonefile { path } => {
-                    let (zone, receipt_info) =
+                    let (zone, ri) =
                         Self::register_primary_zone(name.clone(), &path, &zone_updated_tx).await?;
-                    self.receipt_info.insert(name.clone(), receipt_info);
+                    receipt_info.insert(name.clone(), ri);
                     zone
                 }
 
@@ -123,7 +121,7 @@ impl ZoneLoader {
                 }
 
                 cmd = cmd_rx.recv() => {
-                    self.on_command(cmd, &zone_maintainer, zone_updated_tx.clone()).await?;
+                    self.on_command(cmd, &zone_maintainer, zone_updated_tx.clone(), &mut receipt_info).await?;
                 }
             }
         }
@@ -148,6 +146,7 @@ impl ZoneLoader {
         cmd: Option<ApplicationCommand>,
         zone_maintainer: &ZoneMaintainer<KS, CF>,
         zone_updated_tx: Sender<(StoredName, Serial)>,
+        receipt_info: &mut HashMap<StoredName, ZoneLoaderReport>,
     ) -> Result<(), Terminated>
     where
         KS: Deref + Send + Sync + 'static,
@@ -174,9 +173,10 @@ impl ZoneLoader {
                     ZoneLoadSource::None => return Ok(()),
 
                     ZoneLoadSource::Zonefile { path } => {
-                        let (zone, _receipt_info) =
+                        let (zone, ri) =
                             Self::register_primary_zone(name.clone(), &path, &zone_updated_tx)
                                 .await?;
+                        receipt_info.insert(name, ri);
                         zone
                     }
 
@@ -222,7 +222,8 @@ impl ZoneLoader {
                 report_tx,
             }) => {
                 if let Ok(report) = zone_maintainer.zone_status(&zone_name, Class::IN).await {
-                    report_tx.send(report).unwrap();
+                    let zone_loader_report = receipt_info.get(&zone_name).cloned();
+                    report_tx.send((report, zone_loader_report)).unwrap();
                 }
             }
 
@@ -238,7 +239,7 @@ impl ZoneLoader {
         zone_name: StoredName,
         zone_path: &Utf8Path,
         zone_updated_tx: &Sender<(Name<Bytes>, Serial)>,
-    ) -> Result<(TypedZone, ZoneReceiptInfo), Terminated> {
+    ) -> Result<(TypedZone, ZoneLoaderReport), Terminated> {
         let started_at = SystemTime::now();
         let (zone, byte_count) = load_file_into_zone(&zone_name, zone_path).await?;
         let duration = SystemTime::now().duration_since(started_at).unwrap();
@@ -253,7 +254,7 @@ impl ZoneLoader {
             .await
             .unwrap();
         let zone = Zone::new(NotifyOnWriteZone::new(zone, zone_updated_tx.clone()));
-        let receipt_info = ZoneReceiptInfo {
+        let receipt_info = ZoneLoaderReport {
             started_at,
             finished_at: started_at.checked_add(duration).unwrap(),
             byte_count,

@@ -215,7 +215,6 @@ struct ZoneSigner {
     treat_single_keys_as_csks: bool,
     kmip_servers: HashMap<String, SyncConnPool>,
     keys_dir: Box<Utf8Path>,
-    started_at: (SystemTime, Instant),
 }
 
 impl ZoneSigner {
@@ -241,7 +240,6 @@ impl ZoneSigner {
             treat_single_keys_as_csks,
             kmip_servers,
             keys_dir,
-            started_at: (SystemTime::now(), Instant::now()),
         }
     }
 
@@ -284,24 +282,20 @@ impl ZoneSigner {
         Ok(())
     }
 
-    fn as_system_time(&self, instant: Instant) -> Option<SystemTime> {
-        self.started_at
-            .0
-            .checked_add(self.started_at.1.duration_since(instant))
-    }
-
     fn mk_signing_report(&self, status: &ZoneSigningStatus) -> Option<SigningReport> {
+        let now = Instant::now();
+        let now_t = SystemTime::now();
         match status {
             ZoneSigningStatus::Requested(s) => {
                 Some(SigningReport::Requested(SigningRequestedReport {
-                    requested_at: self.as_system_time(s.requested_at)?,
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
                 }))
             }
             ZoneSigningStatus::InProgress(s) => {
                 Some(SigningReport::InProgress(SigningInProgressReport {
-                    requested_at: self.as_system_time(s.requested_at)?,
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
                     zone_serial: s.zone_serial,
-                    started_at: self.as_system_time(s.started_at)?,
+                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
                     unsigned_rr_count: s.unsigned_rr_count,
                     walk_time: s.walk_time,
                     sort_time: s.sort_time,
@@ -317,9 +311,9 @@ impl ZoneSigner {
             }
             ZoneSigningStatus::Finished(s) => {
                 Some(SigningReport::Finished(SigningFinishedReport {
-                    requested_at: self.as_system_time(s.requested_at)?,
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
                     zone_serial: s.zone_serial,
-                    started_at: self.as_system_time(s.started_at)?,
+                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
                     unsigned_rr_count: s.unsigned_rr_count,
                     walk_time: s.walk_time,
                     sort_time: s.sort_time,
@@ -331,7 +325,7 @@ impl ZoneSigner {
                     insertion_time: s.insertion_time,
                     total_time: s.total_time,
                     threads_used: s.threads_used,
-                    finished_at: self.as_system_time(s.finished_at)?,
+                    finished_at: now_t.checked_sub(now.duration_since(s.finished_at))?,
                 }))
             }
         }

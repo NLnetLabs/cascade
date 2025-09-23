@@ -73,6 +73,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::api::ZoneAdd;
 use crate::center::Change;
+use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zonemaintenance::types::{SigningReport, ZoneReport};
 
 //------------ GraphMetrics --------------------------------------------------
@@ -189,7 +190,7 @@ pub enum ApplicationCommand {
     },
     GetZoneReport {
         zone_name: StoredName,
-        report_tx: oneshot::Sender<ZoneReport>,
+        report_tx: oneshot::Sender<(ZoneReport, Option<ZoneLoaderReport>)>,
     },
     GetSigningReport {
         zone_name: StoredName,
