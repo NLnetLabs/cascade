@@ -395,17 +395,16 @@ impl ZoneSigner {
 
         let last_signed_serial = {
             // Use a block to make sure that the mutex is clearly dropped.
-            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone = get_zone(&self.center, zone_name).unwrap();
             let zone_state = zone.state.lock().unwrap();
             zone_state
                 .find_last_event(&HistoricalEvent::SigningSucceeded { trigger }, None)
-                .map(|item| item.serial)
-                .flatten()
+                .and_then(|item| item.serial)
         };
 
         // Ensure that the Mutexes are locked only in this block;
         let policy = {
-            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone = get_zone(&self.center, zone_name).unwrap();
             let zone_state = zone.state.lock().unwrap();
             zone_state.policy.clone()
         }
@@ -492,7 +491,7 @@ impl ZoneSigner {
         //
         // Ensure that the Mutexes are locked only in this block;
         let policy = {
-            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone = get_zone(&self.center, zone_name).unwrap();
             let zone_state = zone.state.lock().unwrap();
             zone_state.policy.clone()
         };
@@ -781,7 +780,7 @@ impl ZoneSigner {
         // Store the serial in the state.
         {
             // Use a block to make sure that the mutex is clearly dropped.
-            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone = get_zone(&self.center, zone_name).unwrap();
             let mut zone_state = zone.state.lock().unwrap();
             zone_state.record_event(
                 HistoricalEvent::SigningSucceeded { trigger },
@@ -819,7 +818,7 @@ impl ZoneSigner {
         // Save the minimum of the expiration times.
         {
             // Use a block to make sure that the mutex is clearly dropped.
-            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone = get_zone(&self.center, zone_name).unwrap();
             let mut zone_state = zone.state.lock().unwrap();
 
             // Save as next_min_expiration. After the signed zone is approved
