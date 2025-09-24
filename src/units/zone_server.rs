@@ -732,23 +732,23 @@ impl ZoneReviewApi {
                         }
                         "reject" => {
                             status = Ok(());
-                                let (zone_type, event) = match self.source {
-                                    Source::UnsignedZones => (
-                                        "unsigned",
-                                        Update::UnsignedZoneRejectedEvent {
-                                            zone_name: zone_name.clone(),
-                                            zone_serial,
-                                        },
-                                    ),
-                                    Source::SignedZones => (
-                                        "signed",
-                                        Update::SignedZoneRejectedEvent {
-                                            zone_name: zone_name.clone(),
-                                            zone_serial,
-                                        },
-                                    ),
-                                    Source::PublishedZones => unreachable!(),
-                                };
+                            let (zone_type, event) = match self.source {
+                                Source::UnsignedZones => (
+                                    "unsigned",
+                                    Update::UnsignedZoneRejectedEvent {
+                                        zone_name: zone_name.clone(),
+                                        zone_serial,
+                                    },
+                                ),
+                                Source::SignedZones => (
+                                    "signed",
+                                    Update::SignedZoneRejectedEvent {
+                                        zone_name: zone_name.clone(),
+                                        zone_serial,
+                                    },
+                                ),
+                                Source::PublishedZones => unreachable!(),
+                            };
                             info!("Pending {zone_type} zone '{zone_name}' rejected at serial {zone_serial}.");
                             self.update_tx.send(event).unwrap();
                             remove_approvals = true;

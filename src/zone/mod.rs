@@ -134,8 +134,13 @@ pub enum HistoricalEvent {
     PolicyChanged,
     SourceChanged,
     NewVersionReceived,
-    SigningSucceeded{ trigger: SigningTrigger },
-    SigningFailed { trigger: SigningTrigger, reason: String },
+    SigningSucceeded {
+        trigger: SigningTrigger,
+    },
+    SigningFailed {
+        trigger: SigningTrigger,
+        reason: String,
+    },
     UnsignedZoneApproved,
     UnsignedZoneRejected,
     SignedZoneApproved,
