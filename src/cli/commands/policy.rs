@@ -31,7 +31,7 @@ pub enum PolicyCommand {
 }
 
 #[allow(unused)]
-mod ansi {
+pub mod ansi {
     pub const BLACK: &str = "\x1b[0;30m";
     pub const RED: &str = "\x1b[0;31m";
     pub const GREEN: &str = "\x1b[0;32m";

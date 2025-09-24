@@ -328,26 +328,6 @@ impl HttpServer {
             ZoneStage::Unsigned
         };
 
-        // Query zone serials
-        let mut unsigned_serial = None;
-        if let Some(zone) = unsigned_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
-                unsigned_serial = Some(soa.serial());
-            }
-        }
-        let mut signed_serial = None;
-        if let Some(zone) = signed_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
-                signed_serial = Some(soa.serial());
-            }
-        }
-        let mut published_serial = None;
-        if let Some(zone) = published_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
-                published_serial = Some(soa.serial());
-            }
-        }
-
         // Query key status
         let key_status = {
             // TODO: Move this into key manager as that is the component that knows
@@ -530,6 +510,33 @@ impl HttpServer {
             } else {
                 None
             };
+
+        // Query zone serials
+        let mut unsigned_serial = None;
+        if let Some(zone) = unsigned_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                unsigned_serial = Some(soa.serial());
+            }
+        }
+        let mut signed_serial = None;
+        if let Some(zone) = signed_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                signed_serial = Some(soa.serial());
+            }
+        }
+        let mut published_serial = None;
+        if let Some(zone) = published_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                published_serial = Some(soa.serial());
+            }
+        }
+
+        // If the timing were unlucky we may have a published serial but not
+        // signed serial as the signed zone may have just been removed. Use
+        // the published serial as the signed serial in this case.
+        if signed_serial.is_none() && published_serial.is_some() {
+            signed_serial = published_serial;
+        }
 
         Ok(ZoneStatus {
             name: name.clone(),
