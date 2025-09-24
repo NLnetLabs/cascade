@@ -131,17 +131,19 @@ impl KeyManager {
                 }
 
                 // Set config
-                let config_commands = imports_to_commands(&key_imports)
-                    .into_iter()
-                    .chain(policy_to_commands(&self.center, &name));
+                let config_commands = imports_to_commands(&key_imports).into_iter().chain(
+                    policy_to_commands(&self.center, &name)
+                        .into_iter()
+                        .map(|v| {
+                            let mut final_cmd = vec!["set".into()];
+                            final_cmd.extend(v);
+                            final_cmd
+                        }),
+                );
 
                 for c in config_commands {
                     let mut cmd = self.keyset_cmd(&name);
-
-                    cmd.arg("set");
-                    for a in c {
-                        cmd.arg(a);
-                    }
+                    cmd.args(c);
 
                     log::info!("Running {cmd:?}");
 
@@ -159,7 +161,10 @@ impl KeyManager {
                             "[KM]: Create stderr {}",
                             String::from_utf8_lossy(&output.stderr)
                         );
-                        return Err(Terminated);
+
+                        // TODO: Continuing here is probably bad somehow, but
+                        // for now it seems relatively sensible (instead of
+                        // crashing the key manager).
                     }
                 }
 
@@ -391,16 +396,16 @@ fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<Strin
     let mut algorithm_cmd = vec!["algorithm".to_string()];
     match km.algorithm {
         KeyParameters::RsaSha256(bits) => {
-            algorithm_cmd.extend(strs!["RSASHA256", "-b", bits,]);
+            algorithm_cmd.extend(strs!["RSASHA256", "-b", bits]);
         }
         KeyParameters::RsaSha512(bits) => {
-            algorithm_cmd.extend(strs!["RSASHA512", "-b", bits,]);
+            algorithm_cmd.extend(strs!["RSASHA512", "-b", bits]);
         }
         KeyParameters::EcdsaP256Sha256
         | KeyParameters::EcdsaP384Sha384
         | KeyParameters::Ed25519
         | KeyParameters::Ed448 => algorithm_cmd.push(km.algorithm.to_string()),
-    }
+    };
 
     let validity = |x| match x {
         Some(validity) => format!("{validity}s"),
@@ -453,10 +458,7 @@ fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<Strin
         strs!["cds-lifetime", seconds(km.cds_signature_lifetime)],
         strs!["cds-remain-time", seconds(km.cds_remain_time)],
         strs!["ds-algorithm", km.ds_algorithm],
-        strs![
-            "default-ttl".to_string(),
-            seconds(km.default_ttl.as_secs() as u64),
-        ],
+        strs!["default-ttl".to_string(), km.default_ttl.as_secs(),],
         strs!["autoremove", km.auto_remove],
     ]
 }
