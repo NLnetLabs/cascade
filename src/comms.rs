@@ -74,6 +74,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::api::ZoneAdd;
 use crate::center::Change;
 use crate::units::zone_loader::ZoneLoaderReport;
+use crate::zone::SigningTrigger;
 use crate::zonemaintenance::types::{SigningReport, ZoneReport};
 
 //------------ GraphMetrics --------------------------------------------------
@@ -176,6 +177,7 @@ pub enum ApplicationCommand {
     SignZone {
         zone_name: StoredName,
         zone_serial: Option<Serial>,
+        trigger: SigningTrigger,
     },
     SeekApprovalForSignedZone {
         zone_name: StoredName,

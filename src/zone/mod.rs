@@ -8,7 +8,7 @@ use std::{
     io, mem,
     net::SocketAddr,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
@@ -18,6 +18,7 @@ use domain::{
     zonetree::{self, ZoneBuilder},
 };
 use domain::{rdata::dnssec::Timestamp, tsig};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     api,
@@ -79,8 +80,8 @@ pub struct ZoneState {
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
 
-    /// The last serial number we signed for this zone
-    pub last_signed_serial: Option<Serial>,
+    /// History of interesting events that occurred for this zone.
+    pub history: Vec<HistoryItem>,
     //
     // TODO:
     // - A log?
@@ -90,6 +91,62 @@ pub struct ZoneState {
     // - Key manager state
     // - Signer state
     // - Server state
+}
+
+impl ZoneState {
+    pub fn record_event(&mut self, event: HistoricalEvent, serial: Option<Serial>) {
+        self.history.push(HistoryItem::new(event, serial));
+    }
+
+    pub fn find_last_event(
+        &self,
+        event: &HistoricalEvent,
+        serial: Option<Serial>,
+    ) -> Option<&HistoryItem> {
+        self.history
+            .iter()
+            .rev()
+            .find(|item| &item.event == event && (serial.is_none() || item.serial == serial))
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoryItem {
+    pub when: SystemTime,
+    pub serial: Option<Serial>,
+    pub event: HistoricalEvent,
+}
+
+impl HistoryItem {
+    pub fn new(event: HistoricalEvent, serial: Option<Serial>) -> Self {
+        Self {
+            when: SystemTime::now(),
+            serial,
+            event,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum HistoricalEvent {
+    Added,
+    Removed,
+    PolicyChanged,
+    SourceChanged,
+    NewVersionReceived,
+    SigningSucceeded{ trigger: SigningTrigger },
+    SigningFailed { trigger: SigningTrigger, reason: String },
+    UnsignedZoneApproved,
+    UnsignedZoneRejected,
+    SignedZoneApproved,
+    SignedZoneRejected,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum SigningTrigger {
+    KeyManager,
+    SignatureExpiration,
+    ZoneChangesApproved,
 }
 
 /// How to load the contents of a zone.

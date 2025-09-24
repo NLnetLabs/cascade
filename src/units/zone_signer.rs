@@ -44,12 +44,13 @@ use tokio::time::Instant;
 use tokio_rustls::rustls::ServerConfig;
 use url::Url;
 
-use crate::center::Center;
+use crate::center::{get_zone, Center};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::payload::Update;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::zone::{HistoricalEvent, SigningTrigger};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
     SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
@@ -257,9 +258,23 @@ impl ZoneSigner {
                 ApplicationCommand::SignZone {
                     zone_name,
                     zone_serial, // TODO: the serial number is ignored, but is that okay?
+                    trigger,
                 } => {
-                    if let Err(err) = self.sign_zone(&zone_name, zone_serial.is_none()).await {
+                    if let Err(err) = self
+                        .sign_zone(&zone_name, zone_serial.is_none(), trigger)
+                        .await
+                    {
                         error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+
+                        self.center
+                            .update_tx
+                            .send(Update::ZoneSigningFailedEvent {
+                                zone_name: zone_name.clone(),
+                                zone_serial,
+                                trigger,
+                                reason: err.to_string(),
+                            })
+                            .unwrap();
                     }
                 }
 
@@ -342,6 +357,7 @@ impl ZoneSigner {
         &self,
         zone_name: &StoredName,
         resign_last_signed_zone_content: bool,
+        trigger: SigningTrigger,
     ) -> Result<(), String> {
         // TODO: Implement serial bumping (per policy, e.g. ODS 'keep', 'counter', etc.?)
 
@@ -379,18 +395,18 @@ impl ZoneSigner {
 
         let last_signed_serial = {
             // Use a block to make sure that the mutex is clearly dropped.
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let zone_state = zone.0.state.lock().unwrap();
-
-            zone_state.last_signed_serial
+            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone_state = zone.state.lock().unwrap();
+            zone_state
+                .find_last_event(&HistoricalEvent::SigningSucceeded { trigger }, None)
+                .map(|item| item.serial)
+                .flatten()
         };
 
         // Ensure that the Mutexes are locked only in this block;
         let policy = {
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let zone_state = zone.0.state.lock().unwrap();
+            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone_state = zone.state.lock().unwrap();
             zone_state.policy.clone()
         }
         .unwrap();
@@ -476,9 +492,8 @@ impl ZoneSigner {
         //
         // Ensure that the Mutexes are locked only in this block;
         let policy = {
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let zone_state = zone.0.state.lock().unwrap();
+            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone_state = zone.state.lock().unwrap();
             zone_state.policy.clone()
         };
         let signing_config = self.signing_config(&policy.unwrap());
@@ -766,12 +781,13 @@ impl ZoneSigner {
         // Store the serial in the state.
         {
             // Use a block to make sure that the mutex is clearly dropped.
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let mut zone_state = zone.0.state.lock().unwrap();
-
-            zone_state.last_signed_serial = Some(zone_serial);
-            zone.0.mark_dirty(&mut zone_state, &self.center);
+            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let mut zone_state = zone.state.lock().unwrap();
+            zone_state.record_event(
+                HistoricalEvent::SigningSucceeded { trigger },
+                Some(zone_serial),
+            );
+            zone.mark_dirty(&mut zone_state, &self.center);
         }
 
         updater.apply(ZoneUpdate::Finished(soa_rr)).await.unwrap();
@@ -803,14 +819,13 @@ impl ZoneSigner {
         // Save the minimum of the expiration times.
         {
             // Use a block to make sure that the mutex is clearly dropped.
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let mut zone_state = zone.0.state.lock().unwrap();
+            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let mut zone_state = zone.state.lock().unwrap();
 
             // Save as next_min_expiration. After the signed zone is approved
             // this value should be move to min_expiration.
             zone_state.next_min_expiration = saved_min_expiration.get();
-            zone.0.mark_dirty(&mut zone_state, &self.center);
+            zone.mark_dirty(&mut zone_state, &self.center);
         }
 
         let total_time = rrsig_start.elapsed().as_secs();
@@ -838,6 +853,7 @@ impl ZoneSigner {
             .send(Update::ZoneSignedEvent {
                 zone_name: zone_name.clone(),
                 zone_serial,
+                trigger,
             })
             .unwrap();
 

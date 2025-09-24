@@ -1,7 +1,8 @@
-use crate::center::Center;
+use crate::center::{get_zone, Center};
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
 use crate::policy::KeyParameters;
+use crate::zone::SigningTrigger;
 use bytes::Bytes;
 use camino::Utf8Path;
 use core::time::Duration;
@@ -220,6 +221,7 @@ impl KeyManager {
                     .update_tx
                     .send(Update::ResignZoneEvent {
                         zone_name: zone.apex_name().clone(),
+                        trigger: SigningTrigger::KeyManager,
                     })
                     .unwrap();
                 continue;
@@ -263,6 +265,7 @@ impl KeyManager {
                             .update_tx
                             .send(Update::ResignZoneEvent {
                                 zone_name: zone.apex_name().clone(),
+                                trigger: SigningTrigger::KeyManager,
                             })
                             .unwrap();
                         continue;
@@ -363,9 +366,8 @@ fn get_keyset_info(state_path: impl AsRef<Path>) -> KeySetInfo {
 fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<String>> {
     // Ensure that the mutexes are locked only in this block;
     let policy = {
-        let state = center.state.lock().unwrap();
-        let zone = state.zones.get(zone_name).unwrap();
-        let zone_state = zone.0.state.lock().unwrap();
+        let zone = get_zone(center, zone_name).unwrap();
+        let zone_state = zone.state.lock().unwrap();
         zone_state.policy.clone()
     }
     .unwrap();

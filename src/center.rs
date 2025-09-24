@@ -141,6 +141,11 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     Ok(())
 }
 
+pub fn get_zone(center: &Center, name: &Name<Bytes>) -> Option<Arc<Zone>> {
+    let state = center.state.lock().unwrap();
+    state.zones.get(name).map(|zone| zone.0.clone())
+}
+
 //----------- State ------------------------------------------------------------
 
 /// Global state for Cascade.
