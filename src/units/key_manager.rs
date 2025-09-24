@@ -552,14 +552,10 @@ fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<Strin
     let mut algorithm_cmd = vec!["algorithm".to_string()];
     match km.algorithm {
         KeyParameters::RsaSha256(bits) => {
-            algorithm_cmd.push("RSASHA256".to_string());
-            algorithm_cmd.push("-b".to_string());
-            algorithm_cmd.push(bits.to_string());
+            algorithm_cmd.extend(strs!["RSASHA256", "-b", bits,]);
         }
         KeyParameters::RsaSha512(bits) => {
-            algorithm_cmd.push("RSASHA512".to_string());
-            algorithm_cmd.push("-b".to_string());
-            algorithm_cmd.push(bits.to_string());
+            algorithm_cmd.extend(strs!["RSASHA512", "-b", bits,]);
         }
         KeyParameters::EcdsaP256Sha256
         | KeyParameters::EcdsaP384Sha384
@@ -567,91 +563,62 @@ fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<Strin
         | KeyParameters::Ed448 => algorithm_cmd.push(km.algorithm.to_string()),
     }
 
+    let validity = |x| match x {
+        Some(validity) => format!("{validity}s"),
+        None => "off".to_string(),
+    };
+
+    let seconds = |x| format!("{x}s");
+
     vec![
-        vec!["use-csk".to_string(), km.use_csk.to_string()],
+        strs!["use-csk", km.use_csk],
         algorithm_cmd,
-        vec![
-            "ksk-validity".to_string(),
-            if let Some(validity) = km.ksk_validity {
-                validity.to_string() + "s"
-            } else {
-                "off".to_string()
-            },
+        strs!["ksk-validity", validity(km.ksk_validity)],
+        strs!["zsk-validity", validity(km.zsk_validity)],
+        strs!["csk-validity", validity(km.csk_validity)],
+        strs![
+            "auto-ksk",
+            km.auto_ksk.start,
+            km.auto_ksk.report,
+            km.auto_ksk.expire,
+            km.auto_ksk.done,
         ],
-        vec![
-            "zsk-validity".to_string(),
-            if let Some(validity) = km.zsk_validity {
-                validity.to_string() + "s"
-            } else {
-                "off".to_string()
-            },
+        strs![
+            "auto-zsk",
+            km.auto_zsk.start,
+            km.auto_zsk.report,
+            km.auto_zsk.expire,
+            km.auto_zsk.done,
         ],
-        vec![
-            "csk-validity".to_string(),
-            if let Some(validity) = km.csk_validity {
-                validity.to_string() + "s"
-            } else {
-                "off".to_string()
-            },
+        strs![
+            "auto-csk",
+            km.auto_csk.start,
+            km.auto_csk.report,
+            km.auto_csk.expire,
+            km.auto_csk.done,
         ],
-        vec![
-            "auto-ksk".to_string(),
-            km.auto_ksk.start.to_string(),
-            km.auto_ksk.report.to_string(),
-            km.auto_ksk.expire.to_string(),
-            km.auto_ksk.done.to_string(),
+        strs![
+            "auto-algorithm",
+            km.auto_algorithm.start,
+            km.auto_algorithm.report,
+            km.auto_algorithm.expire,
+            km.auto_algorithm.done,
         ],
-        vec![
-            "auto-zsk".to_string(),
-            km.auto_zsk.start.to_string(),
-            km.auto_zsk.report.to_string(),
-            km.auto_zsk.expire.to_string(),
-            km.auto_zsk.done.to_string(),
+        strs![
+            "dnskey-inception-offset",
+            seconds(km.dnskey_inception_offset),
         ],
-        vec![
-            "auto-csk".to_string(),
-            km.auto_csk.start.to_string(),
-            km.auto_csk.report.to_string(),
-            km.auto_csk.expire.to_string(),
-            km.auto_csk.done.to_string(),
-        ],
-        vec![
-            "auto-algorithm".to_string(),
-            km.auto_algorithm.start.to_string(),
-            km.auto_algorithm.report.to_string(),
-            km.auto_algorithm.expire.to_string(),
-            km.auto_algorithm.done.to_string(),
-        ],
-        vec![
-            "dnskey-inception-offset".to_string(),
-            km.dnskey_inception_offset.to_string() + "s",
-        ],
-        vec![
-            "dnskey-lifetime".to_string(),
-            km.dnskey_signature_lifetime.to_string() + "s",
-        ],
-        vec![
-            "dnskey-remain-time".to_string(),
-            km.dnskey_remain_time.to_string() + "s",
-        ],
-        vec![
-            "cds-inception-offset".to_string(),
-            km.cds_inception_offset.to_string() + "s",
-        ],
-        vec![
-            "cds-lifetime".to_string(),
-            km.cds_signature_lifetime.to_string() + "s",
-        ],
-        vec![
-            "cds-remain-time".to_string(),
-            km.cds_remain_time.to_string() + "s",
-        ],
-        vec!["ds-algorithm".to_string(), km.ds_algorithm.to_string()],
-        vec![
+        strs!["dnskey-lifetime", seconds(km.dnskey_signature_lifetime),],
+        strs!["dnskey-remain-time", seconds(km.dnskey_remain_time)],
+        strs!["cds-inception-offset", seconds(km.cds_inception_offset)],
+        strs!["cds-lifetime", seconds(km.cds_signature_lifetime)],
+        strs!["cds-remain-time", seconds(km.cds_remain_time)],
+        strs!["ds-algorithm", km.ds_algorithm],
+        strs![
             "default-ttl".to_string(),
-            km.default_ttl.as_secs().to_string(),
+            seconds(km.default_ttl.as_secs() as u64),
         ],
-        vec!["autoremove".to_string(), km.auto_remove.to_string()],
+        strs!["autoremove", km.auto_remove],
     ]
 }
 
