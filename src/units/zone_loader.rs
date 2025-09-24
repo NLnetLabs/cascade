@@ -198,6 +198,33 @@ impl ZoneLoader {
                 }
             }
 
+            Some(ApplicationCommand::ReloadZone {
+                zone_name: name,
+                source,
+            }) => {
+                // Just remove and re-insert the zone (like with zone source changed).
+                let id = ZoneId {
+                    name: name.clone(),
+                    class: Class::IN,
+                };
+                zone_maintainer.remove_zone(id).await;
+
+                let zone = match source {
+                    ZoneLoadSource::None => return Ok(()),
+
+                    ZoneLoadSource::Zonefile { path } => {
+                        Self::register_primary_zone(name.clone(), &path, &zone_updated_tx).await?
+                    }
+
+                    ZoneLoadSource::Server { addr, tsig_key: _ } => {
+                        Self::register_secondary_zone(name.clone(), addr, zone_updated_tx)?
+                    }
+                };
+
+                // TODO: Handle (or iron out) potential errors here.
+                let _ = zone_maintainer.insert_zone(zone).await;
+            }
+
             Some(_) => {
                 // TODO
             }

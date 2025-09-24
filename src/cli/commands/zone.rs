@@ -4,7 +4,8 @@ use futures::TryFutureExt;
 use log::error;
 
 use crate::api::{
-    ZoneAdd, ZoneAddError, ZoneAddResult, ZoneSource, ZoneStatus, ZoneStatusError, ZonesListResult,
+    ZoneAdd, ZoneAddError, ZoneAddResult, ZoneReloadError, ZoneReloadResult, ZoneSource,
+    ZoneStatus, ZoneStatusError, ZonesListResult,
 };
 use crate::cli::client::CascadeApiClient;
 
@@ -125,17 +126,25 @@ impl Zone {
             }
             ZoneCommand::Reload { zone } => {
                 let url = format!("zone/{zone}/reload");
-                client
+                let res: Result<ZoneReloadResult, ZoneReloadError> = client
                     .post(&url)
                     .send()
-                    .and_then(|r| async { r.error_for_status() })
+                    .and_then(|r| r.json())
                     .await
                     .map_err(|e| {
                         error!("HTTP request failed: {e}");
                     })?;
 
-                println!("Success: Sent zone reload command for {}", zone);
-                Ok(())
+                match res {
+                    Ok(res) => {
+                        println!("Success: Sent zone reload command for {}", res.name);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to reload zone: {e}");
+                        Err(())
+                    }
+                }
             }
             ZoneCommand::Status { zone } => Self::status(client, zone).await,
         }

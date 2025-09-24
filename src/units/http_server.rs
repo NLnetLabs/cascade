@@ -24,28 +24,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
 use crate::api;
-use crate::api::KeyManagerPolicyInfo;
-use crate::api::LoaderPolicyInfo;
-use crate::api::PolicyChanges;
-use crate::api::PolicyInfo;
-use crate::api::PolicyInfoError;
-use crate::api::PolicyListResult;
-use crate::api::PolicyReloadError;
-use crate::api::ReviewPolicyInfo;
-use crate::api::ServerPolicyInfo;
-use crate::api::ServerStatusResult;
-use crate::api::SignerDenialPolicyInfo;
-use crate::api::SignerPolicyInfo;
-use crate::api::SignerSerialPolicyInfo;
-use crate::api::ZoneAdd;
-use crate::api::ZoneAddError;
-use crate::api::ZoneAddResult;
-use crate::api::ZoneReloadResult;
-use crate::api::ZoneRemoveResult;
-use crate::api::ZoneStage;
-use crate::api::ZoneStatus;
-use crate::api::ZoneStatusError;
-use crate::api::ZonesListResult;
+use crate::api::*;
 use crate::center;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
@@ -296,9 +275,41 @@ impl HttpServer {
     }
 
     async fn zone_reload(
-        Path(payload): Path<Name<Bytes>>,
-    ) -> Result<Json<ZoneReloadResult>, String> {
-        Ok(Json(ZoneReloadResult { name: payload }))
+        State(api_state): State<Arc<HttpServerState>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<Result<ZoneReloadResult, ZoneReloadError>> {
+        Json(Self::do_zone_reload(api_state, name))
+    }
+
+    fn do_zone_reload(
+        api_state: Arc<HttpServerState>,
+        name: Name<Bytes>,
+    ) -> Result<ZoneReloadResult, ZoneReloadError> {
+        let the_state = api_state.center.state.lock().unwrap();
+        let zone = the_state
+            .zones
+            .get(&name)
+            .ok_or(ZoneReloadError::ZoneDoesNotExist)?;
+        let zone_state = zone.0.state.lock().unwrap();
+
+        let source = zone_state.source.clone();
+        match zone_state.source.clone() {
+            crate::zone::ZoneLoadSource::None => Err(ZoneReloadError::ZoneWithoutSource),
+            _ => {
+                api_state
+                    .center
+                    .app_cmd_tx
+                    .send((
+                        "ZL".into(),
+                        ApplicationCommand::ReloadZone {
+                            zone_name: name.clone(),
+                            source,
+                        },
+                    ))
+                    .unwrap();
+                Ok(ZoneReloadResult { name })
+            }
+        }
     }
 
     async fn policy_list(State(state): State<Arc<HttpServerState>>) -> Json<PolicyListResult> {
