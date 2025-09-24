@@ -6,6 +6,7 @@ pub mod zone;
 
 use super::client::CascadeApiClient;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum Command {
     /// Manage zones

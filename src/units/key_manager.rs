@@ -1,3 +1,4 @@
+use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
@@ -92,7 +93,13 @@ impl KeyManager {
         match cmd {
             Some(ApplicationCommand::Terminate) | None => Err(Terminated),
             Some(ApplicationCommand::RegisterZone {
-                register: crate::api::ZoneAdd { name, .. },
+                register:
+                    crate::api::ZoneAdd {
+                        name,
+                        source: _,
+                        policy: _,
+                        key_imports,
+                    },
             }) => {
                 let state_path = self.keys_dir.join(format!("{name}.state"));
 
@@ -124,7 +131,10 @@ impl KeyManager {
                 }
 
                 // Set config
-                let config_commands = policy_to_commands(&self.center, &name);
+                let config_commands = imports_to_commands(&key_imports)
+                    .into_iter()
+                    .chain(policy_to_commands(&self.center, &name));
+
                 for c in config_commands {
                     let mut cmd = self.keyset_cmd(&name);
 
@@ -360,6 +370,12 @@ fn get_keyset_info(state_path: impl AsRef<Path>) -> KeySetInfo {
     }
 }
 
+macro_rules! strs {
+    ($($e:expr),*$(,)?) => {
+        vec![$($e.to_string()),*]
+    };
+}
+
 fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<String>> {
     // Ensure that the mutexes are locked only in this block;
     let policy = {
@@ -476,4 +492,26 @@ fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<Strin
         ],
         vec!["autoremove".to_string(), km.auto_remove.to_string()],
     ]
+}
+
+fn imports_to_commands(key_imports: &[KeyImport]) -> Vec<Vec<String>> {
+    key_imports
+        .iter()
+        .map(|key| match key {
+            KeyImport::PublicKey(path) => strs!["import", "public-key", path],
+            KeyImport::Kmip(KmipKeyImport {
+                key_type,
+                server,
+                public_id,
+                private_id,
+                algorithm,
+                flags,
+            }) => {
+                strs!["import", key_type, "kmip", server, public_id, private_id, algorithm, flags]
+            }
+            KeyImport::File(FileKeyImport { key_type, path }) => {
+                strs!["import", key_type, "file", path]
+            }
+        })
+        .collect()
 }

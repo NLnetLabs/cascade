@@ -12,10 +12,52 @@ use crate::center;
 const DEFAULT_AXFR_PORT: u16 = 53;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum KeyImport {
+    PublicKey(Utf8PathBuf),
+    Kmip(KmipKeyImport),
+    File(FileKeyImport),
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
+pub enum KeyType {
+    Ksk,
+    Csk,
+    Zsk,
+}
+
+impl Display for KeyType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KeyType::Ksk => "ksk",
+            KeyType::Csk => "csk",
+            KeyType::Zsk => "zsk",
+        }
+        .fmt(f)
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct FileKeyImport {
+    pub key_type: KeyType,
+    pub path: Utf8PathBuf,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KmipKeyImport {
+    pub key_type: KeyType,
+    pub server: String,
+    pub public_id: String,
+    pub private_id: String,
+    pub algorithm: String,
+    pub flags: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAdd {
     pub name: Name<Bytes>,
     pub source: ZoneSource,
     pub policy: String,
+    pub key_imports: Vec<KeyImport>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
