@@ -598,7 +598,7 @@ impl Progress {
                     {
                         println!(
                             "  Signed {} in {}",
-                            format_size(unsigned_rr_count, "", "records"),
+                            format_size(unsigned_rr_count, "", " records"),
                             format_duration(total_time)
                         );
                     }
@@ -607,7 +607,7 @@ impl Progress {
                     println!("  Signed at {}", to_rfc3339(r.finished_at));
                     println!(
                         "  Signed {} in {}",
-                        format_size(r.unsigned_rr_count, "", "records"),
+                        format_size(r.unsigned_rr_count, "", " records"),
                         format_duration(r.total_time)
                     );
                 }
