@@ -198,11 +198,49 @@ impl ZoneLoader {
                 }
             }
 
+            Some(ApplicationCommand::ReloadZone { zone_name, source }) => match source {
+                ZoneLoadSource::None => return Ok(()),
+                ZoneLoadSource::Zonefile { path } => {
+                    Self::remove_and_add(zone_name, path, zone_maintainer, &zone_updated_tx).await?
+                }
+                ZoneLoadSource::Server { .. } => {
+                    zone_maintainer
+                        .force_zone_refresh(&zone_name, Class::IN)
+                        .await
+                }
+            },
+
             Some(_) => {
                 // TODO
             }
         }
 
+        Ok(())
+    }
+
+    async fn remove_and_add<KS, CF>(
+        name: StoredName,
+        path: Box<Utf8Path>,
+        zone_maintainer: &ZoneMaintainer<KS, CF>,
+        zone_updated_tx: &Sender<(StoredName, Serial)>,
+    ) -> Result<(), Terminated>
+    where
+        KS: Deref + Send + Sync + 'static,
+        KS::Target: KeyStore,
+        <KS::Target as KeyStore>::Key: Clone + Debug + Display + Sync + Send + 'static,
+        CF: ConnectionFactory + Send + Sync + 'static,
+    {
+        // Just remove and re-insert the zone (like with zone source changed).
+        let id = ZoneId {
+            name: name.clone(),
+            class: Class::IN,
+        };
+        zone_maintainer.remove_zone(id).await;
+
+        let zone = Self::register_primary_zone(name.clone(), &path, zone_updated_tx).await?;
+
+        // TODO: Handle (or iron out) potential errors here.
+        let _ = zone_maintainer.insert_zone(zone).await;
         Ok(())
     }
 

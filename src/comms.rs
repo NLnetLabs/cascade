@@ -74,6 +74,7 @@ use tokio::sync::mpsc;
 use crate::api;
 use crate::api::ZoneAdd;
 use crate::center::Change;
+use crate::zone::ZoneLoadSource;
 
 //------------ GraphMetrics --------------------------------------------------
 pub trait GraphStatus: Send + Sync {
@@ -166,6 +167,14 @@ pub enum ApplicationCommand {
         /// If this is set, and the zone's SOA serial is greater than or equal
         /// to this value, the refresh can be ignored.
         serial: Option<Serial>,
+    },
+
+    /// Reload a zone.
+    ///
+    /// The zone loader will immediately remove and re-add the zone.
+    ReloadZone {
+        zone_name: StoredName,
+        source: ZoneLoadSource,
     },
 
     SignZone {

@@ -150,6 +150,21 @@ pub struct ZoneReloadResult {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneReloadError {
+    ZoneDoesNotExist,
+    ZoneWithoutSource,
+}
+
+impl fmt::Display for ZoneReloadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::ZoneDoesNotExist => "no zone with this name exist",
+            Self::ZoneWithoutSource => "the specified zone has no source configured",
+        })
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
     // pub name: Name<Bytes>,
 }
