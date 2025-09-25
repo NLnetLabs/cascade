@@ -1,10 +1,15 @@
 # Cascade
 
+[![Documentation Status](https://app.readthedocs.org/projects/cascade-signer/badge/?version=latest)](https://cascade.docs.nlnetlabs.nl/)
+[![Mastodon Follow](https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social)](https://social.nlnetlabs.nl/@nlnetlabs)
+
 **Cascade will offer a flexible DNSSEC signing pipeline.** 
 
 **A proof of concept (PoC) is scheduled to be available before October 2025,
 followed by a production grade release in Q4 2025. Do NOT use the 
 current codebase in production.**
+
+For more information, visit the [Cascade landing page](https://blog.nlnetlabs.nl/cascade/).
 
 If you have questions, suggestions or feature requests, don't hesitate to
 [reach out](mailto:cascade@nlnetlabs.nl)!
