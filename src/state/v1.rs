@@ -13,8 +13,8 @@ use crate::{
     center::{Change, State},
     config::{self, Config},
     policy::{
-        KeyManagerPolicy, LoaderPolicy, Nsec3OptOutPolicy, Policy, PolicyVersion, ReviewPolicy,
-        ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+        KeyManagerPolicy, LoaderPolicy, Policy, PolicyVersion, ReviewPolicy, ServerPolicy,
+        SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
     },
     util::update_value,
     zone::{Zone, ZoneByName},
@@ -150,6 +150,9 @@ pub struct ConfigSpec {
     /// The directory storing KMIP server state files.
     pub kmip_server_state_dir: Box<Utf8Path>,
 
+    /// Remote control configuration.
+    pub remote_control: RemoteControlConfigSpec,
+
     /// Daemon-related configuration.
     pub daemon: DaemonConfigSpec,
 
@@ -176,6 +179,11 @@ impl ConfigSpec {
         update_value(&mut config.tsig_store_path, self.tsig_store_path, changed);
         update_value(&mut config.keys_dir, self.keys_dir, changed);
         update_value(&mut config.dnst_binary_path, self.dnst_binary_path, changed);
+        update_value(
+            &mut config.remote_control,
+            self.remote_control.parse(),
+            changed,
+        );
         self.daemon.parse_into(&mut config.daemon, changed);
         update_value(&mut config.loader, self.loader.parse(), changed);
         update_value(&mut config.signer, self.signer.parse(), changed);
@@ -193,11 +201,41 @@ impl ConfigSpec {
             dnst_binary_path: config.dnst_binary_path.clone(),
             kmip_credentials_store_path: config.kmip_credentials_store_path.clone(),
             kmip_server_state_dir: config.kmip_server_state_dir.clone(),
+            remote_control: RemoteControlConfigSpec::build(&config.remote_control),
             daemon: DaemonConfigSpec::build(&config.daemon),
             loader: LoaderConfigSpec::build(&config.loader),
             signer: SignerConfigSpec::build(&config.signer),
             key_manager: KeyManagerConfigSpec::build(&config.key_manager),
             server: ServerConfigSpec::build(&config.server),
+        }
+    }
+}
+
+//----------- RemoteControlConfigSpec ----------------------------------------
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct RemoteControlConfigSpec {
+    /// Where to serve our HTTP API from, e.g. for the cascade clientI.
+    ///
+    /// To support systems where it is not possible to bind simultaneously to
+    /// both IPv4 and IPv6 more than one address can be provided if needed.
+    pub servers: Vec<SocketAddr>,
+}
+
+//--- Conversion
+
+impl RemoteControlConfigSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> config::RemoteControlConfig {
+        config::RemoteControlConfig {
+            servers: self.servers.clone(),
+        }
+    }
+
+    /// Build this state specification.
+    pub fn build(config: &config::RemoteControlConfig) -> Self {
+        Self {
+            servers: config.servers.clone(),
         }
     }
 }
@@ -898,6 +936,9 @@ pub struct SignerPolicySpec {
     /// How long record signatures will be valid for, in seconds.
     pub sig_validity_time: u64,
 
+    /// How long before expiration a new signature has to be generated, in seconds.
+    pub sig_remain_time: u64,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicySpec,
 
@@ -914,6 +955,7 @@ impl SignerPolicySpec {
             serial_policy: self.serial_policy.parse(),
             sig_inception_offset: Duration::from_secs(self.sig_inception_offset),
             sig_validity_time: Duration::from_secs(self.sig_validity_time),
+            sig_remain_time: Duration::from_secs(self.sig_remain_time),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -925,6 +967,7 @@ impl SignerPolicySpec {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
             sig_inception_offset: policy.sig_inception_offset.as_secs(),
             sig_validity_time: policy.sig_validity_time.as_secs(),
+            sig_remain_time: policy.sig_remain_time.as_secs(),
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
         }
@@ -987,8 +1030,8 @@ pub enum SignerDenialPolicySpec {
 
     /// Generate NSEC3 records.
     NSec3 {
-        /// Whether and how to enable NSEC3 Opt-Out.
-        opt_out: Nsec3OptOutPolicySpec,
+        /// Whether to enable NSEC3 Opt-Out.
+        opt_out: bool,
     },
 }
 
@@ -999,9 +1042,7 @@ impl SignerDenialPolicySpec {
     pub fn parse(self) -> SignerDenialPolicy {
         match self {
             SignerDenialPolicySpec::NSec => SignerDenialPolicy::NSec,
-            SignerDenialPolicySpec::NSec3 { opt_out } => SignerDenialPolicy::NSec3 {
-                opt_out: opt_out.parse(),
-            },
+            SignerDenialPolicySpec::NSec3 { opt_out } => SignerDenialPolicy::NSec3 { opt_out },
         }
     }
 
@@ -1009,47 +1050,7 @@ impl SignerDenialPolicySpec {
     pub fn build(policy: &SignerDenialPolicy) -> Self {
         match *policy {
             SignerDenialPolicy::NSec => SignerDenialPolicySpec::NSec,
-            SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicySpec::NSec3 {
-                opt_out: Nsec3OptOutPolicySpec::build(opt_out),
-            },
-        }
-    }
-}
-
-//----------- Nsec3OptOutPolicySpec --------------------------------------------
-
-/// Spec for the NSEC3 Opt-Out mechanism.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
-pub enum Nsec3OptOutPolicySpec {
-    /// Do not enable Opt-Out.
-    Disabled,
-
-    /// Only set the Opt-Out flag.
-    FlagOnly,
-
-    /// Enable Opt-Out and omit the corresponding NSEC3 records.
-    Enabled,
-}
-
-//--- Conversion
-
-impl Nsec3OptOutPolicySpec {
-    /// Parse from this specification.
-    pub fn parse(self) -> Nsec3OptOutPolicy {
-        match self {
-            Nsec3OptOutPolicySpec::Disabled => Nsec3OptOutPolicy::Disabled,
-            Nsec3OptOutPolicySpec::FlagOnly => Nsec3OptOutPolicy::FlagOnly,
-            Nsec3OptOutPolicySpec::Enabled => Nsec3OptOutPolicy::Enabled,
-        }
-    }
-
-    /// Build into this specification.
-    pub fn build(policy: Nsec3OptOutPolicy) -> Self {
-        match policy {
-            Nsec3OptOutPolicy::Disabled => Nsec3OptOutPolicySpec::Disabled,
-            Nsec3OptOutPolicy::FlagOnly => Nsec3OptOutPolicySpec::FlagOnly,
-            Nsec3OptOutPolicy::Enabled => Nsec3OptOutPolicySpec::Enabled,
+            SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicySpec::NSec3 { opt_out },
         }
     }
 }

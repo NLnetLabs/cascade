@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::config::{
     Config, DaemonConfig, GroupId, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
-    ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
+    RemoteControlConfig, ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
 };
 
 //----------- Spec -------------------------------------------------------------
@@ -36,6 +36,9 @@ pub struct Spec {
     #[serde(default = "Spec::dnst_binary_path_default")]
     pub dnst_binary_path: Box<Utf8Path>,
 
+    /// Remote control configuration.
+    pub remote_control: RemoteControlSpec,
+
     /// Configuring the Cascade daemon.
     pub daemon: DaemonSpec,
 
@@ -62,6 +65,7 @@ impl Spec {
         config.tsig_store_path = self.tsig_store_path;
         config.keys_dir = self.keys_dir;
         config.dnst_binary_path = self.dnst_binary_path;
+        self.remote_control.parse_into(&mut config.remote_control);
         self.daemon.parse_into(&mut config.daemon);
         self.loader.parse_into(&mut config.loader);
         self.signer.parse_into(&mut config.signer);
@@ -80,6 +84,7 @@ impl Default for Spec {
             tsig_store_path: Self::tsig_store_path_default(),
             keys_dir: Self::keys_dir_default(),
             dnst_binary_path: Self::dnst_binary_path_default(),
+            remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
@@ -116,6 +121,46 @@ impl Spec {
     }
 }
 
+//----------- RemoteControlSpec ----------------------------------------------
+
+/// Remote control configuration for Cascade.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct RemoteControlSpec {
+    /// Where to serve our HTTP API from, e.g. for the Cascade client.
+    ///
+    /// To support systems where it is not possible to bind simultaneously to
+    /// both IPv4 and IPv6 more than one address can be provided if needed.
+    #[serde(default = "RemoteControlSpec::servers_default")]
+    pub servers: Vec<SocketAddr>,
+}
+
+//--- Conversion
+
+impl RemoteControlSpec {
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut RemoteControlConfig) {
+        config.servers = self.servers.clone();
+    }
+}
+
+//--- Defaults
+
+impl Default for RemoteControlSpec {
+    fn default() -> Self {
+        Self {
+            servers: Self::servers_default(),
+        }
+    }
+}
+
+impl RemoteControlSpec {
+    /// The default value for `servers`.
+    fn servers_default() -> Vec<SocketAddr> {
+        vec![SocketAddr::from(([127, 0, 0, 1], 8950))]
+    }
+}
+
 //----------- DaemonSpec -------------------------------------------------------
 
 /// Configuring the Cascade daemon.
@@ -134,9 +179,6 @@ pub struct DaemonSpec {
     /// The path to a PID file to maintain.
     pub pid_file: Option<Box<Utf8Path>>,
 
-    /// The directory to chroot into after startup.
-    pub chroot: Option<Box<Utf8Path>>,
-
     /// The identity to assume after startup.
     pub identity: Option<IdentitySpec>,
 }
@@ -150,7 +192,6 @@ impl DaemonSpec {
         config.logging.target.file = self.log_target.map(|v| v.parse());
         config.daemonize.file = self.daemonize;
         config.pid_file = self.pid_file;
-        config.chroot = self.chroot;
         config.identity = self.identity.map(|v| v.parse());
     }
 }

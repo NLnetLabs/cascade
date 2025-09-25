@@ -269,6 +269,9 @@ pub struct SignerPolicy {
     /// How long record signatures will be valid for.
     pub sig_validity_time: Duration,
 
+    /// How long before expiration a new signature has to be generated.
+    pub sig_remain_time: Duration,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicy,
 
@@ -319,24 +322,9 @@ pub enum SignerDenialPolicy {
 
     /// Generate NSEC3 records.
     NSec3 {
-        /// Whether and how to enable NSEC3 Opt-Out.
-        opt_out: Nsec3OptOutPolicy,
+        /// Whether to enable NSEC3 Opt-Out.
+        opt_out: bool,
     },
-}
-
-//----------- Nsec3OptOutPolicy ------------------------------------------------
-
-/// Policy for the NSEC3 Opt-Out mechanism.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Nsec3OptOutPolicy {
-    /// Do not enable Opt-Out.
-    Disabled,
-
-    /// Only set the Opt-Out flag.
-    FlagOnly,
-
-    /// Enable Opt-Out and omit the corresponding NSEC3 records.
-    Enabled,
 }
 
 //----------- ReviewPolicy -----------------------------------------------------

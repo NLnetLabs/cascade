@@ -1,8 +1,10 @@
+use crate::api;
 use crate::center::Center;
 use crate::cli::commands::hsm::Error;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
 use crate::units::http_server::KmipServerState;
+use crate::policy::KeyParameters;
 use bytes::Bytes;
 use camino::Utf8Path;
 use core::time::Duration;
@@ -18,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use tokio::select;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::MissedTickBehavior;
 
 #[derive(Debug)]
@@ -30,10 +32,16 @@ impl KeyManagerUnit {
     pub async fn run(
         self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
 
-        KeyManager::new(self.center).run(cmd_rx).await?;
+        let km = KeyManager::new(self.center);
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
+
+        km.run(cmd_rx).await?;
 
         Ok(())
     }
@@ -76,13 +84,13 @@ impl KeyManager {
                     self.tick().await;
                 }
                 cmd = cmd_rx.recv() => {
-                    self.run_cmd(cmd)?;
+                    self.run_cmd(cmd).await?;
                 }
             }
         }
     }
 
-    fn run_cmd(&self, cmd: Option<ApplicationCommand>) -> Result<(), Terminated> {
+    async fn run_cmd(&self, cmd: Option<ApplicationCommand>) -> Result<(), Terminated> {
         log::info!("[KM] Received command: {cmd:?}");
 
         match cmd {
@@ -272,6 +280,133 @@ impl KeyManager {
                         String::from_utf8_lossy(&output.stderr)
                     );
                     return Err(Terminated);
+                }
+
+                Ok(())
+            }
+            Some(ApplicationCommand::RollKey {
+                zone,
+                key_roll:
+                    api::keyset::KeyRoll {
+                        variant: roll_variant,
+                        cmd: roll_cmd,
+                    },
+                http_tx,
+            }) => {
+                let mut cmd = self.keyset_cmd(&zone);
+
+                cmd.arg(match roll_variant {
+                    api::keyset::KeyRollVariant::Ksk => "ksk",
+                    api::keyset::KeyRollVariant::Zsk => "zsk",
+                    api::keyset::KeyRollVariant::Csk => "csk",
+                    api::keyset::KeyRollVariant::Algorithm => "algorithm",
+                });
+
+                match roll_cmd {
+                    api::keyset::KeyRollCommand::StartRoll => {
+                        cmd.arg("start-roll");
+                    }
+                    api::keyset::KeyRollCommand::Propagation1Complete { ttl } => {
+                        cmd.arg("propagation1-complete").arg(ttl.to_string());
+                    }
+                    api::keyset::KeyRollCommand::CacheExpired1 => {
+                        cmd.arg("cache-expired1");
+                    }
+                    api::keyset::KeyRollCommand::Propagation2Complete { ttl } => {
+                        cmd.arg("propagation2-complete").arg(ttl.to_string());
+                    }
+                    api::keyset::KeyRollCommand::CacheExpired2 => {
+                        cmd.arg("cache-expired2");
+                    }
+                    api::keyset::KeyRollCommand::RollDone => {
+                        cmd.arg("roll-done");
+                    }
+                }
+
+                log::info!("Running {cmd:?}");
+
+                let output = cmd.output().map_err(|e| {
+                    error!("[KM]: Error running key roll command for {zone}: {e}");
+                    Terminated
+                })?;
+                if output.status.success() {
+                    http_tx.send(Ok(())).await.unwrap();
+                } else {
+                    error!(
+                        "[KM]: Manual key roll command failed for {zone}: {}",
+                        output.status
+                    );
+                    error!(
+                        "[KM]: Manual key roll stdout: {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                    error!(
+                        "[KM]: Manual key roll stderr: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    http_tx
+                        .send(Err(api::keyset::KeyRollError::DnstCommandError {
+                            status: output.status.to_string(),
+                            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                        }))
+                        .await
+                        .unwrap();
+                }
+
+                Ok(())
+            }
+            Some(ApplicationCommand::RemoveKey {
+                zone,
+                key_remove:
+                    api::keyset::KeyRemove {
+                        key,
+                        force,
+                        continue_flag,
+                    },
+                http_tx,
+            }) => {
+                let mut cmd = self.keyset_cmd(&zone);
+
+                cmd.arg("remove-key").arg(key);
+
+                if force {
+                    cmd.arg("--force");
+                }
+
+                if continue_flag {
+                    cmd.arg("--continue");
+                }
+
+                log::info!("Running {cmd:?}");
+
+                let output = cmd.output().map_err(|e| {
+                    error!("[KM]: Error running key removal command for {zone}: {e}");
+                    Terminated
+                })?;
+                if output.status.success() {
+                    http_tx.send(Ok(())).await.unwrap();
+                } else {
+                    error!(
+                        "[KM]: Key remove command failed for {zone}: {}",
+                        output.status
+                    );
+                    error!(
+                        "[KM]: Key remove stdout {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                    error!(
+                        "[KM]: Key remove stderr {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    http_tx
+                        .send(Err(api::keyset::KeyRemoveError::DnstCommandError {
+                            status: output.status.to_string(),
+                            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                        }))
+                        .await
+                        .unwrap();
                 }
 
                 Ok(())
@@ -467,9 +602,27 @@ fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<Strin
 
     let km = &policy.key_manager;
 
+    let mut algorithm_cmd = vec!["algorithm".to_string()];
+    match km.algorithm {
+        KeyParameters::RsaSha256(bits) => {
+            algorithm_cmd.push("RSASHA256".to_string());
+            algorithm_cmd.push("-b".to_string());
+            algorithm_cmd.push(bits.to_string());
+        }
+        KeyParameters::RsaSha512(bits) => {
+            algorithm_cmd.push("RSASHA512".to_string());
+            algorithm_cmd.push("-b".to_string());
+            algorithm_cmd.push(bits.to_string());
+        }
+        KeyParameters::EcdsaP256Sha256
+        | KeyParameters::EcdsaP384Sha384
+        | KeyParameters::Ed25519
+        | KeyParameters::Ed448 => algorithm_cmd.push(km.algorithm.to_string()),
+    }
+
     vec![
         vec!["use-csk".to_string(), km.use_csk.to_string()],
-        vec!["algorithm".to_string(), km.algorithm.to_string()],
+        algorithm_cmd,
         vec![
             "ksk-validity".to_string(),
             if let Some(validity) = km.ksk_validity {

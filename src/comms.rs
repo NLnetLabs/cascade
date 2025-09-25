@@ -71,6 +71,7 @@ use std::fmt::{self, Debug};
 use std::net::IpAddr;
 use tokio::sync::mpsc;
 
+use crate::api;
 use crate::api::ZoneAdd;
 use crate::center::Change;
 
@@ -143,9 +144,6 @@ pub enum ApplicationCommand {
         operation: String,
         http_tx: mpsc::Sender<Result<(), ()>>,
     },
-    HandleZoneReviewApiStatus {
-        http_tx: mpsc::Sender<String>,
-    },
     SeekApprovalForUnsignedZone {
         zone_name: StoredName,
         zone_serial: Serial,
@@ -184,5 +182,16 @@ pub enum ApplicationCommand {
     },
     RegisterZone {
         register: ZoneAdd,
+    },
+
+    RollKey {
+        zone: StoredName,
+        key_roll: api::keyset::KeyRoll,
+        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRollError>>,
+    },
+    RemoveKey {
+        zone: StoredName,
+        key_remove: api::keyset::KeyRemove,
+        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRemoveError>>,
     },
 }

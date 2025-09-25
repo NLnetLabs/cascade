@@ -6,7 +6,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Command;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use arc_swap::ArcSwap;
@@ -35,23 +35,21 @@ use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
 use domain::zonetree::{StoredName, ZoneTree};
 use futures::Future;
-use indoc::formatdoc;
 use log::warn;
 use log::{debug, error, info, trace};
 use serde::Deserialize;
-use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, Sender};
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
 
 use crate::center::Center;
-use crate::common::net::ListenAddr;
 use crate::common::tsig::TsigKeyStore;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::config::SocketConfig;
+use crate::daemon::SocketProvider;
 use crate::payload::Update;
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -97,6 +95,8 @@ impl ZoneServerUnit {
     pub async fn run(
         self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
+        socket_provider: Arc<Mutex<SocketProvider>>,
     ) -> Result<(), Terminated> {
         let unit_name = match (self.mode, self.source) {
             (Mode::Prepublish, Source::UnsignedZones) => "RS",
@@ -153,87 +153,98 @@ impl ZoneServerUnit {
             servers.clone()
         };
 
-        let mut addrs = Vec::new();
+        let _addrs = spawn_servers(socket_provider, unit_name, svc, servers)
+            .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
+            .map_err(|_| Terminated)?;
 
-        for addr in servers {
-            info!("[{unit_name}]: Binding on {addr:?}");
-
-            if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = addr {
-                let unit_name: Box<str> = unit_name.into();
-                let svc = svc.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = Self::server(ListenAddr::Udp(addr), svc).await {
-                        error!("[{unit_name}]: {err}");
-                    }
-                });
-                addrs.push(ListenAddr::Udp(addr));
-            }
-
-            if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = addr {
-                let unit_name: Box<str> = unit_name.into();
-                let svc = svc.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = Self::server(ListenAddr::Tcp(addr), svc).await {
-                        error!("[{unit_name}]: {err}");
-                    }
-                });
-                addrs.push(ListenAddr::Tcp(addr));
-            }
-        }
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
 
         let update_tx = self.center.update_tx.clone();
-        ZoneServer::new(
-            self.center,
-            self.http_api_path,
-            self.mode,
-            self.source,
-            addrs,
-            zones,
-        )
-        .run(unit_name, update_tx, cmd_rx)
-        .await?;
+        ZoneServer::new(self.center, self.http_api_path, self.source)
+            .run(unit_name, update_tx, cmd_rx)
+            .await?;
 
         Ok(())
     }
+}
 
-    async fn server<Svc>(addr: ListenAddr, svc: Svc) -> Result<(), std::io::Error>
-    where
-        Svc: Service<Vec<u8>, ()> + Clone,
-    {
-        let buf = VecBufSource;
-        match addr {
-            ListenAddr::Udp(addr) => {
-                let sock = UdpSocket::bind(addr).await?;
-                let config = dgram::Config::new();
-                let srv = DgramServer::<_, _, _>::with_config(sock, buf, svc, config);
-                let srv = Arc::new(srv);
-                srv.run().await;
-            }
-            ListenAddr::Tcp(addr) => {
-                let sock = tokio::net::TcpListener::bind(addr).await?;
-                let mut conn_config = ConnectionConfig::new();
-                conn_config.set_max_queued_responses(10000);
-                let mut config = stream::Config::new();
-                config.set_connection_config(conn_config);
-                let srv = StreamServer::with_config(sock, buf, svc, config);
-                let srv = Arc::new(srv);
-                srv.run().await;
-            } // #[cfg(feature = "tls")]
-              // ListenAddr::Tls(addr, config) => {
-              //     let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
-              //     let sock = TcpListener::bind(addr).await?;
-              //     let sock = tls::RustlsTcpListener::new(sock, acceptor);
-              //     let mut conn_config = ConnectionConfig::new();
-              //     conn_config.set_max_queued_responses(10000);
-              //     let mut config = stream::Config::new();
-              //     config.set_connection_config(conn_config);
-              //     let srv = StreamServer::with_config(sock, buf, svc, config);
-              //     let srv = Arc::new(srv);
-              //     srv.run().await;
-              // }
+fn spawn_servers<Svc>(
+    socket_provider: Arc<Mutex<SocketProvider>>,
+    unit_name: &'static str,
+    svc: Svc,
+    servers: Vec<SocketConfig>,
+) -> Result<Vec<String>, String>
+where
+    Svc: Service<Vec<u8>, ()> + Clone,
+{
+    let mut addrs = Vec::new();
+    let mut socket_provider = socket_provider.lock().unwrap();
+    for sock_cfg in servers {
+        if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
+            info!("[{unit_name}]: Obtaining UDP socket for address {addr}");
+            let sock = socket_provider
+                .take_udp(&addr)
+                .ok_or(format!("No socket available for UDP {addr}"))?;
+            tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
         }
-        Ok(())
+
+        if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
+            info!("[{unit_name}]: Obtaining TCP listener for address {addr}");
+            let sock = socket_provider
+                .take_tcp(&addr)
+                .ok_or(format!("No socket available for TCP {addr}"))?;
+            tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
     }
+
+    if unit_name == "PS" {
+        // Also listen on any remaining UDP and TCP sockets provided by
+        // the O/S.
+        while let Some(sock) = socket_provider.pop_udp() {
+            let addr = sock
+                .local_addr()
+                .map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
+            info!("[{unit_name}]: Receieved additional UDP socket {addr}");
+            tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
+        while let Some(sock) = socket_provider.pop_tcp() {
+            let addr = sock
+                .local_addr()
+                .map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
+            info!("[{unit_name}]: Receieved additional TCP listener {addr}");
+            tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
+            addrs.push(addr.to_string());
+        }
+    }
+
+    Ok(addrs)
+}
+
+async fn serve_on_udp<Svc>(svc: Svc, buf: VecBufSource, sock: tokio::net::UdpSocket)
+where
+    Svc: Service<Vec<u8>, ()> + Clone,
+{
+    let config = dgram::Config::new();
+    let srv = DgramServer::<_, _, _>::with_config(sock, buf, svc, config);
+    let srv = Arc::new(srv);
+    srv.run().await;
+}
+
+async fn serve_on_tcp<Svc>(svc: Svc, buf: VecBufSource, sock: tokio::net::TcpListener)
+where
+    Svc: Service<Vec<u8>, ()> + Clone,
+{
+    let mut conn_config = ConnectionConfig::new();
+    conn_config.set_max_queued_responses(10000);
+    let mut config = stream::Config::new();
+    config.set_connection_config(conn_config);
+    let srv = StreamServer::with_config(sock, buf, svc, config);
+    let srv = Arc::new(srv);
+    srv.run().await;
 }
 
 //------------ ZoneServer ----------------------------------------------------
@@ -242,36 +253,23 @@ struct ZoneServer {
     http_api_path: Arc<String>,
     zone_review_api: Option<ZoneReviewApi>,
     center: Arc<Center>,
-    mode: Mode,
     source: Source,
-    listen: Vec<ListenAddr>,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
     #[allow(clippy::type_complexity)]
     last_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Instant>>>,
-    zones: XfrDataProvidingZonesWrapper,
 }
 
 impl ZoneServer {
     #[allow(clippy::too_many_arguments)]
-    fn new(
-        center: Arc<Center>,
-        http_api_path: Arc<String>,
-        mode: Mode,
-        source: Source,
-        listen: Vec<ListenAddr>,
-        zones: XfrDataProvidingZonesWrapper,
-    ) -> Self {
+    fn new(center: Arc<Center>, http_api_path: Arc<String>, source: Source) -> Self {
         Self {
             zone_review_api: Default::default(),
             http_api_path,
             center,
-            mode,
             source,
             pending_approvals: Default::default(),
             last_approvals: Default::default(),
-            listen,
-            zones,
         }
     }
 
@@ -288,10 +286,7 @@ impl ZoneServer {
             update_tx.clone(),
             self.pending_approvals.clone(),
             self.last_approvals.clone(),
-            self.zones.clone(),
-            self.mode,
             self.source,
-            self.listen.clone(),
         ));
 
         // status_reporter.listener_listening(&listen_addr.to_string());
@@ -338,10 +333,6 @@ impl ZoneServer {
                     http_tx,
                 )
                 .await;
-            }
-
-            ApplicationCommand::HandleZoneReviewApiStatus { http_tx } => {
-                self.on_zone_review_api_status_cmd(http_tx).await;
             }
 
             ApplicationCommand::SeekApprovalForUnsignedZone { .. }
@@ -517,19 +508,6 @@ impl ZoneServer {
             }
         }
         None
-    }
-
-    async fn on_zone_review_api_status_cmd(&self, http_tx: Sender<String>) {
-        http_tx
-            .send(
-                self.zone_review_api
-                    .as_ref()
-                    .expect("This should have been setup on startup.")
-                    .build_status_response()
-                    .await,
-            )
-            .await
-            .expect("TODO: Should this always succeed?");
     }
 
     async fn on_zone_review_api_cmd(
@@ -783,10 +761,7 @@ struct ZoneReviewApi {
     pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
     #[allow(clippy::type_complexity)]
     last_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Instant>>>,
-    zones: XfrDataProvidingZonesWrapper,
-    mode: Mode,
     source: Source,
-    listen: Vec<ListenAddr>,
 }
 
 impl ZoneReviewApi {
@@ -795,95 +770,13 @@ impl ZoneReviewApi {
         update_tx: mpsc::UnboundedSender<Update>,
         pending_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Vec<Uuid>>>>,
         last_approvals: Arc<RwLock<HashMap<(Name<Bytes>, Serial), Instant>>>,
-        zones: XfrDataProvidingZonesWrapper,
-        mode: Mode,
         source: Source,
-        listen: Vec<ListenAddr>,
     ) -> Self {
         Self {
             update_tx,
             pending_approvals,
             last_approvals,
-            zones,
-            mode,
             source,
-            listen,
         }
-    }
-}
-
-impl ZoneReviewApi {
-    pub async fn build_status_response(&self) -> String {
-        let mut response_body = self.build_response_header().await;
-
-        self.build_status_response_body(&mut response_body).await;
-
-        self.build_response_footer(&mut response_body);
-
-        response_body
-    }
-
-    async fn build_response_header(&self) -> String {
-        let intro = match (self.mode, self.source) {
-            (Mode::Prepublish, Source::UnsignedZones) => {
-                "Pre-publication review server for unsigned zones"
-            }
-            (Mode::Prepublish, Source::SignedZones) => {
-                "Pre-publication review server for signed zones"
-            }
-            (Mode::Prepublish, Source::PublishedZones) => {
-                "Pre-publication review server for published zones"
-            }
-            (Mode::Publish, Source::UnsignedZones) => "Publication server for unsigned zones",
-            (Mode::Publish, Source::SignedZones) => "Publication server for signed zones",
-            (Mode::Publish, Source::PublishedZones) => "Publication server for published zones",
-        };
-
-        formatdoc! {
-            r#"
-            <!DOCTYPE html>
-            <html lang="en">
-                <head>
-                  <meta charset="UTF-8">
-                </head>
-                <body>
-                <pre>{intro}
-
-            "#,
-        }
-    }
-
-    async fn build_status_response_body(&self, response_body: &mut String) {
-        let num_zones = self.zones.zones.load().iter_zones().count();
-        response_body.push_str(&format!("Serving {num_zones} zones on:\n"));
-
-        for addr in &self.listen {
-            response_body.push_str(&format!("  - {addr}\n"));
-        }
-        response_body.push('\n');
-
-        for zone in self.zones.zones.load().iter_zones() {
-            response_body.push_str(&format!("zone:   {}\n", zone.apex_name()));
-            if self.mode == Mode::Prepublish {
-                for ((_zone_name, zone_serial), pending_approvals) in self
-                    .pending_approvals
-                    .read()
-                    .await
-                    .iter()
-                    .filter(|((zone_name, _), _)| zone_name == zone.apex_name())
-                {
-                    response_body.push_str(&format!(
-                        "        pending approvals for serial {zone_serial}: {}\n",
-                        pending_approvals.len()
-                    ));
-                }
-            }
-        }
-    }
-
-    fn build_response_footer(&self, response_body: &mut String) {
-        response_body.push_str("    </pre>\n");
-        response_body.push_str("  </body>\n");
-        response_body.push_str("</html>\n");
     }
 }

@@ -1,6 +1,7 @@
 //! The commands of _cascade_.
 
 pub mod hsm;
+pub mod keyset;
 pub mod policy;
 pub mod status;
 pub mod zone;
@@ -22,6 +23,10 @@ pub enum Command {
     /// Manage policies
     #[command(name = "policy")]
     Policy(self::policy::Policy),
+
+    /// Execute manual key roll or key removal commands
+    #[command(name = "keyset")]
+    KeySet(self::keyset::KeySet),
     //
     // /// Manage keys
     // #[command(name = "key")]
@@ -45,23 +50,11 @@ pub enum Command {
 impl Command {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
-            Self::Zone(zone) => zone
-                .execute(client)
-                .await
-                .map_err(|err| format!("zone command failed: {err}")),
-            Self::Status(status) => status
-                .execute(client)
-                .await
-                .map_err(|err| format!("status command failed: {err}")),
-            Self::Policy(policy) => policy
-                .execute(client)
-                .await
-                .map_err(|err| format!("policy command failed: {err}")),
-            Self::Hsm(hsm) => hsm
-                .execute(client)
-                .await
-                .map_err(|err| format!("hsm command failed: {err}")),
-            // Self::Help(help) => help.execute(),
+            Self::Zone(zone) => zone.execute(client).await,
+            Self::Status(status) => status.execute(client).await,
+            Self::Policy(policy) => policy.execute(client).await,
+            Self::KeySet(keyset) => keyset.execute(client).await,
+            Self::Hsm(hsm) => hsm.execute(client).await,
         }
     }
 }

@@ -21,6 +21,7 @@ use domain::zonetree::{
 use futures::Future;
 use log::{debug, error, info};
 use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::oneshot;
 use tokio::time::Instant;
 
 #[cfg(feature = "tls")]
@@ -48,6 +49,7 @@ impl ZoneLoader {
     pub async fn run(
         self,
         mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
 
@@ -94,6 +96,9 @@ impl ZoneLoader {
 
         let zone_maintainer_clone = zone_maintainer.clone();
         tokio::spawn(async move { zone_maintainer_clone.run().await });
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
 
         loop {
             tokio::select! {
@@ -299,7 +304,8 @@ async fn load_file_into_zone(
             error!("[ZL]: Error: Failed to read data from file '{zone_path}': {err}",)
         })
         .map_err(|_| Terminated)?;
-    let reader = buf.into_inner();
+    let mut reader = buf.into_inner();
+    reader.set_origin(zone_name.clone());
     let res = Zone::try_from(reader);
     let Ok(zone) = res else {
         let errors = res.unwrap_err();

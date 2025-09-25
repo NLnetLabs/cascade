@@ -41,6 +41,9 @@ pub struct Config {
     /// Path to the directory where the keys should be stored.
     pub keys_dir: Box<Utf8Path>,
 
+    /// Remote control configuration.
+    pub remote_control: RemoteControlConfig,
+
     /// Daemon-related configuration.
     pub daemon: DaemonConfig,
 
@@ -75,6 +78,7 @@ impl Default for Config {
             dnst_binary_path: "dnst".into(),
             kmip_credentials_store_path: "/var/lib/cascade/kmip/credentials.db".into(),
             kmip_server_state_dir: "/var/lib/cascade/kmip".into(),
+            remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
@@ -160,6 +164,26 @@ pub fn reload(center: &Center) -> Result<(), file::FileError> {
     Ok(())
 }
 
+//----------- RemoteControlConfig --------------------------------------------
+
+/// Remote control configuration for Cascade.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteControlConfig {
+    /// Where to serve our HTTP API from, e.g. for the Cascade client.
+    ///
+    /// To support systems where it is not possible to bind simultaneously to
+    /// both IPv4 and IPv6 more than one address can be provided if needed.
+    pub servers: Vec<SocketAddr>,
+}
+
+impl Default for RemoteControlConfig {
+    fn default() -> Self {
+        Self {
+            servers: vec![SocketAddr::from(([127, 0, 0, 1], 8950))],
+        }
+    }
+}
+
 //----------- DaemonConfig -----------------------------------------------------
 
 /// Daemon-related configuration for Cascade.
@@ -238,6 +262,15 @@ pub enum UserId {
     Named(Box<str>),
 }
 
+impl std::fmt::Display for UserId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UserId::Numeric(id) => write!(f, "UID {id}"),
+            UserId::Named(name) => write!(f, "user {name}"),
+        }
+    }
+}
+
 //----------- GroupId ----------------------------------------------------------
 
 /// A numeric or named group ID.
@@ -248,6 +281,15 @@ pub enum GroupId {
 
     /// A group name.
     Named(Box<str>),
+}
+
+impl std::fmt::Display for GroupId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GroupId::Numeric(id) => write!(f, "GID {id}"),
+            GroupId::Named(name) => write!(f, "group {name}"),
+        }
+    }
 }
 
 //----------- LoaderConfig -----------------------------------------------------

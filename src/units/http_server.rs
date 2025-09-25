@@ -1,16 +1,15 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use std::sync::Mutex;
 
 use axum::extract::OriginalUri;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::Html;
 use axum::routing::get;
 use axum::routing::post;
 use axum::Json;
@@ -25,8 +24,9 @@ use log::warn;
 use log::{debug, error, info};
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
+use tokio::task::JoinSet;
 
 use crate::api;
 use crate::api::HsmServerAdd;
@@ -34,9 +34,9 @@ use crate::api::HsmServerAddError;
 use crate::api::HsmServerAddResult;
 use crate::api::HsmServerGetResult;
 use crate::api::HsmServerListResult;
+use crate::api::keyset::*;
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
-use crate::api::Nsec3OptOutPolicyInfo;
 use crate::api::PolicyChanges;
 use crate::api::PolicyInfo;
 use crate::api::PolicyInfoError;
@@ -60,7 +60,7 @@ use crate::api::ZonesListResult;
 use crate::center;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
-use crate::policy::Nsec3OptOutPolicy;
+use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::units::key_manager::KmipClientCredentials;
@@ -74,7 +74,6 @@ const HTTP_UNIT_NAME: &str = "HS";
 
 pub struct HttpServer {
     pub center: Arc<Center>,
-    pub listen_addr: SocketAddr,
 }
 
 struct HttpServerState {
@@ -85,13 +84,10 @@ impl HttpServer {
     pub async fn run(
         self,
         mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
+        socket_provider: Arc<Mutex<SocketProvider>>,
     ) -> Result<(), Terminated> {
-        // Setup listener
-        let sock = TcpListener::bind(self.listen_addr).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {e}");
-            Terminated
-        })?;
-
+        // Spawn the application command handler
         tokio::task::spawn(async move {
             loop {
                 let cmd = cmd_rx.recv().await;
@@ -128,14 +124,8 @@ impl HttpServer {
         // "KM"   KeyManagerUnit
 
         let unit_router = Router::new()
-            .route("/ps/", get(Self::handle_ps_base))
-            .route("/ps/{action}/{token}", get(Self::handle_ps))
-            .route("/rs/", get(Self::handle_rs_base))
             .route("/rs/{action}/{token}", get(Self::handle_rs))
-            .route("/rs2/", get(Self::handle_rs2_base))
             .route("/rs2/{action}/{token}", get(Self::handle_rs2));
-        // .route("/zl/", get(Self::handle_zl_base))
-        // .route("/zs/", get(Self::handle_zs_base));
 
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
@@ -153,12 +143,46 @@ impl HttpServer {
             .route("/kmip", post(Self::kmip_server_add))
             .route("/kmip", get(Self::kmip_server_list))
             .route("/kmip/{server_id}", get(Self::hsm_server_get))
-            .with_state(state);
+            .route("/key/{zone}/roll", post(Self::key_roll))
+            .route("/key/{zone}/remove", post(Self::key_remove))
+            .with_state(state.clone());
 
-        axum::serve(sock, app).await.map_err(|e| {
-            error!("[{HTTP_UNIT_NAME}]: {e}");
-            Terminated
-        })
+        // Setup listen sockets
+        let mut socks = vec![];
+        {
+            let state = state.center.state.lock().unwrap();
+            for addr in &state.config.remote_control.servers {
+                let sock = socket_provider
+                    .lock()
+                    .unwrap()
+                    .take_tcp(addr)
+                    .ok_or_else(|| {
+                        error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}");
+                        Terminated
+                    })?;
+                socks.push(sock);
+            }
+        }
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
+
+        // Serve our HTTP endpoints on each listener that has been configured.
+        let mut set = JoinSet::new();
+        for sock in socks {
+            let app = app.clone();
+            set.spawn(async move { axum::serve(sock, app).await });
+        }
+
+        // Wait for each future in the order they complete.
+        while let Some(res) = set.join_next().await {
+            if let Err(err) = res {
+                error!("[{HTTP_UNIT_NAME}]: {err}");
+                return Err(Terminated);
+            }
+        }
+
+        Ok(())
     }
 
     async fn zone_add(
@@ -363,13 +387,7 @@ impl HttpServer {
             sig_validity_offset: p.latest.signer.sig_validity_time,
             denial: match p.latest.signer.denial {
                 SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
-                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 {
-                    opt_out: match opt_out {
-                        Nsec3OptOutPolicy::Disabled => Nsec3OptOutPolicyInfo::Disabled,
-                        Nsec3OptOutPolicy::FlagOnly => Nsec3OptOutPolicyInfo::FlagOnly,
-                        Nsec3OptOutPolicy::Enabled => Nsec3OptOutPolicyInfo::Enabled,
-                    },
-                },
+                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 { opt_out },
             },
             review: ReviewPolicyInfo {
                 required: p.latest.signer.review.required,
@@ -395,6 +413,68 @@ impl HttpServer {
 
     async fn status() -> Json<ServerStatusResult> {
         Json(ServerStatusResult {})
+    }
+
+    async fn key_roll(
+        State(state): State<Arc<HttpServerState>>,
+        Path(zone): Path<Name<Bytes>>,
+        Json(key_roll): Json<KeyRoll>,
+    ) -> Json<Result<KeyRollResult, KeyRollError>> {
+        let (tx, mut rx) = mpsc::channel(10);
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "KM".into(),
+                ApplicationCommand::RollKey {
+                    zone: zone.clone(),
+                    key_roll,
+                    http_tx: tx,
+                },
+            ))
+            .unwrap();
+
+        let res = rx.recv().await;
+        let Some(res) = res else {
+            return Json(Err(KeyRollError::RxError));
+        };
+
+        if let Err(e) = res {
+            return Json(Err(e));
+        }
+
+        Json(Ok(KeyRollResult { zone }))
+    }
+
+    async fn key_remove(
+        State(state): State<Arc<HttpServerState>>,
+        Path(zone): Path<Name<Bytes>>,
+        Json(key_remove): Json<KeyRemove>,
+    ) -> Json<Result<KeyRemoveResult, KeyRemoveError>> {
+        let (tx, mut rx) = mpsc::channel(10);
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "KM".into(),
+                ApplicationCommand::RemoveKey {
+                    zone: zone.clone(),
+                    key_remove,
+                    http_tx: tx,
+                },
+            ))
+            .unwrap();
+
+        let res = rx.recv().await;
+        let Some(res) = res else {
+            return Json(Err(KeyRemoveError::RxError));
+        };
+
+        if let Err(e) = res {
+            return Json(Err(e));
+        }
+
+        Json(Ok(KeyRemoveResult { zone }))
     }
 }
 
@@ -599,82 +679,7 @@ impl HttpServer {
 //------------ HttpServer Handler for /<unit>/ -------------------------------
 
 impl HttpServer {
-    //--- /ps/
-    async fn handle_ps_base(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-    ) -> Result<Html<String>, StatusCode> {
-        Self::zone_server_unit_api_base_common("PS", uri, state).await
-    }
-
-    async fn handle_ps(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-        Path((action, token)): Path<(String, String)>,
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Result<(), StatusCode> {
-        Self::zone_server_unit_api_common("PS", uri, state, action, token, params).await
-    }
-
-    // //--- /zs/
-    // async fn handle_zs_base(
-    //     uri: OriginalUri,
-    //     State(state): State<Arc<HttpServerState>>,
-    // ) -> Result<Html<String>, StatusCode> {
-    //     Self::zone_server_unit_api_base_common("ZS", uri, state).await
-    // }
-
-    // async fn handle_zs(
-    //     uri: OriginalUri,
-    //     State(state): State<Arc<HttpServerState>>,
-    //     Path((action, token)): Path<(String, String)>,
-    //     Query(params): Query<HashMap<String, String>>,
-    // ) -> Result<(), StatusCode> {
-    //     Self::zone_server_unit_api_common("ZS", uri, state, action, token, params).await
-    // }
-
-    // //--- /zl/
-    // async fn handle_zl_base(
-    //     uri: OriginalUri,
-    //     State(state): State<Arc<HttpServerState>>,
-    // ) -> Result<Html<String>, StatusCode> {
-    //     Self::zone_server_unit_api_base_common("ZL", uri, state).await
-    // }
-
-    // async fn handle_zl(
-    //     uri: OriginalUri,
-    //     State(state): State<Arc<HttpServerState>>,
-    //     Path((action, token)): Path<(String, String)>,
-    //     Query(params): Query<HashMap<String, String>>,
-    // ) -> Result<(), StatusCode> {
-    //     Self::zone_server_unit_api_common("ZL", uri, state, action, token, params).await
-    // }
-
-    //--- /rs2/
-    async fn handle_rs2_base(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-    ) -> Result<Html<String>, StatusCode> {
-        Self::zone_server_unit_api_base_common("RS2", uri, state).await
-    }
-
-    async fn handle_rs2(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-        Path((action, token)): Path<(String, String)>,
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Result<(), StatusCode> {
-        Self::zone_server_unit_api_common("RS2", uri, state, action, token, params).await
-    }
-
     //--- /rs/
-    async fn handle_rs_base(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-    ) -> Result<Html<String>, StatusCode> {
-        Self::zone_server_unit_api_base_common("RS", uri, state).await
-    }
-
     async fn handle_rs(
         uri: OriginalUri,
         State(state): State<Arc<HttpServerState>>,
@@ -684,37 +689,17 @@ impl HttpServer {
         Self::zone_server_unit_api_common("RS", uri, state, action, token, params).await
     }
 
-    //--- common api implementations
-    async fn zone_server_unit_api_base_common(
-        unit: &str,
+    //--- /rs2/
+    async fn handle_rs2(
         uri: OriginalUri,
-        state: Arc<HttpServerState>,
-    ) -> Result<Html<String>, StatusCode> {
-        let (tx, mut rx) = mpsc::channel(10);
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                unit.into(),
-                ApplicationCommand::HandleZoneReviewApiStatus { http_tx: tx },
-            ))
-            .unwrap();
-
-        let res = rx.recv().await;
-        let Some(res) = res else {
-            // Failed to receive response... When would that happen?
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        };
-
-        debug!(
-            "[{HTTP_UNIT_NAME}]: Handled HTTP request: {}",
-            uri.path_and_query()
-                .map(|p| { p.as_str() })
-                .unwrap_or_default()
-        );
-
-        Ok(Html(res))
+        State(state): State<Arc<HttpServerState>>,
+        Path((action, token)): Path<(String, String)>,
+        Query(params): Query<HashMap<String, String>>,
+    ) -> Result<(), StatusCode> {
+        Self::zone_server_unit_api_common("RS2", uri, state, action, token, params).await
     }
+
+    //--- common api implementations
 
     // All ZoneServerUnit's have the same review API
     //

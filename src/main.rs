@@ -1,17 +1,21 @@
 use cascade::{
     center::{self, Center},
     comms::ApplicationCommand,
-    config::Config,
+    config::{Config, SocketConfig},
+    daemon::{daemonize, PreBindError, SocketProvider},
     manager::{self, TargetCommand},
     policy,
 };
 use clap::{crate_authors, crate_version};
+use std::collections::HashMap;
 use std::{
     io,
     process::ExitCode,
     sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc;
+
+const MAX_SYSTEMD_FD_SOCKETS: usize = 32;
 
 fn main() -> ExitCode {
     // Initialize the logger in fallback mode.
@@ -113,13 +117,23 @@ fn main() -> ExitCode {
         }
     }
 
-    // TODO: daemonbase
+    // Activate the configured logging setup.
     logger.apply(
         logger
             .prepare(&state.config.daemon.logging)
             .unwrap()
             .unwrap(),
     );
+
+    // Bind to listen addresses before daemonizing.
+    let Ok(socket_provider) = bind_to_listen_sockets_as_needed(&state) else {
+        return ExitCode::FAILURE;
+    };
+
+    if let Err(err) = daemonize(&state.config.daemon) {
+        log::error!("Failed to daemonize: {err}");
+        return ExitCode::FAILURE;
+    }
 
     // Prepare Cascade.
     let (app_cmd_tx, mut app_cmd_rx) = mpsc::unbounded_channel();
@@ -131,6 +145,7 @@ fn main() -> ExitCode {
         signed_zones: Default::default(),
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),
+        resign_busy: Mutex::new(HashMap::new()),
         app_cmd_tx,
         update_tx,
     });
@@ -152,7 +167,18 @@ fn main() -> ExitCode {
         // Spawn Cascade's units.
         let mut center_tx = None;
         let mut unit_txs = Default::default();
-        manager::spawn(&center, update_rx, &mut center_tx, &mut unit_txs);
+        if let Err(err) = manager::spawn(
+            &center,
+            update_rx,
+            &mut center_tx,
+            &mut unit_txs,
+            socket_provider,
+        )
+        .await
+        {
+            log::error!("Failed to spawn units: {err}");
+            return ExitCode::FAILURE;
+        }
 
         let result = loop {
             tokio::select! {
@@ -197,4 +223,66 @@ fn main() -> ExitCode {
 
         result
     })
+}
+
+/// Bind to all listen addresses that are referred to our by the Cascade
+/// configuration.
+///
+/// Sockets provided to us by systemd will be skipped as they are already
+/// bound.
+fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvider, ()> {
+    let mut socket_provider = SocketProvider::new();
+    socket_provider.init_from_env(Some(MAX_SYSTEMD_FD_SOCKETS));
+
+    // Convert the TCP only listen addresses used by the HTTP server into
+    // the same form used by all other units that listen, as the other units
+    // use a type that also supports UDP which the HTTP server doesn't need.
+    let remote_control_servers: Vec<_> = state
+        .config
+        .remote_control
+        .servers
+        .iter()
+        .map(|&addr| SocketConfig::TCP { addr })
+        .collect();
+
+    // Make an iterator over all of the SocketConfig instances we know about.
+    let socket_configs = state
+        .config
+        .loader
+        .review
+        .servers
+        .iter()
+        .chain(state.config.loader.notif_listeners.iter())
+        .chain(state.config.signer.review.servers.iter())
+        .chain(state.config.server.servers.iter())
+        .chain(remote_control_servers.iter());
+
+    // Bind to each of the specified sockets if needed.
+    if let Err(err) = pre_bind_server_sockets_as_needed(&mut socket_provider, socket_configs) {
+        log::error!("{err}");
+        return Err(());
+    }
+
+    Ok(socket_provider)
+}
+
+/// Bind to the specified sockets if needed.
+///
+/// Sockets provided to us by systemd will be skipped as they are already
+/// bound.
+fn pre_bind_server_sockets_as_needed<'a, T: Iterator<Item = &'a SocketConfig>>(
+    socket_provider: &mut SocketProvider,
+    socket_configs: T,
+) -> Result<(), PreBindError> {
+    for socket_config in socket_configs {
+        match socket_config {
+            SocketConfig::UDP { addr } => socket_provider.pre_bind_udp(*addr)?,
+            SocketConfig::TCP { addr } => socket_provider.pre_bind_tcp(*addr)?,
+            SocketConfig::TCPUDP { addr } => {
+                socket_provider.pre_bind_udp(*addr)?;
+                socket_provider.pre_bind_tcp(*addr)?;
+            }
+        }
+    }
+    Ok(())
 }

@@ -1,15 +1,16 @@
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
+use std::time::SystemTime;
 
 use bytes::Bytes;
 use camino::Utf8Path;
 use domain::base::iana::Class;
 use domain::base::name::FlattenInto;
-use domain::base::{CanonicalOrd, Record, Rtype, Serial, Ttl};
+use domain::base::{CanonicalOrd, Record, Rtype, Serial};
 use domain::crypto::kmip::KeyUrl;
 use domain::crypto::kmip::{self, ClientCertificate, ConnectionSettings};
 use domain::crypto::sign::{KeyPair, SecretKeyBytes, SignRaw};
@@ -34,13 +35,13 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use log::warn;
 use log::{debug, error, info, trace};
-use non_empty_vec::NonEmpty;
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
+use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{oneshot, RwLock, Semaphore};
 use tokio::task::spawn_blocking;
-use tokio::time::Instant;
+use tokio::time::{sleep_until, Instant};
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 use url::Url;
@@ -50,13 +51,32 @@ use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::payload::Update;
-use crate::policy::{Nsec3OptOutPolicy, PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
 use core::sync::atomic::AtomicBool;
+
+// Re-signing zones before signatures expire works as follows:
+// - compute when the first zone needs to be re-signed. Loop over unsigned
+//   zones, take the min_expiration field for state, and subtract the remain
+//   time for policy. If the min_expiration time is currently listed for the
+//   zone in resign_busy then skip the zone. The minimum is when the first
+//   zone needs to be re-signed. Sleep until this moment in the main select!
+//   loop.
+// - When the sleep is done, loop over all unsigned zones, and for each zone
+//   check if the zone needs to be re-signed now. If so, send a message to
+//   central command and add the zone the resign_busy. After that
+//   recompute when the first zone needs to be re-signed.
+// - central command forwards PublishSignedZone messages. When such a message
+//   is received, recompute when the first zone eneds to be re-signed.
+
+/// A default poll interval in case no zones need to be resigned.
+///
+/// This simplifies code. Just a high value to avoid extra overhead.
+const IDLE_RESIGNER_POLL_INTERVAL: Duration = Duration::from_secs(24 * 3600);
 
 #[derive(Debug)]
 pub struct ZoneSignerUnit {
@@ -87,8 +107,12 @@ impl ZoneSignerUnit {
     pub async fn run(
         self,
         cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
+        ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
+
+        // Notify the manager that we are ready.
+        ready_tx.send(true).map_err(|_| Terminated)?;
 
         ZoneSigner::new(
             self.center,
@@ -191,28 +215,60 @@ impl ZoneSigner {
         self,
         mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
     ) -> Result<(), crate::comms::Terminated> {
-        while let Some(cmd) = cmd_rx.recv().await {
-            info!("[ZS]: Received command: {cmd:?}");
-            match &cmd {
-                ApplicationCommand::Terminate => {
-                    // self.status_reporter.terminated();
-                    return Ok(());
+        let next_resign_time = self.next_resign_time();
+        let mut next_resign_time =
+            next_resign_time.unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
+        loop {
+            select! {
+            _ = sleep_until(next_resign_time) => {
+                self.resign_zones();
+                next_resign_time = self.next_resign_time().unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
+            }
+            opt_cmd = cmd_rx.recv() => {
+                let Some(cmd) = opt_cmd else { break };
+                if !self.handle_command(cmd, &mut next_resign_time).await {
+                break;
                 }
-
-                ApplicationCommand::SignZone {
-                    zone_name,
-                    zone_serial, // TODO: the serial number is ignored, but is that okay?
-                } => {
-                    if let Err(err) = self.sign_zone(zone_name, zone_serial.is_none()).await {
-                        error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
-                    }
-                }
-
-                _ => { /* Not for us */ }
+            }
             }
         }
 
         Ok(())
+    }
+
+    /// Handle incoming requests.
+    ///
+    /// Return true if the caller should continue, false when a Terminate
+    /// command is received.
+    async fn handle_command(
+        &self,
+        cmd: ApplicationCommand,
+        next_resign_time: &mut Instant,
+    ) -> bool {
+        info!("[ZS]: Received command: {cmd:?}");
+        match &cmd {
+            ApplicationCommand::Terminate => {
+                // self.status_reporter.terminated();
+                return false;
+            }
+
+            ApplicationCommand::SignZone {
+                zone_name,
+                zone_serial, // TODO: the serial number is ignored, but is that okay?
+            } => {
+                if let Err(err) = self.sign_zone(zone_name, zone_serial.is_none()).await {
+                    error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+                }
+            }
+            ApplicationCommand::PublishSignedZone { .. } => {
+                trace!("[ZS]: a zone is published, recompute next time to re-sign");
+                *next_resign_time = self
+                    .next_resign_time()
+                    .unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
+            }
+            _ => { /* Not for us */ }
+        }
+        true
     }
 
     /// Signs zone_name from the Manager::unsigned_zones zone collection,
@@ -228,8 +284,11 @@ impl ZoneSigner {
         zone_name: &StoredName,
         resign_last_signed_zone_content: bool,
     ) -> Result<(), String> {
-        // TODO: Implement serial bumping (per policy, e.g. ODS 'keep', 'counter', etc.?)
-
+        // TODO: The signer_status mechanism is broken, as it is limited to
+        // 100 slots so that if too many sign_zone() invocations occur the
+        // newest will overwrite the oldest. When the permit is then finally
+        // acquired, further down where start() is invoked it will fail
+        // because the enqueued status item will no longer exist...
         info!("[ZS]: Waiting to start signing operation for zone '{zone_name}'.");
         self.signer_status.write().await.enqueue(zone_name.clone());
 
@@ -844,7 +903,7 @@ impl ZoneSigner {
         let denial = match &policy.signer.denial {
             SignerDenialPolicy::NSec => DenialConfig::Nsec(Default::default()),
             SignerDenialPolicy::NSec3 { opt_out } => {
-                let first = parse_nsec3_config(opt_out);
+                let first = parse_nsec3_config(*opt_out);
                 DenialConfig::Nsec3(first)
             }
         };
@@ -853,6 +912,136 @@ impl ZoneSigner {
         let inception = now.wrapping_sub(policy.signer.sig_inception_offset.as_secs() as u32);
         let expiration = now.wrapping_add(policy.signer.sig_validity_time.as_secs() as u32);
         SigningConfig::new(denial, inception.into(), expiration.into())
+    }
+
+    fn next_resign_time(&self) -> Option<Instant> {
+        let zone_tree = &self.center.unsigned_zones;
+        let mut min_time = None;
+        let now = SystemTime::now();
+        for zone in zone_tree.load().iter_zones() {
+            let zone_name = zone.apex_name();
+
+            let min_expiration = {
+                // Use a block to make sure that the mutex is clearly dropped.
+                let state = self.center.state.lock().unwrap();
+                let zone = state.zones.get(zone_name).unwrap();
+                let zone_state = zone.0.state.lock().unwrap();
+
+                zone_state.min_expiration
+            };
+
+            let Some(min_expiration) = min_expiration else {
+                trace!("[ZS] resign: no min-expiration for zone {zone_name}");
+                continue;
+            };
+
+            // Start a new block to make sure the mutex is released.
+            {
+                let mut resign_busy = self.center.resign_busy.lock().expect("should not fail");
+                let opt_expiration = resign_busy.get(zone_name);
+                if let Some(expiration) = opt_expiration {
+                    if *expiration == min_expiration {
+                        // This zone is busy.
+                        trace!("[ZS]: resign: zone {zone_name} is busy");
+                        continue;
+                    }
+
+                    // Zone has been resigned. Remove this entry.
+                    resign_busy.remove(zone_name);
+                }
+            }
+
+            // Ensure that the Mutexes are locked only in this block;
+            let remain_time = {
+                let state = self.center.state.lock().unwrap();
+                let zone = state.zones.get(zone_name).unwrap();
+                let zone_state = zone.0.state.lock().unwrap();
+                // TODO: what if there is no policy?
+                zone_state.policy.as_ref().unwrap().signer.sig_remain_time
+            };
+
+            let exp_time = min_expiration.to_system_time(now);
+            let exp_time = exp_time - remain_time;
+
+            min_time = if let Some(time) = min_time {
+                Some(min(time, exp_time))
+            } else {
+                Some(exp_time)
+            };
+        }
+        min_time.map(|t| {
+            // We need to go from SystemTime to Tokio Instant, is there a
+            // better way?
+
+            // We are computing a timeout value. If the timeout is in the
+            // past then we can just as well use zero.
+            let since_now = t
+                .duration_since(SystemTime::now())
+                .unwrap_or(Duration::ZERO);
+
+            Instant::now() + since_now
+        })
+    }
+
+    fn resign_zones(&self) {
+        let zone_tree = &self.center.unsigned_zones;
+        let now = SystemTime::now();
+        for zone in zone_tree.load().iter_zones() {
+            let zone_name = zone.apex_name();
+
+            let min_expiration = {
+                // Use a block to make sure that the mutex is clearly dropped.
+                let state = self.center.state.lock().unwrap();
+                let zone = state.zones.get(zone_name).unwrap();
+                let zone_state = zone.0.state.lock().unwrap();
+
+                zone_state.min_expiration
+            };
+
+            let Some(min_expiration) = min_expiration else {
+                continue;
+            };
+
+            // Start a new block to make sure the mutex is released.
+            {
+                let resign_busy = self.center.resign_busy.lock().expect("should not fail");
+                let opt_expiration = resign_busy.get(zone_name);
+                if let Some(expiration) = opt_expiration {
+                    if *expiration == min_expiration {
+                        // This zone is busy.
+                        continue;
+                    }
+                }
+            }
+
+            // Ensure that the Mutexes are locked only in this block;
+            let remain_time = {
+                let state = self.center.state.lock().unwrap();
+                let zone = state.zones.get(zone_name).unwrap();
+                let zone_state = zone.0.state.lock().unwrap();
+                // What if there is no policy?
+                zone_state.policy.as_ref().unwrap().signer.sig_remain_time
+            };
+
+            let exp_time = min_expiration.to_system_time(now);
+            let exp_time = exp_time - remain_time;
+
+            if exp_time < now {
+                trace!("[ZS]: re-signing: request signing of zone {zone_name}");
+
+                // Start a new block to make sure the mutex is released.
+                {
+                    let mut resign_busy = self.center.resign_busy.lock().expect("should not fail");
+                    resign_busy.insert(zone_name.clone(), min_expiration);
+                }
+                self.center
+                    .update_tx
+                    .send(Update::ResignZoneEvent {
+                        zone_name: zone_name.clone(),
+                    })
+                    .unwrap();
+            }
+        }
     }
 }
 
@@ -1057,24 +1246,15 @@ fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
     records
 }
 
-fn parse_nsec3_config(
-    opt_out: &Nsec3OptOutPolicy,
-) -> GenerateNsec3Config<Bytes, MultiThreadedSorter> {
+fn parse_nsec3_config(opt_out: bool) -> GenerateNsec3Config<Bytes, MultiThreadedSorter> {
     let mut params = Nsec3param::default();
-    if matches!(
-        opt_out,
-        Nsec3OptOutPolicy::FlagOnly | Nsec3OptOutPolicy::Enabled
-    ) {
+    if opt_out {
         params.set_opt_out_flag()
     }
 
     // TODO: support other ttl_modes? Seems missing from the config right now
     let ttl_mode = Nsec3ParamTtlMode::Soa;
-    let mut nsec3_config = GenerateNsec3Config::new(params).with_ttl_mode(ttl_mode);
-    if matches!(opt_out, Nsec3OptOutPolicy::FlagOnly) {
-        nsec3_config = nsec3_config.without_opt_out_excluding_owner_names_of_unsigned_delegations();
-    }
-    nsec3_config
+    GenerateNsec3Config::new(params).with_ttl_mode(ttl_mode)
 }
 
 impl std::fmt::Debug for ZoneSigner {
@@ -1322,70 +1502,6 @@ impl Default for ZoneSignerStatus {
             zones_being_signed: VecDeque::with_capacity(MAX_SIGNING_HISTORY),
         }
     }
-}
-
-//------------ DenialConfig --------------------------------------------------
-
-// See: domain::sign::denial::config::DenialConfig
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlDenialConfig {
-    #[default]
-    Nsec,
-
-    Nsec3(NonEmpty<TomlNsec3Config>),
-
-    TransitioningToNsec3(TomlNsec3Config, TomlNsecToNsec3TransitionState),
-
-    TransitioningFromNsec3(TomlNsec3Config, TomlNsec3ToNsecTransitionState),
-}
-
-// See: domain::sign::denial::config::GenerateNsec3Config
-// Note: We don't allow configuration of NSEC3 salt, iterations or algorithm
-// as they are fixed to best practice values.
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct TomlNsec3Config {
-    pub opt_out: TomlNsec3OptOut,
-    pub nsec3_param_ttl_mode: TomlNsec3ParamTtlMode,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlNsec3OptOut {
-    #[default]
-    NoOptOut,
-    OptOut,
-    OptOutFlagOnly,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlNsec3ParamTtlMode {
-    Fixed(Ttl),
-    #[default]
-    Soa,
-    SoaMinimum,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlNsecToNsec3TransitionState {
-    #[default]
-    TransitioningDnsKeys,
-    AddingNsec3Records,
-    RemovingNsecRecords,
-    Transitioned,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TomlNsec3ToNsecTransitionState {
-    #[default]
-    AddingNsecRecords,
-    RemovingNsec3ParamdRecord,
-    RemovingNsec3Records,
-    TransitioningDnsKeys,
-    Transitioned,
 }
 
 //------------ MultiThreadedSorter -------------------------------------------
