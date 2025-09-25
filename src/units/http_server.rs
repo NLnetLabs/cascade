@@ -3,6 +3,7 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::SystemTime;
 use std::time::Duration;
 
 use axum::extract::OriginalUri;
@@ -18,6 +19,7 @@ use bytes::Bytes;
 use domain::base::iana::Class;
 use domain::base::Name;
 use domain::base::Serial;
+use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
 use log::warn;
@@ -27,8 +29,10 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
+use tokio::time::Instant;
 
 use crate::api;
+use crate::api::KeyInfo;
 use crate::api::keyset::*;
 use crate::api::HsmServerAdd;
 use crate::api::HsmServerAddError;
@@ -51,6 +55,7 @@ use crate::api::SignerSerialPolicyInfo;
 use crate::api::ZoneAdd;
 use crate::api::ZoneAddError;
 use crate::api::ZoneAddResult;
+use crate::api::ZoneApprovalStatus;
 use crate::api::ZoneReloadResult;
 use crate::api::ZoneRemoveResult;
 use crate::api::ZoneStage;
@@ -63,6 +68,11 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::units::zone_loader::ZoneLoaderReport;
+use crate::units::zone_signer::KeySetState;
+use crate::zone::ZoneLoadSource;
+use crate::zonemaintenance::maintainer::read_soa;
+use crate::zonemaintenance::types::ZoneReportDetails;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -227,14 +237,22 @@ impl HttpServer {
     }
 
     async fn zones_list(State(http_state): State<Arc<HttpServerState>>) -> Json<ZonesListResult> {
-        let state = http_state.center.state.lock().unwrap();
-        let names: Vec<_> = state.zones.iter().map(|z| z.0.name.clone()).collect();
-        drop(state);
+        let names;
+        {
+            let state = http_state.center.state.lock().unwrap();
+            names = state
+                .zones
+                .iter()
+                .map(|z| z.0.name.clone())
+                .collect::<Vec<_>>();
+        }
 
-        let zones = names
-            .iter()
-            .filter_map(|z| Self::get_zone_status(http_state.clone(), z).ok())
-            .collect();
+        let mut zones = Vec::with_capacity(names.len());
+        for name in names {
+            if let Ok(zone_status) = Self::get_zone_status(http_state.clone(), name.clone()).await {
+                zones.push(zone_status);
+            }
+        }
 
         Json(ZonesListResult { zones })
     }
@@ -243,74 +261,318 @@ impl HttpServer {
         State(state): State<Arc<HttpServerState>>,
         Path(name): Path<Name<Bytes>>,
     ) -> Json<Result<ZoneStatus, ZoneStatusError>> {
-        Json(Self::get_zone_status(state, &name))
+        Json(Self::get_zone_status(state, name).await)
     }
 
-    fn get_zone_status(
+    async fn get_zone_status(
         state: Arc<HttpServerState>,
-        name: &Name<Bytes>,
+        name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
-        let center = &state.center;
+        let mut zone_loaded_at = None;
+        let mut zone_loaded_in = None;
+        let mut zone_loaded_bytes = 0;
 
-        let state = center.state.lock().unwrap();
-        let zone = state
-            .zones
-            .get(name)
-            .ok_or(ZoneStatusError::ZoneDoesNotExist)?;
-        let zone_state = zone.0.state.lock().unwrap();
-
-        // TODO: Needs some info from the zone loader?
-        let source = match zone_state.source.clone() {
-            crate::zone::ZoneLoadSource::None => api::ZoneSource::None,
-            crate::zone::ZoneLoadSource::Zonefile { path } => api::ZoneSource::Zonefile { path },
-            crate::zone::ZoneLoadSource::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
-                addr,
-                tsig_key: None,
-            },
-        };
-
-        let policy = zone_state
-            .policy
-            .as_ref()
-            .map_or("<none>".into(), |p| p.name.to_string());
+        let dnst_binary_path;
+        let cfg_path;
+        let state_path;
+        let app_cmd_tx;
+        let policy;
+        let mut source;
+        let unsigned_review_addr;
+        let signed_review_addr;
+        let publish_addr;
+        {
+            let locked_state = state.center.state.lock().unwrap();
+            dnst_binary_path = locked_state.config.dnst_binary_path.clone();
+            let keys_dir = &locked_state.config.keys_dir;
+            cfg_path = keys_dir.join(format!("{name}.cfg"));
+            state_path = keys_dir.join(format!("{name}.state"));
+            app_cmd_tx = state.center.app_cmd_tx.clone();
+            let zone = locked_state
+                .zones
+                .get(&name)
+                .ok_or(ZoneStatusError::ZoneDoesNotExist)?;
+            let zone_state = zone.0.state.lock().unwrap();
+            policy = zone_state
+                .policy
+                .as_ref()
+                .map_or("<none>".into(), |p| p.name.to_string());
+            // TODO: Needs some info from the zone loader?
+            source = match zone_state.source.clone() {
+                ZoneLoadSource::None => api::ZoneSource::None,
+                ZoneLoadSource::Zonefile { path } => api::ZoneSource::Zonefile { path },
+                ZoneLoadSource::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
+                    addr,
+                    tsig_key: None,
+                    xfr_status: Default::default(),
+                },
+            };
+            unsigned_review_addr = locked_state
+                .config
+                .loader
+                .review
+                .servers
+                .first()
+                .map(|v| v.addr());
+            signed_review_addr = locked_state
+                .config
+                .signer
+                .review
+                .servers
+                .first()
+                .map(|v| v.addr());
+            publish_addr = locked_state
+                .config
+                .server
+                .servers
+                .first()
+                .expect("Server must have a publish address")
+                .addr();
+        }
 
         // TODO: We need to show multiple versions here
-        let stage = if center
-            .published_zones
-            .load()
-            .get_zone(&name, Class::IN)
-            .is_some()
-        {
+        let unsigned_zones = state.center.unsigned_zones.load();
+        let signed_zones = state.center.signed_zones.load();
+        let published_zones = state.center.published_zones.load();
+        let unsigned_zone = unsigned_zones.get_zone(&name, Class::IN);
+        let signed_zone = signed_zones.get_zone(&name, Class::IN);
+        let published_zone = published_zones.get_zone(&name, Class::IN);
+
+        // Determine the highest stage the zone has progressed to.
+        let stage = if published_zone.is_some() {
             ZoneStage::Published
-        } else if center
-            .signed_zones
-            .load()
-            .get_zone(&name, Class::IN)
-            .is_some()
-        {
+        } else if signed_zone.is_some() {
             ZoneStage::Signed
         } else {
             ZoneStage::Unsigned
         };
 
-        let dnst_binary = &state.config.dnst_binary_path;
-        let keys_dir = &state.config.keys_dir;
-        let cfg = keys_dir.join(format!("{name}.cfg"));
-        let key_status = Command::new(dnst_binary.as_std_path())
-            .arg("keyset")
-            .arg("-c")
-            .arg(cfg)
-            .arg("status")
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string());
+        // Query key status
+        let key_status = {
+            // TODO: Move this into key manager as that is the component that knows
+            // about dnst?
+            if let Some(stdout) = Command::new(dnst_binary_path.as_std_path())
+                .arg("keyset")
+                .arg("-c")
+                .arg(cfg_path)
+                .arg("status")
+                .arg("-v")
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            {
+                // Invoke dnst to get status information about the keys for the
+                // zone. Strip out lines that would be correct for a dnst user but
+                // confusing for a cascade user, and rewrite advice to invoke dnst
+                // to be equivalent advice to invoke cascade.
+                let mut sanitized_output = String::new();
+                for line in stdout.lines() {
+                    if line.contains("Next time to run the 'cron' subcommand") {
+                        continue;
+                    }
+
+                    if line.contains("dnst keyset -c") {
+                        // The config file path after -c should NOT contain a
+                        // space as it is based on a zone name, and zone names
+                        // cannot contain spaces. Find the config file path so
+                        // that we can strip it out (as users of the cascade
+                        // CLI should not need to know or care what internal
+                        // dnst config files are being used).
+                        let mut parts = line.split(' ');
+                        if parts.any(|part| part == "-c") {
+                            if let Some(dnst_config_path) = parts.next() {
+                                let sanitized_line = line.replace(
+                                    &format!("dnst keyset -c {dnst_config_path}"),
+                                    &format!("cascade keyset {name}"),
+                                );
+                                sanitized_output.push_str(&sanitized_line);
+                                sanitized_output.push('\n');
+                                continue;
+                            }
+                        }
+                    }
+
+                    sanitized_output.push_str(line);
+                    sanitized_output.push('\n');
+                }
+                Some(sanitized_output)
+            } else {
+                None
+            }
+        };
+
+        // Query XFR status
+        let (tx, rx) = oneshot::channel();
+        app_cmd_tx
+            .send((
+                "ZL".to_owned(),
+                ApplicationCommand::GetZoneReport {
+                    zone_name: name.clone(),
+                    report_tx: tx,
+                },
+            ))
+            .ok();
+        if let Ok((zone_maintainer_report, zone_loader_report)) = rx.await {
+            log::info!("ZMR = {zone_maintainer_report:?}");
+            log::info!("ZLR = {zone_loader_report:?}");
+            match zone_maintainer_report.details() {
+                ZoneReportDetails::Primary => {
+                    if let Some(report) = zone_loader_report {
+                        if let Ok(duration) = report.finished_at.duration_since(report.started_at) {
+                            zone_loaded_in = Some(duration);
+                            zone_loaded_at = Some(report.finished_at);
+                            zone_loaded_bytes = report.byte_count;
+                        }
+                    }
+                }
+                ZoneReportDetails::PendingSecondary(s) | ZoneReportDetails::Secondary(s) => {
+                    let api::ZoneSource::Server { xfr_status, .. } = &mut source else {
+                        unreachable!("A secondary must have been configured from a server source");
+                    };
+                    *xfr_status = s.status();
+                    let metrics = s.metrics();
+                    let now = Instant::now();
+                    let now_t = SystemTime::now();
+                    if let (Some(checked_at), Some(refreshed_at)) = (
+                        metrics.last_soa_serial_check_succeeded_at,
+                        metrics.last_refreshed_at,
+                    ) {
+                        zone_loaded_in = Some(refreshed_at.duration_since(checked_at));
+                        zone_loaded_at = now_t.checked_sub(now.duration_since(refreshed_at));
+                        zone_loaded_bytes = metrics.last_refresh_succeeded_bytes.unwrap();
+                    }
+                }
+            }
+        }
+
+        // Query approval status
+        let mut approval_status = None;
+        let (tx, rx) = oneshot::channel();
+        app_cmd_tx
+            .send((
+                "RS".to_owned(),
+                ApplicationCommand::IsZonePendingApproval {
+                    zone_name: name.clone(),
+                    tx,
+                },
+            ))
+            .ok();
+        if matches!(rx.await, Ok(true)) {
+            approval_status = Some(ZoneApprovalStatus::PendingUnsignedApproval);
+        }
+
+        let (tx, rx) = oneshot::channel();
+        app_cmd_tx
+            .send((
+                "RS2".to_owned(),
+                ApplicationCommand::IsZonePendingApproval {
+                    zone_name: name.clone(),
+                    tx,
+                },
+            ))
+            .ok();
+        if matches!(rx.await, Ok(true)) {
+            approval_status = Some(ZoneApprovalStatus::PendingSignedApproval);
+        }
+
+        // Query zone keys
+        let mut keys = vec![];
+        match std::fs::read_to_string(&state_path) {
+            Ok(json) => {
+                let keyset_state: KeySetState = serde_json::from_str(&json).unwrap();
+                for (pubref, key) in keyset_state.keyset.keys() {
+                    let (key_type, signer) = match key.keytype() {
+                        KeyType::Ksk(s) => (api::KeyType::Ksk, s.signer()),
+                        KeyType::Zsk(s) => (api::KeyType::Zsk, s.signer()),
+                        KeyType::Csk(s1, s2) => (api::KeyType::Csk, s1.signer() || s2.signer()),
+                        KeyType::Include(_) => continue,
+                    };
+                    keys.push(KeyInfo {
+                        pubref: pubref.clone(),
+                        key_type,
+                        key_tag: key.key_tag(),
+                        signer,
+                    });
+                }
+            }
+            Err(err) => {
+                error!("Unable to read `dnst keyset` state file '{state_path}' while querying status of zone {name} for the API: {err}");
+            }
+        }
+
+        // Query signing status
+        let mut signing_report = None;
+        if stage >= ZoneStage::Signed {
+            let (report_tx, rx) = oneshot::channel();
+            app_cmd_tx
+                .send((
+                    "ZS".to_owned(),
+                    ApplicationCommand::GetSigningReport {
+                        zone_name: name.clone(),
+                        report_tx,
+                    },
+                ))
+                .ok();
+            if let Ok(report) = rx.await {
+                signing_report = Some(report);
+            }
+        }
+
+        let receipt_report =
+            if let (Some(finished_at), Some(zone_loaded_in)) = (zone_loaded_at, zone_loaded_in) {
+                let started_at = finished_at.checked_sub(zone_loaded_in).unwrap();
+                Some(ZoneLoaderReport {
+                    started_at,
+                    finished_at,
+                    byte_count: zone_loaded_bytes,
+                })
+            } else {
+                None
+            };
+
+        // Query zone serials
+        let mut unsigned_serial = None;
+        if let Some(zone) = unsigned_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                unsigned_serial = Some(soa.serial());
+            }
+        }
+        let mut signed_serial = None;
+        if let Some(zone) = signed_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                signed_serial = Some(soa.serial());
+            }
+        }
+        let mut published_serial = None;
+        if let Some(zone) = published_zone {
+            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+                published_serial = Some(soa.serial());
+            }
+        }
+
+        // If the timing were unlucky we may have a published serial but not
+        // signed serial as the signed zone may have just been removed. Use
+        // the published serial as the signed serial in this case.
+        if signed_serial.is_none() && published_serial.is_some() {
+            signed_serial = published_serial;
+        }
 
         Ok(ZoneStatus {
             name: name.clone(),
             source,
             policy,
             stage,
+            keys,
             key_status,
+            approval_status,
+            unsigned_serial,
+            signed_serial,
+            published_serial,
+            unsigned_review_addr,
+            signed_review_addr,
+            publish_addr,
+            signing_report,
+            receipt_report,
         })
     }
 

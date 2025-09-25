@@ -5,13 +5,11 @@ use std::{net::SocketAddr, time::Duration};
 use bytes::Bytes;
 use camino::Utf8Path;
 use domain::base::Ttl;
-use domain::{
-    base::{Name, Serial},
-    rdata::dnssec::Timestamp,
-};
+use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
+use crate::zone::HistoryItem;
 use crate::{
     policy::{
         KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
@@ -44,8 +42,8 @@ pub struct Spec {
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
 
-    /// The last serial number we signed for this zone
-    pub last_signed_serial: Option<Serial>,
+    /// History of interesting events that occurred for this zone.
+    pub history: Vec<HistoryItem>,
 }
 
 //--- Conversion
@@ -58,7 +56,7 @@ impl Spec {
             source: ZoneLoadSourceSpec::build(&zone.source),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
-            last_signed_serial: zone.last_signed_serial,
+            history: zone.history.clone(),
         }
     }
 }

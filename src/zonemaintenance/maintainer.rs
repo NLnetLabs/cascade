@@ -828,7 +828,7 @@ where
         match time_tracking.write().await.entry(zone_id) {
             Vacant(e) => {
                 let read = zone.read();
-                if let Ok(Some((soa, _))) = Self::read_soa(&read, apex_name).await {
+                if let Ok(Some((soa, _))) = read_soa(&read, apex_name).await {
                     e.insert(ZoneRefreshState::new(&soa));
                     Ok(Some(soa.refresh()))
                 } else {
@@ -1184,10 +1184,10 @@ where
                 Err(())
             }
 
-            Ok(new_soa) => {
+            Ok((new_soa, bytes)) => {
                 if let Some(new_soa) = new_soa {
                     // Refresh succeeded:
-                    zone_refresh_info.refresh_succeeded(&new_soa);
+                    zone_refresh_info.refresh_succeeded(&new_soa, bytes);
                 } else {
                     // No transfer was required, either because transfer is
                     // not enabled at the primaries for the zone or the zone
@@ -1215,7 +1215,7 @@ where
         initial_xfr_addr: Option<SocketAddr>,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
-    ) -> Result<Option<Soa<Name<Bytes>>>, ZoneMaintainerError> {
+    ) -> Result<(Option<Soa<Name<Bytes>>>, usize), ZoneMaintainerError> {
         let zone_id = ZoneId::from(zone);
         // Was this zone already refreshed recently?
         {
@@ -1229,7 +1229,7 @@ where
                         MIN_DURATION_BETWEEN_ZONE_REFRESHES.as_secs(),
                         age.as_secs()
                     );
-                        return Ok(None);
+                        return Ok((None, 0));
                     }
                 }
             }
@@ -1257,7 +1257,7 @@ where
         // the primary is higher. If the zone is a new secondary it will not
         // have a SOA RR and any available data for the zone available at a
         // primary should be accepted.
-        let soa = Self::read_soa(&zone.read(), zone.apex_name().clone())
+        let soa = read_soa(&zone.read(), zone.apex_name().clone())
             .await
             .map_err(|_out_of_zone_err| {
                 ZoneMaintainerError::InternalError(
@@ -1286,11 +1286,11 @@ where
                 .await;
 
                 match res {
-                    Ok(Some(_)) => {
+                    Ok((Some(_), _bytes)) => {
                         // Success!
                         return res;
                     }
-                    Ok(None) => {
+                    Ok((None, _)) => {
                         // No transfer supported to this primary or this
                         // primary has equal or older data than we already
                         // have. Try the next primary.
@@ -1311,7 +1311,7 @@ where
         }
 
         if num_ok_primaries > 0 {
-            Ok(None)
+            Ok((None, 0))
         } else {
             Err(saved_err.unwrap())
         }
@@ -1324,7 +1324,7 @@ where
         xfr_config: &XfrConfig,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
-    ) -> Result<Option<Soa<Name<Bytes>>>, ZoneMaintainerError> {
+    ) -> Result<(Option<Soa<Name<Bytes>>>, usize), ZoneMaintainerError> {
         // Build the SOA request message
         let msg = MessageBuilder::new_vec();
         let mut msg = msg.question();
@@ -1391,7 +1391,7 @@ where
             if let Some(zone_refresh_info) = tt.get_mut(&zone_id) {
                 if !newer_data_available {
                     zone_refresh_info.soa_serial_check_succeeded(None);
-                    return Ok(None);
+                    return Ok((None, 0));
                 } else {
                     zone_refresh_info.soa_serial_check_succeeded(Some(primary_soa_serial));
                 }
@@ -1410,7 +1410,7 @@ where
                         "Transfer not enabled for possibly outdated secondary zone '{}'",
                         zone.apex_name()
                     );
-                    return Ok(None);
+                    return Ok((None, 0));
                 }
                 XfrStrategy::AxfrOnly => Rtype::AXFR,
                 XfrStrategy::IxfrOnly => Rtype::IXFR,
@@ -1476,19 +1476,19 @@ where
                     continue;
                 }
 
-                Ok(new_soa) => {
+                Ok((new_soa, bytes)) => {
                     let mut tt = time_tracking.write().await;
                     if let Some(zone_refresh_info) = tt.get_mut(&zone_id) {
-                        zone_refresh_info.refresh_succeeded(&new_soa);
+                        zone_refresh_info.refresh_succeeded(&new_soa, bytes);
                     }
-                    return Ok(Some(new_soa));
+                    return Ok((Some(new_soa), bytes));
                 }
 
                 Err(err) => return Err(err),
             }
         }
 
-        Ok(None)
+        Ok((None, 0))
     }
 
     /// Does the primary have a newer serial than us?
@@ -1521,7 +1521,7 @@ where
         key: Option<Key>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
-    ) -> Result<Soa<Name<Bytes>>, ZoneMaintainerError> {
+    ) -> Result<(Soa<Name<Bytes>>, usize), ZoneMaintainerError> {
         // Update the zone from the primary using XFR.
         info!(
             "Zone '{}' is outdated, attempting to sync zone by {xfr_type} from {}",
@@ -1536,7 +1536,7 @@ where
         let msg = if xfr_type == Rtype::IXFR {
             let mut msg = msg.authority();
             let read = zone.read();
-            let Ok(Some((soa, ttl))) = Self::read_soa(&read, zone.apex_name().clone()).await else {
+            let Ok(Some((soa, ttl))) = read_soa(&read, zone.apex_name().clone()).await else {
                 trace!(
                     "Internal error - missing SOA for zone '{}'",
                     zone.apex_name()
@@ -1553,6 +1553,7 @@ where
 
         let mut xfr_interpreter = XfrResponseInterpreter::new();
         let mut zone_updater = ZoneUpdater::new(zone.clone(), true).await?;
+        let mut bytes = 0;
 
         match transport {
             TransportStrategy::None => unreachable!(),
@@ -1594,6 +1595,7 @@ where
                 if msg.is_error() {
                     return Err(ZoneMaintainerError::ResponseError(msg.opt_rcode()));
                 }
+                bytes += msg.as_slice().len();
 
                 let it = xfr_interpreter
                     .interpret_response(msg)
@@ -1698,6 +1700,7 @@ where
                         return Err(ZoneMaintainerError::ResponseError(msg.opt_rcode()));
                     }
 
+                    bytes += msg.as_slice().len();
                     num_responses_received += 1;
 
                     let it = xfr_interpreter
@@ -1754,7 +1757,7 @@ where
             }
         }
 
-        let soa_and_ttl = Self::read_soa(&zone.read(), zone.apex_name().clone())
+        let soa_and_ttl = read_soa(&zone.read(), zone.apex_name().clone())
             .await
             .map_err(|_out_of_zone_err| {
                 ZoneMaintainerError::InternalError("Unable to read SOA for zone post XFR in")
@@ -1766,26 +1769,7 @@ where
             ));
         };
 
-        Ok(soa)
-    }
-
-    #[allow(clippy::borrowed_box)]
-    async fn read_soa(
-        read: &Box<dyn ReadableZone>,
-        qname: Name<Bytes>,
-    ) -> Result<Option<(Soa<Name<Bytes>>, Ttl)>, OutOfZone> {
-        let answer = match read.is_async() {
-            true => read.query_async(qname, Rtype::SOA).await,
-            false => read.query(qname, Rtype::SOA),
-        }?;
-
-        if let AnswerContent::Data(rrset) = answer.content() {
-            if let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data() {
-                return Ok(Some((soa.clone(), rrset.ttl())));
-            }
-        }
-
-        Ok(None)
+        Ok((soa, bytes))
     }
 
     #[allow(clippy::borrowed_box)]
@@ -1840,7 +1824,7 @@ where
 
         let read = zone.read();
 
-        let Some((soa, _)) = Self::read_soa(&read, zone.apex_name().clone())
+        let Some((soa, _)) = read_soa(&read, zone.apex_name().clone())
             .await
             .map_err(|_| ())?
         else {
@@ -1995,6 +1979,25 @@ where
             };
         }
     }
+}
+
+#[allow(clippy::borrowed_box)]
+pub async fn read_soa(
+    read: &Box<dyn ReadableZone>,
+    qname: Name<Bytes>,
+) -> Result<Option<(Soa<Name<Bytes>>, Ttl)>, OutOfZone> {
+    let answer = match read.is_async() {
+        true => read.query_async(qname, Rtype::SOA).await,
+        false => read.query(qname, Rtype::SOA),
+    }?;
+
+    if let AnswerContent::Data(rrset) = answer.content() {
+        if let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data() {
+            return Ok(Some((soa.clone(), rrset.ttl())));
+        }
+    }
+
+    Ok(None)
 }
 
 struct XfrProgressReporter {
@@ -2279,9 +2282,7 @@ where
 
         if let Some(diff_from) = diff_from {
             let read = zone.read();
-            if let Ok(Some((soa, _ttl))) =
-                ZoneMaintainer::<KS, CF>::read_soa(&read, zone.apex_name().to_owned()).await
-            {
+            if let Ok(Some((soa, _ttl))) = read_soa(&read, zone.apex_name().to_owned()).await {
                 diffs = zone_info.diffs_for_range(diff_from, soa.serial()).await;
             }
         }

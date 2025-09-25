@@ -4,6 +4,7 @@ use domain::base::Serial;
 use domain::zonetree::StoredName;
 
 use crate::center::Change;
+use crate::zone::SigningTrigger;
 
 //------------ Update --------------------------------------------------------
 
@@ -35,13 +36,28 @@ pub enum Update {
         zone_name: StoredName,
         zone_serial: Serial,
     },
+
     UnsignedZoneApprovedEvent {
         zone_name: StoredName,
         zone_serial: Serial,
     },
+
+    UnsignedZoneRejectedEvent {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+
     ZoneSignedEvent {
         zone_name: StoredName,
         zone_serial: Serial,
+        trigger: SigningTrigger,
+    },
+
+    ZoneSigningFailedEvent {
+        zone_name: StoredName,
+        zone_serial: Option<Serial>,
+        trigger: SigningTrigger,
+        reason: String,
     },
 
     SignedZoneApprovedEvent {
@@ -49,7 +65,13 @@ pub enum Update {
         zone_serial: Serial,
     },
 
+    SignedZoneRejectedEvent {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+
     ResignZoneEvent {
         zone_name: StoredName,
+        trigger: SigningTrigger,
     },
 }
