@@ -732,7 +732,7 @@ fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {
         .into_iter()
         .map(|chunk| {
             let [server, public_id, private_id, algorithm, flags] = chunk else {
-                panic!()
+                unreachable!()
             };
             KeyImport::Kmip(KmipKeyImport {
                 key_type,
