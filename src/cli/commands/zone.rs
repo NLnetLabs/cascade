@@ -128,10 +128,7 @@ impl Zone {
                         println!("Success: Sent zone reload command for {}", res.name);
                         Ok(())
                     }
-                    Err(e) => {
-                        eprintln!("Failed to reload zone: {e}");
-                        Err(())
-                    }
+                    Err(e) => Err(format!("Failed to reload zone: {e}")),
                 }
             }
             ZoneCommand::Status { zone } => Self::status(client, zone).await,
