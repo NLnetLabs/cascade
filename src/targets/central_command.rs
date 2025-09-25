@@ -195,6 +195,13 @@ impl CentralCommand {
                     HistoricalEvent::SignedZoneApproved,
                     Some(zone_serial),
                 );
+                // Send a copy of PublishSignedZone to ZS to trigger a
+                // re-scan of when to re-sign next.
+                let psz = ApplicationCommand::PublishSignedZone {
+                    zone_name: zone_name.clone(),
+                    zone_serial,
+                };
+                self.center.app_cmd_tx.send(("ZS".into(), psz)).unwrap();
                 (
                     "Instructing publication server to publish the signed zone",
                     "PS",

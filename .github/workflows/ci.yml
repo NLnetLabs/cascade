@@ -23,7 +23,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+      uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
     - run: cargo build --verbose ${{ matrix.args }}
@@ -43,7 +43,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+      uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
     - run: cargo test --verbose ${{ matrix.args }}
@@ -59,7 +59,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+      uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
     - run: cargo clippy --all -- -D warnings
@@ -75,7 +75,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+      uses: hecrj/setup-rust-action@v2
       with:
         rust-version: ${{ matrix.rust }}
     - run: cargo fmt --check

@@ -193,6 +193,9 @@ pub struct LoaderPolicy {
 /// Policy for zone key management.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyManagerPolicy {
+    /// Whether and which HSM is being used by the key manager.
+    pub hsm_server_id: Option<String>,
+
     /// Whether to use a CSK (if true) or a KSK and a ZSK.
     pub use_csk: bool,
 
@@ -265,6 +268,9 @@ pub struct SignerPolicy {
 
     /// How long record signatures will be valid for.
     pub sig_validity_time: Duration,
+
+    /// How long before expiration a new signature has to be generated.
+    pub sig_remain_time: Duration,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicy,

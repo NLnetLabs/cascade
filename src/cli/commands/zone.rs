@@ -7,7 +7,6 @@ use chrono::{DateTime, Utc};
 use domain::base::{Name, Serial};
 use futures::TryFutureExt;
 use humantime::FormattedDuration;
-use log::error;
 
 use crate::api::{
     PolicyInfo, PolicyInfoError, ZoneAdd, ZoneAddError, ZoneAddResult, ZoneApprovalStatus,
@@ -72,7 +71,7 @@ pub enum ZoneCommand {
 // - reload zone (i.e. from file)
 
 impl Zone {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             ZoneCommand::Add {
                 name,
@@ -89,19 +88,14 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 match res {
                     Ok(res) => {
                         println!("Added zone {}", res.name);
                         Ok(())
                     }
-                    Err(e) => {
-                        eprintln!("Failed to add zone: {e}");
-                        Err(())
-                    }
+                    Err(e) => Err(format!("Failed to add zone: {e}")),
                 }
             }
             ZoneCommand::Remove { name } => {
@@ -110,9 +104,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Removed zone {}", res.name);
                 Ok(())
@@ -123,9 +115,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 for zone in response.zones {
                     Self::print_zone_status(client.clone(), zone).await?;
@@ -139,9 +129,7 @@ impl Zone {
                     .send()
                     .and_then(|r| async { r.error_for_status() })
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 println!("Success: Sent zone reload command for {}", zone);
                 Ok(())
@@ -150,7 +138,7 @@ impl Zone {
         }
     }
 
-    async fn status(client: CascadeApiClient, zone: Name<Bytes>) -> Result<(), ()> {
+    async fn status(client: CascadeApiClient, zone: Name<Bytes>) -> Result<(), String> {
         // TODO: move to function that can be called by the general
         // status command with a zone arg?
         let url = format!("zone/{}/status", zone);
@@ -159,20 +147,15 @@ impl Zone {
             .send()
             .and_then(|r| r.json())
             .await
-            .map_err(|e| {
-                error!("HTTP request failed: {e}");
-            })?;
+            .map_err(|e| format!("HTTP request failed: {e}"))?;
 
         match response {
             Ok(status) => Self::print_zone_status(client, status).await,
-            Err(ZoneStatusError::ZoneDoesNotExist) => {
-                println!("zone `{zone}` does not exist");
-                Err(())
-            }
+            Err(ZoneStatusError::ZoneDoesNotExist) => Err(format!("zone `{zone}` does not exist")),
         }
     }
 
-    async fn print_zone_status(client: CascadeApiClient, zone: ZoneStatus) -> Result<(), ()> {
+    async fn print_zone_status(client: CascadeApiClient, zone: ZoneStatus) -> Result<(), String> {
         // Fetch the policy for the zone.
         let url = format!("policy/{}", zone.policy);
         let response: Result<PolicyInfo, PolicyInfoError> = client
@@ -180,20 +163,14 @@ impl Zone {
             .send()
             .and_then(|r| r.json())
             .await
-            .map_err(|e| {
-                error!("HTTP request failed: {e}");
-            })?;
+            .map_err(|e| format!("HTTP request failed: {e}"))?;
 
-        let policy = match response {
-            Ok(policy) => policy,
-            Err(PolicyInfoError::PolicyDoesNotExist) => {
-                println!(
-                    "policy `{}` used by zone `{}` does not exist",
-                    zone.policy, zone.name
-                );
-                return Err(());
-            }
-        };
+        let policy = response.map_err(|_| {
+            format!(
+                "policy `{}` used by zone `{}` does not exist",
+                zone.policy, zone.name
+            )
+        })?;
 
         // Determine progress
         let progress = determine_progress(&zone, &policy);

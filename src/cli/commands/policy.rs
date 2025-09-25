@@ -1,5 +1,4 @@
 use futures::TryFutureExt;
-use log::error;
 
 use crate::{
     api::{
@@ -46,7 +45,7 @@ pub mod ansi {
 }
 
 impl Policy {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             PolicyCommand::List => {
                 let res: PolicyListResult = client
@@ -54,9 +53,7 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 for policy in res.policies {
                     println!("{policy}");
@@ -68,15 +65,12 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 let p = match res {
                     Ok(p) => p,
                     Err(e) => {
-                        error!("{e:?}");
-                        return Err(());
+                        return Err(format!("{e:?}"));
                     }
                 };
 
@@ -88,15 +82,12 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| {
-                        error!("HTTP request failed: {e}");
-                    })?;
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
 
                 let res = match res {
                     Ok(res) => res,
                     Err(err) => {
-                        error!("{err}");
-                        return Err(());
+                        return Err(err.to_string());
                     }
                 };
 
@@ -134,6 +125,7 @@ impl Policy {
 }
 
 fn print_policy(p: &PolicyInfo) {
+    let none = "<none>".to_string();
     let name = &p.name;
 
     let zones: Vec<_> = p.zones.iter().map(|z| format!("{}", z)).collect();
@@ -141,7 +133,7 @@ fn print_policy(p: &PolicyInfo) {
     let zones = if !zones.is_empty() {
         zones.join(", ")
     } else {
-        "<none>".into()
+        none.clone()
     };
 
     let serial_policy = match p.signer.serial_policy {
@@ -162,6 +154,8 @@ fn print_policy(p: &PolicyInfo) {
         },
     };
 
+    let hsm_server_id = p.key_manager.hsm_server_id.as_ref().unwrap_or(&none);
+
     fn print_review(r: &ReviewPolicyInfo) {
         println!("    review:");
         println!("      required: {}", r.required);
@@ -175,7 +169,8 @@ fn print_policy(p: &PolicyInfo) {
     println!("  zones: {zones}");
     println!("  loader:");
     print_review(&p.loader.review);
-    println!("  key manager: <unimplemented>");
+    println!("  key manager:");
+    println!("    hsm server: {hsm_server_id}");
     println!("  signer:");
     println!("    serial policy: {serial_policy}");
     println!("    signature inception offset: {inc} seconds",);

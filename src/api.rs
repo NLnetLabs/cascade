@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::center;
 use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
+use crate::units::http_server::KmipServerState;
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
@@ -229,7 +230,9 @@ pub struct LoaderPolicyInfo {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct KeyManagerPolicyInfo {}
+pub struct KeyManagerPolicyInfo {
+    pub hsm_server_id: Option<String>,
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ReviewPolicyInfo {
@@ -281,4 +284,134 @@ pub enum PolicyChange {
     Removed,
     Updated,
     Unchanged,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerAdd {
+    pub server_id: String,
+    pub ip_host_or_fqdn: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub client_cert: Option<Vec<u8>>,
+    pub client_key: Option<Vec<u8>>,
+    pub insecure: bool,
+    pub server_cert: Option<Vec<u8>>,
+    pub ca_cert: Option<Vec<u8>>,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub max_response_bytes: u32,
+    pub key_label_prefix: Option<String>,
+    pub key_label_max_bytes: u8,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerAddResult {
+    pub vendor_id: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum HsmServerAddError {
+    UnableToConnect,
+    UnableToQuery,
+    CredentialsFileCouldNotBeOpenedForWriting,
+    CredentialsFileCouldNotBeSaved,
+    KmipServerStateFileCouldNotBeCreated,
+    KmipServerStateFileCouldNotBeSaved,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerListResult {
+    pub servers: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerGetResult {
+    pub server: KmipServerState,
+}
+
+//------------ KeySet API Types ----------------------------------------------
+
+pub mod keyset {
+    use super::*;
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyRoll {
+        pub variant: KeyRollVariant,
+        pub cmd: KeyRollCommand,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyRollResult {
+        pub zone: Name<Bytes>,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub enum KeyRollError {
+        DnstCommandError {
+            status: String,
+            stdout: String,
+            stderr: String,
+        },
+        RxError,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyRemove {
+        pub key: String,
+        pub force: bool,
+        pub continue_flag: bool,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyRemoveResult {
+        pub zone: Name<Bytes>,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub enum KeyRemoveError {
+        DnstCommandError {
+            status: String,
+            stdout: String,
+            stderr: String,
+        },
+        RxError,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub enum KeyRollVariant {
+        /// Apply the subcommand to a KSK roll.
+        Ksk,
+        /// Apply the subcommand to a ZSK roll.
+        Zsk,
+        /// Apply the subcommand to a CSK roll.
+        Csk,
+        /// Apply the subcommand to an algorithm roll.
+        Algorithm,
+    }
+
+    #[derive(Deserialize, Serialize, Clone, Debug, clap::Subcommand)]
+    pub enum KeyRollCommand {
+        /// Start a key roll.
+        StartRoll,
+        /// Report that the first propagation step has completed.
+        Propagation1Complete {
+            /// The TTL that is required to be reported by the Report actions.
+            ttl: u32,
+        },
+        /// Cached information from before Propagation1Complete should have
+        /// expired by now.
+        CacheExpired1,
+        /// Report that the second propagation step has completed.
+        Propagation2Complete {
+            /// The TTL that is required to be reported by the Report actions.
+            ttl: u32,
+        },
+        /// Cached information from before Propagation2Complete should have
+        /// expired by now.
+        CacheExpired2,
+        /// Report that the final changes have propagated and the the roll is done.
+        RollDone,
+    }
 }

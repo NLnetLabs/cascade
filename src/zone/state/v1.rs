@@ -143,6 +143,9 @@ impl LoaderPolicySpec {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct KeyManagerPolicySpec {
+    /// Whether and which HSM server is being used.
+    pub hsm_server_id: Option<String>,
+
     /// Whether to use a CSK (if true) or a KSK and a ZSK.
     use_csk: bool,
 
@@ -200,6 +203,7 @@ impl KeyManagerPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> KeyManagerPolicy {
         KeyManagerPolicy {
+            hsm_server_id: self.hsm_server_id,
             use_csk: self.use_csk,
             algorithm: self.algorithm,
             ksk_validity: self.ksk_validity,
@@ -224,6 +228,7 @@ impl KeyManagerPolicySpec {
     /// Build into this specification.
     pub fn build(policy: &KeyManagerPolicy) -> Self {
         Self {
+            hsm_server_id: policy.hsm_server_id.clone(),
             use_csk: policy.use_csk,
             algorithm: policy.algorithm.clone(),
             ksk_validity: policy.ksk_validity,
@@ -261,6 +266,9 @@ pub struct SignerPolicySpec {
     /// How long record signatures will be valid for, in seconds.
     pub sig_validity_time: u64,
 
+    /// How long before expiration a new signature has to be generated, in seconds.
+    pub sig_remain_time: u64,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicySpec,
 
@@ -277,6 +285,7 @@ impl SignerPolicySpec {
             serial_policy: self.serial_policy.parse(),
             sig_inception_offset: Duration::from_secs(self.sig_inception_offset),
             sig_validity_time: Duration::from_secs(self.sig_validity_time),
+            sig_remain_time: Duration::from_secs(self.sig_remain_time),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -288,6 +297,7 @@ impl SignerPolicySpec {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
             sig_inception_offset: policy.sig_inception_offset.as_secs(),
             sig_validity_time: policy.sig_validity_time.as_secs(),
+            sig_remain_time: policy.sig_remain_time.as_secs(),
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
         }

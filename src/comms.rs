@@ -71,6 +71,7 @@ use std::fmt::{self, Debug};
 use std::net::IpAddr;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::api;
 use crate::api::ZoneAdd;
 use crate::center::Change;
 use crate::units::zone_loader::ZoneLoaderReport;
@@ -197,5 +198,16 @@ pub enum ApplicationCommand {
     GetSigningReport {
         zone_name: StoredName,
         report_tx: oneshot::Sender<SigningReport>,
+    },
+
+    RollKey {
+        zone: StoredName,
+        key_roll: api::keyset::KeyRoll,
+        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRollError>>,
+    },
+    RemoveKey {
+        zone: StoredName,
+        key_remove: api::keyset::KeyRemove,
+        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRemoveError>>,
     },
 }

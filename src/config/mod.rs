@@ -58,6 +58,12 @@ pub struct Config {
 
     /// The configuration of the zone server.
     pub server: ServerConfig,
+
+    /// The file storing KMIP server credentials.
+    pub kmip_credentials_store_path: Box<Utf8Path>,
+
+    /// The directory storing KMIP server state.
+    pub kmip_server_state_dir: Box<Utf8Path>,
 }
 
 //--- Defaults
@@ -70,6 +76,8 @@ impl Default for Config {
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
             dnst_binary_path: "dnst".into(),
+            kmip_credentials_store_path: "/var/lib/cascade/kmip/credentials.db".into(),
+            kmip_server_state_dir: "/var/lib/cascade/kmip".into(),
             remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
@@ -318,7 +326,10 @@ pub struct ReviewConfig {
 
 /// Configuration for the key manager.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct KeyManagerConfig {}
+pub struct KeyManagerConfig {
+    /// Whether and which HSM server is being used.
+    pub hsm_server_id: Option<String>,
+}
 
 //----------- ServerConfig -----------------------------------------------------
 

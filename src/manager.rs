@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::thread::available_parallelism;
 
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
@@ -14,7 +15,7 @@ use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManagerUnit;
 use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServerUnit};
-use crate::units::zone_signer::{KmipServerConnectionSettings, ZoneSignerUnit};
+use crate::units::zone_signer::ZoneSignerUnit;
 use daemonbase::process::EnvSocketsError;
 use domain::zonetree::StoredName;
 use futures::future::join_all;
@@ -75,28 +76,28 @@ pub async fn spawn(
     tokio::spawn(target.run(center_rx, update_rx));
     *center_tx_slot = Some(center_tx);
 
-    let mut kmip_server_conn_settings = HashMap::new();
+    // let mut kmip_server_conn_settings = HashMap::new();
 
-    let hsm_relay_host = std::env::var("KMIP2PKCS11_HOST").ok();
-    let hsm_relay_port = std::env::var("KMIP2PKCS11_PORT")
-        .ok()
-        .and_then(|v| v.parse::<u16>().ok());
+    // let hsm_relay_host = std::env::var("KMIP2PKCS11_HOST").ok();
+    // let hsm_relay_port = std::env::var("KMIP2PKCS11_PORT")
+    //     .ok()
+    //     .and_then(|v| v.parse::<u16>().ok());
 
-    if let Some(server_addr) = hsm_relay_host {
-        if let Some(server_port) = hsm_relay_port {
-            kmip_server_conn_settings.insert(
-                "hsmrelay".to_string(),
-                KmipServerConnectionSettings {
-                    server_addr,
-                    server_port,
-                    server_insecure: true,
-                    server_username: std::env::var("KMIP2PKCS11_USERNAME").ok(),
-                    server_password: std::env::var("KMIP2PKCS11_PASSWORD").ok(),
-                    ..Default::default()
-                },
-            );
-        }
-    }
+    // if let Some(server_addr) = hsm_relay_host {
+    //     if let Some(server_port) = hsm_relay_port {
+    //         kmip_server_conn_settings.insert(
+    //             "hsmrelay".to_string(),
+    //             KmipServerConnectionSettings {
+    //                 server_addr,
+    //                 server_port,
+    //                 server_insecure: true,
+    //                 server_username: std::env::var("KMIP2PKCS11_USERNAME").ok(),
+    //                 server_password: std::env::var("KMIP2PKCS11_PASSWORD").ok(),
+    //                 ..Default::default()
+    //             },
+    //         );
+    //     }
+    // }
 
     let zone_name =
         StoredName::from_str(&std::env::var("ZL_IN_ZONE").unwrap_or("example.com.".to_string()))
@@ -147,15 +148,18 @@ pub async fn spawn(
     unit_join_handles.insert("KM", tokio::spawn(unit.run(cmd_rx, ready_tx)));
     unit_tx_slots.insert("KM".into(), cmd_tx);
 
+    let available_parallelism = available_parallelism().unwrap().get();
+    let max_concurrent_rrsig_generation_tasks = (available_parallelism - 1).clamp(1, 32);
+
     // Spawn the zone signer.
     log::info!("Starting unit 'ZS'");
     let unit = ZoneSignerUnit {
         center: center.clone(),
         treat_single_keys_as_csks: true,
         max_concurrent_operations: 1,
-        max_concurrent_rrsig_generation_tasks: 32,
+        max_concurrent_rrsig_generation_tasks,
         use_lightweight_zone_tree: false,
-        kmip_server_conn_settings,
+        // kmip_server_conn_settings,
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let (ready_tx, ready_rx) = oneshot::channel();
