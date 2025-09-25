@@ -24,6 +24,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
 use crate::api;
+use crate::api::keyset::*;
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
 use crate::api::PolicyChanges;
@@ -126,6 +127,8 @@ impl HttpServer {
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/list", get(Self::policy_list))
             .route("/policy/{name}", get(Self::policy_show))
+            .route("/key/{zone}/roll", post(Self::key_roll))
+            .route("/key/{zone}/remove", post(Self::key_remove))
             .with_state(state.clone());
 
         // Setup listen sockets
@@ -389,6 +392,68 @@ impl HttpServer {
 
     async fn status() -> Json<ServerStatusResult> {
         Json(ServerStatusResult {})
+    }
+
+    async fn key_roll(
+        State(state): State<Arc<HttpServerState>>,
+        Path(zone): Path<Name<Bytes>>,
+        Json(key_roll): Json<KeyRoll>,
+    ) -> Json<Result<KeyRollResult, KeyRollError>> {
+        let (tx, mut rx) = mpsc::channel(10);
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "KM".into(),
+                ApplicationCommand::RollKey {
+                    zone: zone.clone(),
+                    key_roll,
+                    http_tx: tx,
+                },
+            ))
+            .unwrap();
+
+        let res = rx.recv().await;
+        let Some(res) = res else {
+            return Json(Err(KeyRollError::RxError));
+        };
+
+        if let Err(e) = res {
+            return Json(Err(e));
+        }
+
+        Json(Ok(KeyRollResult { zone }))
+    }
+
+    async fn key_remove(
+        State(state): State<Arc<HttpServerState>>,
+        Path(zone): Path<Name<Bytes>>,
+        Json(key_remove): Json<KeyRemove>,
+    ) -> Json<Result<KeyRemoveResult, KeyRemoveError>> {
+        let (tx, mut rx) = mpsc::channel(10);
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "KM".into(),
+                ApplicationCommand::RemoveKey {
+                    zone: zone.clone(),
+                    key_remove,
+                    http_tx: tx,
+                },
+            ))
+            .unwrap();
+
+        let res = rx.recv().await;
+        let Some(res) = res else {
+            return Json(Err(KeyRemoveError::RxError));
+        };
+
+        if let Err(e) = res {
+            return Json(Err(e));
+        }
+
+        Json(Ok(KeyRemoveResult { zone }))
     }
 }
 

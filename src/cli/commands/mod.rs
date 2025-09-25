@@ -1,5 +1,6 @@
 //! The commands of _cascade_.
 
+pub mod keyset;
 pub mod policy;
 pub mod status;
 pub mod zone;
@@ -21,6 +22,10 @@ pub enum Command {
     /// Manage policies
     #[command(name = "policy")]
     Policy(self::policy::Policy),
+
+    /// Execute manual key roll or key removal commands
+    #[command(name = "keyset")]
+    KeySet(self::keyset::KeySet),
     //
     // /// Manage keys
     // #[command(name = "key")]
@@ -45,6 +50,7 @@ impl Command {
             Self::Zone(zone) => zone.execute(client).await,
             Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,
+            Self::KeySet(keyset) => keyset.execute(client).await,
             // Self::Help(help) => help.execute(),
         }
     }

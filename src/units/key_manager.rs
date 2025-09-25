@@ -1,3 +1,4 @@
+use crate::api;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
@@ -80,13 +81,13 @@ impl KeyManager {
                     self.tick().await;
                 }
                 cmd = cmd_rx.recv() => {
-                    self.run_cmd(cmd)?;
+                    self.run_cmd(cmd).await?;
                 }
             }
         }
     }
 
-    fn run_cmd(&self, cmd: Option<ApplicationCommand>) -> Result<(), Terminated> {
+    async fn run_cmd(&self, cmd: Option<ApplicationCommand>) -> Result<(), Terminated> {
         log::info!("[KM] Received command: {cmd:?}");
 
         match cmd {
@@ -177,6 +178,133 @@ impl KeyManager {
                         String::from_utf8_lossy(&output.stderr)
                     );
                     return Err(Terminated);
+                }
+
+                Ok(())
+            }
+            Some(ApplicationCommand::RollKey {
+                zone,
+                key_roll:
+                    api::keyset::KeyRoll {
+                        variant: roll_variant,
+                        cmd: roll_cmd,
+                    },
+                http_tx,
+            }) => {
+                let mut cmd = self.keyset_cmd(&zone);
+
+                cmd.arg(match roll_variant {
+                    api::keyset::KeyRollVariant::Ksk => "ksk",
+                    api::keyset::KeyRollVariant::Zsk => "zsk",
+                    api::keyset::KeyRollVariant::Csk => "csk",
+                    api::keyset::KeyRollVariant::Algorithm => "algorithm",
+                });
+
+                match roll_cmd {
+                    api::keyset::KeyRollCommand::StartRoll => {
+                        cmd.arg("start-roll");
+                    }
+                    api::keyset::KeyRollCommand::Propagation1Complete { ttl } => {
+                        cmd.arg("propagation1-complete").arg(ttl.to_string());
+                    }
+                    api::keyset::KeyRollCommand::CacheExpired1 => {
+                        cmd.arg("cache-expired1");
+                    }
+                    api::keyset::KeyRollCommand::Propagation2Complete { ttl } => {
+                        cmd.arg("propagation2-complete").arg(ttl.to_string());
+                    }
+                    api::keyset::KeyRollCommand::CacheExpired2 => {
+                        cmd.arg("cache-expired2");
+                    }
+                    api::keyset::KeyRollCommand::RollDone => {
+                        cmd.arg("roll-done");
+                    }
+                }
+
+                log::info!("Running {cmd:?}");
+
+                let output = cmd.output().map_err(|e| {
+                    error!("[KM]: Error running key roll command for {zone}: {e}");
+                    Terminated
+                })?;
+                if output.status.success() {
+                    http_tx.send(Ok(())).await.unwrap();
+                } else {
+                    error!(
+                        "[KM]: Manual key roll command failed for {zone}: {}",
+                        output.status
+                    );
+                    error!(
+                        "[KM]: Manual key roll stdout: {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                    error!(
+                        "[KM]: Manual key roll stderr: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    http_tx
+                        .send(Err(api::keyset::KeyRollError::DnstCommandError {
+                            status: output.status.to_string(),
+                            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                        }))
+                        .await
+                        .unwrap();
+                }
+
+                Ok(())
+            }
+            Some(ApplicationCommand::RemoveKey {
+                zone,
+                key_remove:
+                    api::keyset::KeyRemove {
+                        key,
+                        force,
+                        continue_flag,
+                    },
+                http_tx,
+            }) => {
+                let mut cmd = self.keyset_cmd(&zone);
+
+                cmd.arg("remove-key").arg(key);
+
+                if force {
+                    cmd.arg("--force");
+                }
+
+                if continue_flag {
+                    cmd.arg("--continue");
+                }
+
+                log::info!("Running {cmd:?}");
+
+                let output = cmd.output().map_err(|e| {
+                    error!("[KM]: Error running key removal command for {zone}: {e}");
+                    Terminated
+                })?;
+                if output.status.success() {
+                    http_tx.send(Ok(())).await.unwrap();
+                } else {
+                    error!(
+                        "[KM]: Key remove command failed for {zone}: {}",
+                        output.status
+                    );
+                    error!(
+                        "[KM]: Key remove stdout {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                    error!(
+                        "[KM]: Key remove stderr {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    http_tx
+                        .send(Err(api::keyset::KeyRemoveError::DnstCommandError {
+                            status: output.status.to_string(),
+                            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                        }))
+                        .await
+                        .unwrap();
                 }
 
                 Ok(())
