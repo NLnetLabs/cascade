@@ -1,5 +1,6 @@
 //! The commands of _cascade_.
 
+pub mod hsm;
 pub mod keyset;
 pub mod policy;
 pub mod status;
@@ -39,19 +40,21 @@ pub enum Command {
     // Signer(self::signer::Signer),
     // - Command: add/remove/modify a zone // TODO: ask Arya what we meant by that
     // - Command: resign a zone immediately (optionally with custom config)
-
+    /// Manage HSMs
+    #[command(name = "hsm")]
+    Hsm(self::hsm::Hsm),
     // /// Show the manual pages
     // Help(self::help::Help),
 }
 
 impl Command {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
             Self::Zone(zone) => zone.execute(client).await,
             Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,
             Self::KeySet(keyset) => keyset.execute(client).await,
-            // Self::Help(help) => help.execute(),
+            Self::Hsm(hsm) => hsm.execute(client).await,
         }
     }
 }

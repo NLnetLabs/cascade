@@ -144,6 +144,12 @@ pub struct ConfigSpec {
     /// Path to the dnst binary that Cascade should use.
     pub dnst_binary_path: Box<Utf8Path>,
 
+    /// The file storing KMIP credentials.
+    pub kmip_credentials_store_path: Box<Utf8Path>,
+
+    /// The directory storing KMIP server state files.
+    pub kmip_server_state_dir: Box<Utf8Path>,
+
     /// Remote control configuration.
     pub remote_control: RemoteControlConfigSpec,
 
@@ -193,6 +199,8 @@ impl ConfigSpec {
             tsig_store_path: config.tsig_store_path.clone(),
             keys_dir: config.keys_dir.clone(),
             dnst_binary_path: config.dnst_binary_path.clone(),
+            kmip_credentials_store_path: config.kmip_credentials_store_path.clone(),
+            kmip_server_state_dir: config.kmip_server_state_dir.clone(),
             remote_control: RemoteControlConfigSpec::build(&config.remote_control),
             daemon: DaemonConfigSpec::build(&config.daemon),
             loader: LoaderConfigSpec::build(&config.loader),
@@ -495,20 +503,26 @@ impl ReviewConfigSpec {
 /// Configuration for the key manager.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct KeyManagerConfigSpec {}
+pub struct KeyManagerConfigSpec {
+    /// Whether and which HSM server is being used.
+    pub hsm_server_id: Option<String>,
+}
 
 //--- Conversion
 
 impl KeyManagerConfigSpec {
     /// Parse from this specification.
     pub fn parse(self) -> config::KeyManagerConfig {
-        config::KeyManagerConfig {}
+        config::KeyManagerConfig {
+            hsm_server_id: self.hsm_server_id,
+        }
     }
 
     /// Build this state specification.
     pub fn build(config: &config::KeyManagerConfig) -> Self {
-        let config::KeyManagerConfig {} = config;
-        Self {}
+        Self {
+            hsm_server_id: config.hsm_server_id.clone(),
+        }
     }
 }
 
@@ -799,6 +813,9 @@ impl LoaderPolicySpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct KeyManagerPolicySpec {
+    /// Whether and which HSM server is being used.
+    pub hsm_server_id: Option<String>,
+
     /// Whether to use a CSK (if true) or a KSK and a ZSK.
     use_csk: bool,
 
@@ -856,6 +873,7 @@ impl KeyManagerPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> KeyManagerPolicy {
         KeyManagerPolicy {
+            hsm_server_id: self.hsm_server_id,
             use_csk: self.use_csk,
             algorithm: self.algorithm,
             ksk_validity: self.ksk_validity,
@@ -880,6 +898,7 @@ impl KeyManagerPolicySpec {
     /// Build into this specification.
     pub fn build(policy: &KeyManagerPolicy) -> Self {
         Self {
+            hsm_server_id: policy.hsm_server_id.clone(),
             use_csk: policy.use_csk,
             algorithm: policy.algorithm.clone(),
             ksk_validity: policy.ksk_validity,

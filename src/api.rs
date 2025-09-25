@@ -8,6 +8,7 @@ use domain::base::Name;
 use serde::{Deserialize, Serialize};
 
 use crate::center;
+use crate::units::http_server::KmipServerState;
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
@@ -191,7 +192,9 @@ pub struct LoaderPolicyInfo {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct KeyManagerPolicyInfo {}
+pub struct KeyManagerPolicyInfo {
+    pub hsm_server_id: Option<String>,
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ReviewPolicyInfo {
@@ -243,6 +246,51 @@ pub enum PolicyChange {
     Removed,
     Updated,
     Unchanged,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerAdd {
+    pub server_id: String,
+    pub ip_host_or_fqdn: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub client_cert: Option<Vec<u8>>,
+    pub client_key: Option<Vec<u8>>,
+    pub insecure: bool,
+    pub server_cert: Option<Vec<u8>>,
+    pub ca_cert: Option<Vec<u8>>,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub max_response_bytes: u32,
+    pub key_label_prefix: Option<String>,
+    pub key_label_max_bytes: u8,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerAddResult {
+    pub vendor_id: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum HsmServerAddError {
+    UnableToConnect,
+    UnableToQuery,
+    CredentialsFileCouldNotBeOpenedForWriting,
+    CredentialsFileCouldNotBeSaved,
+    KmipServerStateFileCouldNotBeCreated,
+    KmipServerStateFileCouldNotBeSaved,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerListResult {
+    pub servers: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct HsmServerGetResult {
+    pub server: KmipServerState,
 }
 
 //------------ KeySet API Types ----------------------------------------------

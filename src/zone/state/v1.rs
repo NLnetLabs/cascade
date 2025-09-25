@@ -145,6 +145,9 @@ impl LoaderPolicySpec {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct KeyManagerPolicySpec {
+    /// Whether and which HSM server is being used.
+    pub hsm_server_id: Option<String>,
+
     /// Whether to use a CSK (if true) or a KSK and a ZSK.
     use_csk: bool,
 
@@ -202,6 +205,7 @@ impl KeyManagerPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> KeyManagerPolicy {
         KeyManagerPolicy {
+            hsm_server_id: self.hsm_server_id,
             use_csk: self.use_csk,
             algorithm: self.algorithm,
             ksk_validity: self.ksk_validity,
@@ -226,6 +230,7 @@ impl KeyManagerPolicySpec {
     /// Build into this specification.
     pub fn build(policy: &KeyManagerPolicy) -> Self {
         Self {
+            hsm_server_id: policy.hsm_server_id.clone(),
             use_csk: policy.use_csk,
             algorithm: policy.algorithm.clone(),
             ksk_validity: policy.ksk_validity,
