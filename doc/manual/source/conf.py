@@ -137,7 +137,7 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 # html_logo = 'resources/Routinator_Wordmark.svg'
 # html_favicon = 'resources/favicon.ico'
 html_theme_options = {
-    'logo_only': True,
+    'logo_only': False,
     'display_version': True,
     'style_external_links': False,
 }
