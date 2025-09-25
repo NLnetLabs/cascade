@@ -7,6 +7,7 @@ use cascade::{
     policy,
 };
 use clap::{crate_authors, crate_version};
+use std::collections::HashMap;
 use std::{
     io,
     process::ExitCode,
@@ -144,6 +145,7 @@ fn main() -> ExitCode {
         signed_zones: Default::default(),
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),
+        resign_busy: Mutex::new(HashMap::new()),
         app_cmd_tx,
         update_tx,
     });

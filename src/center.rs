@@ -1,5 +1,6 @@
 //! Cascade's central command.
 
+use std::collections::HashMap;
 use std::{
     fmt, io,
     sync::{Arc, Mutex},
@@ -8,6 +9,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
+use domain::rdata::dnssec::Timestamp;
 use domain::{base::Name, zonetree::ZoneTree};
 use tokio::sync::mpsc;
 
@@ -41,6 +43,9 @@ pub struct Center {
 
     /// The latest published contents of all zones.
     pub published_zones: Arc<ArcSwap<ZoneTree>>,
+
+    /// Zones currently being re-signed.
+    pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
 
     /// The old TSIG key store.
     pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
