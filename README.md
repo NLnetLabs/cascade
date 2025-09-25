@@ -1,5 +1,7 @@
 # Cascade
 
+[![CI](https://github.com/NLnetLabs/cascade/workflows/ci/badge.svg)](https://github.com/NLnetLabs/cascade/actions?query=workflow%3Aci)
+[![Packaging](https://github.com/NLnetLabs/cascade/actions/workflows/pkg.yml/badge.svg)](https://nlnetlabs.nl/packages/)
 [![Documentation Status](https://app.readthedocs.org/projects/cascade-signer/badge/?version=latest)](https://cascade.docs.nlnetlabs.nl/)
 [![Mastodon Follow](https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social)](https://social.nlnetlabs.nl/@nlnetlabs)
 
