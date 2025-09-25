@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use domain::base::Name;
 use futures::TryFutureExt;
-use log::error;
 
 use crate::api::keyset::*;
 use crate::cli::client::CascadeApiClient;
@@ -57,7 +56,7 @@ enum KeySetCommand {
 }
 
 impl KeySet {
-    pub async fn execute(self, client: CascadeApiClient) -> Result<(), ()> {
+    pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             KeySetCommand::Ksk { subcommand } => {
                 roll_command(&client, self.zone, subcommand, KeyRollVariant::Ksk).await
@@ -87,35 +86,29 @@ async fn roll_command(
     zone: Name<Bytes>,
     cmd: KeyRollCommand,
     variant: KeyRollVariant,
-) -> Result<(), ()> {
+) -> Result<(), String> {
     let res: Result<KeyRollResult, KeyRollError> = client
         .post(&format!("key/{zone}/roll"))
         .json(&KeyRoll { variant, cmd })
         .send()
         .and_then(|r| r.json())
         .await
-        .map_err(|e| {
-            error!("HTTP request failed: {e}");
-        })?;
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
     match res {
         Ok(_) => {
             println!("Manual key roll for {} successful", zone);
             Ok(())
         }
-        Err(e) => {
-            eprintln!("Failed manual key roll for {}", zone);
-            match e {
-                KeyRollError::DnstCommandError {
-                    status: _,
-                    stdout: _,
-                    stderr,
-                } => {
-                    eprint!("{}", stderr);
-                }
-                KeyRollError::RxError => eprintln!("Internal Server Error"),
-            }
-            Err(())
-        }
+        Err(e) => match e {
+            KeyRollError::DnstCommandError {
+                status: _,
+                stdout: _,
+                stderr,
+            } => Err(format!("Failed manual key roll for {zone}: {stderr}")),
+            KeyRollError::RxError => Err(format!(
+                "Failed manual key roll for {zone}: Internal Server Error"
+            )),
+        },
     }
 }
 
@@ -125,7 +118,7 @@ async fn remove_key_command(
     key: String,
     force: bool,
     continue_flag: bool,
-) -> Result<(), ()> {
+) -> Result<(), String> {
     let res: Result<KeyRemoveResult, KeyRemoveError> = client
         .post(&format!("key/{zone}/remove"))
         .json(&KeyRemove {
@@ -136,28 +129,22 @@ async fn remove_key_command(
         .send()
         .and_then(|r| r.json())
         .await
-        .map_err(|e| {
-            error!("HTTP request failed: {e}");
-        })?;
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
     match res {
         Ok(_) => {
             println!("Removed key {} from zone {}", key, zone);
             Ok(())
         }
-        Err(e) => {
-            eprintln!("Failed to remove key {} from zone {}", key, zone);
-            match e {
-                KeyRemoveError::DnstCommandError {
-                    status: _,
-                    stdout: _,
-                    stderr,
-                } => {
-                    eprint!("{}", stderr);
-                }
-                KeyRemoveError::RxError => eprintln!("Internal Server Error"),
-            }
-            Err(())
-        }
+        Err(e) => match e {
+            KeyRemoveError::DnstCommandError {
+                status: _,
+                stdout: _,
+                stderr,
+            } => Err(format!("Failed to remove key {key} from {zone}: {stderr}")),
+            KeyRemoveError::RxError => Err(format!(
+                "Failed to remove key {key} from {zone}: Internal Server Error"
+            )),
+        },
     }
 }
 

@@ -111,6 +111,9 @@ impl LoaderSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct KeyManagerSpec {
+    /// Whether and which HSM server is benig used.
+    pub hsm_server_id: Option<String>,
+
     /// Whether to use a CSK (if true) or a KSK and a ZSK.
     use_csk: bool,
 
@@ -168,6 +171,7 @@ impl KeyManagerSpec {
     /// Parse from this specification.
     pub fn parse(self) -> KeyManagerPolicy {
         KeyManagerPolicy {
+            hsm_server_id: self.hsm_server_id,
             use_csk: self.use_csk,
             algorithm: self.algorithm,
             ksk_validity: self.ksk_validity,
@@ -192,6 +196,7 @@ impl KeyManagerSpec {
     /// Build into this specification.
     pub fn build(policy: &KeyManagerPolicy) -> Self {
         Self {
+            hsm_server_id: policy.hsm_server_id.clone(),
             use_csk: policy.use_csk,
             algorithm: policy.algorithm.clone(),
             ksk_validity: policy.ksk_validity,
@@ -217,6 +222,8 @@ impl KeyManagerSpec {
 impl Default for KeyManagerSpec {
     fn default() -> Self {
         Self {
+            hsm_server_id: Default::default(),
+
             // Default to KSK plus ZSK. CSK key rolls are more complex.
             // No official reference.
             use_csk: false,

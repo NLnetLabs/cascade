@@ -335,6 +335,7 @@ async fn load_file_into_zone(
         })
         .map_err(|_| Terminated)?
         .len();
+
     let mut buf = inplace::Zonefile::with_capacity(zone_file_len as usize).writer();
     std::io::copy(&mut zone_file, &mut buf)
         .inspect_err(|err| {

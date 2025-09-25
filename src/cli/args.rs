@@ -28,7 +28,7 @@ pub struct Args {
 }
 
 impl Args {
-    pub async fn execute(self) -> Result<(), ()> {
+    pub async fn execute(self) -> Result<(), String> {
         let client = CascadeApiClient::new(format!("http://{}", self.server));
         self.command.execute(client).await
     }
