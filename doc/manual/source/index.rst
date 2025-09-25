@@ -35,3 +35,11 @@ Open-source with professional support services
          :alt: Mastodon
          :target: https://fosstodon.org/@nlnetlabs
    
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Getting Started
+   :name: toc-getting-started
+
+   installation
+   building
