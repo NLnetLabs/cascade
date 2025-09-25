@@ -259,6 +259,7 @@ impl CentralCommand {
         if let Some(zone) = get_zone(&self.center, name) {
             let mut zone_state = zone.state.lock().unwrap();
             zone_state.record_event(event, serial);
+            zone.mark_dirty(&mut zone_state, &self.center);
         }
     }
 }
