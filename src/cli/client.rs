@@ -41,3 +41,16 @@ impl CascadeApiClient {
         self.request(Method::POST, s)
     }
 }
+
+pub fn format_http_error(err: reqwest::Error) -> String {
+    if err.is_decode() {
+        // Use the debug representation of decoding errors otherwise the cause
+        // of the decoding failure, e.g. the underlying Serde error, gets lost
+        // and makes determining why the response couldn't be decoded a game
+        // of divide and conquer removing response fields one by one until the
+        // offending field is determined.
+        format!("HTTP request failed: {err:?}")
+    } else {
+        format!("HTTP request failed: {err}")
+    }
+}

@@ -5,7 +5,7 @@ use crate::{
         PolicyChange, PolicyChanges, PolicyInfo, PolicyInfoError, PolicyListResult,
         PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo, SignerSerialPolicyInfo,
     },
-    cli::client::CascadeApiClient,
+    cli::client::{format_http_error, CascadeApiClient},
 };
 
 #[derive(Clone, Debug, clap::Args)]
@@ -53,7 +53,7 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 for policy in res.policies {
                     println!("{policy}");
@@ -65,7 +65,7 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 let p = match res {
                     Ok(p) => p,
@@ -82,7 +82,7 @@ impl Policy {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 let res = match res {
                     Ok(res) => res,

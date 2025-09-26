@@ -6,7 +6,7 @@ use crate::api::{
     ZoneAdd, ZoneAddError, ZoneAddResult, ZoneReloadError, ZoneReloadResult, ZoneSource,
     ZoneStatus, ZoneStatusError, ZonesListResult,
 };
-use crate::cli::client::CascadeApiClient;
+use crate::cli::client::{format_http_error, CascadeApiClient};
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Zone {
@@ -80,7 +80,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 match res {
                     Ok(res) => {
@@ -96,7 +96,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 println!("Removed zone {}", res.name);
                 Ok(())
@@ -107,7 +107,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 for zone in response.zones {
                     Self::print_zone_status(zone);
@@ -121,7 +121,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 match res {
                     Ok(res) => {
@@ -144,7 +144,7 @@ impl Zone {
             .send()
             .and_then(|r| r.json())
             .await
-            .map_err(|e| format!("HTTP request failed: {e}"))?;
+            .map_err(format_http_error)?;
 
         match response {
             Ok(status) => {

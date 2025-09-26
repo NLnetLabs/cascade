@@ -23,7 +23,7 @@ use crate::{
         HsmServerAdd, HsmServerAddError, HsmServerAddResult, HsmServerGetResult,
         HsmServerListResult, PolicyInfo, PolicyInfoError, PolicyListResult,
     },
-    cli::client::CascadeApiClient,
+    cli::client::{format_http_error, CascadeApiClient},
     units::http_server::KmipServerState,
 };
 
@@ -93,7 +93,7 @@ impl Hsm {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 match res {
                     Ok(HsmServerAddResult { vendor_id }) => {
@@ -109,7 +109,7 @@ impl Hsm {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 for server in res.servers {
                     println!("{server}");
@@ -122,7 +122,7 @@ impl Hsm {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 match res {
                     Ok(res) => {
@@ -156,14 +156,14 @@ async fn get_policy_names_using_hsm(
         .send()
         .and_then(|r| r.json())
         .await
-        .map_err(|e| format!("HTTP request failed: {e}"))?;
+        .map_err(format_http_error)?;
     for policy_name in res.policies {
         let res: Result<PolicyInfo, PolicyInfoError> = client
             .get(&format!("policy/{policy_name}"))
             .send()
             .and_then(|r| r.json())
             .await
-            .map_err(|e| format!("HTTP request failed: {e}"))?;
+            .map_err(format_http_error)?;
 
         let p = match res {
             Ok(p) => p,
