@@ -7,7 +7,7 @@ use cascade::{
     policy,
 };
 use clap::{crate_authors, crate_version};
-use std::collections::HashMap;
+use std::{collections::HashMap, fs::create_dir_all};
 use std::{
     io,
     process::ExitCode,
@@ -72,6 +72,17 @@ fn main() -> ExitCode {
             log::error!("Cascade couldn't be configured: {err}");
             return ExitCode::FAILURE;
         }
+
+        // Create the policies directory (and its parent components) if they don't exist
+        // TODO: Once we implement live config reloading, this should move somewhere else
+        // to also create the policies directory as specified in a the reloaded config.
+        if let Err(e) = create_dir_all(&*state.config.policy_dir) {
+            log::error!(
+                "Unable to create policy directory '{}': {e}",
+                &state.config.policy_dir
+            );
+            return ExitCode::FAILURE;
+        };
 
         // Load all policies.
         if let Err(err) = policy::reload_all(&mut state.policies, &state.config) {
