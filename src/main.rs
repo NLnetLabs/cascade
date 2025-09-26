@@ -74,6 +74,8 @@ fn main() -> ExitCode {
         }
 
         // Create the policies directory (and its parent components) if they don't exist
+        // TODO: Once we implement live config reloading, this should move somewhere else
+        // to also create the policies directory as specified in a the reloaded config.
         if let Err(e) = create_dir_all(&*state.config.policy_dir) {
             log::error!(
                 "Unable to create policy directory '{}': {e}",
