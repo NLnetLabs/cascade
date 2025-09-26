@@ -4,6 +4,7 @@ pub mod hsm;
 pub mod keyset;
 pub mod policy;
 pub mod status;
+pub mod template;
 pub mod zone;
 
 use super::client::CascadeApiClient;
@@ -45,6 +46,9 @@ pub enum Command {
     Hsm(self::hsm::Hsm),
     // /// Show the manual pages
     // Help(self::help::Help),
+    /// Generate example config or policy files
+    #[command(name = "template")]
+    Template(self::template::Template),
 }
 
 impl Command {
@@ -55,6 +59,7 @@ impl Command {
             Self::Policy(policy) => policy.execute(client).await,
             Self::KeySet(keyset) => keyset.execute(client).await,
             Self::Hsm(hsm) => hsm.execute(client).await,
+            Self::Template(template) => template.execute(client).await,
         }
     }
 }
