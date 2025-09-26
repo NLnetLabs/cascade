@@ -46,7 +46,7 @@ pub enum Command {
     Hsm(self::hsm::Hsm),
     // /// Show the manual pages
     // Help(self::help::Help),
-    /// Generate example config or policy files
+    /// Print example config or policy files
     #[command(name = "template")]
     Template(self::template::Template),
 }
