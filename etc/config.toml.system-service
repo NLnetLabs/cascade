@@ -103,7 +103,7 @@ log-target = { type = "syslog" }
 # Only applied if daemonize = true.
 pid-file = "/var/run/cascade.pid"
 
-u:cc# A directory to chroot into after startup.
+# A directory to chroot into after startup.
 #
 # Cascade will chroot into the specified directory after initialization.  Note
 # that this will fail if Cascade is started without administrator privileges.
