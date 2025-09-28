@@ -83,13 +83,16 @@ Filesystem Usage
 ----------------
 
 Cascade at present stores its state in on-disk files in the TOML format, by
-default at various locations under a single parent directory. As any PKCS#11
+default at various locations under a single parent directory.
+
+As any PKCS#11
 module is *NOT* loaded by the Cascade daemon but by the separate `kmip2pkcs11`
 daemon, the Cascade daemon does *NOT* require access to PKCS#11 config files
-nor does it need to be able to make outbound connections to the HSM (though
-the launched `dnst keyset` tool *WILL* need outbound access to the HSM in order
-to generate and sign HSM KSKs for signing DNSSEC related RRSETs at the apex of
-the zone).
+nor does it need to be able to make outbound connections to the HSM.
+
+The `dnst keyset` tool when invoked by Cascade however *WILL* need outbound
+access to the HSM in order to generate and sign HSM KSKs for signing DNSSEC
+related RRSETs at the apex of the zone).
 
 Managing State
 --------------
