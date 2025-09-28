@@ -127,9 +127,16 @@ impl Hsm {
                 match res {
                     Ok(res) => {
                         print_server(&res.server);
-                        println!("Policies using this HSM:");
-                        for policy_name in get_policy_names_using_hsm(client, &server_id).await? {
-                            println!("  - {policy_name}");
+                        print!("Policies using this HSM:");
+                        let policies = get_policy_names_using_hsm(client, &server_id).await?;
+
+                        if policies.is_empty() {
+                            println!(" None");
+                        } else {
+                            println!();
+                            for policy_name in policies {
+                                println!("  - {policy_name}");
+                            }
                         }
                     }
                     Err(()) => return Err(format!("HSM '{server_id}' not known.")),
@@ -152,7 +159,7 @@ async fn get_policy_names_using_hsm(
 ) -> Result<Vec<String>, String> {
     let mut policies_using_hsm = vec![];
     let res: PolicyListResult = client
-        .get("policy/list")
+        .get("policy/")
         .send()
         .and_then(|r| r.json())
         .await
