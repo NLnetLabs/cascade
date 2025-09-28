@@ -157,7 +157,7 @@ impl Zone {
         let response: Result<ZoneStatus, ZoneStatusError> = client
             .get(&url)
             .send()
-            .and_then(|r| { log::error!("Decoding..."); r.json() })
+            .and_then(|r| r.json())
             .await
             .map_err(|e| format!("HTTP request failed: {e:?}"))?;
 
