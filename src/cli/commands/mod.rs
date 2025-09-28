@@ -1,5 +1,6 @@
 //! The commands of _cascade_.
 
+pub mod config;
 pub mod hsm;
 pub mod keyset;
 pub mod policy;
@@ -10,6 +11,10 @@ use super::client::CascadeApiClient;
 
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum Command {
+    /// Manage Cascade's configuration.
+    #[command(name = "config")]
+    Config(self::config::Config),
+
     /// Manage zones
     #[command(name = "zone")]
     Zone(self::zone::Zone),
@@ -50,6 +55,7 @@ pub enum Command {
 impl Command {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
+            Self::Config(cmd) => cmd.execute(client).await,
             Self::Zone(zone) => zone.execute(client).await,
             Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,

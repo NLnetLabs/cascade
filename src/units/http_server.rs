@@ -118,6 +118,7 @@ impl HttpServer {
             // Using the /_unit sub-path to not clutter the rest of the API
             .nest("/_unit", unit_router)
             .route("/status", get(Self::status))
+            .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
@@ -171,6 +172,26 @@ impl HttpServer {
         }
 
         Ok(())
+    }
+
+    /// Reload the configuration file.
+    async fn config_reload(
+        State(state): State<Arc<HttpServerState>>,
+        Json(command): Json<ConfigReload>,
+    ) -> Json<ConfigReloadResult> {
+        let ConfigReload {} = command;
+
+        match crate::config::reload(&state.center) {
+            Ok(()) => Json(Ok(ConfigReloadOutput {})),
+
+            Err(crate::config::file::FileError::Load(error)) => {
+                Json(Err(ConfigReloadError::Load(error.to_string())))
+            }
+
+            Err(crate::config::file::FileError::Parse(error)) => {
+                Json(Err(ConfigReloadError::Parse(error.to_string())))
+            }
+        }
     }
 
     async fn zone_add(

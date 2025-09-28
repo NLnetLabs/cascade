@@ -16,6 +16,35 @@ use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
+//----------- ConfigReload -----------------------------------------------------
+
+/// Reload Cascade's configuration file.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ConfigReload {
+    // TODO: Support dry runs.
+}
+
+/// The result of a [`ConfigReload`] command.
+pub type ConfigReloadResult = Result<ConfigReloadOutput, ConfigReloadError>;
+
+/// The output of a [`ConfigReload`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ConfigReloadOutput {
+    // TODO: A diff between the old and new config.
+}
+
+/// An error from a [`ConfigReload`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ConfigReloadError {
+    /// The file could not be loaded.
+    Load(String),
+
+    /// The file could not be parsed.
+    Parse(String),
+}
+
+//------------------------------------------------------------------------------
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAdd {
     pub name: Name<Bytes>,
