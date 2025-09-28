@@ -9,9 +9,9 @@ stages:
 
     - Loading
       - Approving
-	    - Signing
-		  - Approving
-		    - Publishing
+        - Signing
+          - Approving
+            - Publishing
 
 Bespoke Zone Verification
 -------------------------
