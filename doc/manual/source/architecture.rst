@@ -57,9 +57,9 @@ Cascade daemon. If using a PKCS#11 compatible HSM you will also need to run
 the `kmip2pksc11` daemon which will receive KMIP TCP TLS requests from Cascade
 and convert them into operations to execute against a loaded PKCS#11 module.
 
-In this latter setup it may appear to some to resemble OpenDNSSEC in that
-it has two processes, one daemon acting as a nameserver and issuing signig
-instructions to the other daemon.
+In this latter setup it may appear similar to the architecture of OpenDNSSEC
+in that it has two processes, one daemon acting as a nameserver and issuing
+signig instructions to the other daemon.
 
 However, the resemblance is only slight, as there are no shared on-disk
 configuration files via which the daemons communicate, and thus no shared
