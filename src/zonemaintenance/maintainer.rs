@@ -1536,8 +1536,8 @@ where
     ) -> Result<(Soa<Name<Bytes>>, usize), ZoneMaintainerError> {
         // Abort if the zone is in a hard halt state.
         {
-            let zone = get_zone(&center, zone.apex_name())
-                .ok_or_else(|| ZoneMaintainerError::UnknownZone)?;
+            let zone =
+                get_zone(&center, zone.apex_name()).ok_or(ZoneMaintainerError::UnknownZone)?;
             let zone_state = zone.state.lock().unwrap();
             if let Some(err) = zone_state.halted(true) {
                 return Err(ZoneMaintainerError::ZoneHardHalted(err));

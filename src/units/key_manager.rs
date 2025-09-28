@@ -472,7 +472,7 @@ impl TryFrom<&Utf8PathBuf> for KeySetInfo {
         // Get the modified time of the state file before we read
         // state file itself. This is safe if there is a concurrent
         // update.
-        let keyset_state_modified = file_modified(&state_path)?;
+        let keyset_state_modified = file_modified(state_path)?;
 
         /// Persistent state for the keyset command.
         /// Copied frmo the keyset branch of dnst.
@@ -873,7 +873,7 @@ impl KmipClientCredentialsFile {
     }
 
     /// Remove any existing configuration for the specified KMIP server.
-
+    ///
     /// Returns any previous configuration if found.
     pub fn remove(&mut self, server_id: &str) -> Option<KmipClientCredentials> {
         self.credentials.0.remove(server_id)
@@ -905,8 +905,8 @@ impl KeySetCommand {
     pub fn new(
         name: StoredName,
         center: Arc<Center>,
-        keys_dir: Box<Utf8Path>,
-        dnst_binary_path: Box<Utf8Path>,
+        #[allow(clippy::boxed_local)] keys_dir: Box<Utf8Path>,
+        #[allow(clippy::boxed_local)] dnst_binary_path: Box<Utf8Path>,
     ) -> Self {
         let cfg_path = keys_dir.join(format!("{name}.cfg"));
         let mut cmd = Command::new(dnst_binary_path.as_std_path());

@@ -211,6 +211,7 @@ pub enum HistoricalEvent {
 
 impl HistoricalEvent {
     pub fn is_of_type(&self, typ: HistoricalEventType) -> bool {
+        #[allow(clippy::match_like_matches_macro)]
         match (self, typ) {
             (HistoricalEvent::Added, HistoricalEventType::Added) => true,
             (HistoricalEvent::Removed, HistoricalEventType::Removed) => true,
