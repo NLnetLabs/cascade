@@ -10,7 +10,7 @@ use humantime::FormattedDuration;
 use crate::api::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::cli::commands::policy::ansi;
-use crate::zone::PipelineMode;
+use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::SigningReport;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -56,6 +56,13 @@ pub enum ZoneCommand {
         detailed: bool,
 
         /// The zone to report the status of.
+        zone: Name<Bytes>,
+    },
+
+    /// Get the history of a single zone
+    #[command(name = "history")]
+    History {
+        /// The zone toe report the history of.
         zone: Name<Bytes>,
     },
 }
@@ -115,7 +122,7 @@ impl Zone {
             }
             ZoneCommand::List => {
                 let response: ZonesListResult = client
-                    .get("zones/list")
+                    .get("zone/")
                     .send()
                     .and_then(|r| r.json())
                     .await
@@ -143,28 +150,111 @@ impl Zone {
                     Err(e) => Err(format!("Failed to reload zone: {e}")),
                 }
             }
-            ZoneCommand::Status { zone, detailed } => Self::status(client, zone, detailed).await,
-        }
-    }
+            ZoneCommand::Status { zone, detailed } => {
+                let url = format!("zone/{}/status", zone);
+                let response: Result<ZoneStatus, ZoneStatusError> = client
+                    .get(&url)
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
 
-    async fn status(
-        client: CascadeApiClient,
-        zone: Name<Bytes>,
-        detailed: bool,
-    ) -> Result<(), String> {
-        // TODO: move to function that can be called by the general
-        // status command with a zone arg?
-        let url = format!("zone/{}/status", zone);
-        let response: Result<ZoneStatus, ZoneStatusError> = client
-            .get(&url)
-            .send()
-            .and_then(|r| r.json())
-            .await
-            .map_err(format_http_error)?;
+                match response {
+                    Ok(status) => Self::print_zone_status(client, status, detailed).await,
+                    Err(ZoneStatusError::ZoneDoesNotExist) => {
+                        Err(format!("zone `{zone}` does not exist"))
+                    }
+                }
+            }
+            ZoneCommand::History { zone } => {
+                let url = format!("zone/{}/history", zone);
+                let response: Result<ZoneHistory, ZoneHistoryError> = client
+                    .get(&url)
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
 
-        match response {
-            Ok(status) => Self::print_zone_status(client, status, detailed).await,
-            Err(ZoneStatusError::ZoneDoesNotExist) => Err(format!("zone `{zone}` does not exist")),
+                match response {
+                    Ok(response) => {
+                        println!("{:25} {:10} Event", "Timestamp", "Serial");
+                        println!("{:25} {:10} -----", "---------", "------");
+                        for history_item in response.history {
+                            let when = to_rfc3339(history_item.when);
+                            let serial = match history_item.serial {
+                                Some(serial) => serial.to_string(),
+                                None => "-".to_string(),
+                            };
+                            let what = match &history_item.event {
+                                HistoricalEvent::Added => "Zone added".to_string(),
+                                HistoricalEvent::Removed => "Zone removed".to_string(),
+                                HistoricalEvent::PolicyChanged => "Policy changed".to_string(),
+                                HistoricalEvent::SourceChanged => "Source changed".to_string(),
+                                HistoricalEvent::NewVersionReceived => {
+                                    "New version received".to_string()
+                                }
+                                HistoricalEvent::SigningSucceeded { trigger } => {
+                                    format!(
+                                        "Signing succeeded (triggered by {})",
+                                        match trigger {
+                                            SigningTrigger::ExternallyModifiedKeySetState =>
+                                                "externally modified keyset state",
+                                            SigningTrigger::SignatureExpiration =>
+                                                "pending signature expiration",
+                                            SigningTrigger::ZoneChangesApproved =>
+                                                "unsigned zone review approved",
+                                            SigningTrigger::KeySetModifiedAfterCron =>
+                                                "keyset cron modified keyset state",
+                                        }
+                                    )
+                                }
+                                HistoricalEvent::SigningFailed { trigger, reason } => {
+                                    format!(
+                                        "Signing failed (triggered by {}): {reason}",
+                                        match trigger {
+                                            SigningTrigger::ExternallyModifiedKeySetState =>
+                                                "externally modified keyset state",
+                                            SigningTrigger::SignatureExpiration =>
+                                                "pending signature expiration",
+                                            SigningTrigger::ZoneChangesApproved =>
+                                                "signed zone review approved",
+                                            SigningTrigger::KeySetModifiedAfterCron =>
+                                                "keyset cron modified keyset state",
+                                        }
+                                    )
+                                }
+                                HistoricalEvent::UnsignedZoneReview { status, .. } => format!(
+                                    "Unsigned zone review {}",
+                                    match status {
+                                        ZoneReviewStatus::Pending => "pending",
+                                        ZoneReviewStatus::Approved => "approved",
+                                        ZoneReviewStatus::Rejected => "rejected",
+                                    }
+                                ),
+                                HistoricalEvent::SignedZoneReview { status, .. } => format!(
+                                    "Signed zone review {}",
+                                    match status {
+                                        ZoneReviewStatus::Pending => "pending",
+                                        ZoneReviewStatus::Approved => "approved",
+                                        ZoneReviewStatus::Rejected => "rejected",
+                                    }
+                                ),
+                                HistoricalEvent::KeySetCommand(cmd) => {
+                                    format!("Keyset command succeeded: {cmd}")
+                                }
+                                HistoricalEvent::KeySetError(err) => {
+                                    format!("Keyset command failed: {err}")
+                                }
+                            };
+                            println!("{when} {serial:10} {what}");
+                        }
+                        Ok(())
+                    }
+                    Err(ZoneHistoryError::ZoneDoesNotExist) => {
+                        Err(format!("zone `{zone}` does not exist"))
+                    }
+                }
+            }
         }
     }
 
@@ -384,7 +474,7 @@ impl Progress {
             ZoneSource::Zonefile { .. } => ("Loaded", "filesystem"),
             ZoneSource::Server { .. } => ("Fetched", "network"),
         };
-        println!("  Loaded at {}", to_rfc3339(report.finished_at));
+        println!("  Loaded at {}", to_rfc3339_ago(report.finished_at));
         println!(
             "  {loaded_fetched} {} from the {filesystem_network} in {} seconds",
             format_size(report.byte_count, " ", "B"),
@@ -503,10 +593,10 @@ impl Progress {
         if let Some(report) = &zone.signing_report {
             match report {
                 SigningReport::Requested(r) => {
-                    println!("  Signing requested at {}", to_rfc3339(r.requested_at));
+                    println!("  Signing requested at {}", to_rfc3339_ago(r.requested_at));
                 }
                 SigningReport::InProgress(r) => {
-                    println!("  Signing started at {}", to_rfc3339(r.started_at));
+                    println!("  Signing started at {}", to_rfc3339_ago(r.started_at));
                     if let (Some(unsigned_rr_count), Some(total_time)) =
                         (r.unsigned_rr_count, r.total_time)
                     {
@@ -518,7 +608,7 @@ impl Progress {
                     }
                 }
                 SigningReport::Finished(r) => {
-                    println!("  Signed at {}", to_rfc3339(r.finished_at));
+                    println!("  Signed at {}", to_rfc3339_ago(r.finished_at));
                     println!(
                         "  Signed {} in {}",
                         format_size(r.unsigned_rr_count, "", " records"),
@@ -552,11 +642,15 @@ fn serial_to_string(serial: Option<Serial>) -> String {
     }
 }
 
-fn to_rfc3339(v: SystemTime) -> String {
+fn to_rfc3339_ago(v: SystemTime) -> String {
     let now = SystemTime::now();
     let diff = now.duration_since(v).unwrap();
-    let rfc3339 = DateTime::<Utc>::from(v).to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+    let rfc3339 = to_rfc3339(v);
     format!("{rfc3339} ({} ago)", format_duration(diff))
+}
+
+fn to_rfc3339(v: SystemTime) -> String {
+    DateTime::<Utc>::from(v).to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
 }
 
 fn format_duration(duration: Duration) -> FormattedDuration {

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::center;
 use crate::units::http_server::KmipServerState;
 use crate::units::zone_loader::ZoneLoaderReport;
-use crate::zone::PipelineMode;
+use crate::zone::{HistoryItem, PipelineMode};
 use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
@@ -195,6 +195,16 @@ pub enum KeyType {
     Ksk,
     Zsk,
     Csk,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneHistory {
+    pub history: Vec<HistoryItem>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneHistoryError {
+    ZoneDoesNotExist,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

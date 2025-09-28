@@ -49,7 +49,7 @@ impl Policy {
         match self.command {
             PolicyCommand::List => {
                 let res: PolicyListResult = client
-                    .get("policy/list")
+                    .get("policy/")
                     .send()
                     .and_then(|r| r.json())
                     .await

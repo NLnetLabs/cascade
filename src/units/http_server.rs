@@ -36,6 +36,7 @@ use crate::api::keyset::*;
 use crate::api::KeyInfo;
 use crate::api::*;
 use crate::center;
+use crate::center::get_zone;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
@@ -117,16 +118,18 @@ impl HttpServer {
             // Using the /_unit sub-path to not clutter the rest of the API
             .nest("/_unit", unit_router)
             .route("/status", get(Self::status))
-            .route("/zones/list", get(Self::zones_list))
+            .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
+            // TODO: .route("/zone/{name}/", get(Self::zone_get))
             .route("/zone/{name}/remove", post(Self::zone_remove))
             .route("/zone/{name}/status", get(Self::zone_status))
+            .route("/zone/{name}/history", get(Self::zone_history))
             .route("/zone/{name}/reload", post(Self::zone_reload))
+            .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
-            .route("/policy/list", get(Self::policy_list))
             .route("/policy/{name}", get(Self::policy_show))
-            .route("/kmip", post(Self::kmip_server_add))
             .route("/kmip", get(Self::kmip_server_list))
+            .route("/kmip", post(Self::kmip_server_add))
             .route("/kmip/{server_id}", get(Self::hsm_server_get))
             .route("/key/{zone}/roll", post(Self::key_roll))
             .route("/key/{zone}/remove", post(Self::key_remove))
@@ -529,6 +532,20 @@ impl HttpServer {
             publish_addr,
             pipeline_mode,
         })
+    }
+
+    async fn zone_history(
+        State(state): State<Arc<HttpServerState>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<Result<ZoneHistory, ZoneHistoryError>> {
+        let zone = match get_zone(&state.center, &name) {
+            Some(zone) => zone,
+            None => return Json(Err(ZoneHistoryError::ZoneDoesNotExist)),
+        };
+        let zone_state = zone.state.lock().unwrap();
+        Json(Ok(ZoneHistory {
+            history: zone_state.history.clone(),
+        }))
     }
 
     async fn zone_reload(

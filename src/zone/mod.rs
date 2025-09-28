@@ -87,7 +87,6 @@ pub struct ZoneState {
     /// the moment.
     // TODO: make the pipeline stop accepting new data when hard halted.
     pub pipeline_mode: PipelineMode,
-
     // TODO:
     // - A log?
     // - Initialization?
@@ -113,8 +112,8 @@ impl ZoneState {
 
     pub fn halted(&self, hard: bool) -> Option<String> {
         match &self.pipeline_mode {
-            PipelineMode::SoftHalt(r) if !hard=> Some(r.clone()),
-            PipelineMode::HardHalt(r) if hard=> Some(r.clone()),
+            PipelineMode::SoftHalt(r) if !hard => Some(r.clone()),
+            PipelineMode::HardHalt(r) if hard => Some(r.clone()),
             _ => None,
         }
     }
