@@ -1,6 +1,46 @@
 Architecture
 ============
 
+The Pipeline
+------------
+
+Zone changes are said to cascade through a pipeline consisting of several
+stages:
+
+    - Loading
+      - Approving
+	    - Signing
+		  - Approving
+		    - Publishing
+
+Bespoke Zone Verification
+-------------------------
+
+Cascade supports optional verification of your zone data at two critical
+stages: verification of the unsigned zone, and verification of the signed
+zone.
+
+In both cases verification consists of executing an operator supplied
+script or application which can verify the zone using whatever mechanisms
+are required to satisfy your policy.
+
+Verification of the zone can be done by retrieving the zone using the DNS
+XFR protocol from dedicated "review" nameservers within Cascade, either
+verifying them directly or writing them to disk for verification by tools
+that only support working with files.
+
+On completion of the verification processs, approval or rejection is signalled
+back to Cascade by means of an (insecure in the initial version of Cascade) HTTP
+REST API.
+
+Rejecting a zone "soft" halts the Cascade pipeline for the zone, preventing it
+from cascading further down the pipeline, but allowing a newer version of the
+zone to be completely processed (unless that too should fail verification).
+
+Serious errors in the pipeline may result in a "hard" halt for the pipeline
+of a zone preventing any further processing of that zone for the current and
+future versions of the zone until an operator manually resumes the pipeline.
+
 Daemon Processes
 ----------------
 

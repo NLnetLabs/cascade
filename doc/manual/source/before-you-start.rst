@@ -30,7 +30,7 @@ Cascade is *NOT* yet intended for operation as a clustered deployment.
 As a successor to OpenDNSSEC Cascade is clearly intended to offer continuity
 to current users of OpenDNSSEC, but should be usable by anyone. In particular
 while functionally Cascade offers most of the functionality of OpenDNSSEC,
-it uses different terminology or has a slightly different architecture than
+it uses different terminology and has a slightly different architecture than
 that of OpenDNSSEC, in order to offer a superior experience to that offered
 by OpenDNSSEC.
 
