@@ -51,9 +51,9 @@ use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::payload::Update;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
-use crate::zone::{HistoricalEvent, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode};
+use crate::zone::{HistoricalEventType, SigningTrigger};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
     SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
@@ -302,39 +302,39 @@ impl ZoneSigner {
                 return false;
             }
 
-                ApplicationCommand::SignZone {
-                    zone_name,
-                    zone_serial, // TODO: the serial number is ignored, but is that okay?
-                    trigger,
-                } => {
-                    if let Err(err) = self
-                        .sign_zone(&zone_name, zone_serial.is_none(), trigger)
-                        .await
-                    {
-                        error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+            ApplicationCommand::SignZone {
+                zone_name,
+                zone_serial, // TODO: the serial number is ignored, but is that okay?
+                trigger,
+            } => {
+                if let Err(err) = self
+                    .sign_zone(&zone_name, zone_serial.is_none(), trigger)
+                    .await
+                {
+                    error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
-                        self.center
-                            .update_tx
-                            .send(Update::ZoneSigningFailedEvent {
-                                zone_name: zone_name.clone(),
-                                zone_serial,
-                                trigger,
-                                reason: err.to_string(),
-                            })
-                            .unwrap();
-                    }
+                    self.center
+                        .update_tx
+                        .send(Update::ZoneSigningFailedEvent {
+                            zone_name,
+                            zone_serial,
+                            trigger,
+                            reason: err,
+                        })
+                        .unwrap();
                 }
+            }
 
-                ApplicationCommand::GetSigningReport {
-                    zone_name,
-                    report_tx,
-                } => {
-                    if let Some(status) = self.signer_status.read().await.get(&zone_name) {
-                        if let Some(report) = self.mk_signing_report(&status.status) {
-                            let _ = report_tx.send(report).ok();
-                        };
-                    }
+            ApplicationCommand::GetSigningReport {
+                zone_name,
+                report_tx,
+            } => {
+                if let Some(status) = self.signer_status.read().await.get(&zone_name) {
+                    if let Some(report) = self.mk_signing_report(&status.status) {
+                        let _ = report_tx.send(report).ok();
+                    };
                 }
+            }
             ApplicationCommand::PublishSignedZone { .. } => {
                 trace!("[ZS]: a zone is published, recompute next time to re-sign");
                 *next_resign_time = self
@@ -398,7 +398,7 @@ impl ZoneSigner {
             let zone = state.zones.get(zone_name).unwrap();
             let zone_state = zone.0.state.lock().unwrap();
             let last_signed_serial = zone_state
-                .find_last_event(&HistoricalEvent::SigningSucceeded { trigger }, None)
+                .find_last_event(HistoricalEventType::SigningSucceeded, None)
                 .and_then(|item| item.serial);
             let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
             let kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
@@ -842,16 +842,18 @@ impl ZoneSigner {
         let zone_serial = soa_data.serial();
 
         // Store the serial in the state.
-        {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone = get_zone(&self.center, zone_name).unwrap();
-            let mut zone_state = zone.state.lock().unwrap();
-            zone_state.record_event(
-                HistoricalEvent::SigningSucceeded { trigger },
-                Some(zone_serial),
-            );
-            zone.mark_dirty(&mut zone_state, &self.center);
-        }
+        // Note: We do NOT do this here because CentralCommand does it when it
+        // sees the ZoneSignedEvent.
+        // {
+        //     // Use a block to make sure that the mutex is clearly dropped.
+        //     let zone = get_zone(&self.center, zone_name).unwrap();
+        //     let mut zone_state = zone.state.lock().unwrap();
+        //     zone_state.record_event(
+        //         HistoricalEvent::SigningSucceeded { trigger },
+        //         Some(zone_serial),
+        //     );
+        //     zone.mark_dirty(&mut zone_state, &self.center);
+        // }
 
         updater.apply(ZoneUpdate::Finished(soa_rr)).await.unwrap();
         let insertion_time = insertion_time

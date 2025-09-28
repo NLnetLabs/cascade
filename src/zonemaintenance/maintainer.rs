@@ -59,6 +59,8 @@ use domain::zonetree::{
 };
 use log::log_enabled;
 
+use crate::center::{get_zone, Center};
+
 use super::types::{
     CompatibilityMode, Event, NotifySrcDstConfig, NotifyStrategy, TransportStrategy, XfrConfig,
     XfrStrategy, ZoneChangedMsg, ZoneConfig, ZoneDiffs, ZoneId, ZoneInfo, ZoneNameServers,
@@ -160,6 +162,7 @@ where
     KS: Deref,
     KS::Target: KeyStore,
 {
+    center: Arc<Center>,
     config: Arc<ArcSwap<Config<KS, CF>>>,
     pending_zones: Arc<RwLock<HashMap<ZoneId, Zone>>>,
     member_zones: Arc<ArcSwap<ZoneTree>>,
@@ -169,26 +172,16 @@ where
     running: AtomicBool,
 }
 
-impl<KS, CF: ConnectionFactory + Default> Default for ZoneMaintainer<KS, CF>
-where
-    KS: Deref + Default,
-    KS::Target: KeyStore,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<KS, CF: ConnectionFactory + Default> ZoneMaintainer<KS, CF>
 where
     KS: Deref + Default,
     KS::Target: KeyStore,
 {
-    pub fn new() -> Self {
-        Self::new_with_config(Config::default())
+    pub fn new(center: Arc<Center>) -> Self {
+        Self::new_with_config(center, Config::default())
     }
 
-    pub fn new_with_config(config: Config<KS, CF>) -> Self {
+    pub fn new_with_config(center: Arc<Center>, config: Config<KS, CF>) -> Self {
         let pending_zones = Default::default();
         let member_zones = ZoneTree::new();
         let member_zones = Arc::new(ArcSwap::from_pointee(member_zones));
@@ -198,7 +191,7 @@ where
         let config = Arc::new(ArcSwap::from_pointee(config));
 
         ZoneMaintainer {
-            // cat_zone,
+            center,
             config,
             pending_zones,
             member_zones,
@@ -396,7 +389,9 @@ where
         let event_tx = self.event_tx.clone();
         let pending_zones = self.pending_zones.clone();
         let config = self.config.clone();
+        let center = self.center.clone();
         tokio::spawn(Self::handle_notify(
+            center,
             zones,
             pending_zones,
             msg,
@@ -520,6 +515,7 @@ where
         let event_tx = self.event_tx.clone();
         let config = self.config.clone();
         let zones = self.zones();
+        let center = self.center.clone();
 
         tokio::spawn(async move {
             // Are we actively managing refreshing of this zone?
@@ -555,6 +551,7 @@ where
                     // zone causing a notify event message to be sent
                     // which will be handled above.
                     match Self::refresh_zone_and_update_state(
+                        center,
                         timer_info.cause,
                         zone,
                         None,
@@ -898,6 +895,7 @@ where
 
     #[allow(clippy::mutable_key_type)]
     async fn handle_notify(
+        center: Arc<Center>,
         zones: Arc<ZoneTree>,
         pending_zones: Arc<RwLock<HashMap<ZoneId, Zone>>>,
         msg: ZoneChangedMsg,
@@ -1055,6 +1053,7 @@ where
 
         let initial_xfr_addr = SocketAddr::new(source, IANA_DNS_PORT_NUMBER);
         if let Err(()) = Self::refresh_zone_and_update_state(
+            center,
             ZoneRefreshCause::NotifyFromPrimary(source),
             zone,
             Some(initial_xfr_addr),
@@ -1076,6 +1075,7 @@ where
 
     #[allow(clippy::mutable_key_type)]
     async fn refresh_zone_and_update_state(
+        center: Arc<Center>,
         cause: ZoneRefreshCause,
         zone: &Zone,
         initial_xfr_addr: Option<SocketAddr>,
@@ -1112,7 +1112,14 @@ where
 
         info!("Refreshing zone '{}' due to {cause}", zone.apex_name());
 
-        let res = Self::refresh_zone(zone, initial_xfr_addr, time_tracking.clone(), config).await;
+        let res = Self::refresh_zone(
+            center,
+            zone,
+            initial_xfr_addr,
+            time_tracking.clone(),
+            config,
+        )
+        .await;
 
         let mut tt = time_tracking.write().await;
         let Some(zone_refresh_info) = tt.get_mut(&zone_id) else {
@@ -1211,6 +1218,7 @@ where
     }
 
     async fn refresh_zone(
+        center: Arc<Center>,
         zone: &Zone,
         initial_xfr_addr: Option<SocketAddr>,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
@@ -1276,6 +1284,7 @@ where
         for primary_addr in primary_addrs {
             if let Some(xfr_config) = request_xfr_from.dst(primary_addr) {
                 let res = Self::refresh_zone_from_addr(
+                    center.clone(),
                     zone,
                     current_serial,
                     *primary_addr,
@@ -1318,6 +1327,7 @@ where
     }
 
     async fn refresh_zone_from_addr(
+        center: Arc<Center>,
         zone: &Zone,
         current_serial: Option<Serial>,
         primary_addr: SocketAddr,
@@ -1447,6 +1457,7 @@ where
             );
             // TODO: Run do_xfr() in its own thread to prevent it blocking us.
             let res = Self::do_xfr(
+                center.clone(),
                 udp_client.take(),
                 transport,
                 zone,
@@ -1513,6 +1524,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     async fn do_xfr(
+        center: Arc<Center>,
         udp_client: Option<Box<dyn SendRequest<RequestMessage<Vec<u8>>> + Send + Sync>>,
         transport: TransportStrategy,
         zone: &Zone,
@@ -1522,6 +1534,16 @@ where
         config: Arc<ArcSwap<Config<KS, CF>>>,
         time_tracking: Arc<RwLock<HashMap<ZoneId, ZoneRefreshState>>>,
     ) -> Result<(Soa<Name<Bytes>>, usize), ZoneMaintainerError> {
+        // Abort if the zone is in a hard halt state.
+        {
+            let zone = get_zone(&center, zone.apex_name())
+                .ok_or_else(|| ZoneMaintainerError::UnknownZone)?;
+            let zone_state = zone.state.lock().unwrap();
+            if let Some(err) = zone_state.halted(true) {
+                return Err(ZoneMaintainerError::ZoneHardHalted(err));
+            }
+        }
+
         // Update the zone from the primary using XFR.
         info!(
             "Zone '{}' is outdated, attempting to sync zone by {xfr_type} from {}",
@@ -2664,6 +2686,7 @@ pub enum ZoneMaintainerError {
     IncompleteResponse,
     ProcessingError(domain::net::xfr::protocol::Error),
     ZoneUpdateError(domain::zonetree::update::Error),
+    ZoneHardHalted(String),
 }
 
 //--- Display
@@ -2673,18 +2696,18 @@ impl Display for ZoneMaintainerError {
         match self {
             ZoneMaintainerError::NotRunning => f.write_str("ZoneMaintainer not running"),
             ZoneMaintainerError::InternalError(err) => {
-                f.write_fmt(format_args!("Internal error: {err}"))
+                write!(f, "Internal error: {err}")
             }
             ZoneMaintainerError::UnknownZone => f.write_str("Unknown zone"),
             ZoneMaintainerError::RequestError(err) => {
-                f.write_fmt(format_args!("Error while sending request: {err}"))
+                write!(f, "Error while sending request: {err}")
             }
             ZoneMaintainerError::ResponseError(err) => {
-                f.write_fmt(format_args!("Error while receiving response: {err}"))
+                write!(f, "Error while receiving response: {err}")
             }
-            ZoneMaintainerError::IoError(err) => f.write_fmt(format_args!("I/O error: {err}")),
+            ZoneMaintainerError::IoError(err) => write!(f, "I/O error: {err}"),
             ZoneMaintainerError::ConnectionError(err) => {
-                f.write_fmt(format_args!("Unable to connect: {err}"))
+                write!(f, "Unable to connect: {err}")
             }
             ZoneMaintainerError::NoConnectionAvailable => f.write_str("No connection available"),
             ZoneMaintainerError::IxfrResponseTooLargeForUdp => {
@@ -2692,10 +2715,13 @@ impl Display for ZoneMaintainerError {
             }
             ZoneMaintainerError::IncompleteResponse => f.write_str("Incomplete response"),
             ZoneMaintainerError::ProcessingError(err) => {
-                f.write_fmt(format_args!("Processing error: {err}"))
+                write!(f, "Processing error: {err}")
             }
             ZoneMaintainerError::ZoneUpdateError(err) => {
-                f.write_fmt(format_args!("Zone update error: {err}"))
+                write!(f, "Zone update error: {err}")
+            }
+            ZoneMaintainerError::ZoneHardHalted(err) => {
+                write!(f, "ZOne hard halted error: {err}")
             }
         }
     }

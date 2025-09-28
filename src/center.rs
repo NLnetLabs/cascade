@@ -10,6 +10,7 @@ use std::{
 use arc_swap::ArcSwap;
 use bytes::Bytes;
 use domain::rdata::dnssec::Timestamp;
+use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
 use tokio::sync::mpsc;
 
@@ -146,9 +147,23 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     Ok(())
 }
 
-pub fn get_zone(center: &Center, name: &Name<Bytes>) -> Option<Arc<Zone>> {
+pub fn get_zone(center: &Center, name: &StoredName) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
+}
+
+pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reason: &str) {
+    let mut state = center.state.lock().unwrap();
+    {
+        let zone = state.zones.get(zone_name).unwrap();
+        let mut zone_state = zone.0.state.lock().unwrap();
+        if hard {
+            zone_state.hard_halt(reason.to_string());
+        } else {
+            zone_state.soft_halt(reason.to_string());
+        }
+    }
+    state.mark_dirty(center);
 }
 
 //----------- State ------------------------------------------------------------

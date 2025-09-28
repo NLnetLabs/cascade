@@ -69,7 +69,7 @@ impl ZoneLoader {
         let maintainer_config =
             Config::<_, DefaultConnFactory>::new(self.center.old_tsig_key_store.clone());
         let zone_maintainer = Arc::new(
-            ZoneMaintainer::new_with_config(maintainer_config)
+            ZoneMaintainer::new_with_config(self.center.clone(), maintainer_config)
                 .with_zone_tree(self.center.unsigned_zones.clone()),
         );
 

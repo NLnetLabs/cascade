@@ -1,14 +1,16 @@
 use std::fmt::{self, Display};
 use std::net::{IpAddr, SocketAddr};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use domain::base::{Name, Serial};
+use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
 use crate::center;
 use crate::units::zone_loader::ZoneLoaderReport;
+use crate::zone::PipelineMode;
 use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
 use crate::units::http_server::KmipServerState;
 
@@ -116,12 +118,16 @@ impl From<&str> for ZoneSource {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZonesListResult {
-    pub zones: Vec<ZoneStatus>,
+    pub zones: Vec<StoredName>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ZoneStage {
     Unsigned,
+    // TODO: Signed is not strictly correct as it is currently set based on
+    // the presence of a zone in the signed zones collection, but that happens
+    // at the start of the signing process, not only once a zone has finished
+    // being signed.
     Signed,
     Published,
 }
@@ -129,9 +135,9 @@ pub enum ZoneStage {
 impl Display for ZoneStage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
-            ZoneStage::Unsigned => "unsigned",
-            ZoneStage::Signed => "signed",
-            ZoneStage::Published => "published",
+            ZoneStage::Unsigned => "loader",
+            ZoneStage::Signed => "signer",
+            ZoneStage::Published => "publication server",
         };
         f.write_str(str)
     }
@@ -150,24 +156,33 @@ pub struct ZoneStatus {
     pub stage: ZoneStage,
     pub keys: Vec<KeyInfo>,
     pub key_status: Option<String>,
-    pub approval_status: Option<ZoneApprovalStatus>,
-    pub unsigned_serial: Option<Serial>,
-    pub signed_serial: Option<Serial>,
-    pub published_serial: Option<Serial>,
-    pub unsigned_review_addr: Option<SocketAddr>,
-    pub signed_review_addr: Option<SocketAddr>,
-    pub publish_addr: SocketAddr,
-    pub signing_report: Option<SigningReport>,
     pub receipt_report: Option<ZoneLoaderReport>,
+    pub unsigned_serial: Option<Serial>,
+    pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
+    pub unsigned_review_addr: Option<SocketAddr>,
+    pub signed_serial: Option<Serial>,
+    pub signed_review_status: Option<TimestampedZoneReviewStatus>,
+    pub signed_review_addr: Option<SocketAddr>,
+    pub signing_report: Option<SigningReport>,
+    pub published_serial: Option<Serial>,
+    pub publish_addr: SocketAddr,
+    pub pipeline_mode: PipelineMode,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub enum ZoneApprovalStatus {
-    PendingUnsignedApproval,
-    PendingSignedApproval,
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct TimestampedZoneReviewStatus {
+    pub status: ZoneReviewStatus,
+    pub when: SystemTime,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum ZoneReviewStatus {
+    Pending,
+    Approved,
+    Rejected,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KeyInfo {
     pub pubref: String,
     pub key_type: KeyType,
@@ -175,7 +190,7 @@ pub struct KeyInfo {
     pub signer: bool,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum KeyType {
     Ksk,
     Zsk,
@@ -349,11 +364,7 @@ pub mod keyset {
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
     pub enum KeyRollError {
-        DnstCommandError {
-            status: String,
-            stdout: String,
-            stderr: String,
-        },
+        DnstCommandError(String),
         RxError,
     }
 
@@ -371,11 +382,7 @@ pub mod keyset {
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
     pub enum KeyRemoveError {
-        DnstCommandError {
-            status: String,
-            stdout: String,
-            stderr: String,
-        },
+        DnstCommandError(String),
         RxError,
     }
 

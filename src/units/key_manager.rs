@@ -1,24 +1,28 @@
 use crate::api;
-use crate::center::{get_zone, Center};
+use crate::api::keyset::{KeyRemoveError, KeyRollError};
+use crate::center::{get_zone, halt_zone, Center};
 use crate::cli::commands::hsm::Error;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
 use crate::policy::KeyParameters;
+use crate::targets::central_command::record_zone_event;
 use crate::units::http_server::KmipServerState;
-use crate::zone::SigningTrigger;
+use crate::zone::{HistoricalEvent, SigningTrigger};
 use bytes::Bytes;
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use core::time::Duration;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
+use domain::zonetree::StoredName;
 use log::error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::ffi::OsStr;
+use std::fmt::Formatter;
 use std::fs::{metadata, File, OpenOptions};
-use std::io::{BufReader, BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufReader, BufWriter, ErrorKind, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot, Mutex};
@@ -85,48 +89,34 @@ impl KeyManager {
                     self.tick().await;
                 }
                 cmd = cmd_rx.recv() => {
-                    self.run_cmd(cmd).await?;
+                    log::debug!("[KM] Received command: {cmd:?}");
+                    if matches!(cmd, Some(ApplicationCommand::Terminate) | None) {
+                        return Err(Terminated);
+                    }
+
+                    if let Err(err) = self.run_cmd(cmd.unwrap()).await {
+                        log::error!("[KM] Error: {err}");
+                    }
                 }
             }
         }
     }
 
-    async fn run_cmd(&self, cmd: Option<ApplicationCommand>) -> Result<(), Terminated> {
-        log::info!("[KM] Received command: {cmd:?}");
-
+    async fn run_cmd(&self, cmd: ApplicationCommand) -> Result<(), String> {
         match cmd {
-            Some(ApplicationCommand::Terminate) | None => Err(Terminated),
-            Some(ApplicationCommand::RegisterZone {
+            ApplicationCommand::RegisterZone {
                 register: crate::api::ZoneAdd { name, .. },
-            }) => {
+            } => {
                 let state_path = self.keys_dir.join(format!("{name}.state"));
 
-                let mut cmd = self.keyset_cmd(&name);
+                let mut cmd = self.keyset_cmd(name.clone());
 
                 cmd.arg("create")
                     .arg("-n")
                     .arg(name.to_string())
                     .arg("-s")
-                    .arg(&state_path);
-
-                log::info!("Running {cmd:?}");
-
-                let output = cmd.output().map_err(|e| {
-                    error!("[KM]: Error creating keyset for {name}: {e}");
-                    Terminated
-                })?;
-                if !output.status.success() {
-                    error!("[KM]: Create command failed for {name}: {}", output.status);
-                    error!(
-                        "[KM]: Create stdout {}",
-                        String::from_utf8_lossy(&output.stdout)
-                    );
-                    error!(
-                        "[KM]: Create stderr {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    return Err(Terminated);
-                }
+                    .arg(&state_path)
+                    .output()?;
 
                 // Lookup the policy for the zone to see if it uses a KMIP
                 // server.
@@ -168,7 +158,7 @@ impl KeyManager {
                         has_credentials,
                     } = kmip_server;
 
-                    let mut cmd = self.keyset_cmd(&name);
+                    let mut cmd = self.keyset_cmd(name.clone());
 
                     // TODO: This command should get issued _after_ keyset create
                     // but _before_ keyset init, both of which are issued above.
@@ -203,89 +193,32 @@ impl KeyManager {
                     }
 
                     // TODO: --client-cert, --client-key, --server-cert and --ca-cert
-
-                    log::info!("Running {cmd:?}");
-
-                    let output = cmd.output().map_err(|e| {
-                        error!("[KM]: Error adding KMIP server '{server_id}' for {name}: {e}");
-                        Terminated
-                    })?;
-                    if !output.status.success() {
-                        error!(
-                            "[KM]: Add KMIP server command failed for {name}: {}",
-                            output.status
-                        );
-                        error!(
-                            "[KM]: Create stdout {}",
-                            String::from_utf8_lossy(&output.stdout)
-                        );
-                        error!(
-                            "[KM]: Create stderr {}",
-                            String::from_utf8_lossy(&output.stderr)
-                        );
-                        return Err(Terminated);
-                    }
+                    cmd.output()?;
                 }
 
                 // Set config
                 let config_commands = policy_to_commands(&self.center, &name);
                 for c in config_commands {
-                    let mut cmd = self.keyset_cmd(&name);
+                    let mut cmd = self.keyset_cmd(name.clone());
 
                     cmd.arg("set");
                     for a in c {
                         cmd.arg(a);
                     }
 
-                    log::info!("Running {cmd:?}");
-
-                    let output = cmd.output().map_err(|e| {
-                        error!("[KM]: keyset command failed for {name}: {e}");
-                        Terminated
-                    })?;
-                    if !output.status.success() {
-                        error!("[KM]: set command failed for {name}: {}", output.status);
-                        error!(
-                            "[KM]: Create stdout {}",
-                            String::from_utf8_lossy(&output.stdout)
-                        );
-                        error!(
-                            "[KM]: Create stderr {}",
-                            String::from_utf8_lossy(&output.stderr)
-                        );
-                        return Err(Terminated);
-                    }
+                    cmd.output()?;
                 }
 
                 // TODO: This should not happen immediately after
                 // `keyset create` but only once the zone is enabled.
                 // We currently do not have a good mechanism for that
                 // so we init the key immediately.
-                let mut cmd = self.keyset_cmd(&name);
-                cmd.arg("init");
-
-                log::info!("Running {cmd:?}");
-
-                let output = cmd.output().map_err(|e| {
-                    error!("[KM]: Error initializing keyset for {name}: {e}");
-                    Terminated
-                })?;
-                if !output.status.success() {
-                    error!("[KM]: init command failed for {name}: {}", output.status);
-                    error!(
-                        "[KM]: Create stdout {}",
-                        String::from_utf8_lossy(&output.stdout)
-                    );
-                    error!(
-                        "[KM]: Create stderr {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    return Err(Terminated);
-                }
+                self.keyset_cmd(name.clone()).arg("init").output()?;
 
                 Ok(())
             }
-            Some(ApplicationCommand::RollKey {
+
+            ApplicationCommand::RollKey {
                 zone,
                 key_roll:
                     api::keyset::KeyRoll {
@@ -293,8 +226,8 @@ impl KeyManager {
                         cmd: roll_cmd,
                     },
                 http_tx,
-            }) => {
-                let mut cmd = self.keyset_cmd(&zone);
+            } => {
+                let mut cmd = self.keyset_cmd(zone);
 
                 cmd.arg(match roll_variant {
                     api::keyset::KeyRollVariant::Ksk => "ksk",
@@ -324,40 +257,23 @@ impl KeyManager {
                     }
                 }
 
-                log::info!("Running {cmd:?}");
-
-                let output = cmd.output().map_err(|e| {
-                    error!("[KM]: Error running key roll command for {zone}: {e}");
-                    Terminated
-                })?;
-                if output.status.success() {
-                    http_tx.send(Ok(())).await.unwrap();
-                } else {
-                    error!(
-                        "[KM]: Manual key roll command failed for {zone}: {}",
-                        output.status
-                    );
-                    error!(
-                        "[KM]: Manual key roll stdout: {}",
-                        String::from_utf8_lossy(&output.stdout)
-                    );
-                    error!(
-                        "[KM]: Manual key roll stderr: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    http_tx
-                        .send(Err(api::keyset::KeyRollError::DnstCommandError {
-                            status: output.status.to_string(),
-                            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-                            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-                        }))
-                        .await
-                        .unwrap();
+                if let Err(KeySetCommandError { err, output }) = cmd.output() {
+                    let client_err = match output {
+                        Some(output) => KeyRollError::DnstCommandError(
+                            String::from_utf8_lossy(&output.stderr).into(),
+                        ),
+                        None => KeyRollError::DnstCommandError(err.clone()),
+                    };
+                    http_tx.send(Err(client_err)).await.unwrap();
+                    return Err(format!("key roll command failed: {err}"));
                 }
+
+                http_tx.send(Ok(())).await.unwrap();
 
                 Ok(())
             }
-            Some(ApplicationCommand::RemoveKey {
+
+            ApplicationCommand::RemoveKey {
                 zone,
                 key_remove:
                     api::keyset::KeyRemove {
@@ -366,8 +282,8 @@ impl KeyManager {
                         continue_flag,
                     },
                 http_tx,
-            }) => {
-                let mut cmd = self.keyset_cmd(&zone);
+            } => {
+                let mut cmd = self.keyset_cmd(zone);
 
                 cmd.arg("remove-key").arg(key);
 
@@ -379,49 +295,34 @@ impl KeyManager {
                     cmd.arg("--continue");
                 }
 
-                log::info!("Running {cmd:?}");
-
-                let output = cmd.output().map_err(|e| {
-                    error!("[KM]: Error running key removal command for {zone}: {e}");
-                    Terminated
-                })?;
-                if output.status.success() {
-                    http_tx.send(Ok(())).await.unwrap();
-                } else {
-                    error!(
-                        "[KM]: Key remove command failed for {zone}: {}",
-                        output.status
-                    );
-                    error!(
-                        "[KM]: Key remove stdout {}",
-                        String::from_utf8_lossy(&output.stdout)
-                    );
-                    error!(
-                        "[KM]: Key remove stderr {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    http_tx
-                        .send(Err(api::keyset::KeyRemoveError::DnstCommandError {
-                            status: output.status.to_string(),
-                            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-                            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-                        }))
-                        .await
-                        .unwrap();
+                if let Err(KeySetCommandError { err, output }) = cmd.output() {
+                    let client_err = match output {
+                        Some(output) => KeyRemoveError::DnstCommandError(
+                            String::from_utf8_lossy(&output.stderr).into(),
+                        ),
+                        None => KeyRemoveError::DnstCommandError(err.clone()),
+                    };
+                    http_tx.send(Err(client_err)).await.unwrap();
+                    return Err(format!("key removal command failed: {err}"));
                 }
+
+                http_tx.send(Ok(())).await.unwrap();
 
                 Ok(())
             }
-            Some(_) => Ok(()), // not for us
+
+            _ => Ok(()), // not for us
         }
     }
 
     /// Create a keyset command with the config file for the given zone
-    fn keyset_cmd(&self, name: impl Display) -> Command {
-        let cfg_path = self.keys_dir.join(format!("{name}.cfg"));
-        let mut cmd = Command::new(self.dnst_binary_path.as_std_path());
-        cmd.arg("keyset").arg("-c").arg(&cfg_path);
-        cmd
+    fn keyset_cmd(&self, name: StoredName) -> KeySetCommand {
+        KeySetCommand::new(
+            name,
+            self.center.clone(),
+            self.keys_dir.clone(),
+            self.dnst_binary_path.clone(),
+        )
     }
 
     async fn tick(&self) {
@@ -434,24 +335,50 @@ impl KeyManager {
                 continue;
             }
 
-            let info = ks_info.get(&apex_name);
-            let Some(info) = info else {
-                let value = get_keyset_info(state_path);
-                let _ = ks_info.insert(apex_name, value);
-                continue;
+            // We can't use HashMap::entry() here as we can't do 'continue'
+            // from inside a closure.
+            let info = match ks_info.get_mut(&apex_name) {
+                Some(info) => info,
+                None => {
+                    match KeySetInfo::try_from(&state_path) {
+                        Ok(new_info) => {
+                            let _ = ks_info.insert(apex_name.clone(), new_info.clone());
+                            // SAFETY: We just added it so it must exist.
+                            ks_info.get_mut(&apex_name).unwrap()
+                        }
+                        Err(err) => {
+                            log::error!(
+                                "[KM]: Failed to load key set state for zone '{apex_name}': {err}"
+                            );
+                            continue;
+                        }
+                    }
+                }
             };
 
-            let keyset_state_modified = file_modified(&state_path).unwrap();
+            let keyset_state_modified = match file_modified(&state_path) {
+                Ok(modified) => modified,
+                Err(err) => {
+                    log::error!("[KM]: {err}");
+                    continue;
+                }
+            };
             if keyset_state_modified != info.keyset_state_modified {
                 // Keyset state file is modified. Update our data and
                 // signal the signer to re-sign the zone.
-                let new_info = get_keyset_info(&state_path);
+                let new_info = match KeySetInfo::try_from(&state_path) {
+                    Ok(info) => info,
+                    Err(err) => {
+                        log::error!("[KM]: {err}");
+                        continue;
+                    }
+                };
                 let _ = ks_info.insert(apex_name, new_info);
                 self.center
                     .update_tx
                     .send(Update::ResignZoneEvent {
                         zone_name: zone.apex_name().clone(),
-                        trigger: SigningTrigger::KeyManager,
+                        trigger: SigningTrigger::ExternallyModifiedKeySetState,
                     })
                     .unwrap();
                 continue;
@@ -462,40 +389,36 @@ impl KeyManager {
             };
 
             if *cron_next < UnixTime::now() {
-                println!("Invoking keyset cron for zone {apex_name}");
-                let Ok(res) = self.keyset_cmd(&apex_name).arg("cron").output() else {
-                    error!(
-                        "Failed to invoke keyset binary at '{}",
-                        self.dnst_binary_path
-                    );
-
-                    // Clear cron_next.
-                    let info = KeySetInfo {
-                        cron_next: None,
-                        keyset_state_modified: info.keyset_state_modified.clone(),
-                        retries: 0,
-                    };
-                    let _ = ks_info.insert(apex_name, info);
+                let Ok(res) = self
+                    .keyset_cmd(zone.apex_name().clone())
+                    .arg("cron")
+                    .output()
+                else {
+                    info.clear_cron_next();
                     continue;
                 };
 
                 if res.status.success() {
-                    println!("CRON OUT: {}", String::from_utf8_lossy(&res.stdout));
-
                     // We expect cron to change the state file. If
                     // that is the case, get a new KeySetInfo and notify
                     // the signer.
-                    let new_info = get_keyset_info(&state_path);
+                    let new_info = match KeySetInfo::try_from(&state_path) {
+                        Ok(info) => info,
+                        Err(err) => {
+                            log::error!("[KM]: {err}");
+                            continue;
+                        }
+                    };
                     if new_info.keyset_state_modified != info.keyset_state_modified {
                         // Something happened. Update ks_info and signal the
                         // signer.
-                        let new_info = get_keyset_info(&state_path);
+                        // let new_info = get_keyset_info(&state_path);
                         let _ = ks_info.insert(apex_name, new_info);
                         self.center
                             .update_tx
                             .send(Update::ResignZoneEvent {
                                 zone_name: zone.apex_name().clone(),
-                                trigger: SigningTrigger::KeyManager,
+                                trigger: SigningTrigger::KeySetModifiedAfterCron,
                             })
                             .unwrap();
                         continue;
@@ -504,37 +427,15 @@ impl KeyManager {
                     // Nothing happened. Assume that the timing could be off.
                     // Try again in a minute. After a few tries log an error
                     // and give up.
-                    let cron_next = cron_next.clone() + Duration::from_secs(60);
-                    let new_info = KeySetInfo {
-                        cron_next: Some(cron_next),
-                        keyset_state_modified: info.keyset_state_modified.clone(),
-                        retries: info.retries + 1,
-                    };
-                    if new_info.retries >= CRON_MAX_RETRIES {
+                    info.retry_after(Duration::from_secs(60));
+                    if info.retries >= CRON_MAX_RETRIES {
                         error!(
                             "The command 'dnst keyset cron' failed to update state file {state_path}", 
                         );
-
-                        // Clear cron_next.
-                        let info = KeySetInfo {
-                            cron_next: None,
-                            keyset_state_modified: info.keyset_state_modified.clone(),
-                            retries: 0,
-                        };
-                        let _ = ks_info.insert(apex_name, info);
-                        continue;
+                        info.clear_cron_next();
                     }
-                    let _ = ks_info.insert(apex_name, new_info);
-                    continue;
                 } else {
-                    println!("CRON ERR: {}", String::from_utf8_lossy(&res.stderr));
-                    // Clear cron_next.
-                    let info = KeySetInfo {
-                        cron_next: None,
-                        keyset_state_modified: info.keyset_state_modified.clone(),
-                        retries: 0,
-                    };
-                    let _ = ks_info.insert(apex_name, info);
+                    info.clear_cron_next();
                 }
             }
         }
@@ -550,47 +451,78 @@ pub struct KeySetInfo {
     retries: u32,
 }
 
+impl KeySetInfo {
+    fn clear_cron_next(&mut self) {
+        self.cron_next = None;
+        self.retries = 0;
+    }
+
+    fn retry_after(&mut self, after: Duration) {
+        if let Some(cron_next) = self.cron_next.take() {
+            self.cron_next = Some(cron_next + after);
+        }
+        self.retries += 1;
+    }
+}
+
+impl TryFrom<&Utf8PathBuf> for KeySetInfo {
+    type Error = String;
+
+    fn try_from(state_path: &Utf8PathBuf) -> Result<Self, Self::Error> {
+        // Get the modified time of the state file before we read
+        // state file itself. This is safe if there is a concurrent
+        // update.
+        let keyset_state_modified = file_modified(&state_path)?;
+
+        /// Persistent state for the keyset command.
+        /// Copied frmo the keyset branch of dnst.
+        #[allow(dead_code)]
+        #[derive(Deserialize)]
+        struct KeySetState {
+            /// Domain KeySet state.
+            keyset: KeySet,
+
+            dnskey_rrset: Vec<String>,
+            ds_rrset: Vec<String>,
+            cds_rrset: Vec<String>,
+            ns_rrset: Vec<String>,
+            cron_next: Option<UnixTime>,
+        }
+
+        let state = std::fs::read_to_string(state_path)
+            .map_err(|err| format!("Failed to read file '{state_path}': {err}"))?;
+        let state: KeySetState = serde_json::from_str(&state).map_err(|err| {
+            format!("Failed to parse keyset JSON from file '{state_path}': {err}")
+        })?;
+
+        Ok(KeySetInfo {
+            keyset_state_modified,
+            cron_next: state.cron_next,
+            retries: 0,
+        })
+    }
+}
+
 // Maximum number of times to try the cron command when the state file does
 // not change.
 const CRON_MAX_RETRIES: u32 = 5;
 
 fn file_modified(filename: impl AsRef<Path>) -> Result<UnixTime, String> {
-    let md = metadata(filename).unwrap();
-    let modified = md.modified().unwrap();
+    let md = metadata(&filename).map_err(|err| {
+        format!(
+            "Failed to query metadata for file '{}': {err}",
+            filename.as_ref().display()
+        )
+    })?;
+    let modified = md.modified().map_err(|err| {
+        format!(
+            "Failed to query modified timestamp for file '{}': {err}",
+            filename.as_ref().display()
+        )
+    })?;
     modified
         .try_into()
-        .map_err(|e| format!("unable to convert from SystemTime: {e}"))
-}
-
-fn get_keyset_info(state_path: impl AsRef<Path>) -> KeySetInfo {
-    // Get the modified time of the state file before we read
-    // state file itself. This is safe if there is a concurrent
-    // update.
-    let keyset_state_modified = file_modified(&state_path).unwrap();
-
-    /// Persistent state for the keyset command.
-    /// Copied frmo the keyset branch of dnst.
-    #[allow(dead_code)]
-    #[derive(Deserialize)]
-    struct KeySetState {
-        /// Domain KeySet state.
-        keyset: KeySet,
-
-        dnskey_rrset: Vec<String>,
-        ds_rrset: Vec<String>,
-        cds_rrset: Vec<String>,
-        ns_rrset: Vec<String>,
-        cron_next: Option<UnixTime>,
-    }
-
-    let state = std::fs::read_to_string(state_path).unwrap();
-    let state: KeySetState = serde_json::from_str(&state).unwrap();
-
-    KeySetInfo {
-        keyset_state_modified,
-        cron_next: state.cron_next,
-        retries: 0,
-    }
+        .map_err(|err| format!("Failed to query modified timestamp for file '{}': unable to convert from SystemTime: {err}", filename.as_ref().display()))
 }
 
 fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<String>> {
@@ -941,7 +873,7 @@ impl KmipClientCredentialsFile {
     }
 
     /// Remove any existing configuration for the specified KMIP server.
-    ///
+
     /// Returns any previous configuration if found.
     pub fn remove(&mut self, server_id: &str) -> Option<KmipClientCredentials> {
         self.credentials.0.remove(server_id)
@@ -949,5 +881,112 @@ impl KmipClientCredentialsFile {
 
     pub fn is_empty(&self) -> bool {
         self.credentials.0.is_empty()
+    }
+}
+
+pub struct KeySetCommand {
+    cmd: Command,
+    name: StoredName,
+    center: Arc<Center>,
+}
+
+pub struct KeySetCommandError {
+    err: String,
+    output: Option<Output>,
+}
+
+impl From<KeySetCommandError> for String {
+    fn from(err: KeySetCommandError) -> Self {
+        err.err
+    }
+}
+
+impl KeySetCommand {
+    pub fn new(
+        name: StoredName,
+        center: Arc<Center>,
+        keys_dir: Box<Utf8Path>,
+        dnst_binary_path: Box<Utf8Path>,
+    ) -> Self {
+        let cfg_path = keys_dir.join(format!("{name}.cfg"));
+        let mut cmd = Command::new(dnst_binary_path.as_std_path());
+        cmd.arg("keyset").arg("-c").arg(&cfg_path);
+        Self { cmd, name, center }
+    }
+
+    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut KeySetCommand {
+        self.cmd.arg(arg);
+        self
+    }
+
+    pub fn output(&mut self) -> Result<Output, KeySetCommandError> {
+        self.exec()
+            .inspect(|_| {
+                record_zone_event(
+                    &self.center,
+                    &self.name,
+                    HistoricalEvent::KeySetCommand(self.cmd_to_string()),
+                    None,
+                );
+            })
+            .inspect_err(|KeySetCommandError { err, output: _ }| {
+                record_zone_event(
+                    &self.center,
+                    &self.name,
+                    HistoricalEvent::KeySetError(err.clone()),
+                    None,
+                );
+                halt_zone(&self.center, &self.name, true, err);
+            })
+    }
+
+    fn exec(&mut self) -> Result<Output, KeySetCommandError> {
+        log::info!("Executing keyset command {}", self.cmd_to_string());
+        let output = self.cmd.output().map_err(|msg| {
+            let mut err = format!(
+                "Keyset command '{}' for zone '{}' could not be executed: {msg}",
+                self.cmd_to_string(),
+                self.name,
+            );
+            if matches!(msg.kind(), ErrorKind::NotFound) {
+                err.push_str(&format!(
+                    " [path: {}]",
+                    self.cmd.get_program().to_string_lossy()
+                ));
+            }
+            KeySetCommandError { err, output: None }
+        })?;
+
+        if !output.status.success() {
+            let err = format!(
+                "Keyset command '{}' for zone '{}' returned non-zero exit code: {} [stdout={}, stderr={}]",
+                self.cmd_to_string(),
+                self.name,
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            return Err(KeySetCommandError {
+                err,
+                output: Some(output),
+            });
+        }
+
+        log::debug!(
+            "Keyset command {} for zone '{}' stdout: {}",
+            self.cmd_to_string(),
+            self.name,
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        Ok(output)
+    }
+
+    fn cmd_to_string(&self) -> String {
+        self.cmd
+            .get_args()
+            .map(|v| v.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }

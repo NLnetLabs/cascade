@@ -3,8 +3,8 @@ use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::SystemTime;
 use std::time::Duration;
+use std::time::SystemTime;
 
 use axum::extract::OriginalUri;
 use axum::extract::Path;
@@ -19,9 +19,9 @@ use bytes::Bytes;
 use domain::base::iana::Class;
 use domain::base::Name;
 use domain::base::Serial;
-use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
+use domain::dnssec::sign::keys::keyset::KeyType;
 use log::warn;
 use log::{debug, error, info};
 use serde::Deserialize;
@@ -32,13 +32,13 @@ use tokio::task::JoinSet;
 use tokio::time::Instant;
 
 use crate::api;
-use crate::api::KeyInfo;
 use crate::api::keyset::*;
 use crate::api::HsmServerAdd;
 use crate::api::HsmServerAddError;
 use crate::api::HsmServerAddResult;
 use crate::api::HsmServerGetResult;
 use crate::api::HsmServerListResult;
+use crate::api::KeyInfo;
 use crate::api::KeyManagerPolicyInfo;
 use crate::api::LoaderPolicyInfo;
 use crate::api::PolicyChanges;
@@ -52,10 +52,10 @@ use crate::api::ServerStatusResult;
 use crate::api::SignerDenialPolicyInfo;
 use crate::api::SignerPolicyInfo;
 use crate::api::SignerSerialPolicyInfo;
+use crate::api::TimestampedZoneReviewStatus;
 use crate::api::ZoneAdd;
 use crate::api::ZoneAddError;
 use crate::api::ZoneAddResult;
-use crate::api::ZoneApprovalStatus;
 use crate::api::ZoneReloadResult;
 use crate::api::ZoneRemoveResult;
 use crate::api::ZoneStage;
@@ -63,19 +63,22 @@ use crate::api::ZoneStatus;
 use crate::api::ZoneStatusError;
 use crate::api::ZonesListResult;
 use crate::center;
+use crate::center::get_zone;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
-use crate::units::zone_loader::ZoneLoaderReport;
-use crate::units::zone_signer::KeySetState;
-use crate::zone::ZoneLoadSource;
-use crate::zonemaintenance::maintainer::read_soa;
-use crate::zonemaintenance::types::ZoneReportDetails;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
+use crate::units::zone_loader::ZoneLoaderReport;
+use crate::units::zone_signer::KeySetState;
+use crate::zone::HistoricalEvent;
+use crate::zone::HistoricalEventType;
+use crate::zone::ZoneLoadSource;
+use crate::zonemaintenance::maintainer::read_soa;
+use crate::zonemaintenance::types::ZoneReportDetails;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -237,23 +240,12 @@ impl HttpServer {
     }
 
     async fn zones_list(State(http_state): State<Arc<HttpServerState>>) -> Json<ZonesListResult> {
-        let names;
-        {
-            let state = http_state.center.state.lock().unwrap();
-            names = state
-                .zones
-                .iter()
-                .map(|z| z.0.name.clone())
-                .collect::<Vec<_>>();
-        }
-
-        let mut zones = Vec::with_capacity(names.len());
-        for name in names {
-            if let Ok(zone_status) = Self::get_zone_status(http_state.clone(), name.clone()).await {
-                zones.push(zone_status);
-            }
-        }
-
+        let state = http_state.center.state.lock().unwrap();
+        let zones = state
+            .zones
+            .iter()
+            .map(|z| z.0.name.clone())
+            .collect::<Vec<_>>();
         Json(ZonesListResult { zones })
     }
 
@@ -271,7 +263,6 @@ impl HttpServer {
         let mut zone_loaded_at = None;
         let mut zone_loaded_in = None;
         let mut zone_loaded_bytes = 0;
-
         let dnst_binary_path;
         let cfg_path;
         let state_path;
@@ -281,6 +272,9 @@ impl HttpServer {
         let unsigned_review_addr;
         let signed_review_addr;
         let publish_addr;
+        let unsigned_review_status;
+        let signed_review_status;
+        let pipeline_mode;
         {
             let locked_state = state.center.state.lock().unwrap();
             dnst_binary_path = locked_state.config.dnst_binary_path.clone();
@@ -293,6 +287,7 @@ impl HttpServer {
                 .get(&name)
                 .ok_or(ZoneStatusError::ZoneDoesNotExist)?;
             let zone_state = zone.0.state.lock().unwrap();
+            pipeline_mode = zone_state.pipeline_mode.clone();
             policy = zone_state
                 .policy
                 .as_ref()
@@ -328,6 +323,24 @@ impl HttpServer {
                 .first()
                 .expect("Server must have a publish address")
                 .addr();
+
+            unsigned_review_status = zone_state
+                .find_last_event(HistoricalEventType::UnsignedZoneReview, None)
+                .map(|item| {
+                    let HistoricalEvent::UnsignedZoneReview { status, when } = item.event else {
+                        unreachable!()
+                    };
+                    TimestampedZoneReviewStatus { status, when }
+                });
+
+            signed_review_status = zone_state
+                .find_last_event(HistoricalEventType::SignedZoneReview, None)
+                .map(|item| {
+                    let HistoricalEvent::SignedZoneReview { status, when } = item.event else {
+                        unreachable!()
+                    };
+                    TimestampedZoneReviewStatus { status, when }
+                });
         }
 
         // TODO: We need to show multiple versions here
@@ -413,8 +426,6 @@ impl HttpServer {
             ))
             .ok();
         if let Ok((zone_maintainer_report, zone_loader_report)) = rx.await {
-            log::info!("ZMR = {zone_maintainer_report:?}");
-            log::info!("ZLR = {zone_loader_report:?}");
             match zone_maintainer_report.details() {
                 ZoneReportDetails::Primary => {
                     if let Some(report) = zone_loader_report {
@@ -443,36 +454,6 @@ impl HttpServer {
                     }
                 }
             }
-        }
-
-        // Query approval status
-        let mut approval_status = None;
-        let (tx, rx) = oneshot::channel();
-        app_cmd_tx
-            .send((
-                "RS".to_owned(),
-                ApplicationCommand::IsZonePendingApproval {
-                    zone_name: name.clone(),
-                    tx,
-                },
-            ))
-            .ok();
-        if matches!(rx.await, Ok(true)) {
-            approval_status = Some(ZoneApprovalStatus::PendingUnsignedApproval);
-        }
-
-        let (tx, rx) = oneshot::channel();
-        app_cmd_tx
-            .send((
-                "RS2".to_owned(),
-                ApplicationCommand::IsZonePendingApproval {
-                    zone_name: name.clone(),
-                    tx,
-                },
-            ))
-            .ok();
-        if matches!(rx.await, Ok(true)) {
-            approval_status = Some(ZoneApprovalStatus::PendingSignedApproval);
         }
 
         // Query zone keys
@@ -558,27 +539,37 @@ impl HttpServer {
         }
 
         Ok(ZoneStatus {
-            name: name.clone(),
+            name,
             source,
             policy,
             stage,
             keys,
             key_status,
-            approval_status,
-            unsigned_serial,
-            signed_serial,
-            published_serial,
-            unsigned_review_addr,
-            signed_review_addr,
-            publish_addr,
-            signing_report,
             receipt_report,
+            unsigned_serial,
+            unsigned_review_status,
+            unsigned_review_addr,
+            signed_serial,
+            signed_review_status,
+            signed_review_addr,
+            signing_report,
+            published_serial,
+            publish_addr,
+            pipeline_mode,
         })
     }
 
     async fn zone_reload(
+        State(state): State<Arc<HttpServerState>>,
         Path(payload): Path<Name<Bytes>>,
     ) -> Result<Json<ZoneReloadResult>, String> {
+        let zone = get_zone(&state.center, &payload)
+            .ok_or_else(|| format!("Zone '{payload}' does not exist"))?;
+        if let Some(reason) = zone.state.lock().unwrap().halted(true) {
+            return Err(format!(
+                "Cannot reload a zone that is in the hard halt state: {reason}"
+            ));
+        }
         Ok(Json(ZoneReloadResult { name: payload }))
     }
 

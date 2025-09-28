@@ -476,10 +476,18 @@ where
                 }
             }
         }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            // Could be "null", could be a u64.
+            deserializer.deserialize_any(StrVisitor)
+        }
     }
 
     Ok(deserializer
-        .deserialize_str(StrVisitor)?
+        .deserialize_option(StrVisitor)?
         .map(Duration::from_secs))
 }
 
@@ -1161,7 +1169,10 @@ pub struct SigningInProgressReport {
     pub zone_serial: Serial,
     pub started_at: SystemTime,
     pub unsigned_rr_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
+    #[serde(
+        serialize_with = "serialize_opt_duration_as_secs",
+        deserialize_with = "deserialize_option_duration_from_secs"
+    )]
     pub walk_time: Option<Duration>,
     #[serde(
         serialize_with = "serialize_opt_duration_as_secs",
