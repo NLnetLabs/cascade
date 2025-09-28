@@ -48,7 +48,8 @@ Daemon Processes
 
 Unlike OpenDNSSEC, Cascade does not run as two separate daemons (the Enforcer
 and the Signer) but instead is able to act entirely on its own, as long as
-on-disk signing keys are permitted by your organizational security policy.
+on-disk signing keys are permitted by your organizational security policy or
+when using a KMIP compatible HSM.
 
 If required a KMIP or PKCS#11 compatible HSM can be used instead of on-disk
 keys. In the case of a KMIP compatible HSM there will still be only a single
