@@ -26,10 +26,10 @@ In both cases verification consists of executing an operator supplied
 script or application which can verify the zone using whatever mechanisms
 are required to satisfy your policy.
 
-Verification of the zone can be done by retrieving the zone using the DNS
-XFR protocol from dedicated "review" nameservers within Cascade, either
-verifying them directly or writing them to disk for verification by tools
-that only support working with files.
+Verification of the zone can be done by retrieving the zone using the DNS XFR
+protocol from dedicated "review" nameservers within Cascade, either verifying
+the zone directly or writing the zone to disk for verification by tools that
+only support working with files.
 
 On completion of the verification processs, approval or rejection is signalled
 back to Cascade by means of an (insecure in the initial version of Cascade) HTTP
