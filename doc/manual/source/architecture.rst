@@ -102,8 +102,7 @@ signalled to stop, reloading them on next start.
 
 Some configuration is done via the Cascade CLI (adding zones and HSMs), other
 configuration is done by editing on-disk policy and application configuration
-files and instructing the Cascade daemon via the CLI to reload
-policy/configuration files.
+files and instructing the Cascade daemon via the CLI to reload them.
 
 Backing Up Cascade
 ------------------
