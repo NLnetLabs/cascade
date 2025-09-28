@@ -59,7 +59,7 @@ and convert them into operations to execute against a loaded PKCS#11 module.
 
 In this latter setup it may appear similar to the architecture of OpenDNSSEC
 in that it has two processes, one daemon acting as a nameserver and issuing
-signig instructions to the other daemon.
+signing instructions to the other daemon.
 
 However, the resemblance is only slight, as there are no shared on-disk
 configuration files via which the daemons communicate, and thus no shared
