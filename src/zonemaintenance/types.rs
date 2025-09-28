@@ -1,4 +1,4 @@
-use core::fmt::Debug;
+use core::fmt::{self, Debug};
 use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::task::{Context, Poll};
@@ -10,11 +10,13 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::string::ToString;
 use std::sync::Arc;
+use std::time::SystemTime;
 use std::vec::Vec;
 
 use bytes::Bytes;
 use futures_util::FutureExt;
-use serde::{Serialize, Serializer};
+use serde::de::{Unexpected, Visitor};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep_until, Instant, Sleep};
 use tracing::{enabled, trace, Level};
@@ -329,7 +331,7 @@ pub type ZoneDiffs = BTreeMap<ZoneDiffKey, Arc<InMemoryZoneDiff>>;
 
 //------------ ZoneStatus ----------------------------------------------------
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub enum ZoneRefreshStatus {
     /// Refreshing according to the SOA REFRESH interval.
     #[default]
@@ -414,6 +416,81 @@ where
     }
 }
 
+pub fn deserialize_duration_from_secs<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct U64Visitor;
+    impl<'de> Visitor<'de> for U64Visitor {
+        type Value = u64;
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a u64 unsigned integer value")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value)
+        }
+    }
+    Ok(Duration::from_secs(
+        deserializer.deserialize_u64(U64Visitor)?,
+    ))
+}
+
+pub fn deserialize_option_duration_from_secs<'de, D>(
+    deserializer: D,
+) -> Result<Option<Duration>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct StrVisitor;
+    impl<'de> Visitor<'de> for StrVisitor {
+        type Value = Option<u64>;
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a u64 unsigned integer value")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(value))
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if value == "null" {
+                Ok(None)
+            } else {
+                let parsed = value.parse::<u64>();
+                match parsed {
+                    Ok(parsed) => Ok(Some(parsed)),
+                    Err(_err) => Err(E::invalid_value(
+                        Unexpected::Str(value),
+                        &"a 64 unsigned integer value",
+                    )),
+                }
+            }
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            // Could be "null", could be a u64.
+            deserializer.deserialize_any(StrVisitor)
+        }
+    }
+
+    Ok(deserializer
+        .deserialize_any(StrVisitor)?
+        .map(Duration::from_secs))
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct ZoneRefreshMetrics {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
@@ -445,6 +522,8 @@ pub struct ZoneRefreshMetrics {
     ///
     /// The SOA SERIAL of the last commit made to this zone.
     pub last_refresh_succeeded_serial: Option<Serial>,
+
+    pub last_refresh_succeeded_bytes: Option<usize>,
 }
 
 impl Default for ZoneRefreshMetrics {
@@ -457,6 +536,7 @@ impl Default for ZoneRefreshMetrics {
             last_soa_serial_check_serial: Default::default(),
             last_refreshed_at: Default::default(),
             last_refresh_succeeded_serial: Default::default(),
+            last_refresh_succeeded_bytes: Default::default(),
         }
     }
 }
@@ -531,12 +611,13 @@ impl ZoneRefreshState {
             .unwrap_or_default()
     }
 
-    pub fn refresh_succeeded(&mut self, new_soa: &Soa<Name<Bytes>>) {
+    pub fn refresh_succeeded(&mut self, new_soa: &Soa<Name<Bytes>>, bytes: usize) {
         self.refresh = new_soa.refresh();
         self.retry = new_soa.retry();
         self.expire = new_soa.expire();
         self.metrics.last_refreshed_at = Some(Instant::now());
         self.metrics.last_refresh_succeeded_serial = Some(new_soa.serial());
+        self.metrics.last_refresh_succeeded_bytes = Some(bytes);
         self.set_status(ZoneRefreshStatus::RefreshPending);
     }
 
@@ -1066,4 +1147,103 @@ pub(super) enum Event {
     ZoneAdded(ZoneId),
 
     ZoneRemoved(ZoneId),
+}
+
+//------------ SigningReport -------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SigningReport {
+    Requested(SigningRequestedReport),
+    InProgress(SigningInProgressReport),
+    Finished(SigningFinishedReport),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningRequestedReport {
+    pub requested_at: SystemTime,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningInProgressReport {
+    pub requested_at: SystemTime,
+    pub zone_serial: Serial,
+    pub started_at: SystemTime,
+    pub unsigned_rr_count: Option<usize>,
+    #[serde(
+        serialize_with = "serialize_opt_duration_as_secs",
+        deserialize_with = "deserialize_option_duration_from_secs"
+    )]
+    pub walk_time: Option<Duration>,
+    #[serde(
+        serialize_with = "serialize_opt_duration_as_secs",
+        deserialize_with = "deserialize_option_duration_from_secs"
+    )]
+    pub sort_time: Option<Duration>,
+    pub denial_rr_count: Option<usize>,
+    #[serde(
+        serialize_with = "serialize_opt_duration_as_secs",
+        deserialize_with = "deserialize_option_duration_from_secs"
+    )]
+    pub denial_time: Option<Duration>,
+    pub rrsig_count: Option<usize>,
+    pub rrsig_reused_count: Option<usize>,
+    #[serde(
+        serialize_with = "serialize_opt_duration_as_secs",
+        deserialize_with = "deserialize_option_duration_from_secs"
+    )]
+    pub rrsig_time: Option<Duration>,
+    #[serde(
+        serialize_with = "serialize_opt_duration_as_secs",
+        deserialize_with = "deserialize_option_duration_from_secs"
+    )]
+    pub insertion_time: Option<Duration>,
+    #[serde(
+        serialize_with = "serialize_opt_duration_as_secs",
+        deserialize_with = "deserialize_option_duration_from_secs"
+    )]
+    pub total_time: Option<Duration>,
+    pub threads_used: Option<usize>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningFinishedReport {
+    pub requested_at: SystemTime,
+    pub zone_serial: Serial,
+    pub started_at: SystemTime,
+    pub unsigned_rr_count: usize,
+    #[serde(
+        serialize_with = "serialize_duration_as_secs",
+        deserialize_with = "deserialize_duration_from_secs"
+    )]
+    pub walk_time: Duration,
+    #[serde(
+        serialize_with = "serialize_duration_as_secs",
+        deserialize_with = "deserialize_duration_from_secs"
+    )]
+    pub sort_time: Duration,
+    pub denial_rr_count: usize,
+    #[serde(
+        serialize_with = "serialize_duration_as_secs",
+        deserialize_with = "deserialize_duration_from_secs"
+    )]
+    pub denial_time: Duration,
+    pub rrsig_count: usize,
+    pub rrsig_reused_count: usize,
+    #[serde(
+        serialize_with = "serialize_duration_as_secs",
+        deserialize_with = "deserialize_duration_from_secs"
+    )]
+    pub rrsig_time: Duration,
+    #[serde(
+        serialize_with = "serialize_duration_as_secs",
+        deserialize_with = "deserialize_duration_from_secs"
+    )]
+    pub insertion_time: Duration,
+    #[serde(
+        serialize_with = "serialize_duration_as_secs",
+        deserialize_with = "deserialize_duration_from_secs"
+    )]
+    pub total_time: Duration,
+    pub threads_used: usize,
+    pub finished_at: SystemTime,
 }

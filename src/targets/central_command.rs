@@ -1,12 +1,17 @@
 use std::sync::Arc;
+use std::time::SystemTime;
 
+use domain::base::Serial;
+use domain::zonetree::StoredName;
 use log::info;
 use tokio::sync::mpsc;
 
-use crate::center::Center;
+use crate::api::ZoneReviewStatus;
+use crate::center::{get_zone, halt_zone, Center, Change};
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::manager::TargetCommand;
 use crate::payload::Update;
+use crate::zone::{HistoricalEvent, SigningTrigger};
 
 pub struct CentralCommand {
     pub center: Arc<Center>,
@@ -73,6 +78,33 @@ impl CentralCommand {
         info!("[CC]: Event received: {event:?}");
         let (msg, target, cmd) = match event {
             Update::Changed(change) => {
+                {
+                    match &change {
+                        Change::ConfigChanged => { /* No zone name, nothing to do */ }
+                        Change::ZoneAdded(name) => {
+                            record_zone_event(&self.center, name, HistoricalEvent::Added, None);
+                        }
+                        Change::ZonePolicyChanged(name, _) => {
+                            record_zone_event(
+                                &self.center,
+                                name,
+                                HistoricalEvent::PolicyChanged,
+                                None,
+                            );
+                        }
+                        Change::ZoneSourceChanged(name, _) => {
+                            record_zone_event(
+                                &self.center,
+                                name,
+                                HistoricalEvent::SourceChanged,
+                                None,
+                            );
+                        }
+                        Change::ZoneRemoved(name) => {
+                            record_zone_event(&self.center, name, HistoricalEvent::Removed, None);
+                        }
+                    }
+                }
                 // Inform all units about the change.
                 for name in ["ZL", "RS", "KM", "ZS", "RS2", "PS"] {
                     self.center
@@ -100,67 +132,169 @@ impl CentralCommand {
             Update::UnsignedZoneUpdatedEvent {
                 zone_name,
                 zone_serial,
-            } => (
-                "Instructing review server to publish the unsigned zone",
-                "RS",
-                ApplicationCommand::SeekApprovalForUnsignedZone {
-                    zone_name,
-                    zone_serial,
-                },
-            ),
+            } => {
+                record_zone_event(
+                    &self.center,
+                    &zone_name,
+                    HistoricalEvent::NewVersionReceived,
+                    Some(zone_serial),
+                );
+                (
+                    "Instructing review server to publish the unsigned zone",
+                    "RS",
+                    ApplicationCommand::SeekApprovalForUnsignedZone {
+                        zone_name,
+                        zone_serial,
+                    },
+                )
+            }
+
+            Update::UnsignedZoneRejectedEvent {
+                zone_name,
+                zone_serial,
+            } => {
+                halt_zone(
+                    &self.center,
+                    &zone_name,
+                    false,
+                    "Unsigned zone was rejected at the review stage.",
+                );
+
+                record_zone_event(
+                    &self.center,
+                    &zone_name,
+                    HistoricalEvent::UnsignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                        when: SystemTime::now(),
+                    },
+                    Some(zone_serial),
+                );
+                return;
+            }
 
             Update::UnsignedZoneApprovedEvent {
                 zone_name,
                 zone_serial,
-            } => (
-                "Instructing zone signer to sign the approved zone",
-                "ZS",
-                ApplicationCommand::SignZone {
-                    zone_name,
-                    zone_serial: Some(zone_serial),
-                },
-            ),
+            } => {
+                record_zone_event(
+                    &self.center,
+                    &zone_name,
+                    HistoricalEvent::UnsignedZoneReview {
+                        status: ZoneReviewStatus::Approved,
+                        when: SystemTime::now(),
+                    },
+                    Some(zone_serial),
+                );
+                (
+                    "Instructing zone signer to sign the approved zone",
+                    "ZS",
+                    ApplicationCommand::SignZone {
+                        zone_name,
+                        zone_serial: Some(zone_serial),
+                        trigger: SigningTrigger::ZoneChangesApproved,
+                    },
+                )
+            }
 
-            Update::ResignZoneEvent { zone_name } => (
+            Update::ResignZoneEvent { zone_name, trigger } => (
                 "Instructing zone signer to re-sign the zone",
                 "ZS",
                 ApplicationCommand::SignZone {
                     zone_name,
                     zone_serial: None,
+                    trigger,
                 },
             ),
 
             Update::ZoneSignedEvent {
                 zone_name,
                 zone_serial,
-            } => (
-                "Instructing review server to publish the signed zone",
-                "RS2",
-                ApplicationCommand::SeekApprovalForSignedZone {
-                    zone_name,
-                    zone_serial,
-                },
-            ),
+                trigger,
+            } => {
+                record_zone_event(
+                    &self.center,
+                    &zone_name,
+                    HistoricalEvent::SigningSucceeded { trigger },
+                    Some(zone_serial),
+                );
+                (
+                    "Instructing review server to publish the signed zone",
+                    "RS2",
+                    ApplicationCommand::SeekApprovalForSignedZone {
+                        zone_name,
+                        zone_serial,
+                    },
+                )
+            }
 
             Update::SignedZoneApprovedEvent {
                 zone_name,
                 zone_serial,
             } => {
+                record_zone_event(
+                    &self.center,
+                    &zone_name,
+                    HistoricalEvent::SignedZoneReview {
+                        status: ZoneReviewStatus::Approved,
+                        when: SystemTime::now(),
+                    },
+                    Some(zone_serial),
+                );
                 // Send a copy of PublishSignedZone to ZS to trigger a
                 // re-scan of when to re-sign next.
                 let psz = ApplicationCommand::PublishSignedZone {
-                    zone_name,
+                    zone_name: zone_name.clone(),
                     zone_serial,
                 };
-                self.center
-                    .app_cmd_tx
-                    .send(("ZS".into(), psz.clone()))
-                    .unwrap();
+                self.center.app_cmd_tx.send(("ZS".into(), psz)).unwrap();
                 (
                     "Instructing publication server to publish the signed zone",
                     "PS",
-                    psz,
+                    ApplicationCommand::PublishSignedZone {
+                        zone_name,
+                        zone_serial,
+                    },
                 )
+            }
+
+            Update::SignedZoneRejectedEvent {
+                zone_name,
+                zone_serial,
+            } => {
+                halt_zone(
+                    &self.center,
+                    &zone_name,
+                    false,
+                    "Signed zone was rejected at the review stage.",
+                );
+
+                record_zone_event(
+                    &self.center,
+                    &zone_name,
+                    HistoricalEvent::SignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                        when: SystemTime::now(),
+                    },
+                    Some(zone_serial),
+                );
+                return;
+            }
+
+            Update::ZoneSigningFailedEvent {
+                zone_name,
+                zone_serial,
+                trigger,
+                reason,
+            } => {
+                halt_zone(&self.center, &zone_name, true, reason.as_str());
+
+                record_zone_event(
+                    &self.center,
+                    &zone_name,
+                    HistoricalEvent::SigningFailed { trigger, reason },
+                    zone_serial,
+                );
+                return;
             }
         };
 
@@ -172,5 +306,18 @@ impl CentralCommand {
 impl std::fmt::Debug for CentralCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CentralCommand").finish()
+    }
+}
+
+pub fn record_zone_event(
+    center: &Arc<Center>,
+    name: &StoredName,
+    event: HistoricalEvent,
+    serial: Option<Serial>,
+) {
+    if let Some(zone) = get_zone(center, name) {
+        let mut zone_state = zone.state.lock().unwrap();
+        zone_state.record_event(event, serial);
+        zone.mark_dirty(&mut zone_state, center);
     }
 }

@@ -1,14 +1,18 @@
 use std::fmt::{self, Display};
 use std::net::{IpAddr, SocketAddr};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
-use domain::base::Name;
+use domain::base::{Name, Serial};
+use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
 use crate::center;
 use crate::units::http_server::KmipServerState;
+use crate::units::zone_loader::ZoneLoaderReport;
+use crate::zone::PipelineMode;
+use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
@@ -74,6 +78,9 @@ pub enum ZoneSource {
 
         /// The name of a TSIG key, if any.
         tsig_key: Option<String>,
+
+        /// The XFR status of the zone.
+        xfr_status: ZoneRefreshStatus,
     },
 }
 
@@ -82,7 +89,7 @@ impl Display for ZoneSource {
         match self {
             ZoneSource::None => f.write_str("<none>"),
             ZoneSource::Zonefile { path } => path.fmt(f),
-            ZoneSource::Server { addr, tsig_key: _ } => addr.fmt(f),
+            ZoneSource::Server { addr, .. } => addr.fmt(f),
         }
     }
 }
@@ -93,11 +100,13 @@ impl From<&str> for ZoneSource {
             ZoneSource::Server {
                 addr,
                 tsig_key: None,
+                xfr_status: Default::default(),
             }
         } else if let Ok(addr) = s.parse::<IpAddr>() {
             ZoneSource::Server {
                 addr: SocketAddr::new(addr, DEFAULT_AXFR_PORT),
                 tsig_key: None,
+                xfr_status: Default::default(),
             }
         } else {
             ZoneSource::Zonefile {
@@ -109,12 +118,16 @@ impl From<&str> for ZoneSource {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZonesListResult {
-    pub zones: Vec<ZoneStatus>,
+    pub zones: Vec<StoredName>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ZoneStage {
     Unsigned,
+    // TODO: Signed is not strictly correct as it is currently set based on
+    // the presence of a zone in the signed zones collection, but that happens
+    // at the start of the signing process, not only once a zone has finished
+    // being signed.
     Signed,
     Published,
 }
@@ -122,9 +135,9 @@ pub enum ZoneStage {
 impl Display for ZoneStage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
-            ZoneStage::Unsigned => "unsigned",
-            ZoneStage::Signed => "signed",
-            ZoneStage::Published => "published",
+            ZoneStage::Unsigned => "loader",
+            ZoneStage::Signed => "signer",
+            ZoneStage::Published => "publication server",
         };
         f.write_str(str)
     }
@@ -141,7 +154,47 @@ pub struct ZoneStatus {
     pub source: ZoneSource,
     pub policy: String,
     pub stage: ZoneStage,
+    pub keys: Vec<KeyInfo>,
     pub key_status: Option<String>,
+    pub receipt_report: Option<ZoneLoaderReport>,
+    pub unsigned_serial: Option<Serial>,
+    pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
+    pub unsigned_review_addr: Option<SocketAddr>,
+    pub signed_serial: Option<Serial>,
+    pub signed_review_status: Option<TimestampedZoneReviewStatus>,
+    pub signed_review_addr: Option<SocketAddr>,
+    pub signing_report: Option<SigningReport>,
+    pub published_serial: Option<Serial>,
+    pub publish_addr: SocketAddr,
+    pub pipeline_mode: PipelineMode,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct TimestampedZoneReviewStatus {
+    pub status: ZoneReviewStatus,
+    pub when: SystemTime,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum ZoneReviewStatus {
+    Pending,
+    Approved,
+    Rejected,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub struct KeyInfo {
+    pub pubref: String,
+    pub key_type: KeyType,
+    pub key_tag: u16,
+    pub signer: bool,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum KeyType {
+    Ksk,
+    Zsk,
+    Csk,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -153,6 +206,7 @@ pub struct ZoneReloadResult {
 pub enum ZoneReloadError {
     ZoneDoesNotExist,
     ZoneWithoutSource,
+    ZoneHalted(String),
 }
 
 impl fmt::Display for ZoneReloadError {
@@ -160,6 +214,9 @@ impl fmt::Display for ZoneReloadError {
         f.write_str(match self {
             Self::ZoneDoesNotExist => "no zone with this name exist",
             Self::ZoneWithoutSource => "the specified zone has no source configured",
+            Self::ZoneHalted(reason) => {
+                return write!(f, "the zone has been halted (reason: {reason})")
+            }
         })
     }
 }
@@ -326,11 +383,7 @@ pub mod keyset {
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
     pub enum KeyRollError {
-        DnstCommandError {
-            status: String,
-            stdout: String,
-            stderr: String,
-        },
+        DnstCommandError(String),
         RxError,
     }
 
@@ -348,11 +401,7 @@ pub mod keyset {
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
     pub enum KeyRemoveError {
-        DnstCommandError {
-            status: String,
-            stdout: String,
-            stderr: String,
-        },
+        DnstCommandError(String),
         RxError,
     }
 
