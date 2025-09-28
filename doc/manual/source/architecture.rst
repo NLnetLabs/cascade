@@ -7,11 +7,13 @@ The Pipeline
 Zone changes are said to cascade through a pipeline consisting of several
 stages:
 
-    - Loading
-      - Approving
-        - Signing
-          - Approving
-            - Publishing
+.. code-block::
+
+   - Loading
+     - Approving
+       - Signing
+         - Approving
+           - Publishing
 
 Bespoke Zone Verification
 -------------------------
