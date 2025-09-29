@@ -1,11 +1,11 @@
 # Configuring a group of zones for Cascade
 # ========================================
 #
-# A policy is a collection of settings that apply to zones known to Cascade.
-# Policy controls how Cascade operates on those zones, e.g. how they are signed.
-# This file is a template describing all possible settings and their defaults.
-# You can copy this and customize it to your liking, or write a policy file from
-# scratch using this as a reference.
+# A policy is a collection of settings that apply to a group of zones known to
+# Cascade.  Policy controls how Cascade operates on those zones, e.g. how they
+# are signed. This file is a template describing all possible settings and their
+# defaults. You can copy this and customize it to your liking, or write a policy
+# file from scratch using this as a reference.
 # 
 # Policy files are managed by the user, and are stored at a configurable path
 # (by default, '/etc/cascade/policies').  You can add, modify, and remove
@@ -42,8 +42,9 @@ version = "v1"
 # Whether review is required.
 #
 # If this is 'true', a loaded version of a zone will not be signed or published
-# until the user explicitly approves it.  If it is 'false', loaded zones will be
-# signed immediately.  The review hook (below) will be run in any case.
+# until it is approved.  If it is 'false', loaded zones will be signed
+# immediately.  At the moment, the review hook will only be run if this is set
+# to true.
 required = false
 
 # A hook for reviewing a loaded zone.
@@ -56,15 +57,21 @@ required = false
 # - 'CASCADE_ZONE': The name of the zone, formatted without a trailing dot.
 # - 'CASCADE_SERIAL': The serial number of the zone (decimal integer).
 # - 'CASCADE_TOKEN': A UUID associated with this review, for approving or
-#   rejecting this version of the zone.
+#     rejecting this version of the zone.
 # - 'CASCADE_SERVER': The TCP/UDP port where Cascade is serving the zone for
-#   review, formatted '<ip-addr>:<port>'.
+#     review, formatted '<ip-addr>:<port>'.
+#     TODO: Multiple such servers can be configured, which one should we pick?
 # - 'CASCADE_CONTROL': The address of Cascade's HTTP API server, for sending
-#   approvals and rejections.
+#     approvals and rejections.
 #
-# To approve the zone contents, send an HTTP POST request to
-# `http://$CASCADE_SERVER/rs/approve/$CASCADE_TOKEN?zone=$CASCADE_ZONE&serial=$CASCADE_SERIAL`
-# (where `approve` can be replaced by `reject` to reject the zone).
+# The command will be called from an unspecified directory, and it must be
+# accessible to Cascade (i.e. after it has dropped privileges).
+#
+# To approve the zone contents, send an HTTP GET request to
+# `http://$CASCADE_CONTROL/approve/$CASCADE_TOKEN?zone=$CASCADE_ZONE&serial=$CASCADE_SERIAL`.
+# `approve` can be replaced by `reject` to reject the zone.  If the command
+# exits without approving or rejecting the zone, Cascade will wait for the user
+# to approve it manually.
 #
 # TODO: Use the exit code of the hook to infer approval / rejection?
 #cmd-hook = "review-unsigned-zone.sh"
@@ -72,15 +79,6 @@ required = false
 
 # DNSSEC key management.
 [key-manager]
-
-# The HSM server to use.
-#
-# If this is set, the named HSM server (which must be configured via 'cascade
-# hsm add') will be used for storing the zone's DNSSEC keys.
-#
-# TODO: Link to a guide for using HSMs with Cascade.
-# TODO: Allow using multiple HSMs, and HSMs in tandem with on-disk keys.
-#hsm-server-id = "softhsm"
 
 # How long keys are considered valid for.
 #
@@ -103,25 +101,50 @@ csk.validity = "31536000"
 # they expire (as per 'validity').  When using this setting, 'validity' must not
 # be set to 'forever'.
 #
+# The first step in a rollover will be to generate new keys to replace old ones.
+# By disabling this setting, the user can manually control how new keys are
+# generated, and when rollovers happen.
+#
 # TODO: Maybe we want to start rolling over keys some time before expiry?
 ksk.auto-start = true
 zsk.auto-start = true
 csk.auto-start = true
 alg.auto-start = true
 
-# TODO
+# Whether to automatically check for record propagation.
+#
+# If this is enabled, Cascade will automatically contact public DNS servers to
+# detect when new records (e.g. DNSKEY) are visible globally.  It is necessary
+# to wait until some records are visible globally to progress key rollovers.  If
+# this is disabled, the user will have to inform Cascade when these conditions
+# are reached manually.
+#
+# For this setting to work, Cascade must have network access to the zone's
+# public nameservers and the parent zone's public nameservers.
 ksk.auto-report = true
 zsk.auto-report = true
 csk.auto-report = true
 alg.auto-report = true
 
-# TODO
+# Whether to automatically wait for cache expiry.
+#
+# If this is enabled, Cascade will automatically progress through key rollover
+# steps that need to wait for downstream users' DNS caches to expire.  It will
+# estimate the right amount of time to wait based on record TTLs.
 ksk.auto-expire = true
 zsk.auto-expire = true
 csk.auto-expire = true
 alg.auto-expire = true
 
-# TODO
+# Whether to automatically check for rollover completion.
+#
+# Like 'auto-report', if this setting is enabled, Cascade will automatically
+# contact public DNS servers to detect when new records are visible globally.
+# 'auto-done' specifically affects automatic checks for the last step of key
+# rollovers, and is independent from 'auto-report'.
+#
+# For this setting to work, Cascade must have network access to the zone's
+# public nameservers and the parent zone's public nameservers.
 ksk.auto-done = true
 zsk.auto-done = true
 csk.auto-done = true
@@ -162,7 +185,7 @@ ttl = 3600 # TODO: "1h"
 # To prevent such cases, this setting allows the inception time to be offset
 # into the past.
 #
-# Independent offsets can be set for each record.  An integer value is
+# Independent offsets can be set for each type of record.  An integer value is
 # intepreted as seconds; inception times will be calculated as 'now - offset'
 # at the time of signing.
 dnskey.signature-inception-offset = 86400 # TODO: "1d"
@@ -174,7 +197,7 @@ cds.signature-inception-offset = 86400
 # invalid.  To keep the zone valid, the signatures should be regenerated before
 # they expire; see 'signature-remain-time' to control regeneration time.
 #
-# Independent lifetimes can be set for each record.  An integer value is
+# Independent lifetimes can be set for each type of record.  An integer value is
 # interpreted as seconds.
 dnskey.signature-lifetime = 1209600 # TODO: "2w"
 cds.signature-lifetime = 1209600
@@ -188,20 +211,28 @@ cds.signature-lifetime = 1209600
 # signatures will be regenerated; it must be less than the 'signature-lifetime'
 # setting.
 #
-# Independent waiting times can be set for each record.  An integer value is
-# interpreted as seconds.
+# Independent waiting times can be set for each type of record.  An integer
+# value is interpreted as seconds.
 dnskey.signature-remain-time = 604800 # TODO: "1w"
 cds.signature-remain-time = 604800
 
 # How keys are generated.
 [key-manager.generation]
 
+# The HSM server to use.
+#
+# If this is set, the named HSM server (which must be configured via 'cascade
+# hsm add') will be used for generating new DNSSEC keys.
+#
+# TODO: Link to a guide for using HSMs with Cascade.
+#hsm-server-id = "softhsm"
+
 # Whether to generate CSKs, instead of separate ZSKs and KSKs.
 #
-# A CSK (Combined Signing Key) uses the same cryptographic key material for
-# both the ZSK and KSK of a zone.  Both keys are rolled over simultaneously,
-# and only a single cryptographic key needs to be managed; this can simplify the
-# maintenance of the zone.
+# A CSK (Combined Signing Key) takes the role of both ZSK and KSK for a zone,
+# unlike the standard practice of using separate keys for ZSK and KSK.  This
+# setting does not affect how DNSSEC validation is performed, only procedures
+# for key rollovers.
 #
 # If this is enabled, Cascade will generate CSKs for the associated zones.
 #
@@ -228,12 +259,17 @@ use-csk = false
 # is recommended or mandated to avoid them.  In addition, RSA keys smaller than
 # 2048 bits are not recommended.
 #
-# TODO: This works with HSM keys too, right?
+# NOTE: At the moment, only RSASHA256 and ECDSAP256SHA256 work with HSMs.  Other
+#   algorithms cannot be used with HSMs, and will cause generation failures.
 parameters = "ecdsa-p256-sha256"
 #parameters = "rsa-sha512:4096"
 
 
 # How zones are signed.
+#
+# Note that certain records (e.g. DNSKEY and CDS records at the apex of the
+# zone) are signed by the key manager, rather than the zone signer; see the
+# `[key-manager.records]` section for configuring the signing of those records.
 [signer]
 
 # How SOA serial numbers are generated for signed zones.
@@ -292,8 +328,8 @@ type = "nsec"
 # Whether to skip NSEC3 records for unsigned delegations.
 #
 # This enables the NSEC3 Opt-Out flag, and skips delegations to unsigned zones
-# when generating NSEC3 records.  This is a performance optimization for large
-# zones with many unsigned delegations, but it should not be enabled carelessly.
+# when generating NSEC3 records.  This affects the security of the zone, so be
+# careful if you wish to enable it.
 #opt-out = false
 
 # How signed zones are reviewed.
@@ -301,9 +337,9 @@ type = "nsec"
 
 # Whether review is required.
 #
-# If this is 'true', a signed version of a zone will not be published until the
-# user explicitly approves it.  If it is 'false', signed zones will be published
-# immediately.  The review hook (below) will be run in any case.
+# If this is 'true', a signed version of a zone will not be published until it
+# is approved.  If it is 'false', signed zones will be published immediately.
+# At the moment, the review hook will only be run if this is set to true.
 required = false
 
 # A hook for reviewing a signed zone.
@@ -326,9 +362,14 @@ required = false
 # - 'CASCADE_CONTROL': The address of Cascade's HTTP API server, for sending
 #   approvals and rejections.
 #
-# To approve the zone contents, send an HTTP POST request to
-# `http://$CASCADE_SERVER/rs2/approve/$CASCADE_TOKEN?zone=$CASCADE_ZONE&serial=$CASCADE_SERIAL`
-# (where `approve` can be replaced by `reject` to reject the zone).
+# The command will be called from an unspecified directory, and it must be
+# accessible to Cascade (i.e. after it has dropped privileges).
+#
+# To approve the zone contents, send an HTTP GET request to
+# `http://$CASCADE_CONTROL/approve/$CASCADE_TOKEN?zone=$CASCADE_ZONE&serial=$CASCADE_SERIAL`.
+# `approve` can be replaced by `reject` to reject the zone.  If the command
+# exits without approving or rejecting the zone, Cascade will wait for the user
+# to approve it manually.
 #
 # TODO: Use the exit code of the hook to infer approval / rejection?
 #cmd-hook = "review-signed-zone.sh"

@@ -326,10 +326,7 @@ pub struct ReviewConfig {
 
 /// Configuration for the key manager.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct KeyManagerConfig {
-    /// Whether and which HSM server is being used.
-    pub hsm_server_id: Option<String>,
-}
+pub struct KeyManagerConfig {}
 
 //----------- ServerConfig -----------------------------------------------------
 

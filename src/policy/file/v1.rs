@@ -116,9 +116,6 @@ impl LoaderSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct KeyManagerSpec {
-    /// Whether and which HSM server is being used.
-    pub hsm_server_id: Option<String>,
-
     /// Policy for KSKs.
     pub ksk: KeyKindSpec,
 
@@ -150,7 +147,7 @@ impl KeyManagerSpec {
     /// Parse from this specification.
     pub fn parse(self) -> KeyManagerPolicy {
         KeyManagerPolicy {
-            hsm_server_id: self.hsm_server_id,
+            hsm_server_id: self.generation.hsm_server_id,
             use_csk: self.generation.use_csk,
             algorithm: match self.generation.parameters {
                 KeyGenerationParametersSpec::RsaSha256(bits) => {
@@ -243,8 +240,6 @@ impl KeyManagerSpec {
     /// Build into this specification.
     pub fn build(policy: &KeyManagerPolicy) -> Self {
         Self {
-            hsm_server_id: policy.hsm_server_id.clone(),
-
             ksk: KeyKindSpec {
                 validity: Some(match policy.ksk_validity {
                     Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
@@ -286,6 +281,7 @@ impl KeyManagerSpec {
             },
 
             generation: KeyManagerGenerationSpec {
+                hsm_server_id: policy.hsm_server_id.clone(),
                 use_csk: policy.use_csk,
                 parameters: match policy.algorithm {
                     KeyParameters::RsaSha256(bits) => {
@@ -307,7 +303,6 @@ impl KeyManagerSpec {
 impl Default for KeyManagerSpec {
     fn default() -> Self {
         Self {
-            hsm_server_id: None,
             ksk: Default::default(),
             zsk: Default::default(),
             csk: Default::default(),
@@ -452,6 +447,9 @@ impl Default for KeyManagerRecordsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct KeyManagerGenerationSpec {
+    /// Whether and which HSM server is being used.
+    pub hsm_server_id: Option<String>,
+
     /// Whether to generate CSKs, instead of separate ZSKs and KSKs.
     pub use_csk: bool,
 
@@ -462,6 +460,8 @@ pub struct KeyManagerGenerationSpec {
 impl Default for KeyManagerGenerationSpec {
     fn default() -> Self {
         Self {
+            hsm_server_id: None,
+
             // Default to KSK plus ZSK. CSK key rolls are more complex.
             // No official reference.
             use_csk: false,

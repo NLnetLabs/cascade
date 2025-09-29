@@ -36,13 +36,35 @@ zone-state-dir = "/var/lib/cascade/zone-state"
 # the event of filesystem corruption.  Carefully consider its security.
 tsig-store-path = "/var/lib/cascade/tsig-keys.db"
 
-# The directory storing on-disk DNSSEC keys.
+# The file storing KMIP credentials.
 #
-# If on-disk keys are used to sign zones, they are stored here.  The format of
-# those keys (file names and file formats) are internal implementation details.
+# This is an internal state file containing sensitive cryptographic material.
 # It should not be modified manually, but it can be backed up and restored in
 # the event of filesystem corruption.  Carefully consider its security.
+kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
+
+# The directory storing rollover states and on-disk DNSSEC keys.
+#
+# For every zone, the state of its DNSSEC keys (which keys are used, ongoing
+# rollovers, etc.) are stored here.  If on-disk keys are used to sign zones,
+# they are stored also here.
+#
+# The organization of this directory (file names and file formats) constitutes
+# internal implementation details.  It should not be modified manually, but
+# it can be backed up and restored in the event of filesystem corruption.
+# Carefully consider its security.
+#
+# TODO: Move rollover state files to a separate directory?
 keys-dir = "/var/lib/cascade/keys"
+
+# The directory containing KMIP server state.
+#
+# Information about known KMIP servers is stored in this directory.
+# 
+# The organization of this directory (file names and file formats) constitutes
+# internal implementation details.  It should not be modified manually, but
+# it can be backed up and restored in the event of filesystem corruption.
+kmip-server-state-dir = "/var/lib/cascade/kmip"
 
 # The path to the dnst binary Cascade should use.
 #
@@ -140,7 +162,7 @@ servers = ["127.0.0.1:8950", "[::1]:8950"] # TODO: Pick a good default port
 # A DNS server will be bound to these addresses.  If a DNS NOTIFY message for a
 # known zone is received there, the zone will be reloaded appropriately.
 #
-# Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
+# Unless explicitly specified (e.g. 'udp://localhost:8050'), each address will
 # be served over UDP and TCP.  An empty array will disable listening entirely.
 #
 # These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -155,7 +177,7 @@ notify-listeners = ["127.0.0.1:8050", "[::1]:8050"] # TODO: Pick a good default 
 # A DNS server will be bound to these addresses, and will serve the contents of
 # all loaded zones.  This can be used to verify the consistency of these zones.
 #
-# Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
+# Unless explicitly specified (e.g. 'udp://localhost:8051'), each address will
 # be served over UDP and TCP.  An empty array will disable serving entirely.
 #
 # These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -175,7 +197,7 @@ servers = ["127.0.0.1:8051", "[::1]:8051"] # TODO: Pick a good default port
 # all signed (but not necessarily published) zones.  This can be used to check
 # the correctness of the signer.
 #
-# Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
+# Unless explicitly specified (e.g. 'udp://localhost:8052'), each address will
 # be served over UDP and TCP.  An empty array will disable serving entirely.
 #
 # These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -195,7 +217,7 @@ servers = ["127.0.0.1:8052", "[::1]:8052"] # TODO: Pick a good default port.
 # A DNS server will be bound to these addresses, and will serve the contents of
 # all published zones.  This is the final output from Cascade.
 #
-# Unless explicitly specified (e.g. 'udp://localhost:0000'), each address will
+# Unless explicitly specified (e.g. 'udp://localhost:8053'), each address will
 # be served over UDP and TCP.  At least one address must be specified.
 #
 # These sockets may be bound by systemd and passed into Cascade.  If systemd

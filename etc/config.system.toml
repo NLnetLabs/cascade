@@ -10,6 +10,10 @@ version = "v1"
 policy-dir = "/etc/cascade/policies"
 zone-state-dir = "/var/lib/cascade/zone-state"
 tsig-store-path = "/var/lib/cascade/tsig-keys.db"
+kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
+keys-dir = "/var/lib/cascade/keys"
+kmip-server-state-dir = "/var/lib/cascade/kmip"
+dnst-binary-path = "dnst"
 
 [daemon]
 log-level = "info"
@@ -20,7 +24,7 @@ daemonize = false
 servers = ["127.0.0.1:8950", "[::1]:8950"] # TODO: Pick a good default port
 
 [loader]
-notif-listeners = ["127.0.0.1:8050", "[::1]:8050"] # TODO: Pick a good default port
+notify-listeners = ["127.0.0.1:8050", "[::1]:8050"] # TODO: Pick a good default port
 review.servers = ["127.0.0.1:8051", "[::1]:8051"] # TODO: Pick a good default port
 
 [signer]

@@ -517,26 +517,20 @@ impl ReviewConfigSpec {
 /// Configuration for the key manager.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct KeyManagerConfigSpec {
-    /// Whether and which HSM server is being used.
-    pub hsm_server_id: Option<String>,
-}
+pub struct KeyManagerConfigSpec {}
 
 //--- Conversion
 
 impl KeyManagerConfigSpec {
     /// Parse from this specification.
     pub fn parse(self) -> config::KeyManagerConfig {
-        config::KeyManagerConfig {
-            hsm_server_id: self.hsm_server_id,
-        }
+        config::KeyManagerConfig {}
     }
 
     /// Build this state specification.
     pub fn build(config: &config::KeyManagerConfig) -> Self {
-        Self {
-            hsm_server_id: config.hsm_server_id.clone(),
-        }
+        let &config::KeyManagerConfig {} = config;
+        Self {}
     }
 }
 
