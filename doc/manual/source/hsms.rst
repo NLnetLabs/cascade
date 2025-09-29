@@ -41,7 +41,7 @@ Cascade is a Rust powered application, crossing the divide between the Rust
 host application and a loaded C library means giving up the stability and
 memory safety guarantees offered by Rust. As such Cascade was designed to
 *NOT* load PKCS#11 modules directly but instead to hand that risk off to a
-helper tool: `kmip2pkcs11`.
+helper tool: :program:`kmip2pkcs11`.
 
 Cascade and HSMs
 ----------------
