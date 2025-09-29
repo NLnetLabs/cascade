@@ -55,8 +55,8 @@ Cascade consists of three, possibly four, pieces:
   allow you to use your preferred solutions to verify the unsigned and/or
   signed zone before publishing it.
 
-- The cascade command line interface (CLI) for controlling and interacting
-  with the cascaded daemon.
+- The Cascade command line interface (CLI) for controlling and interacting
+  with the :program:`cascaded` daemon.
 
 - A tool called `dnst keyset` which is somewhat similar to the OpenDNSSEC
   Enforcer but is not a daemon, instead it is invoked as needed by the cascaded
