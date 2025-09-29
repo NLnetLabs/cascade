@@ -62,12 +62,12 @@ Cascade consists of three, possibly four, pieces:
     - permits Cascade to work with KMIP and/or PKCS#11 compatible HSMs in
       exactly the same way from the perspective of the Cascade operator,
     - isolates the Cascade daemon process from untrusted 3rd party PKCS#11 module
-      code (avoiding crashes caused by the PKCS#11 code crashing,
+      code (avoiding crashes caused by the PKCS#11 code crashing),
     - avoiding the need for the Cascade daemon to have the access rights and
       environment needed to access the HSM,
     - avoiding the confusion caused by PKCS#11 module logging output being
       interleaved with that of the Cascade daemon,
-      offering additional deployment topologies by enabling the HSM access to be
+    - offering additional deployment topologies by enabling the HSM access to be
       from a separate process (and even potentially a separate server) to that
       of the Cascade daemon.
 
