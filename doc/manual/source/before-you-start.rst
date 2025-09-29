@@ -58,7 +58,7 @@ Cascade consists of three, possibly four, pieces:
 - The Cascade command line interface (CLI) for controlling and interacting
   with the :program:`cascaded` daemon.
 
-- A tool called `dnst keyset` which is somewhat similar to the OpenDNSSEC
+- A tool called :program:`dnst keyset` which is somewhat similar to the OpenDNSSEC
   Enforcer but is not a daemon, instead it is invoked as needed by the cascaded
   daemon. In future this may be bundled as an integral part of Cascade but will
   likely still also be supported as an external tool to allow it to be swapped
