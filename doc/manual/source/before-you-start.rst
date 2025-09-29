@@ -50,7 +50,7 @@ The Moving Parts
 
 Cascade consists of three, possibly four, pieces:
 
-- The cascaded daemon, receiving zone data, signing it, and serving the signed
+- The :program:`cascaded` daemon, receiving zone data, signing it, and serving the signed
   result, with support for approval "gates" during the processing pipeline to
   allow you to use your preferred solutions to verify the unsigned and/or
   signed zone before publishing it.
