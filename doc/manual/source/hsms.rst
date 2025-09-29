@@ -97,9 +97,9 @@ Setting up `kmip2pkcs11`
 ------------------------
 
 If you installed Cascade via a DEB or RPM package you should also already
-have the `kmip2pkcs11` software installed, unless you explicitly opted not to
+have the :program:`kmip2pkcs11` software installed, unless you explicitly opted not to
 install it. If installing via building from sources the instructions we
-provide also describe how to install `kmip2pkcs11`.
+provide also describe how to install :program:`kmip2pkcs11`.
 
 When installed via a package the daemon will not be run automatically. This is
 because you will need to:
