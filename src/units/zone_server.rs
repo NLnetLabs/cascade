@@ -443,18 +443,27 @@ impl ZoneServer {
             return Some(Ok(()));
         }
 
-        let hook = {
+        let review = {
             let zone = get_zone(&self.center, &zone_name).unwrap();
             let zone_state = zone.state.lock().unwrap();
             let policy = zone_state.policy.as_ref().unwrap();
             match self.source {
-                Source::UnsignedZones => policy.loader.review.cmd_hook.clone(),
-                Source::SignedZones => policy.signer.review.cmd_hook.clone(),
-                Source::PublishedZones => None,
+                Source::UnsignedZones => policy.loader.review.clone(),
+                Source::SignedZones => policy.signer.review.clone(),
+                Source::PublishedZones => unreachable!(),
             }
         };
 
-        let Some(hook) = hook else {
+        let review_server = {
+            let state = self.center.state.lock().unwrap();
+            match self.source {
+                Source::UnsignedZones => state.config.loader.review.servers[0].clone(),
+                Source::SignedZones => state.config.signer.review.servers[0].clone(),
+                Source::PublishedZones => unreachable!(),
+            }
+        };
+
+        if !review.required {
             // Approve immediately.
             match self.source {
                 Source::UnsignedZones => {
@@ -492,10 +501,27 @@ impl ZoneServer {
             .and_modify(|e| e.push(approval_token))
             .or_insert(vec![approval_token]);
 
-        match Command::new(&hook)
-            .arg(format!("{zone_name}"))
-            .arg(format!("{zone_serial}"))
-            .arg(format!("{approval_token}"))
+        let Some(hook) = review.cmd_hook else {
+            info!("[{unit_name}] No review hook set; waiting for manual review");
+            info!("[{unit_name}]: Confirm with HTTP GET {}approve/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+            info!("[{unit_name}]: Reject with HTTP GET {}reject/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+            return None;
+        };
+
+        // TODO: Windows support?
+        // TODO: Set 'CASCADE_UNSIGNED_SERIAL' and 'CASCADE_UNSIGNED_SERVER'.
+        match Command::new("sh")
+            .args(["-c", &hook])
+            .envs([
+                ("CASCADE_ZONE", &*zone_name.to_string()),
+                ("CASCADE_SERIAL", &*zone_serial.to_string()),
+                ("CASCADE_TOKEN", &*approval_token.to_string()),
+                ("CASCADE_SERVER", &*review_server.addr().to_string()),
+                (
+                    "CASCADE_CONTROL",
+                    self.http_api_path.strip_suffix("/").unwrap(),
+                ),
+            ])
             .spawn()
         {
             Ok(_) => {

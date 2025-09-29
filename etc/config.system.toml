@@ -1,0 +1,34 @@
+# Configuring Cascade for system-wide use
+# =======================================
+#
+# This configuration file is packaged with Cascade for system-wide setups (e.g.
+# with systemd).  See 'config.template.toml' for a complete description of the
+# settings and their defaults.
+
+version = "v1"
+
+policy-dir = "/etc/cascade/policies"
+zone-state-dir = "/var/lib/cascade/zone-state"
+tsig-store-path = "/var/lib/cascade/tsig-keys.db"
+kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
+keys-dir = "/var/lib/cascade/keys"
+kmip-server-state-dir = "/var/lib/cascade/kmip"
+dnst-binary-path = "dnst"
+
+[daemon]
+log-level = "info"
+log-target = { type = "syslog" }
+daemonize = false
+
+[remote-control]
+servers = ["127.0.0.1:8950", "[::1]:8950"] # TODO: Pick a good default port
+
+[loader]
+notify-listeners = ["127.0.0.1:8050", "[::1]:8050"] # TODO: Pick a good default port
+review.servers = ["127.0.0.1:8051", "[::1]:8051"] # TODO: Pick a good default port
+
+[signer]
+review.servers = ["127.0.0.1:8052", "[::1]:8052"] # TODO: Pick a good default port.
+
+[server]
+servers = ["127.0.0.1:8053", "[::1]:8053"] # TODO: Pick a good default port.
