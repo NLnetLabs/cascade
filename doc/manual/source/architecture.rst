@@ -15,6 +15,11 @@ stages:
          - Approving
            - Publishing
 
+.. image:: img/cascade-pipeline.png
+   :width: 100%
+   :align: center
+   :alt: Cascade pipeline
+
 Bespoke Zone Verification
 -------------------------
 
