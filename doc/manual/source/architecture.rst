@@ -95,7 +95,7 @@ module is *NOT* loaded by the Cascade daemon but by the separate :program:`kmip2
 daemon, the Cascade daemon does *NOT* require access to PKCS#11 config files
 nor does it need to be able to make outbound connections to the HSM.
 
-The `dnst keyset` tool when invoked by Cascade however *WILL* need outbound
+The :program:`dnst keyset` tool when invoked by Cascade however *WILL* need outbound
 access to the HSM in order to generate and sign HSM KSKs for signing DNSSEC
 related RRSETs at the apex of the zone).
 
