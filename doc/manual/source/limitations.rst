@@ -5,6 +5,9 @@
 Limitations
 ===========
 
+Updating config of an existing instance (aka state.db exists) requires using
+``cascade config reload`` (and then a restart to bind the new listeners).
+
 Differences to OpenDNSSEC
 -------------------------
 
