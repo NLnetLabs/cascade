@@ -14,8 +14,8 @@ the signed results available to downstream, secondary, nameservers which *are*
 actually Internet facing.
 
 One possible authoritative server that could be used up and downstream of
-Cascade is our NSD product, but any authoritative nameserver product should
-be usable instead of NSD, assuming that it supports transferring zones via XFR
+Cascade is our NSD product, but any authoritative nameserver product can
+be used instead of NSD, assuming that it supports transferring zones via XFR
 transfers to and from Cascade.
 
 Intended Audience
