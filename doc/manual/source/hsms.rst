@@ -104,12 +104,12 @@ provide also describe how to install :program:`kmip2pkcs11`.
 When installed via a package the daemon will not be run automatically. This is
 because you will need to:
 
-- Edit the `/etc/kmip2pkcs11/config.toml` file to tell `kmip2pkcs111` where to
-  find the PKCS#11 module to load.
-- Depending on your PKCS#11 module you may need to set PKCS#11 vendor specific
-  environment variables for the `kmip2pkcs11` process, and/or ensure that
-  PKCS#11 vendor specific configuration files and possibly also other software
-  are installed and correctly configured.
-- Ensure that the `kmip2pkcs11` user has access to the resources needed by the
-  PKCS#11 module to be loaded.
+- Edit the :file:`/etc/kmip2pkcs11/config.toml` file to tell
+  :program:`kmip2pkcs111` where to find the PKCS#11 module to load.
+- Depending on your PKCS#11 module you may need to set PKCS#11 vendor
+  specific environment variables for the :program:`kmip2pkcs11` process,
+  and/or ensure that PKCS#11 vendor specific configuration files and possibly
+  also other software are installed and correctly configured.
+- Ensure that the :program:`kmip2pkcs11` user has access to the resources
+  needed by the PKCS#11 module to be loaded.
 
