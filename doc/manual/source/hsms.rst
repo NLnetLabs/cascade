@@ -47,7 +47,7 @@ Cascade and HSMs
 ----------------
 
 Cascade supports both PKCS#11 and KMIP compatible HSMs (initially with KMIP
-support intended primarily for communication with our `kmip2pkcs11` tool,
+support intended primarily for communication with our :program:`kmip2pkcs11` tool,
 though success has also been seen with some other KMIP implementations, e.g.
 Fortanix DSM).
 
