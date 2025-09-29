@@ -28,11 +28,9 @@ large zones or operators with many many zones.
 Cascade is *NOT* yet intended for operation as a clustered deployment.
 
 As a successor to OpenDNSSEC Cascade is clearly intended to offer continuity
-to current users of OpenDNSSEC, but should be usable by anyone. In particular
-while functionally Cascade offers most of the functionality of OpenDNSSEC,
-it uses different terminology and has a slightly different architecture than
-that of OpenDNSSEC, in order to offer a superior experience to that offered
-by OpenDNSSEC.
+to current users of OpenDNSSEC, but should also be usable by anyone. In particular
+while Cascade offers most of the functionality of OpenDNSSEC,
+it uses different terminology and has a slightly different architecture in order to offer a superior experience.
 
 Like OpenDNSSEC one can use Cascade with a PKCS#11 compatible HSM, but unlike
 OpenDNSSEC using a HSM is not required, on-disk key files may be used instead,
