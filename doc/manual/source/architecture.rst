@@ -38,7 +38,7 @@ only support working with files.
 
 On completion of the verification process, approval or rejection is signalled
 back to Cascade by means of an (insecure in the initial version of Cascade) HTTP
-REST API.
+API.
 
 Rejecting a zone "soft" halts the Cascade pipeline for the zone, preventing it
 from cascading further down the pipeline, but allowing a newer version of the
