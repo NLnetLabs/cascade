@@ -14,6 +14,7 @@ use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
 use tokio::sync::mpsc;
 
+use crate::zone::ZoneOperation;
 use crate::{
     api,
     comms::ApplicationCommand,
@@ -64,6 +65,7 @@ pub struct Center {
 pub fn add_zone(
     center: &Arc<Center>,
     name: Name<Bytes>,
+    enable: bool,
     policy: Box<str>,
     source: api::ZoneSource,
 ) -> Result<(), ZoneAddError> {
@@ -117,6 +119,10 @@ pub fn add_zone(
         // NOTE: The zone is marked as dirty by the above operation.
     }
 
+    if enable {
+        crate::zone::change_operation(center, name.clone(), ZoneOperation::Running).unwrap();
+    }
+
     log::info!("Added zone '{name}'");
     Ok(())
 }
@@ -150,20 +156,6 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 pub fn get_zone(center: &Center, name: &StoredName) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
-}
-
-pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reason: &str) {
-    let mut state = center.state.lock().unwrap();
-    {
-        let zone = state.zones.get(zone_name).unwrap();
-        let mut zone_state = zone.0.state.lock().unwrap();
-        if hard {
-            zone_state.hard_halt(reason.to_string());
-        } else {
-            zone_state.soft_halt(reason.to_string());
-        }
-    }
-    state.mark_dirty(center);
 }
 
 //----------- State ------------------------------------------------------------
@@ -288,6 +280,9 @@ pub enum Change {
 
     /// A zone has been added.
     ZoneAdded(Name<Bytes>),
+
+    /// The operation of a zone has changed.
+    ZoneOperationChanged(Name<Bytes>, ZoneOperation),
 
     /// The policy of a zone has changed.
     ZonePolicyChanged(Name<Bytes>, Arc<PolicyVersion>),

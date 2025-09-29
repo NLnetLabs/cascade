@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::center;
 use crate::units::http_server::KmipServerState;
 use crate::units::zone_loader::ZoneLoaderReport;
-use crate::zone::{HistoryItem, PipelineMode};
+use crate::zone::{HistoryItem, ZoneOperation};
 use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
@@ -43,11 +43,37 @@ pub enum ConfigReloadError {
     Parse(String),
 }
 
+//----------- ZoneChangeOperation ----------------------------------------------
+
+/// Change the operation of a zone.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneChangeOperation {
+    /// The new operation of the zone.
+    pub operation: ZoneOperation,
+}
+
+/// The result of a [`ZoneChangeOperation`] command.
+pub type ZoneChangeOperationResult = Result<ZoneChangeOperationOutput, ZoneChangeOperationError>;
+
+/// The output of a [`ZoneChangeOperation`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneChangeOperationOutput {
+    // TODO: A diff between the old and new operation.
+}
+
+/// An error from a [`ZoneChangeOperation`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneChangeOperationError {
+    /// The zone could not be found.
+    NoSuchZone,
+}
+
 //------------------------------------------------------------------------------
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAdd {
     pub name: Name<Bytes>,
+    pub enable: bool,
     pub source: ZoneSource,
     pub policy: String,
 }
@@ -195,7 +221,7 @@ pub struct ZoneStatus {
     pub signing_report: Option<SigningReport>,
     pub published_serial: Option<Serial>,
     pub publish_addr: SocketAddr,
-    pub pipeline_mode: PipelineMode,
+    pub operation: ZoneOperation,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]

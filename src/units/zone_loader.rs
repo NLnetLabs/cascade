@@ -30,11 +30,11 @@ use tokio::time::Instant;
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 
-use crate::center::{Center, Change};
+use crate::center::{get_zone, Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
-use crate::zone::ZoneLoadSource;
+use crate::zone::{ZoneLoadSource, ZoneOperation};
 use crate::zonemaintenance::maintainer::{
     Config, ConnectionFactory, DefaultConnFactory, TypedZone, ZoneMaintainer,
 };
@@ -80,9 +80,18 @@ impl ZoneLoader {
             state
                 .zones
                 .iter()
-                .map(|zone| {
+                .filter_map(|zone| {
                     let state = zone.0.state.lock().unwrap();
-                    (zone.0.name.clone(), state.source.clone())
+
+                    // Skip the zone if it is disabled.
+                    if matches!(
+                        state.operation,
+                        ZoneOperation::Disabled | ZoneOperation::HardHalt(_)
+                    ) {
+                        return None;
+                    }
+
+                    Some((zone.0.name.clone(), state.source.clone()))
                 })
                 .collect::<Vec<_>>()
         };
@@ -162,12 +171,62 @@ impl ZoneLoader {
             }
 
             Some(ApplicationCommand::Changed(Change::ZoneSourceChanged(name, source))) => {
+                // Ignore if the zone is disabled.
+                if {
+                    let zone = get_zone(&self.center, &name).unwrap();
+                    let state = zone.state.lock().unwrap();
+                    matches!(
+                        state.operation,
+                        ZoneOperation::Disabled | ZoneOperation::HardHalt(_)
+                    )
+                } {
+                    return Ok(());
+                }
+
                 // Just remove and re-insert the zone.
                 let id = ZoneId {
                     name: name.clone(),
                     class: Class::IN,
                 };
                 zone_maintainer.remove_zone(id).await;
+
+                let zone = match source {
+                    ZoneLoadSource::None => return Ok(()),
+
+                    ZoneLoadSource::Zonefile { path } => {
+                        let (zone, ri) =
+                            Self::register_primary_zone(name.clone(), &path, &zone_updated_tx)
+                                .await?;
+                        receipt_info.insert(name, ri);
+                        zone
+                    }
+
+                    ZoneLoadSource::Server { addr, tsig_key: _ } => {
+                        Self::register_secondary_zone(name.clone(), addr, zone_updated_tx)?
+                    }
+                };
+
+                // TODO: Handle (or iron out) potential errors here.
+                let _ = zone_maintainer.insert_zone(zone).await;
+            }
+
+            Some(ApplicationCommand::Changed(Change::ZoneOperationChanged(
+                name,
+                ZoneOperation::Running | ZoneOperation::SoftHalt(_),
+            ))) => {
+                // If we already have the zone, do nothing.
+                if zone_maintainer.has_zone(ZoneId {
+                    name: name.clone(),
+                    class: Class::IN,
+                }) {
+                    return Ok(());
+                }
+
+                let source = {
+                    let zone = get_zone(&self.center, &name).unwrap();
+                    let state = zone.state.lock().unwrap();
+                    state.source.clone()
+                };
 
                 let zone = match source {
                     ZoneLoadSource::None => return Ok(()),

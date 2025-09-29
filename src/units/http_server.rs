@@ -50,6 +50,7 @@ use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::ZoneLoadSource;
+use crate::zone::ZoneOperation;
 use crate::zonemaintenance::maintainer::read_soa;
 use crate::zonemaintenance::types::ZoneReportDetails;
 
@@ -106,6 +107,7 @@ impl HttpServer {
             .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
+            .route("/zone/{name}/operation", post(Self::zone_operation))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
             .route("/zone/{name}/remove", post(Self::zone_remove))
             .route("/zone/{name}/status", get(Self::zone_status))
@@ -186,6 +188,7 @@ impl HttpServer {
         if let Err(e) = center::add_zone(
             &state.center,
             zone_register.name.clone(),
+            zone_register.enable,
             zone_register.policy.clone().into(),
             zone_register.source.clone(),
         ) {
@@ -208,6 +211,20 @@ impl HttpServer {
             name: zone_name,
             status: "Submitted".to_string(),
         }))
+    }
+
+    /// Control the operation of a zone.
+    async fn zone_operation(
+        State(state): State<Arc<HttpServerState>>,
+        Path(name): Path<Name<Bytes>>,
+        Json(cmd): Json<ZoneChangeOperation>,
+    ) -> Json<ZoneChangeOperationResult> {
+        match crate::zone::change_operation(&state.center, name, cmd.operation) {
+            Ok(()) => Json(Ok(ZoneChangeOperationOutput {})),
+            Err(crate::zone::ChangeOperationError::NoSuchZone) => {
+                Json(Err(ZoneChangeOperationError::NoSuchZone))
+            }
+        }
     }
 
     async fn zone_remove(
@@ -268,7 +285,7 @@ impl HttpServer {
                 .get(&name)
                 .ok_or(ZoneStatusError::ZoneDoesNotExist)?;
             let zone_state = zone.0.state.lock().unwrap();
-            pipeline_mode = zone_state.pipeline_mode.clone();
+            pipeline_mode = zone_state.operation.clone();
             policy = zone_state
                 .policy
                 .as_ref()
@@ -536,7 +553,7 @@ impl HttpServer {
             signing_report,
             published_serial,
             publish_addr,
-            pipeline_mode,
+            operation: pipeline_mode,
         })
     }
 
@@ -571,8 +588,8 @@ impl HttpServer {
             .get(&name)
             .ok_or(ZoneReloadError::ZoneDoesNotExist)?;
         let zone_state = zone.0.state.lock().unwrap();
-        if let Some(reason) = zone_state.halted(true) {
-            return Err(ZoneReloadError::ZoneHalted(reason));
+        if let ZoneOperation::HardHalt(reason) = &zone_state.operation {
+            return Err(ZoneReloadError::ZoneHalted(reason.clone()));
         }
 
         let source = zone_state.source.clone();

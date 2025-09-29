@@ -7,11 +7,11 @@ use log::info;
 use tokio::sync::mpsc;
 
 use crate::api::ZoneReviewStatus;
-use crate::center::{get_zone, halt_zone, Center, Change};
+use crate::center::{get_zone, Center, Change};
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::manager::TargetCommand;
 use crate::payload::Update;
-use crate::zone::{HistoricalEvent, SigningTrigger};
+use crate::zone::{self, HistoricalEvent, SigningTrigger, ZoneOperation};
 
 pub struct CentralCommand {
     pub center: Arc<Center>,
@@ -84,6 +84,14 @@ impl CentralCommand {
                         Change::ZoneAdded(name) => {
                             record_zone_event(&self.center, name, HistoricalEvent::Added, None);
                         }
+                        Change::ZoneOperationChanged(name, _) => {
+                            record_zone_event(
+                                &self.center,
+                                name,
+                                HistoricalEvent::OperationChanged,
+                                None,
+                            );
+                        }
                         Change::ZonePolicyChanged(name, _) => {
                             record_zone_event(
                                 &self.center,
@@ -153,13 +161,6 @@ impl CentralCommand {
                 zone_name,
                 zone_serial,
             } => {
-                halt_zone(
-                    &self.center,
-                    &zone_name,
-                    false,
-                    "Unsigned zone was rejected at the review stage.",
-                );
-
                 record_zone_event(
                     &self.center,
                     &zone_name,
@@ -169,6 +170,16 @@ impl CentralCommand {
                     },
                     Some(zone_serial),
                 );
+
+                zone::change_operation(
+                    &self.center,
+                    zone_name.clone(),
+                    ZoneOperation::SoftHalt(format!(
+                        "Unsigned zone (serial {zone_serial}) was rejected at the review stage"
+                    )),
+                )
+                .unwrap();
+
                 return;
             }
 
@@ -261,13 +272,6 @@ impl CentralCommand {
                 zone_name,
                 zone_serial,
             } => {
-                halt_zone(
-                    &self.center,
-                    &zone_name,
-                    false,
-                    "Signed zone was rejected at the review stage.",
-                );
-
                 record_zone_event(
                     &self.center,
                     &zone_name,
@@ -277,6 +281,16 @@ impl CentralCommand {
                     },
                     Some(zone_serial),
                 );
+
+                zone::change_operation(
+                    &self.center,
+                    zone_name.clone(),
+                    ZoneOperation::SoftHalt(format!(
+                        "Signed zone (serial {zone_serial}) was rejected at the review stage"
+                    )),
+                )
+                .unwrap();
+
                 return;
             }
 
@@ -286,14 +300,23 @@ impl CentralCommand {
                 trigger,
                 reason,
             } => {
-                halt_zone(&self.center, &zone_name, true, reason.as_str());
-
                 record_zone_event(
                     &self.center,
                     &zone_name,
-                    HistoricalEvent::SigningFailed { trigger, reason },
+                    HistoricalEvent::SigningFailed {
+                        trigger,
+                        reason: reason.clone(),
+                    },
                     zone_serial,
                 );
+
+                zone::change_operation(
+                    &self.center,
+                    zone_name.clone(),
+                    ZoneOperation::HardHalt(reason.clone()),
+                )
+                .unwrap();
+
                 return;
             }
         };

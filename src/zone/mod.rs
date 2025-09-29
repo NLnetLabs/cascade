@@ -19,6 +19,7 @@ use domain::{
 };
 use domain::{rdata::dnssec::Timestamp, tsig};
 use serde::{Deserialize, Serialize};
+use tokio::sync::SetOnce;
 
 use crate::{
     api::{self, ZoneReviewStatus},
@@ -53,6 +54,9 @@ pub struct Zone {
 
     /// The published contents of the zone.
     pub published: zonetree::Zone,
+
+    /// The key manager state.
+    pub km_state: SetOnce<()>,
 }
 
 /// The state of a zone.
@@ -83,10 +87,11 @@ pub struct ZoneState {
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
 
-    /// Whether or not the pipeline for this zone should be allowed to flow at
-    /// the moment.
+    /// The state of the operation of the zone.
+    //
     // TODO: make the pipeline stop accepting new data when hard halted.
-    pub pipeline_mode: PipelineMode,
+    pub operation: ZoneOperation,
+    //
     // TODO:
     // - A log?
     // - Initialization?
@@ -98,26 +103,6 @@ pub struct ZoneState {
 }
 
 impl ZoneState {
-    pub fn hard_halt(&mut self, reason: String) {
-        self.pipeline_mode = PipelineMode::HardHalt(reason);
-    }
-
-    pub fn soft_halt(&mut self, reason: String) {
-        self.pipeline_mode = PipelineMode::SoftHalt(reason);
-    }
-
-    pub fn resume(&mut self) {
-        self.pipeline_mode = PipelineMode::Running;
-    }
-
-    pub fn halted(&self, hard: bool) -> Option<String> {
-        match &self.pipeline_mode {
-            PipelineMode::SoftHalt(r) if !hard => Some(r.clone()),
-            PipelineMode::HardHalt(r) if hard => Some(r.clone()),
-            _ => None,
-        }
-    }
-
     pub fn record_event(&mut self, event: HistoricalEvent, serial: Option<Serial>) {
         self.history.push(HistoryItem::new(event, serial));
     }
@@ -134,10 +119,17 @@ impl ZoneState {
     }
 }
 
+/// How the zone is being operated.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub enum PipelineMode {
-    /// Newly received zone data will flow through the pipeline.
+pub enum ZoneOperation {
+    /// The zone is disabled; no actions will be taken on it.
     #[default]
+    Disabled,
+
+    /// The zone is operating normally.
+    ///
+    /// All existing versions of the zone will progress through the pipeline as
+    /// usual.
     Running,
 
     /// The current zone data could not be fully processed through the
@@ -187,6 +179,7 @@ pub enum HistoricalEventType {
 pub enum HistoricalEvent {
     Added,
     Removed,
+    OperationChanged,
     PolicyChanged,
     SourceChanged,
     NewVersionReceived,
@@ -279,6 +272,7 @@ impl Zone {
             loaded: ZoneBuilder::new(name.clone(), Class::IN).build(),
             signed: ZoneBuilder::new(name.clone(), Class::IN).build(),
             published: ZoneBuilder::new(name.clone(), Class::IN).build(),
+            km_state: SetOnce::new(),
         }
     }
 }
@@ -451,6 +445,41 @@ pub fn change_policy(
     Ok(())
 }
 
+/// Change the operation of the zone.
+pub fn change_operation(
+    center: &Arc<Center>,
+    name: Name<Bytes>,
+    operation: ZoneOperation,
+) -> Result<(), ChangeOperationError> {
+    // Find the zone.
+    let zone = {
+        let state = center.state.lock().unwrap();
+        state
+            .zones
+            .get(&name)
+            .ok_or(ChangeOperationError::NoSuchZone)?
+            .0
+            .clone()
+    };
+
+    // Set the source in the zone.
+    let mut state = zone.state.lock().unwrap();
+    let old_operation = mem::replace(&mut state.operation, operation.clone());
+
+    center
+        .update_tx
+        .send(Update::Changed(Change::ZoneOperationChanged(
+            name.clone(),
+            operation.clone(),
+        )))
+        .unwrap();
+
+    zone.mark_dirty(&mut state, center);
+
+    log::info!("Set operation of zone '{name}' from '{old_operation:?}' to '{operation:?}'");
+    Ok(())
+}
+
 /// Change the source of the zone.
 pub fn change_source(
     center: &Arc<Center>,
@@ -604,6 +633,25 @@ impl fmt::Display for ChangePolicyError {
             Self::NoSuchZone => "the specified zone does not exist",
             Self::NoSuchPolicy => "the specified policy does not exist",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+        })
+    }
+}
+
+//----------- ChangeOperationError ---------------------------------------------
+
+/// An error in changing the operation of a zone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChangeOperationError {
+    /// The specified zone does not exist.
+    NoSuchZone,
+}
+
+impl std::error::Error for ChangeOperationError {}
+
+impl fmt::Display for ChangeOperationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NoSuchZone => "the specified zone does not exist",
         })
     }
 }

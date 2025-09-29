@@ -1,13 +1,13 @@
-use crate::api;
 use crate::api::keyset::{KeyRemoveError, KeyRollError};
-use crate::center::{get_zone, halt_zone, Center};
+use crate::center::{get_zone, Center, Change};
 use crate::cli::commands::hsm::Error;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
 use crate::policy::KeyParameters;
 use crate::targets::central_command::record_zone_event;
 use crate::units::http_server::KmipServerState;
-use crate::zone::{HistoricalEvent, SigningTrigger};
+use crate::zone::{HistoricalEvent, SigningTrigger, ZoneOperation};
+use crate::{api, zone};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use core::time::Duration;
@@ -104,9 +104,7 @@ impl KeyManager {
 
     async fn run_cmd(&self, cmd: ApplicationCommand) -> Result<(), String> {
         match cmd {
-            ApplicationCommand::RegisterZone {
-                register: crate::api::ZoneAdd { name, .. },
-            } => {
+            ApplicationCommand::Changed(Change::ZoneAdded(name)) => {
                 let state_path = self.keys_dir.join(format!("{name}.state"));
 
                 let mut cmd = self.keyset_cmd(name.clone());
@@ -209,11 +207,19 @@ impl KeyManager {
                     cmd.output()?;
                 }
 
-                // TODO: This should not happen immediately after
-                // `keyset create` but only once the zone is enabled.
-                // We currently do not have a good mechanism for that
-                // so we init the key immediately.
+                Ok(())
+            }
+
+            ApplicationCommand::Changed(Change::ZoneOperationChanged(
+                name,
+                ZoneOperation::Running,
+            )) => {
+                // TODO: Only run this if the zone was previously disabled.
                 self.keyset_cmd(name.clone()).arg("init").output()?;
+
+                // Mark the key manager state as initialized, so that signing
+                // can progress.
+                let _ = get_zone(&self.center, &name).unwrap().km_state.set(());
 
                 Ok(())
             }
@@ -936,7 +942,13 @@ impl KeySetCommand {
                     HistoricalEvent::KeySetError(err.clone()),
                     None,
                 );
-                halt_zone(&self.center, &self.name, true, err);
+
+                zone::change_operation(
+                    &self.center,
+                    self.name.clone(),
+                    ZoneOperation::HardHalt(err.clone()),
+                )
+                .unwrap();
             })
     }
 

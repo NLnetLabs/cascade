@@ -60,6 +60,7 @@ use domain::zonetree::{
 use log::log_enabled;
 
 use crate::center::{get_zone, Center};
+use crate::zone::ZoneOperation;
 
 use super::types::{
     CompatibilityMode, Event, NotifySrcDstConfig, NotifyStrategy, TransportStrategy, XfrConfig,
@@ -578,6 +579,10 @@ where
                 }
             }
         });
+    }
+
+    pub fn has_zone(&self, zone: ZoneId) -> bool {
+        self.zones().get_zone(&zone.name, zone.class).is_some()
     }
 
     /// Remove a zone, if it exists.
@@ -1539,8 +1544,8 @@ where
             let zone =
                 get_zone(&center, zone.apex_name()).ok_or(ZoneMaintainerError::UnknownZone)?;
             let zone_state = zone.state.lock().unwrap();
-            if let Some(err) = zone_state.halted(true) {
-                return Err(ZoneMaintainerError::ZoneHardHalted(err));
+            if let ZoneOperation::HardHalt(reason) = &zone_state.operation {
+                return Err(ZoneMaintainerError::ZoneHardHalted(reason.clone()));
             }
         }
 

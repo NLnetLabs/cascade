@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     policy::{Policy, PolicyVersion},
-    zone::{Zone, ZoneState},
+    zone::{Zone, ZoneOperation, ZoneState},
 };
 
 pub mod v1;
@@ -88,12 +88,21 @@ impl Spec {
                 min_expiration,
                 next_min_expiration,
                 history,
+                operation,
             }) => {
                 state.policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
                 state.source = source.parse();
                 state.min_expiration = min_expiration;
                 state.next_min_expiration = next_min_expiration;
                 state.history = history;
+                state.operation = operation.parse();
+
+                // If the zone was previously running, assume the key manager
+                // state is initialized.  If it was previously halted, we can't
+                // be sure, but the key manager should deal with that for us.
+                if matches!(state.operation, ZoneOperation::Running) {
+                    let _ = zone.km_state.set(());
+                }
             }
         }
     }

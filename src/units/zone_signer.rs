@@ -368,6 +368,13 @@ impl ZoneSigner {
         info!("[ZS]: Waiting to start signing operation for zone '{zone_name}'.");
         self.signer_status.write().await.enqueue(zone_name.clone());
 
+        // Wait for the key manager to be ready.
+        get_zone(&self.center, zone_name)
+            .unwrap()
+            .km_state
+            .wait()
+            .await;
+
         let _permit = self.concurrent_operation_permits.acquire().await.unwrap();
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
 
@@ -385,7 +392,8 @@ impl ZoneSigner {
             }
         };
         let Some(unsigned_zone) = zone_to_sign else {
-            return Err(format!("Unknown zone '{zone_name}'"));
+            // The zone might not have been initialized yet.  It's fine.
+            return Ok(());
         };
         let soa_rr = get_zone_soa(unsigned_zone.clone(), zone_name.clone())?;
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
@@ -528,7 +536,7 @@ impl ZoneSigner {
             zonefile.extend_from_slice(dnskey_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
             if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
-                eprintln!("Adding RR {dnskey_rr}");
+                debug!("Adding RR {dnskey_rr}");
                 records.push(rec.flatten_into());
             }
         }

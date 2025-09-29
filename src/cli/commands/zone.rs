@@ -10,7 +10,7 @@ use humantime::FormattedDuration;
 use crate::api::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::cli::commands::policy::ansi;
-use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
+use crate::zone::{HistoricalEvent, SigningTrigger, ZoneOperation};
 use crate::zonemaintenance::types::SigningReport;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -21,10 +21,15 @@ pub struct Zone {
 
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum ZoneCommand {
-    /// Register a new zone
+    /// Add a zone.
     #[command(name = "add")]
     Add {
         name: Name<Bytes>,
+
+        /// Whether to enable the zone immediately.
+        #[arg(long = "enable")]
+        enable: bool,
+
         /// The zone source can be an IP address (with or without port,
         /// defaults to port 53) or a file path.
         // TODO: allow supplying different tcp and/or udp port?
@@ -34,6 +39,46 @@ pub enum ZoneCommand {
         /// Policy to use for this zone
         #[arg(long = "policy")]
         policy: String,
+    },
+
+    /// Enable a zone.
+    ///
+    /// If the zone is disabled (as it is when it is created), this command
+    /// will enable it.
+    #[command(name = "enable")]
+    Enable {
+        /// The name of the zone.
+        name: Name<Bytes>,
+    },
+
+    /// Halt a zone.
+    ///
+    /// The operation of the zone will be halted.
+    #[command(name = "halt")]
+    Halt {
+        /// The name of the zone.
+        name: Name<Bytes>,
+
+        /// The reason for the halt, if any.
+        #[arg(default_value = "The zone was halted by the user manually.")]
+        reason: String,
+
+        /// Whether this is a soft halt.
+        ///
+        /// In a soft halt, only the current version of the zone will be
+        /// blocked; new versions of the zone can be loaded and will progress
+        /// through the pipeline as usual.
+        #[arg(long = "soft")]
+        soft: bool,
+    },
+
+    /// Resume a zone.
+    ///
+    /// If the zone was halted, it will resume normal operation.
+    #[command(name = "resume")]
+    Resume {
+        /// The name of the zone.
+        name: Name<Bytes>,
     },
 
     /// Remove a zone
@@ -86,6 +131,7 @@ impl Zone {
         match self.command {
             ZoneCommand::Add {
                 name,
+                enable,
                 source,
                 policy,
             } => {
@@ -93,6 +139,7 @@ impl Zone {
                     .post("zone/add")
                     .json(&ZoneAdd {
                         name,
+                        enable,
                         source,
                         policy,
                     })
@@ -107,6 +154,75 @@ impl Zone {
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to add zone: {e}")),
+                }
+            }
+            ZoneCommand::Enable { name } => {
+                let res: ZoneChangeOperationResult = client
+                    .post(&format!("zone/{name}/operation"))
+                    .json(&ZoneChangeOperation {
+                        operation: ZoneOperation::Running,
+                    })
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(format_http_error)?;
+
+                match res {
+                    Ok(ZoneChangeOperationOutput {}) => {
+                        println!("Enabled zone {name}");
+                        Ok(())
+                    }
+
+                    Err(ZoneChangeOperationError::NoSuchZone) => {
+                        Err(format!("Zone {name:?} could not be found"))
+                    }
+                }
+            }
+            ZoneCommand::Halt { name, reason, soft } => {
+                let operation = match soft {
+                    true => ZoneOperation::SoftHalt(reason),
+                    false => ZoneOperation::HardHalt(reason),
+                };
+
+                let res: ZoneChangeOperationResult = client
+                    .post(&format!("zone/{name}/operation"))
+                    .json(&ZoneChangeOperation { operation })
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(format_http_error)?;
+
+                match res {
+                    Ok(ZoneChangeOperationOutput {}) => {
+                        println!("Halted zone {name}");
+                        Ok(())
+                    }
+
+                    Err(ZoneChangeOperationError::NoSuchZone) => {
+                        Err(format!("Zone {name:?} could not be found"))
+                    }
+                }
+            }
+            ZoneCommand::Resume { name } => {
+                let res: ZoneChangeOperationResult = client
+                    .post(&format!("zone/{name}/operation"))
+                    .json(&ZoneChangeOperation {
+                        operation: ZoneOperation::Running,
+                    })
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(format_http_error)?;
+
+                match res {
+                    Ok(ZoneChangeOperationOutput {}) => {
+                        println!("Resumed zone {name}");
+                        Ok(())
+                    }
+
+                    Err(ZoneChangeOperationError::NoSuchZone) => {
+                        Err(format!("Zone {name:?} could not be found"))
+                    }
                 }
             }
             ZoneCommand::Remove { name } => {
@@ -188,6 +304,9 @@ impl Zone {
                             let what = match &history_item.event {
                                 HistoricalEvent::Added => "Zone added".to_string(),
                                 HistoricalEvent::Removed => "Zone removed".to_string(),
+                                HistoricalEvent::OperationChanged => {
+                                    "Operation changed".to_string()
+                                }
                                 HistoricalEvent::PolicyChanged => "Policy changed".to_string(),
                                 HistoricalEvent::SourceChanged => "Source changed".to_string(),
                                 HistoricalEvent::NewVersionReceived => {
@@ -287,13 +406,20 @@ impl Zone {
         progress.print(&zone, &policy);
 
         // If the pipeline is halted, show that.
-        match zone.pipeline_mode {
-            PipelineMode::Running => { /* Nothing to do */ }
-            PipelineMode::SoftHalt(err) => {
+        match zone.operation {
+            ZoneOperation::Disabled => {
+                println!(
+                    "{}- The zone is currently disabled{}",
+                    ansi::YELLOW,
+                    ansi::RESET
+                );
+            }
+            ZoneOperation::Running => { /* Nothing to do */ }
+            ZoneOperation::SoftHalt(err) => {
                 println!("{}\u{78} An error occurred that prevents further processing of this zone version:{}", ansi::RED, ansi::RESET);
                 println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
             }
-            PipelineMode::HardHalt(err) => {
+            ZoneOperation::HardHalt(err) => {
                 println!(
                     "{}\u{78} The pipeline for this zone is halted due to a serious error:{}",
                     ansi::RED,

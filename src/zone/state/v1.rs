@@ -9,7 +9,7 @@ use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
-use crate::zone::HistoryItem;
+use crate::zone::{HistoryItem, ZoneOperation};
 use crate::{
     policy::{
         KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
@@ -44,6 +44,9 @@ pub struct Spec {
 
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
+
+    /// The operation of the zone.
+    pub operation: ZoneOperationSpec,
 }
 
 //--- Conversion
@@ -57,6 +60,7 @@ impl Spec {
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
             history: zone.history.clone(),
+            operation: ZoneOperationSpec::build(&zone.operation),
         }
     }
 }
@@ -502,6 +506,42 @@ impl ZoneLoadSourceSpec {
                     Name::from_octets(bytes).unwrap()
                 }),
             },
+        }
+    }
+}
+
+//----------- ZoneOperationSpec ------------------------------------------------
+
+/// The state of the operation of the zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ZoneOperationSpec {
+    Disabled,
+    Running,
+    SoftHalt(String),
+    HardHalt(String),
+}
+
+//--- Conversion
+
+impl ZoneOperationSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> ZoneOperation {
+        match self {
+            Self::Disabled => ZoneOperation::Disabled,
+            Self::Running => ZoneOperation::Running,
+            Self::SoftHalt(reason) => ZoneOperation::SoftHalt(reason),
+            Self::HardHalt(reason) => ZoneOperation::HardHalt(reason),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(source: &ZoneOperation) -> Self {
+        match source.clone() {
+            ZoneOperation::Disabled => Self::Disabled,
+            ZoneOperation::Running => Self::Running,
+            ZoneOperation::SoftHalt(reason) => Self::SoftHalt(reason),
+            ZoneOperation::HardHalt(reason) => Self::HardHalt(reason),
         }
     }
 }
