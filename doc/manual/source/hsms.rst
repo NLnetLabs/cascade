@@ -66,11 +66,11 @@ meaning normal usage only, not attempting to deliberately cause problems, and
 not attempting to stress or performance test the interface. The tested HSMs
 are:
 
-- SoftHSM v2.6.1 (PKCS#11, s/w)
-- YubiHSM 2 (PKCS#11, h/w USB key)
 - Thales Cloud HSM (PKCS#11, cloud, v7.3 Cryptovisor 7)
-- Nitrokey NetHSM (PKCS#11, s/w Docker image)
 - Fortanix DSM (KMIP, cloud)
+- Nitrokey NetHSM (PKCS#11, s/w Docker image)
+- YubiHSM 2 (PKCS#11, h/w USB key)
+- SoftHSM v2.6.1 (PKCS#11, s/w)
 
 Migration
 ---------
