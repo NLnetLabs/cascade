@@ -95,28 +95,13 @@ impl HttpServer {
             center: self.center,
         });
 
-        // For now, only implemented the ZoneReviewApi for the Units:
-        // "RS"   ZoneServerUnit
-        // "RS2"  ZoneServerUnit
-        // "PS"   ZoneServerUnit
-        //
-        // Skipping SigningHistoryApi and ZoneListApi's for
-        // "ZL"   ZoneLoader
-        // "ZS"   ZoneSignerUnit
-        // "CC"   CentralCommand
-        //
-        // Noting them down, but without a previously existing API:
-        // "HS"   HttpServer
-        // "KM"   KeyManagerUnit
-
         let unit_router = Router::new()
-            .route("/rs/{action}/{token}", get(Self::handle_rs))
-            .route("/rs2/{action}/{token}", get(Self::handle_rs2));
+            .route("/review-unsigned/{action}/{token}", get(Self::handle_rs))
+            .route("/review-signed/{action}/{token}", get(Self::handle_rs2));
 
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
-            // Using the /_unit sub-path to not clutter the rest of the API
-            .nest("/_unit", unit_router)
+            .nest("/hook", unit_router)
             .route("/status", get(Self::status))
             .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
@@ -969,7 +954,6 @@ impl HttpServer {
 //------------ HttpServer Handler for /<unit>/ -------------------------------
 
 impl HttpServer {
-    //--- /rs/
     async fn handle_rs(
         uri: OriginalUri,
         State(state): State<Arc<HttpServerState>>,
@@ -979,7 +963,6 @@ impl HttpServer {
         Self::zone_server_unit_api_common("RS", uri, state, action, token, params).await
     }
 
-    //--- /rs2/
     async fn handle_rs2(
         uri: OriginalUri,
         State(state): State<Arc<HttpServerState>>,
@@ -1007,6 +990,7 @@ impl HttpServer {
         params: HashMap<String, String>,
     ) -> Result<(), StatusCode> {
         let uri = uri.path_and_query().map(|p| p.as_str()).unwrap_or_default();
+        debug!("[{HTTP_UNIT_NAME}]: Got HTTP approval hook request: {uri}");
 
         let Some(zone_name) = params.get("zone") else {
             warn!("[{HTTP_UNIT_NAME}]: Invalid HTTP request: {uri}");

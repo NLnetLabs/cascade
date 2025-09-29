@@ -508,6 +508,11 @@ impl ZoneServer {
             return None;
         };
 
+        let http_api_server_addr = {
+            let state = self.center.state.lock().unwrap();
+            state.config.remote_control.servers.first().cloned()
+        };
+
         // TODO: Windows support?
         // TODO: Set 'CASCADE_UNSIGNED_SERIAL' and 'CASCADE_UNSIGNED_SERVER'.
         match Command::new("sh")
@@ -519,7 +524,12 @@ impl ZoneServer {
                 ("CASCADE_SERVER", &*review_server.addr().to_string()),
                 (
                     "CASCADE_CONTROL",
-                    self.http_api_path.strip_suffix("/").unwrap(),
+                    &if let Some(addr) = http_api_server_addr {
+                        format!("{}{}", addr, self.http_api_path.strip_suffix("/").unwrap())
+                    } else {
+                        warn!("[{unit_name}]: There is no HTTP API server address specified, but a review hook provided");
+                        "".into()
+                    }
                 ),
             ])
             .spawn()
