@@ -19,8 +19,12 @@ pub enum FileSelection {
 impl Template {
     pub async fn execute(self, _client: CascadeApiClient) -> Result<(), String> {
         match self.command {
-            FileSelection::Config => println!("{}", include_str!("../../../etc/config.template.toml")),
-            FileSelection::Policy => println!("{}", include_str!("../../../etc/policy.template.toml")),
+            FileSelection::Config => {
+                println!("{}", include_str!("../../../etc/config.template.toml"))
+            }
+            FileSelection::Policy => {
+                println!("{}", include_str!("../../../etc/policy.template.toml"))
+            }
         }
         Ok(())
     }
