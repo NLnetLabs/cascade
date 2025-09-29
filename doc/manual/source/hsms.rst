@@ -4,11 +4,12 @@ Hardware Security Modules (HSMs)
 Not Using HSMs
 --------------
 
-First, understand that Cascade does *NOT* require an HSM to operate. While
-it is common practice to secure cryptographic key material using an HSM, not
-all operators use an HSM. Cascade is able to use OpenSSL and/or Ring software
-cryptography to generate signing keys and to cryptographically sign DNS RRSET
-data, storing the generated keys in on-disk files.
+First, understand that Cascade does *NOT* require an HSM to operate. While it
+is common practice to secure cryptographic key material using an HSM, not all
+operators use an HSM. Cascade is able to use `OpenSSL
+<https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
+software cryptography to generate signing keys and to cryptographically sign
+DNS RRSET data, storing the generated keys in on-disk files.
 
 An Introduction to HSMs
 -----------------------
