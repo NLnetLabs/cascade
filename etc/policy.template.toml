@@ -42,14 +42,16 @@ version = "v1"
 # Whether review is required.
 #
 # If this is 'true', a loaded version of a zone will not be signed or published
-# until the user explicitly approves it.
+# until the user explicitly approves it.  If it is 'false', loaded zones will be
+# signed immediately.  The review hook (below) will be run in any case.
 required = false
 
 # A hook for reviewing a loaded zone.
 #
 # This command string will be executed in the user's shell when a new version of
-# a zone is loaded.  It will receive the following information via environment
-# variables:
+# a zone is loaded.  At the moment, it will only be run if 'required' is true.
+#
+# It will receive the following information via environment variables:
 #
 # - 'CASCADE_ZONE': The name of the zone, formatted without a trailing dot.
 # - 'CASCADE_SERIAL': The serial number of the zone (decimal integer).
@@ -291,14 +293,16 @@ type = "nsec"
 # Whether review is required.
 #
 # If this is 'true', a signed version of a zone will not be published until the
-# user explicitly approves it.
+# user explicitly approves it.  If it is 'false', signed zones will be published
+# immediately.  The review hook (below) will be run in any case.
 required = false
 
 # A hook for reviewing a signed zone.
 #
 # This command string will be executed in the user's shell when a new version of
-# a zone is signed.  It will receive the following information via environment
-# variables:
+# a zone is signed.  At the moment, it will only be run if 'required' is true.
+#
+# It will receive the following information via environment variables:
 #
 # - 'CASCADE_ZONE': The name of the zone, formatted without a trailing dot.
 # - 'CASCADE_SERIAL': The serial number of the signed zone (decimal integer).

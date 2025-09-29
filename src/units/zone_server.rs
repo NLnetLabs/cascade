@@ -443,18 +443,18 @@ impl ZoneServer {
             return Some(Ok(()));
         }
 
-        let hook = {
+        let review = {
             let zone = get_zone(&self.center, &zone_name).unwrap();
             let zone_state = zone.state.lock().unwrap();
             let policy = zone_state.policy.as_ref().unwrap();
             match self.source {
-                Source::UnsignedZones => policy.loader.review.cmd_hook.clone(),
-                Source::SignedZones => policy.signer.review.cmd_hook.clone(),
-                Source::PublishedZones => None,
+                Source::UnsignedZones => policy.loader.review.clone(),
+                Source::SignedZones => policy.signer.review.clone(),
+                Source::PublishedZones => unreachable!(),
             }
         };
 
-        let Some(hook) = hook else {
+        if !review.required {
             // Approve immediately.
             match self.source {
                 Source::UnsignedZones => {
@@ -491,6 +491,13 @@ impl ZoneServer {
             .entry((zone_name.clone(), zone_serial))
             .and_modify(|e| e.push(approval_token))
             .or_insert(vec![approval_token]);
+
+        let Some(hook) = review.cmd_hook else {
+            info!("[{unit_name}] No review hook set; waiting for manual review");
+            info!("[{unit_name}]: Confirm with HTTP GET {}approve/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+            info!("[{unit_name}]: Reject with HTTP GET {}reject/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+            return None;
+        };
 
         match Command::new(&hook)
             .arg(format!("{zone_name}"))
