@@ -23,7 +23,6 @@ Improvements
 ++++++++++++
 
 - HSM not required.
-.. TODO Should we really list Rust as an improvement here?
 - Rust.
 .. TODO
 - Observability (in theory).
