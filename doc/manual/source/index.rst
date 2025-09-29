@@ -15,7 +15,7 @@ Sensible defaults
 
 Controllability
    Cascade gives you tight control over the DNSSEC signing process and
-   and offers validation hooks at each stage of the process. 
+   offers validation hooks at each stage of the process. 
 
 Observability
    With Cascade you cut out the guesswork. You will know what the
@@ -26,6 +26,10 @@ Open-source with professional support services
    <https://www.nlnetlabs.nl/services/contracts/>`_ with a service-level
    agreement. Cascade is liberally licensed under the `BSD 3-Clause license
    <https://github.com/NLnetLabs/cascade/blob/main/LICENSE>`_.
+
+Cascade is ONLY a DNSSEC signing solution and not a complete primary name
+server. To read what that entails, read the :doc:`limitations <limitations>`
+section.
 
    .. only:: html
 
@@ -43,3 +47,6 @@ Open-source with professional support services
 
    installation
    building
+   quick-start
+   limitations
+   troubleshooting

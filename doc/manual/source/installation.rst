@@ -1,6 +1,20 @@
 Installation
 ============
 
+.. TODO: add note to systemctl start/enable that users may need to override the
+   systemd.socket conf (see troubleshooting or quick start)
+.. TODO: add daemonization guide?
+.. TODO: document approval API?
+.. TODO: add IPv6 localhost to default/template (makes using dig @localhost easier
+   too)
+.. TODO: I think we should have cascade listen on localhost by default anyway,
+   even if we're not starting it immediately, so that we're not shipping an
+   immediately "broken" configuration (it is very likely on systemd-devices
+   that the wildcard:53 listener will fail, and then having that by default
+   seems kinda weird).
+   Cascade tries listening on all interfaces on port 53 by default (which will
+   fail due to systemd-resolved or other stub resolvers)
+
 Binary Packages
 ---------------
 
@@ -10,9 +24,9 @@ compatible systems such as Rocky Linux. Alternatively, you can run with
 Docker. 
 
 You can also build Cascade from the source code using Cargo, Rust's build
-system and package manager. Cargo lets you to run Cascade on almost any
-operating system and CPU architecture. Refer to the :doc:`building` section
-to get started.
+system and package manager. Cargo lets you run Cascade on almost any operating
+system and CPU architecture. Refer to the :doc:`building` section to get
+started.
 
 .. tabs::
 
