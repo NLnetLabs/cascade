@@ -94,5 +94,5 @@ System Requirements
 
 Cascade is able to run with fairly limited CPU and memory. Exact figures are
 not yet available, but in principle with more CPU cores more operations will
-benefit from parallelization, adn with more memory it will be possible to load
+benefit from parallelization, and with more memory it will be possible to load
 and sign larger zones.
