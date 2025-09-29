@@ -71,7 +71,7 @@ configuration files via which the daemons communicate, and thus no shared
 on-disk state which can become out of sync between daemons or vs the in-memory
 view of the world possessed by each daemon.
 
-This is because with Cascade the second daemon, `kmip2pkcs11`, is much simpler
+This is because with Cascade the second daemon, :program:`kmip2pkcs11`, is much simpler
 than the OpenDNSEC signer daemon, it only receives and executes signing
 requests on a per DNS RRSET basis, it is not responsible for the entire zone
 and exists to shield the main Cascade daemon from the risks posed by PKCS#11.
