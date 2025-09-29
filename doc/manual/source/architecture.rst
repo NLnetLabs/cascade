@@ -59,7 +59,7 @@ when using a KMIP compatible HSM.
 If required a KMIP or PKCS#11 compatible HSM can be used instead of on-disk
 keys. In the case of a KMIP compatible HSM there will still be only a single
 Cascade daemon. If using a PKCS#11 compatible HSM you will also need to run
-the `kmip2pksc11` daemon which will receive KMIP TCP TLS requests from Cascade
+the :program:`kmip2pksc11` daemon which will receive KMIP TCP TLS requests from Cascade
 and convert them into operations to execute against a loaded PKCS#11 module.
 
 In this latter setup it may appear similar to the architecture of OpenDNSSEC
