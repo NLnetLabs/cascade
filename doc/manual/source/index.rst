@@ -50,3 +50,11 @@ section.
    quick-start
    limitations
    troubleshooting
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Core
+   :name: toc-core
+
+   approval-hooks
