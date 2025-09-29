@@ -59,7 +59,7 @@ Cascade consists of three, possibly four, pieces:
   with the :program:`cascaded` daemon.
 
 - A tool called :program:`dnst keyset` which is somewhat similar to the OpenDNSSEC
-  Enforcer but is not a daemon, instead it is invoked as needed by the cascaded
+  Enforcer but is not a daemon, instead it is invoked as needed by the :program:`cascaded`
   daemon. In future this may be bundled as an integral part of Cascade but will
   likely still also be supported as an external tool to allow it to be swapped
   out with an alternate version depending on the exact signing policy of the
