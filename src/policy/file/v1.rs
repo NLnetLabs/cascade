@@ -1,9 +1,14 @@
 //! Version 1 of the policy file.
 
-use std::time::Duration;
+use std::{
+    fmt::{self, Display},
+    str::FromStr,
+    time::Duration,
+};
 
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 use crate::policy::{
     KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy, SignerDenialPolicy,
@@ -111,58 +116,32 @@ impl LoaderSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct KeyManagerSpec {
-    /// Whether and which HSM server is benig used.
+    /// Whether and which HSM server is being used.
     pub hsm_server_id: Option<String>,
 
-    /// Whether to use a CSK (if true) or a KSK and a ZSK.
-    use_csk: bool,
+    /// Policy for KSKs.
+    pub ksk: KeyKindSpec,
 
-    /// Algorithm and other parameters for key generation.
-    algorithm: KeyParameters,
+    /// Policy for ZSKs.
+    pub zsk: KeyKindSpec,
 
-    /// Validity of KSKs in seconds.
-    ksk_validity: Option<u64>,
-    /// Validity of ZSKs in seconds.
-    zsk_validity: Option<u64>,
-    /// Validity of CSKs in seconds.
-    csk_validity: Option<u64>,
+    /// Policy for CSKs.
+    pub csk: KeyKindSpec,
 
-    /// Configuration variable for automatic KSK rolls.
-    auto_ksk: AutoConfig,
-    /// Configuration variable for automatic ZSK rolls.
-    auto_zsk: AutoConfig,
-    /// Configuration variable for automatic CSK rolls.
-    auto_csk: AutoConfig,
-    /// Configuration variable for automatic algorithm rolls.
-    auto_algorithm: AutoConfig,
-
-    /// DNSKEY signature inception offset in seconds (positive values are
-    /// subtracted from the current time).
-    dnskey_inception_offset: u64,
-
-    /// DNSKEY signature lifetime in seconds.
-    dnskey_signature_lifetime: u64,
-
-    /// The required remaining signature time in seconds.
-    dnskey_remain_time: u64,
-
-    /// CDS/CDNSKEY signature inception offset in seconds.
-    cds_inception_offset: u64,
-
-    /// CDS/CDNSKEY signature lifetime in seconds.
-    cds_signature_lifetime: u64,
-
-    /// The required remaining signature time in seconds.
-    cds_remain_time: u64,
+    /// Policy for algorithm rollovers.
+    pub alg: RolloverSpec,
 
     /// The DS hash algorithm.
-    ds_algorithm: DsAlgorithm,
-
-    /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
-    default_ttl: Ttl,
+    pub ds_algorithm: DsAlgorithm,
 
     /// Automatically remove keys that are no long in use.
-    auto_remove: bool,
+    pub auto_remove: bool,
+
+    /// How special DNS records are managed.
+    pub records: KeyManagerRecordsSpec,
+
+    /// How keys are generated.
+    pub generation: KeyManagerGenerationSpec,
 }
 
 //--- Conversion
@@ -172,23 +151,91 @@ impl KeyManagerSpec {
     pub fn parse(self) -> KeyManagerPolicy {
         KeyManagerPolicy {
             hsm_server_id: self.hsm_server_id,
-            use_csk: self.use_csk,
-            algorithm: self.algorithm,
-            ksk_validity: self.ksk_validity,
-            zsk_validity: self.zsk_validity,
-            csk_validity: self.csk_validity,
-            auto_ksk: self.auto_ksk,
-            auto_zsk: self.auto_zsk,
-            auto_csk: self.auto_csk,
-            auto_algorithm: self.auto_algorithm,
-            dnskey_inception_offset: self.dnskey_inception_offset,
-            dnskey_signature_lifetime: self.dnskey_signature_lifetime,
-            dnskey_remain_time: self.dnskey_remain_time,
-            cds_inception_offset: self.cds_inception_offset,
-            cds_signature_lifetime: self.cds_signature_lifetime,
-            cds_remain_time: self.cds_remain_time,
+            use_csk: self.generation.use_csk,
+            algorithm: match self.generation.parameters {
+                KeyGenerationParametersSpec::RsaSha256(bits) => {
+                    KeyParameters::RsaSha256(bits.into())
+                }
+                KeyGenerationParametersSpec::RsaSha512(bits) => {
+                    KeyParameters::RsaSha512(bits.into())
+                }
+                KeyGenerationParametersSpec::EcdsaP256Sha256 => KeyParameters::EcdsaP256Sha256,
+                KeyGenerationParametersSpec::EcdsaP384Sha384 => KeyParameters::EcdsaP384Sha384,
+                KeyGenerationParametersSpec::Ed25519 => KeyParameters::Ed25519,
+                KeyGenerationParametersSpec::Ed448 => KeyParameters::Ed448,
+            },
+
+            ksk_validity: self
+                .ksk
+                .validity
+                .map(|v| match v {
+                    KeyValiditySpec::Finite(duration) => Some(duration.as_secs()),
+                    KeyValiditySpec::Forever => None,
+                })
+                // Roll a KSK once a year. No official reference.
+                .unwrap_or(Some(365 * 24 * 3600)),
+
+            zsk_validity: self
+                .zsk
+                .validity
+                .map(|v| match v {
+                    KeyValiditySpec::Finite(duration) => Some(duration.as_secs()),
+                    KeyValiditySpec::Forever => None,
+                })
+                // Roll a ZSK once a month. No official reference.
+                .unwrap_or(Some(30 * 24 * 3600)),
+
+            csk_validity: self
+                .csk
+                .validity
+                .map(|v| match v {
+                    KeyValiditySpec::Finite(duration) => Some(duration.as_secs()),
+                    KeyValiditySpec::Forever => None,
+                })
+                // Roll a CSK once a year just like a KSK. Assume that the DS
+                // record may need to be updated by hand.
+                .unwrap_or(Some(365 * 24 * 3600)),
+
+            auto_ksk: self.ksk.rollover.parse(),
+            auto_zsk: self.zsk.rollover.parse(),
+            auto_csk: self.csk.rollover.parse(),
+            auto_algorithm: self.alg.parse(),
+
+            // The following have the same defaults as used for
+            // signing the zone.
+            dnskey_inception_offset: self
+                .records
+                .dnskey
+                .signature_inception_offset
+                .unwrap_or(SIGNATURE_INCEPTION_OFFSET),
+            dnskey_signature_lifetime: self
+                .records
+                .dnskey
+                .signature_lifetime
+                .unwrap_or(SIGNATURE_VALIDITY_TIME),
+            dnskey_remain_time: self
+                .records
+                .dnskey
+                .signature_remain_time
+                .unwrap_or(SIGNATURE_REMAIN_TIME),
+            cds_inception_offset: self
+                .records
+                .cds
+                .signature_inception_offset
+                .unwrap_or(SIGNATURE_INCEPTION_OFFSET),
+            cds_signature_lifetime: self
+                .records
+                .cds
+                .signature_lifetime
+                .unwrap_or(SIGNATURE_VALIDITY_TIME),
+            cds_remain_time: self
+                .records
+                .cds
+                .signature_remain_time
+                .unwrap_or(SIGNATURE_REMAIN_TIME),
+
+            default_ttl: self.records.ttl,
             ds_algorithm: self.ds_algorithm,
-            default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
         }
     }
@@ -197,24 +244,62 @@ impl KeyManagerSpec {
     pub fn build(policy: &KeyManagerPolicy) -> Self {
         Self {
             hsm_server_id: policy.hsm_server_id.clone(),
-            use_csk: policy.use_csk,
-            algorithm: policy.algorithm.clone(),
-            ksk_validity: policy.ksk_validity,
-            zsk_validity: policy.zsk_validity,
-            csk_validity: policy.csk_validity,
-            auto_ksk: policy.auto_ksk.clone(),
-            auto_zsk: policy.auto_zsk.clone(),
-            auto_csk: policy.auto_csk.clone(),
-            auto_algorithm: policy.auto_algorithm.clone(),
-            dnskey_inception_offset: policy.dnskey_inception_offset,
-            dnskey_signature_lifetime: policy.dnskey_signature_lifetime,
-            dnskey_remain_time: policy.dnskey_remain_time,
-            cds_inception_offset: policy.cds_inception_offset,
-            cds_signature_lifetime: policy.cds_signature_lifetime,
-            cds_remain_time: policy.cds_remain_time,
+
+            ksk: KeyKindSpec {
+                validity: Some(match policy.ksk_validity {
+                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    None => KeyValiditySpec::Forever,
+                }),
+                rollover: RolloverSpec::build(&policy.auto_ksk),
+            },
+            zsk: KeyKindSpec {
+                validity: Some(match policy.zsk_validity {
+                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    None => KeyValiditySpec::Forever,
+                }),
+                rollover: RolloverSpec::build(&policy.auto_zsk),
+            },
+            csk: KeyKindSpec {
+                validity: Some(match policy.csk_validity {
+                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    None => KeyValiditySpec::Forever,
+                }),
+                rollover: RolloverSpec::build(&policy.auto_csk),
+            },
+            alg: RolloverSpec::build(&policy.auto_algorithm),
+
             ds_algorithm: policy.ds_algorithm.clone(),
-            default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
+
+            records: KeyManagerRecordsSpec {
+                ttl: policy.default_ttl,
+                dnskey: RecordSigningSpec {
+                    signature_inception_offset: Some(policy.dnskey_inception_offset),
+                    signature_lifetime: Some(policy.dnskey_signature_lifetime),
+                    signature_remain_time: Some(policy.dnskey_remain_time),
+                },
+                cds: RecordSigningSpec {
+                    signature_inception_offset: Some(policy.cds_inception_offset),
+                    signature_lifetime: Some(policy.cds_signature_lifetime),
+                    signature_remain_time: Some(policy.cds_remain_time),
+                },
+            },
+
+            generation: KeyManagerGenerationSpec {
+                use_csk: policy.use_csk,
+                parameters: match policy.algorithm {
+                    KeyParameters::RsaSha256(bits) => {
+                        KeyGenerationParametersSpec::RsaSha256(bits as u16)
+                    }
+                    KeyParameters::RsaSha512(bits) => {
+                        KeyGenerationParametersSpec::RsaSha512(bits as u16)
+                    }
+                    KeyParameters::EcdsaP256Sha256 => KeyGenerationParametersSpec::EcdsaP256Sha256,
+                    KeyParameters::EcdsaP384Sha384 => KeyGenerationParametersSpec::EcdsaP384Sha384,
+                    KeyParameters::Ed25519 => KeyGenerationParametersSpec::Ed25519,
+                    KeyParameters::Ed448 => KeyGenerationParametersSpec::Ed448,
+                },
+            },
         }
     }
 }
@@ -222,45 +307,221 @@ impl KeyManagerSpec {
 impl Default for KeyManagerSpec {
     fn default() -> Self {
         Self {
-            hsm_server_id: Default::default(),
+            hsm_server_id: None,
+            ksk: Default::default(),
+            zsk: Default::default(),
+            csk: Default::default(),
+            alg: Default::default(),
+            ds_algorithm: DsAlgorithm::Sha256,
+            auto_remove: true,
+            records: Default::default(),
+            generation: Default::default(),
+        }
+    }
+}
 
+//----------- KeyKindRolloverSpec ----------------------------------------------
+
+/// Rollover policy for a particular kind of key.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct KeyKindSpec {
+    /// How long keys are considered valid for.
+    pub validity: Option<KeyValiditySpec>,
+
+    /// The rollover policy for the key.
+    #[serde(flatten)]
+    pub rollover: RolloverSpec,
+}
+
+/// The validity of a key.
+#[derive(Clone, Debug, SerializeDisplay, DeserializeFromStr)]
+pub enum KeyValiditySpec {
+    /// The key is valid for a finite duration.
+    Finite(Duration),
+
+    /// The key is valid forever.
+    Forever,
+}
+
+impl fmt::Display for KeyValiditySpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Finite(duration) => write!(f, "{}", duration.as_secs()),
+            Self::Forever => f.write_str("forever"),
+        }
+    }
+}
+
+impl FromStr for KeyValiditySpec {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "forever" => Ok(Self::Forever),
+            _ => match s.parse::<u64>() {
+                Ok(secs) => Ok(Self::Finite(Duration::from_secs(secs))),
+                Err(_err) => Err(format!("{s:?} is not 'forever' or an integer")),
+            },
+        }
+    }
+}
+
+//----------- RolloverSpec -----------------------------------------------------
+
+/// Policy for rolling over (certain kinds of) keys.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct RolloverSpec {
+    /// Whether to automatically start rollovers.
+    pub auto_start: bool,
+
+    // TODO: Document.
+    pub auto_report: bool,
+    pub auto_expire: bool,
+    pub auto_done: bool,
+}
+
+impl Default for RolloverSpec {
+    fn default() -> Self {
+        Self {
+            auto_start: true,
+            auto_report: true,
+            auto_expire: true,
+            auto_done: true,
+        }
+    }
+}
+
+//--- Conversion
+
+impl RolloverSpec {
+    pub fn parse(self) -> AutoConfig {
+        AutoConfig {
+            start: self.auto_start,
+            report: self.auto_report,
+            expire: self.auto_expire,
+            done: self.auto_done,
+        }
+    }
+
+    pub fn build(policy: &AutoConfig) -> Self {
+        Self {
+            auto_start: policy.start,
+            auto_report: policy.report,
+            auto_expire: policy.expire,
+            auto_done: policy.done,
+        }
+    }
+}
+
+//----------- KeyManagerRecordsSpec --------------------------------------------
+
+/// Policy for managing special DNS records.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct KeyManagerRecordsSpec {
+    /// The TTL to use when creating special records.
+    pub ttl: Ttl,
+
+    /// Signing parameters for DNSKEY records.
+    pub dnskey: RecordSigningSpec,
+
+    /// Signing parameters for CDS records.
+    pub cds: RecordSigningSpec,
+    //
+    // TODO: CDNSKEY?
+}
+
+impl Default for KeyManagerRecordsSpec {
+    fn default() -> Self {
+        Self {
+            // It would be best to default to the SOA minimum. However,
+            // keyset doesn't have access to that. No official reference.
+            ttl: Ttl::from_secs(3600), // Reference?
+
+            dnskey: Default::default(),
+            cds: Default::default(),
+        }
+    }
+}
+
+//----------- KeyManagerGenerationSpec -----------------------------------------
+
+/// Policy for generating DNSSEC keys.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct KeyManagerGenerationSpec {
+    /// Whether to generate CSKs, instead of separate ZSKs and KSKs.
+    pub use_csk: bool,
+
+    /// Parameters for the cryptographic key material.
+    pub parameters: KeyGenerationParametersSpec,
+}
+
+impl Default for KeyManagerGenerationSpec {
+    fn default() -> Self {
+        Self {
             // Default to KSK plus ZSK. CSK key rolls are more complex.
             // No official reference.
             use_csk: false,
 
-            algorithm: Default::default(),
+            parameters: KeyGenerationParametersSpec::EcdsaP256Sha256,
+        }
+    }
+}
 
-            // Roll a KSK once a year. No official reference.
-            ksk_validity: Some(365 * 24 * 3600),
+/// Policy for generating cryptographic keys.
+#[derive(Clone, Debug, DeserializeFromStr, SerializeDisplay)]
+pub enum KeyGenerationParametersSpec {
+    RsaSha256(u16),
+    RsaSha512(u16),
+    EcdsaP256Sha256,
+    EcdsaP384Sha384,
+    Ed25519,
+    Ed448,
+}
 
-            // Roll a ZSK once a month. No official reference.
-            zsk_validity: Some(30 * 24 * 3600),
+impl Display for KeyGenerationParametersSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::RsaSha256(2048) => "rsa-sha256",
+            Self::RsaSha512(2048) => "rsa-sha512",
+            Self::EcdsaP256Sha256 => "ecdsa-p256-sha256",
+            Self::EcdsaP384Sha384 => "ecdsa-p384-sha384",
+            Self::Ed25519 => "ed25519",
+            Self::Ed448 => "ed448",
 
-            // Roll a CSK once a year just like a KSK. Assume that the DS
-            // record may need to be updated by hand.
-            csk_validity: Some(365 * 24 * 3600),
+            Self::RsaSha256(bits) => return write!(f, "rsa-sha256:{bits}"),
+            Self::RsaSha512(bits) => return write!(f, "rsa-sha512:{bits}"),
+        })
+    }
+}
 
-            auto_ksk: Default::default(),
-            auto_zsk: Default::default(),
-            auto_csk: Default::default(),
-            auto_algorithm: Default::default(),
+impl FromStr for KeyGenerationParametersSpec {
+    type Err = String;
 
-            // The following have the same defaults as used for
-            // signing the zone.
-            dnskey_inception_offset: SIGNATURE_INCEPTION_OFFSET,
-            dnskey_signature_lifetime: SIGNATURE_VALIDITY_TIME,
-            dnskey_remain_time: SIGNATURE_REMAIN_TIME,
-            cds_inception_offset: SIGNATURE_INCEPTION_OFFSET,
-            cds_signature_lifetime: SIGNATURE_VALIDITY_TIME,
-            cds_remain_time: SIGNATURE_REMAIN_TIME,
-
-            ds_algorithm: Default::default(),
-
-            // It would be best to default to the SOA minimum. However,
-            // keyset doesn't have access to that. No official reference.
-            default_ttl: Ttl::from_secs(3600), // Reference?
-
-            auto_remove: true, // Note, no auto_remove_delay at the moment.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(bits) = s.strip_prefix("rsa-sha256:") {
+            match bits.parse::<u16>() {
+                Ok(bits) => Ok(Self::RsaSha256(bits)),
+                Err(err) => Err(format!("Could not parse key size {bits:?}: {err}")),
+            }
+        } else if let Some(bits) = s.strip_prefix("rsa-sha512:") {
+            match bits.parse::<u16>() {
+                Ok(bits) => Ok(Self::RsaSha512(bits)),
+                Err(err) => Err(format!("Could not parse key size {bits:?}: {err}")),
+            }
+        } else {
+            Ok(match s {
+                "rsa-sha256" => Self::RsaSha256(2048),
+                "rsa-sha512" => Self::RsaSha512(2048),
+                "ecdsa-p256-sha256" => Self::EcdsaP256Sha256,
+                "ecdsa-p384-sha384" => Self::EcdsaP384Sha384,
+                "ed25519" => Self::Ed25519,
+                "ed448" => Self::Ed448,
+                _ => return Err(format!("Unrecognized algorithm {s:?}")),
+            })
         }
     }
 }
@@ -275,14 +536,14 @@ pub struct SignerSpec {
     pub serial_policy: SignerSerialPolicySpec,
 
     /// The offset for record signature inceptions, in seconds.
-    pub sig_inception_offset: u64,
+    pub signature_inception_offset: u64,
 
     /// How long record signatures will be valid for, in seconds.
-    pub sig_validity_time: u64,
+    pub signature_lifetime: u64,
 
     /// How long before expiration a new signature has to be
     /// generated, in seconds.
-    pub sig_remain_time: u64,
+    pub signature_remain_time: u64,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialSpec,
@@ -301,9 +562,9 @@ impl SignerSpec {
     pub fn parse(self) -> SignerPolicy {
         SignerPolicy {
             serial_policy: self.serial_policy.parse(),
-            sig_inception_offset: Duration::from_secs(self.sig_inception_offset),
-            sig_validity_time: Duration::from_secs(self.sig_validity_time),
-            sig_remain_time: Duration::from_secs(self.sig_remain_time),
+            sig_inception_offset: Duration::from_secs(self.signature_inception_offset),
+            sig_validity_time: Duration::from_secs(self.signature_lifetime),
+            sig_remain_time: Duration::from_secs(self.signature_remain_time),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -313,9 +574,9 @@ impl SignerSpec {
     pub fn build(policy: &SignerPolicy) -> Self {
         Self {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
-            sig_inception_offset: policy.sig_inception_offset.as_secs(),
-            sig_validity_time: policy.sig_validity_time.as_secs(),
-            sig_remain_time: policy.sig_remain_time.as_secs(),
+            signature_inception_offset: policy.sig_inception_offset.as_secs(),
+            signature_lifetime: policy.sig_validity_time.as_secs(),
+            signature_remain_time: policy.sig_remain_time.as_secs(),
             denial: SignerDenialSpec::build(&policy.denial),
             review: ReviewSpec::build(&policy.review),
         }
@@ -327,15 +588,32 @@ impl Default for SignerSpec {
         Self {
             serial_policy: Default::default(),
 
-            sig_inception_offset: SIGNATURE_INCEPTION_OFFSET,
-            sig_validity_time: SIGNATURE_VALIDITY_TIME,
-            sig_remain_time: SIGNATURE_REMAIN_TIME,
+            signature_inception_offset: SIGNATURE_INCEPTION_OFFSET,
+            signature_lifetime: SIGNATURE_VALIDITY_TIME,
+            signature_remain_time: SIGNATURE_REMAIN_TIME,
 
             denial: Default::default(),
 
             review: Default::default(),
         }
     }
+}
+
+//----------- RecordSigningSpec ------------------------------------------------
+
+/// Policy for signing DNS records.
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct RecordSigningSpec {
+    /// The offset for generated signature inceptions.
+    pub signature_inception_offset: Option<u64>,
+
+    /// The lifetime of generated signatures.
+    pub signature_lifetime: Option<u64>,
+
+    /// The amount of time remaining before expiry when signatures will be
+    /// regenerated.
+    pub signature_remain_time: Option<u64>,
 }
 
 //----------- SignerSerialPolicySpec -------------------------------------------
@@ -396,15 +674,17 @@ impl SignerSerialPolicySpec {
 
 /// Spec for generating denial-of-existence records.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
+#[serde(deny_unknown_fields, tag = "type")]
 pub enum SignerDenialSpec {
     /// Generate NSEC records.
     ///
     /// RFC 9276 Section 3.1 recommends NSEC. Therefore it is the default.
+    #[serde(rename = "nsec")]
     #[default]
     NSec,
 
     /// Generate NSEC3 records.
+    #[serde(rename = "nsec3")]
     NSec3 {
         /// Whether and how to enable NSEC3 Opt-Out.
         // From RFC 9276:

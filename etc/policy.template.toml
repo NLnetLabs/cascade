@@ -73,6 +73,15 @@ required = false
 # DNSSEC key management.
 [key-manager]
 
+# The HSM server to use.
+#
+# If this is set, the named HSM server (which must be configured via 'cascade
+# hsm add') will be used for storing the zone's DNSSEC keys.
+#
+# TODO: Link to a guide for using HSMs with Cascade.
+# TODO: Allow using multiple HSMs, and HSMs in tandem with on-disk keys.
+#hsm-server-id = "softhsm"
+
 # How long keys are considered valid for.
 #
 # If a key has been used for longer than this time, it is considered expired,
@@ -143,7 +152,7 @@ auto-remove = true
 #
 # TODO: Perhaps Cascade can automatically set this to the SOA minimum.  The
 #   key manager would have to be sent that information somehow.
-ttl = "3600" # TODO: "1h"
+ttl = 3600 # TODO: "1h"
 
 # The offset for generated signature inceptions.
 #
@@ -155,8 +164,8 @@ ttl = "3600" # TODO: "1h"
 #
 # Independent offsets can be set for each record.  An integer value is
 # intepreted as seconds; inception times will be calculated as 'now - offset'.
-dnskey.signature-inception-offset = "86400" # TODO: "1d"
-cds.signature-inception-offset = "86400"
+dnskey.signature-inception-offset = 86400 # TODO: "1d"
+cds.signature-inception-offset = 86400
 
 # The lifetime of generated signatures.
 #
@@ -166,8 +175,8 @@ cds.signature-inception-offset = "86400"
 #
 # Independent lifetimes can be set for each record.  An integer value is
 # interpreted as seconds.
-dnskey.signature-lifetime = "1209600" # TODO: "2w"
-cds.signature-lifetime = "1209600"
+dnskey.signature-lifetime = 1209600 # TODO: "2w"
+cds.signature-lifetime = 1209600
 
 # The amount of time remaining before expiry when signatures will be
 # regenerated.
@@ -180,8 +189,8 @@ cds.signature-lifetime = "1209600"
 #
 # Independent waiting times can be set for each record.  An integer value is
 # interpreted as seconds.
-dnskey.signature-remain-time = "604800" # TODO: "1w"
-cds.signature-remain-time = "604800"
+dnskey.signature-remain-time = 604800 # TODO: "1w"
+cds.signature-remain-time = 604800
 
 # How keys are generated.
 [key-manager.generation]
@@ -232,9 +241,9 @@ parameters = "ecdsa-p256-sha256"
 # - 'keep': use the same serial number as the unsigned zone.
 # - 'counter': increment the serial number every time.
 # - 'unixtime': use the current Unix time, in seconds.
-# - 'datecounter': format the number as '<YYYY><MM><DD><xx>' in decimal.
+# - 'date-counter': format the number as '<YYYY><MM><DD><xx>' in decimal.
 #     '<xx>' is a simple counter to allow up to 100 versions per day.
-serial-policy = "datecounter"
+serial-policy = "date-counter"
 
 # The offset for generated signature inceptions.
 #
@@ -245,7 +254,7 @@ serial-policy = "datecounter"
 # into the past.
 #
 # An integer value is interpreted as seconds.
-signature-inception-offset = "86400" # TODO: "1d"
+signature-inception-offset = 86400 # TODO: "1d"
 
 # The lifetime of generated signatures.
 #
@@ -254,7 +263,7 @@ signature-inception-offset = "86400" # TODO: "1d"
 # they expire; see 'signature-remain-time' to control regeneration time.
 #
 # An integer value is interpreted as seconds.
-signature-lifetime = "1209600" # TODO: "2w"
+signature-lifetime = 1209600 # TODO: "2w"
 
 # The amount of time remaining before expiry when signatures will be
 # regenerated.
@@ -268,7 +277,7 @@ signature-lifetime = "1209600" # TODO: "2w"
 # An integer value is interpreted as seconds.
 #
 # TODO: Is this supported yet?
-#signature-remain-time = "604800" # TODO: "1w"
+#signature-remain-time = 604800 # TODO: "1w"
 
 # How denial-of-existence records are generated.
 [signer.denial]
