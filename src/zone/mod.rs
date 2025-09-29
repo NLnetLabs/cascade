@@ -8,7 +8,7 @@ use std::{
     io, mem,
     net::SocketAddr,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
@@ -18,9 +18,10 @@ use domain::{
     zonetree::{self, ZoneBuilder},
 };
 use domain::{rdata::dnssec::Timestamp, tsig};
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    api,
+    api::{self, ZoneReviewStatus},
     center::{Center, Change},
     config::Config,
     payload::Update,
@@ -79,9 +80,13 @@ pub struct ZoneState {
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
 
-    /// The last serial number we signed for this zone
-    pub last_signed_serial: Option<Serial>,
-    //
+    /// History of interesting events that occurred for this zone.
+    pub history: Vec<HistoryItem>,
+
+    /// Whether or not the pipeline for this zone should be allowed to flow at
+    /// the moment.
+    // TODO: make the pipeline stop accepting new data when hard halted.
+    pub pipeline_mode: PipelineMode,
     // TODO:
     // - A log?
     // - Initialization?
@@ -90,6 +95,153 @@ pub struct ZoneState {
     // - Key manager state
     // - Signer state
     // - Server state
+}
+
+impl ZoneState {
+    pub fn hard_halt(&mut self, reason: String) {
+        self.pipeline_mode = PipelineMode::HardHalt(reason);
+    }
+
+    pub fn soft_halt(&mut self, reason: String) {
+        self.pipeline_mode = PipelineMode::SoftHalt(reason);
+    }
+
+    pub fn resume(&mut self) {
+        self.pipeline_mode = PipelineMode::Running;
+    }
+
+    pub fn halted(&self, hard: bool) -> Option<String> {
+        match &self.pipeline_mode {
+            PipelineMode::SoftHalt(r) if !hard => Some(r.clone()),
+            PipelineMode::HardHalt(r) if hard => Some(r.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn record_event(&mut self, event: HistoricalEvent, serial: Option<Serial>) {
+        self.history.push(HistoryItem::new(event, serial));
+    }
+
+    pub fn find_last_event(
+        &self,
+        typ: HistoricalEventType,
+        serial: Option<Serial>,
+    ) -> Option<&HistoryItem> {
+        self.history
+            .iter()
+            .rev()
+            .find(|item| item.event.is_of_type(typ) && (serial.is_none() || item.serial == serial))
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub enum PipelineMode {
+    /// Newly received zone data will flow through the pipeline.
+    #[default]
+    Running,
+
+    /// The current zone data could not be fully processed through the
+    /// pipeline. When new zone data is received it will flow through the
+    /// pipeline as normal.
+    SoftHalt(String),
+
+    /// The current zone data could not be fully processed through the
+    /// pipeline. The pipeline for this zone will remain halted until manually
+    /// restarted.
+    HardHalt(String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoryItem {
+    pub when: SystemTime,
+    pub serial: Option<Serial>,
+    pub event: HistoricalEvent,
+}
+
+impl HistoryItem {
+    pub fn new(event: HistoricalEvent, serial: Option<Serial>) -> Self {
+        Self {
+            when: SystemTime::now(),
+            serial,
+            event,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum HistoricalEventType {
+    Added,
+    Removed,
+    PolicyChanged,
+    SourceChanged,
+    NewVersionReceived,
+    SigningSucceeded,
+    SigningFailed,
+    UnsignedZoneReview,
+    SignedZoneReview,
+    KeySetCommand,
+    KeySetError,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum HistoricalEvent {
+    Added,
+    Removed,
+    PolicyChanged,
+    SourceChanged,
+    NewVersionReceived,
+    SigningSucceeded {
+        trigger: SigningTrigger,
+    },
+    SigningFailed {
+        trigger: SigningTrigger,
+        reason: String,
+    },
+    UnsignedZoneReview {
+        status: ZoneReviewStatus,
+        when: SystemTime,
+    },
+    SignedZoneReview {
+        status: ZoneReviewStatus,
+        when: SystemTime,
+    },
+    KeySetCommand(String),
+    KeySetError(String),
+}
+
+impl HistoricalEvent {
+    pub fn is_of_type(&self, typ: HistoricalEventType) -> bool {
+        #[allow(clippy::match_like_matches_macro)]
+        match (self, typ) {
+            (HistoricalEvent::Added, HistoricalEventType::Added) => true,
+            (HistoricalEvent::Removed, HistoricalEventType::Removed) => true,
+            (HistoricalEvent::PolicyChanged, HistoricalEventType::PolicyChanged) => true,
+            (HistoricalEvent::SourceChanged, HistoricalEventType::SourceChanged) => true,
+            (HistoricalEvent::NewVersionReceived, HistoricalEventType::NewVersionReceived) => true,
+            (HistoricalEvent::SigningSucceeded { .. }, HistoricalEventType::SigningSucceeded) => {
+                true
+            }
+            (HistoricalEvent::SigningFailed { .. }, HistoricalEventType::SigningFailed) => true,
+            (
+                HistoricalEvent::UnsignedZoneReview { .. },
+                HistoricalEventType::UnsignedZoneReview,
+            ) => true,
+            (HistoricalEvent::SignedZoneReview { .. }, HistoricalEventType::SignedZoneReview) => {
+                true
+            }
+            (HistoricalEvent::KeySetCommand(_), HistoricalEventType::KeySetCommand) => true,
+            (HistoricalEvent::KeySetError(_), HistoricalEventType::KeySetError) => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum SigningTrigger {
+    ExternallyModifiedKeySetState,
+    SignatureExpiration,
+    ZoneChangesApproved,
+    KeySetModifiedAfterCron,
 }
 
 /// How to load the contents of a zone.
@@ -324,7 +476,7 @@ pub fn change_source(
         api::ZoneSource::Zonefile { path } => ZoneLoadSource::Zonefile { path },
 
         // TODO: Look up the TSIG key.
-        api::ZoneSource::Server { addr, tsig_key: _ } => ZoneLoadSource::Server {
+        api::ZoneSource::Server { addr, .. } => ZoneLoadSource::Server {
             addr,
             tsig_key: None,
         },

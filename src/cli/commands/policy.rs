@@ -30,7 +30,7 @@ pub enum PolicyCommand {
 }
 
 #[allow(unused)]
-mod ansi {
+pub mod ansi {
     pub const BLACK: &str = "\x1b[0;30m";
     pub const RED: &str = "\x1b[0;31m";
     pub const GREEN: &str = "\x1b[0;32m";
@@ -49,7 +49,7 @@ impl Policy {
         match self.command {
             PolicyCommand::List => {
                 let res: PolicyListResult = client
-                    .get("policy/list")
+                    .get("policy/")
                     .send()
                     .and_then(|r| r.json())
                     .await

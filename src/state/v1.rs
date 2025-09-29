@@ -180,6 +180,16 @@ impl ConfigSpec {
         update_value(&mut config.keys_dir, self.keys_dir, changed);
         update_value(&mut config.dnst_binary_path, self.dnst_binary_path, changed);
         update_value(
+            &mut config.kmip_credentials_store_path,
+            self.kmip_credentials_store_path,
+            changed,
+        );
+        update_value(
+            &mut config.kmip_server_state_dir,
+            self.kmip_server_state_dir,
+            changed,
+        );
+        update_value(
             &mut config.remote_control,
             self.remote_control.parse(),
             changed,

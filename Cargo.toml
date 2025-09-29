@@ -32,6 +32,7 @@ domain         = { git = "https://github.com/NLnetLabs/domain", branch = "patche
 ] }
 futures        = "0.3.17"
 futures-util   = "0.3"
+humantime      = "2.3.0"
 octseq         = { version = "0.5.2", default-features = false }
 tokio          = { version = "1.40", features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
 serde          = { version = "1.0", features = ["derive", "rc"] }

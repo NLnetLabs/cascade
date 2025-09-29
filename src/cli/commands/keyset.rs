@@ -100,11 +100,9 @@ async fn roll_command(
             Ok(())
         }
         Err(e) => match e {
-            KeyRollError::DnstCommandError {
-                status: _,
-                stdout: _,
-                stderr,
-            } => Err(format!("Failed manual key roll for {zone}: {stderr}")),
+            KeyRollError::DnstCommandError(err) => {
+                Err(format!("Failed manual key roll for {zone}: {err}"))
+            }
             KeyRollError::RxError => Err(format!(
                 "Failed manual key roll for {zone}: Internal Server Error"
             )),
@@ -136,11 +134,9 @@ async fn remove_key_command(
             Ok(())
         }
         Err(e) => match e {
-            KeyRemoveError::DnstCommandError {
-                status: _,
-                stdout: _,
-                stderr,
-            } => Err(format!("Failed to remove key {key} from {zone}: {stderr}")),
+            KeyRemoveError::DnstCommandError(err) => {
+                Err(format!("Failed to remove key {key} from {zone}: {err}"))
+            }
             KeyRemoveError::RxError => Err(format!(
                 "Failed to remove key {key} from {zone}: Internal Server Error"
             )),

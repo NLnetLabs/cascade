@@ -36,6 +36,14 @@ pub struct Spec {
     #[serde(default = "Spec::dnst_binary_path_default")]
     pub dnst_binary_path: Box<Utf8Path>,
 
+    /// The file storing KMIP server credentials.
+    #[serde(default = "Spec::kmip_credentials_store_path_default")]
+    pub kmip_credentials_store_path: Box<Utf8Path>,
+
+    /// The directory storing KMIP server state.
+    #[serde(default = "Spec::kmip_server_state_dir_default")]
+    pub kmip_server_state_dir: Box<Utf8Path>,
+
     /// Remote control configuration.
     pub remote_control: RemoteControlSpec,
 
@@ -65,6 +73,8 @@ impl Spec {
         config.tsig_store_path = self.tsig_store_path;
         config.keys_dir = self.keys_dir;
         config.dnst_binary_path = self.dnst_binary_path;
+        config.kmip_credentials_store_path = self.kmip_credentials_store_path;
+        config.kmip_server_state_dir = self.kmip_server_state_dir;
         self.remote_control.parse_into(&mut config.remote_control);
         self.daemon.parse_into(&mut config.daemon);
         self.loader.parse_into(&mut config.loader);
@@ -84,6 +94,8 @@ impl Default for Spec {
             tsig_store_path: Self::tsig_store_path_default(),
             keys_dir: Self::keys_dir_default(),
             dnst_binary_path: Self::dnst_binary_path_default(),
+            kmip_credentials_store_path: Self::kmip_credentials_store_path_default(),
+            kmip_server_state_dir: Self::kmip_server_state_dir_default(),
             remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
@@ -118,6 +130,16 @@ impl Spec {
     /// The default value for `dnst_keyset_dir`.
     fn keys_dir_default() -> Box<Utf8Path> {
         "/var/db/cascade/keys".into()
+    }
+
+    /// The default value for `kmip_credentials_store_path`.
+    fn kmip_credentials_store_path_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/kmip/credentials.db".into()
+    }
+
+    /// The default value for `kmip_server_state_dir`.
+    fn kmip_server_state_dir_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/kmip".into()
     }
 }
 
