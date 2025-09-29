@@ -298,7 +298,7 @@ impl std::fmt::Display for GroupId {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LoaderConfig {
     /// Where to listen for zone update notifications.
-    pub notif_listeners: Vec<SocketConfig>,
+    pub notify_listeners: Vec<SocketConfig>,
 
     /// Configuration for reviewing loaded zones.
     pub review: ReviewConfig,
@@ -326,10 +326,7 @@ pub struct ReviewConfig {
 
 /// Configuration for the key manager.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct KeyManagerConfig {
-    /// Whether and which HSM server is being used.
-    pub hsm_server_id: Option<String>,
-}
+pub struct KeyManagerConfig {}
 
 //----------- ServerConfig -----------------------------------------------------
 
@@ -364,6 +361,16 @@ pub enum SocketConfig {
     },
     //
     // TODO: TLS
+}
+
+impl SocketConfig {
+    pub fn addr(&self) -> SocketAddr {
+        match self {
+            SocketConfig::UDP { addr } => *addr,
+            SocketConfig::TCP { addr } => *addr,
+            SocketConfig::TCPUDP { addr } => *addr,
+        }
+    }
 }
 
 //----------- LogLevel ---------------------------------------------------------

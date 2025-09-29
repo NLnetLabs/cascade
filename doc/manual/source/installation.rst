@@ -240,18 +240,7 @@ to get started.
        
    .. group-tab:: Docker
 
-       Cascade Docker images are built with Alpine Linux. The supported 
-       CPU architectures are shown on the `Docker Hub Cascade page 
-       <https://hub.docker.com/r/nlnetlabs/Cascade/tags>`_ per Cascade
-       version (aka Docker "tag") in the ``OS/ARCH`` column.
-
-       To run Cascade as a background daemon with the default settings can be
-       done like so:
-
-       .. code-block:: bash
-
-          sudo docker run -d --restart=unless-stopped --name cascade
-          [TODO]
+       .. Note:: Docker images are coming soon.
 
 Updating
 --------
@@ -319,14 +308,7 @@ Updating
              
    .. group-tab:: Docker
 
-       Assuming that you run Docker with image `nlnetlabs/cascade`, upgrading
-       to the latest version can be done by running the following commands:
-        
-       .. code-block:: text
-       
-          sudo docker pull nlnetlabs/cascade
-          sudo docker rm --force cascade
-          sudo docker run <your usual arguments> nlnetlabs/cascade
+       .. Note:: Docker images are coming soon.
 
 Installing Specific Versions
 ----------------------------
@@ -435,13 +417,5 @@ a specific version, if needed.
              
    .. group-tab:: Docker
 
-       All release versions of Cascade, as well as release candidates and
-       builds based on the latest main branch are available on `Docker Hub
-       <https://hub.docker.com/r/nlnetlabs/Cascade/tags?page=1&ordering=last_updated>`_. 
-       
-       For example, installing Cascade 0.1.0 RC1 is as simple as:
-        
-       .. code-block:: text
-       
-          sudo docker run <your usual arguments> nlnetlabs/cascade:v0.1.0-rc1
+       .. Note:: Docker images are coming soon.
                

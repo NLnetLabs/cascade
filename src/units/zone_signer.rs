@@ -3,8 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
 use camino::Utf8Path;
@@ -46,7 +45,7 @@ use tokio::time::{sleep_until, Instant};
 use tokio_rustls::rustls::ServerConfig;
 use url::Url;
 
-use crate::center::Center;
+use crate::center::{get_zone, Center};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
@@ -54,8 +53,10 @@ use crate::payload::Update;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode};
+use crate::zone::{HistoricalEventType, SigningTrigger};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
+    SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
 };
 use core::sync::atomic::AtomicBool;
 
@@ -236,6 +237,55 @@ impl ZoneSigner {
         Ok(())
     }
 
+    fn mk_signing_report(&self, status: &ZoneSigningStatus) -> Option<SigningReport> {
+        let now = Instant::now();
+        let now_t = SystemTime::now();
+        match status {
+            ZoneSigningStatus::Requested(s) => {
+                Some(SigningReport::Requested(SigningRequestedReport {
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
+                }))
+            }
+            ZoneSigningStatus::InProgress(s) => {
+                Some(SigningReport::InProgress(SigningInProgressReport {
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
+                    zone_serial: s.zone_serial,
+                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
+                    unsigned_rr_count: s.unsigned_rr_count,
+                    walk_time: s.walk_time,
+                    sort_time: s.sort_time,
+                    denial_rr_count: s.denial_rr_count,
+                    denial_time: s.denial_time,
+                    rrsig_count: s.rrsig_count,
+                    rrsig_reused_count: s.rrsig_reused_count,
+                    rrsig_time: s.rrsig_time,
+                    insertion_time: s.insertion_time,
+                    total_time: s.total_time,
+                    threads_used: s.threads_used,
+                }))
+            }
+            ZoneSigningStatus::Finished(s) => {
+                Some(SigningReport::Finished(SigningFinishedReport {
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
+                    zone_serial: s.zone_serial,
+                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
+                    unsigned_rr_count: s.unsigned_rr_count,
+                    walk_time: s.walk_time,
+                    sort_time: s.sort_time,
+                    denial_rr_count: s.denial_rr_count,
+                    denial_time: s.denial_time,
+                    rrsig_count: s.rrsig_count,
+                    rrsig_reused_count: s.rrsig_reused_count,
+                    rrsig_time: s.rrsig_time,
+                    insertion_time: s.insertion_time,
+                    total_time: s.total_time,
+                    threads_used: s.threads_used,
+                    finished_at: now_t.checked_sub(now.duration_since(s.finished_at))?,
+                }))
+            }
+        }
+    }
+
     /// Handle incoming requests.
     ///
     /// Return true if the caller should continue, false when a Terminate
@@ -246,7 +296,7 @@ impl ZoneSigner {
         next_resign_time: &mut Instant,
     ) -> bool {
         info!("[ZS]: Received command: {cmd:?}");
-        match &cmd {
+        match cmd {
             ApplicationCommand::Terminate => {
                 // self.status_reporter.terminated();
                 return false;
@@ -255,9 +305,34 @@ impl ZoneSigner {
             ApplicationCommand::SignZone {
                 zone_name,
                 zone_serial, // TODO: the serial number is ignored, but is that okay?
+                trigger,
             } => {
-                if let Err(err) = self.sign_zone(zone_name, zone_serial.is_none()).await {
+                if let Err(err) = self
+                    .sign_zone(&zone_name, zone_serial.is_none(), trigger)
+                    .await
+                {
                     error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+
+                    self.center
+                        .update_tx
+                        .send(Update::ZoneSigningFailedEvent {
+                            zone_name,
+                            zone_serial,
+                            trigger,
+                            reason: err,
+                        })
+                        .unwrap();
+                }
+            }
+
+            ApplicationCommand::GetSigningReport {
+                zone_name,
+                report_tx,
+            } => {
+                if let Some(status) = self.signer_status.read().await.get(&zone_name) {
+                    if let Some(report) = self.mk_signing_report(&status.status) {
+                        let _ = report_tx.send(report).ok();
+                    };
                 }
             }
             ApplicationCommand::PublishSignedZone { .. } => {
@@ -283,6 +358,7 @@ impl ZoneSigner {
         &self,
         zone_name: &StoredName,
         resign_last_signed_zone_content: bool,
+        trigger: SigningTrigger,
     ) -> Result<(), String> {
         // TODO: The signer_status mechanism is broken, as it is limited to
         // 100 slots so that if too many sign_zone() invocations occur the
@@ -321,10 +397,13 @@ impl ZoneSigner {
             let state = self.center.state.lock().unwrap();
             let zone = state.zones.get(zone_name).unwrap();
             let zone_state = zone.0.state.lock().unwrap();
+            let last_signed_serial = zone_state
+                .find_last_event(HistoricalEventType::SigningSucceeded, None)
+                .and_then(|item| item.serial);
             let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
             let kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
             (
-                zone_state.last_signed_serial,
+                last_signed_serial,
                 zone_state.policy.clone().unwrap(),
                 kmip_server_state_dir,
                 kmip_credentials_store_path,
@@ -412,9 +491,8 @@ impl ZoneSigner {
         //
         // Ensure that the Mutexes are locked only in this block;
         let policy = {
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let zone_state = zone.0.state.lock().unwrap();
+            let zone = get_zone(&self.center, zone_name).unwrap();
+            let zone_state = zone.state.lock().unwrap();
             zone_state.policy.clone()
         };
         let signing_config = self.signing_config(&policy.unwrap());
@@ -437,19 +515,6 @@ impl ZoneSigner {
             s.unsigned_rr_count = Some(unsigned_rr_count);
             s.walk_time = Some(Duration::from_secs(walk_time));
         });
-
-        /// Persistent state for the keyset command.
-        /// Copied frmo the keyset branch of dnst.
-        #[derive(Deserialize, Serialize)]
-        struct KeySetState {
-            /// Domain KeySet state.
-            keyset: KeySet,
-
-            dnskey_rrset: Vec<String>,
-            ds_rrset: Vec<String>,
-            cds_rrset: Vec<String>,
-            ns_rrset: Vec<String>,
-        }
 
         trace!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
         // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
@@ -777,15 +842,18 @@ impl ZoneSigner {
         let zone_serial = soa_data.serial();
 
         // Store the serial in the state.
-        {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let mut zone_state = zone.0.state.lock().unwrap();
-
-            zone_state.last_signed_serial = Some(zone_serial);
-            zone.0.mark_dirty(&mut zone_state, &self.center);
-        }
+        // Note: We do NOT do this here because CentralCommand does it when it
+        // sees the ZoneSignedEvent.
+        // {
+        //     // Use a block to make sure that the mutex is clearly dropped.
+        //     let zone = get_zone(&self.center, zone_name).unwrap();
+        //     let mut zone_state = zone.state.lock().unwrap();
+        //     zone_state.record_event(
+        //         HistoricalEvent::SigningSucceeded { trigger },
+        //         Some(zone_serial),
+        //     );
+        //     zone.mark_dirty(&mut zone_state, &self.center);
+        // }
 
         updater.apply(ZoneUpdate::Finished(soa_rr)).await.unwrap();
         let insertion_time = insertion_time
@@ -816,14 +884,13 @@ impl ZoneSigner {
         // Save the minimum of the expiration times.
         {
             // Use a block to make sure that the mutex is clearly dropped.
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let mut zone_state = zone.0.state.lock().unwrap();
+            let zone = get_zone(&self.center, zone_name).unwrap();
+            let mut zone_state = zone.state.lock().unwrap();
 
             // Save as next_min_expiration. After the signed zone is approved
             // this value should be move to min_expiration.
             zone_state.next_min_expiration = saved_min_expiration.get();
-            zone.0.mark_dirty(&mut zone_state, &self.center);
+            zone.mark_dirty(&mut zone_state, &self.center);
         }
 
         let total_time = rrsig_start.elapsed().as_secs();
@@ -851,6 +918,7 @@ impl ZoneSigner {
             .send(Update::ZoneSignedEvent {
                 zone_name: zone_name.clone(),
                 zone_serial,
+                trigger,
             })
             .unwrap();
 
@@ -1038,11 +1106,25 @@ impl ZoneSigner {
                     .update_tx
                     .send(Update::ResignZoneEvent {
                         zone_name: zone_name.clone(),
+                        trigger: SigningTrigger::SignatureExpiration,
                     })
                     .unwrap();
             }
         }
     }
+}
+
+/// Persistent state for the keyset command.
+/// Copied from the keyset branch of dnst.
+#[derive(Deserialize, Serialize)]
+pub struct KeySetState {
+    /// Domain KeySet state.
+    pub keyset: KeySet,
+
+    pub dnskey_rrset: Vec<String>,
+    pub ds_rrset: Vec<String>,
+    pub cds_rrset: Vec<String>,
+    pub ns_rrset: Vec<String>,
 }
 
 struct MinTimestamp(Mutex<Option<Timestamp>>);

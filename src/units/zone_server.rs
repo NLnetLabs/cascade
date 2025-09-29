@@ -44,7 +44,7 @@ use tokio::sync::{oneshot, RwLock};
 use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
 
-use crate::center::Center;
+use crate::center::{get_zone, Center};
 use crate::common::tsig::TsigKeyStore;
 use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
@@ -335,6 +335,14 @@ impl ZoneServer {
                 .await;
             }
 
+            ApplicationCommand::IsZonePendingApproval { zone_name, tx } => {
+                let locked = self.pending_approvals.read().await;
+                let pending = locked
+                    .iter()
+                    .any(|((name, _serial), tokens)| zone_name == name && !tokens.is_empty());
+                let _ = tx.send(pending).ok();
+            }
+
             ApplicationCommand::SeekApprovalForUnsignedZone { .. }
             | ApplicationCommand::SeekApprovalForSignedZone { .. } => {
                 self.on_seek_approval_for_zone_cmd(cmd, unit_name, update_tx)
@@ -366,15 +374,14 @@ impl ZoneServer {
         // Move next_min_expiration to min_expiration.
         {
             // Use a block to make sure that the mutex is clearly dropped.
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(&zone_name).unwrap();
-            let mut zone_state = zone.0.state.lock().unwrap();
+            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let mut zone_state = zone.state.lock().unwrap();
 
             // Save as next_min_expiration. After the signed zone is approved
             // this value should be move to min_expiration.
             zone_state.min_expiration = zone_state.next_min_expiration;
             zone_state.next_min_expiration = None;
-            zone.0.mark_dirty(&mut zone_state, &self.center);
+            zone.mark_dirty(&mut zone_state, &self.center);
         }
 
         // Move the zone from the signed collection to the published collection.
@@ -436,19 +443,27 @@ impl ZoneServer {
             return Some(Ok(()));
         }
 
-        let hook = {
-            let state = self.center.state.lock().unwrap();
-            let zone = state.zones.get(&zone_name).unwrap();
-            let zone_state = zone.0.state.lock().unwrap();
+        let review = {
+            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone_state = zone.state.lock().unwrap();
             let policy = zone_state.policy.as_ref().unwrap();
             match self.source {
-                Source::UnsignedZones => policy.loader.review.cmd_hook.clone(),
-                Source::SignedZones => policy.signer.review.cmd_hook.clone(),
-                Source::PublishedZones => None,
+                Source::UnsignedZones => policy.loader.review.clone(),
+                Source::SignedZones => policy.signer.review.clone(),
+                Source::PublishedZones => unreachable!(),
             }
         };
 
-        let Some(hook) = hook else {
+        let review_server = {
+            let state = self.center.state.lock().unwrap();
+            match self.source {
+                Source::UnsignedZones => state.config.loader.review.servers[0].clone(),
+                Source::SignedZones => state.config.signer.review.servers[0].clone(),
+                Source::PublishedZones => unreachable!(),
+            }
+        };
+
+        if !review.required {
             // Approve immediately.
             match self.source {
                 Source::UnsignedZones => {
@@ -486,10 +501,27 @@ impl ZoneServer {
             .and_modify(|e| e.push(approval_token))
             .or_insert(vec![approval_token]);
 
-        match Command::new(&hook)
-            .arg(format!("{zone_name}"))
-            .arg(format!("{zone_serial}"))
-            .arg(format!("{approval_token}"))
+        let Some(hook) = review.cmd_hook else {
+            info!("[{unit_name}] No review hook set; waiting for manual review");
+            info!("[{unit_name}]: Confirm with HTTP GET {}approve/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+            info!("[{unit_name}]: Reject with HTTP GET {}reject/{approval_token}?zone={zone_name}&serial={zone_serial}", self.http_api_path);
+            return None;
+        };
+
+        // TODO: Windows support?
+        // TODO: Set 'CASCADE_UNSIGNED_SERIAL' and 'CASCADE_UNSIGNED_SERVER'.
+        match Command::new("sh")
+            .args(["-c", &hook])
+            .envs([
+                ("CASCADE_ZONE", &*zone_name.to_string()),
+                ("CASCADE_SERIAL", &*zone_serial.to_string()),
+                ("CASCADE_TOKEN", &*approval_token.to_string()),
+                ("CASCADE_SERVER", &*review_server.addr().to_string()),
+                (
+                    "CASCADE_CONTROL",
+                    self.http_api_path.strip_suffix("/").unwrap(),
+                ),
+            ])
             .spawn()
         {
             Ok(_) => {
@@ -695,19 +727,18 @@ impl ZoneReviewApi {
                             pending_approvals.remove(idx);
 
                             if pending_approvals.is_empty() {
-                                let evt_zone_name = zone_name.clone();
                                 let (zone_type, event) = match self.source {
                                     Source::UnsignedZones => (
                                         "unsigned",
                                         Update::UnsignedZoneApprovedEvent {
-                                            zone_name: evt_zone_name,
+                                            zone_name: zone_name.clone(),
                                             zone_serial,
                                         },
                                     ),
                                     Source::SignedZones => (
                                         "signed",
                                         Update::SignedZoneApprovedEvent {
-                                            zone_name: evt_zone_name,
+                                            zone_name: zone_name.clone(),
                                             zone_serial,
                                         },
                                     ),
@@ -726,8 +757,26 @@ impl ZoneReviewApi {
                             }
                         }
                         "reject" => {
-                            info!("Pending zone '{zone_name}' rejected at serial {zone_serial}.");
                             status = Ok(());
+                            let (zone_type, event) = match self.source {
+                                Source::UnsignedZones => (
+                                    "unsigned",
+                                    Update::UnsignedZoneRejectedEvent {
+                                        zone_name: zone_name.clone(),
+                                        zone_serial,
+                                    },
+                                ),
+                                Source::SignedZones => (
+                                    "signed",
+                                    Update::SignedZoneRejectedEvent {
+                                        zone_name: zone_name.clone(),
+                                        zone_serial,
+                                    },
+                                ),
+                                Source::PublishedZones => unreachable!(),
+                            };
+                            info!("Pending {zone_type} zone '{zone_name}' rejected at serial {zone_serial}.");
+                            self.update_tx.send(event).unwrap();
                             remove_approvals = true;
                         }
                         _ => unreachable!(),

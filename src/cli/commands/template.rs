@@ -21,7 +21,6 @@ impl Template {
         match self.command {
             FileSelection::Config => println!("{}", include_str!("../../../etc/config.template.toml")),
             FileSelection::Policy => println!("{}", include_str!("../../../etc/policy.template.toml")),
-            FileSelection::Policy => todo!(),
         }
         Ok(())
     }

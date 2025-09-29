@@ -3,7 +3,7 @@ use domain::base::Name;
 use futures::TryFutureExt;
 
 use crate::api::keyset::*;
-use crate::cli::client::CascadeApiClient;
+use crate::cli::client::{format_http_error, CascadeApiClient};
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct KeySet {
@@ -93,18 +93,16 @@ async fn roll_command(
         .send()
         .and_then(|r| r.json())
         .await
-        .map_err(|e| format!("HTTP request failed: {e}"))?;
+        .map_err(format_http_error)?;
     match res {
         Ok(_) => {
             println!("Manual key roll for {} successful", zone);
             Ok(())
         }
         Err(e) => match e {
-            KeyRollError::DnstCommandError {
-                status: _,
-                stdout: _,
-                stderr,
-            } => Err(format!("Failed manual key roll for {zone}: {stderr}")),
+            KeyRollError::DnstCommandError(err) => {
+                Err(format!("Failed manual key roll for {zone}: {err}"))
+            }
             KeyRollError::RxError => Err(format!(
                 "Failed manual key roll for {zone}: Internal Server Error"
             )),
@@ -129,18 +127,16 @@ async fn remove_key_command(
         .send()
         .and_then(|r| r.json())
         .await
-        .map_err(|e| format!("HTTP request failed: {e}"))?;
+        .map_err(format_http_error)?;
     match res {
         Ok(_) => {
             println!("Removed key {} from zone {}", key, zone);
             Ok(())
         }
         Err(e) => match e {
-            KeyRemoveError::DnstCommandError {
-                status: _,
-                stdout: _,
-                stderr,
-            } => Err(format!("Failed to remove key {key} from {zone}: {stderr}")),
+            KeyRemoveError::DnstCommandError(err) => {
+                Err(format!("Failed to remove key {key} from {zone}: {err}"))
+            }
             KeyRemoveError::RxError => Err(format!(
                 "Failed to remove key {key} from {zone}: Internal Server Error"
             )),
@@ -156,7 +152,7 @@ async fn remove_key_command(
 //         .and_then(|r| r.json())
 //         .await
 //         .map_err(|e| {
-//             error!("HTTP request failed: {e}");
+//             error!("HTTP request failed: {e:?}");
 //         })?;
 
 //     for policy in res.policies {
@@ -170,7 +166,7 @@ async fn remove_key_command(
 //         .and_then(|r| r.json())
 //         .await
 //         .map_err(|e| {
-//             error!("HTTP request failed: {e}");
+//             error!("HTTP request failed: {e:?}");
 //         })?;
 
 //     let p = match res {
@@ -190,7 +186,7 @@ async fn remove_key_command(
 //         .and_then(|r| r.json())
 //         .await
 //         .map_err(|e| {
-//             error!("HTTP request failed: {e}");
+//             error!("HTTP request failed: {e:?}");
 //         })?;
 
 //     let res = match res {
