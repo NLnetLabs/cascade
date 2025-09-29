@@ -21,9 +21,18 @@ transfers to and from Cascade.
 Intended Audience
 -----------------
 
-Cascade is intended for use by TLD operators, initially operators with at most
-a few small to medium size zones, later also supporting operators with very
-large zones or operators with many many zones.
+Cascade is currently targeted for use by TLD operators, but will evolve over
+time to cater to other audiences. 
+
+Right now, signing speed is not likely to be a bottle neck for most use
+cases, but there are many improvements in the pipeline, especially when using
+an HSM. Cascade's memory use is considerable, using about 50GiB of RAM when
+signing a ~1GB zone file with about ~25M resource records and adding ~10M
+records while signing. Reducing the memory footprint is a priority.
+
+As such, Cascade can currently be used by TLD operators with at most a few
+small to medium size zones. As development progresses, it will also support
+operators with very large zones or operators with many zones.
 
 Cascade is *NOT* yet intended for operation as a clustered deployment.
 
