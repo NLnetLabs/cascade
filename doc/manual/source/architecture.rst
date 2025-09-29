@@ -36,7 +36,7 @@ protocol from dedicated "review" nameservers within Cascade, either verifying
 the zone directly or writing the zone to disk for verification by tools that
 only support working with files.
 
-On completion of the verification processs, approval or rejection is signalled
+On completion of the verification process, approval or rejection is signalled
 back to Cascade by means of an (insecure in the initial version of Cascade) HTTP
 REST API.
 
