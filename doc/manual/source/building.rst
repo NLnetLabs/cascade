@@ -99,13 +99,13 @@ install the KMIP to PKCS#11 relay with:
 
 Finally, before running Cascade you will need to create a few directories and
 Cascade's config file. Create the directory where you want to store the config
-(let's say ``./cascade`` for this example), fetch an up-to-date example
-config file, and create the ``policies`` and ``keys`` directories:
+(let's say ``./cascade`` for this example), and generate an example
+config file:
 
 .. code-block:: text
 
   mkdir ./cascade
-  curl -sS -o ./cascade/config.toml https://raw.githubusercontent.com/NLnetLabs/cascade/refs/heads/main/etc/config.toml
+  cascade template config > ./cascade/config.toml
 
 Then update the ``config.toml`` to use the appropriate paths.
 
