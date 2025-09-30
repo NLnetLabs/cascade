@@ -68,12 +68,18 @@ systemd features used instead.
 
             cascade --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
 
-
 Defining policy
 ---------------
 
 After configuring Cascade, you can begin adding zones. Cascade supports zones
 sourced from a local file or fetched from another name server using XFR.
+
+.. Note:: No TSIG or passthrough support yet.
+
+   The current version of Cascade does not yet support TSIG authenticated XFR
+   nor can it pass through a signed zone intact, any DNSSEC records will be
+   stripped from the zone before signing. We expect to add support for these
+   features soon.
 
 Zones take a lot of their settings from policy.
 
@@ -105,14 +111,13 @@ Adding a zone to Cascade will cause Cascade to attempt to load, sign and
 publish it. If you configured review hooks, they will be executed (and may
 intentionally prevent your zone reaching publication).
 
-Then, to add a zone use:
+To add a zone use:
 
 .. code-block:: bash
 
    cascade zone add --source <file-path|ip-address> --policy default <zone-name>
 
-Now, your zone will be picked up by Cascade, keys prepared, and the signing
-process started.
+Cascade will now generate signing keys for the zone and attempt to load and sign it.
 
 Checking the result
 -------------------
@@ -147,3 +152,25 @@ From the above you can see that the signed zone can be retrieved from
 .. code-block:: bash
 
     dig @127.0.0.1 -p 8053 AXFR example.com
+
+If you have the BIND `dnssec-verify <https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_
+tool installed you can check that the zone is correctly DNSSEC signed:
+
+.. code-block:: bash
+
+   $ dig @127.0.0.1 -p 8053 example.com AXFR | dnssec-verify -o example.com /dev/stdin
+   Loading zone 'example.com' from file '/dev/stdin'
+
+   Verifying the zone using the following algorithms:
+   - ECDSAP256SHA256
+   Zone fully signed:
+   Algorithm: ECDSAP256SHA256: KSKs: 1 active, 0 stand-by, 0 revoked
+                               ZSKs: 1 active, 0 stand-by, 0 revoked
+
+.. Note:: 
+
+Next steps
+----------
+
+- Establishing the chain of trust to the parent.
+- Automating pre-publication checks.
