@@ -37,23 +37,11 @@ to Cascade's listen addresses.
            ListenDatagram=<your-ip>:53
            ListenStream=<your-ip>:53
 
-        After editing the ``cascaded.socket`` file, you need to issue this
-        command for systemd to pick up the changes:
+        Then notify systemd of the changes and (re)start Cascade:
 
         .. code-block:: bash
 
             sudo systemctl daemon-reload
-
-        Then you can start Cascade with:
-
-        .. code-block:: bash
-
-            sudo systemctl start cascaded
-
-        Or, if Cascade is already running, restart with:
-
-        .. code-block:: bash
-
             sudo systemctl restart cascaded
 
    .. group-tab:: Without systemd
