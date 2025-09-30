@@ -104,7 +104,7 @@ impl ZoneLoader {
             };
 
             if let Err(err) = zone_maintainer.insert_zone(zone).await {
-                error!("[ZL]: Error: Failed to insert zone '{name}': {err}")
+                error!("[ZL]: Failed to insert zone '{name}': {err}")
             }
         }
 
@@ -282,7 +282,7 @@ impl ZoneLoader {
         let (zone, byte_count) = load_file_into_zone(&zone_name, zone_path).await?;
         let duration = SystemTime::now().duration_since(started_at).unwrap();
         let Some(serial) = get_zone_serial(zone_name.clone(), &zone).await else {
-            error!("[ZL]: Error: Zone file '{zone_path}' lacks a SOA record. Skipping zone.");
+            error!("[ZL]: Zone file '{zone_path}' lacks a SOA record. Skipping zone.");
             return Err(Terminated);
         };
 
@@ -362,32 +362,28 @@ async fn load_file_into_zone(
     let before = Instant::now();
     info!("[ZL]: Loading primary zone '{zone_name}' from '{zone_path}'..",);
     let mut zone_file = File::open(zone_path)
-        .inspect_err(|err| error!("[ZL]: Error: Failed to open zone file '{zone_path}': {err}",))
+        .inspect_err(|err| error!("[ZL]: Failed to open zone file '{zone_path}': {err}",))
         .map_err(|_| Terminated)?;
     let zone_file_len = zone_file
         .metadata()
-        .inspect_err(|err| {
-            error!("[ZL]: Error: Failed to read metadata for file '{zone_path}': {err}",)
-        })
+        .inspect_err(|err| error!("[ZL]: Failed to read metadata for file '{zone_path}': {err}",))
         .map_err(|_| Terminated)?
         .len();
 
     let mut buf = inplace::Zonefile::with_capacity(zone_file_len as usize).writer();
     std::io::copy(&mut zone_file, &mut buf)
-        .inspect_err(|err| {
-            error!("[ZL]: Error: Failed to read data from file '{zone_path}': {err}",)
-        })
+        .inspect_err(|err| error!("[ZL]: Failed to read data from file '{zone_path}': {err}",))
         .map_err(|_| Terminated)?;
     let mut reader = buf.into_inner();
     reader.set_origin(zone_name.clone());
     let res = Zone::try_from(reader);
     let Ok(zone) = res else {
         let errors = res.unwrap_err();
-        let mut msg = format!("Failed to parse zone: {} errors", errors.len());
+        let mut msg = format!("Got {} errors", errors.len());
         for (name, err) in errors.into_iter() {
             msg.push_str(&format!("  {name}: {err}\n"));
         }
-        error!("[ZL]: Error parsing zone '{zone_name}': {msg}");
+        error!("[ZL]: Failed to parse zone '{zone_name}': {msg}");
         return Err(Terminated);
     };
     info!(
