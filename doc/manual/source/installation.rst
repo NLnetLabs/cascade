@@ -2,7 +2,6 @@ Installation
 ============
 
 .. TODO: add daemonization guide?
-.. TODO: document approval API?
 
 Binary Packages
 ---------------

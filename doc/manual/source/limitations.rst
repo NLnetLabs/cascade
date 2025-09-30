@@ -35,8 +35,8 @@ Limitations
 
 Cascade is NOT a full primary name server. This means:
 
-- No fully standards conform (DNSSEC) DNS query support, meaning no AD flag and
-  ignoring the DO flag.
+- No fully standards conform (DNSSEC) DNS query support, meaning no AA or AD
+  flag and ignoring the DO flag.
   - Only use AXFR (and normal queries for the SOA RR) to fetch accurate zone
     data from Cascade.
 .. (Optionally with TSIG)
