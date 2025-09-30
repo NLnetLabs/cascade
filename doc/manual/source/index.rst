@@ -51,7 +51,6 @@ section.
    building
    quick-start
    limitations
-   troubleshooting
 
 .. toctree::
    :maxdepth: 2
@@ -72,3 +71,11 @@ section.
 
    migration
    offline-ksk
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Help
+   :name: toc-help
+
+   troubleshooting
