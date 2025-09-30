@@ -65,6 +65,14 @@ server. To read what that entails, read the :doc:`before you start
 .. toctree::
    :maxdepth: 2
    :hidden:
+   :caption: Guides
+   :name: toc-guides
+
+   importing-keys
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
    :caption: Advanced
    :name: toc-advanced
 
