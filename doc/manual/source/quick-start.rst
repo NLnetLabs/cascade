@@ -8,12 +8,15 @@ the settings relating to daemonization.
 Configuring Cascade
 ---------------------
 
-By default, Cascade only listens on the localhost address. If you want Cascade to listen
-on other addresses too, you need to configure them.
+By default, Cascade only listens on the localhost address. If you want Cascade
+to listen on other addresses too, you need to configure them.
 
-The ``/etc/cascade/config.toml`` file controls listen addresses, which filesystem paths Cascade uses, daemonizatioan settings (running in the background, running aa a different user, and log settings.
+The ``/etc/cascade/config.toml`` file controls listen addresses, which
+filesystem paths Cascade uses, daemonization settings (running in the
+background, running as a different user, and log settings).
 
-If using systemd to run Cascade some of these settings should be ignored and systemd features used instead.
+If using systemd to run Cascade some of these settings should be ignored and
+systemd features used instead.
 
 .. tabs::
 
@@ -74,13 +77,21 @@ sourced from a local file or fetched from another name server using XFR.
 
 Zones take a lot of their settings from policy.
 
-Policies allow easy re-use of settings across multiple zones and control things like whether or not zones should be reviewed and how, what DNSSEC settings should be used to sign the zone, and more.
+Policies allow easy re-use of settings across multiple zones and control
+things like whether or not zones should be reviewed and how, what DNSSEC
+settings should be used to sign the zone, and more.
 
-Adding a policy is done by creating a file. To make it easy to get started we provide a default policy template so we'll use that to create a policy for our zone to use.
+Adding a policy is done by creating a file. To make it easy to get started we
+provide a default policy template so we'll use that to create a policy for our
+zone to use.
 
-The name of the policy is taken from the filename. The directory to save the policy file to is determined by the ``policy-dir`` setting as configured in ``/etc/cascade/config.toml``. The filename can be any valid filename and will be used as the name of the policy.
+The name of the policy is taken from the filename. The directory to save the
+policy file to is determined by the ``policy-dir`` setting as configured in
+``/etc/cascade/config.toml``. The filename can be any valid filename and will
+be used as the name of the policy.
 
-In the example below the `sudo tee` command is needed because the default policy directory is not writable by the current user.
+In the example below the `sudo tee` command is needed because the default
+policy directory is not writable by the current user.
 
 .. code-block:: bash
 
