@@ -161,15 +161,15 @@ impl KeyManager {
                     }
                 }
 
-                if let Err(KeySetCommandError { reason, output }) = cmd.output() {
+                if let Err(KeySetCommandError { err, output }) = cmd.output() {
                     let client_err = match output {
                         Some(output) => KeyRollError::DnstCommandError(
                             String::from_utf8_lossy(&output.stderr).into(),
                         ),
-                        None => KeyRollError::DnstCommandError(reason.clone()),
+                        None => KeyRollError::DnstCommandError(err.clone()),
                     };
                     http_tx.send(Err(client_err)).await.unwrap();
-                    return Err(format!("key roll command failed: {reason}"));
+                    return Err(format!("key roll command failed: {err}"));
                 }
 
                 http_tx.send(Ok(())).await.unwrap();
@@ -197,15 +197,15 @@ impl KeyManager {
                     cmd.arg("--continue");
                 }
 
-                if let Err(KeySetCommandError { reason, output }) = cmd.output() {
+                if let Err(KeySetCommandError { err, output }) = cmd.output() {
                     let client_err = match output {
                         Some(output) => KeyRemoveError::DnstCommandError(
                             String::from_utf8_lossy(&output.stderr).into(),
                         ),
-                        None => KeyRemoveError::DnstCommandError(reason.clone()),
+                        None => KeyRemoveError::DnstCommandError(err.clone()),
                     };
                     http_tx.send(Err(client_err)).await.unwrap();
-                    return Err(format!("key removal command failed: {reason}"));
+                    return Err(format!("key removal command failed: {err}"));
                 }
 
                 http_tx.send(Ok(())).await.unwrap();
@@ -246,7 +246,7 @@ impl KeyManager {
             .arg("-s")
             .arg(&state_path)
             .output()
-            .map_err(|err| ZoneAddError::Other(err.reason))?;
+            .map_err(|err| ZoneAddError::Other(err.err))?;
 
         // TODO: If we fail after this point, what should we do with whatever
         // changes `dnst keyset create` made on disk? Will leaving them behind
@@ -314,8 +314,7 @@ impl KeyManager {
             }
 
             // TODO: --client-cert, --client-key, --server-cert and --ca-cert
-            cmd.output()
-                .map_err(|err| ZoneAddError::Other(err.reason))?;
+            cmd.output().map_err(|err| ZoneAddError::Other(err.err))?;
         }
 
         // Set config
@@ -328,8 +327,7 @@ impl KeyManager {
                 cmd.arg(a);
             }
 
-            cmd.output()
-                .map_err(|err| ZoneAddError::Other(err.reason))?;
+            cmd.output().map_err(|err| ZoneAddError::Other(err.err))?;
         }
 
         // TODO: This should not happen immediately after
@@ -339,7 +337,7 @@ impl KeyManager {
         self.keyset_cmd(name.clone())
             .arg("init")
             .output()
-            .map_err(|err| ZoneAddError::Other(err.reason))?;
+            .map_err(|err| ZoneAddError::Other(err.err))?;
 
         Ok(())
     }
@@ -915,13 +913,13 @@ pub struct KeySetCommand {
 }
 
 pub struct KeySetCommandError {
-    reason: String,
+    err: String,
     output: Option<Output>,
 }
 
 impl From<KeySetCommandError> for String {
     fn from(err: KeySetCommandError) -> Self {
-        err.reason
+        err.err
     }
 }
 
@@ -953,7 +951,7 @@ impl KeySetCommand {
                     None,
                 );
             })
-            .inspect_err(|KeySetCommandError { reason, .. }| {
+            .inspect_err(|KeySetCommandError { err: reason, .. }| {
                 record_zone_event(
                     &self.center,
                     &self.name,
@@ -979,7 +977,7 @@ impl KeySetCommand {
                 ));
             }
             KeySetCommandError {
-                reason,
+                err: reason,
                 output: None,
             }
         })?;
@@ -994,7 +992,7 @@ impl KeySetCommand {
                 String::from_utf8_lossy(&output.stderr),
             );
             return Err(KeySetCommandError {
-                reason,
+                err: reason,
                 output: Some(output),
             });
         }
