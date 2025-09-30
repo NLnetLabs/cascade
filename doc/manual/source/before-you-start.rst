@@ -4,19 +4,20 @@ Before You Start
 Placement
 ---------
 
-Cascade must *NOT* be run as an Internet facing service as it is only capable
-of answering a limited subset of the DNS protocol that a full authoritative
-nameserver must support.
+Cascade is what is known as a "hidden signer". A hidden signer takes local
+zones or zones received from an upstream primary nameserver, signs those zones
+and makes the signed results available to downstream *secondary* nameservers.
+In a hidden signer setup, the secondary nameservers are Internet facing,
+Cascade as the hidden signer is not.
 
-Instead, it is what is known as a "hidden signer", taking local zones or zones
-received from an upstream primary nameserver, signing those zones and making
-the signed results available to downstream, secondary, nameservers which *are*
-actually Internet facing.
+.. Warning:: Cascade must *not* be run as an Internet facing service as it is
+   designed to answer a limited subset of the DNS protocol that a full
+   authoritative nameserver must support.
 
 One possible authoritative server that could be used up and downstream of
-Cascade is our NSD product, but any authoritative nameserver product can
-be used instead of NSD, assuming that it supports transferring zones via XFR
-transfers to and from Cascade.
+Cascade is our authoritative nameserver `NSD <https://nlnetlabs.nl/nsd>`__, but
+any authoritative nameserver can be used instead, assuming that it supports
+transferring zones via XFR transfers to and from Cascade.
 
 Intended Audience
 -----------------

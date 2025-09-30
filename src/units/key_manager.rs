@@ -1,11 +1,11 @@
 use crate::api;
 use crate::api::keyset::{KeyRemoveError, KeyRollError};
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{get_zone, halt_zone, Center};
+use crate::center::{halt_zone, Center, ZoneAddError};
 use crate::cli::commands::hsm::Error;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
-use crate::policy::KeyParameters;
+use crate::policy::{KeyParameters, Policy};
 use crate::targets::central_command::record_zone_event;
 use crate::units::http_server::KmipServerState;
 use crate::zone::{HistoricalEvent, SigningTrigger};
@@ -106,127 +106,23 @@ impl KeyManager {
     async fn run_cmd(&self, cmd: ApplicationCommand) -> Result<(), String> {
         match cmd {
             ApplicationCommand::RegisterZone {
-                register:
-                    crate::api::ZoneAdd {
-                        name, key_imports, ..
-                    },
+                name,
+                policy,
+                key_imports,
+                report_tx,
             } => {
-                let state_path = self.keys_dir.join(format!("{name}.state"));
-
-                let mut cmd = self.keyset_cmd(name.clone());
-
-                cmd.arg("create")
-                    .arg("-n")
-                    .arg(name.to_string())
-                    .arg("-s")
-                    .arg(&state_path)
-                    .output()?;
-
-                // Lookup the policy for the zone to see if it uses a KMIP
-                // server.
-                let (kmip_server_id, kmip_server_state_dir, kmip_credentials_store_path) = {
-                    let state = self.center.state.lock().unwrap();
-                    let zone = state.zones.get(&name).unwrap();
-                    let zone_state = zone.0.state.lock().unwrap();
-                    let kmip_server_id = if let Some(policy) = &zone_state.policy {
-                        policy.key_manager.hsm_server_id.clone()
-                    } else {
-                        None
+                let res = self.register_zone(name.clone(), policy, &key_imports);
+                if let Err(unsent_res) = report_tx.send(res.clone()) {
+                    let msg = match unsent_res {
+                        Ok(()) => "succeeded".to_string(),
+                        Err(err) => format!("failed (reason: {err})"),
                     };
-                    let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
-                    let kmip_credentials_store_path =
-                        state.config.kmip_credentials_store_path.clone();
-                    (
-                        kmip_server_id,
-                        kmip_server_state_dir,
-                        kmip_credentials_store_path,
-                    )
-                };
-
-                if let Some(kmip_server_id) = kmip_server_id {
-                    let p = kmip_server_state_dir.join(kmip_server_id);
-                    log::info!("Reading KMIP server state from '{p}'");
-                    let f = std::fs::File::open(p).unwrap();
-                    let kmip_server: KmipServerState = serde_json::from_reader(f).unwrap();
-                    let KmipServerState {
-                        server_id,
-                        ip_host_or_fqdn,
-                        port,
-                        insecure,
-                        connect_timeout,
-                        read_timeout,
-                        write_timeout,
-                        max_response_bytes,
-                        key_label_prefix,
-                        key_label_max_bytes,
-                        has_credentials,
-                    } = kmip_server;
-
-                    let mut cmd = self.keyset_cmd(name.clone());
-
-                    // TODO: This command should get issued _after_ keyset create
-                    // but _before_ keyset init, both of which are issued above.
-                    cmd.arg("kmip")
-                        .arg("add-server")
-                        .arg(server_id.clone())
-                        .arg(ip_host_or_fqdn)
-                        .arg("--port")
-                        .arg(port.to_string())
-                        .arg("--connect-timeout")
-                        .arg(format!("{}s", connect_timeout.as_secs()))
-                        .arg("--read-timeout")
-                        .arg(format!("{}s", read_timeout.as_secs()))
-                        .arg("--write-timeout")
-                        .arg(format!("{}s", write_timeout.as_secs()))
-                        .arg("--max-response-bytes")
-                        .arg(max_response_bytes.to_string())
-                        .arg("--key-label-max-bytes")
-                        .arg(key_label_max_bytes.to_string());
-
-                    if insecure {
-                        cmd.arg("--insecure");
-                    }
-
-                    if has_credentials {
-                        cmd.arg("--credential-store")
-                            .arg(kmip_credentials_store_path.as_str());
-                    }
-
-                    if let Some(key_label_prefix) = key_label_prefix {
-                        cmd.arg("--key-label-prefix").arg(key_label_prefix);
-                    }
-
-                    // TODO: --client-cert, --client-key, --server-cert and --ca-cert
-                    cmd.output()?;
+                    return Err(format!("Registration of zone '{name}' {msg} but was unable to notify the caller: report sending failed"));
                 }
 
-                // Set config
-                let config_commands = imports_to_commands(&key_imports).into_iter().chain(
-                    policy_to_commands(&self.center, &name)
-                        .into_iter()
-                        .map(|v| {
-                            let mut final_cmd = vec!["set".into()];
-                            final_cmd.extend(v);
-                            final_cmd
-                        }),
-                );
-
-                for c in config_commands {
-                    let mut cmd = self.keyset_cmd(name.clone());
-
-                    cmd.arg("set");
-                    for a in c {
-                        cmd.arg(a);
-                    }
-
-                    cmd.output()?;
+                if let Err(err) = res {
+                    return Err(err.to_string());
                 }
-
-                // TODO: This should not happen immediately after
-                // `keyset create` but only once the zone is enabled.
-                // We currently do not have a good mechanism for that
-                // so we init the key immediately.
-                self.keyset_cmd(name.clone()).arg("init").output()?;
 
                 Ok(())
             }
@@ -326,6 +222,141 @@ impl KeyManager {
 
             _ => Ok(()), // not for us
         }
+    }
+
+    fn register_zone(
+        &self,
+        name: Name<Bytes>,
+        policy_name: String,
+        key_imports: &[KeyImport],
+    ) -> Result<(), ZoneAddError> {
+        // Lookup the policy for the zone to see if it uses a KMIP
+        // server.
+        let policy;
+        let kmip_server_id;
+        let kmip_server_state_dir;
+        let kmip_credentials_store_path;
+        {
+            let state = self.center.state.lock().unwrap();
+            policy = state
+                .policies
+                .get(policy_name.as_str())
+                .ok_or(ZoneAddError::NoSuchPolicy)?
+                .clone();
+            kmip_server_id = policy.latest.key_manager.hsm_server_id.clone();
+            kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
+            kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
+        };
+
+        let state_path = self.keys_dir.join(format!("{name}.state"));
+
+        let mut cmd = self.keyset_cmd(name.clone());
+
+        cmd.arg("create")
+            .arg("-n")
+            .arg(name.to_string())
+            .arg("-s")
+            .arg(&state_path)
+            .output()
+            .map_err(|err| ZoneAddError::Other(err.err))?;
+
+        // TODO: If we fail after this point, what should we do with whatever
+        // changes `dnst keyset create` made on disk? Will leaving them behind
+        // mean that a subsequent attempt to again create the zone after
+        // resolving whatever failure occurred below will then fail because
+        // the `dnst keyset create`d state already exists?
+
+        if let Some(kmip_server_id) = kmip_server_id {
+            let kmip_server_state_path = kmip_server_state_dir.join(kmip_server_id);
+
+            log::debug!("Reading KMIP server state from '{kmip_server_state_path}'");
+            let f = File::open(&kmip_server_state_path)
+                .map_err(|err| ZoneAddError::Other(format!("Unable to open KMIP server state file '{kmip_server_state_path}' for reading: {err}")))?;
+            let kmip_server: KmipServerState = serde_json::from_reader(f).map_err(|err| {
+                ZoneAddError::Other(format!(
+                    "Unable to read KMIP server state from file '{kmip_server_state_path}': {err}"
+                ))
+            })?;
+
+            let KmipServerState {
+                server_id,
+                ip_host_or_fqdn,
+                port,
+                insecure,
+                connect_timeout,
+                read_timeout,
+                write_timeout,
+                max_response_bytes,
+                key_label_prefix,
+                key_label_max_bytes,
+                has_credentials,
+            } = kmip_server;
+
+            let mut cmd = self.keyset_cmd(name.clone());
+
+            cmd.arg("kmip")
+                .arg("add-server")
+                .arg(server_id.clone())
+                .arg(ip_host_or_fqdn)
+                .arg("--port")
+                .arg(port.to_string())
+                .arg("--connect-timeout")
+                .arg(format!("{}s", connect_timeout.as_secs()))
+                .arg("--read-timeout")
+                .arg(format!("{}s", read_timeout.as_secs()))
+                .arg("--write-timeout")
+                .arg(format!("{}s", write_timeout.as_secs()))
+                .arg("--max-response-bytes")
+                .arg(max_response_bytes.to_string())
+                .arg("--key-label-max-bytes")
+                .arg(key_label_max_bytes.to_string());
+
+            if insecure {
+                cmd.arg("--insecure");
+            }
+
+            if has_credentials {
+                cmd.arg("--credential-store")
+                    .arg(kmip_credentials_store_path.as_str());
+            }
+
+            if let Some(key_label_prefix) = key_label_prefix {
+                cmd.arg("--key-label-prefix").arg(key_label_prefix);
+            }
+
+            // TODO: --client-cert, --client-key, --server-cert and --ca-cert
+            cmd.output().map_err(|err| ZoneAddError::Other(err.err))?;
+        }
+
+        // Pass `set` and `import` commands to `dnst keyset`.
+        let config_commands = imports_to_commands(key_imports).into_iter().chain(
+            policy_to_commands(&policy).into_iter().map(|v| {
+                let mut final_cmd = vec!["set".into()];
+                final_cmd.extend(v);
+                final_cmd
+            }),
+        );
+
+        for c in config_commands {
+            let mut cmd = self.keyset_cmd(name.clone());
+
+            for a in c {
+                cmd.arg(a);
+            }
+
+            cmd.output().map_err(|err| ZoneAddError::Other(err.err))?;
+        }
+
+        // TODO: This should not happen immediately after
+        // `keyset create` but only once the zone is enabled.
+        // We currently do not have a good mechanism for that
+        // so we init the key immediately.
+        self.keyset_cmd(name.clone())
+            .arg("init")
+            .output()
+            .map_err(|err| ZoneAddError::Other(err.err))?;
+
+        Ok(())
     }
 
     /// Create a keyset command with the config file for the given zone
@@ -544,16 +575,8 @@ macro_rules! strs {
     };
 }
 
-fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<String>> {
-    // Ensure that the mutexes are locked only in this block;
-    let policy = {
-        let zone = get_zone(center, zone_name).unwrap();
-        let zone_state = zone.state.lock().unwrap();
-        zone_state.policy.clone()
-    }
-    .unwrap();
-
-    let km = &policy.key_manager;
+fn policy_to_commands(policy: &Policy) -> Vec<Vec<String>> {
+    let km = &policy.latest.key_manager;
 
     let mut algorithm_cmd = vec!["algorithm".to_string()];
     match km.algorithm {
@@ -912,7 +935,7 @@ impl KeySetCommand {
                     None,
                 );
             })
-            .inspect_err(|KeySetCommandError { err, output: _ }| {
+            .inspect_err(|KeySetCommandError { err, .. }| {
                 record_zone_event(
                     &self.center,
                     &self.name,
