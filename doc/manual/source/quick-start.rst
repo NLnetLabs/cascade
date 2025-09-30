@@ -175,3 +175,4 @@ Next steps
 - Establishing the chain of trust to the parent.
 - Automating pre-publication checks.
 - Using a Hardware Security Module.
+- Migrating an existing DNSSEC signed zone.
