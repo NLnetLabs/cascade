@@ -13,7 +13,7 @@ to listen on other addresses too, you need to configure them.
 
 The ``/etc/cascade/config.toml`` file controls listen addresses, which
 filesystem paths Cascade uses, daemonization settings (running in the
-background, running as a different user, and log settings).
+background, running as a different user), and log settings.
 
 If using systemd to run Cascade some of these settings should be ignored and
 systemd features used instead.
