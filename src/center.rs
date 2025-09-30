@@ -189,8 +189,7 @@ pub fn get_zone(center: &Center, name: &StoredName) -> Option<Arc<Zone>> {
 
 pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reason: &str) {
     let mut state = center.state.lock().unwrap();
-    {
-        let zone = state.zones.get(zone_name).unwrap();
+    if let Some(zone) = state.zones.get(zone_name) {
         let mut zone_state = zone.0.state.lock().unwrap();
         if hard {
             zone_state.hard_halt(reason.to_string());
