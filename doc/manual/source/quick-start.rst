@@ -2,7 +2,8 @@ Quick Start
 ============
 
 After :doc:`installing <installation>` Cascade you can immediately start using
-it, unless you need to adjust the addresses it listens on or need to modify the settings relating to daemonization.
+it, unless you need to adjust the addresses it listens on or need to modify
+the settings relating to daemonization.
 
 Configuring the listen addresses
 ----------------------------------
@@ -15,9 +16,12 @@ to Cascade's listen addresses.
 
    .. group-tab:: Using systemd
 
-        On a system with systemd, you need to override the
-        ``cascaded.socket``, as Cascade will only listen on localhost, by
-        default. To add your own listeners, use the following command:
+        On systems using systemd the ``cascaded.socket`` unit is used to bind
+        to listen addresses on behalf of Cascade. By default, the provided
+        listen address is ``localhost:53``. If you wish to change the
+        addresses bound, you will need to override the ``cascaded.socket``
+        unit. One way to do this is to use the ``systemctl edit`` command like
+        so:
 
         .. code-block:: bash
 
@@ -26,10 +30,6 @@ to Cascade's listen addresses.
         and insert the following config:
 
         .. code-block:: text
-
-           [Socket]
-           ListenDatagram=<your-ip>:53
-           ListenStream=<your-ip>:53
 
            [Socket]
            # Uncomment the next line if you wish to disable listening on localhost.
