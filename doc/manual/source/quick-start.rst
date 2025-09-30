@@ -2,9 +2,7 @@ Quick Start
 ============
 
 After :doc:`installing <installation>` Cascade you can immediately start using
-it, if you only need it to listen on localhost. If you need to be able to
-fetch the signed zones from other servers, you need to configure its
-listening addresses.
+it, unless you need to adjust the addresses it listens on or need to modify the settings relating to daemonization.
 
 Configuration the listen addresses
 ----------------------------------
