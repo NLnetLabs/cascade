@@ -117,9 +117,12 @@ impl KeyManager {
                     };
                     return Err(format!("Registration of zone '{name}' {msg} but was unable to notify the caller: report sending failed"));
                 }
+
                 if let Err(err) = res {
                     return Err(err.to_string());
                 }
+
+                Ok(())
             }
 
             ApplicationCommand::RollKey {
@@ -173,6 +176,8 @@ impl KeyManager {
                 }
 
                 http_tx.send(Ok(())).await.unwrap();
+
+                Ok(())
             }
 
             ApplicationCommand::RemoveKey {
@@ -209,12 +214,12 @@ impl KeyManager {
                 }
 
                 http_tx.send(Ok(())).await.unwrap();
+
+                Ok(())
             }
 
-            _ => { /* not for us */ }
+            _ => Ok(()), // not for us
         }
-
-        Ok(())
     }
 
     fn register_zone(&self, name: Name<Bytes>, policy_name: String) -> Result<(), ZoneAddError> {
