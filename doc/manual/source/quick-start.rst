@@ -94,7 +94,13 @@ Then, to add a zone use:
    cascade zone add --source <file-path|ip-address> --policy default <zone-name>
 
 Now, your zone will be picked up by Cascade, keys prepared, and the signing
-process started. You can view the unsigned zone by querying the zone loader
+process started. You can see the status with:
+
+.. code-block:: bash
+
+   cascade zone status <zone-name>
+
+You can view the unsigned zone by querying the zone loader
 using AXFR (by default, on ``localhost:8051``) and, after successful signing,
 query the publication server using AXFR on ``localhost:53`` (or your above
 configured listen address).
