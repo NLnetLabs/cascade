@@ -69,8 +69,8 @@ systemd features used instead.
             cascade --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
 
 
-Signing your first zone
--------------------------------
+Defining policy
+---------------
 
 After configuring Cascade, you can begin adding zones. Cascade supports zones
 sourced from a local file or fetched from another name server using XFR.
@@ -98,6 +98,13 @@ policy directory is not writable by the current user.
    cascade template policy | sudo tee /etc/cascade/policies/default.toml
    cascade policy reload
 
+Signing your first zone
+-----------------------
+
+Adding a zone to Cascade will cause Cascade to attempt to load, sign and
+publish it. If you configured review hooks, they will be executed (and may
+intentionally prevent your zone reaching publication).
+
 Then, to add a zone use:
 
 .. code-block:: bash
@@ -105,7 +112,12 @@ Then, to add a zone use:
    cascade zone add --source <file-path|ip-address> --policy default <zone-name>
 
 Now, your zone will be picked up by Cascade, keys prepared, and the signing
-process started. You can see the status with:
+process started.
+
+Checking the result
+-------------------
+
+You can view the status of a zone with:
 
 .. code-block:: bash
 
