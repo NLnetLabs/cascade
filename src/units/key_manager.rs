@@ -287,8 +287,6 @@ impl KeyManager {
 
             let mut cmd = self.keyset_cmd(name.clone());
 
-            // TODO: This command should get issued _after_ keyset create
-            // but _before_ keyset init, both of which are issued above.
             cmd.arg("kmip")
                 .arg("add-server")
                 .arg(server_id.clone())
