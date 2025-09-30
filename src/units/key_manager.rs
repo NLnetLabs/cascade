@@ -328,7 +328,7 @@ impl KeyManager {
             cmd.output().map_err(|err| ZoneAddError::Other(err.err))?;
         }
 
-        // Set config
+        // Pass `set` and `import` commands to `dnst keyset`.
         let config_commands = imports_to_commands(key_imports).into_iter().chain(
             policy_to_commands(&policy).into_iter().map(|v| {
                 let mut final_cmd = vec!["set".into()];
