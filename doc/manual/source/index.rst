@@ -50,7 +50,6 @@ server. To read what that entails, read the :doc:`before you start
    installation
    building
    quick-start
-   limitations
 
 .. toctree::
    :maxdepth: 2
@@ -71,6 +70,14 @@ server. To read what that entails, read the :doc:`before you start
 
    migration
    offline-ksk
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Reference
+   :name: toc-reference
+
+   limitations
 
 .. toctree::
    :maxdepth: 2
