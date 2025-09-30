@@ -534,7 +534,7 @@ impl Progress {
     fn print_signed(&self, zone: &ZoneStatus) {
         println!(
             "{} Signed {} as {}",
-            status_icon(*self > Progress::Signed),
+            status_icon(true),
             serial_to_string(zone.unsigned_serial),
             serial_to_string(zone.signed_serial)
         );
@@ -574,7 +574,7 @@ impl Progress {
     fn print_published(&self, zone: &ZoneStatus) {
         println!(
             "{} Published {}",
-            status_icon(*self == Progress::Published),
+            status_icon(true),
             serial_to_string(zone.published_serial),
         );
         if *self == Progress::Published {
