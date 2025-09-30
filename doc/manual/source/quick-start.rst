@@ -31,16 +31,11 @@ to Cascade's listen addresses.
            ListenDatagram=<your-ip>:53
            ListenStream=<your-ip>:53
 
-        if you wish to disable the listen address for localhost, you'll need
-        to replace the top line (``[Socket]``) with the following (adding
-        ``ListenStream=`` resets all previously defined ``ListenStream`` and
-        ``ListenDatagram`` settings):
-
-        .. code-block:: text
-
            [Socket]
+           # Uncomment the next line if you wish to disable listening on localhost.
            #ListenStream=
-           # ... the other ListenDatagram/ListenStream settings
+           ListenDatagram=<your-ip>:53
+           ListenStream=<your-ip>:53
 
         After editing the ``cascaded.socket`` file, you need to issue this
         command for systemd to pick up the changes:
