@@ -186,8 +186,9 @@ impl HttpServer {
         let res = center::add_zone(
             &state.center,
             zone_register.name.clone(),
-            zone_register.policy.clone().into(),
-            zone_register.source.clone(),
+            zone_register.policy.into(),
+            zone_register.source,
+            zone_register.key_imports,
         )
         .await;
 
