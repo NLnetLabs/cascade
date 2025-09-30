@@ -104,7 +104,7 @@ config file, and create the ``policies`` and ``keys`` directories:
 
 .. code-block:: text
 
-  mkdir -p ./cascade/{policies,keys}
+  mkdir ./cascade
   curl -sS -o ./cascade/config.toml https://raw.githubusercontent.com/NLnetLabs/cascade/refs/heads/main/etc/config.toml
 
 Then update the ``config.toml`` to use the appropriate paths.
