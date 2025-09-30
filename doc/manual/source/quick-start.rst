@@ -1,15 +1,17 @@
 Quick Start
 ============
 
-After :doc:`installing <installation>` Cascade you need to configure its
-listening addresses before you can start using it.
+After :doc:`installing <installation>` Cascade you can immediately start using
+it, if you only need it to listen on localhost. If you need to be able to
+fetch the signed zones from other servers, you need to configure its
+listening addresses.
 
 Configuration the listen addresses
 ----------------------------------
 
 Cascade only listens on localhost, by default. To make your signed zones
-available, you need to add your public IP addresses to Cascade's listen
-addresses.
+available to your public primaries, you need to add the required IP addresses
+to Cascade's listen addresses.
 
 .. tabs::
 
@@ -32,9 +34,9 @@ addresses.
            ListenStream=<your-ip>:53
 
         if you wish to disable the listen address for localhost, you'll need
-        to replace the top line with the following (adding ``ListenStream=``
-        resets all previously defined ``ListenStream`` and ``ListenDatagram``
-        settings):
+        to replace the top line (``[Socket]``) with the following (adding
+        ``ListenStream=`` resets all previously defined ``ListenStream`` and
+        ``ListenDatagram`` settings):
 
         .. code-block:: text
 
@@ -43,7 +45,7 @@ addresses.
            # ... the other ListenDatagram/ListenStream settings
 
         After editing the ``cascaded.socket`` file, you need to issue this
-        command to instruct systemd to pick up the changes:
+        command for systemd to pick up the changes:
 
         .. code-block:: bash
 
@@ -99,6 +101,6 @@ Then, to add a zone use:
 
 Now, your zone will be picked up by Cascade, keys prepared, and the signing
 process started. You can view the unsigned zone by querying the zone loader
-using AXFR (by default, on ``localhost:8051``) and after successful signing,
-query the publication server using AXFR on ``localhost:8053`` (or your above
+using AXFR (by default, on ``localhost:8051``) and, after successful signing,
+query the publication server using AXFR on ``localhost:53`` (or your above
 configured listen address).
