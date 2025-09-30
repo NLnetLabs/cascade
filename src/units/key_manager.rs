@@ -263,7 +263,8 @@ impl KeyManager {
             let kmip_server_state_path = kmip_server_state_dir.join(kmip_server_id);
 
             log::debug!("Reading KMIP server state from '{kmip_server_state_path}'");
-            let f = File::open(&kmip_server_state_path).unwrap();
+            let f = File::open(&kmip_server_state_path)
+                .map_err(|err| ZoneAddError::Other(format!("Unable to open KMIP server state file '{kmip_server_state_path}' for reading: {err}")))?;
             let kmip_server: KmipServerState = serde_json::from_reader(f).map_err(|err| {
                 ZoneAddError::Other(format!(
                     "Unable to read KMIP server state from file '{kmip_server_state_path}': {err}"
