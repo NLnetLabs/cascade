@@ -353,17 +353,10 @@ impl KeyManager {
     }
 
     async fn tick(&self) {
-        let zone_names = {
-            let state = self.center.state.lock().unwrap();
-            state
-                .zones
-                .iter()
-                .map(|z| z.0.name.clone())
-                .collect::<Vec<_>>()
-        };
+        let zone_tree = &self.center.unsigned_zones;
         let mut ks_info = self.ks_info.lock().await;
-        for zone_name in zone_names {
-            let apex_name = zone_name.to_string();
+        for zone in zone_tree.load().iter_zones() {
+            let apex_name = zone.apex_name().to_string();
             let state_path = self.keys_dir.join(format!("{apex_name}.state"));
             if !state_path.exists() {
                 continue;
@@ -411,7 +404,7 @@ impl KeyManager {
                 self.center
                     .update_tx
                     .send(Update::ResignZoneEvent {
-                        zone_name: zone_name.clone(),
+                        zone_name: zone.apex_name().clone(),
                         trigger: SigningTrigger::ExternallyModifiedKeySetState,
                     })
                     .unwrap();
@@ -423,7 +416,11 @@ impl KeyManager {
             };
 
             if *cron_next < UnixTime::now() {
-                let Ok(res) = self.keyset_cmd(zone_name.clone()).arg("cron").output() else {
+                let Ok(res) = self
+                    .keyset_cmd(zone.apex_name().clone())
+                    .arg("cron")
+                    .output()
+                else {
                     info.clear_cron_next();
                     continue;
                 };
@@ -447,7 +444,7 @@ impl KeyManager {
                         self.center
                             .update_tx
                             .send(Update::ResignZoneEvent {
-                                zone_name: zone_name.clone(),
+                                zone_name: zone.apex_name().clone(),
                                 trigger: SigningTrigger::KeySetModifiedAfterCron,
                             })
                             .unwrap();
@@ -951,39 +948,36 @@ impl KeySetCommand {
                     None,
                 );
             })
-            .inspect_err(|KeySetCommandError { err: reason, .. }| {
+            .inspect_err(|KeySetCommandError { err, .. }| {
                 record_zone_event(
                     &self.center,
                     &self.name,
-                    HistoricalEvent::KeySetError(reason.clone()),
+                    HistoricalEvent::KeySetError(err.clone()),
                     None,
                 );
-                halt_zone(&self.center, &self.name, true, reason);
+                halt_zone(&self.center, &self.name, true, err);
             })
     }
 
     fn exec(&mut self) -> Result<Output, KeySetCommandError> {
         log::info!("Executing keyset command {}", self.cmd_to_string());
         let output = self.cmd.output().map_err(|msg| {
-            let mut reason = format!(
+            let mut err = format!(
                 "Keyset command '{}' for zone '{}' could not be executed: {msg}",
                 self.cmd_to_string(),
                 self.name,
             );
             if matches!(msg.kind(), ErrorKind::NotFound) {
-                reason.push_str(&format!(
+                err.push_str(&format!(
                     " [path: {}]",
                     self.cmd.get_program().to_string_lossy()
                 ));
             }
-            KeySetCommandError {
-                err: reason,
-                output: None,
-            }
+            KeySetCommandError { err, output: None }
         })?;
 
         if !output.status.success() {
-            let reason = format!(
+            let err = format!(
                 "Keyset command '{}' for zone '{}' returned non-zero exit code: {} [stdout={}, stderr={}]",
                 self.cmd_to_string(),
                 self.name,
@@ -992,7 +986,7 @@ impl KeySetCommand {
                 String::from_utf8_lossy(&output.stderr),
             );
             return Err(KeySetCommandError {
-                err: reason,
+                err,
                 output: Some(output),
             });
         }
