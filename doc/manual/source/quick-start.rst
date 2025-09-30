@@ -5,11 +5,15 @@ After :doc:`installing <installation>` Cascade you can immediately start using
 it, unless you need to adjust the addresses it listens on or need to modify
 the settings relating to daemonization.
 
-Configuring the listen addresses
-----------------------------------
+Configuring Cascade
+---------------------
 
-By default, Cascade only listens on localhost. If you want Cascade to listen
-on other addresses too, you need to configure them as shown below:
+By default, Cascade only listens on the localhost address. If you want Cascade to listen
+on other addresses too, you need to configure them.
+
+The ``/etc/cascade/config.toml`` file controls listen addresses, which filesystem paths Cascade uses, daemonizatioan settings (running in the background, running aa a different user, and log settings.
+
+If using systemd to run Cascade some of these settings should be ignored and systemd features used instead.
 
 .. tabs::
 
