@@ -71,7 +71,7 @@ use std::fmt::{self, Debug};
 use std::net::IpAddr;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::api;
+use crate::api::{self, KeyImport};
 use crate::center::{Change, ZoneAddError};
 use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zone::SigningTrigger;
@@ -199,6 +199,7 @@ pub enum ApplicationCommand {
     RegisterZone {
         name: StoredName,
         policy: String,
+        key_imports: Vec<KeyImport>,
         report_tx: oneshot::Sender<Result<(), ZoneAddError>>,
     },
     GetZoneReport {

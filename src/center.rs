@@ -14,6 +14,7 @@ use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::api::KeyImport;
 use crate::{
     api,
     comms::ApplicationCommand,
@@ -66,8 +67,9 @@ pub async fn add_zone(
     name: Name<Bytes>,
     policy: Box<str>,
     source: api::ZoneSource,
+    key_imports: Vec<KeyImport>,
 ) -> Result<(), ZoneAddError> {
-    register_zone(center, name.clone(), policy.clone()).await?;
+    register_zone(center, name.clone(), policy.clone(), key_imports).await?;
 
     let zone = Arc::new(Zone::new(name.clone()));
 
@@ -127,6 +129,7 @@ async fn register_zone(
     center: &Arc<Center>,
     name: Name<Bytes>,
     policy: Box<str>,
+    key_imports: Vec<KeyImport>,
 ) -> Result<(), ZoneAddError> {
     let (report_tx, report_rx) = oneshot::channel();
 
@@ -137,6 +140,7 @@ async fn register_zone(
             ApplicationCommand::RegisterZone {
                 name,
                 policy: policy.clone().into(),
+                key_imports,
                 report_tx,
             },
         ))

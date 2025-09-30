@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
+use camino::Utf8PathBuf;
 use chrono::{DateTime, Utc};
 use domain::base::{Name, Serial};
 use futures::TryFutureExt;
@@ -19,12 +20,14 @@ pub struct Zone {
     command: ZoneCommand,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum ZoneCommand {
     /// Register a new zone
     #[command(name = "add")]
     Add {
         name: Name<Bytes>,
+
         /// The zone source can be an IP address (with or without port,
         /// defaults to port 53) or a file path.
         // TODO: allow supplying different tcp and/or udp port?
@@ -34,6 +37,27 @@ pub enum ZoneCommand {
         /// Policy to use for this zone
         #[arg(long = "policy")]
         policy: String,
+
+        #[arg(long = "import-public-key")]
+        import_public_key: Vec<Utf8PathBuf>,
+
+        #[arg(long = "import-ksk-file")]
+        import_ksk_file: Vec<Utf8PathBuf>,
+
+        #[arg(long = "import-zsk-file")]
+        import_zsk_file: Vec<Utf8PathBuf>,
+
+        #[arg(long = "import-csk-file")]
+        import_csk_file: Vec<Utf8PathBuf>,
+
+        #[arg(long = "import-ksk-kmip", value_names = ["server", "public_id", "private_id", "algorithm", "flags"])]
+        import_ksk_kmip: Vec<String>,
+
+        #[arg(long = "import-zsk-kmip", value_names = ["server", "public_id", "private_id", "algorithm", "flags"])]
+        import_zsk_kmip: Vec<String>,
+
+        #[arg(long = "import-csk-kmip", value_names = ["server", "public_id", "private_id", "algorithm", "flags"])]
+        import_csk_kmip: Vec<String>,
     },
 
     /// Remove a zone
@@ -88,13 +112,53 @@ impl Zone {
                 name,
                 source,
                 policy,
+                import_public_key,
+                import_ksk_file,
+                import_zsk_file,
+                import_csk_file,
+                import_ksk_kmip,
+                import_zsk_kmip,
+                import_csk_kmip,
             } => {
+                let import_public_key = import_public_key.into_iter().map(KeyImport::PublicKey);
+                let import_ksk_file = import_ksk_file.into_iter().map(|p| {
+                    KeyImport::File(FileKeyImport {
+                        key_type: KeyType::Ksk,
+                        path: p,
+                    })
+                });
+                let import_csk_file = import_csk_file.into_iter().map(|p| {
+                    KeyImport::File(FileKeyImport {
+                        key_type: KeyType::Csk,
+                        path: p,
+                    })
+                });
+                let import_zsk_file = import_zsk_file.into_iter().map(|p| {
+                    KeyImport::File(FileKeyImport {
+                        key_type: KeyType::Zsk,
+                        path: p,
+                    })
+                });
+                let import_ksk_kmip = kmip_imports(KeyType::Ksk, &import_ksk_kmip);
+                let import_csk_kmip = kmip_imports(KeyType::Csk, &import_csk_kmip);
+                let import_zsk_kmip = kmip_imports(KeyType::Zsk, &import_zsk_kmip);
+
+                let key_imports = import_public_key
+                    .chain(import_ksk_file)
+                    .chain(import_csk_file)
+                    .chain(import_zsk_file)
+                    .chain(import_ksk_kmip)
+                    .chain(import_csk_kmip)
+                    .chain(import_zsk_kmip)
+                    .collect();
+
                 let res: Result<ZoneAddResult, ZoneAddError> = client
                     .post("zone/add")
                     .json(&ZoneAdd {
                         name,
                         source,
                         policy,
+                        key_imports,
                     })
                     .send()
                     .and_then(|r| r.json())
@@ -534,7 +598,7 @@ impl Progress {
     fn print_signed(&self, zone: &ZoneStatus) {
         println!(
             "{} Signed {} as {}",
-            status_icon(*self > Progress::Signed),
+            status_icon(true),
             serial_to_string(zone.unsigned_serial),
             serial_to_string(zone.signed_serial)
         );
@@ -574,7 +638,7 @@ impl Progress {
     fn print_published(&self, zone: &ZoneStatus) {
         println!(
             "{} Published {}",
-            status_icon(*self == Progress::Published),
+            status_icon(true),
             serial_to_string(zone.published_serial),
         );
         if *self == Progress::Published {
@@ -656,4 +720,28 @@ fn to_rfc3339(v: SystemTime) -> String {
 fn format_duration(duration: Duration) -> FormattedDuration {
     // See: https://github.com/chronotope/humantime/issues/35
     humantime::format_duration(Duration::from_secs(duration.as_secs()))
+}
+
+fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {
+    let chunks = x.chunks_exact(5);
+
+    // If this fails then clap is not doing what we expect.
+    assert!(chunks.remainder().is_empty());
+
+    chunks
+        .into_iter()
+        .map(|chunk| {
+            let [server, public_id, private_id, algorithm, flags] = chunk else {
+                unreachable!()
+            };
+            KeyImport::Kmip(KmipKeyImport {
+                key_type,
+                server: server.clone(),
+                public_id: public_id.clone(),
+                private_id: private_id.clone(),
+                algorithm: algorithm.clone(),
+                flags: flags.clone(),
+            })
+        })
+        .collect()
 }
