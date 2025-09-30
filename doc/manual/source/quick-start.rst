@@ -68,8 +68,15 @@ Signing your first zone
 After configuring Cascade, you can begin adding zones. Cascade supports zones
 sourced from a local file or fetched from another name server using XFR.
 
-However, before adding a zone you need to create a zone policy to use for the
-zone (you can choose your own name instead of ``default``):
+Zones take a lot of their settings from policy.
+
+Policies allow easy re-use of settings across multiple zones and control things like whether or not zones should be reviewed and how, what DNSSEC settings should be used to sign the zone, and more.
+
+Adding a policy is done by creating a file. To make it easy to get started we provide a default policy template so we'll use that to create a policy for our zone to use.
+
+The name of the policy is taken from the filename. The directory to save the policy file to is determined by the ``policy-dir`` setting as configured in ``/etc/cascade/config.toml``. The filename can be any valid filename and will be used as the name of the policy.
+
+In the example below the `sudo tee` command is needed because the default policy directory is not writable by the current user.
 
 .. code-block:: bash
 
