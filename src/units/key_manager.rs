@@ -340,7 +340,6 @@ impl KeyManager {
         for c in config_commands {
             let mut cmd = self.keyset_cmd(name.clone());
 
-            cmd.arg("set");
             for a in c {
                 cmd.arg(a);
             }
