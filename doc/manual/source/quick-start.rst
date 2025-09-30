@@ -55,11 +55,13 @@ to Cascade's listen addresses.
             servers = ["<your-ip>:53"]
 
         Then you can start Cascade with (replace the config and state path
-        with your appropriate values):
+        with your appropriate values, and if your config uses privileged ports
+        or the daemonization identity feature run the command as root):
 
         .. code-block:: bash
 
-            sudo cascade --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
+            cascade --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
+
 
 Signing your first zone
 -------------------------------
