@@ -28,8 +28,8 @@ Open-source with professional support services
    <https://github.com/NLnetLabs/cascade/blob/main/LICENSE>`_.
 
 Cascade is ONLY a DNSSEC signing solution and not a complete primary name
-server. To read what that entails, read the :doc:`limitations <limitations>`
-section.
+server. To read what that entails, read the :doc:`before you start
+<before-you-start>` section.
 
    .. only:: html
 
