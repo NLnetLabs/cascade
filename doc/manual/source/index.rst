@@ -41,5 +41,28 @@ Open-source with professional support services
    :caption: Getting Started
    :name: toc-getting-started
 
+   before-you-start
+   architecture
    installation
    building
+   get-started
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Core
+   :name: toc-core
+
+   primaries-and-secondaries
+   cli
+   hsms
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Advanced
+   :name: toc-advanced
+
+   migration
+   offline-ksk
+
