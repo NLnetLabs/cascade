@@ -6,6 +6,8 @@ Troubleshooting
 
 
 
+Error: Failed to open zone file '<filename>': No such file or directory
+-----------------------------------------------------------------------
 
 Server crashed on non-existent zone file source and now won't start anymore:
 
