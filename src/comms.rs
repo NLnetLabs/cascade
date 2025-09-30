@@ -69,12 +69,15 @@ use domain::base::Serial;
 use domain::zonetree::StoredName;
 use std::fmt::{self, Debug};
 use std::net::IpAddr;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::api;
 use crate::api::ZoneAdd;
 use crate::center::Change;
+use crate::units::zone_loader::ZoneLoaderReport;
+use crate::zone::SigningTrigger;
 use crate::zone::ZoneLoadSource;
+use crate::zonemaintenance::types::{SigningReport, ZoneReport};
 
 //------------ GraphMetrics --------------------------------------------------
 pub trait GraphStatus: Send + Sync {
@@ -132,7 +135,7 @@ impl fmt::Display for UnitStatus {
 pub struct Terminated;
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum ApplicationCommand {
     /// A change has occurred.
     Changed(Change),
@@ -148,6 +151,10 @@ pub enum ApplicationCommand {
     SeekApprovalForUnsignedZone {
         zone_name: StoredName,
         zone_serial: Serial,
+    },
+    IsZonePendingApproval {
+        zone_name: StoredName,
+        tx: oneshot::Sender<bool>,
     },
 
     /// Refresh a zone.
@@ -180,6 +187,7 @@ pub enum ApplicationCommand {
     SignZone {
         zone_name: StoredName,
         zone_serial: Option<Serial>,
+        trigger: SigningTrigger,
     },
     SeekApprovalForSignedZone {
         zone_name: StoredName,
@@ -191,6 +199,14 @@ pub enum ApplicationCommand {
     },
     RegisterZone {
         register: ZoneAdd,
+    },
+    GetZoneReport {
+        zone_name: StoredName,
+        report_tx: oneshot::Sender<(ZoneReport, Option<ZoneLoaderReport>)>,
+    },
+    GetSigningReport {
+        zone_name: StoredName,
+        report_tx: oneshot::Sender<SigningReport>,
     },
 
     RollKey {

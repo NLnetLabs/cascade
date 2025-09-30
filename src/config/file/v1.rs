@@ -36,6 +36,14 @@ pub struct Spec {
     #[serde(default = "Spec::dnst_binary_path_default")]
     pub dnst_binary_path: Box<Utf8Path>,
 
+    /// The file storing KMIP server credentials.
+    #[serde(default = "Spec::kmip_credentials_store_path_default")]
+    pub kmip_credentials_store_path: Box<Utf8Path>,
+
+    /// The directory storing KMIP server state.
+    #[serde(default = "Spec::kmip_server_state_dir_default")]
+    pub kmip_server_state_dir: Box<Utf8Path>,
+
     /// Remote control configuration.
     pub remote_control: RemoteControlSpec,
 
@@ -65,6 +73,8 @@ impl Spec {
         config.tsig_store_path = self.tsig_store_path;
         config.keys_dir = self.keys_dir;
         config.dnst_binary_path = self.dnst_binary_path;
+        config.kmip_credentials_store_path = self.kmip_credentials_store_path;
+        config.kmip_server_state_dir = self.kmip_server_state_dir;
         self.remote_control.parse_into(&mut config.remote_control);
         self.daemon.parse_into(&mut config.daemon);
         self.loader.parse_into(&mut config.loader);
@@ -84,6 +94,8 @@ impl Default for Spec {
             tsig_store_path: Self::tsig_store_path_default(),
             keys_dir: Self::keys_dir_default(),
             dnst_binary_path: Self::dnst_binary_path_default(),
+            kmip_credentials_store_path: Self::kmip_credentials_store_path_default(),
+            kmip_server_state_dir: Self::kmip_server_state_dir_default(),
             remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
@@ -118,6 +130,16 @@ impl Spec {
     /// The default value for `dnst_keyset_dir`.
     fn keys_dir_default() -> Box<Utf8Path> {
         "/var/db/cascade/keys".into()
+    }
+
+    /// The default value for `kmip_credentials_store_path`.
+    fn kmip_credentials_store_path_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/kmip/credentials.db".into()
+    }
+
+    /// The default value for `kmip_server_state_dir`.
+    fn kmip_server_state_dir_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/kmip".into()
     }
 }
 
@@ -405,7 +427,7 @@ impl GroupIdSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct LoaderSpec {
     /// Where to listen for zone update notifications.
-    pub notif_listeners: Vec<SocketSpec>,
+    pub notify_listeners: Vec<SocketSpec>,
 
     /// Configuring whether and how loaded zones are reviewed.
     pub review: ReviewSpec,
@@ -416,10 +438,10 @@ pub struct LoaderSpec {
 impl LoaderSpec {
     /// Parse from this specification.
     pub fn parse_into(self, config: &mut LoaderConfig) {
-        config.notif_listeners.clear();
+        config.notify_listeners.clear();
         config
-            .notif_listeners
-            .extend(self.notif_listeners.into_iter().map(|v| v.parse()));
+            .notify_listeners
+            .extend(self.notify_listeners.into_iter().map(|v| v.parse()));
         self.review.parse_into(&mut config.review);
     }
 }
@@ -470,17 +492,14 @@ impl ReviewSpec {
 /// Configuring DNSSEC key management.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct KeyManagerSpec {
-    /// Whether and which HSM server is being used.
-    pub hsm_server_id: Option<String>,
-}
+pub struct KeyManagerSpec {}
 
 //--- Conversion
 
 impl KeyManagerSpec {
     /// Parse from this specification.
     pub fn parse_into(self, config: &mut KeyManagerConfig) {
-        config.hsm_server_id = self.hsm_server_id;
+        let &mut KeyManagerConfig {} = config;
     }
 }
 

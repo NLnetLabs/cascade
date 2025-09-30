@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use bytes::{BufMut, Bytes};
 use camino::Utf8Path;
@@ -18,8 +19,10 @@ use domain::zonetree::{
     AnswerContent, InMemoryZoneDiff, ReadableZone, StoredName, WritableZone, WritableZoneNode,
     Zone, ZoneStore,
 };
+use foldhash::{HashMap, HashMapExt};
 use futures::Future;
 use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
 use tokio::time::Instant;
@@ -39,6 +42,13 @@ use crate::zonemaintenance::types::{
     NotifyConfig, TransportStrategy, XfrConfig, XfrStrategy, ZoneConfig, ZoneId,
 };
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ZoneLoaderReport {
+    pub started_at: SystemTime,
+    pub finished_at: SystemTime,
+    pub byte_count: usize,
+}
+
 #[derive(Debug)]
 pub struct ZoneLoader {
     /// The center.
@@ -52,13 +62,14 @@ impl ZoneLoader {
         ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
+        let mut receipt_info: HashMap<StoredName, ZoneLoaderReport> = HashMap::new();
 
         let (zone_updated_tx, mut zone_updated_rx) = tokio::sync::mpsc::channel(10);
 
         let maintainer_config =
             Config::<_, DefaultConnFactory>::new(self.center.old_tsig_key_store.clone());
         let zone_maintainer = Arc::new(
-            ZoneMaintainer::new_with_config(maintainer_config)
+            ZoneMaintainer::new_with_config(self.center.clone(), maintainer_config)
                 .with_zone_tree(self.center.unsigned_zones.clone()),
         );
 
@@ -81,7 +92,10 @@ impl ZoneLoader {
                 ZoneLoadSource::None => continue,
 
                 ZoneLoadSource::Zonefile { path } => {
-                    Self::register_primary_zone(name.clone(), &path, &zone_updated_tx).await?
+                    let (zone, ri) =
+                        Self::register_primary_zone(name.clone(), &path, &zone_updated_tx).await?;
+                    receipt_info.insert(name.clone(), ri);
+                    zone
                 }
 
                 ZoneLoadSource::Server { addr, tsig_key: _ } => {
@@ -107,7 +121,7 @@ impl ZoneLoader {
                 }
 
                 cmd = cmd_rx.recv() => {
-                    self.on_command(cmd, &zone_maintainer, zone_updated_tx.clone()).await?;
+                    self.on_command(cmd, &zone_maintainer, zone_updated_tx.clone(), &mut receipt_info).await?;
                 }
             }
         }
@@ -132,6 +146,7 @@ impl ZoneLoader {
         cmd: Option<ApplicationCommand>,
         zone_maintainer: &ZoneMaintainer<KS, CF>,
         zone_updated_tx: Sender<(StoredName, Serial)>,
+        receipt_info: &mut HashMap<StoredName, ZoneLoaderReport>,
     ) -> Result<(), Terminated>
     where
         KS: Deref + Send + Sync + 'static,
@@ -158,7 +173,11 @@ impl ZoneLoader {
                     ZoneLoadSource::None => return Ok(()),
 
                     ZoneLoadSource::Zonefile { path } => {
-                        Self::register_primary_zone(name.clone(), &path, &zone_updated_tx).await?
+                        let (zone, ri) =
+                            Self::register_primary_zone(name.clone(), &path, &zone_updated_tx)
+                                .await?;
+                        receipt_info.insert(name, ri);
+                        zone
                     }
 
                     ZoneLoadSource::Server { addr, tsig_key: _ } => {
@@ -195,6 +214,16 @@ impl ZoneLoader {
                     zone_maintainer
                         .force_zone_refresh(&zone_name, Class::IN)
                         .await;
+                }
+            }
+
+            Some(ApplicationCommand::GetZoneReport {
+                zone_name,
+                report_tx,
+            }) => {
+                if let Ok(report) = zone_maintainer.zone_status(&zone_name, Class::IN).await {
+                    let zone_loader_report = receipt_info.get(&zone_name).cloned();
+                    report_tx.send((report, zone_loader_report)).unwrap();
                 }
             }
 
@@ -237,7 +266,7 @@ impl ZoneLoader {
         };
         zone_maintainer.remove_zone(id).await;
 
-        let zone = Self::register_primary_zone(name.clone(), &path, zone_updated_tx).await?;
+        let (zone, _) = Self::register_primary_zone(name.clone(), &path, zone_updated_tx).await?;
 
         // TODO: Handle (or iron out) potential errors here.
         let _ = zone_maintainer.insert_zone(zone).await;
@@ -248,8 +277,10 @@ impl ZoneLoader {
         zone_name: StoredName,
         zone_path: &Utf8Path,
         zone_updated_tx: &Sender<(Name<Bytes>, Serial)>,
-    ) -> Result<TypedZone, Terminated> {
-        let zone = load_file_into_zone(&zone_name, zone_path).await?;
+    ) -> Result<(TypedZone, ZoneLoaderReport), Terminated> {
+        let started_at = SystemTime::now();
+        let (zone, byte_count) = load_file_into_zone(&zone_name, zone_path).await?;
+        let duration = SystemTime::now().duration_since(started_at).unwrap();
         let Some(serial) = get_zone_serial(zone_name.clone(), &zone).await else {
             error!("[ZL]: Error: Zone file '{zone_path}' lacks a SOA record. Skipping zone.");
             return Err(Terminated);
@@ -261,7 +292,12 @@ impl ZoneLoader {
             .await
             .unwrap();
         let zone = Zone::new(NotifyOnWriteZone::new(zone, zone_updated_tx.clone()));
-        Ok(TypedZone::new(zone, zone_cfg))
+        let receipt_info = ZoneLoaderReport {
+            started_at,
+            finished_at: started_at.checked_add(duration).unwrap(),
+            byte_count,
+        };
+        Ok((TypedZone::new(zone, zone_cfg), receipt_info))
     }
 
     fn register_secondary_zone(
@@ -322,7 +358,7 @@ async fn get_zone_serial(apex_name: Name<Bytes>, zone: &Zone) -> Option<Serial> 
 async fn load_file_into_zone(
     zone_name: &StoredName,
     zone_path: &Utf8Path,
-) -> Result<Zone, Terminated> {
+) -> Result<(Zone, usize), Terminated> {
     let before = Instant::now();
     info!("[ZL]: Loading primary zone '{zone_name}' from '{zone_path}'..",);
     let mut zone_file = File::open(zone_path)
@@ -358,7 +394,7 @@ async fn load_file_into_zone(
         "Loaded {zone_file_len} bytes from '{zone_path}' in {} secs",
         before.elapsed().as_secs()
     );
-    Ok(zone)
+    Ok((zone, zone_file_len as usize))
 }
 
 //------------- NotifyOnWriteZone --------------------------------------------

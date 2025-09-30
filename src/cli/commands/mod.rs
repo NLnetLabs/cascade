@@ -1,15 +1,21 @@
 //! The commands of _cascade_.
 
+pub mod config;
 pub mod hsm;
 pub mod keyset;
 pub mod policy;
 pub mod status;
+pub mod template;
 pub mod zone;
 
 use super::client::CascadeApiClient;
 
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum Command {
+    /// Manage Cascade's configuration.
+    #[command(name = "config")]
+    Config(self::config::Config),
+
     /// Manage zones
     #[command(name = "zone")]
     Zone(self::zone::Zone),
@@ -45,16 +51,21 @@ pub enum Command {
     Hsm(self::hsm::Hsm),
     // /// Show the manual pages
     // Help(self::help::Help),
+    /// Print example config or policy files
+    #[command(name = "template")]
+    Template(self::template::Template),
 }
 
 impl Command {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
+            Self::Config(cmd) => cmd.execute(client).await,
             Self::Zone(zone) => zone.execute(client).await,
             Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,
             Self::KeySet(keyset) => keyset.execute(client).await,
             Self::Hsm(hsm) => hsm.execute(client).await,
+            Self::Template(template) => template.execute(client).await,
         }
     }
 }

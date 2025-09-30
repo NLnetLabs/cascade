@@ -1,7 +1,7 @@
 use futures::TryFutureExt;
 
 use crate::api::ServerStatusResult;
-use crate::cli::client::CascadeApiClient;
+use crate::cli::client::{format_http_error, CascadeApiClient};
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Status {
@@ -31,7 +31,7 @@ impl Status {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+                    .map_err(format_http_error)?;
 
                 println!("Server status: {:?}", response)
             }

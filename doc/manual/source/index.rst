@@ -35,16 +35,18 @@ section.
 
       |mastodon|
 
-      .. |mastodon| image:: https://img.shields.io/mastodon/follow/109262826617293067?domain=https%3A%2F%2Ffosstodon.org&style=social
+      .. |mastodon| image:: https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social
          :alt: Mastodon
-         :target: https://fosstodon.org/@nlnetlabs
-   
+         :target: https://social.nlnetlabs.nl/@nlnetlabs
+
 .. toctree::
    :maxdepth: 2
    :hidden:
    :caption: Getting Started
    :name: toc-getting-started
 
+   before-you-start
+   architecture
    installation
    building
    quick-start
@@ -57,4 +59,16 @@ section.
    :caption: Core
    :name: toc-core
 
+   primaries-and-secondaries
+   cli
+   hsms
    approval-hooks
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Advanced
+   :name: toc-advanced
+
+   migration
+   offline-ksk
