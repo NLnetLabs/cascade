@@ -74,6 +74,7 @@ zone (you can choose your own name instead of ``default``):
 .. code-block:: bash
 
    cascade template policy | sudo tee /etc/cascade/policies/default.toml
+   cascade policy reload
 
 Then, to add a zone use:
 
