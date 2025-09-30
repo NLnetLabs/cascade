@@ -1,15 +1,12 @@
 Hardware Security Modules (HSMs)
 ================================
 
-Not Using HSMs
---------------
-
-First, understand that Cascade does *NOT* require an HSM to operate. While it
-is common practice to secure cryptographic key material using an HSM, not all
-operators use an HSM. Cascade is able to use `OpenSSL
-<https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
-software cryptography to generate signing keys and to cryptographically sign
-DNS RRSET data, storing the generated keys in on-disk files.
+.. Note:: Cascade does not *require* an HSM to operate. While it is common
+   practice to secure cryptographic key material using an HSM, not all
+   operators use an HSM. Cascade is able to use `OpenSSL
+   <https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
+   software cryptography to generate signing keys and to cryptographically sign
+   DNS RRSET data, storing the generated keys in on-disk files.
 
 An Introduction to HSMs
 -----------------------
@@ -21,7 +18,7 @@ data provided via an interface and returning the signed result via the same
 iinterface.
 
 HSM Interfaces
---------------
+~~~~~~~~~~~~~~
 
 Typically HSMs are interacted with programatically via an interface that
 is compliant with the Oasis PKCS#11 (Public-Key Cryptography Standard)
@@ -36,30 +33,28 @@ stability threat to the client process.
 This is quite different to PKCS#11 which requires the HSM vendor to provide
 a library of code that offers a C language style interface to be used by the
 client at runtime by loading the library (aka module) into its own process
-with no knowledge of or control over what that code is going to do. As
-Cascade is a Rust powered application, crossing the divide between the Rust
+with no knowledge of or control over what that code is going to do.
+
+Cascade and HSMs
+----------------
+
+Cascade supports both PKCS#11 and KMIP compatible HSMs. KMIP is supported
+natively, while PKCS#11 is supported through our :program:`kmip2pkcs11` bridge.
+
+As Cascade is a Rust powered application, crossing the divide between the Rust
 host application and a loaded C library means giving up the stability and
 memory safety guarantees offered by Rust. As such Cascade was designed to
 *NOT* load PKCS#11 modules directly but instead to hand that risk off to a
 helper tool: :program:`kmip2pkcs11`.
 
-Cascade and HSMs
-----------------
-
-Cascade supports both PKCS#11 and KMIP compatible HSMs (initially with KMIP
-support intended primarily for communication with our :program:`kmip2pkcs11` tool,
-though success has also been seen with some other KMIP implementations, e.g.
-Fortanix DSM).
+To interact with a HSM over its PKCS#11 interface, Cascade sends KMIP requests
+to :program:`kmip2pkcs11` which executes them against a loaded PKCS#11 vendor
+library.
 
 Supported HSMs
---------------
+~~~~~~~~~~~~~~
 
 In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
-Note however that for increased security Cascade only supports TLS 1.3
-connections to the KMIP server, even though KMIP 1.2 requires servers to
-offer support for earlier versions of the TLS protocol with known security
-vulnerabilities. For this reason Cascade *CANNOT* be used with PyKMIP as
-PyKMIP only supports older vulnerable TLS ciphers.
 
 Several HSMs have been tested in limited fashion with Cascade. Limited here
 meaning normal usage only, not attempting to deliberately cause problems, and
@@ -71,6 +66,34 @@ are:
 - Nitrokey NetHSM (PKCS#11, s/w Docker image)
 - YubiHSM 2 (PKCS#11, h/w USB key)
 - SoftHSM v2.6.1 (PKCS#11, s/w)
+
+.. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
+   though KMIP 1.2 requires servers to offer support for old versions of the
+   TLS protocol with known security vulnerabilities. For this reason Cascade
+   *CANNOT* be used with PyKMIP as PyKMIP only supports older vulnerable TLS
+   versions.
+
+Setting up `kmip2pkcs11`
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+To work with a HSM using its PKCS#11 interface, Cascade requires our
+:program:`kmip2pkcs11` bridge. If you installed Cascade via a DEB or RPM
+package you should also already have the :program:`kmip2pkcs11` software
+installed, unless you explicitly opted not to install it. If installing via
+building from sources the instructions we provide also describe how to install
+:program:`kmip2pkcs11`.
+
+When installed via a package the daemon will not be run automatically. This is
+because you will need to:
+
+- Edit the :file:`/etc/kmip2pkcs11/config.toml` file to tell
+  :program:`kmip2pkcs111` where to find the PKCS#11 module to load.
+- Depending on your PKCS#11 module you may need to set PKCS#11 vendor
+  specific environment variables for the :program:`kmip2pkcs11` process,
+  and/or ensure that PKCS#11 vendor specific configuration files and possibly
+  also other software are installed and correctly configured.
+- Ensure that the :program:`kmip2pkcs11` user has access to the resources
+  needed by the PKCS#11 module to be loaded.
 
 Migration
 ---------
@@ -92,24 +115,3 @@ operations with which you are less familiar).
 The "simplest" approach is a key roll with Cascade having no access to the old
 HSM. More details on how to migrate require their own dedicated documentation
 and will not be discussed further here.
-
-Setting up `kmip2pkcs11`
-------------------------
-
-If you installed Cascade via a DEB or RPM package you should also already
-have the :program:`kmip2pkcs11` software installed, unless you explicitly opted not to
-install it. If installing via building from sources the instructions we
-provide also describe how to install :program:`kmip2pkcs11`.
-
-When installed via a package the daemon will not be run automatically. This is
-because you will need to:
-
-- Edit the :file:`/etc/kmip2pkcs11/config.toml` file to tell
-  :program:`kmip2pkcs111` where to find the PKCS#11 module to load.
-- Depending on your PKCS#11 module you may need to set PKCS#11 vendor
-  specific environment variables for the :program:`kmip2pkcs11` process,
-  and/or ensure that PKCS#11 vendor specific configuration files and possibly
-  also other software are installed and correctly configured.
-- Ensure that the :program:`kmip2pkcs11` user has access to the resources
-  needed by the PKCS#11 module to be loaded.
-
