@@ -69,7 +69,7 @@ to Cascade's listen addresses.
         .. code-block:: text
 
             [server]
-            servers = ["127.0.0.1:53", "<your-ip>:53"]
+            servers = ["<your-ip>:53"]
 
         Then you can start Cascade with (replace the config and state path
         with your appropriate values):
