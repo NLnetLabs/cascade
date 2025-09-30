@@ -279,7 +279,13 @@ impl ZoneLoader {
         zone_updated_tx: &Sender<(Name<Bytes>, Serial)>,
     ) -> Result<(TypedZone, ZoneLoaderReport), Terminated> {
         let started_at = SystemTime::now();
-        let (zone, byte_count) = load_file_into_zone(&zone_name, zone_path).await?;
+        let (zone, byte_count) = {
+            let zone_name = zone_name.clone();
+            let zone_path: Box<Utf8Path> = zone_path.into();
+            tokio::task::spawn_blocking(move || load_file_into_zone(&zone_name, &zone_path))
+                .await
+                .unwrap_or(Err(Terminated))?
+        };
         let duration = SystemTime::now().duration_since(started_at).unwrap();
         let Some(serial) = get_zone_serial(zone_name.clone(), &zone).await else {
             error!("[ZL]: Zone file '{zone_path}' lacks a SOA record. Skipping zone.");
@@ -355,7 +361,7 @@ async fn get_zone_serial(apex_name: Name<Bytes>, zone: &Zone) -> Option<Serial> 
     None
 }
 
-async fn load_file_into_zone(
+fn load_file_into_zone(
     zone_name: &StoredName,
     zone_path: &Utf8Path,
 ) -> Result<(Zone, usize), Terminated> {
