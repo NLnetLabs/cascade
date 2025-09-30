@@ -8,9 +8,8 @@ the settings relating to daemonization.
 Configuring the listen addresses
 ----------------------------------
 
-Cascade only listens on localhost, by default. To make your signed zones
-available to your public primaries, you need to add the required IP addresses
-to Cascade's listen addresses.
+By default, Cascade only listens on localhost. If you want Cascade to listen
+on other addresses too, you need to configure them as shown below:
 
 .. tabs::
 
