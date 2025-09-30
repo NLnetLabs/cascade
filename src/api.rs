@@ -63,6 +63,7 @@ pub enum ZoneAddError {
     AlreadyExists,
     NoSuchPolicy,
     PolicyMidDeletion,
+    Other(String),
 }
 
 impl fmt::Display for ZoneAddError {
@@ -71,6 +72,7 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::Other(reason) => reason,
         })
     }
 }
@@ -81,6 +83,7 @@ impl From<center::ZoneAddError> for ZoneAddError {
             center::ZoneAddError::AlreadyExists => Self::AlreadyExists,
             center::ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
             center::ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
+            center::ZoneAddError::Other(reason) => Self::Other(reason),
         }
     }
 }

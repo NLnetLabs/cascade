@@ -196,33 +196,23 @@ impl HttpServer {
 
     async fn zone_add(
         State(state): State<Arc<HttpServerState>>,
-        Json(zone_register): Json<ZoneAdd>,
+        Json(register): Json<ZoneAdd>,
     ) -> Json<Result<ZoneAddResult, ZoneAddError>> {
-        if let Err(e) = center::add_zone(
+        let res = center::add_zone(
             &state.center,
-            zone_register.name.clone(),
-            zone_register.policy.clone().into(),
-            zone_register.source.clone(),
-        ) {
-            return Json(Err(e.into()));
+            register.name.clone(),
+            register.policy.clone().into(),
+            register.source.clone(),
+        )
+        .await;
+
+        match res {
+            Ok(_) => Json(Ok(ZoneAddResult {
+                name: register.name,
+                status: "Submitted".to_string(),
+            })),
+            Err(err) => Json(Err(err.into())),
         }
-
-        let zone_name = zone_register.name.clone();
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "KM".into(),
-                ApplicationCommand::RegisterZone {
-                    register: zone_register,
-                },
-            ))
-            .unwrap();
-
-        Json(Ok(ZoneAddResult {
-            name: zone_name,
-            status: "Submitted".to_string(),
-        }))
     }
 
     async fn zone_remove(

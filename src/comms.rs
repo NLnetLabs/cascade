@@ -72,8 +72,7 @@ use std::net::IpAddr;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::api;
-use crate::api::ZoneAdd;
-use crate::center::Change;
+use crate::center::{Change, ZoneAddError};
 use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zone::SigningTrigger;
 use crate::zone::ZoneLoadSource;
@@ -198,7 +197,9 @@ pub enum ApplicationCommand {
         zone_serial: Serial,
     },
     RegisterZone {
-        register: ZoneAdd,
+        name: StoredName,
+        policy: String,
+        report_tx: oneshot::Sender<Result<(), ZoneAddError>>,
     },
     GetZoneReport {
         zone_name: StoredName,

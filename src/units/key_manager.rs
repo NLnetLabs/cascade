@@ -1,10 +1,10 @@
 use crate::api;
 use crate::api::keyset::{KeyRemoveError, KeyRollError};
-use crate::center::{get_zone, halt_zone, Center};
+use crate::center::{halt_zone, Center, ZoneAddError};
 use crate::cli::commands::hsm::Error;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
-use crate::policy::KeyParameters;
+use crate::policy::{KeyParameters, Policy};
 use crate::targets::central_command::record_zone_event;
 use crate::units::http_server::KmipServerState;
 use crate::zone::{HistoricalEvent, SigningTrigger};
@@ -105,117 +105,21 @@ impl KeyManager {
     async fn run_cmd(&self, cmd: ApplicationCommand) -> Result<(), String> {
         match cmd {
             ApplicationCommand::RegisterZone {
-                register: crate::api::ZoneAdd { name, .. },
+                name,
+                policy,
+                report_tx,
             } => {
-                let state_path = self.keys_dir.join(format!("{name}.state"));
-
-                let mut cmd = self.keyset_cmd(name.clone());
-
-                cmd.arg("create")
-                    .arg("-n")
-                    .arg(name.to_string())
-                    .arg("-s")
-                    .arg(&state_path)
-                    .output()?;
-
-                // Lookup the policy for the zone to see if it uses a KMIP
-                // server.
-                let (kmip_server_id, kmip_server_state_dir, kmip_credentials_store_path) = {
-                    let state = self.center.state.lock().unwrap();
-                    let zone = state.zones.get(&name).unwrap();
-                    let zone_state = zone.0.state.lock().unwrap();
-                    let kmip_server_id = if let Some(policy) = &zone_state.policy {
-                        policy.key_manager.hsm_server_id.clone()
-                    } else {
-                        None
+                let res = self.register_zone(name.clone(), policy);
+                if let Err(unsent_res) = report_tx.send(res.clone()) {
+                    let msg = match unsent_res {
+                        Ok(()) => "succeeded".to_string(),
+                        Err(err) => format!("failed (reason: {err})"),
                     };
-                    let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
-                    let kmip_credentials_store_path =
-                        state.config.kmip_credentials_store_path.clone();
-                    (
-                        kmip_server_id,
-                        kmip_server_state_dir,
-                        kmip_credentials_store_path,
-                    )
-                };
-
-                if let Some(kmip_server_id) = kmip_server_id {
-                    let p = kmip_server_state_dir.join(kmip_server_id);
-                    log::info!("Reading KMIP server state from '{p}'");
-                    let f = std::fs::File::open(p).unwrap();
-                    let kmip_server: KmipServerState = serde_json::from_reader(f).unwrap();
-                    let KmipServerState {
-                        server_id,
-                        ip_host_or_fqdn,
-                        port,
-                        insecure,
-                        connect_timeout,
-                        read_timeout,
-                        write_timeout,
-                        max_response_bytes,
-                        key_label_prefix,
-                        key_label_max_bytes,
-                        has_credentials,
-                    } = kmip_server;
-
-                    let mut cmd = self.keyset_cmd(name.clone());
-
-                    // TODO: This command should get issued _after_ keyset create
-                    // but _before_ keyset init, both of which are issued above.
-                    cmd.arg("kmip")
-                        .arg("add-server")
-                        .arg(server_id.clone())
-                        .arg(ip_host_or_fqdn)
-                        .arg("--port")
-                        .arg(port.to_string())
-                        .arg("--connect-timeout")
-                        .arg(format!("{}s", connect_timeout.as_secs()))
-                        .arg("--read-timeout")
-                        .arg(format!("{}s", read_timeout.as_secs()))
-                        .arg("--write-timeout")
-                        .arg(format!("{}s", write_timeout.as_secs()))
-                        .arg("--max-response-bytes")
-                        .arg(max_response_bytes.to_string())
-                        .arg("--key-label-max-bytes")
-                        .arg(key_label_max_bytes.to_string());
-
-                    if insecure {
-                        cmd.arg("--insecure");
-                    }
-
-                    if has_credentials {
-                        cmd.arg("--credential-store")
-                            .arg(kmip_credentials_store_path.as_str());
-                    }
-
-                    if let Some(key_label_prefix) = key_label_prefix {
-                        cmd.arg("--key-label-prefix").arg(key_label_prefix);
-                    }
-
-                    // TODO: --client-cert, --client-key, --server-cert and --ca-cert
-                    cmd.output()?;
+                    return Err(format!("Registration of zone '{name}' {msg} but was unable to notify the caller: report sending failed"));
                 }
-
-                // Set config
-                let config_commands = policy_to_commands(&self.center, &name);
-                for c in config_commands {
-                    let mut cmd = self.keyset_cmd(name.clone());
-
-                    cmd.arg("set");
-                    for a in c {
-                        cmd.arg(a);
-                    }
-
-                    cmd.output()?;
+                if let Err(err) = res {
+                    return Err(err.to_string());
                 }
-
-                // TODO: This should not happen immediately after
-                // `keyset create` but only once the zone is enabled.
-                // We currently do not have a good mechanism for that
-                // so we init the key immediately.
-                self.keyset_cmd(name.clone()).arg("init").output()?;
-
-                Ok(())
             }
 
             ApplicationCommand::RollKey {
@@ -257,20 +161,18 @@ impl KeyManager {
                     }
                 }
 
-                if let Err(KeySetCommandError { err, output }) = cmd.output() {
+                if let Err(KeySetCommandError { reason, output }) = cmd.output() {
                     let client_err = match output {
                         Some(output) => KeyRollError::DnstCommandError(
                             String::from_utf8_lossy(&output.stderr).into(),
                         ),
-                        None => KeyRollError::DnstCommandError(err.clone()),
+                        None => KeyRollError::DnstCommandError(reason.clone()),
                     };
                     http_tx.send(Err(client_err)).await.unwrap();
-                    return Err(format!("key roll command failed: {err}"));
+                    return Err(format!("key roll command failed: {reason}"));
                 }
 
                 http_tx.send(Ok(())).await.unwrap();
-
-                Ok(())
             }
 
             ApplicationCommand::RemoveKey {
@@ -295,24 +197,151 @@ impl KeyManager {
                     cmd.arg("--continue");
                 }
 
-                if let Err(KeySetCommandError { err, output }) = cmd.output() {
+                if let Err(KeySetCommandError { reason, output }) = cmd.output() {
                     let client_err = match output {
                         Some(output) => KeyRemoveError::DnstCommandError(
                             String::from_utf8_lossy(&output.stderr).into(),
                         ),
-                        None => KeyRemoveError::DnstCommandError(err.clone()),
+                        None => KeyRemoveError::DnstCommandError(reason.clone()),
                     };
                     http_tx.send(Err(client_err)).await.unwrap();
-                    return Err(format!("key removal command failed: {err}"));
+                    return Err(format!("key removal command failed: {reason}"));
                 }
 
                 http_tx.send(Ok(())).await.unwrap();
-
-                Ok(())
             }
 
-            _ => Ok(()), // not for us
+            _ => { /* not for us */ }
         }
+
+        Ok(())
+    }
+
+    fn register_zone(&self, name: Name<Bytes>, policy_name: String) -> Result<(), ZoneAddError> {
+        // Lookup the policy for the zone to see if it uses a KMIP
+        // server.
+        let policy;
+        let kmip_server_id;
+        let kmip_server_state_dir;
+        let kmip_credentials_store_path;
+        {
+            let state = self.center.state.lock().unwrap();
+            policy = state
+                .policies
+                .get(policy_name.as_str())
+                .ok_or(ZoneAddError::NoSuchPolicy)?
+                .clone();
+            kmip_server_id = policy.latest.key_manager.hsm_server_id.clone();
+            kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
+            kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
+        };
+
+        let state_path = self.keys_dir.join(format!("{name}.state"));
+
+        let mut cmd = self.keyset_cmd(name.clone());
+
+        cmd.arg("create")
+            .arg("-n")
+            .arg(name.to_string())
+            .arg("-s")
+            .arg(&state_path)
+            .output()
+            .map_err(|err| ZoneAddError::Other(err.reason))?;
+
+        // TODO: If we fail after this point, what should we do with whatever
+        // changes `dnst keyset create` made on disk? Will leaving them behind
+        // mean that a subsequent attempt to again create the zone after
+        // resolving whatever failure occurred below will then fail because
+        // the `dnst keyset create`d state already exists?
+
+        if let Some(kmip_server_id) = kmip_server_id {
+            let kmip_server_state_path = kmip_server_state_dir.join(kmip_server_id);
+
+            log::debug!("Reading KMIP server state from '{kmip_server_state_path}'");
+            let f = File::open(&kmip_server_state_path).unwrap();
+            let kmip_server: KmipServerState = serde_json::from_reader(f).map_err(|err| {
+                ZoneAddError::Other(format!(
+                    "Unable to read KMIP server state from file '{kmip_server_state_path}': {err}"
+                ))
+            })?;
+
+            let KmipServerState {
+                server_id,
+                ip_host_or_fqdn,
+                port,
+                insecure,
+                connect_timeout,
+                read_timeout,
+                write_timeout,
+                max_response_bytes,
+                key_label_prefix,
+                key_label_max_bytes,
+                has_credentials,
+            } = kmip_server;
+
+            let mut cmd = self.keyset_cmd(name.clone());
+
+            // TODO: This command should get issued _after_ keyset create
+            // but _before_ keyset init, both of which are issued above.
+            cmd.arg("kmip")
+                .arg("add-server")
+                .arg(server_id.clone())
+                .arg(ip_host_or_fqdn)
+                .arg("--port")
+                .arg(port.to_string())
+                .arg("--connect-timeout")
+                .arg(format!("{}s", connect_timeout.as_secs()))
+                .arg("--read-timeout")
+                .arg(format!("{}s", read_timeout.as_secs()))
+                .arg("--write-timeout")
+                .arg(format!("{}s", write_timeout.as_secs()))
+                .arg("--max-response-bytes")
+                .arg(max_response_bytes.to_string())
+                .arg("--key-label-max-bytes")
+                .arg(key_label_max_bytes.to_string());
+
+            if insecure {
+                cmd.arg("--insecure");
+            }
+
+            if has_credentials {
+                cmd.arg("--credential-store")
+                    .arg(kmip_credentials_store_path.as_str());
+            }
+
+            if let Some(key_label_prefix) = key_label_prefix {
+                cmd.arg("--key-label-prefix").arg(key_label_prefix);
+            }
+
+            // TODO: --client-cert, --client-key, --server-cert and --ca-cert
+            cmd.output()
+                .map_err(|err| ZoneAddError::Other(err.reason))?;
+        }
+
+        // Set config
+        let config_commands = policy_to_commands(&policy);
+        for c in config_commands {
+            let mut cmd = self.keyset_cmd(name.clone());
+
+            cmd.arg("set");
+            for a in c {
+                cmd.arg(a);
+            }
+
+            cmd.output()
+                .map_err(|err| ZoneAddError::Other(err.reason))?;
+        }
+
+        // TODO: This should not happen immediately after
+        // `keyset create` but only once the zone is enabled.
+        // We currently do not have a good mechanism for that
+        // so we init the key immediately.
+        self.keyset_cmd(name.clone())
+            .arg("init")
+            .output()
+            .map_err(|err| ZoneAddError::Other(err.reason))?;
+
+        Ok(())
     }
 
     /// Create a keyset command with the config file for the given zone
@@ -326,10 +355,17 @@ impl KeyManager {
     }
 
     async fn tick(&self) {
-        let zone_tree = &self.center.unsigned_zones;
+        let zone_names = {
+            let state = self.center.state.lock().unwrap();
+            state
+                .zones
+                .iter()
+                .map(|z| z.0.name.clone())
+                .collect::<Vec<_>>()
+        };
         let mut ks_info = self.ks_info.lock().await;
-        for zone in zone_tree.load().iter_zones() {
-            let apex_name = zone.apex_name().to_string();
+        for zone_name in zone_names {
+            let apex_name = zone_name.to_string();
             let state_path = self.keys_dir.join(format!("{apex_name}.state"));
             if !state_path.exists() {
                 continue;
@@ -377,7 +413,7 @@ impl KeyManager {
                 self.center
                     .update_tx
                     .send(Update::ResignZoneEvent {
-                        zone_name: zone.apex_name().clone(),
+                        zone_name: zone_name.clone(),
                         trigger: SigningTrigger::ExternallyModifiedKeySetState,
                     })
                     .unwrap();
@@ -389,11 +425,7 @@ impl KeyManager {
             };
 
             if *cron_next < UnixTime::now() {
-                let Ok(res) = self
-                    .keyset_cmd(zone.apex_name().clone())
-                    .arg("cron")
-                    .output()
-                else {
+                let Ok(res) = self.keyset_cmd(zone_name.clone()).arg("cron").output() else {
                     info.clear_cron_next();
                     continue;
                 };
@@ -417,7 +449,7 @@ impl KeyManager {
                         self.center
                             .update_tx
                             .send(Update::ResignZoneEvent {
-                                zone_name: zone.apex_name().clone(),
+                                zone_name: zone_name.clone(),
                                 trigger: SigningTrigger::KeySetModifiedAfterCron,
                             })
                             .unwrap();
@@ -525,16 +557,8 @@ fn file_modified(filename: impl AsRef<Path>) -> Result<UnixTime, String> {
         .map_err(|err| format!("Failed to query modified timestamp for file '{}': unable to convert from SystemTime: {err}", filename.as_ref().display()))
 }
 
-fn policy_to_commands(center: &Center, zone_name: &Name<Bytes>) -> Vec<Vec<String>> {
-    // Ensure that the mutexes are locked only in this block;
-    let policy = {
-        let zone = get_zone(center, zone_name).unwrap();
-        let zone_state = zone.state.lock().unwrap();
-        zone_state.policy.clone()
-    }
-    .unwrap();
-
-    let km = &policy.key_manager;
+fn policy_to_commands(policy: &Policy) -> Vec<Vec<String>> {
+    let km = &policy.latest.key_manager;
 
     let mut algorithm_cmd = vec!["algorithm".to_string()];
     match km.algorithm {
@@ -891,13 +915,13 @@ pub struct KeySetCommand {
 }
 
 pub struct KeySetCommandError {
-    err: String,
+    reason: String,
     output: Option<Output>,
 }
 
 impl From<KeySetCommandError> for String {
     fn from(err: KeySetCommandError) -> Self {
-        err.err
+        err.reason
     }
 }
 
@@ -929,36 +953,39 @@ impl KeySetCommand {
                     None,
                 );
             })
-            .inspect_err(|KeySetCommandError { err, output: _ }| {
+            .inspect_err(|KeySetCommandError { reason, .. }| {
                 record_zone_event(
                     &self.center,
                     &self.name,
-                    HistoricalEvent::KeySetError(err.clone()),
+                    HistoricalEvent::KeySetError(reason.clone()),
                     None,
                 );
-                halt_zone(&self.center, &self.name, true, err);
+                halt_zone(&self.center, &self.name, true, reason);
             })
     }
 
     fn exec(&mut self) -> Result<Output, KeySetCommandError> {
         log::info!("Executing keyset command {}", self.cmd_to_string());
         let output = self.cmd.output().map_err(|msg| {
-            let mut err = format!(
+            let mut reason = format!(
                 "Keyset command '{}' for zone '{}' could not be executed: {msg}",
                 self.cmd_to_string(),
                 self.name,
             );
             if matches!(msg.kind(), ErrorKind::NotFound) {
-                err.push_str(&format!(
+                reason.push_str(&format!(
                     " [path: {}]",
                     self.cmd.get_program().to_string_lossy()
                 ));
             }
-            KeySetCommandError { err, output: None }
+            KeySetCommandError {
+                reason,
+                output: None,
+            }
         })?;
 
         if !output.status.success() {
-            let err = format!(
+            let reason = format!(
                 "Keyset command '{}' for zone '{}' returned non-zero exit code: {} [stdout={}, stderr={}]",
                 self.cmd_to_string(),
                 self.name,
@@ -967,7 +994,7 @@ impl KeySetCommand {
                 String::from_utf8_lossy(&output.stderr),
             );
             return Err(KeySetCommandError {
-                err,
+                reason,
                 output: Some(output),
             });
         }

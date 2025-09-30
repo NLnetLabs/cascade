@@ -12,7 +12,7 @@ use bytes::Bytes;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     api,
@@ -61,12 +61,14 @@ pub struct Center {
 //--- Actions
 
 /// Add a zone.
-pub fn add_zone(
+pub async fn add_zone(
     center: &Arc<Center>,
     name: Name<Bytes>,
     policy: Box<str>,
     source: api::ZoneSource,
 ) -> Result<(), ZoneAddError> {
+    register_zone(center, name.clone(), policy.clone()).await?;
+
     let zone = Arc::new(Zone::new(name.clone()));
 
     {
@@ -119,6 +121,35 @@ pub fn add_zone(
 
     log::info!("Added zone '{name}'");
     Ok(())
+}
+
+async fn register_zone(
+    center: &Arc<Center>,
+    name: Name<Bytes>,
+    policy: Box<str>,
+) -> Result<(), ZoneAddError> {
+    let (report_tx, report_rx) = oneshot::channel();
+
+    center
+        .app_cmd_tx
+        .send((
+            "KM".into(),
+            ApplicationCommand::RegisterZone {
+                name,
+                policy: policy.clone().into(),
+                report_tx,
+            },
+        ))
+        .unwrap();
+
+    report_rx
+        .await
+        .map_err(|err| {
+            ZoneAddError::Other(format!(
+                "Zone registration failed: internal command could not be sent: {err}"
+            ))
+        })?
+        .map_err(|err| ZoneAddError::Other(format!("Zone registration failed: {err}")))
 }
 
 /// Remove a zone.
@@ -310,6 +341,8 @@ pub enum ZoneAddError {
     NoSuchPolicy,
     /// The specified policy is being deleted.
     PolicyMidDeletion,
+    /// Some other error occurred.
+    Other(String),
 }
 
 impl std::error::Error for ZoneAddError {}
@@ -320,6 +353,7 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::Other(reason) => reason,
         })
     }
 }
