@@ -61,7 +61,7 @@ to Cascade's listen addresses.
 
             sudo cascade --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
 
-Adding an unsigned zone to sign
+Signing your first zone
 -------------------------------
 
 After configuring Cascade, you can begin adding zones. Cascade supports zones
