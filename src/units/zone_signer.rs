@@ -387,7 +387,13 @@ impl ZoneSigner {
             }
         };
         let Some(unsigned_zone) = zone_to_sign else {
-            return Err(format!("Unknown zone '{zone_name}'"));
+            // In some cases, we might receive requests to sign zones that are
+            // not yet available, because the requestor doesn't know the zone
+            // hasn't been signed yet.  The requestors should be fixed; but this
+            // is a quick fix for now.
+
+            debug!("Ignoring request to sign unavailable zone '{zone_name}'");
+            return Ok(());
         };
         let soa_rr = get_zone_soa(unsigned_zone.clone(), zone_name.clone())?;
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
