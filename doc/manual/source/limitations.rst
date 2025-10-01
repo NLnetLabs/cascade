@@ -31,6 +31,7 @@ OpenDNSSEC that will be added in a future release:
 - No TSIG support.
 - No inbound XFR/NOTIFY access control.
 - Only IP address outbound NOTIFY access control, no prefix support.
+- Requires more memory.
 
 Improvements
 ++++++++++++
