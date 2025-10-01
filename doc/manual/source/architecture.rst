@@ -115,7 +115,7 @@ direct encrypted connection to communicate.
 Managing State
 --------------
 
-Cascade stores its state in on-disk files in the TOML format, by default at
+Cascade stores its state in on-disk files in JSON format, by default at
 various locations under a single parent directory. No additional database
 software is required, state is human readable and easily backed up.
 
