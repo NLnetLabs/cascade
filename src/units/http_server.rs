@@ -169,7 +169,8 @@ impl HttpServer {
         let path = {
             let state = state.center.state.lock().unwrap();
             state.config.daemon.config_file.value().clone()
-        }.into_path_buf();
+        }
+        .into_path_buf();
 
         match crate::config::reload(&state.center) {
             Ok(()) => Json(Ok(ConfigReloadOutput {})),
