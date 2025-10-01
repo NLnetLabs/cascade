@@ -53,6 +53,7 @@ called ``kmip2pkcs11``.
 Start the Cascade daemon:
 
 .. code-block:: bash
+
    # systemctl start cascaded
 
 Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
