@@ -166,15 +166,21 @@ impl HttpServer {
     ) -> Json<ConfigReloadResult> {
         let ConfigReload {} = command;
 
+        let path = {
+            let state = state.center.state.lock().unwrap();
+            state.config.daemon.config_file.value().clone()
+        }
+        .into_path_buf();
+
         match crate::config::reload(&state.center) {
             Ok(()) => Json(Ok(ConfigReloadOutput {})),
 
             Err(crate::config::file::FileError::Load(error)) => {
-                Json(Err(ConfigReloadError::Load(error.to_string())))
+                Json(Err(ConfigReloadError::Load(path, error.to_string())))
             }
 
             Err(crate::config::file::FileError::Parse(error)) => {
-                Json(Err(ConfigReloadError::Parse(error.to_string())))
+                Json(Err(ConfigReloadError::Parse(path, error.to_string())))
             }
         }
     }
