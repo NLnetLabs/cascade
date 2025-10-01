@@ -33,17 +33,18 @@ Create a test zone to load and sign and ensure the Cascade daemon has access to 
    EOF
    # chown -R cascade: /etc/cascade/zones
 
-Start the Cascade daemon, create a default policy and set it to use a HSM
-called ``kmip2pkcs11``, and reload the modified policy:
+Create a Cascade policy called ``default`` and set it to use a HSM
+called ``kmip2pkcs11``.
 
 .. code-block:: bash
 
-   # systemctl start cascaded
    # cascade template policy | tee /etc/cascade/policies/default.toml
    # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "kmip2pkcs11"|' /etc/cascade/policies/default.toml
-   # cascade policy reload
-   Policies reloaded:
-    - default added
+
+Start the Cascade daemon:
+
+.. code-block:: bash
+   # systemctl start cascaded
 
 Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
 locally running :program:`kmip2pkcs11` daemon:
