@@ -86,11 +86,3 @@ server. To read what that entails, read the :doc:`before you start
    :name: toc-reference
 
    limitations
-
-.. toctree::
-   :maxdepth: 2
-   :hidden:
-   :caption: Help
-   :name: toc-help
-
-   troubleshooting
