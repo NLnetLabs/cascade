@@ -41,6 +41,10 @@ Improvements
   - Single daemon per image.
 - Rust.
 - Observability (Still a Work-In-Progress).
+- No XML.
+- No database.
+- No file based communication between daemons.
+- Finer grained control over and insight into key states.
 
 NOT a complete authoritative name server
 ----------------------------------------
