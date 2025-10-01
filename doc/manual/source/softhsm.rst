@@ -1,5 +1,5 @@
-Integrating Cascade with SoftHSMv2
-==================================
+Integrating with SoftHSMv2
+==========================
 
 .. Note:: The instructions on this page were correct at the time
    of writing for an Ubuntu 24.04 host and assume that Cascade has
