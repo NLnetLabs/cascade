@@ -120,7 +120,7 @@ a package) or directly:
 
    kmip2pkcs11 --config /etc/kmip2pkcs11/config.toml -d --user <USER> --group <GROUP>
 
-.. Tip:: Use the ``--user`` and ``--group`` arguments to make :program:kmip2pkcs11
+.. Tip:: Use the ``--user`` and ``--group`` arguments to make :program:`kmip2pkcs11`
    run as the same user that has access to any necessary resources required by
    PKCS#11 module vendor.
 
