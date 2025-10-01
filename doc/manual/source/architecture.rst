@@ -20,6 +20,20 @@ stages:
    :align: center
    :alt: Cascade pipeline
 
+Flexible Signing
+----------------
+
+Cascade does not *require* an HSM to operate. While it is common
+practice to secure cryptographic key material using an HSM, not all
+operators use an HSM. Cascade is able to use `OpenSSL
+<https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
+software cryptography to generate signing keys and to cryptographically sign
+DNS RRSET data, storing the generated keys in on-disk files.
+
+For operators wishing to use a HSM Cascade can connect directly to KMIP
+compatible HSMs, or to PKCS#11 compatible HSMs via our :program:`kmip2pkcs11`
+relay tool which is installed automatically as part of our Cascade packages.
+
 Bespoke Zone Verification
 -------------------------
 
@@ -108,8 +122,3 @@ signalled to stop, reloading them on next start.
 Some configuration is done via the Cascade CLI (adding zones and HSMs), other
 configuration is done by editing on-disk policy and application configuration
 files and instructing the Cascade daemon via the CLI to reload them.
-
-Backing Up Cascade
-------------------
-
-TODO
