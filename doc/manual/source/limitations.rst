@@ -28,6 +28,8 @@ OpenDNSSEC that will be added in a future release:
 - No passthrough mode.
 - No incremental signing.
 - No TSIG support.
+- No inbound XFR/NOTIFY access control.
+- Only IP address outbound NOTIFY access control, no prefix support.
 
 Improvements
 ++++++++++++
@@ -43,3 +45,10 @@ Cascade is NOT a complete authoritative DNS server. It will not reply with the
 AA or AD flag set. Nor can it reply to DNSSEC queries. Instead, Cascade is
 intended to be used as a hidden signer with a proper secondary such as NSD
 serving the signed zones to actual clients.
+
+Other known limitations
+-----------------------
+
+- No NOTIFY retry support.
+- No NOTIFY "Notify Set" (RFC 1996) discovery.
+- HSM algorithm support is limited to RSASHA256 and ECDSAP256SHA256.
