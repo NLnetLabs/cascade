@@ -665,7 +665,21 @@ impl HttpServer {
             hsm_server_id: p.latest.key_manager.hsm_server_id.clone(),
         };
 
-        let server = ServerPolicyInfo {};
+        let p_outbound = &p.latest.server.outbound;
+        let server = ServerPolicyInfo {
+            outbound: OutboundPolicyInfo {
+                accept_xfr_requests_from: p_outbound
+                    .accept_xfr_requests_from
+                    .iter()
+                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .collect(),
+                send_notify_to: p_outbound
+                    .send_notify_to
+                    .iter()
+                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .collect(),
+            },
+        };
 
         Json(Ok(PolicyInfo {
             name: p.latest.name.clone(),

@@ -51,6 +51,7 @@ use crate::comms::Terminated;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::payload::Update;
+use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
 pub enum Mode {
@@ -371,8 +372,8 @@ impl ZoneServer {
     ) {
         info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.");
 
-        // Move next_min_expiration to min_expiration.
-        {
+        // Move next_min_expiration to min_expiration, and determine policy.
+        let policy = {
             // Use a block to make sure that the mutex is clearly dropped.
             let zone = get_zone(&self.center, &zone_name).unwrap();
             let mut zone_state = zone.state.lock().unwrap();
@@ -382,7 +383,9 @@ impl ZoneServer {
             zone_state.min_expiration = zone_state.next_min_expiration;
             zone_state.next_min_expiration = None;
             zone.mark_dirty(&mut zone_state, &self.center);
-        }
+
+            zone_state.policy.clone()
+        };
 
         // Move the zone from the signed collection to the published collection.
         // TODO: Bump the zone serial?
@@ -408,10 +411,37 @@ impl ZoneServer {
             // zone from the copied set and then
             // replace the original set with the
             // new set.
-            info!("[{unit_name}]: Removing '{zone_name}' from the set of signed zones.");
             let mut new_signed_zones = Arc::unwrap_or_clone(signed_zones.clone());
             new_signed_zones.remove_zone(&zone_name, Class::IN).unwrap();
             self.center.signed_zones.store(Arc::new(new_signed_zones));
+        }
+
+        // Send NOTIFY if configured to do so.
+        if let Some(policy) = policy {
+            info!(
+                "[{unit_name}]: Found {} NOTIFY targets",
+                policy.server.outbound.send_notify_to.len()
+            );
+            if !policy.server.outbound.send_notify_to.is_empty() {
+                let addrs = policy
+                    .server
+                    .outbound
+                    .send_notify_to
+                    .iter()
+                    .filter_map(|s| {
+                        if s.addr.port() != 0 {
+                            Some(&s.addr)
+                        } else {
+                            None
+                        }
+                    });
+
+                let maintainer_config =
+                    Config::<_, DefaultConnFactory>::new(self.center.old_tsig_key_store.clone());
+                let maintainer_config = Arc::new(ArcSwap::from_pointee(maintainer_config));
+                ZoneMaintainer::send_notify_to_addrs(zone_name.clone(), addrs, maintainer_config)
+                    .await;
+            }
         }
     }
 

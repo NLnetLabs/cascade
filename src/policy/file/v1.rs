@@ -2,6 +2,7 @@
 
 use std::{
     fmt::{self, Display},
+    net::{AddrParseError, SocketAddr},
     str::FromStr,
     time::Duration,
 };
@@ -11,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 use crate::policy::{
-    KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy, SignerDenialPolicy,
-    SignerPolicy, SignerSerialPolicy,
+    KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
+    ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
 };
 
 use super::super::{AutoConfig, DsAlgorithm, KeyParameters};
@@ -674,7 +675,7 @@ impl SignerSerialPolicySpec {
 
 /// Spec for generating denial-of-existence records.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields, tag = "type")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
 pub enum SignerDenialSpec {
     /// Generate NSEC records.
     ///
@@ -767,19 +768,120 @@ impl ReviewSpec {
 /// Policy for serving zones.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct ServerSpec {}
+pub struct ServerSpec {
+    outbound: OutboundSpec,
+}
 
 //--- Conversion
 
 impl ServerSpec {
     /// Parse from this specification.
     pub fn parse(self) -> ServerPolicy {
-        ServerPolicy {}
+        ServerPolicy {
+            outbound: self.outbound.parse(),
+        }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ServerPolicy) -> Self {
-        let ServerPolicy {} = policy;
-        Self {}
+        Self {
+            outbound: OutboundSpec::build(&policy.outbound),
+        }
     }
 }
+
+//----------- OutboundSpec ---------------------------------------------------
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct OutboundSpec {
+    /// The set of nameservers from which SOA and XFR requests may be received.
+    ///
+    /// If empty, any nameserver may request XFR from us.
+    #[serde(default = "empty_list")]
+    pub accept_xfr_requests_from: Vec<NameserverCommsSpec>,
+
+    /// The set of nameservers to which NOTIFY messages should be sent.
+    ///
+    /// If empty, no NOTIFY messages will be sent.
+    ///
+    /// TODO: support the RFC 1996 "Notify Set"?
+    #[serde(default = "empty_list")]
+    pub send_notify_to: Vec<NameserverCommsSpec>,
+}
+
+fn empty_list() -> Vec<NameserverCommsSpec> {
+    vec![]
+}
+
+//--- Conversion
+
+impl OutboundSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> OutboundPolicy {
+        OutboundPolicy {
+            accept_xfr_requests_from: self
+                .accept_xfr_requests_from
+                .into_iter()
+                .map(|v| v.parse())
+                .collect(),
+            send_notify_to: self.send_notify_to.into_iter().map(|v| v.parse()).collect(),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(policy: &OutboundPolicy) -> Self {
+        Self {
+            accept_xfr_requests_from: policy
+                .accept_xfr_requests_from
+                .iter()
+                .map(|v| NameserverCommsSpec::build(v))
+                .collect(),
+            send_notify_to: policy
+                .send_notify_to
+                .iter()
+                .map(|v| NameserverCommsSpec::build(v))
+                .collect(),
+        }
+    }
+}
+
+//----------- NameserverCommsSpec --------------------------------------------
+
+/// Policy for communicating with another namesever.
+#[derive(Clone, Debug, DeserializeFromStr, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct NameserverCommsSpec {
+    /// The address to send to/receive from.
+    ///
+    /// For sending the port MUST NOT be zero.
+    ///
+    /// TODO: Support IP prefixes?
+    pub addr: SocketAddr,
+    // TODO: Support TSIG key names?
+}
+
+//--- Conversion
+
+impl NameserverCommsSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> NameserverCommsPolicy {
+        NameserverCommsPolicy { addr: self.addr }
+    }
+
+    /// Build into this specification.
+    pub fn build(policy: &NameserverCommsPolicy) -> Self {
+        Self { addr: policy.addr }
+    }
+}
+
+impl FromStr for NameserverCommsSpec {
+    type Err = AddrParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(NameserverCommsSpec {
+            addr: SocketAddr::from_str(s)?,
+        })
+    }
+}
+

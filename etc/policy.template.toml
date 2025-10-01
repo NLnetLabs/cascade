@@ -376,4 +376,14 @@ required = false
 
 
 # How published zones are served.
-[server]
+[server.outbound]
+
+# The set of nameservers from which SOA and XFR requests may be received.
+#
+# If empty, any nameserver may request XFR from us.
+accept-xfr-requests-from = []
+
+# The set of nameservers to which NOTIFY messages should be sent.
+#
+# If empty, no NOTIFY messages will be sent.
+send-notify-to = []
