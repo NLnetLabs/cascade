@@ -60,7 +60,7 @@ server. To read what that entails, read the :doc:`before you start
    primaries-and-secondaries
    cli
    hsms
-   approval-hooks
+   review-hooks
 
 .. toctree::
    :maxdepth: 2
