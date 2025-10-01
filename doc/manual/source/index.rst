@@ -57,7 +57,6 @@ server. To read what that entails, read the :doc:`before you start
    :caption: Core
    :name: toc-core
 
-   primaries-and-secondaries
    cli
    hsms
    review-hooks

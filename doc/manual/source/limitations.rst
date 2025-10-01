@@ -22,6 +22,7 @@ OpenDNSSEC that will be added in a future release:
 
 - No jitter support.
 - No IXFR out.
+- No file output.
 - No delay before automatic key deletion.
 - No holding keys for use until a backup flag is set.
 - No sharing of keys between zones.
@@ -30,8 +31,7 @@ OpenDNSSEC that will be added in a future release:
 - No support for sharing keys between zones.
 - No TSIG support.
 - No inbound XFR/NOTIFY access control.
-- Only IP address outbound NOTIFY access control, no prefix support.
-- Requires more memory.
+- No prefix based access control.
 
 Improvements
 ++++++++++++
@@ -60,5 +60,7 @@ Other known limitations
 
 - No NOTIFY retry support.
 - No NOTIFY "Notify Set" (RFC 1996) discovery.
+- No KMIP batching support.
+- No DNS UPDATE support.
 - HSM algorithm support is limited to RSASHA256 and ECDSAP256SHA256.
-- No KMIP batching.
+- Memory usage can be improved.
