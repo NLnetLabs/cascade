@@ -36,6 +36,9 @@ Improvements
 ++++++++++++
 
 - An HSM is not required.
+- More suited to containerized usage:
+  - Supports stdout/stderr logging as well as syslog.
+  - Single daemon per image.
 - Rust.
 - Observability (Still a Work-In-Progress).
 
