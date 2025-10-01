@@ -68,6 +68,20 @@ server. To read what that entails, read the :doc:`before you start
    :name: toc-guides
 
    importing-keys
+   cascade-for-opendnssec-users
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Integrations
+   :name: toc-integrations
+
+   fortanix
+   nitrokey
+   softhsm
+   thales
+   yubihsm
+   
 
 .. toctree::
    :maxdepth: 2
