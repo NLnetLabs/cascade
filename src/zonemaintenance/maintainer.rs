@@ -63,9 +63,9 @@ use crate::center::{get_zone, Center};
 
 use super::types::{
     CompatibilityMode, Event, NotifySrcDstConfig, NotifyStrategy, TransportStrategy, XfrConfig,
-    XfrStrategy, ZoneChangedMsg, ZoneConfig, ZoneDiffs, ZoneId, ZoneInfo, ZoneNameServers,
-    ZoneRefreshCause, ZoneRefreshInstant, ZoneRefreshState, ZoneRefreshStatus, ZoneRefreshTimer,
-    ZoneReport, ZoneReportDetails, IANA_DNS_PORT_NUMBER, MIN_DURATION_BETWEEN_ZONE_REFRESHES,
+    XfrStrategy, ZoneChangedMsg, ZoneConfig, ZoneId, ZoneInfo, ZoneNameServers, ZoneRefreshCause,
+    ZoneRefreshInstant, ZoneRefreshState, ZoneRefreshStatus, ZoneRefreshTimer, ZoneReport,
+    ZoneReportDetails, IANA_DNS_PORT_NUMBER, MIN_DURATION_BETWEEN_ZONE_REFRESHES,
 };
 
 //------------ ConnectionFactory ---------------------------------------------
@@ -674,18 +674,11 @@ where
 {
     /// Wrap a [`Zone`] so that we get notified when it is modified.
     fn wrap_zone(zone: TypedZone, notify_tx: Sender<Event>) -> Zone {
-        let diffs = Arc::new(Mutex::new(ZoneDiffs::new()));
-        let nameservers = Arc::new(Mutex::new(None));
-        let expired = Arc::new(AtomicBool::new(false));
-
         let (zone_store, zone_type) = zone.into_inner();
 
         let zone_info = ZoneInfo {
-            _catalog_member_id: None, // TODO
             config: zone_type,
-            diffs,
-            nameservers,
-            expired,
+            ..Default::default()
         };
 
         let new_store = MaintainedZone::new(notify_tx, zone_store, zone_info);
@@ -716,7 +709,7 @@ where
                 cat_zone.apex_name().clone(),
                 nameservers.notify_set(),
                 config.clone(),
-                zone_info,
+                // zone_info,
             )
             .await;
         }
@@ -726,17 +719,16 @@ where
                 cat_zone.apex_name().clone(),
                 notify.addrs(),
                 config,
-                zone_info,
+                // zone_info,
             )
             .await;
         }
     }
 
-    async fn send_notify_to_addrs(
+    pub async fn send_notify_to_addrs(
         apex_name: StoredName,
         notify_set: impl Iterator<Item = &SocketAddr>,
         config: Arc<ArcSwap<Config<KS, CF>>>,
-        _zone_info: &ZoneInfo,
     ) {
         let mut dgram_config = dgram::Config::new();
         dgram_config.set_max_parallel(1);
