@@ -2,7 +2,7 @@
 
 use std::{
     fmt::{self, Display},
-    net::{AddrParseError, SocketAddr},
+    net::{AddrParseError, IpAddr, SocketAddr},
     str::FromStr,
     time::Duration,
 };
@@ -875,12 +875,14 @@ impl NameserverCommsSpec {
     }
 }
 
+/// Parse as an IpAddr (assuming port 53), or as a SocketAddr.
 impl FromStr for NameserverCommsSpec {
     type Err = AddrParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(NameserverCommsSpec {
-            addr: SocketAddr::from_str(s)?,
-        })
+        let addr = IpAddr::from_str(s)
+            .map(|ip| SocketAddr::new(ip, 53))
+            .or_else(|_| SocketAddr::from_str(s))?;
+        Ok(NameserverCommsSpec { addr })
     }
 }

@@ -381,9 +381,13 @@ required = false
 # The set of nameservers from which SOA and XFR requests may be received.
 #
 # If empty, any nameserver may request XFR from us.
+#
+# A collection of IP addresses.
 accept-xfr-requests-from = []
 
 # The set of nameservers to which NOTIFY messages should be sent.
 #
 # If empty, no NOTIFY messages will be sent.
+# 
+# A collection of IP:[port], defaulting to port 53 when not specified.
 send-notify-to = []
