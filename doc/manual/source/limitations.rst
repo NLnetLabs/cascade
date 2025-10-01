@@ -60,3 +60,4 @@ Other known limitations
 - No NOTIFY retry support.
 - No NOTIFY "Notify Set" (RFC 1996) discovery.
 - HSM algorithm support is limited to RSASHA256 and ECDSAP256SHA256.
+- No KMIP batching.
