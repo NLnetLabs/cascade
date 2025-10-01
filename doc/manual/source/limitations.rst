@@ -27,6 +27,7 @@ OpenDNSSEC that will be added in a future release:
 - No sharing of keys between zones.
 - No passthrough mode.
 - No incremental signing.
+- No support for sharing keys between zones.
 - No TSIG support.
 - No inbound XFR/NOTIFY access control.
 - Only IP address outbound NOTIFY access control, no prefix support.
