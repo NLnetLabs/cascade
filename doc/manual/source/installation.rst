@@ -382,7 +382,7 @@ a specific version, if needed.
 
        .. code-block:: bash
 
-          sudo apt policy Cascade
+          sudo apt policy cascade
 
        You can install a specific version using ``<package name>=<version>``,
        e.g.:
