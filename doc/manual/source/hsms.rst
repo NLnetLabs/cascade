@@ -83,7 +83,7 @@ are:
 Setting up `kmip2pkcs11`
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-To work with a HSM using its PKCS#11 interface, Cascade requires our
+To work with an HSM using its PKCS#11 interface, Cascade requires our
 :program:`kmip2pkcs11` relay. If you installed Cascade via a DEB or RPM
 package you should also already have the :program:`kmip2pkcs11` software
 installed, unless you explicitly opted not to install it. If installing via
@@ -110,10 +110,10 @@ because you will need to:
   self-signed TLS certificate each time it starts.
 
 .. Note:: There is no currently no provided way to test that the configuration
-   of :program:`kmip2pksc11` is correct other than to try using it with
+   of :program:`kmip2pkcs11` is correct other than to try using it with
    Cascade.
 
-When ready, start program:`kmip2pkcs11` either via systemd (if installed from
+When ready, start :program:`kmip2pkcs11` either via systemd (if installed from
 a package) or directly:
 
 .. code-block:: bash
