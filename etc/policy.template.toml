@@ -376,4 +376,11 @@ required = false
 
 
 # How published zones are served.
-[server]
+[server.outbound]
+
+# The set of nameservers to which NOTIFY messages should be sent.
+#
+# If empty, no NOTIFY messages will be sent.
+# 
+# A collection of IP:[port], defaulting to port 53 when not specified.
+send-notify-to = []

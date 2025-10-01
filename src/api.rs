@@ -382,7 +382,26 @@ pub enum Nsec3OptOutPolicyInfo {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ServerPolicyInfo {}
+pub struct ServerPolicyInfo {
+    pub outbound: OutboundPolicyInfo,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct OutboundPolicyInfo {
+    pub accept_xfr_requests_from: Vec<NameserverCommsPolicyInfo>,
+    pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct NameserverCommsPolicyInfo {
+    pub addr: SocketAddr,
+}
+
+impl std::fmt::Display for NameserverCommsPolicyInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.addr)
+    }
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum PolicyInfoError {

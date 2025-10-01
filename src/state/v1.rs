@@ -8,6 +8,7 @@ use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 
+use crate::policy::file::v1::OutboundSpec;
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
 use crate::{
     center::{Change, State},
@@ -1101,19 +1102,25 @@ impl ReviewPolicySpec {
 /// Policy for serving zones.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ServerPolicySpec {}
+pub struct ServerPolicySpec {
+    /// Outbound policy.
+    pub outbound: OutboundSpec,
+}
 
 //--- Conversion
 
 impl ServerPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> ServerPolicy {
-        ServerPolicy {}
+        ServerPolicy {
+            outbound: self.outbound.parse(),
+        }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ServerPolicy) -> Self {
-        let ServerPolicy {} = policy;
-        Self {}
+        Self {
+            outbound: OutboundSpec::build(&policy.outbound),
+        }
     }
 }
