@@ -127,12 +127,34 @@ a package) or directly:
 Using `kmip2pkcs11` with Cascade
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To use :program:`kmip2pkcs11` with Cascade where the PKCS#11 token label and PIN
-are the values you configured above.
+To use :program:`kmip2pkcs11` with Cascade we must tell it that there is a HSM
+running that it can connect to. In the instructions below the PKCS#11 token label
+and PIN are the values you configured above.
 
 .. code-block:: bash
 
-   cascade hsm add --insecure kmip2pkcs11 --username <PKCS#11 token label> --password <PKCS#11 PIN>
+   cascade hsm add --insecure --username <PKCS#11 token label> --password <PKCS#11 PIN> kmip2pkcs11 127.0.0.1
 
 .. Note:: ``--insecure`` must be used if using a self-signed TLS certificate (the
-   default) with :program:`kmip2pkcs11`.
+   default) with :program:`kmip2pkcs11`. 127.0.0.1 should be changed if your
+   :program:`kmip2pkcs11` instance is running on a different address.
+
+Cascade will verify that it can connect and that the target server appears to be a
+KMIP compatible HSM.
+
+.. Note:: Cascade does **NOT** yet verify that the target KMIP server supports
+   the features needed by Cascade. For :program:`kmip2pkcs11` this isn't a problem
+   as it is designed to work with Cascade.
+
+Next we need to add the HSM to a policy so that when zones are added the keys for the
+zones will be generated using the HSM.
+
+To do this, edit :file:`/etc/cascade/policies/<your_policy>.toml` and set:
+
+.. code-block:: text
+
+   [key-manager.generation]
+   hsm-server-id = "kmip2pkcs11"
+
+Now when you use ``cascade zone add --policy <your_policy>`` the HSM will be used
+for key generation and signing.
