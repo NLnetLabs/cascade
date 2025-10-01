@@ -38,12 +38,12 @@ impl Config {
                         Ok(())
                     }
 
-                    Err(ConfigReloadError::Load(error)) => Err(format!(
-                        "Could not load the new configuration file: {error}"
+                    Err(ConfigReloadError::Load(path, error)) => Err(format!(
+                        "Could not load the new configuration file '{path}': {error}"
                     )),
 
-                    Err(ConfigReloadError::Parse(error)) => Err(format!(
-                        "Could not parse the new configuration file: {error}"
+                    Err(ConfigReloadError::Parse(path, error)) => Err(format!(
+                        "Could not parse the new configuration file '{path}': {error}"
                     )),
                 }
             }

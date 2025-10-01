@@ -37,10 +37,10 @@ pub struct ConfigReloadOutput {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ConfigReloadError {
     /// The file could not be loaded.
-    Load(String),
+    Load(Utf8PathBuf, String),
 
     /// The file could not be parsed.
-    Parse(String),
+    Parse(Utf8PathBuf, String),
 }
 
 //------------------------------------------------------------------------------
