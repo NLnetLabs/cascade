@@ -1,4 +1,4 @@
-Integration Cascade with SoftHSMv2
+Integrating Cascade with SoftHSMv2
 ==================================
 
 .. Note:: The instructions on this page were correct at the time
