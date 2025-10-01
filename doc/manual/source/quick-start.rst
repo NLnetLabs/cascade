@@ -167,8 +167,6 @@ tool installed you can check that the zone is correctly DNSSEC signed:
    Algorithm: ECDSAP256SHA256: KSKs: 1 active, 0 stand-by, 0 revoked
                                ZSKs: 1 active, 0 stand-by, 0 revoked
 
-.. Note:: 
-
 Next steps
 ----------
 
