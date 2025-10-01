@@ -676,8 +676,10 @@ where
     fn wrap_zone(zone: TypedZone, notify_tx: Sender<Event>) -> Zone {
         let (zone_store, zone_type) = zone.into_inner();
 
-        let mut zone_info = ZoneInfo::default();
-        zone_info.config = zone_type;
+        let zone_info = ZoneInfo {
+            config: zone_type,
+            ..Default::default()
+        };
 
         let new_store = MaintainedZone::new(notify_tx, zone_store, zone_info);
         Zone::new(new_store)

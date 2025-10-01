@@ -835,12 +835,12 @@ impl OutboundSpec {
             accept_xfr_requests_from: policy
                 .accept_xfr_requests_from
                 .iter()
-                .map(|v| NameserverCommsSpec::build(v))
+                .map(NameserverCommsSpec::build)
                 .collect(),
             send_notify_to: policy
                 .send_notify_to
                 .iter()
-                .map(|v| NameserverCommsSpec::build(v))
+                .map(NameserverCommsSpec::build)
                 .collect(),
         }
     }
@@ -884,4 +884,3 @@ impl FromStr for NameserverCommsSpec {
         })
     }
 }
-
