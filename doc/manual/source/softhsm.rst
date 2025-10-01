@@ -1,9 +1,18 @@
 Integrating with SoftHSMv2
 ==========================
 
-.. Note:: The instructions on this page were correct at the time
-   of writing for an Ubuntu 24.04 host and assume that Cascade has
-   already been installed using our DEB package.
+.. Note:: The instructions on this page are for an Ubuntu 24.04 host and
+   assume that Cascade has already been installed using our DEB package.
+
+.. epigraph::
+
+   SoftHSM is an implementation of a cryptographic store accessible through
+   a PKCS #11 interface. You can use it to explore PKCS #11 without having
+   a Hardware Security Module. It was originally developed as a part of the
+   OpenDNSSEC project. SoftHSM uses Botan or OpenSSL for its cryptographic
+   operations.
+
+   -- https://www.softhsm.org/
 
 Install SoftHSMv2 and initialize it:
 
