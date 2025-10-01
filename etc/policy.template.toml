@@ -109,7 +109,7 @@ csk.validity = "31536000"
 ksk.auto-start = true
 zsk.auto-start = true
 csk.auto-start = true
-alg.auto-start = true
+algorithm.auto-start = true
 
 # Whether to automatically check for record propagation.
 #
@@ -124,7 +124,7 @@ alg.auto-start = true
 ksk.auto-report = true
 zsk.auto-report = true
 csk.auto-report = true
-alg.auto-report = true
+algorithm.auto-report = true
 
 # Whether to automatically wait for cache expiry.
 #
@@ -134,7 +134,7 @@ alg.auto-report = true
 ksk.auto-expire = true
 zsk.auto-expire = true
 csk.auto-expire = true
-alg.auto-expire = true
+algorithm.auto-expire = true
 
 # Whether to automatically check for rollover completion.
 #
@@ -148,7 +148,7 @@ alg.auto-expire = true
 ksk.auto-done = true
 zsk.auto-done = true
 csk.auto-done = true
-alg.auto-done = true
+algorithm.auto-done = true
 
 # The hash algorithm used by the parent zones' DS records.
 #
@@ -240,11 +240,11 @@ cds.signature-remain-time = 604800
 # existing keys are rolled over?
 use-csk = false
 
-# Parameters for the cryptographic key material.
+# The cryptographic algorithm (and parameters) for generated keys.
 #
 # DNSSEC supports various cryptographic algorithms for signatures; one must be
 # selected, and for some algorithms, additional parameters are also necessary.
-# The same parameters will be applied to the ZSK and KSK.
+# The same algorithm and parameters will be applied to the ZSK and KSK.
 #
 # - 'rsa-sha256[:<bits>]', RSASHA256 (algorithm 8), with a public key size of
 #   '<bits>' (default 2048) bits.
@@ -261,8 +261,8 @@ use-csk = false
 #
 # NOTE: At the moment, only RSASHA256 and ECDSAP256SHA256 work with HSMs.  Other
 #   algorithms cannot be used with HSMs, and will cause generation failures.
-parameters = "ecdsa-p256-sha256"
-#parameters = "rsa-sha512:4096"
+algorithm = "ecdsa-p256-sha256"
+#algorithm = "rsa-sha512:4096"
 
 
 # How zones are signed.

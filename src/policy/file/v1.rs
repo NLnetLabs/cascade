@@ -126,7 +126,7 @@ pub struct KeyManagerSpec {
     pub csk: KeyKindSpec,
 
     /// Policy for algorithm rollovers.
-    pub alg: RolloverSpec,
+    pub algorithm: RolloverSpec,
 
     /// The DS hash algorithm.
     pub ds_algorithm: DsAlgorithm,
@@ -149,7 +149,7 @@ impl KeyManagerSpec {
         KeyManagerPolicy {
             hsm_server_id: self.generation.hsm_server_id,
             use_csk: self.generation.use_csk,
-            algorithm: match self.generation.parameters {
+            algorithm: match self.generation.algorithm {
                 KeyGenerationParametersSpec::RsaSha256(bits) => {
                     KeyParameters::RsaSha256(bits.into())
                 }
@@ -196,7 +196,7 @@ impl KeyManagerSpec {
             auto_ksk: self.ksk.rollover.parse(),
             auto_zsk: self.zsk.rollover.parse(),
             auto_csk: self.csk.rollover.parse(),
-            auto_algorithm: self.alg.parse(),
+            auto_algorithm: self.algorithm.parse(),
 
             // The following have the same defaults as used for
             // signing the zone.
@@ -261,7 +261,7 @@ impl KeyManagerSpec {
                 }),
                 rollover: RolloverSpec::build(&policy.auto_csk),
             },
-            alg: RolloverSpec::build(&policy.auto_algorithm),
+            algorithm: RolloverSpec::build(&policy.auto_algorithm),
 
             ds_algorithm: policy.ds_algorithm.clone(),
             auto_remove: policy.auto_remove,
@@ -283,7 +283,7 @@ impl KeyManagerSpec {
             generation: KeyManagerGenerationSpec {
                 hsm_server_id: policy.hsm_server_id.clone(),
                 use_csk: policy.use_csk,
-                parameters: match policy.algorithm {
+                algorithm: match policy.algorithm {
                     KeyParameters::RsaSha256(bits) => {
                         KeyGenerationParametersSpec::RsaSha256(bits as u16)
                     }
@@ -306,7 +306,7 @@ impl Default for KeyManagerSpec {
             ksk: Default::default(),
             zsk: Default::default(),
             csk: Default::default(),
-            alg: Default::default(),
+            algorithm: Default::default(),
             ds_algorithm: DsAlgorithm::Sha256,
             auto_remove: true,
             records: Default::default(),
@@ -454,7 +454,7 @@ pub struct KeyManagerGenerationSpec {
     pub use_csk: bool,
 
     /// Parameters for the cryptographic key material.
-    pub parameters: KeyGenerationParametersSpec,
+    pub algorithm: KeyGenerationParametersSpec,
 }
 
 impl Default for KeyManagerGenerationSpec {
@@ -466,7 +466,7 @@ impl Default for KeyManagerGenerationSpec {
             // No official reference.
             use_csk: false,
 
-            parameters: KeyGenerationParametersSpec::EcdsaP256Sha256,
+            algorithm: KeyGenerationParametersSpec::EcdsaP256Sha256,
         }
     }
 }
