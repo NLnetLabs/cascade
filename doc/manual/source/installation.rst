@@ -1,6 +1,8 @@
 Installation
 ============
 
+.. TODO: add daemonization guide?
+
 Binary Packages
 ---------------
 
@@ -10,9 +12,9 @@ compatible systems such as Rocky Linux. Alternatively, you can run with
 Docker. 
 
 You can also build Cascade from the source code using Cargo, Rust's build
-system and package manager. Cargo lets you to run Cascade on almost any
-operating system and CPU architecture. Refer to the :doc:`building` section
-to get started.
+system and package manager. Cargo lets you run Cascade on almost any operating
+system and CPU architecture. Refer to the :doc:`building` section to get
+started.
 
 .. tabs::
 
@@ -147,13 +149,6 @@ to get started.
        .. code-block:: bash
 
           sudo apt install cascade
-
-       If you want to use a PKCS#11-based HSM, also install the KMIP to PKCS#11
-       relay with:
-
-       .. code-block:: bash
-
-          sudo apt install kmip2pkcs11
 
        Then you can start Cascade with:
 
@@ -380,7 +375,7 @@ a specific version, if needed.
 
        .. code-block:: bash
 
-          sudo apt policy Cascade
+          sudo apt policy cascade
 
        You can install a specific version using ``<package name>=<version>``,
        e.g.:

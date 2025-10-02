@@ -69,6 +69,7 @@ Cascade consists of three, possibly four, pieces:
 - The *optional* :program:`kmip2pkcs11` daemon which receives KMIP TCP TLS requests
   and converts them into PKCS#11 operations executed against a loaded PKCS#11
   module. This separation of concerns:
+
     - permits Cascade to work with KMIP and/or PKCS#11 compatible HSMs in
       exactly the same way from the perspective of the Cascade operator,
     - isolates the Cascade daemon process from untrusted 3rd party PKCS#11 module
