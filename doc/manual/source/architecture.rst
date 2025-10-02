@@ -26,7 +26,7 @@ Robustness
 Cascade is written in the Rust programming language making it significantly
 less likely to crash or suffer from memory safety issues, and at the same time
 making it easier to leverage the higher core count of modern computers via
-Rusts' "fearless concurrency" when needed.
+Rust's "fearless concurrency" when needed.
 
 Cascade outsources PKCS#11 module loading to a separate :program:`kmip2pkcs11`
 daemon to avoid running untrusted 3rd party code inside the main Cascade
