@@ -1,21 +1,61 @@
-.. TODO better doc title?
+Known Limitations
+=================
 
-Limitations
-===========
+Cascade is a hidden signer. This has implications for :doc:`before-you-start`.
 
-Making changes to the config
-----------------------------
 
-Only on the first start of Cascade will it read the provided config file and
-initialize the state. After that, all changes to the config require
-a ``cascade config reload`` to load the changes to the config (and, if you
-changed Cascade's listener addresses, a restart to bind the new sockets).
+Expectations for the alpha release
+----------------------------------
 
-All further restarts of Cascade do not pick up changes to the config, until
-you issue the ``cascade config reload`` command.
+.. tip:: This page details what you can expect from Cascade in its alpha form.
+   Our goal is to gather operator feedback. Please :ref:`reach out <reach-out>`
+   to us.
+
+- The included functionality should work correctly for simple scenarios with
+  correct inputs when running on setups (O/S, HSM) that we have tested on.
+- Handling of incorrect inputs, edge cases, more complex scenarios, non-default
+  policy settings, and so on *may be incomplete or incorrect*. Please `report
+  any bugs you find <https://github.com/NLnetLabs/cascade/issues/new>`_
+- The user experience is a *work-in-progress*. The goal of Cascade is not only
+  to be a correctly functioning DNSSEC signer which makes it easy to do the
+  right thing and hard to do the wrong thing, it should also be obvious how to
+  use it and be clear what the system did, is doing now and will do in the
+  future. But we're not there yet, we have more ideas but `we'd love to hear
+  yours too <https://github.com/NLnetLabs/cascade/issues/new>`_.
+
+Config & Policy Require Explicit Reload
+---------------------------------------
+
+Users may expect that edits to the Cascade configuration file or to policy
+files will take effect if Cascade is restarted, however this is not the case.
+
+Cascade deliberately does not reload the configuration or policy files until
+explicitly told to do so via ``cascade config reload`` and ``cascade policy
+reload`` respectively.
+
+This design ensures that a restart doesn't suddenly cause unexpected changes
+in behaviour, e.g. config file edits that were made but never actually used
+and then forgotten about.
 
 Differences to OpenDNSSEC
 -------------------------
+
+Improvements
+++++++++++++
+
+- An HSM is not required.
+- More suited to containerized usage:
+  - Supports stdout/stderr logging as well as syslog.
+  - Single daemon per image.
+- Rust.
+- Observability (Still a Work-In-Progress).
+- No XML.
+- No database.
+- No file based communication between daemons.
+- Finer grained control over and insight into key states.
+
+Missing features
+++++++++++++++++
 
 The alpha release of Cascade is missing some of the features provided by
 OpenDNSSEC that will be added in a future release:
@@ -32,6 +72,8 @@ OpenDNSSEC that will be added in a future release:
 - No TSIG support.
 - No inbound XFR/NOTIFY access control.
 - No prefix based access control.
+- Terminology differences, Cascade does not use the term "omnipresent" for
+  example.
 
 Improvements
 ++++++++++++
