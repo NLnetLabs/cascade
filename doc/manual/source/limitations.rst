@@ -3,16 +3,58 @@
 Limitations
 ===========
 
-Making changes to the config
-----------------------------
+.. admonition:: Alpha version
 
-Only on the first start of Cascade will it read the provided config file and
-initialize the state. After that, all changes to the config require
-a ``cascade config reload`` to load the changes to the config (and, if you
-changed Cascade's listener addresses, a restart to bind the new sockets).
+   Cascade is currently in its first alpha version. What can you expect from
+   Cascade in its alpha form:
 
-All further restarts of Cascade do not pick up changes to the config, until
-you issue the ``cascade config reload`` command.
+     - The included functionality *should work* correctly for simple scenarios
+       with correct inputs when running on setups (O/S, HSM) that we have
+       tested on.
+     - Handling of incorrect inputs, edge cases, more complex
+       scenarios, non-default policy settings, and so on *may be
+       incomplete or incorrect*. Please `report any bugs you find
+       <https://github.com/NLnetLabs/cascade/issues/new>`_
+     - The user experience is a *work-in-progress*. The goal of Cascade
+       is not only to be a correctly functioning DNSSEC signer which
+       makes it easy to do the right thing and hard to do the wrong
+       thing, it should also be obvious how to use it and be clear what
+       the system did, is doing now and will do in the future. But we're
+       not there yet, we have more ideas but `we'd love to hear yours too
+       <https://github.com/NLnetLabs/cascade/issues/new>`_.
+     - Not all intended functionality has been implemented at this
+       point. If a feature that you need is missing `please let us know
+       <https://github.com/NLnetLabs/cascade/issues/new>`_.
+     - Performance and memory usage are expected to improve but if
+       you think it won't meet your needs `tell us about your use case
+       <https://github.com/NLnetLabs/cascade/issues/new>`_. *We run
+       Cascade ourselves* at cascade.nlnetlabs.nl but it hasn't been
+       running for very long so there may be issues when left running
+       for a longer time. If that happens `we want to know about it
+       <https://github.com/NLnetLabs/cascade/issues/new>`_.
+     - If it works for you post on social media with hashtag #cascade or `post
+       an issue <https://github.com/NLnetLabs/cascade/issues/new>`_ telling us
+       which O/S, HSM and size/number of zones it worked for.
+     - Help us out with more data and more platforms. We test with various
+       data sources and with the operating systems and HSMs available to
+       us. If you can give us more data to test with, help with building and
+       testing on more platforms, have an HSM you can let us use (especially
+       hardware we can use for performance testing) please `contact us by email 
+       <mailto://cascade@nlnetlabs.nl>`_.
+
+Config & Policy Require Explicit Reload
+---------------------------------------
+
+Users may expect that edits to the Cascade configuration file or to policy
+files will take effect if Cascade is restarted, however this is not the case.
+
+Cascade deliberately does not reload the configuration or policy files until
+explicitly told to do so via ``cascade config reload`` and ``cascade policy
+reload`` respectively.
+
+This design ensures that a restart doesn't suddenly cause unexpected changes
+in behaviour, e.g. config file edits that were made but never actually used
+and then forgotten about.
 
 Differences to OpenDNSSEC
 -------------------------
@@ -32,6 +74,8 @@ OpenDNSSEC that will be added in a future release:
 - No TSIG support.
 - No inbound XFR/NOTIFY access control.
 - No prefix based access control.
+- Terminology differences, Cascade does not use the term "omnipresent" for
+  example.
 
 Improvements
 ++++++++++++
