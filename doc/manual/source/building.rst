@@ -78,7 +78,7 @@ running:
 
 .. code-block:: text
 
-  cargo install --locked cascade
+  cargo install --locked --git https://github.com/nlnetlabs/cascade
   cargo install --locked --branch keyset --git https://github.com/nlnetlabs/dnst
 
 The command will build Cascade and install it in the same directory that
@@ -124,7 +124,7 @@ Cascade release:
 
 .. code-block:: text
 
-    cargo install --locked --force cascade
+    cargo install --locked --force --git https://github.com/nlnetlabs/cascade
     cargo install --locked --force --branch keyset --git https://github.com/nlnetlabs/dnst
 ..  cargo install --locked --force cascade dnst
 
@@ -144,7 +144,8 @@ use the ``--force`` option to overwrite an existing version:
         
 .. code-block:: text
 
-    cargo install --locked --force cascade --version 0.1.0-rc1
+    cargo install --locked --force --git https://github.com/nlnetlabs/cascade --tag 0.1.0-rc1
+..  cargo install --locked --force cascade --version 0.1.0-rc1
 
 Make sure to install a compatible version of ``dnst``.
 
