@@ -30,7 +30,7 @@ Rust's "fearless concurrency" when needed.
 
 Cascade outsources PKCS#11 module loading to a separate :program:`kmip2pkcs11`
 daemon to avoid running untrusted 3rd party code inside the main Cascade
-process also thereby eliminating another source of potentially instability and
+process also thereby eliminating another source of potential instability and
 unpredictable behaviour and resource usage.
 
 Flexible Signing
