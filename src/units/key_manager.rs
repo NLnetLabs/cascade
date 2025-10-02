@@ -12,6 +12,7 @@ use crate::zone::{HistoricalEvent, SigningTrigger};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use core::time::Duration;
+use domain::base::iana::Class;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::zonetree::StoredName;
@@ -247,6 +248,15 @@ impl KeyManager {
             kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
             kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
         };
+
+        // Check if the zone already exist. If it does we should not be
+        // here and panic. For the moment, assume there is a bug and
+        // return an error.
+        let zone_tree = &self.center.unsigned_zones.load();
+        let zone = zone_tree.get_zone(&name, Class::IN);
+        if zone.is_some() {
+            return Err(ZoneAddError::Other(format!("zone {name} already exists")));
+        }
 
         let state_path = self.keys_dir.join(format!("{name}.state"));
 
