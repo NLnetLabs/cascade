@@ -210,11 +210,13 @@ impl HttpServer {
     async fn zone_remove(
         State(state): State<Arc<HttpServerState>>,
         Path(name): Path<Name<Bytes>>,
-    ) -> Json<ZoneRemoveResult> {
+    ) -> Json<Result<ZoneRemoveResult, ZoneRemoveError>> {
         // TODO: Use the result.
-        let _ = center::remove_zone(&state.center, name);
-
-        Json(ZoneRemoveResult {})
+        Json(
+            center::remove_zone(&state.center, name.clone())
+                .map(|_| ZoneRemoveResult { name })
+                .map_err(|e| e.into()),
+        )
     }
 
     async fn zones_list(State(http_state): State<Arc<HttpServerState>>) -> Json<ZonesListResult> {

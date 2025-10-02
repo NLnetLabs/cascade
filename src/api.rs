@@ -113,7 +113,30 @@ impl From<center::ZoneAddError> for ZoneAddError {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ZoneRemoveResult {}
+pub struct ZoneRemoveResult {
+    pub name: Name<Bytes>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneRemoveError {
+    NotFound,
+}
+
+impl fmt::Display for ZoneRemoveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NotFound => "no such zone was found",
+        })
+    }
+}
+
+impl From<center::ZoneRemoveError> for ZoneRemoveError {
+    fn from(value: center::ZoneRemoveError) -> Self {
+        match value {
+            center::ZoneRemoveError::NotFound => Self::NotFound,
+        }
+    }
+}
 
 /// How to load the contents of a zone.
 #[derive(Deserialize, Serialize, Debug, Clone)]
