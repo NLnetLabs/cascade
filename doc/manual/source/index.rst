@@ -6,6 +6,8 @@ Cascade
    Cascade is currently in its first alpha version. What can you expect from
    Cascade in its alpha form:
 
+     - If these documentation pages don't answer your question,
+       `tell us what we missed <https://github.com/NLnetLabs/cascade/issues/new>`_.
      - The included functionality *should work* correctly for simple scenarios
        with correct inputs when running on setups (O/S, HSM) that we have
        tested on.
@@ -37,8 +39,11 @@ Cascade
        data sources and with the operating systems and HSMs available to
        us. If you can give us more data to test with, help with building and
        testing on more platforms, have an HSM you can let us use (especially
-       hardware we can use for performance testing) please `contact us by email 
+       hardware we can use for performance testing) please `contact us 
        <mailto://cascade@nlnetlabs.nl>`_.
+
+   If GitHub isn't your thing you can also
+   `contact us by email <mailto://cascade@nlnetlabs.nl>`_.
 
 A friendly DNSSEC signing solution written in Rust, a programming
 language designed for performance and memory safety.
