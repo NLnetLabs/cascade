@@ -242,15 +242,6 @@ fn read_binary_file(p: Option<&PathBuf>) -> std::io::Result<Option<Vec<u8>>> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Subcommand)]
 pub enum HsmCommand {
-    /// Disable use of KMIP for generating new keys.
-    ///
-    /// Existing KMIP keys will still work as normal, but any new keys will
-    /// be generated using Ring/OpenSSL whether or not KMIP servers are
-    /// configured.
-    ///
-    /// To re-enable KMIP use: kmip set-default-server.
-    // Disable,
-
     /// Add a KMIP server to use for key generation & signing.
     ///
     /// If this is the first KMIP server to be configured it will be set
@@ -399,113 +390,7 @@ pub enum HsmCommand {
         )]
         key_label_max_bytes: u8,
     },
-    // /// Modify an existing KMIP server configuration.
-    // ModifyServer {
-    //     /// The identifier of the KMIP server.
-    //     server_id: String,
 
-    //     /// Modify the hostname or IP address of the KMIP server.
-    //     #[arg(help_heading = "Server", long = "address")]
-    //     ip_host_or_fqdn: Option<String>,
-
-    //     /// Modify the TCP port to connect to the KMIP server on.
-    //     #[arg(help_heading = "Server", long = "port")]
-    //     port: Option<u16>,
-
-    //     /// Disable use of username / password authentication.
-    //     ///
-    //     /// Note: This will remove any credentials from the credential-store
-    //     /// for this server id.
-    //     #[arg(help_heading = "Client Credentials", long = "no-credentials", action = clap::ArgAction::SetTrue)]
-    //     no_credentials: bool,
-
-    //     /// Modify the path to a JSON file to read/write username/password
-    //     /// credentials from/to.
-    //     #[arg(help_heading = "Client Credentials", long = "credential-store")]
-    //     credentials_store_path: Option<PathBuf>,
-
-    //     /// Modifyt the username to authenticate to the KMIP server as.
-    //     #[arg(help_heading = "Client Credentials", long = "username")]
-    //     username: Option<String>,
-
-    //     /// Modify the password to authenticate to the KMIP server with.
-    //     #[arg(help_heading = "Client Credentials", long = "password")]
-    //     password: Option<String>,
-
-    //     /// Disable use of TLS client certificate authentication.
-    //     #[arg(help_heading = "Client Certificate Authentication", long = "no-client-auth", action = clap::ArgAction::SetTrue)]
-    //     no_client_auth: bool,
-
-    //     /// Modify the path to the TLS certificate to authenticate to the KMIP
-    //     /// server with.
-    //     #[arg(
-    //         help_heading = "Client Certificate Authentication",
-    //         long = "client-cert"
-    //     )]
-    //     client_cert_path: Option<PathBuf>,
-
-    //     /// Modify the path to the private key for client certificate
-    //     /// authentication.
-    //     #[arg(
-    //         help_heading = "Client Certificate Authentication",
-    //         long = "client-key"
-    //     )]
-    //     client_key_path: Option<PathBuf>,
-
-    //     /// Modify whether or not to accept the KMIP server TLS certificate
-    //     /// without verifying it.
-    //     #[arg(help_heading = "Server Certificate Verification", long = "insecure")]
-    //     insecure: Option<bool>,
-
-    //     /// Modify the path to a TLS PEM certificate for the server.
-    //     #[arg(help_heading = "Server Certificate Verification", long = "server-cert")]
-    //     server_cert_path: Option<PathBuf>,
-
-    //     /// Optional path to a TLS PEM certificate for a Certificate Authority.
-    //     #[arg(help_heading = "Server Certificate Verification", long = "ca-cert")]
-    //     ca_cert_path: Option<PathBuf>,
-
-    //     /// Modify the TCP connect timeout.
-    //     #[arg(help_heading = "Client Limits", long = "connect-timeout", value_parser = parse_duration)]
-    //     connect_timeout: Option<Duration>,
-
-    //     /// Modify the TCP response read timeout.
-    //     #[arg(help_heading = "Client Limits", long = "read-timeout", value_parser = parse_duration)]
-    //     read_timeout: Option<Duration>,
-
-    //     /// Modify the TCP request write timeout.
-    //     #[arg(help_heading = "Client Limits", long = "write-timeout", value_parser = parse_duration)]
-    //     write_timeout: Option<Duration>,
-
-    //     /// Modify the maximum KMIP response size to accept (in bytes).
-    //     #[arg(help_heading = "Client Limits", long = "max-response-bytes")]
-    //     max_response_bytes: Option<u32>,
-
-    //     /// Optional user supplied key label prefix.
-    //     ///
-    //     /// Can be used to denote the s/w that created the key, and/or to
-    //     /// indicate which installation/environment it belongs to, e.g. dev,
-    //     /// test, prod, etc.
-    //     #[arg(help_heading = "Key Labels", long = "key-label-prefix")]
-    //     key_label_prefix: Option<String>,
-
-    //     /// Maximum label length (in bytes) permitted by the HSM.
-    //     #[arg(help_heading = "Key Labels", long = "key-label-max-bytes")]
-    //     key_label_max_bytes: Option<u8>,
-    // },
-
-    // /// Remove an existing non-default KMIP server.
-    // #[command(name = "remove")]
-    // RemoveServer {
-    //     /// The identifier of the KMIP server to remove.
-    //     server_id: String,
-    // },
-
-    // /// Set the default KMIP server to use for key generation.
-    // SetDefaultServer {
-    //     /// The identifier of the KMIP server to use as the default.
-    //     server_id: String,
-    // },
     /// Get the details of an existing KMIP server.
     #[command(name = "show")]
     GetServer {
