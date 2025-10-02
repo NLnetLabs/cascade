@@ -2,8 +2,9 @@ use futures::TryFutureExt;
 
 use crate::{
     api::{
-        PolicyChange, PolicyChanges, PolicyInfo, PolicyInfoError, PolicyListResult,
-        PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo, SignerSerialPolicyInfo,
+        NameserverCommsPolicyInfo, PolicyChange, PolicyChanges, PolicyInfo, PolicyInfoError,
+        PolicyListResult, PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo,
+        SignerSerialPolicyInfo,
     },
     cli::client::{format_http_error, CascadeApiClient},
 };
@@ -165,6 +166,12 @@ fn print_policy(p: &PolicyInfo) {
         );
     }
 
+    fn print_nameserver_comms_policy(n: &[NameserverCommsPolicyInfo]) {
+        for item in n {
+            println!("        {item}");
+        }
+    }
+
     println!("{name}:");
     println!("  zones: {zones}");
     println!("  loader:");
@@ -177,5 +184,10 @@ fn print_policy(p: &PolicyInfo) {
     println!("    signature validity offset: {val} seconds",);
     println!("    denial: {denial}");
     print_review(&p.signer.review);
-    println!("  server: <unimplemented>");
+    println!("  server:");
+    println!("    outbound:");
+    println!("      accept XFR requests from:");
+    print_nameserver_comms_policy(&p.server.outbound.accept_xfr_requests_from);
+    println!("      send NOTIFY to:");
+    print_nameserver_comms_policy(&p.server.outbound.send_notify_to);
 }

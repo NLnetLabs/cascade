@@ -37,10 +37,10 @@ pub struct ConfigReloadOutput {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ConfigReloadError {
     /// The file could not be loaded.
-    Load(String),
+    Load(Utf8PathBuf, String),
 
     /// The file could not be parsed.
-    Parse(String),
+    Parse(Utf8PathBuf, String),
 }
 
 //------------------------------------------------------------------------------
@@ -113,7 +113,30 @@ impl From<center::ZoneAddError> for ZoneAddError {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ZoneRemoveResult {}
+pub struct ZoneRemoveResult {
+    pub name: Name<Bytes>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneRemoveError {
+    NotFound,
+}
+
+impl fmt::Display for ZoneRemoveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NotFound => "no such zone was found",
+        })
+    }
+}
+
+impl From<center::ZoneRemoveError> for ZoneRemoveError {
+    fn from(value: center::ZoneRemoveError) -> Self {
+        match value {
+            center::ZoneRemoveError::NotFound => Self::NotFound,
+        }
+    }
+}
 
 /// How to load the contents of a zone.
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -382,7 +405,26 @@ pub enum Nsec3OptOutPolicyInfo {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ServerPolicyInfo {}
+pub struct ServerPolicyInfo {
+    pub outbound: OutboundPolicyInfo,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct OutboundPolicyInfo {
+    pub accept_xfr_requests_from: Vec<NameserverCommsPolicyInfo>,
+    pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct NameserverCommsPolicyInfo {
+    pub addr: SocketAddr,
+}
+
+impl std::fmt::Display for NameserverCommsPolicyInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.addr)
+    }
+}
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum PolicyInfoError {

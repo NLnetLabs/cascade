@@ -1,7 +1,7 @@
 Cascade
 =======
 
-A friendly DNSSEC signing solution written in Rust, a programming language
+A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing solution written in Rust, a programming language
 designed for performance and memory safety.
 
 Cascade has the following design goals:

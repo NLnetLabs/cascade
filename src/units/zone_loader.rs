@@ -4,7 +4,8 @@ use std::fs::File;
 use std::net::SocketAddr;
 use std::ops::Deref;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::thread::available_parallelism;
 use std::time::SystemTime;
 
 use bytes::{BufMut, Bytes};
@@ -19,12 +20,12 @@ use domain::zonetree::{
     AnswerContent, InMemoryZoneDiff, ReadableZone, StoredName, WritableZone, WritableZoneNode,
     Zone, ZoneStore,
 };
-use foldhash::{HashMap, HashMapExt};
+use foldhash::HashMap;
 use futures::Future;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Semaphore};
 use tokio::time::Instant;
 
 #[cfg(feature = "tls")]
@@ -62,7 +63,7 @@ impl ZoneLoader {
         ready_tx: oneshot::Sender<bool>,
     ) -> Result<(), Terminated> {
         // TODO: metrics and status reporting
-        let mut receipt_info: HashMap<StoredName, ZoneLoaderReport> = HashMap::new();
+        let receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>> = Default::default();
 
         let (zone_updated_tx, mut zone_updated_rx) = tokio::sync::mpsc::channel(10);
 
@@ -86,26 +87,56 @@ impl ZoneLoader {
                 })
                 .collect::<Vec<_>>()
         };
+
+        // TODO: Decide how to really handle this... not use hard-coded max of 3.
+        let available_parallelism = available_parallelism().unwrap().get();
+        let max_zones_loading_at_once = (available_parallelism - 1).clamp(1, 3);
+        info!("[ZL]: Adding at most {max_zones_loading_at_once} zones at once.");
+        let max_zones_loading_at_once = Arc::new(Semaphore::new(max_zones_loading_at_once));
+
         for (name, source) in zones {
-            info!("[ZL]: Adding zone '{name}' with source '{source:?}'",);
-            let zone = match source {
-                ZoneLoadSource::None => continue,
+            let zone_maintainer_clone = zone_maintainer.clone();
+            let max_zones_loading_at_once = max_zones_loading_at_once.clone();
+            let zone_updated_tx = zone_updated_tx.clone();
+            let receipt_info = receipt_info.clone();
+            tokio::spawn(async move {
+                info!("[ZL]: Waiting to add zone '{name}' with source '{source:?}'");
+                let _permit = max_zones_loading_at_once.acquire().await.unwrap();
 
-                ZoneLoadSource::Zonefile { path } => {
-                    let (zone, ri) =
-                        Self::register_primary_zone(name.clone(), &path, &zone_updated_tx).await?;
-                    receipt_info.insert(name.clone(), ri);
-                    zone
+                info!("[ZL]: Adding zone '{name}' with source '{source:?}'");
+                let zone = match source {
+                    ZoneLoadSource::None => {
+                        // Nothing to do.
+                        return;
+                    }
+
+                    ZoneLoadSource::Zonefile { path } => {
+                        match Self::register_primary_zone(name.clone(), &path, &zone_updated_tx)
+                            .await
+                        {
+                            Ok((zone, ri)) => {
+                                receipt_info.lock().unwrap().insert(name.clone(), ri);
+                                zone
+                            }
+
+                            Err(Terminated) => {
+                                // Self::register_primary_zone() will have
+                                // already logged the error so nothing to
+                                // do but quit this task.
+                                return;
+                            }
+                        }
+                    }
+
+                    ZoneLoadSource::Server { addr, tsig_key: _ } => {
+                        Self::register_secondary_zone(name.clone(), addr, zone_updated_tx.clone())
+                    }
+                };
+
+                if let Err(err) = zone_maintainer_clone.insert_zone(zone).await {
+                    error!("[ZL]: Failed to insert zone '{name}': {err}")
                 }
-
-                ZoneLoadSource::Server { addr, tsig_key: _ } => {
-                    Self::register_secondary_zone(name.clone(), addr, zone_updated_tx.clone())?
-                }
-            };
-
-            if let Err(err) = zone_maintainer.insert_zone(zone).await {
-                error!("[ZL]: Error: Failed to insert zone '{name}': {err}")
-            }
+            });
         }
 
         let zone_maintainer_clone = zone_maintainer.clone();
@@ -121,7 +152,7 @@ impl ZoneLoader {
                 }
 
                 cmd = cmd_rx.recv() => {
-                    self.on_command(cmd, &zone_maintainer, zone_updated_tx.clone(), &mut receipt_info).await?;
+                    self.on_command(cmd, zone_maintainer.clone(), zone_updated_tx.clone(), receipt_info.clone()).await?;
                 }
             }
         }
@@ -144,9 +175,9 @@ impl ZoneLoader {
     async fn on_command<KS, CF>(
         &self,
         cmd: Option<ApplicationCommand>,
-        zone_maintainer: &ZoneMaintainer<KS, CF>,
+        zone_maintainer: Arc<ZoneMaintainer<KS, CF>>,
         zone_updated_tx: Sender<(StoredName, Serial)>,
-        receipt_info: &mut HashMap<StoredName, ZoneLoaderReport>,
+        receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
     ) -> Result<(), Terminated>
     where
         KS: Deref + Send + Sync + 'static,
@@ -168,25 +199,41 @@ impl ZoneLoader {
                     class: Class::IN,
                 };
                 zone_maintainer.remove_zone(id).await;
+                let zone_maintainer = zone_maintainer.clone();
 
-                let zone = match source {
-                    ZoneLoadSource::None => return Ok(()),
+                tokio::spawn(async move {
+                    let zone = match source {
+                        ZoneLoadSource::None => {
+                            // Nothing to do
+                            return;
+                        }
 
-                    ZoneLoadSource::Zonefile { path } => {
-                        let (zone, ri) =
-                            Self::register_primary_zone(name.clone(), &path, &zone_updated_tx)
-                                .await?;
-                        receipt_info.insert(name, ri);
-                        zone
-                    }
+                        ZoneLoadSource::Zonefile { path } => {
+                            match Self::register_primary_zone(name.clone(), &path, &zone_updated_tx)
+                                .await
+                            {
+                                Ok((zone, ri)) => {
+                                    receipt_info.lock().unwrap().insert(name.clone(), ri);
+                                    zone
+                                }
 
-                    ZoneLoadSource::Server { addr, tsig_key: _ } => {
-                        Self::register_secondary_zone(name.clone(), addr, zone_updated_tx)?
-                    }
-                };
+                                Err(Terminated) => {
+                                    // Self::register_primary_zone() will have
+                                    // already logged the error so nothing to
+                                    // do but quit this task.
+                                    return;
+                                }
+                            }
+                        }
 
-                // TODO: Handle (or iron out) potential errors here.
-                let _ = zone_maintainer.insert_zone(zone).await;
+                        ZoneLoadSource::Server { addr, tsig_key: _ } => {
+                            Self::register_secondary_zone(name.clone(), addr, zone_updated_tx)
+                        }
+                    };
+
+                    // TODO: Handle (or iron out) potential errors here.
+                    let _ = zone_maintainer.insert_zone(zone).await;
+                });
             }
 
             Some(ApplicationCommand::Changed(Change::ZoneRemoved(name))) => {
@@ -222,7 +269,7 @@ impl ZoneLoader {
                 report_tx,
             }) => {
                 if let Ok(report) = zone_maintainer.zone_status(&zone_name, Class::IN).await {
-                    let zone_loader_report = receipt_info.get(&zone_name).cloned();
+                    let zone_loader_report = receipt_info.lock().unwrap().get(&zone_name).cloned();
                     report_tx.send((report, zone_loader_report)).unwrap();
                 }
             }
@@ -250,7 +297,7 @@ impl ZoneLoader {
     async fn remove_and_add<KS, CF>(
         name: StoredName,
         path: Box<Utf8Path>,
-        zone_maintainer: &ZoneMaintainer<KS, CF>,
+        zone_maintainer: Arc<ZoneMaintainer<KS, CF>>,
         zone_updated_tx: &Sender<(StoredName, Serial)>,
     ) -> Result<(), Terminated>
     where
@@ -279,10 +326,16 @@ impl ZoneLoader {
         zone_updated_tx: &Sender<(Name<Bytes>, Serial)>,
     ) -> Result<(TypedZone, ZoneLoaderReport), Terminated> {
         let started_at = SystemTime::now();
-        let (zone, byte_count) = load_file_into_zone(&zone_name, zone_path).await?;
+        let (zone, byte_count) = {
+            let zone_name = zone_name.clone();
+            let zone_path: Box<Utf8Path> = zone_path.into();
+            tokio::task::spawn_blocking(move || load_file_into_zone(&zone_name, &zone_path))
+                .await
+                .unwrap_or(Err(Terminated))?
+        };
         let duration = SystemTime::now().duration_since(started_at).unwrap();
         let Some(serial) = get_zone_serial(zone_name.clone(), &zone).await else {
-            error!("[ZL]: Error: Zone file '{zone_path}' lacks a SOA record. Skipping zone.");
+            error!("[ZL]: Zone file '{zone_path}' lacks a SOA record. Skipping zone.");
             return Err(Terminated);
         };
 
@@ -304,17 +357,14 @@ impl ZoneLoader {
         zone_name: Name<Bytes>,
         source: SocketAddr,
         zone_updated_tx: Sender<(Name<Bytes>, Serial)>,
-    ) -> Result<TypedZone, Terminated> {
-        let zone_cfg = Self::determine_secondary_zone_cfg(&zone_name, source)?;
+    ) -> TypedZone {
+        let zone_cfg = Self::determine_secondary_zone_cfg(&zone_name, source);
         let zone = Zone::new(LightWeightZone::new(zone_name, true));
         let zone = Zone::new(NotifyOnWriteZone::new(zone, zone_updated_tx));
-        Ok(TypedZone::new(zone, zone_cfg))
+        TypedZone::new(zone, zone_cfg)
     }
 
-    fn determine_secondary_zone_cfg(
-        zone_name: &StoredName,
-        source: SocketAddr,
-    ) -> Result<ZoneConfig, Terminated> {
+    fn determine_secondary_zone_cfg(zone_name: &StoredName, source: SocketAddr) -> ZoneConfig {
         let mut zone_cfg = ZoneConfig::new();
 
         let notify_cfg = NotifyConfig::default();
@@ -338,7 +388,7 @@ impl ZoneLoader {
         info!("[ZL]: Adding XFR primary {source} for zone '{zone_name}'",);
         zone_cfg.request_xfr_from.add_dst(source, xfr_cfg.clone());
 
-        Ok(zone_cfg)
+        zone_cfg
     }
 }
 
@@ -355,39 +405,35 @@ async fn get_zone_serial(apex_name: Name<Bytes>, zone: &Zone) -> Option<Serial> 
     None
 }
 
-async fn load_file_into_zone(
+fn load_file_into_zone(
     zone_name: &StoredName,
     zone_path: &Utf8Path,
 ) -> Result<(Zone, usize), Terminated> {
     let before = Instant::now();
     info!("[ZL]: Loading primary zone '{zone_name}' from '{zone_path}'..",);
     let mut zone_file = File::open(zone_path)
-        .inspect_err(|err| error!("[ZL]: Error: Failed to open zone file '{zone_path}': {err}",))
+        .inspect_err(|err| error!("[ZL]: Failed to open zone file '{zone_path}': {err}",))
         .map_err(|_| Terminated)?;
     let zone_file_len = zone_file
         .metadata()
-        .inspect_err(|err| {
-            error!("[ZL]: Error: Failed to read metadata for file '{zone_path}': {err}",)
-        })
+        .inspect_err(|err| error!("[ZL]: Failed to read metadata for file '{zone_path}': {err}",))
         .map_err(|_| Terminated)?
         .len();
 
     let mut buf = inplace::Zonefile::with_capacity(zone_file_len as usize).writer();
     std::io::copy(&mut zone_file, &mut buf)
-        .inspect_err(|err| {
-            error!("[ZL]: Error: Failed to read data from file '{zone_path}': {err}",)
-        })
+        .inspect_err(|err| error!("[ZL]: Failed to read data from file '{zone_path}': {err}",))
         .map_err(|_| Terminated)?;
     let mut reader = buf.into_inner();
     reader.set_origin(zone_name.clone());
     let res = Zone::try_from(reader);
     let Ok(zone) = res else {
         let errors = res.unwrap_err();
-        let mut msg = format!("Failed to parse zone: {} errors", errors.len());
+        let mut msg = format!("Got {} errors", errors.len());
         for (name, err) in errors.into_iter() {
             msg.push_str(&format!("  {name}: {err}\n"));
         }
-        error!("[ZL]: Error parsing zone '{zone_name}': {msg}");
+        error!("[ZL]: Failed to parse zone '{zone_name}': {msg}");
         return Err(Terminated);
     };
     info!(

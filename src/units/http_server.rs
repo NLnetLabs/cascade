@@ -166,15 +166,21 @@ impl HttpServer {
     ) -> Json<ConfigReloadResult> {
         let ConfigReload {} = command;
 
+        let path = {
+            let state = state.center.state.lock().unwrap();
+            state.config.daemon.config_file.value().clone()
+        }
+        .into_path_buf();
+
         match crate::config::reload(&state.center) {
             Ok(()) => Json(Ok(ConfigReloadOutput {})),
 
             Err(crate::config::file::FileError::Load(error)) => {
-                Json(Err(ConfigReloadError::Load(error.to_string())))
+                Json(Err(ConfigReloadError::Load(path, error.to_string())))
             }
 
             Err(crate::config::file::FileError::Parse(error)) => {
-                Json(Err(ConfigReloadError::Parse(error.to_string())))
+                Json(Err(ConfigReloadError::Parse(path, error.to_string())))
             }
         }
     }
@@ -204,11 +210,13 @@ impl HttpServer {
     async fn zone_remove(
         State(state): State<Arc<HttpServerState>>,
         Path(name): Path<Name<Bytes>>,
-    ) -> Json<ZoneRemoveResult> {
+    ) -> Json<Result<ZoneRemoveResult, ZoneRemoveError>> {
         // TODO: Use the result.
-        let _ = center::remove_zone(&state.center, name);
-
-        Json(ZoneRemoveResult {})
+        Json(
+            center::remove_zone(&state.center, name.clone())
+                .map(|_| ZoneRemoveResult { name })
+                .map_err(|e| e.into()),
+        )
     }
 
     async fn zones_list(State(http_state): State<Arc<HttpServerState>>) -> Json<ZonesListResult> {
@@ -665,7 +673,21 @@ impl HttpServer {
             hsm_server_id: p.latest.key_manager.hsm_server_id.clone(),
         };
 
-        let server = ServerPolicyInfo {};
+        let p_outbound = &p.latest.server.outbound;
+        let server = ServerPolicyInfo {
+            outbound: OutboundPolicyInfo {
+                accept_xfr_requests_from: p_outbound
+                    .accept_xfr_requests_from
+                    .iter()
+                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .collect(),
+                send_notify_to: p_outbound
+                    .send_notify_to
+                    .iter()
+                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .collect(),
+            },
+        };
 
         Json(Ok(PolicyInfo {
             name: p.latest.name.clone(),

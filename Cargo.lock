@@ -501,7 +501,7 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.11.1-dev"
-source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#4f2e0ced06c06f8c66aa71b398237ce9189835dc"
+source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#1753a62e1e4290181153d401ab2bcc14843bccbd"
 dependencies = [
  "arc-swap",
  "bcder",
@@ -536,7 +536,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.11.1-dev"
-source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#4f2e0ced06c06f8c66aa71b398237ce9189835dc"
+source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#1753a62e1e4290181153d401ab2bcc14843bccbd"
 dependencies = [
  "proc-macro2",
  "quote",
