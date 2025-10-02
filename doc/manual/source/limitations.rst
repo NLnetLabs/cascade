@@ -22,19 +22,30 @@ OpenDNSSEC that will be added in a future release:
 
 - No jitter support.
 - No IXFR out.
+- No file output.
 - No delay before automatic key deletion.
 - No holding keys for use until a backup flag is set.
 - No sharing of keys between zones.
 - No passthrough mode.
 - No incremental signing.
+- No support for sharing keys between zones.
 - No TSIG support.
+- No inbound XFR/NOTIFY access control.
+- No prefix based access control.
 
 Improvements
 ++++++++++++
 
 - An HSM is not required.
+- More suited to containerized usage:
+  - Supports stdout/stderr logging as well as syslog.
+  - Single daemon per image.
 - Rust.
 - Observability (Still a Work-In-Progress).
+- No XML.
+- No database.
+- No file based communication between daemons.
+- Finer grained control over and insight into key states.
 
 NOT a complete authoritative name server
 ----------------------------------------
@@ -43,3 +54,13 @@ Cascade is NOT a complete authoritative DNS server. It will not reply with the
 AA or AD flag set. Nor can it reply to DNSSEC queries. Instead, Cascade is
 intended to be used as a hidden signer with a proper secondary such as NSD
 serving the signed zones to actual clients.
+
+Other known limitations
+-----------------------
+
+- No NOTIFY retry support.
+- No NOTIFY "Notify Set" (RFC 1996) discovery.
+- No KMIP batching support.
+- No DNS UPDATE support.
+- HSM algorithm support is limited to RSASHA256 and ECDSAP256SHA256.
+- Memory usage can be improved.

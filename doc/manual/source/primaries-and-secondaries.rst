@@ -1,3 +1,0 @@
-Primaries and Secondaries
-=========================
-

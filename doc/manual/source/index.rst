@@ -57,10 +57,9 @@ server. To read what that entails, read the :doc:`before you start
    :caption: Core
    :name: toc-core
 
-   primaries-and-secondaries
    cli
    hsms
-   approval-hooks
+   review-hooks
 
 .. toctree::
    :maxdepth: 2
@@ -69,6 +68,20 @@ server. To read what that entails, read the :doc:`before you start
    :name: toc-guides
 
    importing-keys
+   cascade-for-opendnssec-users
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Integrations
+   :name: toc-integrations
+
+   fortanix
+   nitrokey
+   softhsm
+   thales
+   yubihsm
+   
 
 .. toctree::
    :maxdepth: 2
@@ -86,11 +99,3 @@ server. To read what that entails, read the :doc:`before you start
    :name: toc-reference
 
    limitations
-
-.. toctree::
-   :maxdepth: 2
-   :hidden:
-   :caption: Help
-   :name: toc-help
-
-   troubleshooting

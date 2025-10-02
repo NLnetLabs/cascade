@@ -150,13 +150,6 @@ started.
 
           sudo apt install cascade
 
-       If you want to use a PKCS#11-based HSM, also install the KMIP to PKCS#11
-       relay with:
-
-       .. code-block:: bash
-
-          sudo apt install kmip2pkcs11
-
        Then you can start Cascade with:
 
        .. code-block:: bash
@@ -382,7 +375,7 @@ a specific version, if needed.
 
        .. code-block:: bash
 
-          sudo apt policy Cascade
+          sudo apt policy cascade
 
        You can install a specific version using ``<package name>=<version>``,
        e.g.:
