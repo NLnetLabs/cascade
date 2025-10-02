@@ -1,8 +1,10 @@
 Cascade
 =======
 
-A friendly DNSSEC signing solution written in Rust, a programming
-language designed for performance and memory safety.
+A friendly DNSSEC signing solution written in Rust, a programming language
+designed for performance and memory safety. 
+
+Cascade has the following design goals:
 
 Flexibility
    Run Cascade the way that you want: from a package or a Docker image,
@@ -27,11 +29,32 @@ Open-source with professional support services
    agreement. Cascade is liberally licensed under the `BSD 3-Clause license
    <https://github.com/NLnetLabs/cascade/blob/main/LICENSE>`_.
 
-Cascade is ONLY a DNSSEC signing solution and not a complete primary name
-server. To read what that entails, read the :doc:`before you start
-<before-you-start>` section.
+We would love for you to :doc:`get to know Cascade
+<before-you-start>`.
 
-   .. only:: html
+.. _reach-out:
+
+.. tip:: Cascade is currently in its first *alpha version*, with documented :doc:`limitations`. Our goal is to gather operator feedback. Don't be shy and reach out. In particular:
+
+     - If these documentation pages don't answer your question,
+       `tell us what we missed <https://github.com/NLnetLabs/cascade/issues/new>`_.
+     - Performance and memory usage are expected to improve but if
+       you think it won't meet your needs `tell us about your use case
+       <https://github.com/NLnetLabs/cascade/issues/new>`_.
+     - Not all intended functionality has been implemented at this
+       point. If a feature that you need is missing `please let us know
+       <https://github.com/NLnetLabs/cascade/issues/new>`_.
+     - We are actively working to shape the user experience to operator needs.
+       We have a lot more ideas for improvement and `we'd love to hear yours
+       too <https://github.com/NLnetLabs/cascade/issues/new>`_.  
+     - Do tell us about your positive experiences. Use social media (#cascade)
+       or `create an issue <https://github.com/NLnetLabs/cascade/issues/new>`_.
+       We particularly appreciate hearing O/S, HSM and size/number of zones you
+       worked with.
+      
+   If GitHub isn't your thing you can also `contact us by email <mailto://cascade@nlnetlabs.nl>`_.
+
+.. only:: html
 
       |mastodon|
 

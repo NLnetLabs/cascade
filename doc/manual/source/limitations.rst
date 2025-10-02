@@ -1,7 +1,27 @@
-.. TODO better doc title?
+Known Limitations
+=================
 
-Limitations
-===========
+Cascade is a hidden signer. This has implications for :doc:`before-you-start`.
+
+
+Expectations for the alpha release
+----------------------------------
+
+.. tip:: This page details what you can expect from Cascade in its alpha form.
+   Our goal is to gather operator feedback. Please :ref:`reach out <reach-out>`
+   to us.
+
+- The included functionality should work correctly for simple scenarios with
+  correct inputs when running on setups (O/S, HSM) that we have tested on.
+- Handling of incorrect inputs, edge cases, more complex scenarios, non-default
+  policy settings, and so on *may be incomplete or incorrect*. Please `report
+  any bugs you find <https://github.com/NLnetLabs/cascade/issues/new>`_
+- The user experience is a *work-in-progress*. The goal of Cascade is not only
+  to be a correctly functioning DNSSEC signer which makes it easy to do the
+  right thing and hard to do the wrong thing, it should also be obvious how to
+  use it and be clear what the system did, is doing now and will do in the
+  future. But we're not there yet, we have more ideas but `we'd love to hear
+  yours too <https://github.com/NLnetLabs/cascade/issues/new>`_.
 
 .. admonition:: Alpha version
 
@@ -58,6 +78,23 @@ and then forgotten about.
 
 Differences to OpenDNSSEC
 -------------------------
+
+Improvements
+++++++++++++
+
+- An HSM is not required.
+- More suited to containerized usage:
+  - Supports stdout/stderr logging as well as syslog.
+  - Single daemon per image.
+- Rust.
+- Observability (Still a Work-In-Progress).
+- No XML.
+- No database.
+- No file based communication between daemons.
+- Finer grained control over and insight into key states.
+
+Missing features
+++++++++++++++++
 
 The alpha release of Cascade is missing some of the features provided by
 OpenDNSSEC that will be added in a future release:
