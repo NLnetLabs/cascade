@@ -114,7 +114,7 @@ assets = [
 ["README.md","usr/share/doc/cascade/","644"],
 #["doc/cascade.1", "usr/share/man/man1/cascade.1", "644"],
 #["doc/cascaded.1", "usr/share/man/man1/cascaded.1", "644"],
-["etc/config.toml.system-service", "etc/cascade/config.toml", "644"],
+["etc/config.system.toml", "etc/cascade/config.toml", "644"],
 ["pkg/common/service.preset","usr/lib/systemd/service-preset/50-cascaded.preset", "644"],
 ]
 name = "cascade"
@@ -124,7 +124,7 @@ extended-description = """\
 Cascade is a friendly DNSSEC signing solution, offering sensible defaults,
 controllability, observability and flexibility.
 """
-depends = "$auto, adduser, dnst"
+depends = "$auto, adduser, cascade-dnst"
 recommends = "kmip2pkcs11"
 section = "net"
 priority = "optional"
@@ -157,14 +157,14 @@ assets = [
 { source = "target/rpm/cascaded.socket", dest = "/usr/lib/systemd/system/cascaded.socket", mode = "644" },
 #{ source = "doc/cascade.1", dest = "/usr/share/man/man1/cascade.1", mode = "644", doc = true },
 #{ source = "doc/cascaded.1", dest = "/usr/share/man/man1/cascaded.1", mode = "644", doc = true },
-{ source = "etc/config.toml.system-service", dest = "/etc/cascade/config.toml", mode = "644", config = true },
+{ source = "etc/config.system.toml", dest = "/etc/cascade/config.toml", mode = "644", config = true },
 { source = "pkg/common/service.preset", dest = "/usr/lib/systemd/system-preset/50-cascaded.preset", mode = "644" },
 ]
 
 # ensure that the useradd tools are present by installing their respective packages
 [package.metadata.generate-rpm.requires]
 shadow-utils = "*"
-dnst = "*"
+cascade-dnst = "*"
 
 [package.metadata.generate-rpm.recommends]
 kmip2pkcs11 = "*"

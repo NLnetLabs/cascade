@@ -71,7 +71,7 @@ kmip-server-state-dir = "/var/lib/cascade/kmip"
 # Cascade relies on the 'dnst' program (<https://github.com/NLnetLabs/dnst>) in
 # order to perform DNSSEC key rollovers.  You can specify an absolute path here,
 # or just 'dnst' if it is in $PATH.
-dnst-binary-path = "dnst"
+dnst-binary-path = "/usr/libexec/cascade/cascade-dnst"
 
 
 # Settings relevant to any daemon program.

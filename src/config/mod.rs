@@ -75,7 +75,7 @@ impl Default for Config {
             zone_state_dir: "/var/lib/cascade/zone-state".into(),
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
-            dnst_binary_path: "dnst".into(),
+            dnst_binary_path: "/usr/libexec/cascade/cascade-dnst".into(),
             kmip_credentials_store_path: "/var/lib/cascade/kmip/credentials.db".into(),
             kmip_server_state_dir: "/var/lib/cascade/kmip".into(),
             remote_control: Default::default(),
