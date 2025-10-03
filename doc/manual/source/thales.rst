@@ -189,14 +189,12 @@ Installing and Configuring :program:`kmip2pkcs11`
 
        $ sed -i -e 's|^lib_path =.\+|lib_path = "/usr/local/dpodclient/libs/64/libCryptoki2.so"|' /etc/kmip2pkcs11/config.toml
 
-15. Now run :program:`kmip2pkcs11` and send its logs to a file so that for
-    this test we can easily see the content of the logs. Normally in a Docker
-    container one would send logs to stdout and then view them using the
-    ``docker logs`` command:
+15. Now run :program:`kmip2pkcs11` and send its logs to the terminal so that
+    we can easily verify that it loads the Thales PKCS#11 module correctly.
 
     .. code-block:: bash
 
-       $ kmip2pkcs11 -c /etc/kmip2pkcs11/config.toml -d --logfile /tmp/kmip2pkcs11.log
+       $ kmip2pkcs11 -c /etc/kmip2pkcs11/config.toml --stderr
        $ cat /tmp/kmip2pkcs11.log
        [2025-10-03T20:48:37] [INFO] Loading and initializing PKCS#11 library /usr/local/dpodclient/libs/64/libCryptoki2.so
        [2025-10-03T20:48:37] [INFO] Loaded SafeNet PKCS#11 library v10.9 supporting Cryptoki v2.20: Chrystoki
@@ -204,6 +202,11 @@ Installing and Configuring :program:`kmip2pkcs11`
        [2025-10-03T20:48:37] [INFO] Listening on 127.0.0.1:5696`
 
 Here we can see that the PKCS#11 module has been loaded correctly.
+
+.. Note::
+
+   For best practices concerning running applications in Docker containers
+   please consult the Docker documentation and other authoritative sources.
 
 Using :program:`kmip2pkcs11` to connect Cascade to the Thales HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
