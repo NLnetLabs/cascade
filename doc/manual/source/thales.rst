@@ -19,6 +19,20 @@ Integrating with Thales Cloud HSM
    Thales documentation offers a way to use Docker to easily get PKCS#11
    connectivity to a Thales Luna Cloud HSM working.
 
+.. Note::
+
+   When running :program:`kmip2pkcs11` as a systemd service, i.e. not in a
+   Docker container, beware that you will need to use the ``systemctl edit
+   kmip2pkcs11`` command to set some settings that are required to make the
+   Thales Luna Cloud HSM PKCS#11 module work in a program started by systemd:
+
+   .. code-block:: text
+
+      [Service]
+      WorkingDirectory=/usr/local/dpodclient/libs/64
+      Environment="ChrystokiConfigurationPath=/usr/local/dpodclient"
+      MemoryDenyWriteExecute=no
+
 Acquire the PKCS#11 Module
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -89,41 +103,104 @@ Luna Cloud HSM instance.
 
 .. Note::
 
-   When following the instructions to build the Docker image, you **MUST**
-   make sure to use **YOUR** downloaded service client ZIP when the
+   Replace ``FROM ubuntu:20.04`` in the Docker instructions with ``FROM ubuntu:22.04``.`
+
+   Also, when following the instructions to build the Docker image, you
+   **MUST** make sure to use **YOUR** downloaded service client ZIP when the
    instructions refer to such a ZIP archive.
 
-10. Assuming that you have built your Docker image according to the Thales
-    instructions using your downloaded service client ZIP, proceed as follows
-    for one way to setup the Luna Cloud HSM for use with Cascade:
+11. Assuming that you have built your Docker image according to the Thales
+    instructions using your downloaded service client ZIP, run a container
+    based on the image and use the lunacm command to setup access to your
+    Luna Cloud HSM:
+
+    .. Note::
+
+       The docker command below has an additional ``--publish`` argument
+       that is not present in the Thales documentation. This is needed in
+       to expose the :program:`kmi2pkcs11` listen port outside the container
+       so that you can connect to it from Cascade running on the host or
+       inside another container.
 
     .. code-block:: bash
     
-       $ docker run -it --name luna --entrypoint=./bin/64/lunacm myimage
+       $ docker run -it \
+           --name luna \
+           --publish 5696:5696 \
+           --entrypoint=./bin/64/lunacm \
+           myimage
        lunacm:> role login -name po
        lunacm:> role init -name co
        lunacm:> role login -name co
        lunacm:> role changepw -name co
 
-11. To test our settings before we use :program:`kmip2pkcs11` we can use
-    the opensc ``pkcs11-tool`` program from another terminal:
+12. To test our settings before we use :program:`kmip2pkcs11` we can use
+    the opensc ``pkcs11-tool`` program *from another shell terminal*:
 
-   .. code-block:: bash
+    .. code-block:: bash
    
-      $ docker exec -it luna /bin/bash
-      # apt update
-      # apt install -y opensc
-      # pkcs11-tool --module ./libs/64/libCryptoki2.so -I
-      Cryptoki version 2.20
-      Manufacturer     SafeNet
-      Library          Chrystoki                       (ver 10.9)
-      Using slot 3 with a present token (0x3)
+       $ docker exec -it luna /bin/bash
+       # apt update
+       # apt install -y opensc
+       # pkcs11-tool --module ./libs/64/libCryptoki2.so -I
+       Cryptoki version 2.20
+       Manufacturer     SafeNet
+       Library          Chrystoki                       (ver 10.9)
+       Using slot 3 with a present token (0x3)
 
    # pkcs11-tool --module ./libs/64/libCryptoki2.so --login -O
    Using slot 3 with a present token (0x3)
    Logging in to "MyPartition".
    Please enter User PIN: <THE PASSWORD YOU CHOSE ABOVE>
 
-Now that that works we can configure :program:`kmip2pkcs11`.
+Now that that works we can install :program:`kmip2pkcs11`.
 
-TO DO
+Installing and Configuring :program:`kmip2pkcs11`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+13. Continuing from the same /bin/bash session inside the Docker container,
+    follow the :doc:`installation` steps to install :program:`kmip2pkcs11`
+    for Ubuntu 24.04, the base image used by our DPoD Docker container.
+
+    .. Note::
+
+       The installation instructions use ``sudo`` but this does not usually
+       exist inside a Docker container as typically one executes commands as
+       ``root``. Either remove ``sudo`` from any commands you copy-paste, or
+       execute ``alias sudo=`` before copy-pasting commands that use ``sudo``.
+       This will ensure that the commands work as intended.
+
+14. Next edit the :program:`kmip2pkcs11` configuration file to point it to
+    the Thales Luna Cloud HSM PKCS#11 module:
+
+    .. code-block:: bash
+
+       $ sed -i -e 's|^lib_path =.\+|lib_path = "/usr/local/dpodclient/libs/64/libCryptoki2.so"|' /etc/kmip2pkcs11/config.toml
+
+15. Now run :program:`kmip2pkcs11` and send its logs to a file so that for
+    this test we can easily see the content of the logs. Normally in a Docker
+    container one would send logs to stdout and then view them using the
+    ``docker logs`` command:
+
+    .. code-block:: bash
+
+       $ kmip2pkcs11 -c /etc/kmip2pkcs11/config.toml -d --logfile /tmp/kmip2pkcs11.log
+       $ cat /tmp/kmip2pkcs11.log
+       [2025-10-03T20:48:37] [INFO] Loading and initializing PKCS#11 library /usr/local/dpodclient/libs/64/libCryptoki2.so
+       [2025-10-03T20:48:37] [INFO] Loaded SafeNet PKCS#11 library v10.9 supporting Cryptoki v2.20: Chrystoki
+       [2025-10-03T20:48:37] [WARN] Generating self-signed server identity certificate
+       [2025-10-03T20:48:37] [INFO] Listening on 127.0.0.1:5696`
+
+Here we can see that the PKCS#11 module has been loaded correctly.
+
+Next you need to get Cascade running and add :program:`kmip2pkcs11` as the HSM
+that it will use.
+
+You can learn how to do that on the :doc:`hsms` page.
+
+.. Note::
+
+   Skip down to the _"Using kmip2pkcs11 with Cascade"_ section as we have
+   already setup :program:`kmip2pkcs11` on 127.0.0.1 port 5659 as expected
+   by that page, but in a Docker container that contains the necessary Thales
+   Luna Cloud HSM PKCS#11 module and related files..
