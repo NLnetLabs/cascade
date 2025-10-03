@@ -136,6 +136,7 @@ Luna Cloud HSM instance.
            --publish 5696:5696 \
            --entrypoint=./bin/64/lunacm \
            myimage
+       lunacm:> partition init -label MyPartition -password mypartitionsopassword -domain mydomainname
        lunacm:> role login -name po
        lunacm:> role init -name co
        lunacm:> role login -name co
