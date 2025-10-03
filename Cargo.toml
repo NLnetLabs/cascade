@@ -124,7 +124,7 @@ extended-description = """\
 Cascade is a friendly DNSSEC signing solution, offering sensible defaults,
 controllability, observability and flexibility.
 """
-depends = "$auto, adduser, dnst"
+depends = "$auto, adduser, cascade-dnst"
 recommends = "kmip2pkcs11"
 section = "net"
 priority = "optional"
@@ -164,7 +164,7 @@ assets = [
 # ensure that the useradd tools are present by installing their respective packages
 [package.metadata.generate-rpm.requires]
 shadow-utils = "*"
-dnst = "*"
+cascade-dnst = "*"
 
 [package.metadata.generate-rpm.recommends]
 kmip2pkcs11 = "*"

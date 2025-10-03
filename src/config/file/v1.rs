@@ -124,7 +124,7 @@ impl Spec {
 
     /// The default value for `dnst_binary_path`.
     fn dnst_binary_path_default() -> Box<Utf8Path> {
-        "dnst".into()
+        "/var/lib/cascade/bin/cascade-dnst".into()
     }
 
     /// The default value for `dnst_keyset_dir`.
