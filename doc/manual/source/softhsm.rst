@@ -14,15 +14,23 @@ Integrating with SoftHSMv2
 
    -- https://www.softhsm.org/
 
-Install SoftHSMv2 and initialize it:
+Install SoftHSMv2
+~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
    # apt install -y softhsm2
    # softhsm2-util --init-token --label Cascade --pin 1234 --so-pin 1234 --free
 
-Configure :program:`kmip2pkcs11` to use the SoftHSMv2 PKCS#11 module and to
-have access to its data files, and start the daemon:
+Configure :program:`kmip2pkcs11`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:program:`kmip2pkcs11` needs to know where to find the SoftHSMv2 PKCS#11
+module. As PKCS#11 modules are loaded into a host application, any
+access to resources needed by the PKCS#11 module must be granted to
+the host application. For SoftHSM that involves granting the user that
+:program:`kmip2pkcs11` runs as read-write access to the `/var/lib/softhsm`
+directory. Let's set this all up and start the daemon:
 
 .. code-block:: bash
 
