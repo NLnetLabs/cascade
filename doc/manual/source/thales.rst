@@ -1,5 +1,5 @@
-Integrating with a Thales Luna HSM
-==================================
+Integrating with Thales Cloud HSM
+=================================
 
 .. Note:: The instructions on this page are for use with the `Thales Data
    Protection on Demand <https://thales.eu.market.dpondemand.io/signup/>`_
