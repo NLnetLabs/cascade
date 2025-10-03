@@ -123,11 +123,11 @@ Luna Cloud HSM instance.
 
     .. Note::
 
-       The docker command below has an additional ``--publish`` argument
-       that is not present in the Thales documentation. This is needed in
-       to expose the :program:`kmi2pkcs11` listen port outside the container
-       so that you can connect to it from Cascade running on the host or
-       inside another container.
+       The docker command below has an additional ``--publish`` argument that
+       is not present in the Thales documentation. This is needed to expose
+       the :program:`kmi2pkcs11` listen port outside the container so that you
+       can connect to it from Cascade running on the host or inside another
+       container.
 
     .. code-block:: bash
     
