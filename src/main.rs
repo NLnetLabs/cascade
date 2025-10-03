@@ -83,7 +83,8 @@ fn main() -> ExitCode {
         // somewhere else to also create the directories as specified in a the
         // reloaded config.
         for dir in [
-            &*state.config.kmip_credentials_store_path,
+            &*state.config.keys_dir,
+            &*state.config.kmip_credentials_store_path.parent().unwrap(),
             &*state.config.kmip_server_state_dir,
             &*state.config.policy_dir,
             &*state.config.zone_state_dir,
