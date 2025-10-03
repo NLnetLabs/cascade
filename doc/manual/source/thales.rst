@@ -13,7 +13,7 @@ Docker is NOT required to use Cascade or :program:`kmip2pkcs11`.
 This example uses Docker because the `Thales documentation
 <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_insta
 ll/linux_minimal_client_access_dpod.htm>`_ describes how one can easily get
-PKCS#11 connectivity to a Thales Luna Cloud HSM working.
+PKCS#11 connectivity to a Thales Luna Cloud HSM working using Docker.
 
 .. Note::
 
