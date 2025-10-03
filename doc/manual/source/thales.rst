@@ -84,10 +84,8 @@ stall/linux_minimal_client_access_dpod.htm>`_.
 Follow these steps to confirm that you can connect via PKCS#11 to your DPoD
 Luna Cloud HSM instance.
 
-1. Build a Docker image as described at `Create a
-Docker Container to Access a Luna Cloud HSM Service
-<https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_insta
-ll/linux_minimal_client_access_dpod.htm>`_.
+10. Build a Docker image as described at `Create a Docker Container to Access
+    a Luna Cloud HSM Service <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_install/linux_minimal_client_access_dpod.htm>`_.
 
 .. Note::
 
@@ -95,31 +93,31 @@ ll/linux_minimal_client_access_dpod.htm>`_.
    make sure to use **YOUR** downloaded service client ZIP when the
    instructions refer to such a ZIP archive.
 
-Assuming that you have built your Docker image according to the Thales
-instructions using your downloaded service client ZIP, proceed as follows
-for one way to setup the Luna Cloud HSM for use with Cascade:
+10. Assuming that you have built your Docker image according to the Thales
+    instructions using your downloaded service client ZIP, proceed as follows
+    for one way to setup the Luna Cloud HSM for use with Cascade:
 
-.. code-block:: bash
+    .. code-block:: bash
+    
+       $ docker run -it --name luna --entrypoint=./bin/64/lunacm myimage
+       lunacm:> role login -name po
+       lunacm:> role init -name co
+       lunacm:> role login -name co
+       lunacm:> role changepw -name co
 
-   $ docker run -it --name luna --entrypoint=./bin/64/lunacm myimage
-   lunacm:> role login -name po
-   lunacm:> role init -name co
-   lunacm:> role login -name co
-   lunacm:> role changepw -name co
+11. To test our settings before we use :program:`kmip2pkcs11` we can use
+    the opensc ``pkcs11-tool`` program from another terminal:
 
-To test our settings before we use :program:`kmip2pkcs11` we can use
-the opensc ``pkcs11-tool`` program from another terminal:
-
-.. code-block:: bash
-
-   $ docker exec -it luna /bin/bash
-   # apt update
-   # apt install -y opensc
-   # pkcs11-tool --module ./libs/64/libCryptoki2.so -I
-   Cryptoki version 2.20
-   Manufacturer     SafeNet
-   Library          Chrystoki                       (ver 10.9)
-   Using slot 3 with a present token (0x3)
+   .. code-block:: bash
+   
+      $ docker exec -it luna /bin/bash
+      # apt update
+      # apt install -y opensc
+      # pkcs11-tool --module ./libs/64/libCryptoki2.so -I
+      Cryptoki version 2.20
+      Manufacturer     SafeNet
+      Library          Chrystoki                       (ver 10.9)
+      Using slot 3 with a present token (0x3)
 
    # pkcs11-tool --module ./libs/64/libCryptoki2.so --login -O
    Using slot 3 with a present token (0x3)
