@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use clap::{command, Parser};
+use clap::Parser;
 
 use crate::config::LogLevel;
 

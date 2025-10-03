@@ -73,16 +73,27 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
 
-        // Create the policies directory (and its parent components) if they don't exist
-        // TODO: Once we implement live config reloading, this should move somewhere else
-        // to also create the policies directory as specified in a the reloaded config.
-        if let Err(e) = create_dir_all(&*state.config.policy_dir) {
-            log::error!(
-                "Unable to create policy directory '{}': {e}",
-                &state.config.policy_dir
-            );
-            return ExitCode::FAILURE;
-        };
+        // Create required subdirectories (and their parents) if they don't
+        // exist. This is only needed for directories to which we write files
+        // without using util::write_file() as that function creates the
+        // directory (and parent directories) if missing. However, do it for
+        // all state directories now so that we don't discover only later that
+        // we can't create the directory.
+        // TODO: Once we implement live config reloading, this should move
+        // somewhere else to also create the directories as specified in a the
+        // reloaded config.
+        for dir in [
+            &*state.config.keys_dir,
+            state.config.kmip_credentials_store_path.parent().unwrap(),
+            &*state.config.kmip_server_state_dir,
+            &*state.config.policy_dir,
+            &*state.config.zone_state_dir,
+        ] {
+            if let Err(e) = create_dir_all(dir) {
+                log::error!("Unable to create directory '{dir}': {e}",);
+                return ExitCode::FAILURE;
+            };
+        }
 
         // Load all policies.
         if let Err(err) = policy::reload_all(&mut state.policies, &state.config) {
