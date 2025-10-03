@@ -86,7 +86,7 @@ By this point you should in principle have everything needed to connect
 However, there are a lot of files in the downloaded service client
 ZIP and you'll need to work out which ones you need and how to use them.
 
-Thales proivde a guide for using a `Docker
+Thales provide a guide for using a `Docker
 container to Access a Luna Cloud HSM Service
 <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_in
 stall/linux_minimal_client_access_dpod.htm>`_. We use that guide here to
