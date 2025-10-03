@@ -47,12 +47,7 @@ fn main() -> ExitCode {
     };
 
     // Initially activate the logging with the setting from the config
-    logger.apply(
-        logger
-            .prepare(&config.daemon.logging)
-            .unwrap()
-            .unwrap(),
-    );
+    logger.apply(logger.prepare(&config.daemon.logging).unwrap().unwrap());
 
     if matches.get_flag("check_config") {
         // Try reading the configuration file.
