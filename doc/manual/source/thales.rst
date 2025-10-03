@@ -168,7 +168,7 @@ Luna Cloud HSM instance.
        # pkcs11-tool --module ./libs/64/libCryptoki2.so --login -O
        Using slot 3 with a present token (0x3)
        Logging in to "MyPartition".
-       Please enter User PIN: <THE PASSWORD YOU CHOSE IN STEP 11>
+       Please enter User PIN: <THE PASSWORD YOU CHOSE IN STEP 11 ABOVE>
 
 Now that that works we can install :program:`kmip2pkcs11`.
 
@@ -234,7 +234,7 @@ If you have Cascade setup, the command to add the Thales HSM is:
    $ cascade hsm add thales 127.0.0.1 \
        --insecure \
        --username MyPartition \
-       --password <THE PASSWORD YOU CHOSE ABOVE>
+       --password <THE PASSWORD YOU CHOSE IN STEP 11 ABOVE>
    [2025-10-03T21:43:43.486Z] INFO cascade::units::http_server: Writing to KMIP server file './kmip/thales
    Added KMIP server 'kmip2pkcs11 0.1.0-rc1 using PKCS#11 token with label MyPartition in slot Net Token Slot via library libCryptoki2.so'.
 
