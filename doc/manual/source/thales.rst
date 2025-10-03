@@ -224,6 +224,9 @@ with Cascade, visit the :doc:`hsms` page, but skip to the *"Using kmip2pkcs11
 with Cascade"* section as we have already setup :program:`kmip2pkcs11` on
 port 5659.
 
+You can also see a more detailed example of using Cascade with
+:program:`kmip2pkcs11` in the :doc:`softhsm` page.
+
 If you have Cascade setup, the command to add the Thales HSM is:
 
 .. code-block:: bash
