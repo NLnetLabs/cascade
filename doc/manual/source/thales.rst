@@ -1,42 +1,66 @@
 Integrating with Thales Cloud HSM
 =================================
 
-.. Note:: The instructions on this page are for use with the `Thales Data
+.. Note::
+
+   The instructions on this page are for use with the `Thales Data
    Protection on Demand <https://thales.eu.market.dpondemand.io/signup/>`_
-   service. A free trial is available but thereafter it is a paid service. The
-   PKCS#11 specific part of the instructions below should be similar for
+   service.
+
+   Warning: A free trial is available but thereafter it is a paid service.
+
+   The PKCS#11 specific part of the instructions below should be similar for
    any modern Thales HSM service. The instructions are based around the Thales
    guide for using a `Docker container to Access a Luna Cloud HSM Service
    <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_in
-   stall/linux_minimal_client_access_dpod.htm>`_ but Cascade will work
-   equally well without Docker, it just needs the Thales PKCS#11 module and a
-   correctly configured Thales HSM to communicate with.
+   stall/linux_minimal_client_access_dpod.htm>`_.
+
+   Docker is NOT required to use Cascade, this example uses Docker because the
+   Thales documentation offers a way to use Docker to easily get PKCS#11
+   connectivity to a Thales Luna Cloud HSM working.
+
+Acquire the PKCS#11 Module
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The first step to using a Thales HSM with Cascade, assuming that the HSM
-itself is already provisioned, is to acquire the Thales PKCS#11 software.
+itself is already provisioned, is to acquire the Thales PKCS#11 module that
+contains the code needed to connect to a Thales Luna Cloud HSM.
 
-Thales HSMs are commercial products and Thales do not make their software
-developer kit, of which the PKCS#11 module is part, publically available.
-One version of it is however available via the free trial of the Thales
-Data Protection on Demand service which we will demonstrate here.
+.. Note::
 
-1. Login to the Thales DPoD portal and via the Service tab add a Luna Cloud
-   HSM service to your account. Enter a name for your service. For our test
-   we left the "Remove FIPS restrictions" box unticked and named our service
-   "Luna HSM with FIPS restrictions".
+   Thales HSMs are commercial products and Thales do not make their software
+   developer kit, of which the PKCS#11 module is part, publically available.
+   One version of it is however available via the free trial of the Thales
+   Data Protection on Demand service which we will demonstrate here.
 
-2. Click the name of your new Luna Cloud HSM service on the Service tab and
-   click the "New Service Client" button. Give your service client a name.
-   For our test we named our service client "kmip2pkcs11" as we expected the
-   Cascade :program:`kmip2pkcs11` tool to be the client that connects to the
-   Luna Cloud HSM. Client the "Create Service Client" button.
+1. Login to the Thales DPoD portal. This step assumes you already have an
+   account.
 
-3. Click the "Download Client" button that appears. This will download a ZIP
-   archive called "setup-<YOUR_CLIENT_NAME>.zip. Inside the zip are the key
-   files needed to connect to the Luna Cloud HSM using a PKCS#11 client like
-   :program:`kmip2pkcs11` including client certificates to authenticate, a
-   PKCS#11 module configuration file called ``Chrystoki.conf```, and a TAR
-   archive containing the PKCS#11 module ``libs/64/libCryptoki2.so``.
+2. Via the Service tab add a Luna Cloud HSM service to your account.
+
+3. Enter a name for your service.
+
+4. (optional) Tick the "Remove FIPS restrictions" box. For our test we left
+   the "Remove FIPS restrictions" box unticked.
+
+5. Click the name of your new Luna Cloud HSM service on the Service tab.
+
+6. Click the "New Service Client" button.
+
+7. Give your service client a name when asked.
+
+8. Click the "Create Service Client" button.
+
+9. Click the "Download Client" button that appears.
+
+This will download a ZIP archive called "setup-<YOUR_CLIENT_NAME>.zip. Inside
+the zip are the files needed to connect to the Luna Cloud HSM using a
+PKCS#11 client like :program:`kmip2pkcs11`, including client certificates to
+authenticate, a PKCS#11 module configuration file called ``Chrystoki.conf```,
+and a TAR archive containing the PKCS#11 module ``libs/64/libCryptoki2.so``.
+
+Test the PKCS#11 Module
+~~~~~~~~~~~~~~~~~~~~~~~
 
 Now, at this point you should in principle have everything needed to connect
 :program:`kmip2pkcs11` or any other PKCS#11 client to the Luna Cloud HSM.
@@ -47,13 +71,29 @@ guide for using a `Docker container to Access a Luna Cloud HSM Service
 <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_in
 stall/linux_minimal_client_access_dpod.htm>`_.
 
-First, the following Thales documentation pages are particularly relevant
-in the next steps:
+.. Tip::
 
-  - https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_install/linux_minimal_client_access_dpod.htm
-  - https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/initialize_par.htm
-  - https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/partition_roles.htm
-  - https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/init_co_cu.htm#InitCO
+   The following Thales documentation pages are particularly relevant in the
+   next steps:
+
+     - `Create a Docker Container to Access a Luna Cloud HSM Service <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_install/linux_minimal_client_access_dpod.htm>`_
+     - `Initializing an Application Partition <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/initialize_par.htm>`_
+     - `Partition Roles`<https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/partition_roles.htm>`_
+     - `Initializing the Crypto Officer Role <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/init_co_cu.htm#InitCO>`_
+
+Follow these steps to confirm that you can connect via PKCS#11 to your DPoD
+Luna Cloud HSM instance.
+
+1. Build a Docker image as described at `Create a
+Docker Container to Access a Luna Cloud HSM Service
+<https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_insta
+ll/linux_minimal_client_access_dpod.htm>`_.
+
+.. Note::
+
+   When following the instructions to build the Docker image, you **MUST**
+   make sure to use **YOUR** downloaded service client ZIP when the
+   instructions refer to such a ZIP archive.
 
 Assuming that you have built your Docker image according to the Thales
 instructions using your downloaded service client ZIP, proceed as follows
