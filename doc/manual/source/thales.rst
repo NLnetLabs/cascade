@@ -118,8 +118,8 @@ Luna Cloud HSM instance.
 
 11. Assuming that you have built your Docker image according to the Thales
     instructions using your downloaded service client ZIP, run a container
-    based on the image and use the Thales lunacm command to setup access to
-    your Luna Cloud HSM:
+    based on the image and use the Thales ``lunacm`` command to setup access
+    to your Luna Cloud HSM:
 
     .. Note::
 
