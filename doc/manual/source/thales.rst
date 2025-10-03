@@ -5,9 +5,12 @@ Integrating with Thales Cloud HSM
 
    The instructions on this page are for use with the `Thales Data
    Protection on Demand <https://thales.eu.market.dpondemand.io/signup/>`_
-   service.
+   (DPoD) service.
 
-   Warning: A free trial is available but thereafter it is a paid service.
+   **Warning:** DPoD is **NOT** free. An initial free trial is available but
+   thereafter it is a paid service.
+
+.. Note::
 
    The PKCS#11 specific part of the instructions below should be similar for
    any modern Thales HSM service. The instructions are based around the Thales
@@ -15,16 +18,16 @@ Integrating with Thales Cloud HSM
    <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_in
    stall/linux_minimal_client_access_dpod.htm>`_.
 
-   Docker is NOT required to use Cascade, this example uses Docker because the
-   Thales documentation offers a way to use Docker to easily get PKCS#11
+.. Tip::
+
+   Docker is NOT required to use Cascade. This example uses Docker because the
+   Thales documentation describes how using Docker one can easily get PKCS#11
    connectivity to a Thales Luna Cloud HSM working.
 
-.. Note::
-
-   When running :program:`kmip2pkcs11` as a systemd service, i.e. not in a
-   Docker container, beware that you will need to use the ``systemctl edit
-   kmip2pkcs11`` command to set some settings that are required to make the
-   Thales Luna Cloud HSM PKCS#11 module work in a program started by systemd:
+   Hwoever, when running :program:`kmip2pkcs11` as a systemd service, i.e. not
+   in a Docker container as this page describes, be aware that you will need
+   to use the ``systemctl edit kmip2pkcs11`` command to set some extra systemd
+   settings that the Thales Luna Cloud HSM PKCS#11 module needs.
 
    .. code-block:: text
 
@@ -67,23 +70,27 @@ contains the code needed to connect to a Thales Luna Cloud HSM.
 
 9. Click the "Download Client" button that appears.
 
-This will download a ZIP archive called "setup-<YOUR_CLIENT_NAME>.zip. Inside
-the zip are the files needed to connect to the Luna Cloud HSM using a
+This will download a ZIP archive called "setup-<YOUR_CLIENT_NAME>.zip.
+
+Inside the zip are the files needed to connect to the Luna Cloud HSM using a
 PKCS#11 client like :program:`kmip2pkcs11`, including client certificates to
 authenticate, a PKCS#11 module configuration file called ``Chrystoki.conf```,
 and a TAR archive containing the PKCS#11 module ``libs/64/libCryptoki2.so``.
 
-Test the PKCS#11 Module
-~~~~~~~~~~~~~~~~~~~~~~~
+Testing the PKCS#11 Module
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Now, at this point you should in principle have everything needed to connect
+By this point you should in principle have everything needed to connect
 :program:`kmip2pkcs11` or any other PKCS#11 client to the Luna Cloud HSM.
 
 However, there are a lot of files in the downloaded service client
-ZIP and one easy way to use them properly is to follow the Thales
-guide for using a `Docker container to Access a Luna Cloud HSM Service
+ZIP and you'll need to work out which ones you need and how to use them.
+
+Thales proivde a guide for using a `Docker
+container to Access a Luna Cloud HSM Service
 <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_in
-stall/linux_minimal_client_access_dpod.htm>`_.
+stall/linux_minimal_client_access_dpod.htm>`_. We use that guide here to
+demonstrate that Cascade works with the Thales Luna Cloud HSM.
 
 .. Tip::
 
@@ -105,9 +112,9 @@ Luna Cloud HSM instance.
 
    Replace ``FROM ubuntu:20.04`` in the Docker instructions with ``FROM ubuntu:22.04``.`
 
-   Also, when following the instructions to build the Docker image, you
-   **MUST** make sure to use **YOUR** downloaded service client ZIP when the
-   instructions refer to such a ZIP archive.
+   When following the instructions to build the Docker image, replace
+   references to ``setup-myclient.zip`` with **YOUR** service client ZIP that
+   you downloaded in step 9 above.
 
 11. Assuming that you have built your Docker image according to the Thales
     instructions using your downloaded service client ZIP, run a container
