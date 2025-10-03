@@ -75,20 +75,6 @@ OpenDNSSEC that will be added in a future release:
 - Terminology differences, Cascade does not use the term "omnipresent" for
   example.
 
-Improvements
-++++++++++++
-
-- An HSM is not required.
-- More suited to containerized usage:
-  - Supports stdout/stderr logging as well as syslog.
-  - Single daemon per image.
-- Rust.
-- Observability (Still a Work-In-Progress).
-- No XML.
-- No database.
-- No file based communication between daemons.
-- Finer grained control over and insight into key states.
-
 NOT a complete authoritative name server
 ----------------------------------------
 
