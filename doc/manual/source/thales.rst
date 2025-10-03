@@ -5,16 +5,20 @@ Integrating with Thales Cloud HSM
 
    The instructions on this page are for use with the `Thales Data
    Protection on Demand <https://thales.eu.market.dpondemand.io/signup/>`_
-   (DPoD) service. The instructions show how to run :program:`kmip2pkcs11`
-   inside a Docker container and connect to its listen port from a server or
-   another Docker container.
+   (DPoD) service.
+
+   These instructions show how to run :program:`kmip2pkcs11` (the relay used
+   to enable Cascade to connect to PKCS#11 compatible :doc:`hsms`)  inside a
+   Docker container and connect to its listen port from a server or another
+   Docker container.
 
    **Warning:** DPoD is **NOT** free. An initial free trial is available but
    thereafter it is a paid service.
 
-   Docker is NOT required to use Cascade. This example uses Docker because the
-   Thales documentation describes how using Docker one can easily get PKCS#11
-   connectivity to a Thales Luna Cloud HSM working.
+   Docker is NOT required to use Cascade or :program:`kmip2pkcs11`. This
+   example uses Docker because the Thales documentation describes how using
+   Docker one can easily get PKCS#11 connectivity to a Thales Luna Cloud HSM
+   working.
 
 .. Note::
 
