@@ -78,7 +78,7 @@ stall/linux_minimal_client_access_dpod.htm>`_.
 
      - `Create a Docker Container to Access a Luna Cloud HSM Service <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_install/linux_minimal_client_access_dpod.htm>`_
      - `Initializing an Application Partition <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/initialize_par.htm>`_
-     - `Partition Roles`<https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/partition_roles.htm>`_
+     - `Partition Roles <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/partition_roles.htm>`_
      - `Initializing the Crypto Officer Role <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/init_co_cu.htm#InitCO>`_
 
 Follow these steps to confirm that you can connect via PKCS#11 to your DPoD
