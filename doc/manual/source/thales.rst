@@ -155,11 +155,10 @@ Luna Cloud HSM instance.
        Manufacturer     SafeNet
        Library          Chrystoki                       (ver 10.9)
        Using slot 3 with a present token (0x3)
-
-   # pkcs11-tool --module ./libs/64/libCryptoki2.so --login -O
-   Using slot 3 with a present token (0x3)
-   Logging in to "MyPartition".
-   Please enter User PIN: <THE PASSWORD YOU CHOSE ABOVE>
+       # pkcs11-tool --module ./libs/64/libCryptoki2.so --login -O
+       Using slot 3 with a present token (0x3)
+       Logging in to "MyPartition".
+       Please enter User PIN: <THE PASSWORD YOU CHOSE ABOVE>
 
 Now that that works we can install :program:`kmip2pkcs11`.
 
