@@ -4,7 +4,7 @@ Integrating with Thales Cloud HSM
 .. Note:: The instructions on this page are for use with the `Thales Data
    Protection on Demand <https://thales.eu.market.dpondemand.io/signup/>`_
    service. A free trial is available but thereafter it is a paid service. The
-   the PKCS#11 specific part of the instructions below should be similar for
+   PKCS#11 specific part of the instructions below should be similar for
    any modern Thales HSM service. The instructions are based around the Thales
    guide for using a `Docker container to Access a Luna Cloud HSM Service
    <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_in
