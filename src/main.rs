@@ -84,7 +84,7 @@ fn main() -> ExitCode {
         // reloaded config.
         for dir in [
             &*state.config.keys_dir,
-            &*state.config.kmip_credentials_store_path.parent().unwrap(),
+            &state.config.kmip_credentials_store_path.parent().unwrap(),
             &*state.config.kmip_server_state_dir,
             &*state.config.policy_dir,
             &*state.config.zone_state_dir,
