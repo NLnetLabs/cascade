@@ -102,7 +102,7 @@ demonstrate that Cascade works with the Thales Luna Cloud HSM.
      - `Partition Roles <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/partition_roles.htm>`_
      - `Initializing the Crypto Officer Role <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/init_co_cu.htm#InitCO>`_
 
-Follow these steps to confirm that you can connect via PKCS#11 to your DPoD
+Follow the steps below to confirm that you can connect via PKCS#11 to your DPoD
 Luna Cloud HSM instance.
 
 10. Build a Docker image as described at `Create a Docker Container to Access
@@ -118,8 +118,8 @@ Luna Cloud HSM instance.
 
 11. Assuming that you have built your Docker image according to the Thales
     instructions using your downloaded service client ZIP, run a container
-    based on the image and use the lunacm command to setup access to your
-    Luna Cloud HSM:
+    based on the image and use the Thales lunacm command to setup access to
+    your Luna Cloud HSM:
 
     .. Note::
 
