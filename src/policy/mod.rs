@@ -426,7 +426,7 @@ impl Default for AutoConfig {
 /// Therefore, we only support SHA-256 and SHA-384 and the default is
 /// SHA-256.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum DsAlgorithm {
     /// Hash the public key using SHA-256.
     #[default]
@@ -438,8 +438,8 @@ pub enum DsAlgorithm {
 impl Display for DsAlgorithm {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            DsAlgorithm::Sha256 => write!(fmt, "SHA-256"),
-            DsAlgorithm::Sha384 => write!(fmt, "SHA-384"),
+            DsAlgorithm::Sha256 => write!(fmt, "SHA256"),
+            DsAlgorithm::Sha384 => write!(fmt, "SHA384"),
         }
     }
 }
