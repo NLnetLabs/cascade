@@ -207,7 +207,7 @@ You can learn how to do that on the :doc:`hsms` page.
 
 .. Note::
 
-   Skip down to the _"Using kmip2pkcs11 with Cascade"_ section as we have
+   Skip down to the *"Using kmip2pkcs11 with Cascade"* section as we have
    already setup :program:`kmip2pkcs11` on 127.0.0.1 port 5659 as expected
    by that page, but in a Docker container that contains the necessary Thales
    Luna Cloud HSM PKCS#11 module and related files..
