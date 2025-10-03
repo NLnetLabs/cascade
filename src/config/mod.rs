@@ -72,7 +72,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             policy_dir: "/etc/cascade/policies".into(),
-            zone_state_dir: "/var/lib/cascade/zone-state.db".into(),
+            zone_state_dir: "/var/lib/cascade/zone-state".into(),
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
             dnst_binary_path: "dnst".into(),
