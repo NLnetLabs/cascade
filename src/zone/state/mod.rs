@@ -94,6 +94,14 @@ impl Spec {
                 state.min_expiration = min_expiration;
                 state.next_min_expiration = next_min_expiration;
                 state.history = history;
+
+                // This should always be some at this stage...
+                if let Some(ref policy) = state.policy {
+                    let p = policies
+                        .get_mut(&*policy.name)
+                        .expect("zone policy references should not be kept around");
+                    p.zones.insert(zone.name.clone());
+                }
             }
         }
     }
