@@ -38,17 +38,8 @@ directory. Let's set this all up and start the daemon:
    # chown -R kmip2pkcs11: /var/lib/softhsm
    # systemctl start kmip2pkcs11
 
-Create a test zone to load and sign and ensure the Cascade daemon has access to it:
-
-.. code-block:: bash
-
-   # mkdir /etc/cascade/zones
-   # cat > /etc/cascade/zones/example.com << EOF
-   example.com.    3600    IN      SOA     ns.example.com. username.example.com. 1 86400 7200 2419200 300
-   example.com.            IN      NS      ns
-   ns                      IN      A       192.0.2.1
-   EOF
-   # chown -R cascade: /etc/cascade/zones
+Create a Cascade Policy that uses SoftHSM
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Create a Cascade policy called ``default`` and set it to use a HSM
 called ``kmip2pkcs11``.
@@ -72,7 +63,23 @@ locally running :program:`kmip2pkcs11` daemon:
    # cascade hsm add --insecure --username Cascade --password 1234 kmip2pkcs11 127.0.0.1
    Added KMIP server 'kmip2pkcs11 0.1.0-rc1 using PKCS#11 token with label Cascade in slot SoftHSM slot ID 0x1948bafd via library libsofthsm2.so'.
 
-Add our test zone and associate the policy that we created with the zone:
+Sign a Test Zone with SoftHSM
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Create a test zone to load and sign and ensure the Cascade daemon has access to it:
+
+.. code-block:: bash
+
+   # mkdir /etc/cascade/zones
+   # cat > /etc/cascade/zones/example.com << EOF
+   example.com.    3600    IN      SOA     ns.example.com. username.example.com. 1 86400 7200 2419200 300
+   example.com.            IN      NS      ns
+   ns                      IN      A       192.0.2.1
+   EOF
+   # chown -R cascade: /etc/cascade/zones
+
+Add our test zone to Cascade and associate the policy that we created with
+the zone:
 
 .. code-block:: bash
 
@@ -106,6 +113,9 @@ which includes the identifiers of the signing keys that were used:
        Reference: kmip://kmip2pkcs11/keys/3C95A4EC3A1E26BC67EC0336926ADBB212ADB3D8_pub?algorithm=13&flags=256
        Actively used for signing
    ...
+
+Inspect the SoftHSM Key Store
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Install the ``pkcs11-tool`` program from the ``opensc`` package and use it to query SoftHSMv2 directly:
 
