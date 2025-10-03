@@ -240,9 +240,11 @@ impl HttpServer {
         state: Arc<HttpServerState>,
         name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
+        let mut zone_started_at = None;
         let mut zone_loaded_at = None;
         let mut zone_loaded_in = None;
         let mut zone_loaded_bytes = 0;
+        let mut zone_loaded_record_count = 0;
         let dnst_binary_path;
         let cfg_path;
         let state_path;
@@ -409,10 +411,26 @@ impl HttpServer {
             match zone_maintainer_report.details() {
                 ZoneReportDetails::Primary => {
                     if let Some(report) = zone_loader_report {
-                        if let Ok(duration) = report.finished_at.duration_since(report.started_at) {
-                            zone_loaded_in = Some(duration);
-                            zone_loaded_at = Some(report.finished_at);
+                        zone_started_at = Some(report.started_at);
+                        if let Some(finished_at) = report.finished_at {
+                            if let Ok(duration) = finished_at.duration_since(report.started_at) {
+                                zone_loaded_in = Some(duration);
+                                zone_loaded_at = Some(finished_at);
+                                zone_loaded_bytes = report.byte_count;
+                                zone_loaded_record_count = report.record_count;
+                            } else {
+                                zone_loaded_in = Some(
+                                    SystemTime::now().duration_since(report.started_at).unwrap(),
+                                );
+                                zone_loaded_at = None;
+                                zone_loaded_bytes = report.byte_count;
+                                zone_loaded_record_count = report.record_count;
+                            }
+                        } else {
+                            zone_loaded_in = None;
+                            zone_loaded_at = None;
                             zone_loaded_bytes = report.byte_count;
+                            zone_loaded_record_count = report.record_count;
                         }
                     }
                 }
@@ -479,17 +497,32 @@ impl HttpServer {
             }
         }
 
-        let receipt_report =
-            if let (Some(finished_at), Some(zone_loaded_in)) = (zone_loaded_at, zone_loaded_in) {
-                let started_at = finished_at.checked_sub(zone_loaded_in).unwrap();
+        let receipt_report = match (zone_loaded_at, zone_loaded_in, zone_started_at) {
+            (Some(finished_at), Some(zone_loaded_in), started_at) => {
+                let started_at = match started_at {
+                    Some(started_at) => started_at,
+                    None => finished_at.checked_sub(zone_loaded_in).unwrap(),
+                };
                 Some(ZoneLoaderReport {
                     started_at,
-                    finished_at,
+                    finished_at: Some(finished_at),
                     byte_count: zone_loaded_bytes,
+                    record_count: zone_loaded_record_count,
                 })
-            } else {
+            }
+
+            (finished_at, None, Some(started_at)) => Some(ZoneLoaderReport {
+                started_at,
+                finished_at,
+                byte_count: zone_loaded_bytes,
+                record_count: zone_loaded_record_count,
+            }),
+
+            other => {
+                warn!("Unable to provide receipt report for zone '{name}': {other:?}");
                 None
-            };
+            }
+        };
 
         // Query zone serials
         let mut unsigned_serial = None;
@@ -861,16 +894,39 @@ impl HttpServer {
             Some(Duration::from_secs(60)),
         ) {
             Ok(pool) => pool,
-            Err(_err) => return Json(Err(HsmServerAddError::UnableToConnect)),
+            Err(err) => {
+                return Json(Err(HsmServerAddError::UnableToConnect {
+                    server_id,
+                    host: conn_settings.host,
+                    port: conn_settings.port,
+                    err: format!("Error creating connection pool: {err}"),
+                }))
+            }
         };
 
         // Test the connectivity (but not the HSM capabilities).
-        let Ok(conn) = pool.get() else {
-            return Json(Err(HsmServerAddError::UnableToConnect));
+        let conn = match pool.get() {
+            Ok(conn) => conn,
+            Err(err) => {
+                return Json(Err(HsmServerAddError::UnableToConnect {
+                    server_id,
+                    host: conn_settings.host,
+                    port: conn_settings.port,
+                    err: format!("Error retrieving connection from pool: {err}"),
+                }));
+            }
         };
 
-        let Ok(query_res) = conn.query() else {
-            return Json(Err(HsmServerAddError::UnableToQuery));
+        let query_res = match conn.query() {
+            Ok(query_res) => query_res,
+            Err(err) => {
+                return Json(Err(HsmServerAddError::UnableToQuery {
+                    server_id,
+                    host: conn_settings.host,
+                    port: conn_settings.port,
+                    err: err.to_string(),
+                }));
+            }
         };
 
         let vendor_id = query_res
@@ -889,15 +945,19 @@ impl HttpServer {
                 KmipServerCredentialsFileMode::CreateReadWrite,
             ) {
                 Ok(creds_file) => creds_file,
-                Err(_err) => {
+                Err(err) => {
                     return Json(Err(
-                        HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting,
+                        HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
+                            err: err.to_string(),
+                        },
                     ))
                 }
             };
             let _ = creds_file.insert(server_id, creds);
-            if creds_file.save().is_err() {
-                return Json(Err(HsmServerAddError::CredentialsFileCouldNotBeSaved));
+            if let Err(err) = creds_file.save() {
+                return Json(Err(HsmServerAddError::CredentialsFileCouldNotBeSaved {
+                    err: err.to_string(),
+                }));
             }
         }
 
@@ -906,14 +966,23 @@ impl HttpServer {
         let kmip_state = KmipServerState::from(req);
 
         info!("Writing to KMIP server file '{kmip_server_state_file}");
-        let f = match std::fs::File::create_new(kmip_server_state_file) {
+        let f = match std::fs::File::create_new(kmip_server_state_file.clone()) {
             Ok(f) => f,
-            Err(_err) => return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeCreated)),
+            Err(err) => {
+                return Json(Err(
+                    HsmServerAddError::KmipServerStateFileCouldNotBeCreated {
+                        path: kmip_server_state_file.into_string(),
+                        err: err.to_string(),
+                    },
+                ))
+            }
         };
-        if let Err(_err) = serde_json::to_writer_pretty(&f, &kmip_state) {
-            return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeSaved));
+        if let Err(err) = serde_json::to_writer_pretty(&f, &kmip_state) {
+            return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeSaved {
+                path: kmip_server_state_file.into_string(),
+                err: err.to_string(),
+            }));
         }
-        drop(f);
 
         Json(Ok(HsmServerAddResult { vendor_id }))
     }

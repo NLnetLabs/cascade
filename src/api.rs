@@ -466,12 +466,75 @@ pub struct HsmServerAddResult {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum HsmServerAddError {
-    UnableToConnect,
-    UnableToQuery,
-    CredentialsFileCouldNotBeOpenedForWriting,
-    CredentialsFileCouldNotBeSaved,
-    KmipServerStateFileCouldNotBeCreated,
-    KmipServerStateFileCouldNotBeSaved,
+    UnableToConnect {
+        server_id: String,
+        host: String,
+        port: u16,
+        err: String,
+    },
+    UnableToQuery {
+        server_id: String,
+        host: String,
+        port: u16,
+        err: String,
+    },
+    CredentialsFileCouldNotBeOpenedForWriting {
+        // Path is not needed as the error already contains it.
+        err: String,
+    },
+    CredentialsFileCouldNotBeSaved {
+        // Path is not needed as the error already contains it.
+        err: String,
+    },
+    KmipServerStateFileCouldNotBeCreated {
+        path: String,
+        err: String,
+    },
+    KmipServerStateFileCouldNotBeSaved {
+        path: String,
+        err: String,
+    },
+}
+
+impl std::fmt::Display for HsmServerAddError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HsmServerAddError::UnableToConnect {
+                server_id,
+                host,
+                port,
+                err,
+            } => write!(
+                f,
+                "Unable to connect to HSM '{server_id}' at {host}:{port}: {err}"
+            ),
+            HsmServerAddError::UnableToQuery {
+                server_id,
+                host,
+                port,
+                err,
+            } => write!(
+                f,
+                "Unable to query HSM '{server_id} at {host}:{port}: {err}"
+            ),
+            HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting { err } => {
+                // The error already contains everything we want to say so
+                // don't duplicate it.
+                f.write_str(err)
+            }
+            HsmServerAddError::CredentialsFileCouldNotBeSaved { err } => {
+                // The error already contains everything we want to say so
+                // don't duplicate it.
+                f.write_str(err)
+            }
+            HsmServerAddError::KmipServerStateFileCouldNotBeCreated { path, err } => {
+                write!(f, "Unable to create KMIP server state file '{path}': {err}")
+            }
+            HsmServerAddError::KmipServerStateFileCouldNotBeSaved { path, err } => {
+                write!(f, "Unable to save KMIP server state file '{path}': {err}")
+            }
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
