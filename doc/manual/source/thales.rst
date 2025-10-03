@@ -205,14 +205,10 @@ Installing and Configuring :program:`kmip2pkcs11`
 
 Here we can see that the PKCS#11 module has been loaded correctly.
 
-Next you need to get Cascade running and add :program:`kmip2pkcs11` as the HSM
-that it will use.
+Using :program:`kmip2pkcs11` to connect Cascade to the Thales HSM
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can learn how to do that on the :doc:`hsms` page.
-
-.. Note::
-
-   Skip down to the *"Using kmip2pkcs11 with Cascade"* section as we have
-   already setup :program:`kmip2pkcs11` on 127.0.0.1 port 5659 as expected
-   by that page, but in a Docker container that contains the necessary Thales
-   Luna Cloud HSM PKCS#11 module and related files.
+To learn how to use the :program:`kmip2pkcs11` instance that you just setup
+with Cascade, visit the :doc:`hsms` page, but skip to the *"Using kmip2pkcs11
+with Cascade"* section as we have already setup :program:`kmip2pkcs11` on
+127.0.0.1 port 5659.
