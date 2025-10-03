@@ -224,9 +224,6 @@ with Cascade, visit the :doc:`hsms` page, but skip to the *"Using kmip2pkcs11
 with Cascade"* section as we have already setup :program:`kmip2pkcs11` on
 port 5659.
 
-You can also see a more detailed example of using Cascade with
-:program:`kmip2pkcs11` in the :doc:`softhsm` page.
-
 If you have Cascade setup, the command to add the Thales HSM is:
 
 .. code-block:: bash
@@ -243,3 +240,7 @@ password you chose in step 11 above when setting up the Luna Cloud HSM.
 
 We can see from the output that Cascade made an initial test connection to the
 Thales HSM via :program:`kmip2pkcs11` to query its identification strings.
+
+For an example of how to associate the HSM with a Cascade policy and use it to
+sign a zone see the :doc:`softhsm` page.
+
