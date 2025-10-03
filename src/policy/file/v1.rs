@@ -127,7 +127,7 @@ pub struct KeyManagerSpec {
     pub csk: KeyKindSpec,
 
     /// Policy for algorithm rollovers.
-    pub alg: RolloverSpec,
+    pub algorithm: RolloverSpec,
 
     /// The DS hash algorithm.
     pub ds_algorithm: DsAlgorithm,
@@ -150,7 +150,7 @@ impl KeyManagerSpec {
         KeyManagerPolicy {
             hsm_server_id: self.generation.hsm_server_id,
             use_csk: self.generation.use_csk,
-            algorithm: match self.generation.parameters {
+            algorithm: match self.generation.algorithm {
                 KeyGenerationParametersSpec::RsaSha256(bits) => {
                     KeyParameters::RsaSha256(bits.into())
                 }
@@ -197,7 +197,7 @@ impl KeyManagerSpec {
             auto_ksk: self.ksk.rollover.parse(),
             auto_zsk: self.zsk.rollover.parse(),
             auto_csk: self.csk.rollover.parse(),
-            auto_algorithm: self.alg.parse(),
+            auto_algorithm: self.algorithm.parse(),
 
             // The following have the same defaults as used for
             // signing the zone.
@@ -262,7 +262,7 @@ impl KeyManagerSpec {
                 }),
                 rollover: RolloverSpec::build(&policy.auto_csk),
             },
-            alg: RolloverSpec::build(&policy.auto_algorithm),
+            algorithm: RolloverSpec::build(&policy.auto_algorithm),
 
             ds_algorithm: policy.ds_algorithm.clone(),
             auto_remove: policy.auto_remove,
@@ -284,7 +284,7 @@ impl KeyManagerSpec {
             generation: KeyManagerGenerationSpec {
                 hsm_server_id: policy.hsm_server_id.clone(),
                 use_csk: policy.use_csk,
-                parameters: match policy.algorithm {
+                algorithm: match policy.algorithm {
                     KeyParameters::RsaSha256(bits) => {
                         KeyGenerationParametersSpec::RsaSha256(bits as u16)
                     }
@@ -307,7 +307,7 @@ impl Default for KeyManagerSpec {
             ksk: Default::default(),
             zsk: Default::default(),
             csk: Default::default(),
-            alg: Default::default(),
+            algorithm: Default::default(),
             ds_algorithm: DsAlgorithm::Sha256,
             auto_remove: true,
             records: Default::default(),
@@ -455,7 +455,7 @@ pub struct KeyManagerGenerationSpec {
     pub use_csk: bool,
 
     /// Parameters for the cryptographic key material.
-    pub parameters: KeyGenerationParametersSpec,
+    pub algorithm: KeyGenerationParametersSpec,
 }
 
 impl Default for KeyManagerGenerationSpec {
@@ -467,7 +467,7 @@ impl Default for KeyManagerGenerationSpec {
             // No official reference.
             use_csk: false,
 
-            parameters: KeyGenerationParametersSpec::EcdsaP256Sha256,
+            algorithm: KeyGenerationParametersSpec::EcdsaP256Sha256,
         }
     }
 }
@@ -486,15 +486,15 @@ pub enum KeyGenerationParametersSpec {
 impl Display for KeyGenerationParametersSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::RsaSha256(2048) => "rsa-sha256",
-            Self::RsaSha512(2048) => "rsa-sha512",
-            Self::EcdsaP256Sha256 => "ecdsa-p256-sha256",
-            Self::EcdsaP384Sha384 => "ecdsa-p384-sha384",
-            Self::Ed25519 => "ed25519",
-            Self::Ed448 => "ed448",
+            Self::RsaSha256(2048) => "RSASHA256",
+            Self::RsaSha512(2048) => "RSASHA512",
+            Self::EcdsaP256Sha256 => "ECDSAP256SHA256",
+            Self::EcdsaP384Sha384 => "ECDSAP384SHA384",
+            Self::Ed25519 => "Ed25519",
+            Self::Ed448 => "ED448",
 
-            Self::RsaSha256(bits) => return write!(f, "rsa-sha256:{bits}"),
-            Self::RsaSha512(bits) => return write!(f, "rsa-sha512:{bits}"),
+            Self::RsaSha256(bits) => return write!(f, "RSASHA256:{bits}"),
+            Self::RsaSha512(bits) => return write!(f, "RSASHA512:{bits}"),
         })
     }
 }
@@ -503,24 +503,24 @@ impl FromStr for KeyGenerationParametersSpec {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(bits) = s.strip_prefix("rsa-sha256:") {
+        if let Some(bits) = s.strip_prefix("RSASHA256:") {
             match bits.parse::<u16>() {
                 Ok(bits) => Ok(Self::RsaSha256(bits)),
                 Err(err) => Err(format!("Could not parse key size {bits:?}: {err}")),
             }
-        } else if let Some(bits) = s.strip_prefix("rsa-sha512:") {
+        } else if let Some(bits) = s.strip_prefix("RSASHA512:") {
             match bits.parse::<u16>() {
                 Ok(bits) => Ok(Self::RsaSha512(bits)),
                 Err(err) => Err(format!("Could not parse key size {bits:?}: {err}")),
             }
         } else {
             Ok(match s {
-                "rsa-sha256" => Self::RsaSha256(2048),
-                "rsa-sha512" => Self::RsaSha512(2048),
-                "ecdsa-p256-sha256" => Self::EcdsaP256Sha256,
-                "ecdsa-p384-sha384" => Self::EcdsaP384Sha384,
-                "ed25519" => Self::Ed25519,
-                "ed448" => Self::Ed448,
+                "RSASHA256" => Self::RsaSha256(2048),
+                "RSASHA512" => Self::RsaSha512(2048),
+                "ECDSAP256SHA256" => Self::EcdsaP256Sha256,
+                "ECDSAP384SHA384" => Self::EcdsaP384Sha384,
+                "ED25519" => Self::Ed25519,
+                "ED448" => Self::Ed448,
                 _ => return Err(format!("Unrecognized algorithm {s:?}")),
             })
         }
