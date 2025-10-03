@@ -520,12 +520,12 @@ impl std::fmt::Display for HsmServerAddError {
             HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting { err } => {
                 // The error already contains everything we want to say so
                 // don't duplicate it.
-                f.write_str(&err)
+                f.write_str(err)
             }
             HsmServerAddError::CredentialsFileCouldNotBeSaved { err } => {
                 // The error already contains everything we want to say so
                 // don't duplicate it.
-                f.write_str(&err)
+                f.write_str(err)
             }
             HsmServerAddError::KmipServerStateFileCouldNotBeCreated { path, err } => {
                 write!(f, "Unable to create KMIP server state file '{path}': {err}")

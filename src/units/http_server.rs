@@ -866,7 +866,7 @@ impl HttpServer {
                     server_id,
                     host: conn_settings.host,
                     port: conn_settings.port,
-                    err: format!("Error creating connection pool: {}", err.to_string()),
+                    err: format!("Error creating connection pool: {err}"),
                 }))
             }
         };
@@ -879,7 +879,7 @@ impl HttpServer {
                     server_id,
                     host: conn_settings.host,
                     port: conn_settings.port,
-                    err: format!("Error retrieving connection from pool: {}", err.to_string()),
+                    err: format!("Error retrieving connection from pool: {err}"),
                 }));
             }
         };
