@@ -225,7 +225,7 @@ port 5659.
 
 If you have Cascade setup, the command to add the Thales HSM is:
 
-.. code-block:: bash
+.. code-block:: text
 
    $ cascade hsm add thales 127.0.0.1 \
        --insecure \
