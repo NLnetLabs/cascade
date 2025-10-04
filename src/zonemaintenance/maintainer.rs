@@ -486,7 +486,9 @@ where
                 // TODO
             }
         } else {
-            warn!("Zone '{}' not found for zone status request.", zone_id.name);
+            // This can happen when the zone has been added to Center but
+            // is still being loaded from disk and has not yet been added to
+            // the zone maintainer.
         };
     }
 
