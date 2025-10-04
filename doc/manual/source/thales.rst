@@ -186,7 +186,7 @@ Installing and Configuring :program:`kmip2pkcs11`
        execute ``alias sudo=`` before copy-pasting commands that use ``sudo``.
        This will ensure that the commands work as intended.
 
-14. Next edit the :program:`kmip2pkcs11` configuration file to point it to
+14. Next, edit the :program:`kmip2pkcs11` configuration file to point it to
     the Thales Luna Cloud HSM PKCS#11 module, and to listen on all network
     IPv4 interfaces inside the Docker container:
 
