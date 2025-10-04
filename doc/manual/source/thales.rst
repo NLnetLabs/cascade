@@ -212,7 +212,7 @@ Here we can see that the PKCS#11 module has been loaded correctly.
 This does NOT show that :program:`kmip2pkcs11` is able to connect to the
 Luna Cloud HSM, but the ``pkcs11-tool -O`` command we used above proved that
 the PKCS#11 module is able to connect and so :program:`kmip2pkcs11` can as
-well. To demonstrate that you will however need to setup Cascade to use this
+well. To demonstrate that, however, you will need to setup Cascade to use this
 running instance of :program:`kmip2pksc11`.
 
 Using :program:`kmip2pkcs11` to connect Cascade to the Thales HSM
