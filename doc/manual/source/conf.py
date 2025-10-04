@@ -32,7 +32,7 @@ except ModuleNotFoundError:
 project = 'Cascade'
 year = datetime.datetime.now().year
 copyright = f'2025–{year}, NLnet Labs'
-author = 'NLnet Labs'
+author = 'NLnet Labs <cascade@nlnetlabs.nl>'
 
 semver = toml.load('../../../Cargo.toml')
 
