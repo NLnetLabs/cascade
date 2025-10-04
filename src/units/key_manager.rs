@@ -1019,7 +1019,9 @@ impl KeySetCommand {
     }
 
     pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut KeySetCommand {
-        self.cmd.as_mut().map(|c| c.arg(arg));
+        if let Some(c) = self.cmd.as_mut() {
+            c.arg(arg)
+        }
         self
     }
 
