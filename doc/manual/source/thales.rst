@@ -174,7 +174,7 @@ Now that that works we can install :program:`kmip2pkcs11`.
 Installing and Configuring :program:`kmip2pkcs11`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-13. Continuing from the same /bin/bash session inside the Docker container,
+13. Continuing from the same ``/bin/bash`` session inside the Docker container,
     follow the :doc:`installation` steps to install :program:`kmip2pkcs11`
     for Ubuntu 24.04, the base image used by our DPoD Docker container.
 
