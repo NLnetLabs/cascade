@@ -216,18 +216,19 @@ impl ZoneSigner {
         self,
         mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
     ) -> Result<(), crate::comms::Terminated> {
-        let next_resign_time = self.next_resign_time();
+        let arc_self = Arc::new(self);
+        let next_resign_time = arc_self.next_resign_time();
         let mut next_resign_time =
             next_resign_time.unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
         loop {
             select! {
             _ = sleep_until(next_resign_time) => {
-                self.resign_zones();
-                next_resign_time = self.next_resign_time().unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
+                arc_self.clone().resign_zones();
+                next_resign_time = arc_self.next_resign_time().unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
             }
             opt_cmd = cmd_rx.recv() => {
                 let Some(cmd) = opt_cmd else { break };
-                if !self.handle_command(cmd, &mut next_resign_time).await {
+                if !arc_self.clone().handle_command(cmd, &mut next_resign_time).await {
                 break;
                 }
             }
@@ -291,7 +292,7 @@ impl ZoneSigner {
     /// Return true if the caller should continue, false when a Terminate
     /// command is received.
     async fn handle_command(
-        &self,
+        self: Arc<Self>,
         cmd: ApplicationCommand,
         next_resign_time: &mut Instant,
     ) -> bool {
@@ -307,22 +308,25 @@ impl ZoneSigner {
                 zone_serial, // TODO: the serial number is ignored, but is that okay?
                 trigger,
             } => {
-                if let Err(err) = self
-                    .sign_zone(&zone_name, zone_serial.is_none(), trigger)
-                    .await
-                {
-                    error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+                let arc_self = self.clone();
+                tokio::task::spawn(async move {
+                    if let Err(err) = arc_self
+                        .sign_zone(&zone_name, zone_serial.is_none(), trigger)
+                        .await
+                    {
+                        error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
-                    self.center
-                        .update_tx
-                        .send(Update::ZoneSigningFailedEvent {
-                            zone_name,
-                            zone_serial,
-                            trigger,
-                            reason: err,
-                        })
-                        .unwrap();
-                }
+                        self.center
+                            .update_tx
+                            .send(Update::ZoneSigningFailedEvent {
+                                zone_name,
+                                zone_serial,
+                                trigger,
+                                reason: err,
+                            })
+                            .unwrap();
+                    }
+                });
             }
 
             ApplicationCommand::GetSigningReport {
@@ -355,7 +359,7 @@ impl ZoneSigner {
     /// rather than a LightWeightZone (and XFR-in zones are LightWeightZone
     /// instances).
     async fn sign_zone(
-        &self,
+        self: Arc<Self>,
         zone_name: &StoredName,
         resign_last_signed_zone_content: bool,
         trigger: SigningTrigger,
