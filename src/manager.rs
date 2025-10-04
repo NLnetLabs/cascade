@@ -126,7 +126,6 @@ pub async fn spawn(
         _xfr_out: HashMap::from([(zone_name.clone(), xfr_out)]),
         mode: zone_server::Mode::Prepublish,
         source: zone_server::Source::UnsignedZones,
-        http_api_path: Arc::new(String::from("/hook/review-unsigned/")),
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let (ready_tx, ready_rx) = oneshot::channel();
@@ -171,7 +170,6 @@ pub async fn spawn(
     log::info!("Starting unit 'RS2'");
     let unit = ZoneServerUnit {
         center: center.clone(),
-        http_api_path: Arc::new(String::from("/hook/review-signed/")),
         _xfr_out: HashMap::from([(zone_name.clone(), "127.0.0.1:8055 KEY sec1-key".into())]),
         mode: zone_server::Mode::Prepublish,
         source: zone_server::Source::SignedZones,
@@ -216,7 +214,6 @@ pub async fn spawn(
     log::info!("Starting unit 'PS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
-        http_api_path: Arc::new(String::from("/__this_is_not_used_in_publication_server__/")),
         _xfr_out: HashMap::from([(zone_name, "127.0.0.1:8055".into())]),
         mode: zone_server::Mode::Publish,
         source: zone_server::Source::PublishedZones,

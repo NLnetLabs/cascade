@@ -140,20 +140,25 @@ pub enum ApplicationCommand {
     Changed(Change),
 
     Terminate,
-    HandleZoneReviewApi {
-        zone_name: StoredName,
-        zone_serial: Serial,
-        approval_token: String,
-        operation: String,
-        http_tx: mpsc::Sender<Result<(), ()>>,
+
+    /// Review a zone.
+    ReviewZone {
+        /// The name of the zone.
+        name: StoredName,
+
+        /// The serial number of the zone.
+        serial: Serial,
+
+        /// Whether to approve or reject the zone.
+        decision: api::ZoneReviewDecision,
+
+        /// A handle for returning a response.
+        tx: tokio::sync::oneshot::Sender<api::ZoneReviewResult>,
     },
+
     SeekApprovalForUnsignedZone {
         zone_name: StoredName,
         zone_serial: Serial,
-    },
-    IsZonePendingApproval {
-        zone_name: StoredName,
-        tx: oneshot::Sender<bool>,
     },
 
     /// Refresh a zone.

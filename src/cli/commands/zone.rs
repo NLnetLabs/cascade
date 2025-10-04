@@ -72,6 +72,34 @@ pub enum ZoneCommand {
     #[command(name = "reload")]
     Reload { zone: Name<Bytes> },
 
+    /// Approve a zone being reviewed.
+    #[command(name = "approve")]
+    Approve {
+        /// Whether to approve an unsigned or signed version of the zone.
+        #[command(flatten)]
+        review_stage: ZoneReviewStage,
+
+        /// The name of the zone.
+        name: Name<Bytes>,
+
+        /// The serial number of the zone.
+        serial: u32,
+    },
+
+    /// Reject a zone being reviewed.
+    #[command(name = "approve")]
+    Reject {
+        /// Whether to reject an unsigned or signed version of the zone.
+        #[command(flatten)]
+        review_stage: ZoneReviewStage,
+
+        /// The name of the zone.
+        name: Name<Bytes>,
+
+        /// The serial number of the zone.
+        serial: u32,
+    },
+
     /// Get the status of a single zone
     #[command(name = "status")]
     Status {
@@ -89,6 +117,19 @@ pub enum ZoneCommand {
         /// The zone toe report the history of.
         zone: Name<Bytes>,
     },
+}
+
+/// The stage to review a zone at.
+#[derive(Clone, Debug, clap::Args)]
+#[group(required = true, multiple = false)]
+pub struct ZoneReviewStage {
+    /// Review the zone before it is signed.
+    #[arg(long = "unsigned")]
+    unsigned: bool,
+
+    /// Review the zone after it is signed.
+    #[arg(long = "signed")]
+    signed: bool,
 }
 
 // From brainstorm in beginning of April 2025
@@ -217,6 +258,82 @@ impl Zone {
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to reload zone: {e}")),
+                }
+            }
+            ZoneCommand::Approve {
+                review_stage,
+                name,
+                serial,
+            } => {
+                let stage = match review_stage {
+                    ZoneReviewStage {
+                        unsigned: true,
+                        signed: false,
+                    } => "unsigned",
+                    ZoneReviewStage {
+                        unsigned: false,
+                        signed: true,
+                    } => "signed",
+                    _ => unreachable!(),
+                };
+
+                let url = format!("/zone/{name}/{stage}/{serial}/approve");
+                let result: ZoneReviewResult = client
+                    .post(&url)
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+
+                match result {
+                    Ok(ZoneReviewOutput {}) => {
+                        println!("Approved {stage} zone '{name}' with serial number {serial}");
+                        Ok(())
+                    },
+                    Err(ZoneReviewError::NoSuchZone) => {
+                        Err(format!("Zone '{name}' could not be found"))
+                    },
+                    Err(ZoneReviewError::NotUnderReview) => {
+                        Err(format!("The {stage} zone '{name}' with serial number {serial} is not being reviewed right now"))
+                    }
+                }
+            }
+            ZoneCommand::Reject {
+                review_stage,
+                name,
+                serial,
+            } => {
+                let stage = match review_stage {
+                    ZoneReviewStage {
+                        unsigned: true,
+                        signed: false,
+                    } => "unsigned",
+                    ZoneReviewStage {
+                        unsigned: false,
+                        signed: true,
+                    } => "signed",
+                    _ => unreachable!(),
+                };
+
+                let url = format!("/zone/{name}/{stage}/{serial}/reject");
+                let result: ZoneReviewResult = client
+                    .post(&url)
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+
+                match result {
+                    Ok(ZoneReviewOutput {}) => {
+                        println!("Rejected {stage} zone '{name}' with serial number {serial}");
+                        Ok(())
+                    },
+                    Err(ZoneReviewError::NoSuchZone) => {
+                        Err(format!("Zone '{name}' could not be found"))
+                    },
+                    Err(ZoneReviewError::NotUnderReview) => {
+                        Err(format!("The {stage} zone '{name}' with serial number {serial} is not being reviewed right now"))
+                    }
                 }
             }
             ZoneCommand::Status { zone, detailed } => {
