@@ -107,7 +107,7 @@ fn main() -> ExitCode {
         // TODO: Fail if any zone state files exist.
     } else {
         // If continuing from state update the configured logging setup.
-        // Only update logger if a log setting has been persistet in state before
+        // Only update logger if a log setting was persisted in state before
         if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
             logger.apply(x)
         }
