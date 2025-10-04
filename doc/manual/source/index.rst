@@ -122,3 +122,20 @@ We would love for you to :doc:`get to know Cascade
    :name: toc-reference
 
    limitations
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Manual Pages
+   :name: toc-manual-pages
+
+   man/cascade
+   man/cascaded
+   man/cascaded-config.toml
+   man/cascaded-policy.toml
+   man/cascade-config
+   man/cascade-hsm
+   man/cascade-keyset
+   man/cascade-policy
+   man/cascade-template
+   man/cascade-zone
