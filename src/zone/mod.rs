@@ -26,6 +26,7 @@ use crate::{
     config::Config,
     payload::Update,
     policy::{Policy, PolicyVersion},
+    zonemaintenance::types::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
 pub mod state;
@@ -199,14 +200,27 @@ pub enum HistoricalEvent {
     },
     UnsignedZoneReview {
         status: ZoneReviewStatus,
-        when: SystemTime,
     },
     SignedZoneReview {
         status: ZoneReviewStatus,
-        when: SystemTime,
     },
-    KeySetCommand(String),
-    KeySetError(String),
+    KeySetCommand {
+        cmd: String,
+        #[serde(
+            serialize_with = "serialize_duration_as_secs",
+            deserialize_with = "deserialize_duration_from_secs"
+        )]
+        elapsed: Duration,
+    },
+    KeySetError {
+        cmd: String,
+        err: String,
+        #[serde(
+            serialize_with = "serialize_duration_as_secs",
+            deserialize_with = "deserialize_duration_from_secs"
+        )]
+        elapsed: Duration,
+    },
 }
 
 impl HistoricalEvent {
@@ -229,8 +243,8 @@ impl HistoricalEvent {
             (HistoricalEvent::SignedZoneReview { .. }, HistoricalEventType::SignedZoneReview) => {
                 true
             }
-            (HistoricalEvent::KeySetCommand(_), HistoricalEventType::KeySetCommand) => true,
-            (HistoricalEvent::KeySetError(_), HistoricalEventType::KeySetError) => true,
+            (HistoricalEvent::KeySetCommand { .. }, HistoricalEventType::KeySetCommand) => true,
+            (HistoricalEvent::KeySetError { .. }, HistoricalEventType::KeySetError) => true,
             _ => false,
         }
     }

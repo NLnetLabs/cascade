@@ -308,11 +308,17 @@ impl Zone {
                                         ZoneReviewStatus::Rejected => "rejected",
                                     }
                                 ),
-                                HistoricalEvent::KeySetCommand(cmd) => {
-                                    format!("Keyset command succeeded: {cmd}")
+                                HistoricalEvent::KeySetCommand { cmd, elapsed } => {
+                                    format!(
+                                        "Keyset command '{cmd}' succeeded in {}s",
+                                        elapsed.as_secs()
+                                    )
                                 }
-                                HistoricalEvent::KeySetError(err) => {
-                                    format!("Keyset command failed: {err}")
+                                HistoricalEvent::KeySetError { cmd, err, elapsed } => {
+                                    format!(
+                                        "Keyset command '{cmd}' failed in {}s with error: {err}",
+                                        elapsed.as_secs()
+                                    )
                                 }
                             };
                             println!("{when} {serial:10} {what}");

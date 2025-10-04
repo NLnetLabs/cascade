@@ -307,19 +307,25 @@ impl HttpServer {
             unsigned_review_status = zone_state
                 .find_last_event(HistoricalEventType::UnsignedZoneReview, None)
                 .map(|item| {
-                    let HistoricalEvent::UnsignedZoneReview { status, when } = item.event else {
+                    let HistoricalEvent::UnsignedZoneReview { status } = item.event else {
                         unreachable!()
                     };
-                    TimestampedZoneReviewStatus { status, when }
+                    TimestampedZoneReviewStatus {
+                        status,
+                        when: item.when,
+                    }
                 });
 
             signed_review_status = zone_state
                 .find_last_event(HistoricalEventType::SignedZoneReview, None)
                 .map(|item| {
-                    let HistoricalEvent::SignedZoneReview { status, when } = item.event else {
+                    let HistoricalEvent::SignedZoneReview { status } = item.event else {
                         unreachable!()
                     };
-                    TimestampedZoneReviewStatus { status, when }
+                    TimestampedZoneReviewStatus {
+                        status,
+                        when: item.when,
+                    }
                 });
         }
 
