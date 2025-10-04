@@ -198,7 +198,7 @@ Installing and Configuring :program:`kmip2pkcs11`
 15. Now run :program:`kmip2pkcs11` and send its logs to the terminal so that
     we can easily verify that it loads the Thales PKCS#11 module correctly.
 
-    .. code-block:: bash
+    .. code-block:: text
 
        $ kmip2pkcs11 -c /etc/kmip2pkcs11/config.toml --stderr
        $ cat /tmp/kmip2pkcs11.log
