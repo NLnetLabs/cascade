@@ -107,12 +107,10 @@ fn main() -> ExitCode {
         // TODO: Fail if any zone state files exist.
     } else {
         // If continuing from state update the configured logging setup.
-        logger.apply(
-            logger
-                .prepare(&state.config.daemon.logging)
-                .unwrap()
-                .unwrap(),
-        );
+        // Only update logger if a log setting was persisted in state before
+        if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
+            logger.apply(x)
+        }
 
         log::info!("Successfully loaded the global state file");
 
