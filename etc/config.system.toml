@@ -21,14 +21,14 @@ log-target = { type = "syslog" }
 daemonize = false
 
 [remote-control]
-servers = ["127.0.0.1:8950", "[::1]:8950"] # TODO: Pick a good default port
+servers = ["127.0.0.1:2060", "[::1]:2060"]
 
 [loader]
-notify-listeners = ["127.0.0.1:8050", "[::1]:8050"] # TODO: Pick a good default port
-review.servers = ["127.0.0.1:8051", "[::1]:8051"] # TODO: Pick a good default port
+notify-listeners = ["127.0.0.1:2050", "[::1]:2050"]
+review.servers = ["127.0.0.1:2051", "[::1]:2051"]
 
 [signer]
-review.servers = ["127.0.0.1:8052", "[::1]:8052"] # TODO: Pick a good default port.
+review.servers = ["127.0.0.1:2052", "[::1]:2052"]
 
 [server]
-servers = ["127.0.0.1:8053", "[::1]:8053"] # TODO: Pick a good default port.
+servers = ["127.0.0.1:2053", "[::1]:2053"]
