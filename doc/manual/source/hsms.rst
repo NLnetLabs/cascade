@@ -64,15 +64,15 @@ are:
 .. table:: Supported HSMs
    :widths: auto
 
-   ================  ============  =========  ================================
-   HSM               Type          Interface  :program:`kmip2pkcs11` required?
-   ================  ============  =========  ================================
+   ================  ============  =========  ================================  =================
+   HSM               Type          Interface  :program:`kmip2pkcs11` required?  Integration guide
+   ================  ============  =========  ================================  =================
    Fortanix DSM      Cloud         KMIP       No
-   Thales Cloud HSM  Cloud         PKCS#11    Yes
+   Thales Cloud HSM  Cloud         PKCS#11    Yes                               :doc:`view <thales>`
    Nitrokey NetHSM   Docker image  PKCS#11    Yes
    YubiHSM 2         USB key       PKCS#11    Yes
-   SoftHSM v2.6.1    Software      PKCS#11    Yes
-   ================  ============  =========  ================================
+   SoftHSM v2.6.1    Software      PKCS#11    Yes                               :doc:`view <softhsm>`
+   ================  ============  =========  ================================  =================
 
 .. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
    though KMIP 1.2 requires servers to offer support for old versions of the

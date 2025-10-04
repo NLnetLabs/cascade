@@ -5,13 +5,6 @@ USER_ID="cascade"
 create_user() {
     if id ${USER_ID} > /dev/null 2>&1; then return; fi
     adduser --system --home /var/cascade --group ${USER_ID}
-
-    # Create the empty default directories as Cascade will fail to start
-    # without them.
-    mkdir -p /etc/cascade/policies
-    mkdir -p /var/lib/cascade/{zone-state,keys}
-    chown ${USER_ID}: /etc/cascade/policies
-    chown -R ${USER_ID}: /var/lib/cascade
 }
 
 case "$1" in

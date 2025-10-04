@@ -544,7 +544,7 @@ impl TryFrom<&Utf8PathBuf> for KeySetInfo {
         let keyset_state_modified = file_modified(state_path)?;
 
         /// Persistent state for the keyset command.
-        /// Copied frmo the keyset branch of dnst.
+        /// Copied from the keyset branch of dnst.
         #[allow(dead_code)]
         #[derive(Deserialize)]
         struct KeySetState {

@@ -13,7 +13,7 @@ tsig-store-path = "/var/lib/cascade/tsig-keys.db"
 kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
 keys-dir = "/var/lib/cascade/keys"
 kmip-server-state-dir = "/var/lib/cascade/kmip"
-dnst-binary-path = "dnst"
+dnst-binary-path = "/usr/libexec/cascade/cascade-dnst"
 
 [daemon]
 log-level = "info"

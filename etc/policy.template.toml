@@ -105,11 +105,10 @@ csk.validity = "31536000"
 # By disabling this setting, the user can manually control how new keys are
 # generated, and when rollovers happen.
 #
-# TODO: Maybe we want to start rolling over keys some time before expiry?
 ksk.auto-start = true
 zsk.auto-start = true
 csk.auto-start = true
-alg.auto-start = true
+algorithm.auto-start = true
 
 # Whether to automatically check for record propagation.
 #
@@ -124,7 +123,7 @@ alg.auto-start = true
 ksk.auto-report = true
 zsk.auto-report = true
 csk.auto-report = true
-alg.auto-report = true
+algorithm.auto-report = true
 
 # Whether to automatically wait for cache expiry.
 #
@@ -134,7 +133,7 @@ alg.auto-report = true
 ksk.auto-expire = true
 zsk.auto-expire = true
 csk.auto-expire = true
-alg.auto-expire = true
+algorithm.auto-expire = true
 
 # Whether to automatically check for rollover completion.
 #
@@ -148,14 +147,14 @@ alg.auto-expire = true
 ksk.auto-done = true
 zsk.auto-done = true
 csk.auto-done = true
-alg.auto-done = true
+algorithm.auto-done = true
 
 # The hash algorithm used by the parent zones' DS records.
 #
 # Supported options:
-# - 'sha256': SHA-256.
-# - 'sha384': SHA-384.
-ds-algorithm = "sha256"
+# - 'SHA256': SHA-256.
+# - 'SHA384': SHA-384.
+ds-algorithm = "SHA256"
 
 # Whether to automatically remove expired keys.
 #
@@ -240,20 +239,20 @@ cds.signature-remain-time = 604800
 # existing keys are rolled over?
 use-csk = false
 
-# Parameters for the cryptographic key material.
+# The cryptographic algorithm (and parameters) for generated keys.
 #
 # DNSSEC supports various cryptographic algorithms for signatures; one must be
 # selected, and for some algorithms, additional parameters are also necessary.
-# The same parameters will be applied to the ZSK and KSK.
+# The same algorithm and parameters will be applied to the ZSK and KSK.
 #
-# - 'rsa-sha256[:<bits>]', RSASHA256 (algorithm 8), with a public key size of
+# - 'RSASHA256[:<bits>]', algorithm 8, with a public key size of
 #   '<bits>' (default 2048) bits.
-# - 'rsa-sha512[:<bits>]', RSASHA512 (algorithm 10), with a public key size of
+# - 'RSASHA512[:<bits>]', algorithm 10, with a public key size of
 #   '<bits>' (default 2048) bits.
-# - 'ecdsa-p256-sha256', ECDSAP256SHA256 (algorithm 13).
-# - 'ecdsa-p384-sha384', ECDSAP384SHA384 (algorithm 14).
-# - 'ed25519', ED25519 (algorithm 15).
-# - 'ed448', ED448 (algorithm 16).
+# - 'ECDSAP256SHA256', algorithm 13.
+# - 'ECDSAP384SHA384', algorithm 14.
+# - 'ED25519', algorithm 15.
+# - 'ED448', algorithm 16.
 #
 # There are additional algorithms, but many are now considered insecure, and it
 # is recommended or mandated to avoid them.  In addition, RSA keys smaller than
@@ -261,8 +260,8 @@ use-csk = false
 #
 # NOTE: At the moment, only RSASHA256 and ECDSAP256SHA256 work with HSMs.  Other
 #   algorithms cannot be used with HSMs, and will cause generation failures.
-parameters = "ecdsa-p256-sha256"
-#parameters = "rsa-sha512:4096"
+algorithm = "ECDSAP256SHA256"
+#algorithm = "RSASHA512:4096"
 
 
 # How zones are signed.

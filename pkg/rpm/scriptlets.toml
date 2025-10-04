@@ -15,13 +15,6 @@ if [ $1 -eq 1 ] ; then
         # According to the CentOS 7 useradd man page:
         # --user-group causes a group by the same name as the user to be created
         useradd --system --user-group ${USER_ID} --home-dir /var/${USER_ID} --create-home
-
-        # Create the empty default directories as Cascade will fail to start
-        # without them.
-        mkdir -p /etc/cascade/policies
-        mkdir -p /var/lib/cascade/{zone-state,keys}
-        chown ${USER_ID}: /etc/cascade/policies
-        chown -R ${USER_ID}: /var/lib/cascade
     fi
 
     # Run commands equivalent to what the RPM systemd macros would do

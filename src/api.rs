@@ -515,7 +515,7 @@ impl std::fmt::Display for HsmServerAddError {
                 err,
             } => write!(
                 f,
-                "Unable to query HSM '{server_id} at {host}:{port}: {err}"
+                "Unable to query HSM '{server_id}' at {host}:{port}: {err}"
             ),
             HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting { err } => {
                 // The error already contains everything we want to say so
