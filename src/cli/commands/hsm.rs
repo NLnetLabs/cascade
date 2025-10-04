@@ -99,7 +99,7 @@ impl Hsm {
                     Ok(HsmServerAddResult { vendor_id }) => {
                         println!("Added KMIP server '{vendor_id}'.")
                     }
-                    Err(err) => return Err(format!("Add KMIP server command failed: {err:?}")),
+                    Err(err) => return Err(format!("Add KMIP server command failed: {err}")),
                 }
             }
 

@@ -861,16 +861,39 @@ impl HttpServer {
             Some(Duration::from_secs(60)),
         ) {
             Ok(pool) => pool,
-            Err(_err) => return Json(Err(HsmServerAddError::UnableToConnect)),
+            Err(err) => {
+                return Json(Err(HsmServerAddError::UnableToConnect {
+                    server_id,
+                    host: conn_settings.host,
+                    port: conn_settings.port,
+                    err: format!("Error creating connection pool: {err}"),
+                }))
+            }
         };
 
         // Test the connectivity (but not the HSM capabilities).
-        let Ok(conn) = pool.get() else {
-            return Json(Err(HsmServerAddError::UnableToConnect));
+        let conn = match pool.get() {
+            Ok(conn) => conn,
+            Err(err) => {
+                return Json(Err(HsmServerAddError::UnableToConnect {
+                    server_id,
+                    host: conn_settings.host,
+                    port: conn_settings.port,
+                    err: format!("Error retrieving connection from pool: {err}"),
+                }));
+            }
         };
 
-        let Ok(query_res) = conn.query() else {
-            return Json(Err(HsmServerAddError::UnableToQuery));
+        let query_res = match conn.query() {
+            Ok(query_res) => query_res,
+            Err(err) => {
+                return Json(Err(HsmServerAddError::UnableToQuery {
+                    server_id,
+                    host: conn_settings.host,
+                    port: conn_settings.port,
+                    err: err.to_string(),
+                }));
+            }
         };
 
         let vendor_id = query_res
@@ -889,15 +912,19 @@ impl HttpServer {
                 KmipServerCredentialsFileMode::CreateReadWrite,
             ) {
                 Ok(creds_file) => creds_file,
-                Err(_err) => {
+                Err(err) => {
                     return Json(Err(
-                        HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting,
+                        HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
+                            err: err.to_string(),
+                        },
                     ))
                 }
             };
             let _ = creds_file.insert(server_id, creds);
-            if creds_file.save().is_err() {
-                return Json(Err(HsmServerAddError::CredentialsFileCouldNotBeSaved));
+            if let Err(err) = creds_file.save() {
+                return Json(Err(HsmServerAddError::CredentialsFileCouldNotBeSaved {
+                    err: err.to_string(),
+                }));
             }
         }
 
@@ -906,14 +933,23 @@ impl HttpServer {
         let kmip_state = KmipServerState::from(req);
 
         info!("Writing to KMIP server file '{kmip_server_state_file}");
-        let f = match std::fs::File::create_new(kmip_server_state_file) {
+        let f = match std::fs::File::create_new(kmip_server_state_file.clone()) {
             Ok(f) => f,
-            Err(_err) => return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeCreated)),
+            Err(err) => {
+                return Json(Err(
+                    HsmServerAddError::KmipServerStateFileCouldNotBeCreated {
+                        path: kmip_server_state_file.into_string(),
+                        err: err.to_string(),
+                    },
+                ))
+            }
         };
-        if let Err(_err) = serde_json::to_writer_pretty(&f, &kmip_state) {
-            return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeSaved));
+        if let Err(err) = serde_json::to_writer_pretty(&f, &kmip_state) {
+            return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeSaved {
+                path: kmip_server_state_file.into_string(),
+                err: err.to_string(),
+            }));
         }
-        drop(f);
 
         Json(Ok(HsmServerAddResult { vendor_id }))
     }
