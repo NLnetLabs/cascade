@@ -14,9 +14,9 @@ This example uses Docker because the `Thales documentation
 ll/linux_minimal_client_access_dpod.htm>`_ describes how one can easily get
 PKCS#11 connectivity to a Thales Luna Cloud HSM working using Docker.
 
-.. Note::
+.. Warning::
 
-   **Warning:** DPoD is **NOT** free. An initial free trial is available but
+   DPoD is **NOT** free. An initial free trial is available but
    thereafter it is a paid service.
 
 .. Note::
