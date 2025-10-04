@@ -108,10 +108,9 @@ fn main() -> ExitCode {
     } else {
         // If continuing from state update the configured logging setup.
         // Only update logger if a log setting has been persistet in state before
-        match logger.prepare(&state.config.daemon.logging).unwrap() {
-            Some(x) => logger.apply(x),
-            None => {}
-        };
+        if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
+            logger.apply(x)
+        }
 
         log::info!("Successfully loaded the global state file");
 
