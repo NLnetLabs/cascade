@@ -91,7 +91,7 @@ We would love for you to :doc:`get to know Cascade
    :name: toc-guides
 
    importing-keys
-   cascade-for-opendnssec-users
+.. cascade-for-opendnssec-users
 
 .. toctree::
    :maxdepth: 2
@@ -99,10 +99,10 @@ We would love for you to :doc:`get to know Cascade
    :caption: Integrations
    :name: toc-integrations
 
-   fortanix
-   nitrokey
    softhsm
    thales
+.. fortanix
+   nitrokey
    yubihsm
 
 
