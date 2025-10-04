@@ -652,7 +652,7 @@ fn policy_to_commands(policy: &Policy) -> Vec<Vec<String>> {
         strs!["cds-inception-offset", seconds(km.cds_inception_offset)],
         strs!["cds-lifetime", seconds(km.cds_signature_lifetime)],
         strs!["cds-remain-time", seconds(km.cds_remain_time)],
-        strs!["ds-algorithm", km.ds_algorithm],
+        // strs!["ds-algorithm", km.ds_algorithm],
         strs!["default-ttl".to_string(), km.default_ttl.as_secs(),],
         strs!["autoremove", km.auto_remove],
     ]

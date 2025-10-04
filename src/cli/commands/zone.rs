@@ -406,6 +406,7 @@ enum Progress {
     WaitingToSign,
     Signing,
     Signed,
+    SigningFailed,
     AtSignedReview,
     Published,
 }
@@ -426,7 +427,10 @@ fn determine_progress(zone: &ZoneStatus, policy: &PolicyInfo) -> Progress {
                         match &zone.signing_report {
                             None | Some(SigningReport::Requested(_)) => Progress::WaitingToSign,
                             Some(SigningReport::InProgress(_)) => Progress::Signing,
-                            Some(SigningReport::Finished(_)) => Progress::Signed,
+                            Some(SigningReport::Finished(s)) => match s.succeeded {
+                                true => Progress::Signed,
+                                false => Progress::SigningFailed,
+                            },
                         }
                     }
                 }
@@ -459,6 +463,7 @@ impl std::fmt::Display for Progress {
             Progress::WaitingToSign => f.write_str("Waiting to sign"),
             Progress::Signing => f.write_str("Signing"),
             Progress::Signed => f.write_str("Signed"),
+            Progress::SigningFailed => f.write_str("Signing failed"),
             Progress::AtSignedReview => f.write_str("At signed review"),
             Progress::Published => f.write_str("Published"),
         }
@@ -480,7 +485,8 @@ impl Progress {
                 Progress::AtUnsignedReview => self.print_pending_unsigned_review(zone, policy),
                 Progress::WaitingToSign => self.print_waiting_to_sign(zone),
                 Progress::Signing => self.print_signing(zone),
-                Progress::Signed => self.print_signed(zone),
+                Progress::Signed => self.print_signed(zone, true),
+                Progress::SigningFailed => self.print_signed(zone, false),
                 Progress::AtSignedReview => self.print_pending_signed_review(zone, policy),
                 Progress::Published => self.print_published(zone),
             }
@@ -499,6 +505,7 @@ impl Progress {
             Progress::WaitingToSign => Progress::Signing,
             Progress::Signing => Progress::Signed,
             Progress::Signed => Progress::AtSignedReview,
+            Progress::SigningFailed => return ControlFlow::Break(()),
             Progress::AtSignedReview => Progress::Published,
             Progress::Published => return ControlFlow::Break(()),
         };
@@ -536,10 +543,14 @@ impl Progress {
 
         // Print how receival of the zone went.
         let Some(report) = &zone.receipt_report else {
-            unreachable!();
+            println!("  {}No receipt report available!{}", ansi::RED, ansi::RESET);
+            return;
         };
         let (loaded_fetched, filesystem_network) = match zone.source {
-            ZoneSource::None => unreachable!(),
+            ZoneSource::None => {
+                println!("  {}Zone has no source!{}", ansi::RED, ansi::RESET);
+                return;
+            }
             ZoneSource::Zonefile { .. } => ("Loaded", "filesystem"),
             ZoneSource::Server { .. } => ("Fetched", "network"),
         };
@@ -600,10 +611,16 @@ impl Progress {
         Self::print_signing_progress(zone);
     }
 
-    fn print_signed(&self, zone: &ZoneStatus) {
+    fn print_signed(&self, zone: &ZoneStatus, succeeded: bool) {
+        let (signed_failed, icon) = match succeeded {
+            true => ("Signed", status_icon(true)),
+            false => (
+                "Signing failed",
+                format!("{}\u{78}{}", ansi::RED, ansi::RESET),
+            ),
+        };
         println!(
-            "{} Signed {} as {}",
-            status_icon(true),
+            "{icon} {signed_failed} {} as {}",
             serial_to_string(zone.unsigned_serial),
             serial_to_string(zone.signed_serial)
         );

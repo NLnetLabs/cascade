@@ -1246,4 +1246,5 @@ pub struct SigningFinishedReport {
     pub total_time: Duration,
     pub threads_used: usize,
     pub finished_at: SystemTime,
+    pub succeeded: bool,
 }
