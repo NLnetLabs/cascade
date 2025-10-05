@@ -69,6 +69,10 @@ Options for :subcmd:`zone add`
 
    Policy to use for this zone.
 
+   Note: At present to use a HSM with a zone the HSM must exist and be
+   configured in the policy used by the zone when the zone is added. It is not
+   possible to change it later in this alpha version of Cascade.
+
 .. option:: --import-public-key <IMPORT_PUBLIC_KEY>
 
    Import a public key to be included in the DNSKEY RRset.
