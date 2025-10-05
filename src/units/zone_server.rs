@@ -531,11 +531,6 @@ impl ZoneServer {
             return None;
         };
 
-        let http_api_server_addr = {
-            let state = self.center.state.lock().unwrap();
-            state.config.remote_control.servers.first().cloned()
-        };
-
         // TODO: Windows support?
         // TODO: Set 'CASCADE_UNSIGNED_SERIAL' and 'CASCADE_UNSIGNED_SERVER'.
         match tokio::process::Command::new("sh")
@@ -544,12 +539,6 @@ impl ZoneServer {
                 ("CASCADE_ZONE", &*zone_name.to_string()),
                 ("CASCADE_SERIAL", &*zone_serial.to_string()),
                 ("CASCADE_SERVER", &*review_server.addr().to_string()),
-                (
-                    "CASCADE_CONTROL",
-                    &http_api_server_addr
-                        .expect("An HTTP API server must be set")
-                        .to_string(),
-                ),
             ])
             .spawn()
         {
