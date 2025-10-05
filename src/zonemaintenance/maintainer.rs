@@ -469,7 +469,8 @@ where
             .collect();
 
         let zones = self.zones();
-        if let Some(zone) = self
+        let name = zone_id.name.clone();
+        let report = if let Some(zone) = self
             .pending_zones
             .read()
             .await
@@ -477,19 +478,21 @@ where
             .or_else(|| zones.get_zone(&zone_id.name, zone_id.class))
         {
             let cat_zone: &MaintainedZone = zone.into();
-
             let zone_info = cat_zone.info().clone();
-
-            let report = ZoneReport::new(zone_id, details, timers, zone_info);
-
-            if let Err(_err) = tx.send(report) {
-                // TODO
-            }
+            ZoneReport::new(zone_id, details, timers, zone_info)
         } else {
-            // This can happen when the zone has been added to Center but
-            // is still being loaded from disk and has not yet been added to
-            // the zone maintainer.
+            // This can happen when a zone has been added to Center but not
+            // yet to the ZoneMaintainer because it is still being loaded
+            // from disk.
+            let details = ZoneReportDetails::Primary;
+            let timers = vec![];
+            let zone_info = ZoneInfo::default();
+            ZoneReport::new(zone_id, details, timers, zone_info)
         };
+
+        if let Err(err) = tx.send(report) {
+            warn!("Failed to send report request for zone '{name}': {err}");
+        }
     }
 
     async fn on_refresh_timer(
