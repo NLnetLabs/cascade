@@ -222,16 +222,20 @@ impl ZoneSigner {
             next_resign_time.unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
         loop {
             select! {
-            _ = sleep_until(next_resign_time) => {
-                arc_self.clone().resign_zones();
-                next_resign_time = arc_self.next_resign_time().unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
-            }
-            opt_cmd = cmd_rx.recv() => {
-                let Some(cmd) = opt_cmd else { break };
-                if !arc_self.clone().handle_command(cmd, &mut next_resign_time).await {
-                break;
+                _ = sleep_until(next_resign_time) => {
+                    arc_self.clone().resign_zones();
+                    next_resign_time = arc_self
+                        .next_resign_time()
+                        .unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
                 }
-            }
+                opt_cmd = cmd_rx.recv() => {
+                    let Some(cmd) = opt_cmd else { break };
+                    if !arc_self
+                        .clone()
+                        .handle_command(cmd, &mut next_resign_time).await {
+                        break;
+                    }
+                }
             }
         }
 
