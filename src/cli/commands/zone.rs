@@ -692,7 +692,7 @@ impl Progress {
                 serial_to_string(zone.unsigned_serial),
             );
             if !done {
-                Self::print_review_hook(done, &policy.loader.review.cmd_hook, &zone, true);
+                Self::print_review_hook(done, &policy.loader.review.cmd_hook, zone, true);
             }
             // TODO: When complete, show how long we waited.
         }
@@ -756,7 +756,7 @@ impl Progress {
                 serial_to_string(zone.signed_serial),
             );
             if !done {
-                Self::print_review_hook(done, &policy.signer.review.cmd_hook, &zone, false);
+                Self::print_review_hook(done, &policy.signer.review.cmd_hook, zone, false);
             }
         }
     }
