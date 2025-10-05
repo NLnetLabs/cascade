@@ -266,7 +266,7 @@ impl KeyManager {
             return Err(ZoneAddError::Other(format!("zone {name} already exists")));
         }
 
-        let state_path = mk_dnst_keyset_state_file_path(self.keys_dir.clone(), &name);
+        let state_path = mk_dnst_keyset_state_file_path(&self.keys_dir, &name);
 
         let mut cmd = self.keyset_cmd(name.clone());
 
@@ -402,7 +402,7 @@ impl KeyManager {
         for zone in zone_tree.load().iter_zones() {
             let apex_name = zone.apex_name().to_string();
             let state_path =
-                mk_dnst_keyset_state_file_path(self.keys_dir.clone(), zone.apex_name());
+                mk_dnst_keyset_state_file_path(&self.keys_dir, zone.apex_name());
             if !state_path.exists() {
                 continue;
             }
@@ -519,7 +519,7 @@ impl KeyManager {
     }
 }
 
-pub fn mk_dnst_keyset_cfg_file_path(keys_dir: Box<Utf8Path>, name: &Name<Bytes>) -> Utf8PathBuf {
+pub fn mk_dnst_keyset_cfg_file_path(keys_dir: &Utf8Path, name: &Name<Bytes>) -> Utf8PathBuf {
     // Note: Zone name to file name handling needs work as we shouldn't
     // have to lowercase this here (if we don't the dnst keyset state file
     // for an uppercase zone name won't be found) but also in general we
@@ -528,7 +528,7 @@ pub fn mk_dnst_keyset_cfg_file_path(keys_dir: Box<Utf8Path>, name: &Name<Bytes>)
     keys_dir.join(format!("{}.cfg", name.to_string().to_lowercase()))
 }
 
-pub fn mk_dnst_keyset_state_file_path(keys_dir: Box<Utf8Path>, name: &Name<Bytes>) -> Utf8PathBuf {
+pub fn mk_dnst_keyset_state_file_path(keys_dir: &Utf8Path, name: &Name<Bytes>) -> Utf8PathBuf {
     // Note: Zone name to file name handling needs work as we shouldn't
     // have to lowercase this here (if we don't the dnst keyset state file
     // for an uppercase zone name won't be found) but also in general we
@@ -1042,7 +1042,7 @@ impl KeySetCommand {
         #[allow(clippy::boxed_local)] keys_dir: Box<Utf8Path>,
         #[allow(clippy::boxed_local)] dnst_binary_path: Box<Utf8Path>,
     ) -> Self {
-        let cfg_path = mk_dnst_keyset_state_file_path(keys_dir, &name);
+        let cfg_path = mk_dnst_keyset_state_file_path(&keys_dir, &name);
         let mut cmd = std::process::Command::new(dnst_binary_path.as_std_path());
         cmd.arg("keyset").arg("-c").arg(&cfg_path);
         Self {

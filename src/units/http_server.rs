@@ -263,8 +263,8 @@ impl HttpServer {
             let locked_state = state.center.state.lock().unwrap();
             dnst_binary_path = locked_state.config.dnst_binary_path.clone();
             let keys_dir = &locked_state.config.keys_dir;
-            cfg_path = mk_dnst_keyset_cfg_file_path(keys_dir.clone(), &name);
-            state_path = mk_dnst_keyset_state_file_path(keys_dir.clone(), &name);
+            cfg_path = mk_dnst_keyset_cfg_file_path(keys_dir, &name);
+            state_path = mk_dnst_keyset_state_file_path(keys_dir, &name);
             app_cmd_tx = state.center.app_cmd_tx.clone();
             let zone = locked_state
                 .zones
