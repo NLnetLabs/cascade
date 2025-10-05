@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use domain::base::Serial;
 use domain::zonetree::StoredName;
-use log::info;
+use log::{info, warn};
 use tokio::sync::mpsc;
 
 use crate::api::ZoneReviewStatus;
@@ -10,7 +10,7 @@ use crate::center::{get_zone, halt_zone, Center, Change};
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::manager::TargetCommand;
 use crate::payload::Update;
-use crate::zone::{HistoricalEvent, SigningTrigger};
+use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
 
 pub struct CentralCommand {
     pub center: Arc<Center>,
@@ -138,6 +138,16 @@ impl CentralCommand {
                     HistoricalEvent::NewVersionReceived,
                     Some(zone_serial),
                 );
+
+                if let Some(zone) = get_zone(&self.center, &zone_name) {
+                    if let Ok(zone_state) = zone.state.lock() {
+                        if matches!(zone_state.pipeline_mode, PipelineMode::HardHalt(_)) {
+                            warn!("[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted");
+                            return;
+                        }
+                    }
+                }
+
                 (
                     "Instructing review server to publish the unsigned zone",
                     "RS",
