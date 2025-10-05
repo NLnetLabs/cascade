@@ -942,7 +942,7 @@ impl KeySetCommand {
         #[allow(clippy::boxed_local)] keys_dir: Box<Utf8Path>,
         #[allow(clippy::boxed_local)] dnst_binary_path: Box<Utf8Path>,
     ) -> Self {
-        let cfg_path = mk_dnst_keyset_state_file_path(&keys_dir, &name);
+        let cfg_path = mk_dnst_keyset_cfg_file_path(&keys_dir, &name);
         let mut cmd = std::process::Command::new(dnst_binary_path.as_std_path());
         cmd.arg("keyset").arg("-c").arg(&cfg_path);
         Self { cmd, name, center }
