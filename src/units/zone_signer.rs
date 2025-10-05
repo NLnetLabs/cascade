@@ -528,7 +528,9 @@ impl ZoneSigner {
         trace!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
         // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
         let apex_name = zone.apex_name().to_string();
-        let state_path = self.keys_dir.join(format!("{}.state", apex_name.to_string().to_lowercase()));
+        let state_path = self
+            .keys_dir
+            .join(format!("{}.state", apex_name.to_string().to_lowercase()));
         let state = std::fs::read_to_string(&state_path)
             .map_err(|err| format!("Unable to read `dnst keyset` state file '{state_path}' while signing zone {zone_name}: {err}"))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();
