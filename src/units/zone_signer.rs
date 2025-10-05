@@ -14,7 +14,7 @@ use domain::base::{CanonicalOrd, Record, Rtype, Serial};
 use domain::crypto::kmip::KeyUrl;
 use domain::crypto::kmip::{self, ClientCertificate, ConnectionSettings};
 use domain::crypto::sign::{KeyPair, SecretKeyBytes, SignRaw};
-use domain::dep::kmip::client::pool::{ConnectionManager, SyncConnPool};
+use domain::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
 use domain::dnssec::common::parse_from_bind;
 use domain::dnssec::sign::denial::config::DenialConfig;
 use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode};
@@ -289,6 +289,7 @@ impl ZoneSigner {
                     succeeded: s.succeeded,
                 }))
             }
+            ZoneSigningStatus::Aborted => None,
         }
     }
 
@@ -310,7 +311,7 @@ impl ZoneSigner {
 
             ApplicationCommand::SignZone {
                 zone_name,
-                zone_serial, // TODO: the serial number is ignored, but is that okay?
+                zone_serial, // None means re-sign last signed & published serial
                 trigger,
             } => {
                 let arc_self = self.clone();
@@ -319,17 +320,27 @@ impl ZoneSigner {
                         .join_sign_zone_queue(&zone_name, zone_serial.is_none(), trigger)
                         .await
                     {
-                        error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+                        if matches!(err, SignerError::CannotResignNonPublishedZone) {
+                            // Ignore this benign case. It was probably caused
+                            // by dnst keyset cron triggering resigning before
+                            // we even signed the first time, either because
+                            // the zone was large and slow to load and sign,
+                            // or because the unsigned zone was pending
+                            // review.
+                            debug!("[ZS]: Ignoring probably bening failure to re-sign '{zone_name}' as it was not yet published");
+                        } else {
+                            error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
-                        self.center
-                            .update_tx
-                            .send(Update::ZoneSigningFailedEvent {
-                                zone_name,
-                                zone_serial,
-                                trigger,
-                                reason: err,
-                            })
-                            .unwrap();
+                            self.center
+                                .update_tx
+                                .send(Update::ZoneSigningFailedEvent {
+                                    zone_name,
+                                    zone_serial,
+                                    trigger,
+                                    reason: err.to_string(),
+                                })
+                                .unwrap();
+                        }
                     }
                 });
             }
@@ -368,7 +379,7 @@ impl ZoneSigner {
         zone_name: &StoredName,
         resign_last_signed_zone_content: bool,
         trigger: SigningTrigger,
-    ) -> Result<(), String> {
+    ) -> Result<(), SignerError> {
         info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
         let (q_size, _q_permit, _zone_permit) = {
             let mut signer_status = self.signer_status.write().await;
@@ -393,6 +404,7 @@ impl ZoneSigner {
                         "failed"
                     }
                 }
+                ZoneSigningStatus::Aborted => "aborted",
             };
             info!("[ZS]: Queue item: {} => {status}", q_item.zone_name);
         }
@@ -423,7 +435,7 @@ impl ZoneSigner {
         zone_name: &StoredName,
         resign_last_signed_zone_content: bool,
         trigger: SigningTrigger,
-    ) -> Result<(), String> {
+    ) -> Result<(), SignerError> {
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
         let start = Instant::now();
 
@@ -445,12 +457,12 @@ impl ZoneSigner {
                 published_zones
                     .get_zone(&zone_name, Class::IN)
                     .cloned()
-                    .ok_or_else(|| "No signed zone version available to resign".to_string())?
+                    .ok_or(SignerError::CannotResignNonPublishedZone)?
             }
         };
         let soa_rr = get_zone_soa(unsigned_zone.clone(), zone_name.clone())?;
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
-            return Err(format!("SOA not found for zone '{zone_name}'"));
+            return Err(SignerError::SoaNotFound);
         };
 
         let (last_signed_serial, policy, kmip_server_state_dir, kmip_credentials_store_path) = {
@@ -461,7 +473,7 @@ impl ZoneSigner {
 
             // Do NOT sign a zone that is halted.
             if zone_state.pipeline_mode != PipelineMode::Running {
-                return Err(format!("Zone '{zone_name}' is halted"));
+                return Err(SignerError::PipelineIsHalted);
             }
 
             let last_signed_serial = zone_state
@@ -481,9 +493,7 @@ impl ZoneSigner {
             SignerSerialPolicy::Keep => {
                 if let Some(previous_serial) = last_signed_serial {
                     if soa.serial() <= previous_serial {
-                        return Err(
-                            "Serial policy is Keep but upstream serial did not increase".into()
-                        );
+                        return Err(SignerError::KeepSerialPolicyViolated);
                     }
                 }
 
@@ -593,7 +603,7 @@ impl ZoneSigner {
         // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
         let state_path = mk_dnst_keyset_state_file_path(&self.keys_dir, zone.apex_name());
         let state = std::fs::read_to_string(&state_path)
-            .map_err(|err| format!("Unable to read `dnst keyset` state file '{state_path}' while signing zone {zone_name}: {err}"))?;
+            .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();
         for dnskey_rr in state.dnskey_rrset {
             let mut zonefile = Zonefile::new();
@@ -626,16 +636,16 @@ impl ZoneSigner {
                         debug!("Attempting to load private key '{priv_key_path}'.");
 
                         let private_key = ZoneSignerUnit::load_private_key(Path::new(priv_key_path))
-                            .map_err(|_| format!("Failed to load private key from '{priv_key_path}'"))?;
+                            .map_err(|_| SignerError::CannotReadPrivateKeyFile(priv_key_path.to_string()))?;
 
                         let pub_key_path = pub_url.path();
                         debug!("Attempting to load public key '{pub_key_path}'.");
 
                         let public_key = ZoneSignerUnit::load_public_key(Path::new(pub_key_path))
-                            .map_err(|_| format!("Failed to load public key from '{pub_key_path}'"))?;
+                            .map_err(|_| SignerError::CannotReadPublicKeyFile(pub_key_path.to_string()))?;
 
                         let key_pair = KeyPair::from_bytes(&private_key, public_key.data())
-                            .map_err(|err| format!("Failed to create key pair for zone {zone_name} using key files {pub_key_path} and {priv_key_path}: {err}"))?;
+                            .map_err(|err| SignerError::InvalidKeyPairComponents(err.to_string()))?;
                         let signing_key =
                             SigningKey::new(zone_name.clone(), public_key.data().flags(), key_pair);
 
@@ -643,8 +653,8 @@ impl ZoneSigner {
                     }
 
                     ("kmip", "kmip") => {
-                        let priv_key_url = KeyUrl::try_from(priv_url).map_err(|err| format!("Invalid KMIP URL for private key: {err}"))?;
-                        let pub_key_url = KeyUrl::try_from(pub_url).map_err(|err| format!("Invalid KMIP URL for public key: {err}"))?;
+                        let priv_key_url = KeyUrl::try_from(priv_url).map_err(SignerError::InvalidPublicKeyUrl)?;
+                        let pub_key_url = KeyUrl::try_from(pub_url).map_err(SignerError::InvalidPrivateKeyUrl)?;
 
                         // TODO: Replace the connection pool if the persisted KMIP server settings
                         // were updated more recently than the pool was created.
@@ -681,7 +691,7 @@ impl ZoneSigner {
                                         .unwrap();
 
                                         let creds = creds_file.get(&server_id)
-                                            .ok_or(format!("Missing credentials for KMIP server '{server_id}'"))?;
+                                            .ok_or(SignerError::KmipServerCredentialsNeeded(server_id.clone()))?;
 
                                         username = Some(creds.username.clone());
                                         password = creds.password.clone();
@@ -708,7 +718,7 @@ impl ZoneSigner {
                                         10,
                                         Some(Duration::from_secs(60)),
                                         Some(Duration::from_secs(60)),
-                                    ).map_err(|err| format!("Failed to create connection pool for KMIP server '{server_id}': {err}"))?;
+                                    ).map_err(|err| SignerError::CannotCreateKmipConnectionPool(server_id, err))?;
 
                                     e.insert(pool)
                                 }
@@ -720,14 +730,14 @@ impl ZoneSigner {
                             priv_key_url,
                             pub_key_url,
                             kmip_conn_pool.clone(),
-                        ).map_err(|err| format!("Failed to create keypair for KMIP key IDs: {err}"))?);
+                        ).map_err(|err| SignerError::InvalidKeyPairComponents(err.to_string()))?);
 
                         let signing_key = SigningKey::new(zone_name.clone(), key_pair.flags(), key_pair);
 
                         signing_keys.push(signing_key);
                     }
 
-                    (other1, other2) => return Err(format!("Using different key URI schemes ({other1} vs {other2}) for a public/private key pair is not supported.")),
+                    (other1, other2) => return Err(SignerError::InvalidKeyPairComponents(format!("Using different key URI schemes ({other1} vs {other2}) for a public/private key pair is not supported."))),
                 }
 
                 debug!("Loaded key pair for zone {zone_name} from key pair");
@@ -778,7 +788,7 @@ impl ZoneSigner {
         .await
         .unwrap()
         .map_err(|err: SigningError| {
-            format!("Failed to generate denial RRs for zone '{zone_name}': {err}")
+            SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
         })?;
         let denial_time = denial_start.elapsed();
         let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
@@ -853,9 +863,9 @@ impl ZoneSigner {
                 })
             }
         });
-        let (unsigned_records, mut updater) = unsigned_updater_task
-            .await
-            .map_err(|_| "Failed to insert unsigned records")?;
+        let (unsigned_records, mut updater) = unsigned_updater_task.await.map_err(|_| {
+            SignerError::SigningError("Failed to insert unsigned records".to_string())
+        })?;
 
         // At the moment, 'ZoneUpdater' only allows single-threaded access.  It
         // needs to be passed all of our records, which get created across many
@@ -928,11 +938,12 @@ impl ZoneSigner {
         // Wait for signature generation and insertion to finish.
         let generation_time = generator_task
             .await
-            .map_err(|_| "Could not generate RRsigs")?
-            .map_err(|err| format!("Signing failed: {err}"))?;
+            .map_err(|_| SignerError::SigningError("Could not generate RRsigs".to_string()))?
+            .map_err(|err| SignerError::SigningError(err.to_string()))?;
+
         let (mut updater, total_signatures, insertion_time) = inserter_task
             .await
-            .map_err(|_| "Could not insert all records")?;
+            .map_err(|_| SignerError::SigningError("Could not insert all records".to_string()))?;
 
         let generation_rate = total_signatures as f64 / generation_time.as_secs_f64().min(0.001);
         let insertion_rate = total_signatures as f64 / insertion_time.as_secs_f64().min(0.001);
@@ -1397,20 +1408,18 @@ impl SignTask<'_> {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn get_zone_soa(
     zone: Zone,
     zone_name: StoredName,
-) -> Result<Record<StoredName, StoredRecordData>, String> {
+) -> Result<Record<StoredName, StoredRecordData>, SignerError> {
     let answer = zone
         .read()
         .query(zone_name.clone(), Rtype::SOA)
-        .map_err(|_| format!("SOA not found for zone '{zone_name}'"))?;
-    let (soa_ttl, soa_data) = answer
-        .content()
-        .first()
-        .ok_or_else(|| format!("SOA not found for zone '{zone_name}'"))?;
+        .map_err(|_| SignerError::SoaNotFound)?;
+    let (soa_ttl, soa_data) = answer.content().first().ok_or(SignerError::SoaNotFound)?;
     if !matches!(soa_data, ZoneRecordData::Soa(_)) {
-        return Err(format!("SOA not found for zone '{zone_name}'"));
+        return Err(SignerError::SoaNotFound);
     };
     Ok(Record::new(zone_name.clone(), Class::IN, soa_ttl, soa_data))
 }
@@ -1600,6 +1609,8 @@ enum ZoneSigningStatus {
     InProgress(InProgressStatus),
 
     Finished(FinishedStatus),
+
+    Aborted,
 }
 
 impl ZoneSigningStatus {
@@ -1613,19 +1624,19 @@ impl ZoneSigningStatus {
             ZoneSigningStatus::Requested(s) => {
                 Ok(Self::InProgress(InProgressStatus::new(s, zone_serial)))
             }
-            ZoneSigningStatus::InProgress(_) | ZoneSigningStatus::Finished(_) => Err(self),
+            ZoneSigningStatus::Aborted
+            | ZoneSigningStatus::InProgress(_)
+            | ZoneSigningStatus::Finished(_) => Err(self),
         }
     }
 
     fn finish(self, succeeded: bool) -> Self {
         match self {
-            ZoneSigningStatus::Requested(_) => {
-                panic!("Cannot finish a signing operation that never started")
-            }
+            ZoneSigningStatus::Requested(_) => Self::Aborted,
             ZoneSigningStatus::InProgress(status) => {
                 Self::Finished(FinishedStatus::new(status, succeeded))
             }
-            ZoneSigningStatus::Finished(_) => self,
+            ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted => self,
         }
     }
 }
@@ -1636,6 +1647,7 @@ impl std::fmt::Display for ZoneSigningStatus {
             ZoneSigningStatus::Requested(_) => f.write_str("Requested"),
             ZoneSigningStatus::InProgress(_) => f.write_str("InProgress"),
             ZoneSigningStatus::Finished(_) => f.write_str("Finished"),
+            ZoneSigningStatus::Aborted => f.write_str("Aborted"),
         }
     }
 }
@@ -1688,21 +1700,22 @@ impl ZoneSignerStatus {
     pub async fn enqueue(
         &mut self,
         zone_name: StoredName,
-    ) -> Result<(usize, OwnedSemaphorePermit, OwnedSemaphorePermit), String> {
+    ) -> Result<(usize, OwnedSemaphorePermit, OwnedSemaphorePermit), SignerError> {
         let approx_q_size = SIGNING_QUEUE_SIZE - self.queue_semaphore.available_permits() + 1;
         let queue_permit = self
             .queue_semaphore
             .clone()
             .acquire_owned()
             .await
-            .map_err(|err| format!("Attempt to enqueue '{zone_name}' to sign failed: unable to acquire quue permit: {err}"))?;
+            .map_err(|_| SignerError::SignerNotReady)?;
         if self.zones_being_signed.len() == self.zones_being_signed.capacity() {
             // Discard oldest.
             let signing_status = self.zones_being_signed.pop_front();
             if let Some(signing_status) = signing_status {
                 if !matches!(signing_status.status, ZoneSigningStatus::Finished(_)) {
-                    return Err(format!("Attempt to enqueue '{zone_name}' to sign failed: next free queue item is not actually free but was for zone {} in state {}",
-                        signing_status.zone_name, signing_status.status));
+                    return Err(SignerError::InternalError(
+                        "Cannot acquire the queue semaphore".to_string(),
+                    ));
                 }
             }
         }
@@ -1711,11 +1724,16 @@ impl ZoneSignerStatus {
             status: ZoneSigningStatus::new(),
         });
 
-        let zone_permit = self.zone_semaphores
+        let zone_permit = self
+            .zone_semaphores
             .entry(zone_name.clone())
             .or_insert(Arc::new(Semaphore::new(1)))
             .clone()
-            .acquire_owned().await.map_err(|err| format!("Attempt to start signing zone '{zone_name}' failed: unable to acquire zone permit: {err}"))?;
+            .acquire_owned()
+            .await
+            .map_err(|_| {
+                SignerError::InternalError("Cannot acquire the zone semaphore".to_string())
+            })?;
 
         Ok((approx_q_size, queue_permit, zone_permit))
     }
@@ -1727,16 +1745,18 @@ impl ZoneSignerStatus {
         &mut self,
         zone_name: &StoredName,
         zone_serial: Serial,
-    ) -> Result<(), String> {
+    ) -> Result<(), SignerError> {
         if let Some(NamedZoneSigningStatus {
             status: status @ ZoneSigningStatus::Requested(..),
-            zone_name,
+            zone_name: _,
         }) = self.get_mut(zone_name)
         {
-            *status = status.start(zone_serial).map_err(|s| format!("Attempt to start signing serial {zone_serial} of zone '{zone_name} failed: queued request should be in the requested state but is in the {s} state"))?;
+            *status = status
+                .start(zone_serial)
+                .map_err(SignerError::InvalidStatus)?;
             Ok(())
         } else {
-            Err(format!("Attempt to start signing serial {zone_serial} of zone '{zone_name}' failed: no signing request found for this zone in the signing queue"))
+            Err(SignerError::InternalError(format!("Attempt to sign using serial {zone_serial} of zone '{zone_name}' failed: no signing request found for this zone in the signing queue")))
         }
     }
 
@@ -1894,4 +1914,83 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
     File::open(path).unwrap().read_to_end(&mut bytes).unwrap();
 
     bytes
+}
+
+enum SignerError {
+    SoaNotFound,
+    CannotResignNonPublishedZone,
+    SignerNotReady,
+    InternalError(String),
+    PipelineIsHalted,
+    KeepSerialPolicyViolated,
+    InvalidStatus(ZoneSigningStatus),
+    CannotReadStateFile(String),
+    CannotReadPrivateKeyFile(String),
+    CannotReadPublicKeyFile(String),
+    InvalidKeyPairComponents(String),
+    InvalidPublicKeyUrl(String),
+    InvalidPrivateKeyUrl(String),
+    KmipServerCredentialsNeeded(String),
+    CannotCreateKmipConnectionPool(String, KmipConnError),
+    SigningError(String),
+}
+
+impl std::fmt::Display for SignerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SignerError::SoaNotFound => f.write_str("SOA not found"),
+            SignerError::CannotResignNonPublishedZone => {
+                f.write_str("Cannot re-sign non-published zone")
+            }
+            SignerError::SignerNotReady => f.write_str("Signer not ready"),
+            SignerError::InternalError(err) => write!(f, "Internal error: {err}"),
+            SignerError::PipelineIsHalted => f.write_str("Pipeline is halted"),
+            SignerError::KeepSerialPolicyViolated => {
+                f.write_str("Serial policy is Keep but upstream serial did not increase")
+            }
+            SignerError::InvalidStatus(status) => {
+                let state = match status {
+                    ZoneSigningStatus::Requested(_) => "requested",
+                    ZoneSigningStatus::InProgress(_) => "in-progress",
+                    ZoneSigningStatus::Finished(_) => "finished",
+                    ZoneSigningStatus::Aborted => "aborted",
+                };
+                write!(
+                    f,
+                    "Queued request should be in the requested state but is in the {state} state"
+                )
+            }
+            SignerError::CannotReadStateFile(path) => {
+                write!(f, "Failed to read state file '{path}'")
+            }
+            SignerError::CannotReadPrivateKeyFile(path) => {
+                write!(f, "Failed to read private key file '{path}'")
+            }
+            SignerError::CannotReadPublicKeyFile(path) => {
+                write!(f, "Failed to read public key file '{path}'")
+            }
+            SignerError::InvalidKeyPairComponents(err) => {
+                write!(
+                    f,
+                    "Failed to create a key pair from private and public keys: {err}"
+                )
+            }
+            SignerError::InvalidPublicKeyUrl(err) => {
+                write!(f, "Invalid public key URL: {err}")
+            }
+            SignerError::InvalidPrivateKeyUrl(err) => {
+                write!(f, "Invalid private key URL: {err}")
+            }
+            SignerError::KmipServerCredentialsNeeded(server_id) => {
+                write!(f, "No credentials available for KMIP server '{server_id}'")
+            }
+            SignerError::CannotCreateKmipConnectionPool(server_id, err) => {
+                write!(
+                    f,
+                    "Cannot create connection pool for KMIP server '{server_id}': {err}"
+                )
+            }
+            SignerError::SigningError(err) => write!(f, "Signing erorr: {err}"),
+        }
+    }
 }
