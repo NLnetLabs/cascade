@@ -1573,7 +1573,7 @@ impl FinishedStatus {
             requested_at: in_progress_status.requested_at,
             zone_serial: in_progress_status.zone_serial,
             started_at: Instant::now(),
-            unsigned_rr_count: in_progress_status.unsigned_rr_count.unwrap(),
+            unsigned_rr_count: in_progress_status.unsigned_rr_count.unwrap_or_default(),
             walk_time: in_progress_status.walk_time.unwrap_or_default(),
             sort_time: in_progress_status.sort_time.unwrap_or_default(),
             denial_rr_count: in_progress_status.denial_rr_count.unwrap_or_default(),
