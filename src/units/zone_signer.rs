@@ -433,10 +433,12 @@ impl ZoneSigner {
         let unsigned_zone = match resign_last_signed_zone_content {
             false => {
                 let unsigned_zones = self.center.unsigned_zones.load();
-                unsigned_zones
-                    .get_zone(&zone_name, Class::IN)
-                    .cloned()
-                    .ok_or_else(|| "Unknown zone".to_string())?
+                let Some(unsigned_zone) = unsigned_zones.get_zone(&zone_name, Class::IN).cloned()
+                else {
+                    debug!("Ignoring request to sign unavailable zone '{zone_name}'");
+                    return Ok(());
+                };
+                unsigned_zone
             }
             true => {
                 let published_zones = self.center.published_zones.load();
