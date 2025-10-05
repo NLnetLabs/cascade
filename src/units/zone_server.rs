@@ -5,7 +5,7 @@ use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
@@ -39,7 +39,7 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 
-use crate::api;
+use crate::api::{self, ZoneReviewStatus};
 use crate::center::{get_zone, Center};
 use crate::common::tsig::TsigKeyStore;
 use crate::comms::ApplicationCommand;
@@ -47,6 +47,8 @@ use crate::comms::Terminated;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::payload::Update;
+use crate::targets::central_command::record_zone_event;
+use crate::zone::HistoricalEvent;
 use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -466,11 +468,24 @@ impl ZoneServer {
             }
         };
 
-        let review_server = {
+        let (review_server, pending_event) = {
             let state = self.center.state.lock().unwrap();
+            let status = ZoneReviewStatus::Pending;
             match self.source {
-                Source::UnsignedZones => state.config.loader.review.servers[0].clone(),
-                Source::SignedZones => state.config.signer.review.servers[0].clone(),
+                Source::UnsignedZones => (
+                    state.config.loader.review.servers[0].clone(),
+                    HistoricalEvent::UnsignedZoneReview {
+                        status,
+                        when: SystemTime::now(),
+                    },
+                ),
+                Source::SignedZones => (
+                    state.config.signer.review.servers[0].clone(),
+                    HistoricalEvent::SignedZoneReview {
+                        status,
+                        when: SystemTime::now(),
+                    },
+                ),
                 Source::PublishedZones => unreachable!(),
             }
         };
@@ -507,16 +522,13 @@ impl ZoneServer {
             .await
             .insert((zone_name.clone(), zone_serial));
 
+        record_zone_event(&self.center, &zone_name, pending_event, Some(zone_serial));
+
         let Some(hook) = review.cmd_hook else {
             info!("[{unit_name}] No review hook set; waiting for manual review");
-            info!("[{unit_name}]: Approve with HTTP POST /zone/{zone_name}/{zone_type}/{zone_serial}/approve");
-            info!("[{unit_name}]: Reject with HTTP POST /zone/{zone_name}/{zone_type}/{zone_serial}/reject");
+            info!("[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}");
+            info!("[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}");
             return None;
-        };
-
-        let http_api_server_addr = {
-            let state = self.center.state.lock().unwrap();
-            state.config.remote_control.servers.first().cloned()
         };
 
         // TODO: Windows support?
@@ -527,12 +539,6 @@ impl ZoneServer {
                 ("CASCADE_ZONE", &*zone_name.to_string()),
                 ("CASCADE_SERIAL", &*zone_serial.to_string()),
                 ("CASCADE_SERVER", &*review_server.addr().to_string()),
-                (
-                    "CASCADE_CONTROL",
-                    &http_api_server_addr
-                        .expect("An HTTP API server must be set")
-                        .to_string(),
-                ),
             ])
             .spawn()
         {

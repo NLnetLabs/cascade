@@ -17,9 +17,7 @@ use domain::base::Serial;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
 use domain::dnssec::sign::keys::keyset::KeyType;
-use log::debug;
-use log::warn;
-use log::{error, info};
+use log::{debug, info, warn, error};
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -644,9 +642,7 @@ impl HttpServer {
     async fn approve_unsigned(
         State(state): State<Arc<HttpServerState>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
-        Json(command): Json<ZoneReview>,
     ) -> Json<ZoneReviewResult> {
-        let ZoneReview {} = command;
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         state
@@ -670,9 +666,7 @@ impl HttpServer {
     async fn reject_unsigned(
         State(state): State<Arc<HttpServerState>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
-        Json(command): Json<ZoneReview>,
     ) -> Json<ZoneReviewResult> {
-        let ZoneReview {} = command;
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         state
@@ -696,9 +690,7 @@ impl HttpServer {
     async fn approve_signed(
         State(state): State<Arc<HttpServerState>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
-        Json(command): Json<ZoneReview>,
     ) -> Json<ZoneReviewResult> {
-        let ZoneReview {} = command;
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         state
@@ -722,9 +714,7 @@ impl HttpServer {
     async fn reject_signed(
         State(state): State<Arc<HttpServerState>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
-        Json(command): Json<ZoneReview>,
     ) -> Json<ZoneReviewResult> {
-        let ZoneReview {} = command;
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         state

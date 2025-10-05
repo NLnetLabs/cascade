@@ -327,7 +327,7 @@ impl ZoneSigner {
                             // the zone was large and slow to load and sign,
                             // or because the unsigned zone was pending
                             // review.
-                            debug!("[ZS]: Ignoring probably bening failure to re-sign '{zone_name}' as it was not yet published");
+                            debug!("[ZS]: Ignoring probably benign failure to re-sign '{zone_name}' as it was not yet published");
                         } else {
                             error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 

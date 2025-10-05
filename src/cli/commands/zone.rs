@@ -87,7 +87,7 @@ pub enum ZoneCommand {
     },
 
     /// Reject a zone being reviewed.
-    #[command(name = "approve")]
+    #[command(name = "reject")]
     Reject {
         /// Whether to reject an unsigned or signed version of the zone.
         #[command(flatten)]
@@ -730,7 +730,9 @@ impl Progress {
                 waiting_waited,
                 serial_to_string(zone.unsigned_serial),
             );
-            Self::print_review_hook(&policy.loader.review.cmd_hook);
+            if !done {
+                Self::print_review_hook(done, &policy.loader.review.cmd_hook, zone, true);
+            }
             // TODO: When complete, show how long we waited.
         }
     }
@@ -798,7 +800,9 @@ impl Progress {
                 waiting_waited,
                 serial_to_string(zone.signed_serial),
             );
-            Self::print_review_hook(&policy.signer.review.cmd_hook);
+            if !done {
+                Self::print_review_hook(done, &policy.signer.review.cmd_hook, zone, false);
+            }
         }
     }
 
@@ -813,10 +817,25 @@ impl Progress {
         }
     }
 
-    fn print_review_hook(cmd_hook: &Option<String>) {
+    fn print_review_hook(done: bool, cmd_hook: &Option<String>, zone: &ZoneStatus, unsigned: bool) {
         match cmd_hook {
             Some(path) => println!("  Configured to invoke {path}"),
-            None => println!("\u{0021} Zone will be held until manually approved"),
+            None => {
+                if !done {
+                    let zone_name = &zone.name;
+                    let (zone_type, zone_serial) = match unsigned {
+                        true => ("unsigned", zone.unsigned_serial),
+                        false => ("signed", zone.signed_serial),
+                    };
+                    println!("\u{0021} Zone will be held until manually approved");
+                    if let Some(zone_serial) = zone_serial {
+                        println!("  Approve with: cascade zone approve --{zone_type} {zone_name} {zone_serial}");
+                        println!("  Reject with:  cascade zone reject --{zone_type} {zone_name} {zone_serial}");
+                    }
+                } else {
+                    println!("  Zone was held until manually approved");
+                }
+            }
         }
     }
 
