@@ -541,35 +541,57 @@ impl Progress {
     fn print_zone_received(&self, zone: &ZoneStatus) {
         // TODO: we have no indication of whether a zone is currently being
         // received or not, we can only say if it was received after the fact.
-        println!(
-            "{} Loaded {}",
-            status_icon(true),
-            serial_to_string(zone.unsigned_serial),
-        );
-
         // Print how receival of the zone went.
         let Some(report) = &zone.receipt_report else {
-            println!("  {}No receipt report available!{}", ansi::RED, ansi::RESET);
+            // This shouldn't happen.
+            println!(
+                "{}\u{78} The receipt report for this zone is unavailable.{}",
+                ansi::RED,
+                ansi::RESET
+            );
             return;
         };
-        let (loaded_fetched, filesystem_network) = match zone.source {
-            ZoneSource::None => {
-                println!("  {}Zone has no source!{}", ansi::RED, ansi::RESET);
-                return;
-            }
-            ZoneSource::Zonefile { .. } => ("Loaded", "filesystem"),
-            ZoneSource::Server { .. } => ("Fetched", "network"),
+
+        let (loading_fetching, loaded_fetched, filesystem_network) = match zone.source {
+            ZoneSource::None => unreachable!(),
+            ZoneSource::Zonefile { .. } => ("Loading", "Loaded", "filesystem"),
+            ZoneSource::Server { .. } => ("Fetching", "Fetched", "network"),
         };
-        println!("  Loaded at {}", to_rfc3339_ago(report.finished_at));
-        println!(
-            "  {loaded_fetched} {} from the {filesystem_network} in {} seconds",
-            format_size(report.byte_count, " ", "B"),
-            report
-                .finished_at
-                .duration_since(report.started_at)
-                .unwrap()
-                .as_secs()
-        );
+
+        match report.finished_at {
+            None => {
+                println!("{} {loading_fetching} ..", status_icon(false),);
+
+                println!(
+                    "  {loaded_fetched} {} and {} in {} seconds",
+                    format_size(report.byte_count, " ", "B"),
+                    format_size(report.record_count, "", " records"),
+                    SystemTime::now()
+                        .duration_since(report.started_at)
+                        .unwrap()
+                        .as_secs()
+                );
+            }
+            Some(finished_at) => {
+                println!(
+                    "{} Loaded {}",
+                    status_icon(true),
+                    serial_to_string(zone.unsigned_serial),
+                );
+
+                println!("  Loaded at {}", to_rfc3339_ago(report.finished_at));
+
+                println!(
+                    "  {loaded_fetched} {} and {} from the {filesystem_network} in {} seconds",
+                    format_size(report.byte_count, " ", "B"),
+                    format_size(report.record_count, "", " records"),
+                    finished_at
+                        .duration_since(report.started_at)
+                        .unwrap()
+                        .as_secs()
+                );
+            }
+        }
     }
 
     fn print_pending_unsigned_review(&self, zone: &ZoneStatus, policy: &PolicyInfo) {
@@ -685,10 +707,16 @@ impl Progress {
         if let Some(report) = &zone.signing_report {
             match report {
                 SigningReport::Requested(r) => {
-                    println!("  Signing requested at {}", to_rfc3339_ago(r.requested_at));
+                    println!(
+                        "  Signing requested at {}",
+                        to_rfc3339_ago(Some(r.requested_at))
+                    );
                 }
                 SigningReport::InProgress(r) => {
-                    println!("  Signing started at {}", to_rfc3339_ago(r.started_at));
+                    println!(
+                        "  Signing started at {}",
+                        to_rfc3339_ago(Some(r.started_at))
+                    );
                     if let (Some(unsigned_rr_count), Some(total_time)) =
                         (r.unsigned_rr_count, r.total_time)
                     {
@@ -700,7 +728,7 @@ impl Progress {
                     }
                 }
                 SigningReport::Finished(r) => {
-                    println!("  Signed at {}", to_rfc3339_ago(r.finished_at));
+                    println!("  Signed at {}", to_rfc3339_ago(Some(r.finished_at)));
                     println!(
                         "  Signed {} in {}",
                         format_size(r.unsigned_rr_count, "", " records"),
@@ -734,11 +762,16 @@ fn serial_to_string(serial: Option<Serial>) -> String {
     }
 }
 
-fn to_rfc3339_ago(v: SystemTime) -> String {
-    let now = SystemTime::now();
-    let diff = now.duration_since(v).unwrap();
-    let rfc3339 = to_rfc3339(v);
-    format!("{rfc3339} ({} ago)", format_duration(diff))
+fn to_rfc3339_ago(v: Option<SystemTime>) -> String {
+    match v {
+        Some(v) => {
+            let now = SystemTime::now();
+            let diff = now.duration_since(v).unwrap();
+            let rfc3339 = to_rfc3339(v);
+            format!("{rfc3339} ({} ago)", format_duration(diff))
+        }
+        None => "Not yet finished".to_string(),
+    }
 }
 
 fn to_rfc3339(v: SystemTime) -> String {
