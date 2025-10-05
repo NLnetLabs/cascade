@@ -20,10 +20,10 @@ case $1 in
     echo -e "\nCASCADED SERVICE STATUS:"
     systemctl status cascaded || true
 
-    #echo -e "\nCASCADE MAN PAGE (first 20 lines only):"
-    #man -P cat cascade | head -n 20 || true
+    echo -e "\nCASCADE MAN PAGE (first 20 lines only):"
+    man -P cat cascade | head -n 20 || true
 
-    #echo -e "\nCASCADED MAN PAGE (first 20 lines only):"
-    #man -P cat cascaded | head -n 20 || true
+    echo -e "\nCASCADED MAN PAGE (first 20 lines only):"
+    man -P cat cascaded | head -n 20 || true
     ;;
 esac
