@@ -5,7 +5,7 @@ use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
@@ -474,11 +474,17 @@ impl ZoneServer {
             match self.source {
                 Source::UnsignedZones => (
                     state.config.loader.review.servers[0].clone(),
-                    HistoricalEvent::UnsignedZoneReview { status },
+                    HistoricalEvent::UnsignedZoneReview {
+                        status,
+                        when: SystemTime::now(),
+                    },
                 ),
                 Source::SignedZones => (
                     state.config.signer.review.servers[0].clone(),
-                    HistoricalEvent::SignedZoneReview { status },
+                    HistoricalEvent::SignedZoneReview {
+                        status,
+                        when: SystemTime::now(),
+                    },
                 ),
                 Source::PublishedZones => unreachable!(),
             }
@@ -520,8 +526,8 @@ impl ZoneServer {
 
         let Some(hook) = review.cmd_hook else {
             info!("[{unit_name}] No review hook set; waiting for manual review");
-            info!("[{unit_name}]: Approve with HTTP POST /zone/{zone_name}/{zone_type}/{zone_serial}/approve");
-            info!("[{unit_name}]: Reject with HTTP POST /zone/{zone_name}/{zone_type}/{zone_serial}/reject");
+            info!("[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}");
+            info!("[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}");
             return None;
         };
 
