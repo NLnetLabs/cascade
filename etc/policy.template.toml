@@ -152,9 +152,9 @@ algorithm.auto-done = true
 # The hash algorithm used by the parent zones' DS records.
 #
 # Supported options:
-# - 'SHA256': SHA-256.
-# - 'SHA384': SHA-384.
-ds-algorithm = "SHA256"
+# - 'SHA-256'
+# - 'SHA-384'
+ds-algorithm = "SHA-256"
 
 # Whether to automatically remove expired keys.
 #
