@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use domain::base::Serial;
 use domain::zonetree::StoredName;
-use log::{info, warn};
+use log::{debug, info, warn};
 use tokio::sync::mpsc;
 
 use crate::api::{self, ZoneReviewStatus};
