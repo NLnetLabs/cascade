@@ -16,7 +16,7 @@ use domain::base::iana::Class;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::zonetree::StoredName;
-use log::error;
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -96,7 +96,7 @@ impl KeyManager {
                     });
                 }
                 cmd = cmd_rx.recv() => {
-                    log::debug!("[KM] Received command: {cmd:?}");
+                    debug!("[KM] Received command: {cmd:?}");
                     if matches!(cmd, Some(ApplicationCommand::Terminate) | None) {
                         return Err(Terminated);
                     }

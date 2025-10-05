@@ -302,7 +302,7 @@ impl ZoneSigner {
         cmd: ApplicationCommand,
         next_resign_time: &mut Instant,
     ) -> bool {
-        info!("[ZS]: Received command: {cmd:?}");
+        debug!("[ZS]: Received command: {cmd:?}");
         match cmd {
             ApplicationCommand::Terminate => {
                 // self.status_reporter.terminated();

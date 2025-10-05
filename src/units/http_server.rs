@@ -77,7 +77,7 @@ impl HttpServer {
                 let Some(cmd) = cmd else {
                     return Result::<(), Terminated>::Err(Terminated);
                 };
-                info!("[{HTTP_UNIT_NAME}] Received command: {cmd:?}");
+                debug!("[{HTTP_UNIT_NAME}] Received command: {cmd:?}");
                 match &cmd {
                     ApplicationCommand::Terminate => {
                         return Err(Terminated);

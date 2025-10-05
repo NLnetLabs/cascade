@@ -303,7 +303,7 @@ impl ZoneServer {
         unit_name: &'static str,
         update_tx: mpsc::UnboundedSender<Update>,
     ) -> Result<(), Terminated> {
-        info!("[{unit_name}] Received command: {cmd:?}",);
+        debug!("[{unit_name}] Received command: {cmd:?}",);
         match cmd {
             ApplicationCommand::Terminate => {
                 // arc_self.status_reporter.terminated();
