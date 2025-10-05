@@ -87,7 +87,7 @@ pub enum ZoneCommand {
     },
 
     /// Reject a zone being reviewed.
-    #[command(name = "approve")]
+    #[command(name = "reject")]
     Reject {
         /// Whether to reject an unsigned or signed version of the zone.
         #[command(flatten)]
