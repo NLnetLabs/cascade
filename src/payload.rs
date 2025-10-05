@@ -3,6 +3,7 @@ use std::net::IpAddr;
 use domain::base::Serial;
 use domain::zonetree::StoredName;
 
+use crate::api;
 use crate::center::Change;
 use crate::zone::SigningTrigger;
 
@@ -30,6 +31,21 @@ pub enum Update {
         /// If this is set, and the zone's SOA serial is greater than or equal
         /// to this value, the refresh can be ignored.
         serial: Option<Serial>,
+    },
+
+    /// Review a zone.
+    ReviewZone {
+        /// The name of the zone.
+        name: StoredName,
+
+        /// The stage of review.
+        stage: api::ZoneReviewStage,
+
+        /// The serial number of the zone.
+        serial: Serial,
+
+        /// Whether to approve or reject the zone.
+        decision: api::ZoneReviewDecision,
     },
 
     UnsignedZoneUpdatedEvent {

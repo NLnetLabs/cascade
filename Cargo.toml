@@ -34,7 +34,7 @@ futures            = "0.3.17"
 futures-util       = "0.3"
 humantime          = "2.3.0"
 octseq             = { version = "0.5.2", default-features = false }
-tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
+tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing", "process"] }
 serde              = { version = "1.0", features = ["derive", "rc"] }
 toml               = "0.8"
 tokio-rustls       = { version = "0.23.4", optional = true }
@@ -50,7 +50,6 @@ crossbeam-utils    = "0.8"
 serde_json         = "1.0"
 serde_with         = "3"
 url                = { version = "2.4", features = ["serde"] }
-uuid               = { version = "1.4", features = ["v4", "fast-rng"] }
 rayon = "1.10.0"
 
 # Jiff is used by zone_signer for the DateCounter serial policy.

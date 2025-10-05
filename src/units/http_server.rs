@@ -1,16 +1,11 @@
-use std::collections::HashMap;
 use std::process::Command;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use axum::extract::OriginalUri;
 use axum::extract::Path;
-use axum::extract::Query;
 use axum::extract::State;
-use axum::http::StatusCode;
 use axum::routing::get;
 use axum::routing::post;
 use axum::Json;
@@ -22,8 +17,7 @@ use domain::base::Serial;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
 use domain::dnssec::sign::keys::keyset::KeyType;
-use log::warn;
-use log::{debug, error, info};
+use log::{error, info};
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -97,13 +91,8 @@ impl HttpServer {
             center: self.center,
         });
 
-        let unit_router = Router::new()
-            .route("/review-unsigned/{action}/{token}", get(Self::handle_rs))
-            .route("/review-signed/{action}/{token}", get(Self::handle_rs2));
-
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
-            .nest("/hook", unit_router)
             .route("/status", get(Self::status))
             .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
@@ -113,6 +102,22 @@ impl HttpServer {
             .route("/zone/{name}/status", get(Self::zone_status))
             .route("/zone/{name}/history", get(Self::zone_history))
             .route("/zone/{name}/reload", post(Self::zone_reload))
+            .route(
+                "/zone/{name}/unsigned/{serial}/approve",
+                post(Self::approve_unsigned),
+            )
+            .route(
+                "/zone/{name}/unsigned/{serial}/reject",
+                post(Self::reject_unsigned),
+            )
+            .route(
+                "/zone/{name}/signed/{serial}/approve",
+                post(Self::approve_signed),
+            )
+            .route(
+                "/zone/{name}/signed/{serial}/reject",
+                post(Self::reject_signed),
+            )
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/{name}", get(Self::policy_show))
@@ -596,6 +601,110 @@ impl HttpServer {
         }
     }
 
+    /// Approve an unsigned version of a zone.
+    async fn approve_unsigned(
+        State(state): State<Arc<HttpServerState>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+        Json(command): Json<ZoneReview>,
+    ) -> Json<ZoneReviewResult> {
+        let ZoneReview {} = command;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "RS".into(),
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision: ZoneReviewDecision::Approve,
+                    tx,
+                },
+            ))
+            .unwrap();
+
+        Json(rx.await.unwrap())
+    }
+
+    /// Reject an unsigned version of a zone.
+    async fn reject_unsigned(
+        State(state): State<Arc<HttpServerState>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+        Json(command): Json<ZoneReview>,
+    ) -> Json<ZoneReviewResult> {
+        let ZoneReview {} = command;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "RS".into(),
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision: ZoneReviewDecision::Reject,
+                    tx,
+                },
+            ))
+            .unwrap();
+
+        Json(rx.await.unwrap())
+    }
+
+    /// Approve a signed version of a zone.
+    async fn approve_signed(
+        State(state): State<Arc<HttpServerState>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+        Json(command): Json<ZoneReview>,
+    ) -> Json<ZoneReviewResult> {
+        let ZoneReview {} = command;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "RS2".into(),
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision: ZoneReviewDecision::Approve,
+                    tx,
+                },
+            ))
+            .unwrap();
+
+        Json(rx.await.unwrap())
+    }
+
+    /// Reject a signed version of a zone.
+    async fn reject_signed(
+        State(state): State<Arc<HttpServerState>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+        Json(command): Json<ZoneReview>,
+    ) -> Json<ZoneReviewResult> {
+        let ZoneReview {} = command;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "RS2".into(),
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision: ZoneReviewDecision::Reject,
+                    tx,
+                },
+            ))
+            .unwrap();
+
+        Json(rx.await.unwrap())
+    }
+
     async fn policy_list(State(state): State<Arc<HttpServerState>>) -> Json<PolicyListResult> {
         let state = state.center.state.lock().unwrap();
 
@@ -999,105 +1108,5 @@ impl HttpServer {
         }
 
         Json(Err(()))
-    }
-}
-
-//------------ HttpServer Handler for /<unit>/ -------------------------------
-
-impl HttpServer {
-    async fn handle_rs(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-        Path((action, token)): Path<(String, String)>,
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Result<(), StatusCode> {
-        Self::zone_server_unit_api_common("RS", uri, state, action, token, params).await
-    }
-
-    async fn handle_rs2(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-        Path((action, token)): Path<(String, String)>,
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Result<(), StatusCode> {
-        Self::zone_server_unit_api_common("RS2", uri, state, action, token, params).await
-    }
-
-    //--- common api implementations
-
-    // All ZoneServerUnit's have the same review API
-    //
-    // API: GET /{approve,reject}/<approval token>?zone=<zone name>&serial=<zone serial>
-    //
-    // NOTE: We use query parameters for the zone details because dots that appear in zone names
-    // are decoded specially by HTTP standards compliant libraries, especially occurences of
-    // handling of /./ are problematic as that gets collapsed to /.
-    async fn zone_server_unit_api_common(
-        unit: &str,
-        uri: OriginalUri,
-        state: Arc<HttpServerState>,
-        action: String,
-        token: String,
-        params: HashMap<String, String>,
-    ) -> Result<(), StatusCode> {
-        let uri = uri.path_and_query().map(|p| p.as_str()).unwrap_or_default();
-        debug!("[{HTTP_UNIT_NAME}]: Got HTTP approval hook request: {uri}");
-
-        let Some(zone_name) = params.get("zone") else {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid HTTP request: {uri}");
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        let Some(zone_serial) = params.get("serial") else {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid HTTP request: {uri}");
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        if token.is_empty() || !["approve", "reject"].contains(&action.as_ref()) {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid HTTP request: {uri}");
-            return Err(StatusCode::BAD_REQUEST);
-        }
-
-        let Ok(zone_name) = Name::<Bytes>::from_str(zone_name) else {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid zone name '{zone_name}' in request.");
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        let Ok(zone_serial) = Serial::from_str(zone_serial) else {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid zone serial '{zone_serial}' in request.");
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        let (tx, mut rx) = mpsc::channel(10);
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                unit.into(),
-                ApplicationCommand::HandleZoneReviewApi {
-                    zone_name,
-                    zone_serial,
-                    approval_token: token,
-                    operation: action,
-                    http_tx: tx,
-                },
-            ))
-            .unwrap();
-
-        let res = rx.recv().await;
-        let Some(res) = res else {
-            // Failed to receive response... When would that happen?
-            error!("[{HTTP_UNIT_NAME}]: Failed to receive response from unit {unit} while handling HTTP request: {uri}");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        };
-
-        let ret = match res {
-            Ok(_) => Ok(()),
-            Err(_) => Err(StatusCode::BAD_REQUEST),
-        };
-
-        debug!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
-
-        ret
     }
 }

@@ -43,6 +43,49 @@ pub enum ConfigReloadError {
     Parse(Utf8PathBuf, String),
 }
 
+//----------- ZoneReview -------------------------------------------------------
+
+/// Review a version of a zone.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneReview {}
+
+/// A stage for reviewing a zone.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneReviewStage {
+    /// Before signing.
+    Unsigned,
+
+    /// After signing.
+    Signed,
+}
+
+/// A decision upon reviewing a zone.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneReviewDecision {
+    /// Approve the zone.
+    Approve,
+
+    /// Reject the zone.
+    Reject,
+}
+
+/// The result of a [`ZoneReview`] command.
+pub type ZoneReviewResult = Result<ZoneReviewOutput, ZoneReviewError>;
+
+/// The output of a [`ZoneReview`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneReviewOutput {}
+
+/// An error from a [`ZoneReview`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneReviewError {
+    /// The specified zone could not be found.
+    NoSuchZone,
+
+    /// The specified version of the zone was not being reviewed.
+    NotUnderReview,
+}
+
 //------------------------------------------------------------------------------
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
