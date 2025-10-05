@@ -5,7 +5,7 @@ use domain::zonetree::StoredName;
 use log::{info, warn};
 use tokio::sync::mpsc;
 
-use crate::api::ZoneReviewStatus;
+use crate::api::{self, ZoneReviewStatus};
 use crate::center::{get_zone, halt_zone, Center, Change};
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::manager::TargetCommand;
@@ -125,6 +125,25 @@ impl CentralCommand {
                     zone_name,
                     source,
                     serial,
+                },
+            ),
+
+            Update::ReviewZone {
+                name,
+                stage,
+                serial,
+                decision,
+            } => (
+                "Passing back zone review",
+                match stage {
+                    api::ZoneReviewStage::Unsigned => "RS",
+                    api::ZoneReviewStage::Signed => "RS2",
+                },
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision,
+                    tx: tokio::sync::oneshot::channel().0,
                 },
             ),
 
