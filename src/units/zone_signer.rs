@@ -56,7 +56,7 @@ use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
     mk_dnst_keyset_state_file_path, KmipClientCredentialsFile, KmipServerCredentialsFileMode,
 };
-use crate::zone::{HistoricalEventType, SigningTrigger};
+use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
     SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
@@ -386,24 +386,21 @@ impl ZoneSigner {
         //
         // Lookup the zone to sign.
         //
-        let zone_to_sign = match resign_last_signed_zone_content {
+        let unsigned_zone = match resign_last_signed_zone_content {
             false => {
                 let unsigned_zones = self.center.unsigned_zones.load();
-                unsigned_zones.get_zone(&zone_name, Class::IN).cloned()
+                unsigned_zones
+                    .get_zone(&zone_name, Class::IN)
+                    .cloned()
+                    .ok_or_else(|| "Unknown zone".to_string())?
             }
             true => {
                 let published_zones = self.center.published_zones.load();
-                published_zones.get_zone(&zone_name, Class::IN).cloned()
+                published_zones
+                    .get_zone(&zone_name, Class::IN)
+                    .cloned()
+                    .ok_or_else(|| "No signed zone version available to resign".to_string())?
             }
-        };
-        let Some(unsigned_zone) = zone_to_sign else {
-            // In some cases, we might receive requests to sign zones that are
-            // not yet available, because the requestor doesn't know the zone
-            // hasn't been signed yet.  The requestors should be fixed; but this
-            // is a quick fix for now.
-
-            debug!("Ignoring request to sign unavailable zone '{zone_name}'");
-            return Ok(());
         };
         let soa_rr = get_zone_soa(unsigned_zone.clone(), zone_name.clone())?;
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
@@ -415,6 +412,12 @@ impl ZoneSigner {
             let state = self.center.state.lock().unwrap();
             let zone = state.zones.get(zone_name).unwrap();
             let zone_state = zone.0.state.lock().unwrap();
+
+            // Do NOT sign a zone that is halted.
+            if zone_state.pipeline_mode != PipelineMode::Running {
+                return Err(format!("Zone '{zone_name}' is halted"));
+            }
+
             let last_signed_serial = zone_state
                 .find_last_event(HistoricalEventType::SigningSucceeded, None)
                 .and_then(|item| item.serial);

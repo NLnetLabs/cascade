@@ -5,7 +5,7 @@ use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
@@ -39,7 +39,7 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 
-use crate::api;
+use crate::api::{ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage, ZoneReviewStatus};
 use crate::center::{get_zone, Center};
 use crate::common::tsig::TsigKeyStore;
 use crate::comms::ApplicationCommand;
@@ -47,6 +47,8 @@ use crate::comms::Terminated;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::payload::Update;
+use crate::targets::central_command::record_zone_event;
+use crate::zone::HistoricalEvent;
 use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -320,7 +322,7 @@ impl ZoneServer {
                     unit_name,
                     name,
                     serial,
-                    matches!(decision, api::ZoneReviewDecision::Approve),
+                    matches!(decision, ZoneReviewDecision::Approve),
                     tx,
                 )
                 .await;
@@ -466,11 +468,24 @@ impl ZoneServer {
             }
         };
 
-        let review_server = {
+        let (review_server, pending_event) = {
             let state = self.center.state.lock().unwrap();
+            let status = ZoneReviewStatus::Pending;
             match self.source {
-                Source::UnsignedZones => state.config.loader.review.servers[0].clone(),
-                Source::SignedZones => state.config.signer.review.servers[0].clone(),
+                Source::UnsignedZones => (
+                    state.config.loader.review.servers[0].clone(),
+                    HistoricalEvent::UnsignedZoneReview {
+                        status,
+                        when: SystemTime::now(),
+                    },
+                ),
+                Source::SignedZones => (
+                    state.config.signer.review.servers[0].clone(),
+                    HistoricalEvent::SignedZoneReview {
+                        status,
+                        when: SystemTime::now(),
+                    },
+                ),
                 Source::PublishedZones => unreachable!(),
             }
         };
@@ -507,16 +522,13 @@ impl ZoneServer {
             .await
             .insert((zone_name.clone(), zone_serial));
 
+        record_zone_event(&self.center, &zone_name, pending_event, Some(zone_serial));
+
         let Some(hook) = review.cmd_hook else {
             info!("[{unit_name}] No review hook set; waiting for manual review");
-            info!("[{unit_name}]: Approve with HTTP POST /zone/{zone_name}/{zone_type}/{zone_serial}/approve");
-            info!("[{unit_name}]: Reject with HTTP POST /zone/{zone_name}/{zone_type}/{zone_serial}/reject");
+            info!("[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}");
+            info!("[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}");
             return None;
-        };
-
-        let http_api_server_addr = {
-            let state = self.center.state.lock().unwrap();
-            state.config.remote_control.servers.first().cloned()
         };
 
         // TODO: Windows support?
@@ -527,12 +539,6 @@ impl ZoneServer {
                 ("CASCADE_ZONE", &*zone_name.to_string()),
                 ("CASCADE_SERIAL", &*zone_serial.to_string()),
                 ("CASCADE_SERVER", &*review_server.addr().to_string()),
-                (
-                    "CASCADE_CONTROL",
-                    &http_api_server_addr
-                        .expect("An HTTP API server must be set")
-                        .to_string(),
-                ),
             ])
             .spawn()
         {
@@ -553,15 +559,15 @@ impl ZoneServer {
                     debug!("[{unit_name}]: Hook '{hook}' exited with status {status}");
 
                     let decision = match status.success() {
-                        true => api::ZoneReviewDecision::Approve,
-                        false => api::ZoneReviewDecision::Reject,
+                        true => ZoneReviewDecision::Approve,
+                        false => ZoneReviewDecision::Reject,
                     };
 
                     let _ = update_tx.send(Update::ReviewZone {
                         name: zone_name,
                         stage: match zone_type {
-                            "unsigned" => api::ZoneReviewStage::Unsigned,
-                            "signed" => api::ZoneReviewStage::Signed,
+                            "unsigned" => ZoneReviewStage::Unsigned,
+                            "signed" => ZoneReviewStage::Signed,
                             _ => unreachable!(),
                         },
                         serial: zone_serial,
@@ -586,7 +592,7 @@ impl ZoneServer {
         zone_name: Name<Bytes>,
         zone_serial: Serial,
         approve: bool,
-        tx: tokio::sync::oneshot::Sender<api::ZoneReviewResult>,
+        tx: tokio::sync::oneshot::Sender<ZoneReviewResult>,
     ) {
         // This can fail if the caller doesn't care about the result.
         let _ = tx.send(
@@ -738,7 +744,7 @@ impl ZoneReviewApi {
         zone_name: Name<Bytes>,
         zone_serial: Serial,
         approve: bool,
-    ) -> api::ZoneReviewResult {
+    ) -> ZoneReviewResult {
         // Was this version of the zone pending review?
         let existed = {
             let mut approvals = self.pending_approvals.write().await;
@@ -748,7 +754,7 @@ impl ZoneReviewApi {
         if !existed {
             // TODO: Check whether the zone exists at all.
             debug!("[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review");
-            return Err(api::ZoneReviewError::NotUnderReview);
+            return Err(ZoneReviewError::NotUnderReview);
         }
 
         if approve {
@@ -800,7 +806,7 @@ impl ZoneReviewApi {
             self.update_tx.send(event).unwrap();
         }
 
-        Ok(api::ZoneReviewOutput {})
+        Ok(ZoneReviewOutput {})
     }
 }
 

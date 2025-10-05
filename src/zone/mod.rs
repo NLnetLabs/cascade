@@ -179,7 +179,7 @@ pub enum ZoneVersionReviewState {
     Rejected,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PipelineMode {
     /// Newly received zone data will flow through the pipeline.
     #[default]

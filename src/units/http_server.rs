@@ -605,9 +605,7 @@ impl HttpServer {
     async fn approve_unsigned(
         State(state): State<Arc<HttpServerState>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
-        Json(command): Json<ZoneReview>,
     ) -> Json<ZoneReviewResult> {
-        let ZoneReview {} = command;
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         state
@@ -631,9 +629,7 @@ impl HttpServer {
     async fn reject_unsigned(
         State(state): State<Arc<HttpServerState>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
-        Json(command): Json<ZoneReview>,
     ) -> Json<ZoneReviewResult> {
-        let ZoneReview {} = command;
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         state
@@ -657,9 +653,7 @@ impl HttpServer {
     async fn approve_signed(
         State(state): State<Arc<HttpServerState>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
-        Json(command): Json<ZoneReview>,
     ) -> Json<ZoneReviewResult> {
-        let ZoneReview {} = command;
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         state
@@ -683,9 +677,7 @@ impl HttpServer {
     async fn reject_signed(
         State(state): State<Arc<HttpServerState>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
-        Json(command): Json<ZoneReview>,
     ) -> Json<ZoneReviewResult> {
-        let ZoneReview {} = command;
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         state
