@@ -5,7 +5,7 @@ use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
@@ -474,17 +474,11 @@ impl ZoneServer {
             match self.source {
                 Source::UnsignedZones => (
                     state.config.loader.review.servers[0].clone(),
-                    HistoricalEvent::UnsignedZoneReview {
-                        status,
-                        when: SystemTime::now(),
-                    },
+                    HistoricalEvent::UnsignedZoneReview { status },
                 ),
                 Source::SignedZones => (
                     state.config.signer.review.servers[0].clone(),
-                    HistoricalEvent::SignedZoneReview {
-                        status,
-                        when: SystemTime::now(),
-                    },
+                    HistoricalEvent::SignedZoneReview { status },
                 ),
                 Source::PublishedZones => unreachable!(),
             }
