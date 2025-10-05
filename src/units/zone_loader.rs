@@ -185,7 +185,7 @@ impl ZoneLoader {
         <KS::Target as KeyStore>::Key: Clone + Debug + Display + Sync + Send + 'static,
         CF: ConnectionFactory + Send + Sync + 'static,
     {
-        info!("[ZL] Received command: {cmd:?}",);
+        debug!("[ZL] Received command: {cmd:?}",);
 
         match cmd {
             Some(ApplicationCommand::Terminate) | None => {
