@@ -15,6 +15,7 @@ use domain::{base::Name, zonetree::ZoneTree};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::api::KeyImport;
+use crate::zone::PipelineMode;
 use crate::{
     api,
     comms::ApplicationCommand,
@@ -192,8 +193,13 @@ pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reaso
     if let Some(zone) = state.zones.get(zone_name) {
         let mut zone_state = zone.0.state.lock().unwrap();
         if hard {
-            zone_state.hard_halt(reason.to_string());
-        } else {
+            if !matches!(zone_state.pipeline_mode, PipelineMode::HardHalt(_)) {
+                zone_state.hard_halt(reason.to_string());
+            }
+        } else if !matches!(
+            zone_state.pipeline_mode,
+            PipelineMode::SoftHalt(_) | PipelineMode::HardHalt(_)
+        ) {
             zone_state.soft_halt(reason.to_string());
         }
     }
