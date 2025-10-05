@@ -81,19 +81,23 @@ Global Options
    It should not be modified manually, but it can be backed up and restored in
    the event of filesystem corruption.  Carefully consider its security.
 
+   Note: This setting is not used at present as the alpha version of Cascade
+   does not yet support TSIG keys.
+
 .. option:: kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
 
    The file storing KMIP credentials.
 
-   This is an internal state file containing sensitive cryptographic material.
-   It should not be modified manually, but it can be backed up and restored in
-   the event of filesystem corruption.  Carefully consider its security.
+   This is an internal state file containing sensitive KMIP server login
+   credentials. It should not be modified manually, but it can be backed up
+   and restored in the event of filesystem corruption.  Carefully consider
+   its security.
 
 .. option:: keys-dir = "/var/lib/cascade/keys"
 
    The directory storing rollover states and on-disk DNSSEC keys.
 
-   For every zone, the state of its DNSSEC keys (which keys are used, ongoing
+   For every zone, the state of its DNSSEC keys (which keys are used, on-going
    rollovers, etc.) are stored here.  If on-disk keys are used to sign zones,
    they are stored also here.
 
@@ -116,10 +120,10 @@ Global Options
 
    The path to the dnst binary Cascade should use.
 
-   Cascade relies on the (not yet officially released) ``dnst`` program
-   (<https://github.com/NLnetLabs/dnst>) in order to perform DNSSEC key
-   rollovers.  You can specify an absolute path here, or just ``dnst`` if it is
-   in $PATH.
+   Cascade relies on a Cascade specific verison of the (not yet officially
+   released) ``dnst`` program (<https://github.com/NLnetLabs/dnst>) in order
+   to perform DNSSEC key management.  You can specify an absolute path here, or
+   just ``dnst`` if it is in $PATH.
 
 
 

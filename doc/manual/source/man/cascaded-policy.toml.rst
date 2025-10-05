@@ -131,21 +131,14 @@ The ``[loader]`` section.
 
    - ``CASCADE_ZONE``: The name of the zone, formatted without a trailing dot.
    - ``CASCADE_SERIAL``: The serial number of the zone (decimal integer).
-   - ``CASCADE_TOKEN``: A UUID associated with this review, for approving or
-     rejecting this version of the zone.
    - ``CASCADE_SERVER``: The TCP/UDP port where Cascade is serving the zone for
      review, formatted ``<ip-addr>:<port>``.
    - ``CASCADE_CONTROL``: The address of Cascade's HTTP API server, for sending
      approvals and rejections.
 
    The command will be called from an unspecified directory, and it must be
-   accessible to Cascade (i.e. after it has dropped privileges).
-
-   To approve the zone contents, send an HTTP GET request to
-   ``http://$CASCADE_CONTROL/approve/$CASCADE_TOKEN?zone=$CASCADE_ZONE&serial=$CASCADE_SERIAL``.
-   ``approve`` can be replaced by ``reject`` to reject the zone.  If the command
-   exits without approving or rejecting the zone, Cascade will wait for the
-   user to approve it manually.
+   accessible to Cascade (i.e. after it has dropped privileges). Its exit code
+   will determine whether the zone is approved or not.
 
 
 DNSSEC key management.
@@ -226,14 +219,14 @@ The ``[key-manager]`` section.
    For this setting to work, Cascade must have network access to the zone's
    public nameservers and the parent zone's public nameservers.
 
-.. option:: ds-algorithm = "SHA256"
+.. option:: ds-algorithm = "SHA-256"
 
    The hash algorithm used by the parent zones' DS records.
 
    Supported options:
 
-   - ``SHA256``: SHA-256.
-   - ``SHA384``: SHA-384.
+   - ``SHA-256``: SHA-256.
+   - ``SHA-384``: SHA-384.
 
 .. option:: auto-remove = true
 
@@ -306,8 +299,8 @@ The ``[key-manager.generation]`` section.
 
    The HSM server to use.
 
-   If this is set, the named HSM server (which must be configured via 'cascade
-   hsm add') will be used for generating new DNSSEC keys.
+   If this is set, the named HSM server (which must be configured via ``cascade
+   hsm add``) will be used for generating new DNSSEC keys.
 
    See https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html for more
    information.
@@ -453,25 +446,12 @@ The ``[signer.review]`` section.
 
    - ``CASCADE_ZONE``: The name of the zone, formatted without a trailing dot.
    - ``CASCADE_SERIAL``: The serial number of the signed zone (decimal integer).
-   - ``CASCADE_UNSIGNED_SERIAL``: The serial number of the unsigned zone from which
-     the signed zone was generated (decimal integer).
-   - ``CASCADE_TOKEN``: A UUID associated with this review, for approving or
-     rejecting this version of the zone.
    - ``CASCADE_SERVER``: The TCP/UDP port where Cascade is serving the zone for
      review, formatted ``<ip-addr>:<port>``.
-   - ``CASCADE_UNSIGNED_SERVER``: The TCP/UDP port where Cascade is serving the
-     unsigned version of the zone for review, formatted ``<ip-addr>:<port>``.
-   - ``CASCADE_CONTROL``: The address of Cascade's HTTP API server, for sending
-     approvals and rejections.
 
    The command will be called from an unspecified directory, and it must be
-   accessible to Cascade (i.e. after it has dropped privileges).
-
-   To approve the zone contents, send an HTTP GET request to
-   ``http://$CASCADE_CONTROL/approve/$CASCADE_TOKEN?zone=$CASCADE_ZONE&serial=$CASCADE_SERIAL``.
-   ``approve`` can be replaced by ``reject`` to reject the zone.  If the
-   command exits without approving or rejecting the zone, Cascade will wait for
-   the user to approve it manually.
+   accessible to Cascade (i.e. after it has dropped privileges). Its exit code
+   will determine whether the zone is approved or not.
 
 
 How published zones are served.
