@@ -266,7 +266,9 @@ impl KeyManager {
             return Err(ZoneAddError::Other(format!("zone {name} already exists")));
         }
 
-        let state_path = self.keys_dir.join(format!("{name}.state"));
+        let state_path = self
+            .keys_dir
+            .join(format!("{}.state", name.to_string().to_lowercase()));
 
         let mut cmd = self.keyset_cmd(name.clone());
 
@@ -1023,7 +1025,7 @@ impl KeySetCommand {
         #[allow(clippy::boxed_local)] keys_dir: Box<Utf8Path>,
         #[allow(clippy::boxed_local)] dnst_binary_path: Box<Utf8Path>,
     ) -> Self {
-        let cfg_path = keys_dir.join(format!("{name}.cfg"));
+        let cfg_path = keys_dir.join(format!("{}.cfg", name.to_string().to_lowercase()));
         let mut cmd = std::process::Command::new(dnst_binary_path.as_std_path());
         cmd.arg("keyset").arg("-c").arg(&cfg_path);
         Self {
