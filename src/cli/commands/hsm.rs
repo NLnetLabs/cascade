@@ -251,8 +251,6 @@ pub enum HsmCommand {
     /// If this is NOT the first KMIP server to be configured, the default
     /// KMIP server will be left as-is, either unset or set to an existing
     /// KMIP server.
-    ///
-    /// Use 'kmip set-default-server' to change the default KMIP server.
     #[command(name = "add")]
     AddServer {
         /// An identifier to refer to the KMIP server by.

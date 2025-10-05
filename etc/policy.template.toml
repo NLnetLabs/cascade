@@ -56,24 +56,13 @@ required = false
 #
 # - 'CASCADE_ZONE': The name of the zone, formatted without a trailing dot.
 # - 'CASCADE_SERIAL': The serial number of the zone (decimal integer).
-# - 'CASCADE_TOKEN': A UUID associated with this review, for approving or
-#     rejecting this version of the zone.
 # - 'CASCADE_SERVER': The TCP/UDP port where Cascade is serving the zone for
 #     review, formatted '<ip-addr>:<port>'.
 #     TODO: Multiple such servers can be configured, which one should we pick?
-# - 'CASCADE_CONTROL': The address of Cascade's HTTP API server, for sending
-#     approvals and rejections.
 #
 # The command will be called from an unspecified directory, and it must be
-# accessible to Cascade (i.e. after it has dropped privileges).
-#
-# To approve the zone contents, send an HTTP GET request to
-# `http://$CASCADE_CONTROL/approve/$CASCADE_TOKEN?zone=$CASCADE_ZONE&serial=$CASCADE_SERIAL`.
-# `approve` can be replaced by `reject` to reject the zone.  If the command
-# exits without approving or rejecting the zone, Cascade will wait for the user
-# to approve it manually.
-#
-# TODO: Use the exit code of the hook to infer approval / rejection?
+# accessible to Cascade (i.e. after it has dropped privileges).  Its exit code
+# will determine whether the zone is approved or not.
 #cmd-hook = "review-unsigned-zone.sh"
 
 
@@ -152,9 +141,9 @@ algorithm.auto-done = true
 # The hash algorithm used by the parent zones' DS records.
 #
 # Supported options:
-# - 'SHA256': SHA-256.
-# - 'SHA384': SHA-384.
-ds-algorithm = "SHA256"
+# - 'SHA-256'
+# - 'SHA-384'
+ds-algorithm = "SHA-256"
 
 # Whether to automatically remove expired keys.
 #
@@ -350,27 +339,13 @@ required = false
 #
 # - 'CASCADE_ZONE': The name of the zone, formatted without a trailing dot.
 # - 'CASCADE_SERIAL': The serial number of the signed zone (decimal integer).
-# - 'CASCADE_UNSIGNED_SERIAL': The serial number of the unsigned zone from which
-#   the signed zone was generated (decimal integer).
-# - 'CASCADE_TOKEN': A UUID associated with this review, for approving or
-#   rejecting this version of the zone.
 # - 'CASCADE_SERVER': The TCP/UDP port where Cascade is serving the zone for
 #   review, formatted '<ip-addr>:<port>'.
-# - 'CASCADE_UNSIGNED_SERVER': The TCP/UDP port where Cascade is serving the
-#   unsigned version of the zone for review, formatted '<ip-addr>:<port>'.
-# - 'CASCADE_CONTROL': The address of Cascade's HTTP API server, for sending
-#   approvals and rejections.
+#     TODO: Multiple such servers can be configured, which one should we pick?
 #
 # The command will be called from an unspecified directory, and it must be
-# accessible to Cascade (i.e. after it has dropped privileges).
-#
-# To approve the zone contents, send an HTTP GET request to
-# `http://$CASCADE_CONTROL/approve/$CASCADE_TOKEN?zone=$CASCADE_ZONE&serial=$CASCADE_SERIAL`.
-# `approve` can be replaced by `reject` to reject the zone.  If the command
-# exits without approving or rejecting the zone, Cascade will wait for the user
-# to approve it manually.
-#
-# TODO: Use the exit code of the hook to infer approval / rejection?
+# accessible to Cascade (i.e. after it has dropped privileges).  Its exit code
+# will determine whether the zone is approved or not.
 #cmd-hook = "review-signed-zone.sh"
 
 
