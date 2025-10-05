@@ -23,7 +23,9 @@ Commands
 
 .. subcmd:: reload
 
-   Reload Cascade's configuration
+   Reload Cascade's configuration.
+
+   Note: Only some setting changes are honoured by Cascade at this point.
 
 
 See Also
