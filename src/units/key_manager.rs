@@ -24,11 +24,11 @@ use std::fmt::Formatter;
 use std::fs::{metadata, File, OpenOptions};
 use std::io::{BufReader, BufWriter, ErrorKind, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio::time::MissedTickBehavior;
+use tokio::time::{Instant, MissedTickBehavior};
 
 #[derive(Debug)]
 pub struct KeyManagerUnit {
@@ -85,10 +85,15 @@ impl KeyManager {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+        let arc_self = Arc::new(self);
+
         loop {
             select! {
                 _ = interval.tick() => {
-                    self.tick().await;
+                    let arc_self = arc_self.clone();
+                    tokio::task::spawn(async move {
+                        arc_self.tick().await;
+                    });
                 }
                 cmd = cmd_rx.recv() => {
                     log::debug!("[KM] Received command: {cmd:?}");
@@ -96,9 +101,12 @@ impl KeyManager {
                         return Err(Terminated);
                     }
 
-                    if let Err(err) = self.run_cmd(cmd.unwrap()).await {
-                        log::error!("[KM] Error: {err}");
-                    }
+                    let arc_self = arc_self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(err) = arc_self.run_cmd(cmd.unwrap()).await {
+                            log::error!("[KM] Error: {err}");
+                        }
+                    });
                 }
             }
         }
@@ -112,7 +120,7 @@ impl KeyManager {
                 key_imports,
                 report_tx,
             } => {
-                let res = self.register_zone(name.clone(), policy, &key_imports);
+                let res = self.register_zone(name.clone(), policy, &key_imports).await;
                 if let Err(unsent_res) = report_tx.send(res.clone()) {
                     let msg = match unsent_res {
                         Ok(()) => "succeeded".to_string(),
@@ -167,7 +175,7 @@ impl KeyManager {
                     }
                 }
 
-                if let Err(KeySetCommandError { err, output }) = cmd.output() {
+                if let Err(KeySetCommandError { err, output, .. }) = cmd.output().await {
                     let client_err = match output {
                         Some(output) => KeyRollError::DnstCommandError(
                             String::from_utf8_lossy(&output.stderr).into(),
@@ -205,7 +213,7 @@ impl KeyManager {
                     cmd.arg("--continue");
                 }
 
-                if let Err(KeySetCommandError { err, output }) = cmd.output() {
+                if let Err(KeySetCommandError { err, output, .. }) = cmd.output().await {
                     let client_err = match output {
                         Some(output) => KeyRemoveError::DnstCommandError(
                             String::from_utf8_lossy(&output.stderr).into(),
@@ -225,7 +233,7 @@ impl KeyManager {
         }
     }
 
-    fn register_zone(
+    async fn register_zone(
         &self,
         name: Name<Bytes>,
         policy_name: String,
@@ -268,6 +276,7 @@ impl KeyManager {
             .arg("-s")
             .arg(&state_path)
             .output()
+            .await
             .map_err(|err| ZoneAddError::Other(err.err))?;
 
         // TODO: If we fail after this point, what should we do with whatever
@@ -335,7 +344,9 @@ impl KeyManager {
             }
 
             // TODO: --client-cert, --client-key, --server-cert and --ca-cert
-            cmd.output().map_err(|err| ZoneAddError::Other(err.err))?;
+            cmd.output()
+                .await
+                .map_err(|err| ZoneAddError::Other(err.err))?;
         }
 
         // Pass `set` and `import` commands to `dnst keyset`.
@@ -354,7 +365,9 @@ impl KeyManager {
                 cmd.arg(a);
             }
 
-            cmd.output().map_err(|err| ZoneAddError::Other(err.err))?;
+            cmd.output()
+                .await
+                .map_err(|err| ZoneAddError::Other(err.err))?;
         }
 
         // TODO: This should not happen immediately after
@@ -364,6 +377,7 @@ impl KeyManager {
         self.keyset_cmd(name.clone())
             .arg("init")
             .output()
+            .await
             .map_err(|err| ZoneAddError::Other(err.err))?;
 
         Ok(())
@@ -381,7 +395,10 @@ impl KeyManager {
 
     async fn tick(&self) {
         let zone_tree = &self.center.unsigned_zones;
-        let mut ks_info = self.ks_info.lock().await;
+        let Ok(mut ks_info) = self.ks_info.try_lock() else {
+            // An existing call to tick() is still busy, don't do anything.
+            return;
+        };
         for zone in zone_tree.load().iter_zones() {
             let apex_name = zone.apex_name().to_string();
             let state_path = self.keys_dir.join(format!("{apex_name}.state"));
@@ -443,10 +460,15 @@ impl KeyManager {
             };
 
             if *cron_next < UnixTime::now() {
+                // Note: The call to keyset cron can take a long time if
+                // keyset times out trying to contact nameservers. This will
+                // block the loop so we won't check the keyset state for the
+                // next zone till after the call to cron finishes.
                 let Ok(res) = self
                     .keyset_cmd(zone.apex_name().clone())
                     .arg("cron")
                     .output()
+                    .await
                 else {
                     info.clear_cron_next();
                     continue;
@@ -900,13 +922,90 @@ impl KmipClientCredentialsFile {
     }
 }
 
+/// A process command that doesn't block and records events in history.
+struct AsyncHistoricalCommand {
+    cmd: std::process::Command,
+}
+
+impl AsyncHistoricalCommand {
+    fn new(cmd: std::process::Command) -> Self {
+        Self { cmd }
+    }
+
+    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) {
+        let _ = self.cmd.arg(arg);
+    }
+
+    pub async fn output(self) -> Result<KeySetCommandSuccess, KeySetCommandError> {
+        // Remember the binary path and the entire command
+        // string as these are only available until we convert
+        // std::process::Command into tokio::process::Command while we
+        // use them in error messages after that point.
+        let binary_path = self.cmd.get_program().to_string_lossy().to_string();
+        let cmd_string = self
+            .cmd
+            .get_args()
+            .map(|v| v.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // Convert std::process::Command into tokio::process::Command so that
+        // we can execute it without blocking the Tokio runtime.
+        let mut cmd = tokio::process::Command::from(self.cmd);
+
+        // Execute the command.
+        log::info!("Executing keyset command {cmd_string}");
+        let output = cmd.output().await.map_err(|msg| {
+            let mut err = format!("Keyset command '{cmd_string}' could not be executed: {msg}",);
+            if matches!(msg.kind(), ErrorKind::NotFound) {
+                err.push_str(&format!(" [path: {binary_path}]"));
+            }
+            KeySetCommandError {
+                cmd: cmd_string.clone(),
+                err,
+                output: None,
+            }
+        })?;
+
+        if !output.status.success() {
+            let err = format!(
+                "Keyset command '{cmd_string}' returned non-zero exit code: {} [stdout={}, stderr={}]",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            return Err(KeySetCommandError {
+                cmd: cmd_string,
+                err,
+                output: Some(output),
+            });
+        }
+
+        log::debug!(
+            "Keyset command '{cmd_string}' stdout: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        Ok(KeySetCommandSuccess {
+            cmd: cmd_string,
+            output,
+        })
+    }
+}
+
 pub struct KeySetCommand {
-    cmd: Command,
+    cmd: Option<AsyncHistoricalCommand>,
     name: StoredName,
     center: Arc<Center>,
 }
 
+pub struct KeySetCommandSuccess {
+    cmd: String,
+    output: Output,
+}
+
 pub struct KeySetCommandError {
+    cmd: String,
     err: String,
     output: Option<Output>,
 }
@@ -925,85 +1024,58 @@ impl KeySetCommand {
         #[allow(clippy::boxed_local)] dnst_binary_path: Box<Utf8Path>,
     ) -> Self {
         let cfg_path = keys_dir.join(format!("{name}.cfg"));
-        let mut cmd = Command::new(dnst_binary_path.as_std_path());
+        let mut cmd = std::process::Command::new(dnst_binary_path.as_std_path());
         cmd.arg("keyset").arg("-c").arg(&cfg_path);
-        Self { cmd, name, center }
+        Self {
+            cmd: Some(AsyncHistoricalCommand::new(cmd)),
+            name,
+            center,
+        }
     }
 
     pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut KeySetCommand {
-        self.cmd.arg(arg);
+        if let Some(c) = self.cmd.as_mut() {
+            c.arg(arg)
+        }
         self
     }
 
-    pub fn output(&mut self) -> Result<Output, KeySetCommandError> {
-        self.exec()
-            .inspect(|_| {
-                record_zone_event(
-                    &self.center,
-                    &self.name,
-                    HistoricalEvent::KeySetCommand(self.cmd_to_string()),
-                    None,
-                );
-            })
-            .inspect_err(|KeySetCommandError { err, .. }| {
-                record_zone_event(
-                    &self.center,
-                    &self.name,
-                    HistoricalEvent::KeySetError(err.clone()),
-                    None,
-                );
-                halt_zone(&self.center, &self.name, true, err);
-            })
-    }
+    pub async fn output(&mut self) -> Result<Output, KeySetCommandError> {
+        let start = Instant::now();
+        let res = self
+            .cmd
+            .take()
+            .expect("Command has already been consumed")
+            .output()
+            .await;
+        let elapsed = Instant::now().duration_since(start);
 
-    fn exec(&mut self) -> Result<Output, KeySetCommandError> {
-        log::info!("Executing keyset command {}", self.cmd_to_string());
-        let output = self.cmd.output().map_err(|msg| {
-            let mut err = format!(
-                "Keyset command '{}' for zone '{}' could not be executed: {msg}",
-                self.cmd_to_string(),
-                self.name,
-            );
-            if matches!(msg.kind(), ErrorKind::NotFound) {
-                err.push_str(&format!(
-                    " [path: {}]",
-                    self.cmd.get_program().to_string_lossy()
-                ));
+        match res {
+            Ok(KeySetCommandSuccess { cmd, output }) => {
+                record_zone_event(
+                    &self.center,
+                    &self.name,
+                    HistoricalEvent::KeySetCommand { cmd, elapsed },
+                    None,
+                );
+                Ok(output)
             }
-            KeySetCommandError { err, output: None }
-        })?;
-
-        if !output.status.success() {
-            let err = format!(
-                "Keyset command '{}' for zone '{}' returned non-zero exit code: {} [stdout={}, stderr={}]",
-                self.cmd_to_string(),
-                self.name,
-                output.status,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr),
-            );
-            return Err(KeySetCommandError {
-                err,
-                output: Some(output),
-            });
+            Err(err) => {
+                let err_string = err.err.to_string();
+                halt_zone(&self.center, &self.name, true, &err_string);
+                record_zone_event(
+                    &self.center,
+                    &self.name,
+                    HistoricalEvent::KeySetError {
+                        cmd: err.cmd.clone(),
+                        err: err_string,
+                        elapsed,
+                    },
+                    None,
+                );
+                Err(err)
+            }
         }
-
-        log::debug!(
-            "Keyset command {} for zone '{}' stdout: {}",
-            self.cmd_to_string(),
-            self.name,
-            String::from_utf8_lossy(&output.stdout)
-        );
-
-        Ok(output)
-    }
-
-    fn cmd_to_string(&self) -> String {
-        self.cmd
-            .get_args()
-            .map(|v| v.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ")
     }
 }
 
