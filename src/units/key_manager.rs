@@ -384,8 +384,7 @@ impl KeyManager {
         let mut ks_info = self.ks_info.lock().await;
         for zone in zone_tree.load().iter_zones() {
             let apex_name = zone.apex_name().to_string();
-            let state_path =
-                mk_dnst_keyset_state_file_path(&self.keys_dir, zone.apex_name());
+            let state_path = mk_dnst_keyset_state_file_path(&self.keys_dir, zone.apex_name());
             if !state_path.exists() {
                 continue;
             }
