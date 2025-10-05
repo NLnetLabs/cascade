@@ -23,11 +23,11 @@ Commands
 
 .. subcmd:: config
 
-   Generate a config template
+   Generate a config template.
 
 .. subcmd:: policy
 
-   Generate a policy template
+   Generate a policy template.
 
 
 See Also

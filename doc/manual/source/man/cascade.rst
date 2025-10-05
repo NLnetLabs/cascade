@@ -16,12 +16,12 @@ Options
 
 .. option:: -s, --server <IP:PORT>
 
-   The cascade server instance to connect to [default: 127.0.0.1:8950]
+   The cascade server instance to connect to [default: 127.0.0.1:8950].
 
 .. option:: --log-level <LEVEL>
 
    The minimum severity of messages to log [default: warning] [possible values:
-   trace, debug, info, warning, error, critical]
+   trace, debug, info, warning, error, critical].
 
 .. option:: -h, --help
 
@@ -29,7 +29,7 @@ Options
 
 .. option:: -V, --version
 
-   Print version
+   Print version.
 
 
 Commands
@@ -41,47 +41,47 @@ Commands
 
         :doc:`cascade-config <cascade-config>`\ (1)
 
-          Manage Cascade's configuration
+          Manage Cascade's configuration.
 
         :doc:`cascade-zone <cascade-zone>`\ (1)
 
-          Manage zones
+          Manage zones.
 
         :doc:`cascade-policy <cascade-policy>`\ (1)
 
-          Manage policies
+          Manage policies.
 
         :doc:`cascade-keyset <cascade-keyset>`\ (1)
 
-          Execute manual key roll or key removal commands
+          Execute manual key roll or key removal commands.
 
         :doc:`cascade-hsm <cascade-hsm>`\ (1)
 
-          Manage HSMs
+          Manage HSMs.
 
         :doc:`cascade-template <cascade-template>`\ (1)
 
-          Print example config or policy files
+          Print example config or policy files.
 
 .. only:: man or text
 
     **cascade-config**\ (1)
-        Manage Cascade's configuration
+        Manage Cascade's configuration.
 
     **cascade-zone**\ (1)
-        Manage zones
+        Manage zones.
 
     **cascade-policy**\ (1)
-        Manage policies
+        Manage policies.
 
     **cascade-keyset**\ (1)
-        Execute manual key roll or key removal commands
+        Execute manual key roll or key removal commands.
 
     **cascade-hsm**\ (1)
-        Manage HSMs
+        Manage HSMs.
 
     **cascade-template**\ (1)
-        Print example config or policy files
+        Print example config or policy files.
 
 See Also
 --------

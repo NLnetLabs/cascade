@@ -29,23 +29,23 @@ Commands
 
 .. subcmd:: ksk
 
-   Command for KSK rolls
+   Command for KSK rolls.
 
 .. subcmd:: zsk
 
-   Command for ZSK rolls
+   Command for ZSK rolls.
 
 .. subcmd:: csk
 
-   Command for CSK rolls
+   Command for CSK rolls.
 
 .. subcmd:: algorithm
 
-   Command for algorithm rolls
+   Command for algorithm rolls.
 
 .. subcmd:: remove-key
 
-   Remove a key from the key set
+   Remove a key from the key set.
 
 
 Key roll commands for :subcmd:`ksk|zsk|csk|algorithm`
@@ -54,7 +54,7 @@ Key roll commands for :subcmd:`ksk|zsk|csk|algorithm`
 
 .. subcmd:: start-roll
 
-   Start a key roll
+   Start a key roll.
 
 .. subcmd:: propagation1-complete <TTL>
 
@@ -94,11 +94,11 @@ Options for :subcmd:`keyset remove-key`
 
 .. option:: --force
 
-    Force a key to be removed even if the key is not stale
+    Force a key to be removed even if the key is not stale.
 
 .. option:: --continue
 
-    Continue when removing the underlying keys fails
+    Continue when removing the underlying keys fails.
 
 
 See Also

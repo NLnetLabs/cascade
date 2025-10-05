@@ -29,24 +29,24 @@ Commands
 
 .. subcmd:: add
 
-   Add a KMIP server to use for key generation & signing
+   Add a KMIP server to use for key generation & signing.
 
    Note: There are no commands to remove or modify KMIP servers yet.
 
 .. subcmd:: show
 
-   Get the details of an existing KMIP server
+   Get the details of an existing KMIP server.
 
 .. subcmd:: list
 
-   List all configured KMIP servers
+   List all configured KMIP servers.
 
 Arguments for :subcmd:`hsm show`
 --------------------------------
 
 .. option:: <SERVER_ID>
 
-   The identifier of the KMIP server to show information about
+   The identifier of the KMIP server to show information about.
 
 
 :subcmd:`hsm add`

@@ -35,27 +35,27 @@ Commands
 
 .. subcmd:: add
 
-   Register a new zone
+   Register a new zone.
 
 .. subcmd:: remove
 
-   Remove a zone
+   Remove a zone.
 
 .. subcmd:: list
 
-   List registered zones
+   List registered zones.
 
 .. subcmd:: reload
 
-   Reload a zone
+   Reload a zone.
 
 .. subcmd:: status
 
-   Get the status of a single zone
+   Get the status of a single zone.
 
 .. subcmd:: history
 
-   Get the history of a single zone
+   Get the history of a single zone.
 
 Options for :subcmd:`zone add`
 ------------------------------
@@ -63,11 +63,11 @@ Options for :subcmd:`zone add`
 .. option:: --source <SOURCE>
 
    The zone source can be an IP address (with or without port, defaults to port
-   53) or a file path
+   53) or a file path.
 
 .. option:: --policy <POLICY>
 
-   Policy to use for this zone
+   Policy to use for this zone.
 
 .. option:: --import-public-key <IMPORT_PUBLIC_KEY>
 
@@ -98,15 +98,15 @@ Options for :subcmd:`zone add`
 
 .. option:: --import-ksk-kmip <server> <public_id> <private_id> <algorithm> <flags>
 
-   Import a KSK from an HSM
+   Import a KSK from an HSM.
 
 .. option:: --import-zsk-kmip <server> <public_id> <private_id> <algorithm> <flags>
 
-   Import a ZSK from an HSM
+   Import a ZSK from an HSM.
 
 .. option:: --import-csk-kmip <server> <public_id> <private_id> <algorithm> <flags>
 
-   Import a CSK from an HSM
+   Import a CSK from an HSM.
 
 .. option:: -h, --help
 

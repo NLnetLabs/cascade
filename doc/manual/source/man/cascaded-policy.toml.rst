@@ -20,6 +20,9 @@ policy files, then update Cascade with ``cascade policy reload``.  Note that:
   policy and reload policies in Cascade, it will fail and continue to use its
   internal copy of the policy.
 
+- Only policy files stored in the configured policy directory and having a
+  ``.toml`` extension will be loaded by Cascade.`
+
 
 Example
 -------

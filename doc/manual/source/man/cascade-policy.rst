@@ -29,15 +29,15 @@ Commands
 
 .. subcmd:: list
 
-   List registered policies
+   List registered policies.
 
 .. subcmd:: show
 
-   Show the settings contained in a policy
+   Show the settings contained in a policy.
 
 .. subcmd:: reload
 
-   Reload all the policies from the files
+   Reload all the policies from the files.
 
 
 See Also

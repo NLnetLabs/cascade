@@ -20,11 +20,11 @@ Options
 
 .. option:: --check-config
 
-          Check the configuration and exit
+          Check the configuration and exit.
 
 .. option:: --state <PATH>
 
-          The global state file to use
+          The global state file to use.
 
 .. option:: -c, --config <PATH>
 
@@ -34,18 +34,18 @@ Options
 .. option:: --log-level <LEVEL>
 
           The minimum severity of messages to log [possible values: trace,
-          debug, info, warning, error, critical]
+          debug, info, warning, error, critical].
 
           Defaults to ``info``, unless set in the config file.
 
 .. option:: -l, --log <TARGET>
 
           Where logs should be written to [possible values: stdout, stderr,
-          file:<PATH>, syslog]
+          file:<PATH>, syslog].
 
 .. option:: -d, --daemonize
 
-          Whether Cascade should fork on startup
+          Whether Cascade should fork on startup.
 
 .. option:: -h, --help
 
@@ -54,7 +54,7 @@ Options
 
 .. option:: -V, --version
 
-          Print version
+          Print version.
 
 Files
 -----
