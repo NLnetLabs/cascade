@@ -62,8 +62,8 @@ Global Options
    The directory storing zone policies.
 
    Zone policies are user-managed files configuring groups of zones.  You can
-   modify them as you like, then ask Cascade to reload them with 'cascade
-   policy reload'.
+   modify them as you like, then ask Cascade to reload them with ``cascade
+   policy reload``.
 
 .. option:: zone-state-dir = "/var/lib/cascade/zone-state"
 
