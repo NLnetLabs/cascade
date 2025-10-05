@@ -384,18 +384,21 @@ impl ZoneSigner {
         //
         // Lookup the zone to sign.
         //
-        let zone_to_sign = match resign_last_signed_zone_content {
+        let unsigned_zone = match resign_last_signed_zone_content {
             false => {
                 let unsigned_zones = self.center.unsigned_zones.load();
-                unsigned_zones.get_zone(&zone_name, Class::IN).cloned()
+                unsigned_zones
+                    .get_zone(&zone_name, Class::IN)
+                    .cloned()
+                    .ok_or_else(|| "Unknown zone".to_string())?
             }
             true => {
                 let published_zones = self.center.published_zones.load();
-                published_zones.get_zone(&zone_name, Class::IN).cloned()
+                published_zones
+                    .get_zone(&zone_name, Class::IN)
+                    .cloned()
+                    .ok_or_else(|| "No signed zone version available to resign".to_string())?
             }
-        };
-        let Some(unsigned_zone) = zone_to_sign else {
-            return Err(format!("Unknown zone '{zone_name}'"));
         };
         let soa_rr = get_zone_soa(unsigned_zone.clone(), zone_name.clone())?;
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
