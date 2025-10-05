@@ -124,12 +124,12 @@ impl Spec {
 
     /// The default value for `dnst_binary_path`.
     fn dnst_binary_path_default() -> Box<Utf8Path> {
-        "dnst".into()
+        "/usr/libexec/cascade/cascade-dnst".into()
     }
 
     /// The default value for `dnst_keyset_dir`.
     fn keys_dir_default() -> Box<Utf8Path> {
-        "/var/db/cascade/keys".into()
+        "/var/lib/cascade/keys".into()
     }
 
     /// The default value for `kmip_credentials_store_path`.

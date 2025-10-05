@@ -54,7 +54,7 @@ use crate::payload::Update;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode};
-use crate::zone::{HistoricalEventType, SigningTrigger};
+use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
     SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
@@ -216,21 +216,26 @@ impl ZoneSigner {
         self,
         mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
     ) -> Result<(), crate::comms::Terminated> {
-        let next_resign_time = self.next_resign_time();
+        let arc_self = Arc::new(self);
+        let next_resign_time = arc_self.next_resign_time();
         let mut next_resign_time =
             next_resign_time.unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
         loop {
             select! {
-            _ = sleep_until(next_resign_time) => {
-                self.resign_zones();
-                next_resign_time = self.next_resign_time().unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
-            }
-            opt_cmd = cmd_rx.recv() => {
-                let Some(cmd) = opt_cmd else { break };
-                if !self.handle_command(cmd, &mut next_resign_time).await {
-                break;
+                _ = sleep_until(next_resign_time) => {
+                    arc_self.clone().resign_zones();
+                    next_resign_time = arc_self
+                        .next_resign_time()
+                        .unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
                 }
-            }
+                opt_cmd = cmd_rx.recv() => {
+                    let Some(cmd) = opt_cmd else { break };
+                    if !arc_self
+                        .clone()
+                        .handle_command(cmd, &mut next_resign_time).await {
+                        break;
+                    }
+                }
             }
         }
 
@@ -291,7 +296,7 @@ impl ZoneSigner {
     /// Return true if the caller should continue, false when a Terminate
     /// command is received.
     async fn handle_command(
-        &self,
+        self: Arc<Self>,
         cmd: ApplicationCommand,
         next_resign_time: &mut Instant,
     ) -> bool {
@@ -307,22 +312,25 @@ impl ZoneSigner {
                 zone_serial, // TODO: the serial number is ignored, but is that okay?
                 trigger,
             } => {
-                if let Err(err) = self
-                    .sign_zone(&zone_name, zone_serial.is_none(), trigger)
-                    .await
-                {
-                    error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+                let arc_self = self.clone();
+                tokio::task::spawn(async move {
+                    if let Err(err) = arc_self
+                        .sign_zone(&zone_name, zone_serial.is_none(), trigger)
+                        .await
+                    {
+                        error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
-                    self.center
-                        .update_tx
-                        .send(Update::ZoneSigningFailedEvent {
-                            zone_name,
-                            zone_serial,
-                            trigger,
-                            reason: err,
-                        })
-                        .unwrap();
-                }
+                        self.center
+                            .update_tx
+                            .send(Update::ZoneSigningFailedEvent {
+                                zone_name,
+                                zone_serial,
+                                trigger,
+                                reason: err,
+                            })
+                            .unwrap();
+                    }
+                });
             }
 
             ApplicationCommand::GetSigningReport {
@@ -355,7 +363,7 @@ impl ZoneSigner {
     /// rather than a LightWeightZone (and XFR-in zones are LightWeightZone
     /// instances).
     async fn sign_zone(
-        &self,
+        self: Arc<Self>,
         zone_name: &StoredName,
         resign_last_signed_zone_content: bool,
         trigger: SigningTrigger,
@@ -376,24 +384,21 @@ impl ZoneSigner {
         //
         // Lookup the zone to sign.
         //
-        let zone_to_sign = match resign_last_signed_zone_content {
+        let unsigned_zone = match resign_last_signed_zone_content {
             false => {
                 let unsigned_zones = self.center.unsigned_zones.load();
-                unsigned_zones.get_zone(&zone_name, Class::IN).cloned()
+                unsigned_zones
+                    .get_zone(&zone_name, Class::IN)
+                    .cloned()
+                    .ok_or_else(|| "Unknown zone".to_string())?
             }
             true => {
                 let published_zones = self.center.published_zones.load();
-                published_zones.get_zone(&zone_name, Class::IN).cloned()
+                published_zones
+                    .get_zone(&zone_name, Class::IN)
+                    .cloned()
+                    .ok_or_else(|| "No signed zone version available to resign".to_string())?
             }
-        };
-        let Some(unsigned_zone) = zone_to_sign else {
-            // In some cases, we might receive requests to sign zones that are
-            // not yet available, because the requestor doesn't know the zone
-            // hasn't been signed yet.  The requestors should be fixed; but this
-            // is a quick fix for now.
-
-            debug!("Ignoring request to sign unavailable zone '{zone_name}'");
-            return Ok(());
         };
         let soa_rr = get_zone_soa(unsigned_zone.clone(), zone_name.clone())?;
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
@@ -405,6 +410,12 @@ impl ZoneSigner {
             let state = self.center.state.lock().unwrap();
             let zone = state.zones.get(zone_name).unwrap();
             let zone_state = zone.0.state.lock().unwrap();
+
+            // Do NOT sign a zone that is halted.
+            if zone_state.pipeline_mode != PipelineMode::Running {
+                return Err(format!("Zone '{zone_name}' is halted"));
+            }
+
             let last_signed_serial = zone_state
                 .find_last_event(HistoricalEventType::SigningSucceeded, None)
                 .and_then(|item| item.serial);

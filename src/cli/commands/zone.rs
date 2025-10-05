@@ -215,15 +215,20 @@ impl Zone {
                 }
             }
             ZoneCommand::Remove { name } => {
-                let res: ZoneAddResult = client
+                let res: Result<ZoneRemoveResult, ZoneRemoveError> = client
                     .post(&format!("zone/{name}/remove"))
                     .send()
                     .and_then(|r| r.json())
                     .await
                     .map_err(format_http_error)?;
 
-                println!("Removed zone {}", res.name);
-                Ok(())
+                match res {
+                    Ok(res) => {
+                        println!("Removed zone {}", res.name);
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to remove zone: {e}")),
+                }
             }
             ZoneCommand::List => {
                 let response: ZonesListResult = client
