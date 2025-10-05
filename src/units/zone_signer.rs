@@ -403,7 +403,13 @@ impl ZoneSigner {
             let status = match q_item.status {
                 ZoneSigningStatus::Requested(_) => "requested",
                 ZoneSigningStatus::InProgress(_) => "in progress",
-                ZoneSigningStatus::Finished(s) => if s.succeeded { "finished" } else { "failed" },
+                ZoneSigningStatus::Finished(s) => {
+                    if s.succeeded {
+                        "finished"
+                    } else {
+                        "failed"
+                    }
+                }
             };
             info!("[ZS]: Queue item: {} => {status}", q_item.zone_name);
         }
