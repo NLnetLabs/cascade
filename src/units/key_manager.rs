@@ -85,10 +85,15 @@ impl KeyManager {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+        let arc_self = Arc::new(self);
+
         loop {
             select! {
                 _ = interval.tick() => {
-                    self.tick().await;
+                    let arc_self = arc_self.clone();
+                    tokio::task::spawn(async move {
+                        arc_self.tick().await;
+                    });
                 }
                 cmd = cmd_rx.recv() => {
                     log::debug!("[KM] Received command: {cmd:?}");
@@ -96,9 +101,12 @@ impl KeyManager {
                         return Err(Terminated);
                     }
 
-                    if let Err(err) = self.run_cmd(cmd.unwrap()).await {
-                        log::error!("[KM] Error: {err}");
-                    }
+                    let arc_self = arc_self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(err) = arc_self.run_cmd(cmd.unwrap()).await {
+                            log::error!("[KM] Error: {err}");
+                        }
+                    });
                 }
             }
         }
@@ -387,7 +395,10 @@ impl KeyManager {
 
     async fn tick(&self) {
         let zone_tree = &self.center.unsigned_zones;
-        let mut ks_info = self.ks_info.lock().await;
+        let Ok(mut ks_info) = self.ks_info.try_lock() else {
+            // An existing call to tick() is still busy, don't do anything.
+            return;
+        };
         for zone in zone_tree.load().iter_zones() {
             let apex_name = zone.apex_name().to_string();
             let state_path = self.keys_dir.join(format!("{apex_name}.state"));
@@ -449,6 +460,10 @@ impl KeyManager {
             };
 
             if *cron_next < UnixTime::now() {
+                // Note: The call to keyset cron can take a long time if
+                // keyset times out trying to contact nameservers. This will
+                // block the loop so we won't check the keyset state for the
+                // next zone till after the call to cron finishes.
                 let Ok(res) = self
                     .keyset_cmd(zone.apex_name().clone())
                     .arg("cron")
