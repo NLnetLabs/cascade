@@ -17,7 +17,7 @@ use domain::base::Serial;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
 use domain::dnssec::sign::keys::keyset::KeyType;
-use log::{debug, info, warn, error};
+use log::{debug, error, info, warn};
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::mpsc;
