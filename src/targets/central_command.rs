@@ -75,7 +75,7 @@ impl CentralCommand {
 
 impl CentralCommand {
     async fn direct_update(&self, event: Update) {
-        info!("[CC]: Event received: {event:?}");
+        debug!("[CC]: Event received: {event:?}");
         let (msg, target, cmd) = match event {
             Update::Changed(change) => {
                 {
