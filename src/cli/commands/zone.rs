@@ -686,7 +686,9 @@ impl Progress {
                 waiting_waited,
                 serial_to_string(zone.unsigned_serial),
             );
-            Self::print_review_hook(&policy.loader.review.cmd_hook);
+            if !done {
+                Self::print_review_hook(done, &policy.loader.review.cmd_hook);
+            }
             // TODO: When complete, show how long we waited.
         }
     }
@@ -748,7 +750,9 @@ impl Progress {
                 waiting_waited,
                 serial_to_string(zone.signed_serial),
             );
-            Self::print_review_hook(&policy.signer.review.cmd_hook);
+            if !done {
+                Self::print_review_hook(done, &policy.signer.review.cmd_hook);
+            }
         }
     }
 
@@ -763,10 +767,16 @@ impl Progress {
         }
     }
 
-    fn print_review_hook(cmd_hook: &Option<String>) {
+    fn print_review_hook(done: bool, cmd_hook: &Option<String>) {
         match cmd_hook {
             Some(path) => println!("  Configured to invoke {path}"),
-            None => println!("\u{0021} Zone will be held until manually approved"),
+            None => {
+                if !done {
+                    println!("\u{0021} Zone will be held until manually approved");
+                } else {
+                    println!("  Zone was held until manually approved");
+                }
+            }
         }
     }
 
