@@ -286,6 +286,7 @@ impl ZoneSigner {
                     total_time: s.total_time,
                     threads_used: s.threads_used,
                     finished_at: now_t.checked_sub(now.duration_since(s.finished_at))?,
+                    succeeded: s.succeeded,
                 }))
             }
         }
@@ -315,7 +316,7 @@ impl ZoneSigner {
                 let arc_self = self.clone();
                 tokio::task::spawn(async move {
                     if let Err(err) = arc_self
-                        .sign_zone(&zone_name, zone_serial.is_none(), trigger)
+                        .join_sign_zone_queue(&zone_name, zone_serial.is_none(), trigger)
                         .await
                     {
                         error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
@@ -362,24 +363,60 @@ impl ZoneSigner {
     /// be possible if the unsigned zone were definitely a ZoneApex zone
     /// rather than a LightWeightZone (and XFR-in zones are LightWeightZone
     /// instances).
+    async fn join_sign_zone_queue(
+        self: Arc<Self>,
+        zone_name: &StoredName,
+        resign_last_signed_zone_content: bool,
+        trigger: SigningTrigger,
+    ) -> Result<(), String> {
+        info!("[ZS]: Waiting to start signing operation for zone '{zone_name}'.");
+        self.signer_status.write().await.enqueue(zone_name.clone());
+
+        let arc_self = self.clone();
+        let _permit = arc_self
+            .concurrent_operation_permits
+            .acquire()
+            .await
+            .unwrap();
+
+        let res = self
+            .clone()
+            .sign_zone(zone_name, resign_last_signed_zone_content, trigger)
+            .await;
+
+        if res.is_ok() {
+            self.signer_status.write().await.finish(zone_name);
+        } else {
+            self.signer_status.write().await.abort(zone_name);
+        }
+
+        res
+    }
+
     async fn sign_zone(
         self: Arc<Self>,
         zone_name: &StoredName,
         resign_last_signed_zone_content: bool,
         trigger: SigningTrigger,
     ) -> Result<(), String> {
-        // TODO: The signer_status mechanism is broken, as it is limited to
-        // 100 slots so that if too many sign_zone() invocations occur the
-        // newest will overwrite the oldest. When the permit is then finally
-        // acquired, further down where start() is invoked it will fail
-        // because the enqueued status item will no longer exist...
-        info!("[ZS]: Waiting to start signing operation for zone '{zone_name}'.");
-        self.signer_status.write().await.enqueue(zone_name.clone());
-
-        let _permit = self.concurrent_operation_permits.acquire().await.unwrap();
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
-
         let start = Instant::now();
+
+        // Dump the queue:
+        for q_item in self.signer_status.read().await.zones_being_signed.iter() {
+            let status = match q_item.status {
+                ZoneSigningStatus::Requested(_) => "requested",
+                ZoneSigningStatus::InProgress(_) => "in progress",
+                ZoneSigningStatus::Finished(s) => {
+                    if s.succeeded {
+                        "finished"
+                    } else {
+                        "failed"
+                    }
+                }
+            };
+            info!("[ZS]: Queue item: {} => {status}", q_item.zone_name);
+        }
 
         //
         // Lookup the zone to sign.
@@ -484,6 +521,9 @@ impl ZoneSigner {
             soa_rr.ttl(),
             new_soa,
         );
+
+        info!("[ZS]: Serials for zone '{zone_name}': last signed={last_signed_serial:?}, current={}, serial policy={}, new={serial}",
+            soa.serial(), policy.signer.serial_policy);
 
         self.signer_status
             .write()
@@ -1504,10 +1544,11 @@ struct FinishedStatus {
     threads_used: usize,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     finished_at: tokio::time::Instant,
+    succeeded: bool,
 }
 
 impl FinishedStatus {
-    fn new(in_progress_status: InProgressStatus) -> Self {
+    fn new(in_progress_status: InProgressStatus, succeeded: bool) -> Self {
         Self {
             requested_at: in_progress_status.requested_at,
             zone_serial: in_progress_status.zone_serial,
@@ -1524,6 +1565,7 @@ impl FinishedStatus {
             total_time: in_progress_status.total_time.unwrap(),
             threads_used: in_progress_status.threads_used.unwrap(),
             finished_at: Instant::now(),
+            succeeded,
         }
     }
 }
@@ -1554,12 +1596,14 @@ impl ZoneSigningStatus {
         }
     }
 
-    fn finish(self) -> Self {
+    fn finish(self, succeeded: bool) -> Self {
         match self {
             ZoneSigningStatus::Requested(_) => {
                 panic!("Cannot finish a signing operation that never started")
             }
-            ZoneSigningStatus::InProgress(s) => Self::Finished(FinishedStatus::new(s)),
+            ZoneSigningStatus::InProgress(status) => {
+                Self::Finished(FinishedStatus::new(status, succeeded))
+            }
             ZoneSigningStatus::Finished(_) => self,
         }
     }
@@ -1643,7 +1687,13 @@ impl ZoneSignerStatus {
             })
         ) {
             let named_status = res.unwrap();
-            named_status.status = named_status.status.finish();
+            named_status.status = named_status.status.finish(true);
+        }
+    }
+
+    pub fn abort(&mut self, zone_name: &StoredName) {
+        if let Some(named_status) = self.get_mut(zone_name) {
+            named_status.status = named_status.status.finish(false);
         }
     }
 }
