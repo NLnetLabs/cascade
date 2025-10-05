@@ -42,6 +42,8 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
+use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -261,8 +263,8 @@ impl HttpServer {
             let locked_state = state.center.state.lock().unwrap();
             dnst_binary_path = locked_state.config.dnst_binary_path.clone();
             let keys_dir = &locked_state.config.keys_dir;
-            cfg_path = keys_dir.join(format!("{name}.cfg"));
-            state_path = keys_dir.join(format!("{name}.state"));
+            cfg_path = mk_dnst_keyset_cfg_file_path(keys_dir.clone(), &name);
+            state_path = mk_dnst_keyset_state_file_path(keys_dir.clone(), &name);
             app_cmd_tx = state.center.app_cmd_tx.clone();
             let zone = locked_state
                 .zones
