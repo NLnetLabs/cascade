@@ -87,8 +87,11 @@ Example
     send-notify-to = []
 
 
+Options
+-------
+
 Global Options
---------------
+++++++++++++++
 
 .. option:: version = "v1"
 
@@ -102,7 +105,7 @@ Global Options
 
 
 How zones are loaded.
----------------------
++++++++++++++++++++++
 
 The ``[loader]`` section.
 
@@ -145,7 +148,7 @@ The ``[loader]`` section.
 
 
 DNSSEC key management.
-----------------------
+++++++++++++++++++++++
 
 The ``[key-manager]`` section.
 
@@ -240,7 +243,7 @@ The ``[key-manager]`` section.
 
 
 The management of DNS records by the key manager.
--------------------------------------------------
++++++++++++++++++++++++++++++++++++++++++++++++++
 
 The ``[key-manager.records]`` section.
 
@@ -294,7 +297,7 @@ section controls its behaviour towards them.
    value is interpreted as seconds.
 
 How keys are generated.
------------------------
++++++++++++++++++++++++
 
 The ``[key-manager.generation]`` section.
 
@@ -346,7 +349,7 @@ The ``[key-manager.generation]`` section.
 
 
 How zones are signed.
----------------------
++++++++++++++++++++++
 
 The ``[signer]`` section.
 
@@ -403,7 +406,7 @@ zone) are signed by the key manager, rather than the zone signer; see the
    An integer value is interpreted as seconds.
 
 How denial-of-existence records are generated.
-----------------------------------------------
+++++++++++++++++++++++++++++++++++++++++++++++
 
 The ``[signer.denial]`` section.
 
@@ -426,7 +429,7 @@ The ``[signer.denial]`` section.
    careful if you wish to enable it.
 
 How signed zones are reviewed.
-------------------------------
+++++++++++++++++++++++++++++++
 
 The ``[signer.review]`` section.
 
@@ -458,7 +461,7 @@ The ``[signer.review]`` section.
 
 
 How published zones are served.
--------------------------------
++++++++++++++++++++++++++++++++
 
 The ``[server.outbound]`` section.
 
@@ -470,3 +473,28 @@ The ``[server.outbound]`` section.
 
    A collection of ``IP:[port]``, defaulting to port 53 when not specified, e.g.:
    ``send-notify-to = ["[::1]:53"]``
+
+
+Files
+-----
+
+/etc/cascade/config.toml
+    Default Cascade config file
+
+/etc/cascade/policies
+    Default policies directory
+
+See Also
+--------
+
+https://cascade.docs.nlnetlabs.nl
+    Cascade online documentation
+
+**cascade**\ (1)
+    :doc:`cascade`
+
+**cascaded**\ (1)
+    :doc:`cascaded`
+
+**cascaded-config.toml**\ (5)
+    :doc:`cascaded-config.toml`

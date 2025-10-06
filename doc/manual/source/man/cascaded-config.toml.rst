@@ -42,10 +42,11 @@ Example
     [server]
     servers = ["127.0.0.1:2053", "[::1]:2053"]
 
-
+Options
+-------
 
 Global Options
---------------
+++++++++++++++
 
 .. option:: version = "v1"
 
@@ -128,7 +129,7 @@ Global Options
 
 
 Settings relevant to any daemon program.
-----------------------------------------
+++++++++++++++++++++++++++++++++++++++++
 
 The ``[daemon]`` section.
 
@@ -205,7 +206,7 @@ The ``[daemon]`` section.
 
 
 How Cascade is controlled.
---------------------------
+++++++++++++++++++++++++++
 
 The ``[remote-control]`` section.
 
@@ -223,7 +224,7 @@ The ``[remote-control]`` section.
 
 
 How zones are loaded.
----------------------
++++++++++++++++++++++
 
 The ``[loader]`` section.
 
@@ -243,7 +244,7 @@ The ``[loader]`` section.
 
 
 How loaded zones are reviewed.
-------------------------------
+++++++++++++++++++++++++++++++
 
 The ``[loader.review]`` section.
 
@@ -264,13 +265,13 @@ The ``[loader.review]`` section.
 
 
 How zones are signed.
----------------------
++++++++++++++++++++++
 
 The ``[signer]`` section. (This only includes the ``[signer.review]`` section
 below, for now).
 
 How signed zones are reviewed.
-------------------------------
+++++++++++++++++++++++++++++++
 
 The ``[signer.review]`` section.
 
@@ -291,13 +292,13 @@ The ``[signer.review]`` section.
 
 
 DNSSEC key management.
-----------------------
+++++++++++++++++++++++
 
 The ``[key-manager]`` section. (Currently without options)
 
 
 How zones are published.
-------------------------
+++++++++++++++++++++++++
 
 The ``[server]`` section.
 
@@ -314,3 +315,22 @@ The ``[server]`` section.
    These sockets may be bound by systemd and passed into Cascade.  If systemd
    does not provide them, Cascade will bind them itself (and will do so before
    dropping privileges, if that is enabled).
+
+
+Files
+-----
+
+/etc/cascade/config.toml
+    Default Cascade config file
+
+See Also
+--------
+
+https://cascade.docs.nlnetlabs.nl
+    Cascade online documentation
+
+**cascade**\ (1)
+    :doc:`cascade`
+
+**cascaded**\ (1)
+    :doc:`cascaded`
