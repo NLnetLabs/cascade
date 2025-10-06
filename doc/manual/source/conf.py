@@ -32,7 +32,7 @@ except ModuleNotFoundError:
 project = 'Cascade'
 year = datetime.datetime.now().year
 copyright = f'2025–{year}, NLnet Labs'
-author = 'NLnet Labs'
+author = 'NLnet Labs <cascade@nlnetlabs.nl>'
 
 semver = toml.load('../../../Cargo.toml')
 
@@ -233,7 +233,16 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('manual-page', 'cascade', 'DNSSEC signer', author, 1)
+    ('man/cascaded', 'cascaded', 'DNSSEC signer', author, 1),
+    ('man/cascaded-config.toml', 'cascaded-config.toml', 'Cascade configuration file', author, 5),
+    ('man/cascaded-policy.toml', 'cascaded-policy.toml', 'Cascade policy file format', author, 5),
+    ('man/cascade', 'cascade', 'Cascade CLI', author, 1),
+    ('man/cascade-config', 'cascade-config', 'Manage configuration', author, 1),
+    ('man/cascade-hsm', 'cascade-hsm', 'Manage HSMs', author, 1),
+    ('man/cascade-keyset', 'cascade-keyset', 'Execute manual key roll or key removal commands', author, 1),
+    ('man/cascade-policy', 'cascade-policy', 'Manage policies', author, 1),
+    ('man/cascade-template', 'cascade-template', 'Print example config or policy files', author, 1),
+    ('man/cascade-zone', 'cascade-zone', 'Manage zones', author, 1),
 ]
 
 

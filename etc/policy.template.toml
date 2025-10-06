@@ -58,7 +58,6 @@ required = false
 # - 'CASCADE_SERIAL': The serial number of the zone (decimal integer).
 # - 'CASCADE_SERVER': The TCP/UDP port where Cascade is serving the zone for
 #     review, formatted '<ip-addr>:<port>'.
-#     TODO: Multiple such servers can be configured, which one should we pick?
 #
 # The command will be called from an unspecified directory, and it must be
 # accessible to Cascade (i.e. after it has dropped privileges).  Its exit code
@@ -341,7 +340,6 @@ required = false
 # - 'CASCADE_SERIAL': The serial number of the signed zone (decimal integer).
 # - 'CASCADE_SERVER': The TCP/UDP port where Cascade is serving the zone for
 #   review, formatted '<ip-addr>:<port>'.
-#     TODO: Multiple such servers can be configured, which one should we pick?
 #
 # The command will be called from an unspecified directory, and it must be
 # accessible to Cascade (i.e. after it has dropped privileges).  Its exit code
