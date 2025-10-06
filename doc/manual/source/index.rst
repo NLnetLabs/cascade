@@ -106,14 +106,15 @@ We would love for you to :doc:`get to know Cascade
    yubihsm
 
 
-.. toctree::
-   :maxdepth: 2
-   :hidden:
-   :caption: Advanced
-   :name: toc-advanced
+.. Commented out until these pages are written
+.. .. toctree::
+..    :maxdepth: 2
+..    :hidden:
+..    :caption: Advanced
+..    :name: toc-advanced
 
-   migration
-   offline-ksk
+..    migration
+..    offline-ksk
 
 .. toctree::
    :maxdepth: 2
