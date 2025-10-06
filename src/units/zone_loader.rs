@@ -374,10 +374,8 @@ impl ZoneLoader {
             .await
             .map_err(|_| Terminated)?
             .inspect_err(|err| {
-                let err_msg =
-                    format!("Failed to load zone '{zone_name}' from '{zone_path}': {err}");
-                halt_zone(&center, &zone_name, true, &err_msg);
-                error!("[ZL]: {err_msg}");
+                halt_zone(&center, &zone_name, true, &err);
+                error!("[ZL]: {err}");
             })
             .map_err(|_| Terminated)?
         };
@@ -461,10 +459,10 @@ fn load_file_into_zone(
     let before = Instant::now();
     log::info!("[ZL]: Loading primary zone '{zone_name}' from '{zone_path}'..");
     let mut zone_file = File::open(zone_path)
-        .map_err(|err| format!("[ZL]: Failed to open zone file '{zone_path}': {err}"))?;
+        .map_err(|err| format!("Failed to open zone file '{zone_path}': {err}"))?;
     let zone_file_len = zone_file
         .metadata()
-        .map_err(|err| format!("[ZL]: Failed to read metadata for file '{zone_path}': {err}"))?
+        .map_err(|err| format!("Failed to read metadata for file '{zone_path}': {err}"))?
         .len();
 
     let report = ZoneLoaderReport {
@@ -483,7 +481,7 @@ fn load_file_into_zone(
 
     debug!("[ZL]: Reading {zone_file_len} bytes for zone '{zone_name}' from '{zone_path}");
     std::io::copy(&mut zone_file, &mut buf)
-        .map_err(|err| format!("[ZL]: Failed to read data from file '{zone_path}': {err}"))?;
+        .map_err(|err| format!("Failed to read data from file '{zone_path}': {err}"))?;
     let mut reader = buf.into_inner();
     reader.set_origin(zone_name.clone());
 
@@ -498,7 +496,7 @@ fn load_file_into_zone(
                 let stored_rec = r.flatten_into();
                 // let name = stored_rec.owner().clone();
                 if let Err(err) = parsed_zone_file.insert(stored_rec) {
-                    error!("[ZL]: Unable to parse record in '{zone_name}': {err}");
+                    error!("Unable to parse record in '{zone_name}': {err}");
                     loading_error = Some(err.to_string());
                     break;
                 }
