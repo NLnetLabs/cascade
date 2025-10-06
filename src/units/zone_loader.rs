@@ -365,14 +365,21 @@ impl ZoneLoader {
         receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
     ) -> Result<(TypedZone, ZoneLoaderReport), Terminated> {
         let (zone, _byte_count) = {
-            let zone_name = zone_name.clone();
-            let zone_path: Box<Utf8Path> = zone_path.into();
+            let cloned_zone_name = zone_name.clone();
+            let cloned_zone_path: Box<Utf8Path> = zone_path.into();
             let cloned_receipt_info = receipt_info.clone();
             tokio::task::spawn_blocking(move || {
-                load_file_into_zone(center, &zone_name, &zone_path, cloned_receipt_info)
+                load_file_into_zone(&cloned_zone_name, &cloned_zone_path, cloned_receipt_info)
             })
             .await
-            .unwrap_or(Err(Terminated))?
+            .map_err(|_| Terminated)?
+            .inspect_err(|err| {
+                let err_msg =
+                    format!("Failed to load zone '{zone_name}' from '{zone_path}': {err}");
+                halt_zone(&center, &zone_name, true, &err_msg);
+                error!("[ZL]: {err_msg}");
+            })
+            .map_err(|_| Terminated)?
         };
         let Some(serial) = get_zone_serial(zone_name.clone(), &zone).await else {
             error!("[ZL]: Zone file '{zone_path}' lacks a SOA record. Skipping zone.");
@@ -447,20 +454,17 @@ async fn get_zone_serial(apex_name: Name<Bytes>, zone: &Zone) -> Option<Serial> 
 }
 
 fn load_file_into_zone(
-    center: Arc<Center>,
     zone_name: &StoredName,
     zone_path: &Utf8Path,
     receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
-) -> Result<(Zone, usize), Terminated> {
+) -> Result<(Zone, usize), String> {
     let before = Instant::now();
     log::info!("[ZL]: Loading primary zone '{zone_name}' from '{zone_path}'..");
     let mut zone_file = File::open(zone_path)
-        .inspect_err(|err| error!("[ZL]: Failed to open zone file '{zone_path}': {err}",))
-        .map_err(|_| Terminated)?;
+        .map_err(|err| format!("[ZL]: Failed to open zone file '{zone_path}': {err}"))?;
     let zone_file_len = zone_file
         .metadata()
-        .inspect_err(|err| error!("[ZL]: Failed to read metadata for file '{zone_path}': {err}",))
-        .map_err(|_| Terminated)?
+        .map_err(|err| format!("[ZL]: Failed to read metadata for file '{zone_path}': {err}"))?
         .len();
 
     let report = ZoneLoaderReport {
@@ -479,8 +483,7 @@ fn load_file_into_zone(
 
     debug!("[ZL]: Reading {zone_file_len} bytes for zone '{zone_name}' from '{zone_path}");
     std::io::copy(&mut zone_file, &mut buf)
-        .inspect_err(|err| error!("[ZL]: Failed to read data from file '{zone_path}': {err}",))
-        .map_err(|_| Terminated)?;
+        .map_err(|err| format!("[ZL]: Failed to read data from file '{zone_path}': {err}"))?;
     let mut reader = buf.into_inner();
     reader.set_origin(zone_name.clone());
 
@@ -528,13 +531,9 @@ fn load_file_into_zone(
     }
 
     if let Some(err) = loading_error {
-        halt_zone(
-            &center,
-            zone_name,
-            true,
-            &format!("Encountered an error while loading the zone: {err}"),
-        );
-        return Err(Terminated);
+        return Err(format!(
+            "Encountered an error while loading the zone: {err}"
+        ));
     }
 
     debug!("[ZL]: Parsing stage 2 of zone '{zone_name}' data");
@@ -542,13 +541,9 @@ fn load_file_into_zone(
     let Ok(zone) = res else {
         let err = format!("{}", res.unwrap_err());
         error!("[ZL]: Failed to build a zone tree for '{zone_name}': {err}");
-        halt_zone(
-            &center,
-            zone_name,
-            true,
-            &format!("Encountered an error while loading the zone: {err}"),
-        );
-        return Err(Terminated);
+        return Err(format!(
+            "Encountered an error while loading the zone: {err}"
+        ));
     };
     info!(
         "Loaded {zone_file_len} bytes from '{zone_path}' in {} secs",

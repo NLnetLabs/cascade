@@ -2,7 +2,7 @@ use std::ops::ControlFlow;
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8PathBuf;
 use chrono::{DateTime, Utc};
 use domain::base::{Name, Serial};
 use futures::TryFutureExt;
@@ -655,6 +655,19 @@ impl Progress {
             waiting_waited,
             zone.name
         );
+
+        if let ZoneSource::Zonefile { path } = &zone.source {
+            if zone.receipt_report.is_none() {
+                println!("\u{78} Cascade has not yet started loading the zonefile.");
+                println!(
+                    "  Check that '{path}' is readable by Cascade at this path on the server."
+                );
+                println!(
+                    "  If the zone does not begin loading check for errors in the Cascade log."
+                );
+            }
+        }
+
         // TODO: When complete, show how long we waited.
     }
 
