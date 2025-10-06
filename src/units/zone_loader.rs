@@ -28,9 +28,6 @@ use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::{oneshot, Semaphore};
 use tokio::time::Instant;
 
-#[cfg(feature = "tls")]
-use tokio_rustls::rustls::ServerConfig;
-
 use crate::center::{Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::{ApplicationCommand, Terminated};

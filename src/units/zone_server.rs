@@ -36,8 +36,6 @@ use futures::Future;
 use log::{debug, error, info, trace};
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot, RwLock};
-#[cfg(feature = "tls")]
-use tokio_rustls::rustls::ServerConfig;
 
 use crate::api::{
     ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage,
