@@ -1149,10 +1149,18 @@ pub(super) enum Event {
     ZoneRemoved(ZoneId),
 }
 
-//------------ SigningReport -------------------------------------------------
+//------------ SigningReport ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum SigningReport {
+pub struct SigningReport {
+    pub current_action: String,
+    pub stage_report: SigningStageReport,
+}
+
+//------------ SigningStageReport -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SigningStageReport {
     Requested(SigningRequestedReport),
     InProgress(SigningInProgressReport),
     Finished(SigningFinishedReport),
