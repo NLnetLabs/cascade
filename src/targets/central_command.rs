@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use domain::base::Serial;
 use domain::zonetree::StoredName;
@@ -194,7 +193,6 @@ impl CentralCommand {
                     &zone_name,
                     HistoricalEvent::UnsignedZoneReview {
                         status: ZoneReviewStatus::Rejected,
-                        when: SystemTime::now(),
                     },
                     Some(zone_serial),
                 );
@@ -210,7 +208,6 @@ impl CentralCommand {
                     &zone_name,
                     HistoricalEvent::UnsignedZoneReview {
                         status: ZoneReviewStatus::Approved,
-                        when: SystemTime::now(),
                     },
                     Some(zone_serial),
                 );
@@ -265,7 +262,6 @@ impl CentralCommand {
                     &zone_name,
                     HistoricalEvent::SignedZoneReview {
                         status: ZoneReviewStatus::Approved,
-                        when: SystemTime::now(),
                     },
                     Some(zone_serial),
                 );
@@ -302,7 +298,6 @@ impl CentralCommand {
                     &zone_name,
                     HistoricalEvent::SignedZoneReview {
                         status: ZoneReviewStatus::Rejected,
-                        when: SystemTime::now(),
                     },
                     Some(zone_serial),
                 );

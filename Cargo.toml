@@ -34,7 +34,7 @@ futures            = "0.3.17"
 futures-util       = "0.3"
 humantime          = "2.3.0"
 octseq             = { version = "0.5.2", default-features = false }
-tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing", "process"] }
+tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
 serde              = { version = "1.0", features = ["derive", "rc"] }
 toml               = "0.8"
 tokio-rustls       = { version = "0.23.4", optional = true }
