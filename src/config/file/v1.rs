@@ -179,7 +179,7 @@ impl Default for RemoteControlSpec {
 impl RemoteControlSpec {
     /// The default value for `servers`.
     fn servers_default() -> Vec<SocketAddr> {
-        vec![SocketAddr::from(([127, 0, 0, 1], 8950))]
+        vec![SocketAddr::from(([127, 0, 0, 1], 4539))]
     }
 }
 

@@ -179,7 +179,7 @@ pub struct RemoteControlConfig {
 impl Default for RemoteControlConfig {
     fn default() -> Self {
         Self {
-            servers: vec![SocketAddr::from(([127, 0, 0, 1], 8950))],
+            servers: vec![SocketAddr::from(([127, 0, 0, 1], 4539))],
         }
     }
 }

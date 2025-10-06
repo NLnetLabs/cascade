@@ -104,7 +104,7 @@ which includes the identifiers of the signing keys that were used:
      Signed 3 records in 0s
    ✔ Auto approving publication of version 2025100101, no checks enabled in policy.
    ✔ Published version 2025100101
-     Published zone available on 127.0.0.1:8053
+     Published zone available on 127.0.0.1:4543
    DNSSEC keys:
      KSK tagged 16598:
        Reference: kmip://kmip2pkcs11/keys/C9623EAF300AF8E4A3DF6D5F6AD6674B49CCD322_pub?algorithm=13&flags=257
