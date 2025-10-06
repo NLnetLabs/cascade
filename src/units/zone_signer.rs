@@ -1064,6 +1064,11 @@ impl ZoneSigner {
             // Save as next_min_expiration. After the signed zone is approved
             // this value should be move to min_expiration.
             zone_state.next_min_expiration = saved_min_expiration.get();
+            debug!(
+                "SIGNER: Determined min expiration time: {:?}",
+                zone_state.next_min_expiration
+            );
+
             zone.mark_dirty(&mut zone_state, &self.center);
         }
 
