@@ -3,15 +3,15 @@ use std::time::SystemTime;
 
 use domain::base::Serial;
 use domain::zonetree::StoredName;
-use log::info;
+use log::{debug, info, warn};
 use tokio::sync::mpsc;
 
-use crate::api::ZoneReviewStatus;
+use crate::api::{self, ZoneReviewStatus};
 use crate::center::{get_zone, halt_zone, Center, Change};
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::manager::TargetCommand;
 use crate::payload::Update;
-use crate::zone::{HistoricalEvent, SigningTrigger};
+use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
 
 pub struct CentralCommand {
     pub center: Arc<Center>,
@@ -75,7 +75,7 @@ impl CentralCommand {
 
 impl CentralCommand {
     async fn direct_update(&self, event: Update) {
-        info!("[CC]: Event received: {event:?}");
+        debug!("[CC]: Event received: {event:?}");
         let (msg, target, cmd) = match event {
             Update::Changed(change) => {
                 {
@@ -129,6 +129,25 @@ impl CentralCommand {
                 },
             ),
 
+            Update::ReviewZone {
+                name,
+                stage,
+                serial,
+                decision,
+            } => (
+                "Passing back zone review",
+                match stage {
+                    api::ZoneReviewStage::Unsigned => "RS",
+                    api::ZoneReviewStage::Signed => "RS2",
+                },
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision,
+                    tx: tokio::sync::oneshot::channel().0,
+                },
+            ),
+
             Update::UnsignedZoneUpdatedEvent {
                 zone_name,
                 zone_serial,
@@ -139,6 +158,16 @@ impl CentralCommand {
                     HistoricalEvent::NewVersionReceived,
                     Some(zone_serial),
                 );
+
+                if let Some(zone) = get_zone(&self.center, &zone_name) {
+                    if let Ok(zone_state) = zone.state.lock() {
+                        if matches!(zone_state.pipeline_mode, PipelineMode::HardHalt(_)) {
+                            warn!("[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted");
+                            return;
+                        }
+                    }
+                }
+
                 (
                     "Instructing review server to publish the unsigned zone",
                     "RS",

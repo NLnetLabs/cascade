@@ -91,7 +91,7 @@ We would love for you to :doc:`get to know Cascade
    :name: toc-guides
 
    importing-keys
-   cascade-for-opendnssec-users
+.. cascade-for-opendnssec-users
 
 .. toctree::
    :maxdepth: 2
@@ -99,21 +99,22 @@ We would love for you to :doc:`get to know Cascade
    :caption: Integrations
    :name: toc-integrations
 
-   fortanix
-   nitrokey
    softhsm
    thales
+.. fortanix
+   nitrokey
    yubihsm
 
 
-.. toctree::
-   :maxdepth: 2
-   :hidden:
-   :caption: Advanced
-   :name: toc-advanced
+.. Commented out until these pages are written
+.. .. toctree::
+..    :maxdepth: 2
+..    :hidden:
+..    :caption: Advanced
+..    :name: toc-advanced
 
-   migration
-   offline-ksk
+..    migration
+..    offline-ksk
 
 .. toctree::
    :maxdepth: 2
@@ -122,3 +123,20 @@ We would love for you to :doc:`get to know Cascade
    :name: toc-reference
 
    limitations
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Manual Pages
+   :name: toc-manual-pages
+
+   man/cascade
+   man/cascaded
+   man/cascaded-config.toml
+   man/cascaded-policy.toml
+   man/cascade-config
+   man/cascade-hsm
+   man/cascade-keyset
+   man/cascade-policy
+   man/cascade-template
+   man/cascade-zone
