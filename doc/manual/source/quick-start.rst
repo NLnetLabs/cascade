@@ -172,6 +172,6 @@ Next steps
 
 - Establishing the chain of trust to the parent.
 - Automating pre-publication checks.
-- Using a Hardware Security Module.
+- :doc:`Using a Hardware Security Module <hsms>`.
 - Migrating an existing DNSSEC signed zone.
-- Getting support.
+- `Getting support <https://nlnetlabs.nl/services/contracts/>`_.
