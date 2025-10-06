@@ -1,10 +1,17 @@
 Installation
 ============
 
-.. TODO: add daemonization guide?
-
 Binary Packages
 ---------------
+
+.. Tip::
+
+   Cascade is currently in alpha. This means that packages are only
+   only available via the "proposed" package repositories. If 
+   ``apt install cascade`` or ``yum install cascade`` report no
+   packages found, check that you added the configuration at the
+   for the "proposed" repository which you can find at the bottom
+   of this page under "Installing Specific Versions".
 
 Getting started with Cascade is really easy by installing a binary package
 for either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL) and
@@ -347,7 +354,7 @@ a specific version, if needed.
 
        .. code-block:: bash
 
-          sudo apt install Cascade=0.1.0~rc1-1bookworm
+          sudo apt install Cascade=0.1.0~alpha-1bookworm
 
    .. group-tab:: Ubuntu
 
@@ -382,7 +389,7 @@ a specific version, if needed.
 
        .. code-block:: bash
 
-          sudo apt install cascade=0.1.0~rc1-1jammy
+          sudo apt install cascade=0.1.0~alpha-1jammy
           
    .. group-tab:: RHEL
 
@@ -408,7 +415,7 @@ a specific version, if needed.
          
        .. code-block:: bash
          
-          sudo yum install -y cascade-0.1.0~rc1
+          sudo yum install -y cascade-0.1.0~alpha
              
    .. group-tab:: Docker
 
