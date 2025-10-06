@@ -234,8 +234,8 @@ latex_documents = [
 # (source start file, name, description, authors, manual section).
 man_pages = [
     ('man/cascaded', 'cascaded', 'DNSSEC signer', author, 1),
-    ('man/cascaded-config.toml', 'cascaded-config.toml', 'Cascade configuration file', author, 1),
-    ('man/cascaded-policy.toml', 'cascaded-policy.toml', 'Cascade policy file format', author, 1),
+    ('man/cascaded-config.toml', 'cascaded-config.toml', 'Cascade configuration file', author, 5),
+    ('man/cascaded-policy.toml', 'cascaded-policy.toml', 'Cascade policy file format', author, 5),
     ('man/cascade', 'cascade', 'Cascade CLI', author, 1),
     ('man/cascade-config', 'cascade-config', 'Manage configuration', author, 1),
     ('man/cascade-hsm', 'cascade-hsm', 'Manage HSMs', author, 1),
