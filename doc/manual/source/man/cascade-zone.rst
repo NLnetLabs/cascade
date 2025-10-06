@@ -124,7 +124,7 @@ Options for :subcmd:`zone status`
 .. option:: --detailed
 
    Print detailed information about the zone, including a zone's DNSSEC key
-   handles in use, as well as the new DNSKEY records during key rolls.
+   identifiers in use, as well as the new DNSKEY records during key rolls.
 
 
 See Also
