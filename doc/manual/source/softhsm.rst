@@ -41,13 +41,13 @@ directory. Let's set this all up and start the daemon:
 Create a Cascade Policy that uses SoftHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a Cascade policy called ``default`` and set it to use a HSM
+Create a Cascade policy called ``softhsm`` and set it to use a HSM
 called ``kmip2pkcs11``.
 
 .. code-block:: bash
 
-   # cascade template policy | tee /etc/cascade/policies/default.toml
-   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "kmip2pkcs11"|' /etc/cascade/policies/default.toml
+   # cascade template policy | tee /etc/cascade/policies/softhsm.toml
+   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "kmip2pkcs11"|' /etc/cascade/policies/softhsm.toml
 
 Start the Cascade daemon:
 
@@ -83,7 +83,7 @@ the zone:
 
 .. code-block:: bash
 
-   # cascade zone add --source /etc/cascade/zones/example.com --policy default example.com
+   # cascade zone add --source /etc/cascade/zones/example.com --policy softhsm example.com
    Added zone example.com
 
 Check that the zone has been signed, and print out additional information
@@ -92,7 +92,7 @@ which includes the identifiers of the signing keys that were used:
 .. code-block:: bash
 
    # cascade zone status example.com --detailed
-   Status report for zone 'example.com' using policy 'default'
+   Status report for zone 'example.com' using policy 'softhsm'
    ✔ Waited for a new version of the example.com zone
    ✔ Loaded version 1
      Loaded at 2025-10-01T21:44:13+00:00 (1m 46s ago)
