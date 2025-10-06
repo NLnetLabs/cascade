@@ -12,7 +12,7 @@ use crate::api::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::cli::commands::policy::ansi;
 use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
-use crate::zonemaintenance::types::SigningReport;
+use crate::zonemaintenance::types::SigningStageReport;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Zone {
@@ -547,10 +547,13 @@ fn determine_progress(zone: &ZoneStatus, policy: &PolicyInfo) -> Progress {
                     ZoneReviewStatus::Approved => {
                         // After reviewing comes signing, and if we're not stuck at
                         // reviewing then we must be somewhere in signing.
-                        match &zone.signing_report {
-                            None | Some(SigningReport::Requested(_)) => Progress::WaitingToSign,
-                            Some(SigningReport::InProgress(_)) => Progress::Signing,
-                            Some(SigningReport::Finished(s)) => match s.succeeded {
+                        let Some(signing_report) = &zone.signing_report else {
+                            return Progress::WaitingToSign;
+                        };
+                        match &signing_report.stage_report {
+                            SigningStageReport::Requested(_) => Progress::WaitingToSign,
+                            SigningStageReport::InProgress(_) => Progress::Signing,
+                            SigningStageReport::Finished(s) => match s.succeeded {
                                 true => Progress::Signed,
                                 false => Progress::SigningFailed,
                             },
@@ -561,10 +564,13 @@ fn determine_progress(zone: &ZoneStatus, policy: &PolicyInfo) -> Progress {
         },
         ZoneStage::Signed => {
             if !policy.signer.review.required {
-                match &zone.signing_report {
-                    None | Some(SigningReport::Requested(_)) => Progress::WaitingToSign,
-                    Some(SigningReport::InProgress(_)) => Progress::Signing,
-                    Some(SigningReport::Finished(_)) => Progress::Signed,
+                let Some(signing_report) = &zone.signing_report else {
+                    return Progress::WaitingToSign;
+                };
+                match &signing_report.stage_report {
+                    SigningStageReport::Requested(_) => Progress::WaitingToSign,
+                    SigningStageReport::InProgress(_) => Progress::Signing,
+                    SigningStageReport::Finished(_) => Progress::Signed,
                 }
             } else {
                 // After reviewing comes publication, and if we're not at the
@@ -841,14 +847,14 @@ impl Progress {
 
     fn print_signing_progress(zone: &ZoneStatus) {
         if let Some(report) = &zone.signing_report {
-            match report {
-                SigningReport::Requested(r) => {
+            match &report.stage_report {
+                SigningStageReport::Requested(r) => {
                     println!(
                         "  Signing requested at {}",
                         to_rfc3339_ago(Some(r.requested_at))
                     );
                 }
-                SigningReport::InProgress(r) => {
+                SigningStageReport::InProgress(r) => {
                     println!(
                         "  Signing requested at {}",
                         to_rfc3339_ago(Some(r.requested_at))
@@ -894,10 +900,10 @@ impl Progress {
                         );
                     }
                     if let Some(threads_used) = r.threads_used {
-                        println!("  Using {threads_used} threads");
+                        println!("  Using {threads_used} threads to generate signatures");
                     }
                 }
-                SigningReport::Finished(r) => {
+                SigningStageReport::Finished(r) => {
                     println!(
                         "  Signing requested at {}",
                         to_rfc3339_ago(Some(r.requested_at))
@@ -943,6 +949,7 @@ impl Progress {
                     );
                 }
             }
+            println!("  Current action: {}", report.current_action);
         }
     }
 }
