@@ -680,7 +680,7 @@ impl Progress {
                 println!("{} {loading_fetching} ..", status_icon(false),);
 
                 println!(
-                    "  {loaded_fetched} {} and {} in {} seconds",
+                    "  {loaded_fetched} {} and parsed {} in {} seconds",
                     format_size(report.byte_count, " ", "B"),
                     format_size(report.record_count, "", " records"),
                     SystemTime::now()
@@ -850,25 +850,96 @@ impl Progress {
                 }
                 SigningReport::InProgress(r) => {
                     println!(
+                        "  Signing requested at {}",
+                        to_rfc3339_ago(Some(r.requested_at))
+                    );
+                    println!(
                         "  Signing started at {}",
                         to_rfc3339_ago(Some(r.started_at))
                     );
-                    if let (Some(unsigned_rr_count), Some(total_time)) =
-                        (r.unsigned_rr_count, r.total_time)
+                    if let (Some(unsigned_rr_count), Some(walk_time), Some(sort_time)) =
+                        (r.unsigned_rr_count, r.walk_time, r.sort_time)
                     {
                         println!(
-                            "  Signed {} in {}",
+                            "  Collected {} in {}, sorted in {}",
                             format_size(unsigned_rr_count, "", " records"),
-                            format_duration(total_time)
+                            format_duration(walk_time),
+                            format_duration(sort_time)
                         );
+                    }
+                    if let (Some(denial_rr_count), Some(denial_time)) =
+                        (r.denial_rr_count, r.denial_time)
+                    {
+                        println!(
+                            "  Generated {} in {}",
+                            format_size(denial_rr_count, "", " NSEC(3) records"),
+                            format_duration(denial_time)
+                        );
+                    }
+                    if let (Some(rrsig_count), Some(rrsig_time)) = (r.rrsig_count, r.rrsig_time) {
+                        println!(
+                            "  Generated {} in {} ({} sig/s)",
+                            format_size(rrsig_count, "", " signatures"),
+                            format_duration(rrsig_time),
+                            rrsig_count / (rrsig_time.as_secs() as usize)
+                        );
+                    }
+                    if let (Some(rrsig_count), Some(insertion_time)) =
+                        (r.rrsig_count, r.insertion_time)
+                    {
+                        println!(
+                            "  Inserted signatures in {} ({} sig/s)",
+                            format_duration(insertion_time),
+                            rrsig_count / (insertion_time.as_secs() as usize)
+                        );
+                    }
+                    if let Some(threads_used) = r.threads_used {
+                        println!("  Using {threads_used} threads");
                     }
                 }
                 SigningReport::Finished(r) => {
-                    println!("  Signed at {}", to_rfc3339_ago(Some(r.finished_at)));
                     println!(
-                        "  Signed {} in {}",
+                        "  Signing requested at {}",
+                        to_rfc3339_ago(Some(r.requested_at))
+                    );
+                    println!(
+                        "  Signing started at {}",
+                        to_rfc3339_ago(Some(r.started_at))
+                    );
+                    println!(
+                        "  Signing finished at {}",
+                        to_rfc3339_ago(Some(r.finished_at))
+                    );
+                    println!(
+                        "  Collected {} in {}, sorted in {}",
                         format_size(r.unsigned_rr_count, "", " records"),
-                        format_duration(r.total_time)
+                        format_duration(r.walk_time),
+                        format_duration(r.sort_time)
+                    );
+                    println!(
+                        "  Generated {} in {}",
+                        format_size(r.denial_rr_count, "", " NSEC(3) records"),
+                        format_duration(r.denial_time)
+                    );
+                    println!(
+                        "  Generated {} in {} ({} sig/s)",
+                        format_size(r.rrsig_count, "", " signatures"),
+                        format_duration(r.rrsig_time),
+                        r.rrsig_count
+                            .checked_div(r.rrsig_time.as_secs() as usize)
+                            .unwrap_or(r.rrsig_count),
+                    );
+                    println!(
+                        "  Inserted signatures in {} ({} sig/s)",
+                        format_duration(r.insertion_time),
+                        r.rrsig_count
+                            .checked_div(r.insertion_time.as_secs() as usize)
+                            .unwrap_or(r.rrsig_count),
+                    );
+                    println!(
+                        "  Took {} in total, using {} threads",
+                        format_duration(r.total_time),
+                        r.threads_used
                     );
                 }
             }
