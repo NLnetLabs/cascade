@@ -170,8 +170,8 @@ tool installed you can check that the zone is correctly DNSSEC signed:
 Next steps
 ----------
 
-- Establishing the chain of trust to the parent.
-- Automating pre-publication checks.
-- Using a Hardware Security Module.
+- :ref:`Establishing the chain of trust to the parent <zone-status-detailed>`.
+- :doc:`Automating pre-publication checks <review-hooks>`.
+- :doc:`Using a Hardware Security Module <hsms>`.
 - Migrating an existing DNSSEC signed zone.
-- Getting support.
+- `Getting support <https://nlnetlabs.nl/services/contracts/>`_.
