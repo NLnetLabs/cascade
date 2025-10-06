@@ -31,9 +31,6 @@ use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::{oneshot, Semaphore};
 use tokio::time::Instant;
 
-#[cfg(feature = "tls")]
-use tokio_rustls::rustls::ServerConfig;
-
 use crate::center::{halt_zone, Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::comms::{ApplicationCommand, Terminated};
@@ -197,7 +194,7 @@ impl ZoneLoader {
         <KS::Target as KeyStore>::Key: Clone + Debug + Display + Sync + Send + 'static,
         CF: ConnectionFactory + Send + Sync + 'static,
     {
-        info!("[ZL] Received command: {cmd:?}",);
+        debug!("[ZL] Received command: {cmd:?}",);
 
         match cmd {
             Some(ApplicationCommand::Terminate) | None => {

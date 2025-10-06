@@ -42,8 +42,6 @@ use tokio::sync::mpsc;
 use tokio::sync::{oneshot, RwLock, Semaphore};
 use tokio::task::spawn_blocking;
 use tokio::time::{sleep_until, Instant};
-#[cfg(feature = "tls")]
-use tokio_rustls::rustls::ServerConfig;
 use url::Url;
 
 use crate::center::{get_zone, Center};
@@ -53,8 +51,10 @@ use crate::comms::Terminated;
 use crate::payload::Update;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
-use crate::units::key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode};
-use crate::zone::{HistoricalEventType, SigningTrigger};
+use crate::units::key_manager::{
+    mk_dnst_keyset_state_file_path, KmipClientCredentialsFile, KmipServerCredentialsFileMode,
+};
+use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
     SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
@@ -300,7 +300,7 @@ impl ZoneSigner {
         cmd: ApplicationCommand,
         next_resign_time: &mut Instant,
     ) -> bool {
-        info!("[ZS]: Received command: {cmd:?}");
+        debug!("[ZS]: Received command: {cmd:?}");
         match cmd {
             ApplicationCommand::Terminate => {
                 // self.status_reporter.terminated();
@@ -384,18 +384,21 @@ impl ZoneSigner {
         //
         // Lookup the zone to sign.
         //
-        let zone_to_sign = match resign_last_signed_zone_content {
+        let unsigned_zone = match resign_last_signed_zone_content {
             false => {
                 let unsigned_zones = self.center.unsigned_zones.load();
-                unsigned_zones.get_zone(&zone_name, Class::IN).cloned()
+                unsigned_zones
+                    .get_zone(&zone_name, Class::IN)
+                    .cloned()
+                    .ok_or_else(|| "Unknown zone".to_string())?
             }
             true => {
                 let published_zones = self.center.published_zones.load();
-                published_zones.get_zone(&zone_name, Class::IN).cloned()
+                published_zones
+                    .get_zone(&zone_name, Class::IN)
+                    .cloned()
+                    .ok_or_else(|| "No signed zone version available to resign".to_string())?
             }
-        };
-        let Some(unsigned_zone) = zone_to_sign else {
-            return Err(format!("Unknown zone '{zone_name}'"));
         };
         let soa_rr = get_zone_soa(unsigned_zone.clone(), zone_name.clone())?;
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
@@ -407,6 +410,12 @@ impl ZoneSigner {
             let state = self.center.state.lock().unwrap();
             let zone = state.zones.get(zone_name).unwrap();
             let zone_state = zone.0.state.lock().unwrap();
+
+            // Do NOT sign a zone that is halted.
+            if zone_state.pipeline_mode != PipelineMode::Running {
+                return Err(format!("Zone '{zone_name}' is halted"));
+            }
+
             let last_signed_serial = zone_state
                 .find_last_event(HistoricalEventType::SigningSucceeded, None)
                 .and_then(|item| item.serial);
@@ -527,8 +536,7 @@ impl ZoneSigner {
 
         trace!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
         // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
-        let apex_name = zone.apex_name().to_string();
-        let state_path = self.keys_dir.join(format!("{apex_name}.state"));
+        let state_path = mk_dnst_keyset_state_file_path(&self.keys_dir, zone.apex_name());
         let state = std::fs::read_to_string(&state_path)
             .map_err(|err| format!("Unable to read `dnst keyset` state file '{state_path}' while signing zone {zone_name}: {err}"))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();

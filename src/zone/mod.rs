@@ -26,6 +26,7 @@ use crate::{
     config::Config,
     payload::Update,
     policy::{Policy, PolicyVersion},
+    zonemaintenance::types::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
 pub mod state;
@@ -79,6 +80,12 @@ pub struct ZoneState {
     /// value should be move to min_expiration after the signed zone is
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
+
+    /// Unsigned versions of the zone.
+    pub unsigned: foldhash::HashMap<Serial, UnsignedZoneVersionState>,
+
+    /// Signed versions of the zone.
+    pub signed: foldhash::HashMap<Serial, SignedZoneVersionState>,
 
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
@@ -134,7 +141,46 @@ impl ZoneState {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+/// The state of an unsigned version of a zone.
+#[derive(Clone, Debug)]
+pub struct UnsignedZoneVersionState {
+    /// The review state of the zone version.
+    pub review: ZoneVersionReviewState,
+}
+
+/// The state of a signed version of a zone.
+#[derive(Clone, Debug)]
+pub struct SignedZoneVersionState {
+    /// The serial number of the corresponding unsigned version of the zone.
+    pub unsigned_serial: Serial,
+
+    /// The review state of the zone version.
+    pub review: ZoneVersionReviewState,
+}
+
+/// The review state of a version of a zone.
+#[derive(Clone, Debug, Default)]
+pub enum ZoneVersionReviewState {
+    /// The zone is pending review.
+    ///
+    /// If a review script has been configured, it is running now.  Otherwise,
+    /// the zone must be manually reviewed.
+    #[default]
+    Pending,
+
+    /// The zone has been approved.
+    ///
+    /// This is a terminal state.  The zone may have progressed further through
+    /// the pipeline, so it is no longer possible to reject it.
+    Approved,
+
+    /// The zone has been rejected.
+    ///
+    /// The zone has not yet been approved; it can be approved at any time.
+    Rejected,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PipelineMode {
     /// Newly received zone data will flow through the pipeline.
     #[default]
@@ -199,14 +245,27 @@ pub enum HistoricalEvent {
     },
     UnsignedZoneReview {
         status: ZoneReviewStatus,
-        when: SystemTime,
     },
     SignedZoneReview {
         status: ZoneReviewStatus,
-        when: SystemTime,
     },
-    KeySetCommand(String),
-    KeySetError(String),
+    KeySetCommand {
+        cmd: String,
+        #[serde(
+            serialize_with = "serialize_duration_as_secs",
+            deserialize_with = "deserialize_duration_from_secs"
+        )]
+        elapsed: Duration,
+    },
+    KeySetError {
+        cmd: String,
+        err: String,
+        #[serde(
+            serialize_with = "serialize_duration_as_secs",
+            deserialize_with = "deserialize_duration_from_secs"
+        )]
+        elapsed: Duration,
+    },
 }
 
 impl HistoricalEvent {
@@ -229,8 +288,8 @@ impl HistoricalEvent {
             (HistoricalEvent::SignedZoneReview { .. }, HistoricalEventType::SignedZoneReview) => {
                 true
             }
-            (HistoricalEvent::KeySetCommand(_), HistoricalEventType::KeySetCommand) => true,
-            (HistoricalEvent::KeySetError(_), HistoricalEventType::KeySetError) => true,
+            (HistoricalEvent::KeySetCommand { .. }, HistoricalEventType::KeySetCommand) => true,
+            (HistoricalEvent::KeySetError { .. }, HistoricalEventType::KeySetError) => true,
             _ => false,
         }
     }

@@ -15,6 +15,7 @@ use domain::{base::Name, zonetree::ZoneTree};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::api::KeyImport;
+use crate::zone::PipelineMode;
 use crate::{
     api,
     comms::ApplicationCommand,
@@ -65,12 +66,10 @@ pub struct Center {
 pub async fn add_zone(
     center: &Arc<Center>,
     name: Name<Bytes>,
-    policy: Box<str>,
+    policy_name: Box<str>,
     source: api::ZoneSource,
     key_imports: Vec<KeyImport>,
 ) -> Result<(), ZoneAddError> {
-    register_zone(center, name.clone(), policy.clone(), key_imports).await?;
-
     let zone = Arc::new(Zone::new(name.clone()));
 
     {
@@ -83,25 +82,48 @@ pub async fn add_zone(
             return Err(ZoneAddError::AlreadyExists);
         }
 
-        let policy = state
-            .policies
-            .get_mut(&policy)
-            .ok_or(ZoneAddError::NoSuchPolicy)?;
-        if policy.mid_deletion {
-            return Err(ZoneAddError::PolicyMidDeletion);
-        }
+        // Do this inside a block to prevent holding a mutable reference to
+        // state.
+        {
+            let policy = state
+                .policies
+                .get_mut(&policy_name)
+                .ok_or(ZoneAddError::NoSuchPolicy)?;
+            if policy.mid_deletion {
+                return Err(ZoneAddError::PolicyMidDeletion);
+            }
 
-        let mut zone_state = zone.state.lock().unwrap();
-        zone_state.policy = Some(policy.latest.clone());
-        policy.zones.insert(name.clone());
+            let mut zone_state = zone.state.lock().unwrap();
+            zone_state.policy = Some(policy.latest.clone());
+            policy.zones.insert(name.clone());
+        }
 
         // Actually insert the zone now. This shouldn't fail since we've done
         // the `contains` check above and we hold a lock to the state, but it
         // doesn't hurt to have proper error handling here just in case.
-        if !state.zones.insert(zone_by_name) {
+        if !state.zones.insert(zone_by_name.clone()) {
             return Err(ZoneAddError::AlreadyExists);
         }
+    }
 
+    // Send out a registration command so that prerequisites for zone setup
+    // (such as invoking dnst keyset create, ..., init) can be done _before_
+    // the pipeline for the zone starts. We do this _after_ adding the zone
+    // because otherwise updating zone history will fail. If registration
+    // fails we will have to remove the added zone.
+    if let Err(err) = register_zone(center, name.clone(), policy_name.clone(), key_imports).await {
+        // Remove in reverse order what was added above.
+        let mut state = center.state.lock().unwrap();
+        let zone_by_name = ZoneByName(zone);
+        state.zones.remove(&zone_by_name);
+        if let Some(policy) = state.policies.get_mut(&policy_name) {
+            policy.zones.remove(&name);
+        }
+        return Err(err);
+    }
+
+    {
+        let mut state = center.state.lock().unwrap();
         center
             .update_tx
             .send(Update::Changed(Change::ZoneAdded(name.clone())))
@@ -192,8 +214,13 @@ pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reaso
     if let Some(zone) = state.zones.get(zone_name) {
         let mut zone_state = zone.0.state.lock().unwrap();
         if hard {
-            zone_state.hard_halt(reason.to_string());
-        } else {
+            if !matches!(zone_state.pipeline_mode, PipelineMode::HardHalt(_)) {
+                zone_state.hard_halt(reason.to_string());
+            }
+        } else if !matches!(
+            zone_state.pipeline_mode,
+            PipelineMode::SoftHalt(_) | PipelineMode::HardHalt(_)
+        ) {
             zone_state.soft_halt(reason.to_string());
         }
     }

@@ -15,7 +15,7 @@ pub struct Args {
         short = 's',
         long = "server",
         value_name = "IP:PORT",
-        default_value = "127.0.0.1:8950"
+        default_value = "127.0.0.1:4539"
     )]
     pub server: SocketAddr,
 
