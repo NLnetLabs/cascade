@@ -91,4 +91,5 @@ Other known limitations
 - No KMIP batching support.
 - No DNS UPDATE support.
 - HSM algorithm support is limited to RSASHA256 and ECDSAP256SHA256.
+- Changing a policy to use a HSM will not affect existing zones.
 - Memory usage can be improved.
