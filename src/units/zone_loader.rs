@@ -374,7 +374,7 @@ impl ZoneLoader {
             .await
             .map_err(|_| Terminated)?
             .inspect_err(|err| {
-                halt_zone(&center, &zone_name, true, &err);
+                halt_zone(&center, &zone_name, true, err);
                 error!("[ZL]: {err}");
             })
             .map_err(|_| Terminated)?
