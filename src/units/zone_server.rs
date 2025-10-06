@@ -39,7 +39,10 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 #[cfg(feature = "tls")]
 use tokio_rustls::rustls::ServerConfig;
 
-use crate::api::{self, ZoneReviewStatus};
+use crate::api::{
+    ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage,
+    ZoneReviewStatus,
+};
 use crate::center::{get_zone, Center};
 use crate::common::tsig::TsigKeyStore;
 use crate::comms::ApplicationCommand;
@@ -322,7 +325,7 @@ impl ZoneServer {
                     unit_name,
                     name,
                     serial,
-                    matches!(decision, api::ZoneReviewDecision::Approve),
+                    matches!(decision, ZoneReviewDecision::Approve),
                     tx,
                 )
                 .await;
@@ -559,15 +562,15 @@ impl ZoneServer {
                     debug!("[{unit_name}]: Hook '{hook}' exited with status {status}");
 
                     let decision = match status.success() {
-                        true => api::ZoneReviewDecision::Approve,
-                        false => api::ZoneReviewDecision::Reject,
+                        true => ZoneReviewDecision::Approve,
+                        false => ZoneReviewDecision::Reject,
                     };
 
                     let _ = update_tx.send(Update::ReviewZone {
                         name: zone_name,
                         stage: match zone_type {
-                            "unsigned" => api::ZoneReviewStage::Unsigned,
-                            "signed" => api::ZoneReviewStage::Signed,
+                            "unsigned" => ZoneReviewStage::Unsigned,
+                            "signed" => ZoneReviewStage::Signed,
                             _ => unreachable!(),
                         },
                         serial: zone_serial,
@@ -592,7 +595,7 @@ impl ZoneServer {
         zone_name: Name<Bytes>,
         zone_serial: Serial,
         approve: bool,
-        tx: tokio::sync::oneshot::Sender<api::ZoneReviewResult>,
+        tx: tokio::sync::oneshot::Sender<ZoneReviewResult>,
     ) {
         // This can fail if the caller doesn't care about the result.
         let _ = tx.send(
@@ -744,7 +747,7 @@ impl ZoneReviewApi {
         zone_name: Name<Bytes>,
         zone_serial: Serial,
         approve: bool,
-    ) -> api::ZoneReviewResult {
+    ) -> ZoneReviewResult {
         // Was this version of the zone pending review?
         let existed = {
             let mut approvals = self.pending_approvals.write().await;
@@ -754,7 +757,7 @@ impl ZoneReviewApi {
         if !existed {
             // TODO: Check whether the zone exists at all.
             debug!("[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review");
-            return Err(api::ZoneReviewError::NotUnderReview);
+            return Err(ZoneReviewError::NotUnderReview);
         }
 
         if approve {
@@ -806,7 +809,7 @@ impl ZoneReviewApi {
             self.update_tx.send(event).unwrap();
         }
 
-        Ok(api::ZoneReviewOutput {})
+        Ok(ZoneReviewOutput {})
     }
 }
 
