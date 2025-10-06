@@ -880,9 +880,6 @@ impl ZoneSigner {
                 s.threads_used = Some(parallelism);
             }
         }
-        // if let ZoneSigningStatus::InProgress(mut s) = status.write().unwrap().status {
-        //     s.threads_used = Some(parallelism);
-        // }
 
         // Create a zone updater which will be used to add RRs resulting
         // from RRSIG generation to the signed zone. We set the create_diff
