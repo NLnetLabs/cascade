@@ -104,6 +104,8 @@ started.
        
           sudo journalctl --unit=cascaded
 
+       After installing, refer to the :doc:`quick-start` to get started.
+
    .. group-tab:: Ubuntu
 
        To install a Cascade package, you need the 64-bit version of one of
@@ -181,6 +183,8 @@ started.
        
           sudo journalctl --unit=cascaded
 
+       After installing, refer to the :doc:`quick-start` to get started.
+
    .. group-tab:: RHEL
 
        To install a Cascade package, you need Red Hat Enterprise Linux
@@ -239,6 +243,8 @@ started.
        .. code-block:: bash
        
           sudo journalctl --unit=cascaded
+
+       After installing, refer to the :doc:`quick-start` to get started.
        
    .. group-tab:: Docker
 
