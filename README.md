@@ -5,26 +5,30 @@
 [![Documentation Status](https://app.readthedocs.org/projects/cascade-signer/badge/?version=latest)](https://cascade.docs.nlnetlabs.nl/)
 [![Mastodon Follow](https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social)](https://social.nlnetlabs.nl/@nlnetlabs)
 
-**Cascade will offer a flexible DNSSEC signing pipeline.** 
+Cascade is a flexible DNSSEC signing pipeline. For more information, visit
+the [Cascade landing page](https://blog.nlnetlabs.nl/cascade/).
 
-**A proof of concept (PoC) is scheduled to be available before October 2025,
-followed by a production grade release in Q4 2025. Do NOT use the 
-current codebase in production.**
+An alpha release is available now, we encourage you to test it. If you have
+questions, suggestions or feature requests, don't hesitate to [reach
+out](mailto:cascade@nlnetlabs.nl)!
 
-For more information, visit the [Cascade landing page](https://blog.nlnetlabs.nl/cascade/).
+## Installation
 
-If you have questions, suggestions or feature requests, don't hesitate to
-[reach out](mailto:cascade@nlnetlabs.nl)!
+Getting started with Cascade is really easy by installing a binary package
+for either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL) and
+compatible systems such as Rocky Linux.
 
-## Pipeline Design
+We host packages on packages.nlnetlabs.nl, with a *main* repository for
+production releases, and a *proposed* repository for alphas, betas, and
+release candidates. Alternatively, you can build from the source code using
+Cargo, Rust’s build system and package manager.
 
-![cascade-pipeline 001](https://github.com/user-attachments/assets/0d9c599c-5362-4ee6-96bc-dc54de9c8c0f)
+Please refer to our [comprehensive
+documentation](https://cascade.docs.nlnetlabs.nl/) to learn what works best
+for you.
 
-## HSM Support
+## Join Us On Our Journey
 
-Signing keys can either be BIND format key files or signing keys stored in a
-KMIP compatible HSM, or PKCS#11 compatible HSM (via
-[`kmip2pkcs11`](https://github.com/NLnetLabs/kmip2pkcs11)).
-
-KMIP support is currently limited to that needed to communicate with
-`kmip2pkcs11`.
+Based on your feedback, we will continue work to offer a production grade
+release of Cascade in Q1 of 2026. Please do not use the current codebase in
+production.
