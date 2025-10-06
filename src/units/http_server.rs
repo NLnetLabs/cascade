@@ -18,6 +18,7 @@ use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use log::debug;
+use log::warn;
 use log::{error, info};
 use serde::Deserialize;
 use serde::Serialize;
@@ -248,9 +249,11 @@ impl HttpServer {
         state: Arc<HttpServerState>,
         name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
+        let mut zone_started_at = None;
         let mut zone_loaded_at = None;
         let mut zone_loaded_in = None;
         let mut zone_loaded_bytes = 0;
+        let mut zone_loaded_record_count = 0;
         let dnst_binary_path;
         let cfg_path;
         let state_path;
@@ -423,10 +426,26 @@ impl HttpServer {
             match zone_maintainer_report.details() {
                 ZoneReportDetails::Primary => {
                     if let Some(report) = zone_loader_report {
-                        if let Ok(duration) = report.finished_at.duration_since(report.started_at) {
-                            zone_loaded_in = Some(duration);
-                            zone_loaded_at = Some(report.finished_at);
+                        zone_started_at = Some(report.started_at);
+                        if let Some(finished_at) = report.finished_at {
+                            if let Ok(duration) = finished_at.duration_since(report.started_at) {
+                                zone_loaded_in = Some(duration);
+                                zone_loaded_at = Some(finished_at);
+                                zone_loaded_bytes = report.byte_count;
+                                zone_loaded_record_count = report.record_count;
+                            } else {
+                                zone_loaded_in = Some(
+                                    SystemTime::now().duration_since(report.started_at).unwrap(),
+                                );
+                                zone_loaded_at = None;
+                                zone_loaded_bytes = report.byte_count;
+                                zone_loaded_record_count = report.record_count;
+                            }
+                        } else {
+                            zone_loaded_in = None;
+                            zone_loaded_at = None;
                             zone_loaded_bytes = report.byte_count;
+                            zone_loaded_record_count = report.record_count;
                         }
                     }
                 }
@@ -493,17 +512,30 @@ impl HttpServer {
             }
         }
 
-        let receipt_report =
-            if let (Some(finished_at), Some(zone_loaded_in)) = (zone_loaded_at, zone_loaded_in) {
-                let started_at = finished_at.checked_sub(zone_loaded_in).unwrap();
+        let receipt_report = match (zone_loaded_at, zone_loaded_in, zone_started_at) {
+            (Some(finished_at), Some(zone_loaded_in), started_at) => {
+                let started_at = match started_at {
+                    Some(started_at) => started_at,
+                    None => finished_at.checked_sub(zone_loaded_in).unwrap(),
+                };
                 Some(ZoneLoaderReport {
                     started_at,
-                    finished_at,
+                    finished_at: Some(finished_at),
                     byte_count: zone_loaded_bytes,
+                    record_count: zone_loaded_record_count,
                 })
-            } else {
+            }
+            (finished_at, None, Some(started_at)) => Some(ZoneLoaderReport {
+                started_at,
+                finished_at,
+                byte_count: zone_loaded_bytes,
+                record_count: zone_loaded_record_count,
+            }),
+            other => {
+                warn!("Unable to provide receipt report for zone '{name}': {other:?}");
                 None
-            };
+            }
+        };
 
         // Query zone serials
         let mut unsigned_serial = None;

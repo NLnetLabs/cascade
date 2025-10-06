@@ -937,7 +937,7 @@ pub struct ZoneReport {
 }
 
 impl ZoneReport {
-    pub(super) fn new(
+    pub fn new(
         zone_id: ZoneId,
         details: ZoneReportDetails,
         timers: Vec<ZoneRefreshInstant>,
