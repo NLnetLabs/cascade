@@ -1,20 +1,3 @@
-#[cfg(test)]
-pub(crate) mod internal {
-    use std::sync::Arc;
-
-    use crate::metrics::{self, OutputFormat, Target};
-
-    pub const _MOCK_ROUTER_ID: &str = "mock-router";
-
-    pub(crate) fn get_testable_metrics_snapshot(
-        metrics: &Arc<impl metrics::Source + ?Sized>,
-    ) -> Target {
-        let mut target = Target::new(OutputFormat::Test);
-        metrics.append("testunit", &mut target);
-        target
-    }
-}
-
 pub fn assert_json_eq(actual_json: serde_json::Value, expected_json: serde_json::Value) {
     use assert_json_diff::{assert_json_matches_no_panic, CompareMode};
 

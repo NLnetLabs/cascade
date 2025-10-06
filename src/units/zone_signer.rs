@@ -42,8 +42,6 @@ use tokio::sync::{mpsc, OwnedSemaphorePermit};
 use tokio::sync::{oneshot, RwLock, Semaphore};
 use tokio::task::spawn_blocking;
 use tokio::time::{sleep_until, Instant};
-#[cfg(feature = "tls")]
-use tokio_rustls::rustls::ServerConfig;
 use url::Url;
 
 use crate::center::{get_zone, Center};
