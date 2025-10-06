@@ -1,6 +1,6 @@
 use std::cmp::{min, Ordering};
 use std::collections::{HashMap, VecDeque};
-use std::ops::{Deref, Range};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -33,7 +33,7 @@ use domain::zonetree::update::ZoneUpdater;
 use domain::zonetree::{StoredName, StoredRecord, Zone, ZoneBuilder};
 use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, Level};
 use log::{log_enabled, warn};
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
@@ -388,7 +388,7 @@ impl ZoneSigner {
         info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
 
         // Dump the queue:
-        if log_enabled!(Log::Debug) {
+        if log_enabled!(Level::Debug) {
             for q_item in self.signer_status.read().await.zones_being_signed.iter() {
                 let q_item = q_item.read().unwrap();
                 match q_item.status {
@@ -1927,7 +1927,6 @@ enum SignerError {
     InternalError(String),
     PipelineIsHalted,
     KeepSerialPolicyViolated,
-    InvalidStatus(ZoneSigningStatus),
     CannotReadStateFile(String),
     CannotReadPrivateKeyFile(String),
     CannotReadPublicKeyFile(String),
@@ -1951,18 +1950,6 @@ impl std::fmt::Display for SignerError {
             SignerError::PipelineIsHalted => f.write_str("Pipeline is halted"),
             SignerError::KeepSerialPolicyViolated => {
                 f.write_str("Serial policy is Keep but upstream serial did not increase")
-            }
-            SignerError::InvalidStatus(status) => {
-                let state = match status {
-                    ZoneSigningStatus::Requested(_) => "requested",
-                    ZoneSigningStatus::InProgress(_) => "in-progress",
-                    ZoneSigningStatus::Finished(_) => "finished",
-                    ZoneSigningStatus::Aborted => "aborted",
-                };
-                write!(
-                    f,
-                    "Queued request should be in the requested state but is in the {state} state"
-                )
             }
             SignerError::CannotReadStateFile(path) => {
                 write!(f, "Failed to read state file '{path}'")
