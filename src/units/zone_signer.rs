@@ -409,20 +409,6 @@ impl ZoneSigner {
             signer_status.enqueue(zone_name.clone()).await?
         };
 
-        // Dump the queue:
-        for q_item in self.signer_status.read().await.zones_being_signed.iter() {
-            let q_item = q_item.read().unwrap();
-            match q_item.status {
-                ZoneSigningStatus::Requested(_) => {
-                    info!("[ZS]: 2Queue item: {} => requested", q_item.zone_name)
-                }
-                ZoneSigningStatus::InProgress(_) => {
-                    info!("[ZS]: 2Queue item: {} => in-progress", q_item.zone_name)
-                }
-                ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted => { /* Don't log */ }
-            };
-        }
-
         let num_ops_in_progress =
             self.max_concurrent_operations - self.concurrent_operation_permits.available_permits();
         info!(
