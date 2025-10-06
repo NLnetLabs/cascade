@@ -1,0 +1,242 @@
+.\" Man page generated from reStructuredText.
+.
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.TH "CASCADE-HSM" "1" "Oct 06, 2025" "0.1.0-rc1" "Cascade"
+.SH NAME
+cascade-hsm \- Manage HSMs
+.SH SYNOPSIS
+.sp
+\fBcascade hsm\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+.sp
+\fBcascade hsm\fP \fB[OPTIONS]\fP \fI\%add\fP \fB<SERVER_ID>\fP \fB<IP_HOST_OR_FQDN>\fP
+.sp
+\fBcascade hsm\fP \fB[OPTIONS]\fP \fI\%show\fP \fB<SERVER_ID>\fP
+.sp
+\fBcascade hsm\fP \fB[OPTIONS]\fP \fI\%list\fP
+.SH DESCRIPTION
+.sp
+Manage HSM\(aqs.
+.SH OPTIONS
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
+.UNINDENT
+.SH COMMANDS
+.INDENT 0.0
+.TP
+.B add
+Add a KMIP server to use for key generation & signing.
+.sp
+Note: There are no commands to remove or modify KMIP servers yet.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B show
+Get the details of an existing KMIP server.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B list
+List all configured KMIP servers.
+.UNINDENT
+.SH ARGUMENTS FOR HSM SHOW
+.INDENT 0.0
+.TP
+.B <SERVER_ID>
+The identifier of the KMIP server to show information about.
+.UNINDENT
+.SH HSM ADD
+.sp
+Add a KMIP server to use for key generation & signing instead of using
+Ring/OpenSSL based key generation.
+.SH ARGUMENTS FOR HSM ADD
+.INDENT 0.0
+.TP
+.B <SERVER_ID>
+An identifier to refer to the KMIP server by.
+.sp
+This identifier is used with other \fBcascade hsm\fP commands and Cascade
+policy files. The identifier serves several purposes:
+.sp
+1. To make it easy at a glance to recognize which KMIP server a given key
+was created on, by allowing operators to assign a meaningful name to the
+server instead of whatever identity strings the server associates with
+itself or by using hostnames or IP addresses as identifiers.
+.sp
+2. To refer to additional configuration elsewhere to avoid including
+sensitive and/or verbose KMIP server credential or TLS client
+certificate/key authentication data in each key identifier, and which
+would be repeated in every key created on the same server.
+.sp
+3. To allow the actual location of the server and/or its access
+credentials to be rotated without affecting key idenifiers, e.g. if
+a server is assigned a new IP address or if access credentials change.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <IP_HOST_OR_FQDN>
+The hostname or IP address of the KMIP server.
+.UNINDENT
+.SH OPTIONS FOR HSM ADD
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
+.UNINDENT
+.SS Server:
+.INDENT 0.0
+.TP
+.B \-\-port <PORT>
+TCP port to connect to the KMIP server on.
+.sp
+[default: 5696]
+.UNINDENT
+.SS Client Credentials:
+.INDENT 0.0
+.TP
+.B \-\-username <USERNAME>
+Optional username to authenticate to the KMIP server as.
+.sp
+Note: When using the Cascade \fBkmip2pkcs11\fP tool the username
+set here will be used as the label of the PKCS#11 token to login
+to.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-password <PASSWORD>
+Optional password to authenticate to the KMIP server with.
+.sp
+Note: When using the Cascdee \fBkmip2pkcs11\fP tool the password
+set here will be used as the PKCS#11 PIN to login with.
+.UNINDENT
+.SS Client Certificate Authentication:
+.INDENT 0.0
+.TP
+.B \-\-client\-cert <CLIENT_CERT_PATH>
+Optional path to a TLS certificate to authenticate to the KMIP server
+with. The file will be read and sent to the server.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-client\-key <CLIENT_KEY_PATH>
+Optional path to a private key for client certificate authentication.
+THe file will be read and sent to the server.
+.sp
+The private key is needed to be able to prove to the KMIP server that
+you are the owner of the provided TLS client certificate.
+.UNINDENT
+.SS Server Certificate Verification:
+.INDENT 0.0
+.TP
+.B \-\-insecure
+Whether to accept the KMIP server TLS certificate without
+verifying it.
+.sp
+Use this option when your KMIP server uses a self\-signed TLS
+certificate, e.g. in a test environment.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-server\-cert <SERVER_CERT_PATH>
+Optional path to a TLS PEM certificate for the server.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-ca\-cert <CA_CERT_PATH>
+Optional path to a TLS PEM certificate for a Certificate Authority.
+.UNINDENT
+.SS Client Limits:
+.INDENT 0.0
+.TP
+.B \-\-connect\-timeout <CONNECT_TIMEOUT>
+TCP connect timeout.
+.sp
+[default: 3s]
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-read\-timeout <READ_TIMEOUT>
+TCP response read timeout.
+.sp
+[default: 30s]
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-write\-timeout <WRITE_TIMEOUT>
+TCP request write timeout.
+.sp
+[default: 3s]
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-max\-response\-bytes <MAX_RESPONSE_BYTES>
+Maximum KMIP response size to accept (in bytes).
+.sp
+[default: 8192]
+.UNINDENT
+.SS Key Labels:
+.INDENT 0.0
+.TP
+.B \-\-key\-label\-prefix <KEY_LABEL_PREFIX>
+Optional user supplied key label prefix.
+.sp
+Can be used to denote the s/w that created the key, and/or to
+indicate which installation/environment it belongs to, e.g. dev,
+test, prod, etc.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-key\-label\-max\-bytes <KEY_LABEL_MAX_BYTES>
+Maximum label length (in bytes) permitted by the HSM. Key labels
+longer than this will be truncated to fit.
+.sp
+[default: 32]
+.UNINDENT
+.SH SEE ALSO
+.INDENT 0.0
+.TP
+.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
+Cascade online documentation
+.TP
+\fBcascade\fP(1)
+\fI\%Cascade CLI\fP
+.TP
+\fBcascaded\fP(1)
+\fI\%Cascade Daemon\fP
+.TP
+\fBkmip2pkcs11\fP(1)
+KMIP to PKCS#11 relay documentation
+.UNINDENT
+.SH AUTHOR
+NLnet Labs <cascade@nlnetlabs.nl>
+.SH COPYRIGHT
+2025–2025, NLnet Labs
+.\" Generated by docutils manpage writer.
+.

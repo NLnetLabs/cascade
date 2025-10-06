@@ -151,7 +151,7 @@ impl Zone {
         match self.command {
             ZoneCommand::Add {
                 name,
-                source,
+                mut source,
                 policy,
                 import_public_key,
                 import_ksk_file,
@@ -192,6 +192,16 @@ impl Zone {
                     .chain(import_csk_kmip)
                     .chain(import_zsk_kmip)
                     .collect();
+
+                if let ZoneSource::Zonefile { path } = &mut source {
+                    let canonicalized_path = path.canonicalize().map_err(|err| {
+                        format!("Failed to canonicalize zonefile path '{}': {err}", path)
+                    })?;
+                    let path_str = canonicalized_path.to_str().ok_or_else(|| {
+                        format!("Failed to convert path '{}'", canonicalized_path.display())
+                    })?;
+                    *path = Utf8PathBuf::from(path_str).into_boxed_path();
+                }
 
                 let res: Result<ZoneAddResult, ZoneAddError> = client
                     .post("zone/add")
@@ -652,6 +662,7 @@ impl Progress {
             waiting_waited,
             zone.name
         );
+
         // TODO: When complete, show how long we waited.
     }
 
