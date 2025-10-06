@@ -32,6 +32,7 @@ include:
 
   - image: 'almalinux:10'
     systemd_service_unit_file: pkg/common/cascaded.s*
+    rpm_rpmlint_check_filters: bad-manual-page-folder
 
 # 'mode' is not used by the package building workflow job, but is used by the package testing workflow job.
 # Ploutos will not include this key when using this matrix definition to generate package building matrix
