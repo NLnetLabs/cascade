@@ -117,6 +117,16 @@ Options for :subcmd:`zone add`
    Print the help text (short summary with ``-h``, long help with ``--help``).
 
 
+Options for :subcmd:`zone status`
+---------------------------------
+
+.. _zone-status-detailed:
+.. option:: --detailed
+
+   Print detailed information about the zone, including a zone's DNSSEC key
+   handles in use, as well as the new DNSKEY records during key rolls.
+
+
 See Also
 --------
 
