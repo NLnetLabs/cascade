@@ -25,22 +25,22 @@ Example
     daemonize = false
 
     [remote-control]
-    servers = ["127.0.0.1:2060", "[::1]:2060"]
+    servers = ["127.0.0.1:4539", "[::1]:4539"]
 
     [loader]
-    notify-listeners = ["127.0.0.1:2050", "[::1]:2050"]
+    notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
 
     [loader.review]
-    servers = ["127.0.0.1:2051", "[::1]:2051"]
+    servers = ["127.0.0.1:4541", "[::1]:4541"]
 
     [signer]
     [signer.review]
-    servers = ["127.0.0.1:2052", "[::1]:2052"]
+    servers = ["127.0.0.1:4542", "[::1]:4542"]
 
     [key-manager]
 
     [server]
-    servers = ["127.0.0.1:2053", "[::1]:2053"]
+    servers = ["127.0.0.1:4543", "[::1]:4543"]
 
 Options
 -------
@@ -210,7 +210,7 @@ How Cascade is controlled.
 
 The ``[remote-control]`` section.
 
-.. option:: servers = ["127.0.0.1:2060", "[::1]:2060"]
+.. option:: servers = ["127.0.0.1:4539", "[::1]:4539"]
 
    Where to serve Cascade's HTTP API.
 
@@ -228,14 +228,14 @@ How zones are loaded.
 
 The ``[loader]`` section.
 
-.. option:: notify-listeners = ["127.0.0.1:2050", "[::1]:2050"]
+.. option:: notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
 
    Where to listen for zone change notifications.
 
    A DNS server will be bound to these addresses.  If a DNS NOTIFY message for
    a known zone is received there, the zone will be reloaded appropriately.
 
-   Unless explicitly specified (e.g. ``udp://localhost:2050``), each address will
+   Unless explicitly specified (e.g. ``udp://localhost:4540``), each address will
    be served over UDP and TCP.  An empty array will disable listening entirely.
 
    These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -248,7 +248,7 @@ How loaded zones are reviewed.
 
 The ``[loader.review]`` section.
 
-.. option:: servers = ["127.0.0.1:2051", "[::1]:2051"]
+.. option:: servers = ["127.0.0.1:4541", "[::1]:4541"]
 
    Where to serve loaded zones for review.
 
@@ -256,7 +256,7 @@ The ``[loader.review]`` section.
    of all loaded zones.  This can be used to verify the consistency of these
    zones.
 
-   Unless explicitly specified (e.g. ``udp://localhost:2051``), each address will
+   Unless explicitly specified (e.g. ``udp://localhost:4541``), each address will
    be served over UDP and TCP.  An empty array will disable serving entirely.
 
    These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -275,7 +275,7 @@ How signed zones are reviewed.
 
 The ``[signer.review]`` section.
 
-.. option:: servers = ["127.0.0.1:2052", "[::1]:2052"]
+.. option:: servers = ["127.0.0.1:4542", "[::1]:4542"]
 
    Where to serve signed zones for review.
 
@@ -283,7 +283,7 @@ The ``[signer.review]`` section.
    of all signed (but not necessarily published) zones.  This can be used to
    check the correctness of the signer.
 
-   Unless explicitly specified (e.g. ``udp://localhost:2052``), each address will
+   Unless explicitly specified (e.g. ``udp://localhost:4542``), each address will
    be served over UDP and TCP.  An empty array will disable serving entirely.
 
    These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -302,14 +302,14 @@ How zones are published.
 
 The ``[server]`` section.
 
-.. option:: servers = ["127.0.0.1:2053", "[::1]:2053"]
+.. option:: servers = ["127.0.0.1:4543", "[::1]:4543"]
 
    Where to serve published zones.
 
    A DNS server will be bound to these addresses, and will serve the contents
    of all published zones.  This is the final output from Cascade.
 
-   Unless explicitly specified (e.g. ``udp://localhost:2053``), each address will
+   Unless explicitly specified (e.g. ``udp://localhost:4543``), each address will
    be served over UDP and TCP.  At least one address must be specified.
 
    These sockets may be bound by systemd and passed into Cascade.  If systemd
