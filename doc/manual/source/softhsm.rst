@@ -61,7 +61,7 @@ locally running :program:`kmip2pkcs11` daemon:
 .. code-block:: bash
 
    # cascade hsm add --insecure --username Cascade --password 1234 kmip2pkcs11 127.0.0.1
-   Added KMIP server 'kmip2pkcs11 0.1.0-rc1 using PKCS#11 token with label Cascade in slot SoftHSM slot ID 0x1948bafd via library libsofthsm2.so'.
+   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label Cascade in slot SoftHSM slot ID 0x1948bafd via library libsofthsm2.so'.
 
 Sign a Test Zone with SoftHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
