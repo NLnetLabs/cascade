@@ -21,14 +21,14 @@ log-target = { type = "syslog" }
 daemonize = false
 
 [remote-control]
-servers = ["127.0.0.1:2060", "[::1]:2060"]
+servers = ["127.0.0.1:4539", "[::1]:4539"]
 
 [loader]
-notify-listeners = ["127.0.0.1:2050", "[::1]:2050"]
-review.servers = ["127.0.0.1:2051", "[::1]:2051"]
+notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
+review.servers = ["127.0.0.1:4541", "[::1]:4541"]
 
 [signer]
-review.servers = ["127.0.0.1:2052", "[::1]:2052"]
+review.servers = ["127.0.0.1:4542", "[::1]:4542"]
 
 [server]
-servers = ["127.0.0.1:2053", "[::1]:2053"]
+servers = ["127.0.0.1:4543", "[::1]:4543"]
