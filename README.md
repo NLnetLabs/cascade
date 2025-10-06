@@ -30,5 +30,5 @@ for you.
 ## Join Us On Our Journey
 
 Based on your feedback, we will continue work to offer a production grade
-release of Cascade in Q1 of 2026. Please do not use the current codebase in
-production.
+release of Cascade in the first half of 2026. Please do not use the current
+codebase in production.
