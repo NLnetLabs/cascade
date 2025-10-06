@@ -16,7 +16,7 @@ Options
 
 .. option:: -s, --server <IP:PORT>
 
-   The cascade server instance to connect to [default: 127.0.0.1:8950].
+   The cascade server instance to connect to [default: 127.0.0.1:2060].
 
 .. option:: --log-level <LEVEL>
 
