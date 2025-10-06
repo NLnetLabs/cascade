@@ -109,12 +109,16 @@ How zones are loaded.
 
 The ``[loader]`` section.
 
-.. option:: [loader.review]
 
-   How loaded zones are reviewed.
+.. _policy-loaded-review:
 
-   Review offers an opportunity to perform external checks on the zone contents
-   loaded by Cascade.
+How loaded zones are reviewed.
+++++++++++++++++++++++++++++++
+
+The ``[loader.review]`` section.
+
+Review offers an opportunity to perform external checks on the zone contents
+loaded by Cascade.
 
 .. option:: required = false
 
@@ -428,10 +432,16 @@ The ``[signer.denial]`` section.
    when generating NSEC3 records.  This affects the security of the zone, so be
    careful if you wish to enable it.
 
+.. _policy-signed-review:
+
 How signed zones are reviewed.
 ++++++++++++++++++++++++++++++
 
 The ``[signer.review]`` section.
+
+.. option:: [signer.review]
+
+   How signed zones are reviewed.
 
 .. option:: required = false
 

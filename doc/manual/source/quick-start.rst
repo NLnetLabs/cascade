@@ -171,7 +171,7 @@ Next steps
 ----------
 
 - Establishing the chain of trust to the parent.
-- Automating pre-publication checks.
+- :doc:`Automating pre-publication checks <review-hooks>`.
 - :doc:`Using a Hardware Security Module <hsms>`.
 - Migrating an existing DNSSEC signed zone.
 - `Getting support <https://nlnetlabs.nl/services/contracts/>`_.
