@@ -12,7 +12,7 @@ use crate::api::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::cli::commands::policy::ansi;
 use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
-use crate::zonemaintenance::types::SigningReport;
+use crate::zonemaintenance::types::SigningStageReport;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Zone {
@@ -539,6 +539,7 @@ enum Progress {
     WaitingToSign,
     Signing,
     Signed,
+    SigningFailed,
     AtSignedReview,
     Published,
 }
@@ -556,10 +557,16 @@ fn determine_progress(zone: &ZoneStatus, policy: &PolicyInfo) -> Progress {
                     ZoneReviewStatus::Approved => {
                         // After reviewing comes signing, and if we're not stuck at
                         // reviewing then we must be somewhere in signing.
-                        match &zone.signing_report {
-                            None | Some(SigningReport::Requested(_)) => Progress::WaitingToSign,
-                            Some(SigningReport::InProgress(_)) => Progress::Signing,
-                            Some(SigningReport::Finished(_)) => Progress::Signed,
+                        let Some(signing_report) = &zone.signing_report else {
+                            return Progress::WaitingToSign;
+                        };
+                        match &signing_report.stage_report {
+                            SigningStageReport::Requested(_) => Progress::WaitingToSign,
+                            SigningStageReport::InProgress(_) => Progress::Signing,
+                            SigningStageReport::Finished(s) => match s.succeeded {
+                                true => Progress::Signed,
+                                false => Progress::SigningFailed,
+                            },
                         }
                     }
                 }
@@ -567,10 +574,13 @@ fn determine_progress(zone: &ZoneStatus, policy: &PolicyInfo) -> Progress {
         },
         ZoneStage::Signed => {
             if !policy.signer.review.required {
-                match &zone.signing_report {
-                    None | Some(SigningReport::Requested(_)) => Progress::WaitingToSign,
-                    Some(SigningReport::InProgress(_)) => Progress::Signing,
-                    Some(SigningReport::Finished(_)) => Progress::Signed,
+                let Some(signing_report) = &zone.signing_report else {
+                    return Progress::WaitingToSign;
+                };
+                match &signing_report.stage_report {
+                    SigningStageReport::Requested(_) => Progress::WaitingToSign,
+                    SigningStageReport::InProgress(_) => Progress::Signing,
+                    SigningStageReport::Finished(_) => Progress::Signed,
                 }
             } else {
                 // After reviewing comes publication, and if we're not at the
@@ -592,6 +602,7 @@ impl std::fmt::Display for Progress {
             Progress::WaitingToSign => f.write_str("Waiting to sign"),
             Progress::Signing => f.write_str("Signing"),
             Progress::Signed => f.write_str("Signed"),
+            Progress::SigningFailed => f.write_str("Signing failed"),
             Progress::AtSignedReview => f.write_str("At signed review"),
             Progress::Published => f.write_str("Published"),
         }
@@ -613,7 +624,8 @@ impl Progress {
                 Progress::AtUnsignedReview => self.print_pending_unsigned_review(zone, policy),
                 Progress::WaitingToSign => self.print_waiting_to_sign(zone),
                 Progress::Signing => self.print_signing(zone),
-                Progress::Signed => self.print_signed(zone),
+                Progress::Signed => self.print_signed(zone, true),
+                Progress::SigningFailed => self.print_signed(zone, false),
                 Progress::AtSignedReview => self.print_pending_signed_review(zone, policy),
                 Progress::Published => self.print_published(zone),
             }
@@ -632,6 +644,7 @@ impl Progress {
             Progress::WaitingToSign => Progress::Signing,
             Progress::Signing => Progress::Signed,
             Progress::Signed => Progress::AtSignedReview,
+            Progress::SigningFailed => return ControlFlow::Break(()),
             Progress::AtSignedReview => Progress::Published,
             Progress::Published => return ControlFlow::Break(()),
         };
@@ -684,7 +697,7 @@ impl Progress {
                 println!("{} {loading_fetching} ..", status_icon(false),);
 
                 println!(
-                    "  {loaded_fetched} {} and {} in {} seconds",
+                    "  {loaded_fetched} {} and parsed {} in {} seconds",
                     format_size(report.byte_count, " ", "B"),
                     format_size(report.record_count, "", " records"),
                     SystemTime::now()
@@ -762,10 +775,16 @@ impl Progress {
         Self::print_signing_progress(zone);
     }
 
-    fn print_signed(&self, zone: &ZoneStatus) {
+    fn print_signed(&self, zone: &ZoneStatus, succeeded: bool) {
+        let (signed_failed, icon) = match succeeded {
+            true => ("Signed", status_icon(true)),
+            false => (
+                "Signing failed",
+                format!("{}\u{78}{}", ansi::RED, ansi::RESET),
+            ),
+        };
         println!(
-            "{} Signed {} as {}",
-            status_icon(true),
+            "{icon} {signed_failed} {} as {}",
             serial_to_string(zone.unsigned_serial),
             serial_to_string(zone.signed_serial)
         );
@@ -839,37 +858,109 @@ impl Progress {
 
     fn print_signing_progress(zone: &ZoneStatus) {
         if let Some(report) = &zone.signing_report {
-            match report {
-                SigningReport::Requested(r) => {
+            match &report.stage_report {
+                SigningStageReport::Requested(r) => {
                     println!(
                         "  Signing requested at {}",
                         to_rfc3339_ago(Some(r.requested_at))
                     );
                 }
-                SigningReport::InProgress(r) => {
+                SigningStageReport::InProgress(r) => {
+                    println!(
+                        "  Signing requested at {}",
+                        to_rfc3339_ago(Some(r.requested_at))
+                    );
                     println!(
                         "  Signing started at {}",
                         to_rfc3339_ago(Some(r.started_at))
                     );
-                    if let (Some(unsigned_rr_count), Some(total_time)) =
-                        (r.unsigned_rr_count, r.total_time)
+                    if let (Some(unsigned_rr_count), Some(walk_time), Some(sort_time)) =
+                        (r.unsigned_rr_count, r.walk_time, r.sort_time)
                     {
                         println!(
-                            "  Signed {} in {}",
+                            "  Collected {} in {}, sorted in {}",
                             format_size(unsigned_rr_count, "", " records"),
-                            format_duration(total_time)
+                            format_duration(walk_time),
+                            format_duration(sort_time)
                         );
                     }
+                    if let (Some(denial_rr_count), Some(denial_time)) =
+                        (r.denial_rr_count, r.denial_time)
+                    {
+                        println!(
+                            "  Generated {} in {}",
+                            format_size(denial_rr_count, "", " NSEC(3) records"),
+                            format_duration(denial_time)
+                        );
+                    }
+                    if let (Some(rrsig_count), Some(rrsig_time)) = (r.rrsig_count, r.rrsig_time) {
+                        println!(
+                            "  Generated {} in {} ({} sig/s)",
+                            format_size(rrsig_count, "", " signatures"),
+                            format_duration(rrsig_time),
+                            rrsig_count / (rrsig_time.as_secs() as usize)
+                        );
+                    }
+                    if let (Some(rrsig_count), Some(insertion_time)) =
+                        (r.rrsig_count, r.insertion_time)
+                    {
+                        println!(
+                            "  Inserted signatures in {} ({} sig/s)",
+                            format_duration(insertion_time),
+                            rrsig_count / (insertion_time.as_secs() as usize)
+                        );
+                    }
+                    if let Some(threads_used) = r.threads_used {
+                        println!("  Using {threads_used} threads to generate signatures");
+                    }
                 }
-                SigningReport::Finished(r) => {
-                    println!("  Signed at {}", to_rfc3339_ago(Some(r.finished_at)));
+                SigningStageReport::Finished(r) => {
                     println!(
-                        "  Signed {} in {}",
+                        "  Signing requested at {}",
+                        to_rfc3339_ago(Some(r.requested_at))
+                    );
+                    println!(
+                        "  Signing started at {}",
+                        to_rfc3339_ago(Some(r.started_at))
+                    );
+                    println!(
+                        "  Signing finished at {}",
+                        to_rfc3339_ago(Some(r.finished_at))
+                    );
+                    println!(
+                        "  Collected {} in {}, sorted in {}",
                         format_size(r.unsigned_rr_count, "", " records"),
-                        format_duration(r.total_time)
+                        format_duration(r.walk_time),
+                        format_duration(r.sort_time)
+                    );
+                    println!(
+                        "  Generated {} in {}",
+                        format_size(r.denial_rr_count, "", " NSEC(3) records"),
+                        format_duration(r.denial_time)
+                    );
+                    println!(
+                        "  Generated {} in {} ({} sig/s)",
+                        format_size(r.rrsig_count, "", " signatures"),
+                        format_duration(r.rrsig_time),
+                        r.rrsig_count
+                            .checked_div(r.rrsig_time.as_secs() as usize)
+                            .unwrap_or(r.rrsig_count),
+                    );
+                    println!(
+                        "  Inserted signatures in {} ({} sig/s)",
+                        format_duration(r.insertion_time),
+                        r.rrsig_count
+                            .checked_div(r.insertion_time.as_secs() as usize)
+                            .unwrap_or(r.rrsig_count),
+                    );
+                    println!(
+                        "  Took {} in total, using {} threads",
+                        format_duration(r.total_time),
+                        r.threads_used
                     );
                 }
             }
+            println!("  Current action: {}", report.current_action);
         }
     }
 }
