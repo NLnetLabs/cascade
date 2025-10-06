@@ -99,6 +99,11 @@ be used as the name of the policy.
 In the example below the `sudo tee` command is needed because the default
 policy directory is not writable by the current user.
 
+.. Tip::
+
+   Cascade needs to running before you proceed further. See "Configuring
+   Cascade" above for how to configure and start Cascade.
+
 .. code-block:: bash
 
    cascade template policy | sudo tee /etc/cascade/policies/default.toml
