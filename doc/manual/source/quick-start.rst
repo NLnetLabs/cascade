@@ -66,7 +66,7 @@ systemd features used instead.
 
         .. code-block:: bash
 
-            cascade --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
+            cascaded --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
 
 Defining policy
 ---------------
