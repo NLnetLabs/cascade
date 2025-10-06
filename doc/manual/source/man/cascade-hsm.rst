@@ -81,7 +81,7 @@ Arguments for :subcmd:`hsm add`
 
 .. option:: <IP_HOST_OR_FQDN>
 
-      The hostname or IP address of the KMIP server
+      The hostname or IP address of the KMIP server.
 
 Options for :subcmd:`hsm add`
 -----------------------------
