@@ -151,14 +151,14 @@ From the above you can see that the signed zone can be retrieved from
 
 .. code-block:: bash
 
-    dig @127.0.0.1 -p 1053 AXFR example.com
+    dig @127.0.0.1 -p 2053 AXFR example.com
 
 If you have the BIND `dnssec-verify <https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_
 tool installed you can check that the zone is correctly DNSSEC signed:
 
 .. code-block:: bash
 
-   $ dig @127.0.0.1 -p 1053 example.com AXFR | dnssec-verify -o example.com /dev/stdin
+   $ dig @127.0.0.1 -p 2053 example.com AXFR | dnssec-verify -o example.com /dev/stdin
    Loading zone 'example.com' from file '/dev/stdin'
 
    Verifying the zone using the following algorithms:
