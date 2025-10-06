@@ -1681,7 +1681,6 @@ impl ZoneSigningStatus {
         Self::Requested(RequestedStatus::new())
     }
 
-    #[allow(clippy::result_large_err)]
     fn start(&mut self, zone_serial: Serial) -> Result<(), ()> {
         match *self {
             ZoneSigningStatus::Requested(s) => {
