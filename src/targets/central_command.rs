@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use domain::base::Serial;
 use domain::zonetree::StoredName;
-use log::{info, warn};
+use log::{debug, info, warn};
 use tokio::sync::mpsc;
 
 use crate::api::{self, ZoneReviewStatus};
@@ -74,7 +74,7 @@ impl CentralCommand {
 
 impl CentralCommand {
     async fn direct_update(&self, event: Update) {
-        info!("[CC]: Event received: {event:?}");
+        debug!("[CC]: Event received: {event:?}");
         let (msg, target, cmd) = match event {
             Update::Changed(change) => {
                 {

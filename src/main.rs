@@ -76,6 +76,11 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
 
+        // Update the configured logging setup with settings from the config file.
+        if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
+            logger.apply(x)
+        }
+
         // Create required subdirectories (and their parents) if they don't
         // exist. This is only needed for directories to which we write files
         // without using util::write_file() as that function creates the
@@ -106,8 +111,7 @@ fn main() -> ExitCode {
 
         // TODO: Fail if any zone state files exist.
     } else {
-        // If continuing from state update the configured logging setup.
-        // Only update logger if a log setting was persisted in state before
+        // Update the configured logging setup from state.
         if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
             logger.apply(x)
         }
