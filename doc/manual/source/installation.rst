@@ -4,15 +4,6 @@ Installation
 Binary Packages
 ---------------
 
-.. Tip::
-
-   Cascade is currently in alpha. This means that packages are only
-   only available via the "proposed" package repositories. If 
-   ``apt install cascade`` or ``yum install cascade`` report no
-   packages found, check that you added the configuration at the
-   for the "proposed" repository which you can find at the bottom
-   of this page under "Installing Specific Versions".
-
 Getting started with Cascade is really easy by installing a binary package
 for either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL) and
 compatible systems such as Rocky Linux. Alternatively, you can run with
@@ -66,9 +57,9 @@ started.
 
           echo \
           "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/debian \
-          $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
+          $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
 
-       Update the :program:`apt` package index once more: 
+Update the :program:`apt` package index once more: 
 
        .. code-block:: bash
 
@@ -80,7 +71,9 @@ started.
 
           sudo apt install cascade
 
-       Then you can start Cascade with:
+       After installing, refer to the :doc:`quick-start` to get started.
+
+       Once you're ready, start Cascade with:
 
        .. code-block:: bash
 
@@ -103,8 +96,6 @@ started.
        .. code-block:: bash
        
           sudo journalctl --unit=cascaded
-
-       After installing, refer to the :doc:`quick-start` to get started.
 
    .. group-tab:: Ubuntu
 
@@ -145,7 +136,7 @@ started.
 
           echo \
           "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/ubuntu \
-          $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
+          $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
 
        Update the :program:`apt` package index once more: 
 
@@ -159,7 +150,9 @@ started.
 
           sudo apt install cascade
 
-       Then you can start Cascade with:
+       After installing, refer to the :doc:`quick-start` to get started.
+
+       Once you're ready, start Cascade with:
 
        .. code-block:: bash
 
@@ -183,8 +176,6 @@ started.
        
           sudo journalctl --unit=cascaded
 
-       After installing, refer to the :doc:`quick-start` to get started.
-
    .. group-tab:: RHEL
 
        To install a Cascade package, you need Red Hat Enterprise Linux
@@ -196,9 +187,9 @@ started.
        
        .. code-block:: text
        
-          [nlnetlabs]
-          name=NLnet Labs
-          baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/main/$basearch
+          [nlnetlabs-testing]
+          name=NLnet Labs Testing
+          baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/proposed/$basearch
           enabled=1
         
        Add the GPG key from NLnet Labs:
@@ -220,7 +211,9 @@ started.
 
           sudo yum install -y kmip2pkcs11
 
-       Then you can start Cascade with:
+       After installing, refer to the :doc:`quick-start` to get started.
+
+       Once you're ready, start Cascade with:
 
        .. code-block:: bash
 
@@ -243,8 +236,6 @@ started.
        .. code-block:: bash
        
           sudo journalctl --unit=cascaded
-
-       After installing, refer to the :doc:`quick-start` to get started.
        
    .. group-tab:: Docker
 
@@ -318,112 +309,6 @@ Updating
 
        .. Note:: Docker images are coming soon.
 
-Installing Specific Versions
-----------------------------
-
-Before every new release of Cascade, one or more release candidates are 
-provided for testing through every installation method. You can also install
-a specific version, if needed.
-
-.. tabs::
-
-   .. group-tab:: Debian
-
-       If you would like to try out release candidates of Cascade you can
-       add the *proposed* repository to the existing *main* repository
-       described earlier. 
-       
-       Assuming you already have followed the steps to install regular releases,
-       run this command to add the additional repository:
-
-       .. code-block:: bash
-
-          echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/debian \
-          $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
-
-       Make sure to update the :program:`apt` package index:
-
-       .. code-block:: bash
-
-          sudo apt update
-       
-       You can now use this command to get an overview of the available 
-       versions:
-
-       .. code-block:: bash
-
-          sudo apt policy cascade
-
-       You can install a specific version using ``<package name>=<version>``,
-       e.g.:
-
-       .. code-block:: bash
-
-          sudo apt install Cascade=0.1.0~alpha-1bookworm
-
-   .. group-tab:: Ubuntu
-
-       If you would like to try out release candidates of Cascade you can
-       add the *proposed* repository to the existing *main* repository
-       described earlier. 
-       
-       Assuming you already have followed the steps to install regular
-       releases, run this command to add the additional repository:
-
-       .. code-block:: bash
-
-          echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/ubuntu \
-          $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
-
-       Make sure to update the :program:`apt` package index:
-
-       .. code-block:: bash
-
-          sudo apt update
-       
-       You can now use this command to get an overview of the available 
-       versions:
-
-       .. code-block:: bash
-
-          sudo apt policy cascade
-
-       You can install a specific version using ``<package name>=<version>``,
-       e.g.:
-
-       .. code-block:: bash
-
-          sudo apt install cascade=0.1.0~alpha-1jammy
-          
-   .. group-tab:: RHEL
-
-       To install release candidates of Cascade, create an additional repo 
-       file named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`, enter this
-       configuration and save it:
-       
-       .. code-block:: text
-       
-          [nlnetlabs-testing]
-          name=NLnet Labs Testing
-          baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/proposed/$basearch
-          enabled=1
-        
-       You can use this command to get an overview of the available versions:
-        
-       .. code-block:: bash
-        
-          sudo yum list --showduplicates cascade
-          
-       You can install a specific version using 
-       ``<package name>-<version info>``, e.g.:
-         
-       .. code-block:: bash
-         
-          sudo yum install -y cascade-0.1.0~alpha
-             
-   .. group-tab:: Docker
 
        .. Note:: Docker images are coming soon.
                
