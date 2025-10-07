@@ -5,11 +5,9 @@ When migrating from an existing DNSSEC signing solution to Cascade one typically
 
 Any migration strategy requires importing keys from the old signer into the new signer.
 
-Keys can be imported in one of two ways:
-  - Using them for signing but otherwise not managing them. This is appropriate when the keys are used for multiple zones but migration is not being done at this point for all of them and so the old signer will continue to need to use them.
-  - Taking ownership of them. Cascade will delete them when they are no longer needed.
+Cascade will use imported keys but will *not* delete them when they are no longer needed.
 
-In both cases the keys remain where they are. Actually moving keys out of the existing signer may be possible but the process, if possible, is vendor specific and not documented here.
+Moving keys out of the existing signer may be possible but the process is vendor specific and not documented here.
 
 Key import is done as part of adding a zone and can be from files or from an HSM.
 
