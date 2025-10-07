@@ -60,6 +60,14 @@ Commands
 Options for :subcmd:`zone add`
 ------------------------------
 
+.. Tip::
+
+   When importing a PKCS#11 HSM key and accessing the HSM via
+   :program:`kmip2pkcs11` you will need to suffix public key ID arguments that
+   you pass to ``cascade zone add --import-xxx-kmip`` with `_pub`` private
+   key IDs with ``_priv``. Otherwise :program:`kmip2pkcs11` will fail to find
+   the keys.
+
 .. option:: --source <SOURCE>
 
    The zone source can be an IP address (with or without port, defaults to port
