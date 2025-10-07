@@ -74,6 +74,7 @@ OpenDNSSEC that will be added in a future release:
 - No prefix based access control.
 - Terminology differences, Cascade does not use the term "omnipresent" for
   example.
+- No CAA record support.
 
 NOT a complete authoritative name server
 ----------------------------------------
