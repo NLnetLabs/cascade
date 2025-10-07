@@ -33,7 +33,7 @@ use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
 use domain::zonetree::{StoredName, ZoneTree};
 use futures::Future;
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot, RwLock};
 
@@ -449,15 +449,13 @@ impl ZoneServer {
             _ => unreachable!(),
         };
 
-        if self
+        // Remove any prior approval for this zone as we have been asked to
+        // (re-)approve it.
+        let _ = self
             .last_approvals
-            .read()
+            .write()
             .await
-            .contains_key(&(zone_name.clone(), zone_serial))
-        {
-            trace!("Skipping approval request for already approved {zone_type} zone '{zone_name}' at serial {zone_serial}.");
-            return Some(Ok(()));
-        }
+            .remove(&(zone_name.clone(), zone_serial));
 
         let review = {
             let zone = get_zone(&self.center, &zone_name).unwrap();
