@@ -51,7 +51,7 @@ started.
 
           curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | sudo gpg --dearmor -o /etc/apt/keyrings/nlnetlabs-archive-keyring.gpg
 
-       Now, use the following command to set up the *main* repository:
+       Now, use the following command to set up the *proposed* repository:
 
        .. code-block:: bash
 
@@ -130,7 +130,7 @@ started.
 
           curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | sudo gpg --dearmor -o /etc/apt/keyrings/nlnetlabs-archive-keyring.gpg
 
-       Now, use the following command to set up the *main* repository:
+       Now, use the following command to set up the *proposed* repository:
 
        .. code-block:: bash
 
@@ -182,7 +182,7 @@ started.
        (RHEL) 8 or 9, or compatible operating system such as Rocky Linux.
        Packages are available for the ``amd64``/``x86_64`` architecture only.
        
-       First create a file named :file:`/etc/yum.repos.d/nlnetlabs.repo`,
+       First create a file named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`,
        enter this configuration and save it:
        
        .. code-block:: text
