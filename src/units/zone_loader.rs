@@ -484,6 +484,7 @@ fn load_file_into_zone(
         .map_err(|err| format!("Failed to read data from file '{zone_path}': {err}"))?;
     let mut reader = buf.into_inner();
     reader.set_origin(zone_name.clone());
+    reader.set_default_class(Class::IN);
 
     debug!("[ZL]: Parsing stage 1 {zone_file_len} bytes of zone '{zone_name}' data");
     let mut parsed_zone_file = Zonefile::default();
