@@ -59,7 +59,7 @@ started.
           "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/debian \
           $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
 
-Update the :program:`apt` package index once more: 
+       Update the :program:`apt` package index once more: 
 
        .. code-block:: bash
 
