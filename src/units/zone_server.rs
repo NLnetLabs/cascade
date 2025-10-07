@@ -615,7 +615,7 @@ impl ZoneServer {
             return Err(ZoneReviewError::NoSuchZone);
         };
 
-        // Create a deep copy of the set of unsigned zones. We will add
+        // Create a deep copy of the set of signable zones. We will add
         // the new zone to that copied set and then replace the original
         // set with the new set.
         let signable_zones = center.signable_zones.load();
