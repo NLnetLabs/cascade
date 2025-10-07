@@ -143,9 +143,7 @@ loaded by Cascade.
    - ``CASCADE_SERIAL``: The serial number of the zone (decimal integer).
    - ``CASCADE_SERVER``: The TCP/UDP port where Cascade is serving the zone for
      review, formatted ``<ip-addr>:<port>``.
-   - ``CASCADE_CONTROL``: The address of Cascade's HTTP API server, for sending
-     approvals and rejections.
-
+   
    The command will be called from an unspecified directory, and it must be
    accessible to Cascade (i.e. after it has dropped privileges). Its exit code
    will determine whether the zone is approved or not.
