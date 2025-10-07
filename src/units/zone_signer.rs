@@ -374,9 +374,9 @@ impl ZoneSigner {
         true
     }
 
-    /// Signs zone_name from the Manager::signable_zones zone collection,
+    /// Signs zone_name from the Center::signable_zones zone collection,
     /// unless `resign_last_signed_zone_content` is true in which case
-    /// it resigns the copy of the zone from the Manager::published_zones
+    /// it resigns the copy of the zone from the Center::published_zones
     /// collection instead. An alternative way to do this would be to only
     /// read the right version of the signable zone, but that would only
     /// be possible if the signable zone were definitely a ZoneApex zone
