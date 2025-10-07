@@ -17,4 +17,4 @@ The :doc:`man/cascade-zone` manual page documents the various `--import-` argume
 
 .. Tip::
 
-   When importing a PKCS#11 HSM key and accessing the HSM via :program:`kmip2pkcs11` you will need to suffix public key ID arguments that you pass to ``cascade zone add --import-xxx-kmip`` with `_pub`` private key IDs with ``_priv``. Otherwise :program:`kmip2pkcs11` will fail to find the keys.
+   When importing a PKCS#11 HSM key and accessing the HSM via :program:`kmip2pkcs11` you will need to suffix public key ID arguments that you pass to ``cascade zone add --import-xxx-kmip`` with ``_pub`` private key IDs with ``_priv``. Otherwise :program:`kmip2pkcs11` will fail to find the keys.
