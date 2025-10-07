@@ -367,7 +367,7 @@ zone) are signed by the key manager, rather than the zone signer; see the
 
    - ``keep``: use the same serial number as the unsigned zone.
    - ``counter``: increment the serial number every time.
-   - ``unixtime``: use the current Unix time, in seconds.
+   - ``unix-time``: use the current Unix time, in seconds.
    - ``date-counter``: format the number as ``<YYYY><MM><DD><xx>`` in decimal.
      ``<xx>`` is a simple counter to allow up to 100 versions per day.
 
