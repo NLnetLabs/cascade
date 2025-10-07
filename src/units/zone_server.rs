@@ -490,12 +490,19 @@ impl ZoneServer {
             // Approve immediately.
             match self.source {
                 Source::UnsignedZones => {
-                    update_tx
-                        .send(Update::UnsignedZoneApprovedEvent {
-                            zone_name: zone_name.clone(),
-                            zone_serial,
-                        })
-                        .unwrap();
+                    info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
+                    if let Err(err) =
+                        ZoneServer::promote_zone_to_signable(self.center.clone(), &zone_name)
+                    {
+                        error!("[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}");
+                    } else {
+                        update_tx
+                            .send(Update::UnsignedZoneApprovedEvent {
+                                zone_name: zone_name.clone(),
+                                zone_serial,
+                            })
+                            .unwrap();
+                    }
                 }
                 Source::SignedZones => {
                     update_tx
@@ -598,6 +605,28 @@ impl ZoneServer {
                 .process_request(unit_name, zone_name.clone(), zone_serial, approve)
                 .await,
         );
+    }
+
+    fn promote_zone_to_signable(
+        center: Arc<Center>,
+        zone_name: &StoredName,
+    ) -> Result<(), ZoneReviewError> {
+        let unsigned_zones = center.unsigned_zones.load();
+        let Some(zone) = unsigned_zones.get_zone(&zone_name, Class::IN) else {
+            debug!("Cannot promote zone '{zone_name}' to signable: zone not found'");
+            return Err(ZoneReviewError::NoSuchZone);
+        };
+
+        // Create a deep copy of the set of unsigned zones. We will add
+        // the new zone to that copied set and then replace the original
+        // set with the new set.
+        let signable_zones = center.signable_zones.load();
+        let mut new_signable_zones = Arc::unwrap_or_clone(signable_zones.clone());
+        let _ = new_signable_zones.remove_zone(zone_name, Class::IN);
+        new_signable_zones.insert_zone(zone.clone()).unwrap();
+        center.signable_zones.store(Arc::new(new_signable_zones));
+
+        Ok(())
     }
 }
 
@@ -756,24 +785,8 @@ impl ZoneReviewApi {
         if approve {
             let (zone_type, event) = match self.source {
                 Source::UnsignedZones => {
-                    let unsigned_zones = self.center.unsigned_zones.load();
-                    let Some(zone) = unsigned_zones.get_zone(&zone_name, Class::IN) else {
-                        debug!("Couldn't find the approved zone");
-                        return Err(ZoneReviewError::NotUnderReview);
-                    };
-
-                    let signable_zones = self.center.signable_zones.load();
-
-                    // Create a deep copy of the set of unsigned zones. We will add
-                    // the new zone to that copied set and then replace the original
-                    // set with the new set.
                     info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
-                    let mut new_signable_zones = Arc::unwrap_or_clone(signable_zones.clone());
-                    let _ = new_signable_zones.remove_zone(&zone_name, Class::IN);
-                    new_signable_zones.insert_zone(zone.clone()).unwrap();
-                    self.center
-                        .signable_zones
-                        .store(Arc::new(new_signable_zones));
+                    ZoneServer::promote_zone_to_signable(self.center.clone(), &zone_name)?;
 
                     (
                         "unsigned",

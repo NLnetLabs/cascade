@@ -86,6 +86,15 @@ pub enum ZoneReviewError {
     NotUnderReview,
 }
 
+impl std::fmt::Display for ZoneReviewError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ZoneReviewError::NoSuchZone => f.write_str("No such zone"),
+            ZoneReviewError::NotUnderReview => f.write_str("Zone not under review"),
+        }
+    }
+}
+
 //------------------------------------------------------------------------------
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
