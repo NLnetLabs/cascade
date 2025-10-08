@@ -21,7 +21,7 @@ Example
 
     [daemon]
     log-level = "info"
-    log-target = { type = "file", path = "/dev/stdout" }
+    log-target = { type = "stdout" }
     daemonize = false
 
     [remote-control]
@@ -147,16 +147,24 @@ The ``[daemon]`` section.
    - ``error``: Something went wrong (but Cascade can recover).
    - ``critical``: Something went wrong and Cascade can't function at all.
 
-.. option:: log-target = { type = "file", path = "/dev/stdout" }
+.. option:: log-target = { type = "stdout" }
+.. option:: log-target = { type = "stderr" }
 .. option:: log-target = { type = "syslog" }
+.. option:: log-target = { type = "file", path = "cascaded.log" }
 
    The location the daemon writes logs to.
 
    - type ``file``: Logs are appended line-by-line to the specified file path.
 
-     It can be set to ``/dev/stdout`` or ``/dev/stderr`` for standard output and
-     error, respectively.  If it is a terminal, ANSI escape codes may be used
-     to style the output.
+     If it is a terminal, ANSI escape codes may be used to style the output.
+
+   - type ``stdout``: Logs are written to stdout. (The default)
+
+     If it is a terminal, ANSI escape codes may be used to style the output.
+
+   - type ``stderr``: Logs are written to stderr.
+
+     If it is a terminal, ANSI escape codes may be used to style the output.
 
    - type ``syslog``: Logs are written to the UNIX syslog.
 

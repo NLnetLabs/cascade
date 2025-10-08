@@ -213,6 +213,12 @@ enum PrimaryLogger {
     /// A syslog logger.
     #[cfg(unix)]
     Syslog(syslog::BasicLogger),
+
+    /// A logger to stdout.
+    Stdout(std::io::Stdout),
+
+    /// A logger to stderr.
+    Stderr(std::io::Stderr),
 }
 
 impl PrimaryLogger {
@@ -230,7 +236,6 @@ impl PrimaryLogger {
                     path: path.clone(),
                 })
             }
-
             LogTarget::Syslog => {
                 let formatter = syslog::Formatter3164::default();
                 let result = syslog::unix(formatter.clone())
@@ -250,6 +255,8 @@ impl PrimaryLogger {
 
                 Ok(Self::Syslog(syslog::BasicLogger::new(logger)))
             }
+            LogTarget::Stdout => Ok(Self::Stdout(std::io::stdout())),
+            LogTarget::Stderr => Ok(Self::Stderr(std::io::stderr())),
         }
     }
 
@@ -258,7 +265,24 @@ impl PrimaryLogger {
         match (self, config) {
             (Self::File { path: l, .. }, LogTarget::File(r)) => l == r,
             (Self::Syslog(_), LogTarget::Syslog) => true,
+            (Self::Stdout(_), LogTarget::Stdout) => true,
+            (Self::Stderr(_), LogTarget::Stderr) => true,
             _ => false,
+        }
+    }
+}
+
+impl std::fmt::Debug for PrimaryLogger {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::File { file, path } => f
+                .debug_struct("File")
+                .field("file", file)
+                .field("path", path)
+                .finish(),
+            Self::Syslog(_) => f.debug_tuple("Syslog").finish(),
+            Self::Stdout(_) => f.debug_tuple("Stdout").finish(),
+            Self::Stderr(_) => f.debug_tuple("Stderr").finish(),
         }
     }
 }
@@ -283,6 +307,28 @@ impl log::Log for PrimaryLogger {
             }
             #[cfg(unix)]
             PrimaryLogger::Syslog(logger) => logger.log(record),
+            PrimaryLogger::Stdout(stdout) => {
+                let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                let value = format!(
+                    "[{now}] {} {}: {}\n",
+                    record.level(),
+                    record.target(),
+                    record.args()
+                );
+                let mut stdout: &std::io::Stdout = stdout;
+                let _ = stdout.write_all(value.as_bytes());
+            }
+            PrimaryLogger::Stderr(stderr) => {
+                let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                let value = format!(
+                    "[{now}] {} {}: {}\n",
+                    record.level(),
+                    record.target(),
+                    record.args()
+                );
+                let mut stderr: &std::io::Stderr = stderr;
+                let _ = stderr.write_all(value.as_bytes());
+            }
         }
     }
 
@@ -292,9 +338,16 @@ impl log::Log for PrimaryLogger {
                 let mut file: &std::fs::File = file;
                 let _ = file.flush();
             }
-
             #[cfg(unix)]
             PrimaryLogger::Syslog(logger) => logger.flush(),
+            PrimaryLogger::Stdout(stdout) => {
+                let mut file: &std::io::Stdout = stdout;
+                let _ = file.flush();
+            }
+            PrimaryLogger::Stderr(stderr) => {
+                let mut file: &std::io::Stderr = stderr;
+                let _ = file.flush();
+            }
         }
     }
 }
@@ -302,6 +355,7 @@ impl log::Log for PrimaryLogger {
 //------------------------------------------------------------------------------
 
 /// A prepared change to the [`Logger`].
+#[derive(Debug)]
 pub struct PreparedChange {
     /// The primary logger, if changed.
     primary: Option<PrimaryLogger>,
