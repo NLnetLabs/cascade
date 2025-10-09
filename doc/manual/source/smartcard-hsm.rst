@@ -193,3 +193,5 @@ but after Cascade has created some keys you should see the objects on the card.
 Note how the key tag or key IDs created by Cascade match the ``labels`` on the Smart Card: ``<zone name>-<key tag>-<key type>-pri``.
 
 End.
+
+— Contributed by `Jan-Piet Mens <https://jpmens.net>`_
