@@ -114,8 +114,8 @@ configured for the card.
    # cascade hsm add --insecure --username "0" --password 123456 kmip2pkcs11 127.0.0.1
    Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label SmartCard-HSM (UserPIN) in slot Identive CLOUD 2700 R Smart Card Reader [CCID Interface] (536... via library opensc-pkcs11.so'.
 
-Sign a Test Zone with SoftHSM
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Sign a Test Zone with SmartCard-HSM
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Create a test zone to load and sign and ensure the Cascade daemon has access to it:
 
