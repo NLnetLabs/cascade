@@ -117,7 +117,8 @@ Managing State
 
 Cascade stores its state in on-disk files in JSON format, by default at
 various locations under a single parent directory. No additional database
-software is required, state is human readable and easily backed up.
+software is required, state is human-readable and easily backed up. However,
+do *NOT* edit the state file by hand.
 
 Some configuration is done via the Cascade CLI (adding zones and HSMs), other
 configuration is done by editing on-disk policy and application configuration
