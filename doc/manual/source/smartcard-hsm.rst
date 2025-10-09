@@ -16,7 +16,7 @@ Integrating with a SmartCard-HSM
 
    -- https://www.smartcard-hsm.com
 
-.. image:: smartcard-and-reader.jpg
+.. image:: img/smartcard-and-reader.jpg
 
 
 Install the prerequisites
