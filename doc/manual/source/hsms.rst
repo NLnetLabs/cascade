@@ -72,6 +72,7 @@ are:
    Nitrokey NetHSM   Docker image  PKCS#11    Yes
    YubiHSM 2         USB key       PKCS#11    Yes
    SoftHSM v2.6.1    Software      PKCS#11    Yes                               :doc:`view <softhsm>`
+   SmartCard-HSM     Smart Card    PKCS#11    Yes                               :doc:`view <smartcard-hsm>`
    ================  ============  =========  ================================  =================
 
 .. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
