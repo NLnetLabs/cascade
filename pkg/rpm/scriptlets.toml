@@ -14,7 +14,7 @@ if [ $1 -eq 1 ] ; then
     if ! id ${USER_ID} > /dev/null 2>&1; then
         # According to the CentOS 7 useradd man page:
         # --user-group causes a group by the same name as the user to be created
-        useradd --system --user-group ${USER_ID} --home-dir /var/${USER_ID} --create-home
+        useradd --system --user-group ${USER_ID} --home-dir /var/lib/${USER_ID} --create-home
     fi
 
     # Run commands equivalent to what the RPM systemd macros would do
