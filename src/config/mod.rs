@@ -244,7 +244,7 @@ impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: Setting::new(LogLevel::Info),
-            target: Setting::new(LogTarget::File("/dev/stdout".into())),
+            target: Setting::new(LogTarget::Stdout),
             trace_targets: Setting::new(Default::default()),
         }
     }
@@ -429,6 +429,12 @@ pub enum LogTarget {
 
     /// Write logs to the UNIX syslog.
     Syslog,
+
+    /// Write logs to stdout.
+    Stdout,
+
+    /// Write logs to stderr.
+    Stderr,
 }
 
 //----------- Setting ----------------------------------------------------------

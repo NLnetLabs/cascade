@@ -10,7 +10,7 @@ use humantime::FormattedDuration;
 
 use crate::api::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
-use crate::cli::commands::policy::ansi;
+use crate::common::ansi;
 use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::SigningStageReport;
 

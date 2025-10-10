@@ -15,7 +15,7 @@ async fn main() -> ExitCode {
 
     let log_config = LoggingConfig {
         level: Setting::new(args.log_level),
-        target: Setting::new(LogTarget::File("/dev/stdout".into())),
+        target: Setting::new(LogTarget::Stdout),
         trace_targets: Default::default(),
     };
     if let Some(change) = logger.prepare(&log_config).unwrap() {

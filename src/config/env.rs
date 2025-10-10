@@ -93,6 +93,12 @@ pub enum LogTargetSpec {
 
     /// Write logs to the UNIX syslog.
     Syslog,
+
+    /// Write logs to stdout.
+    Stdout,
+
+    /// Write logs to stderr.
+    Stderr,
 }
 
 //--- Parsing
@@ -101,9 +107,9 @@ impl LogTargetSpec {
     /// Parse this value from an owned string.
     pub fn parse(s: String) -> Result<Self, EnvError> {
         if s == "stdout" {
-            Ok(Self::File("/dev/stdout".into()))
+            Ok(Self::Stdout)
         } else if s == "stderr" {
-            Ok(Self::File("/dev/stderr".into()))
+            Ok(Self::Stderr)
         } else if let Some(s) = s.strip_prefix("file:") {
             let path = <&Utf8Path>::from(s);
             Ok(Self::File(path.into()))
@@ -123,6 +129,8 @@ impl LogTargetSpec {
         match self {
             Self::File(path) => LogTarget::File(path),
             Self::Syslog => LogTarget::Syslog,
+            Self::Stdout => LogTarget::Stdout,
+            Self::Stderr => LogTarget::Stderr,
         }
     }
 }

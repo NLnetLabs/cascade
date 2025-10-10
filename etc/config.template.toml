@@ -93,15 +93,22 @@ log-level = "info"
 #
 # - type 'file': Logs are appended line-by-line to the specified file path.
 #
-#   It can be set to '/dev/stdout' or '/dev/stderr' for standard output and
-#   error, respectively.  If it is a terminal, ANSI escape codes may be used to
-#   style the output.
+#   If it is a terminal, ANSI escape codes may be used to style the output.
+#
+# - type 'stdout': Logs are written to stdout. (The default)
+#
+#   If it is a terminal, ANSI escape codes may be used to style the output.
+#
+# - type 'stderr': Logs are written to stderr.
+#
+#   If it is a terminal, ANSI escape codes may be used to style the output.
 #
 # - type 'syslog': Logs are written to the UNIX syslog.
 #
 #   This option is only supported on UNIX systems.
-log-target = { type = "file", path = "/dev/stdout" }
+log-target = { type = "stdout" }
 #log-target = { type = "syslog" }
+#log-target = { type = "file", path = "/dev/stdout" }
 
 # Whether to apply internal daemonization.
 #
