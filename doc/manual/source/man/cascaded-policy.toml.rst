@@ -23,6 +23,11 @@ policy files, then update Cascade with ``cascade policy reload``.  Note that:
 - Only policy files stored in the configured policy directory and having a
   ``.toml`` extension will be loaded by Cascade.`
 
+.. note::
+
+   In the current alpha release, changes to some policy options (e.g. review
+   hook) also require a server restart in addition to running ``cascade policy
+   reload`` to take effect.
 
 Example
 -------
