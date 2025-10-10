@@ -33,7 +33,7 @@ use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
 use domain::zonetree::{StoredName, ZoneTree};
 use futures::Future;
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot, RwLock};
 
@@ -278,6 +278,7 @@ impl ZoneServer {
 
         // Setup approval API endpoint
         self.zone_review_api = Some(ZoneReviewApi::new(
+            self.center.clone(),
             update_tx.clone(),
             self.pending_approvals.clone(),
             self.last_approvals.clone(),
@@ -448,15 +449,13 @@ impl ZoneServer {
             _ => unreachable!(),
         };
 
-        if self
+        // Remove any prior approval for this zone as we have been asked to
+        // (re-)approve it.
+        let _ = self
             .last_approvals
-            .read()
+            .write()
             .await
-            .contains_key(&(zone_name.clone(), zone_serial))
-        {
-            trace!("Skipping approval request for already approved {zone_type} zone '{zone_name}' at serial {zone_serial}.");
-            return Some(Ok(()));
-        }
+            .remove(&(zone_name.clone(), zone_serial));
 
         let review = {
             let zone = get_zone(&self.center, &zone_name).unwrap();
@@ -489,12 +488,19 @@ impl ZoneServer {
             // Approve immediately.
             match self.source {
                 Source::UnsignedZones => {
-                    update_tx
-                        .send(Update::UnsignedZoneApprovedEvent {
-                            zone_name: zone_name.clone(),
-                            zone_serial,
-                        })
-                        .unwrap();
+                    info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
+                    if let Err(err) =
+                        ZoneServer::promote_zone_to_signable(self.center.clone(), &zone_name)
+                    {
+                        error!("[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}");
+                    } else {
+                        update_tx
+                            .send(Update::UnsignedZoneApprovedEvent {
+                                zone_name: zone_name.clone(),
+                                zone_serial,
+                            })
+                            .unwrap();
+                    }
                 }
                 Source::SignedZones => {
                     update_tx
@@ -597,6 +603,28 @@ impl ZoneServer {
                 .process_request(unit_name, zone_name.clone(), zone_serial, approve)
                 .await,
         );
+    }
+
+    fn promote_zone_to_signable(
+        center: Arc<Center>,
+        zone_name: &StoredName,
+    ) -> Result<(), ZoneReviewError> {
+        let unsigned_zones = center.unsigned_zones.load();
+        let Some(zone) = unsigned_zones.get_zone(&zone_name, Class::IN) else {
+            debug!("Cannot promote zone '{zone_name}' to signable: zone not found'");
+            return Err(ZoneReviewError::NoSuchZone);
+        };
+
+        // Create a deep copy of the set of signable zones. We will add
+        // the new zone to that copied set and then replace the original
+        // set with the new set.
+        let signable_zones = center.signable_zones.load();
+        let mut new_signable_zones = Arc::unwrap_or_clone(signable_zones.clone());
+        let _ = new_signable_zones.remove_zone(zone_name, Class::IN);
+        new_signable_zones.insert_zone(zone.clone()).unwrap();
+        center.signable_zones.store(Arc::new(new_signable_zones));
+
+        Ok(())
     }
 }
 
@@ -754,13 +782,18 @@ impl ZoneReviewApi {
 
         if approve {
             let (zone_type, event) = match self.source {
-                Source::UnsignedZones => (
-                    "unsigned",
-                    Update::UnsignedZoneApprovedEvent {
-                        zone_name: zone_name.clone(),
-                        zone_serial,
-                    },
-                ),
+                Source::UnsignedZones => {
+                    info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
+                    ZoneServer::promote_zone_to_signable(self.center.clone(), &zone_name)?;
+
+                    (
+                        "unsigned",
+                        Update::UnsignedZoneApprovedEvent {
+                            zone_name: zone_name.clone(),
+                            zone_serial,
+                        },
+                    )
+                }
                 Source::SignedZones => (
                     "signed",
                     Update::SignedZoneApprovedEvent {
@@ -808,6 +841,7 @@ impl ZoneReviewApi {
 //------------ ZoneReviewApi -------------------------------------------------
 
 struct ZoneReviewApi {
+    center: Arc<Center>,
     update_tx: mpsc::UnboundedSender<Update>,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<foldhash::HashSet<(Name<Bytes>, Serial)>>>,
@@ -819,12 +853,14 @@ struct ZoneReviewApi {
 impl ZoneReviewApi {
     #[allow(clippy::type_complexity)]
     fn new(
+        center: Arc<Center>,
         update_tx: mpsc::UnboundedSender<Update>,
         pending_approvals: Arc<RwLock<foldhash::HashSet<(Name<Bytes>, Serial)>>>,
         last_approvals: Arc<RwLock<foldhash::HashMap<(Name<Bytes>, Serial), Instant>>>,
         source: Source,
     ) -> Self {
         Self {
+            center,
             update_tx,
             pending_approvals,
             last_approvals,

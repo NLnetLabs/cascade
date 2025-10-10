@@ -169,6 +169,7 @@ fn main() -> ExitCode {
         state: Mutex::new(state),
         logger,
         unsigned_zones: Default::default(),
+        signable_zones: Default::default(),
         signed_zones: Default::default(),
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),

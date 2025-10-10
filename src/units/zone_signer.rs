@@ -328,14 +328,14 @@ impl ZoneSigner {
                         .join_sign_zone_queue(&zone_name, zone_serial.is_none(), trigger)
                         .await
                     {
-                        if matches!(err, SignerError::CannotResignNonPublishedZone) {
+                        if err.is_benign() {
                             // Ignore this benign case. It was probably caused
                             // by dnst keyset cron triggering resigning before
                             // we even signed the first time, either because
                             // the zone was large and slow to load and sign,
                             // or because the unsigned zone was pending
                             // review.
-                            debug!("[ZS]: Ignoring probably benign failure to re-sign '{zone_name}' as it was not yet published");
+                            debug!("[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}");
                         } else {
                             error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
@@ -374,12 +374,12 @@ impl ZoneSigner {
         true
     }
 
-    /// Signs zone_name from the Manager::unsigned_zones zone collection,
+    /// Signs zone_name from the Center::signable_zones zone collection,
     /// unless `resign_last_signed_zone_content` is true in which case
-    /// it resigns the copy of the zone from the Manager::published_zones
+    /// it resigns the copy of the zone from the Center::published_zones
     /// collection instead. An alternative way to do this would be to only
-    /// read the right version of the unsigned zone, but that would only
-    /// be possible if the unsigned zone were definitely a ZoneApex zone
+    /// read the right version of the signable zone, but that would only
+    /// be possible if the signable zone were definitely a ZoneApex zone
     /// rather than a LightWeightZone (and XFR-in zones are LightWeightZone
     /// instances).
     async fn join_sign_zone_queue(
@@ -469,7 +469,9 @@ impl ZoneSigner {
 
             // Do NOT sign a zone that is halted.
             if zone_state.pipeline_mode != PipelineMode::Running {
-                return Err(SignerError::PipelineIsHalted);
+                // TODO: This accidentally sets an existing soft-halt to a hard-halt.
+                // return Err(SignerError::PipelineIsHalted);
+                return Ok(());
             }
 
             let last_signed_serial = zone_state
@@ -489,18 +491,19 @@ impl ZoneSigner {
         // Lookup the zone to sign.
         //
         status.write().await.current_action = "Retrieving zone to sign".to_string();
-        let unsigned_zone = match resign_last_signed_zone_content {
+        let signable_zone = match resign_last_signed_zone_content {
             false => {
-                let unsigned_zones = self.center.unsigned_zones.load();
-                let Some(unsigned_zone) = unsigned_zones.get_zone(&zone_name, Class::IN).cloned()
+                let signable_zones = self.center.signable_zones.load();
+                let Some(signable_zone) = signable_zones.get_zone(&zone_name, Class::IN).cloned()
                 else {
                     debug!("Ignoring request to sign unavailable zone '{zone_name}'");
-                    return Ok(());
+                    return Err(SignerError::CannotSignUnapprovedZone);
                 };
-                unsigned_zone
+                signable_zone
             }
             true => {
                 let published_zones = self.center.published_zones.load();
+                debug!("Ignoring request to re-sign zone that was never published '{zone_name}'");
                 published_zones
                     .get_zone(&zone_name, Class::IN)
                     .cloned()
@@ -509,7 +512,7 @@ impl ZoneSigner {
         };
 
         status.write().await.current_action = "Querying zone SOA record".to_string();
-        let soa_rr = get_zone_soa(unsigned_zone.clone(), zone_name.clone())?;
+        let soa_rr = get_zone_soa(signable_zone.clone(), zone_name.clone())?;
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
             return Err(SignerError::SoaNotFound);
         };
@@ -617,7 +620,7 @@ impl ZoneSigner {
         status.write().await.current_action = "Collecting records to sign".to_string();
         debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
-        let passed_zone = unsigned_zone.clone();
+        let passed_zone = signable_zone.clone();
         let mut records = spawn_blocking(|| collect_zone(passed_zone)).await.unwrap();
         records.push(soa_rr.clone());
         let walk_time = walk_start.elapsed();
@@ -1976,10 +1979,10 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
 
 enum SignerError {
     SoaNotFound,
+    CannotSignUnapprovedZone,
     CannotResignNonPublishedZone,
     SignerNotReady,
     InternalError(String),
-    PipelineIsHalted,
     KeepSerialPolicyViolated,
     CannotReadStateFile(String),
     CannotReadPrivateKeyFile(String),
@@ -1992,16 +1995,25 @@ enum SignerError {
     SigningError(String),
 }
 
+impl SignerError {
+    fn is_benign(&self) -> bool {
+        matches!(
+            self,
+            SignerError::CannotSignUnapprovedZone | SignerError::CannotResignNonPublishedZone
+        )
+    }
+}
+
 impl std::fmt::Display for SignerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SignerError::SoaNotFound => f.write_str("SOA not found"),
+            SignerError::CannotSignUnapprovedZone => f.write_str("Cannot sign unapproved zone"),
             SignerError::CannotResignNonPublishedZone => {
                 f.write_str("Cannot re-sign non-published zone")
             }
             SignerError::SignerNotReady => f.write_str("Signer not ready"),
             SignerError::InternalError(err) => write!(f, "Internal error: {err}"),
-            SignerError::PipelineIsHalted => f.write_str("Pipeline is halted"),
             SignerError::KeepSerialPolicyViolated => {
                 f.write_str("Serial policy is Keep but upstream serial did not increase")
             }
