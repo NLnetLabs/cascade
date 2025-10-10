@@ -1997,12 +1997,10 @@ enum SignerError {
 
 impl SignerError {
     fn is_benign(&self) -> bool {
-        match self {
-            SignerError::CannotSignUnapprovedZone | SignerError::CannotResignNonPublishedZone => {
-                true
-            }
-            _ => false,
-        }
+        matches!(
+            self,
+            SignerError::CannotSignUnapprovedZone | SignerError::CannotResignNonPublishedZone
+        )
     }
 }
 
