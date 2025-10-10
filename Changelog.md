@@ -39,15 +39,16 @@ Released yyyy-mm-dd.
 
 ### Documentation improvements
 
-- Add documentation about ntegrating with a SmartCard-HSM by @jpmens (#191)
+- Add documentation about integrating with a SmartCard-HSM by @jpmens (#191)
 - Make it clear that state is human-readable but not writable by @mozzieongit
   and @maertsen (#188)
 - Explicitly mention the need for config reload in the config file format man
   page @mozzieongit (#181)
 - Use proposed/testing names where appropriate by @ximon18 (#170)
 - Remove a broken link by @ximon18 (bbae66af)
-- Fix the "unit-time" policy setting documetation by @jpmens (#167)
-
+- Fix the "unit-time" policy setting documentation by @jpmens (#167)
+- Document that some policy options also require a restart by @mozzieongit
+  (6cdc126)
 
 ### Known issues
 
