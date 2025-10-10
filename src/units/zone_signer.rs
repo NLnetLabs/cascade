@@ -328,14 +328,14 @@ impl ZoneSigner {
                         .join_sign_zone_queue(&zone_name, zone_serial.is_none(), trigger)
                         .await
                     {
-                        if matches!(err, SignerError::CannotResignNonPublishedZone) {
+                        if err.is_benign() {
                             // Ignore this benign case. It was probably caused
                             // by dnst keyset cron triggering resigning before
                             // we even signed the first time, either because
                             // the zone was large and slow to load and sign,
                             // or because the unsigned zone was pending
                             // review.
-                            debug!("[ZS]: Ignoring probably benign failure to re-sign '{zone_name}' as it was not yet published");
+                            debug!("[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}");
                         } else {
                             error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
@@ -497,12 +497,13 @@ impl ZoneSigner {
                 let Some(signable_zone) = signable_zones.get_zone(&zone_name, Class::IN).cloned()
                 else {
                     debug!("Ignoring request to sign unavailable zone '{zone_name}'");
-                    return Ok(());
+                    return Err(SignerError::CannotSignUnapprovedZone);
                 };
                 signable_zone
             }
             true => {
                 let published_zones = self.center.published_zones.load();
+                debug!("Ignoring request to re-sign zone that was never published '{zone_name}'");
                 published_zones
                     .get_zone(&zone_name, Class::IN)
                     .cloned()
@@ -1978,10 +1979,10 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
 
 enum SignerError {
     SoaNotFound,
+    CannotSignUnapprovedZone,
     CannotResignNonPublishedZone,
     SignerNotReady,
     InternalError(String),
-    // PipelineIsHalted,
     KeepSerialPolicyViolated,
     CannotReadStateFile(String),
     CannotReadPrivateKeyFile(String),
@@ -1994,16 +1995,27 @@ enum SignerError {
     SigningError(String),
 }
 
+impl SignerError {
+    fn is_benign(&self) -> bool {
+        match self {
+            SignerError::CannotSignUnapprovedZone | SignerError::CannotResignNonPublishedZone => {
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 impl std::fmt::Display for SignerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SignerError::SoaNotFound => f.write_str("SOA not found"),
+            SignerError::CannotSignUnapprovedZone => f.write_str("Cannot sign unapproved zone"),
             SignerError::CannotResignNonPublishedZone => {
                 f.write_str("Cannot re-sign non-published zone")
             }
             SignerError::SignerNotReady => f.write_str("Signer not ready"),
             SignerError::InternalError(err) => write!(f, "Internal error: {err}"),
-            // SignerError::PipelineIsHalted => f.write_str("Pipeline is halted"),
             SignerError::KeepSerialPolicyViolated => {
                 f.write_str("Serial policy is Keep but upstream serial did not increase")
             }
