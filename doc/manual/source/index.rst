@@ -101,6 +101,7 @@ We would love for you to :doc:`get to know Cascade
 
    softhsm
    thales
+   smartcard-hsm
 .. fortanix
    nitrokey
    yubihsm

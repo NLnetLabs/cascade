@@ -5,6 +5,12 @@ Cascade uses the TOML format for its configuration file. A template can be
 generated using ``cascade template config``. The provided values to the options
 below are the default values and are serving as a hint to the option's format.
 
+.. Note::
+
+   All changes to the configuration file require running ``cascade config
+   reload`` for them to take effect. Currently, most options additionally
+   require a restart of the server.
+
 Example
 -------
 

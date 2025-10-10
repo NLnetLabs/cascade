@@ -23,6 +23,11 @@ policy files, then update Cascade with ``cascade policy reload``.  Note that:
 - Only policy files stored in the configured policy directory and having a
   ``.toml`` extension will be loaded by Cascade.`
 
+.. note::
+
+   In the current alpha release, changes to some policy options (e.g. review
+   hook) also require a server restart in addition to running ``cascade policy
+   reload`` to take effect.
 
 Example
 -------
@@ -367,7 +372,7 @@ zone) are signed by the key manager, rather than the zone signer; see the
 
    - ``keep``: use the same serial number as the unsigned zone.
    - ``counter``: increment the serial number every time.
-   - ``unixtime``: use the current Unix time, in seconds.
+   - ``unix-time``: use the current Unix time, in seconds.
    - ``date-counter``: format the number as ``<YYYY><MM><DD><xx>`` in decimal.
      ``<xx>`` is a simple counter to allow up to 100 versions per day.
 
