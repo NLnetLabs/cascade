@@ -49,7 +49,7 @@ We would love for you to :doc:`get to know Cascade
    :doc:`limitations`. 
    
    Our goal is to gather operator feedback. Don't be shy and reach out by 
-   `creating a GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
+   creating a `GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
    sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
    `NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
    channel on the `DNS OARC Mattermost 
