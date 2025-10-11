@@ -14,14 +14,14 @@ Expectations for the alpha release
 - The included functionality should work correctly for simple scenarios with
   correct inputs when running on setups (O/S, HSM) that we have tested on.
 - Handling of incorrect inputs, edge cases, more complex scenarios, non-default
-  policy settings, and so on *may be incomplete or incorrect*. Please `report
-  any bugs you find <https://github.com/NLnetLabs/cascade/issues/new>`_
+  policy settings, and so on *may be incomplete or incorrect*. Please 
+  :ref:`report any bugs you find <reach-out>`
 - The user experience is a *work-in-progress*. The goal of Cascade is not only
   to be a correctly functioning DNSSEC signer which makes it easy to do the
   right thing and hard to do the wrong thing, it should also be obvious how to
   use it and be clear what the system did, is doing now and will do in the
-  future. But we're not there yet, we have more ideas but `we'd love to hear
-  yours too <https://github.com/NLnetLabs/cascade/issues/new>`_.
+  future. But we're not there yet, we have more ideas but :ref:`we'd love to
+  hear yours too <reach-out>`.
 
 Config & Policy Require Explicit Reload
 ---------------------------------------
