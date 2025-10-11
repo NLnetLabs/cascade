@@ -1,6 +1,18 @@
 Cascade
 =======
 
+.. only:: html
+
+   |lastupdated| |mastodon|
+
+   .. |lastupdated| image:: https://img.shields.io/github/last-commit/NLnetLabs/cascade?path=%2Fdoc%2Fmanual&label=last%20updated
+      :alt: Last docs update
+      :target: 
+
+   .. |mastodon| image:: https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social
+      :alt: Mastodon
+      :target: https://social.nlnetlabs.nl/@nlnetlabs
+
 A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing solution written in Rust, a programming language
 designed for performance and memory safety.
 
@@ -34,33 +46,29 @@ We would love for you to :doc:`get to know Cascade
 
 .. _reach-out:
 
-.. tip:: Cascade is currently in its first *alpha version*, with documented :doc:`limitations`. Our goal is to gather operator feedback. Don't be shy and reach out. In particular:
+.. tip:: Cascade is currently in its first *alpha version*, with documented 
+         :doc:`limitations`. Our goal is to gather operator feedback. Don't 
+         be shy and reach out by `creating a GitHub issue 
+         <https://github.com/NLnetLabs/cascade/issues/new>`_, `sending us an 
+         email <mailto://cascade@nlnetlabs.nl>`_, finding us in the
+         `NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
+         channel on the `DNS OARC 
+         Mattermost <https://www.dns-oarc.net/oarc/services/chat>`_, or
+         mention us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
 
-     - If these documentation pages don't answer your question,
-       `tell us what we missed <https://github.com/NLnetLabs/cascade/issues/new>`_.
-     - Performance and memory usage are expected to improve but if
-       you think it won't meet your needs `tell us about your use case
-       <https://github.com/NLnetLabs/cascade/issues/new>`_.
-     - Not all intended functionality has been implemented at this
-       point. If a feature that you need is missing `please let us know
-       <https://github.com/NLnetLabs/cascade/issues/new>`_.
-     - We are actively working to shape the user experience to operator needs.
-       We have a lot more ideas for improvement and `we'd love to hear yours
-       too <https://github.com/NLnetLabs/cascade/issues/new>`_.
-     - Do tell us about your positive experiences. Use social media (#cascade)
-       or `create an issue <https://github.com/NLnetLabs/cascade/issues/new>`_.
-       We particularly appreciate hearing O/S, HSM and size/number of zones you
-       worked with.
+         Examples of things we're interested in:
 
-   If GitHub isn't your thing you can also `contact us by email <mailto://cascade@nlnetlabs.nl>`_.
-
-.. only:: html
-
-      |mastodon|
-
-      .. |mastodon| image:: https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social
-         :alt: Mastodon
-         :target: https://social.nlnetlabs.nl/@nlnetlabs
+     - If these documentation pages don't answer your question, tell us what
+       we missed.
+     - Performance and memory usage are expected to improve but if you think
+       it won't meet your needs, tell us about your use case.
+     - Not all intended functionality has been implemented at this point. If
+       a feature that you need is missing, please let us know.
+     - We are actively working to shape the user experience to operator
+       needs. We have a lot more ideas for improvement and we'd love to hear
+       yours too.
+     - Do tell us about your positive experiences. We particularly appreciate
+       hearing O/S, HSM and size/number of zones you worked with.
 
 .. toctree::
    :maxdepth: 2
