@@ -78,12 +78,12 @@ OpenDNSSEC that will be added in a future release:
   example.
 - No CAA record support.
 
-NOT a complete authoritative name server
+Not a complete authoritative name server
 ----------------------------------------
 
-Cascade is NOT a complete authoritative DNS server. It will not reply with the
-AA or AD flag set. Nor can it reply to DNSSEC queries. Instead, Cascade is
-intended to be used as a hidden signer with a proper secondary such as NSD
+Cascade is *not* a complete authoritative DNS server. It will not reply with
+the AA or AD flag set, nor can it reply to DNSSEC queries. Instead, Cascade
+is intended to be used as a hidden signer with a proper secondary such as NSD
 serving the signed zones to actual clients.
 
 Other known limitations
