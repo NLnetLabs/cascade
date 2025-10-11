@@ -15,8 +15,9 @@ Cascade
 
 A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing
 solution written in Rust, a programming language designed for performance and
-memory safety. Cascade is liberally licensed under the `BSD 3-Clause license
-<https://github.com/NLnetLabs/cascade/blob/main/LICENSE>`_.
+memory safety. Cascade is currently in its first **alpha** version, with
+documented :doc:`limitations`. We are eager to hear your :ref:`feedback
+<reach-out>`.
 
 Cascade has the following design goals:
 
@@ -45,8 +46,7 @@ Open-source with professional support services
 We would love for you to :doc:`get to know Cascade
 <before-you-start>`.
 
-.. note:: Cascade is currently in its first **alpha** version, with documented 
-   :doc:`limitations`. 
+.. note:: 
 
 .. _reach-out:
 
