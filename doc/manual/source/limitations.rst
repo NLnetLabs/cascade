@@ -78,8 +78,8 @@ OpenDNSSEC that will be added in a future release:
   example.
 - No CAA record support.
 
-Not a complete authoritative name server
-----------------------------------------
+Not a complete authoritative nameserver
+---------------------------------------
 
 Cascade is *not* a complete authoritative DNS server. It will not reply with
 the AA or AD flag set, nor can it reply to DNSSEC queries. Instead, Cascade
