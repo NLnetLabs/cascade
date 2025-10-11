@@ -7,7 +7,6 @@ Cascade
 
    .. |lastupdated| image:: https://img.shields.io/github/last-commit/NLnetLabs/cascade?path=%2Fdoc%2Fmanual&label=last%20updated
       :alt: Last docs update
-      :target: 
 
    .. |mastodon| image:: https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social
       :alt: Mastodon
