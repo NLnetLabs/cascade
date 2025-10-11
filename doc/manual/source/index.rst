@@ -63,17 +63,16 @@ mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
 
 Examples of things we're interested in:
 
-   - If these documentation pages don't answer your question, tell us what
-      we missed.
-   - Performance and memory usage are expected to improve but if you think
-      it won't meet your needs, tell us about your use case.
-   - Not all intended functionality has been implemented at this point. If
-      a feature that you need is missing, please let us know.
-   - We are actively working to shape the user experience to operator
-      needs. We have a lot more ideas for improvement and we'd love to hear
-      yours too.
-   - Do tell us about your positive experiences. We particularly appreciate
-      hearing O/S, HSM and size/number of zones you worked with.
+- If these documentation pages don't answer your question, tell us what we
+  missed.
+- Performance and memory usage are expected to improve but if you think it
+  won't meet your needs, tell us about your use case.
+- Not all intended functionality has been implemented at this point. If a
+  feature that you need is missing, please let us know.
+- We are actively working to shape the user experience to operator needs. We
+  have a lot more ideas for improvement and we'd love to hear yours too.
+- Do tell us about your positive experiences. We particularly appreciate
+  hearing O/S, HSM and size/number of zones you worked with.
 
 .. toctree::
    :maxdepth: 2
