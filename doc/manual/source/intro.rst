@@ -6,14 +6,13 @@ infrastructure by digitally signing data to help ensure its validity. In
 order to ensure a secure lookup, signing must happen at every level in the
 DNS lookup process.
 
-DNSSEC is often perceived as a complicated topic, but Cascade tries to make
-the experience as understandable and robust as possible. In this section we
-explain the basic concepts that you will encounter in the DNSSEC signing
+Though DNSSEC is often perceived as a complicated topic, Cascade tries to
+make the experience as understandable and robust as possible. In this section
+we explain the basic concepts that you will encounter in the DNSSEC signing
 process.
 
 The Value of DNSSEC
 -------------------
-
 
 DNSSEC mitigates attacks that compromise the integrity and authenticity of
 DNS data. These can be categorised into roughly four types:
