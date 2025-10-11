@@ -72,7 +72,7 @@ Defining policy
 ---------------
 
 After configuring Cascade, you can begin adding zones. Cascade supports zones
-sourced from a local file or fetched from another name server using XFR.
+sourced from a local file or fetched from another nameserver using XFR.
 
 .. Note:: No TSIG or passthrough support yet.
 

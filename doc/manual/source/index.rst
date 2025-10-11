@@ -13,8 +13,12 @@ Cascade
       :alt: Mastodon
       :target: https://social.nlnetlabs.nl/@nlnetlabs
 
-A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing solution written in Rust, a programming language
-designed for performance and memory safety.
+A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing
+solution written in Rust, a programming language designed for performance and
+memory safety. Cascade is currently in its first **alpha** version, with
+documented :doc:`limitations`. We would love for you to :doc:`get to know
+Cascade <before-you-start>` and are eager to hear your :ref:`feedback
+<reach-out>`.
 
 Cascade has the following design goals:
 
@@ -38,38 +42,33 @@ Observability
 Open-source with professional support services
    NLnet Labs offers `professional support and consultancy services
    <https://www.nlnetlabs.nl/services/contracts/>`_ with a service-level
-   agreement. Cascade is liberally licensed under the `BSD 3-Clause license
-   <https://github.com/NLnetLabs/cascade/blob/main/LICENSE>`_.
-
-We would love for you to :doc:`get to know Cascade
-<before-you-start>`.
+   agreement. 
 
 .. _reach-out:
 
-.. tip:: Cascade is currently in its first **alpha** version, with documented 
-   :doc:`limitations`. 
-   
-   Our goal is to gather operator feedback. Don't be shy and reach out by 
-   creating a `GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
-   sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
-   `NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
-   channel on the `DNS OARC Mattermost 
-   server <https://www.dns-oarc.net/oarc/services/chat>`_, or
-   mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
+Feedback
+--------
 
-   Examples of things we're interested in:
+Our goal is to gather operator feedback. Don't be shy and reach out by 
+creating a `GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
+sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
+`NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
+channel on the `DNS OARC Mattermost 
+server <https://www.dns-oarc.net/oarc/services/chat>`_, or
+mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
 
-     - If these documentation pages don't answer your question, tell us what
-       we missed.
-     - Performance and memory usage are expected to improve but if you think
-       it won't meet your needs, tell us about your use case.
-     - Not all intended functionality has been implemented at this point. If
-       a feature that you need is missing, please let us know.
-     - We are actively working to shape the user experience to operator
-       needs. We have a lot more ideas for improvement and we'd love to hear
-       yours too.
-     - Do tell us about your positive experiences. We particularly appreciate
-       hearing O/S, HSM and size/number of zones you worked with.
+Examples of things we're interested in:
+
+- If these documentation pages don't answer your question, tell us what we
+  missed.
+- Performance and memory usage are expected to improve but if you think it
+  won't meet your needs, tell us about your use case.
+- Not all intended functionality has been implemented at this point. If a
+  feature that you need is missing, please let us know.
+- We are actively working to shape the user experience to operator needs. We
+  have a lot more ideas for improvement and we'd love to hear yours too.
+- Do tell us about your positive experiences. We particularly appreciate
+  hearing O/S, HSM and size/number of zones you worked with.
 
 .. toctree::
    :maxdepth: 2
