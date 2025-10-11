@@ -55,6 +55,8 @@ Supported HSMs
 ~~~~~~~~~~~~~~
 
 In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
+To work with an HSM using its PKCS#11 interface, Cascade requires our
+:program:`kmip2pkcs11` relay. 
 
 Several HSMs have been tested in limited fashion with Cascade. Limited here
 meaning normal usage only, not attempting to deliberately cause problems, and
@@ -64,32 +66,30 @@ are:
 .. table:: Supported HSMs
    :widths: auto
 
-   ================  ============  =========  ================================  =================
-   HSM               Type          Interface  :program:`kmip2pkcs11` required?  Integration guide
-   ================  ============  =========  ================================  =================
-   Fortanix DSM      Cloud         KMIP       No
-   Thales Cloud HSM  Cloud         PKCS#11    Yes                               :doc:`view <thales>`
-   Nitrokey NetHSM   Docker image  PKCS#11    Yes
-   YubiHSM 2         USB key       PKCS#11    Yes
-   SoftHSM v2.6.1    Software      PKCS#11    Yes                               :doc:`view <softhsm>`
-   SmartCard-HSM     Smart Card    PKCS#11    Yes                               :doc:`view <smartcard-hsm>`
-   ================  ============  =========  ================================  =================
+   ================  ============  =========  =================
+   HSM               Type          Interface  Integration guide
+   ================  ============  =========  =================
+   Fortanix DSM      Cloud         KMIP       
+   Thales Cloud HSM  Cloud         PKCS#11    :doc:`view <thales>`
+   Nitrokey NetHSM   Docker image  PKCS#11    
+   YubiHSM 2         USB key       PKCS#11    
+   SoftHSM v2.6.1    Software      PKCS#11    :doc:`view <softhsm>`
+   SmartCard-HSM     Smart Card    PKCS#11    :doc:`view <smartcard-hsm>`
+   ================  ============  =========  =================
 
 .. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
    though KMIP 1.2 requires servers to offer support for old versions of the
    TLS protocol with known security vulnerabilities. For this reason Cascade
-   *CANNOT* be used with PyKMIP as PyKMIP only supports older vulnerable TLS
-   versions.
+   **cannot** be used with PyKMIP as this implementation only supports older,
+   vulnerable TLS versions.
 
-Setting up `kmip2pkcs11`
-~~~~~~~~~~~~~~~~~~~~~~~~
+Setting up kmip2pkcs11
+~~~~~~~~~~~~~~~~~~~~~~
 
-To work with an HSM using its PKCS#11 interface, Cascade requires our
-:program:`kmip2pkcs11` relay. If you installed Cascade via a DEB or RPM
-package you should also already have the :program:`kmip2pkcs11` software
-installed, unless you explicitly opted not to install it. If installing via
-building from sources the instructions we provide also describe how to install
-:program:`kmip2pkcs11`.
+If you installed Cascade via a DEB or RPM package you should also already
+have the :program:`kmip2pkcs11` software installed, unless you explicitly
+opted not to install it. If installing via building from sources the
+instructions we provide also describe how to install :program:`kmip2pkcs11`.
 
 When installed via a package the daemon will not be run automatically. This is
 because you will need to:
@@ -104,7 +104,7 @@ because you will need to:
   needed by the PKCS#11 module to be loaded.
 - Use the (vendor specific) PKCS#11 module setup process to create a token
   label and PIN that Cascade should use to authenticate with the HSM.
-- (optional) Generate a proper TLS certificate for use by :program:`kmip2pkcs11`
+- Optionally generate a proper TLS certificate for use by :program:`kmip2pkcs11`
   and set the :file:`/etc/kmip2pkcs11/config.toml` settings ``cert_path`` and
   ``key_path`` to point the certificate file and accompanying private key. If
   you omit these settings :program:`kmip2pkcs11` will generate a long-lived
@@ -125,8 +125,8 @@ a package) or directly:
    run as the same user that has access to any necessary resources required by
    PKCS#11 module vendor.
 
-Using `kmip2pkcs11` with Cascade
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Using kmip2pkcs11 with Cascade
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To use :program:`kmip2pkcs11` with Cascade we must tell it that there is a HSM
 running that it can connect to. In the instructions below the PKCS#11 token label
@@ -143,7 +143,7 @@ and PIN are the values you configured above.
 Cascade will verify that it can connect and that the target server appears to be a
 KMIP compatible HSM.
 
-.. Note:: Cascade does **NOT** yet verify that the target KMIP server supports
+.. Note:: Cascade does **not** yet verify that the target KMIP server supports
    the features needed by Cascade. For :program:`kmip2pkcs11` this isn't a problem
    as it is designed to work with Cascade.
 
