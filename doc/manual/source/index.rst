@@ -45,15 +45,16 @@ We would love for you to :doc:`get to know Cascade
 
 .. _reach-out:
 
-.. tip:: Cascade is currently in its first *alpha version*, with documented 
-   :doc:`limitations`. Our goal is to gather operator feedback. Don't 
-   be shy and reach out by `creating a GitHub issue 
-   <https://github.com/NLnetLabs/cascade/issues/new>`_, `sending us an 
-   email <mailto://cascade@nlnetlabs.nl>`_, finding us in the
+.. tip:: Cascade is currently in its first **alpha** version, with documented 
+   :doc:`limitations`. 
+   
+   Our goal is to gather operator feedback. Don't be shy and reach out by 
+   `creating a GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
+   sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
    `NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
-   channel on the `DNS OARC 
-   Mattermost <https://www.dns-oarc.net/oarc/services/chat>`_, or
-   mention us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
+   channel on the `DNS OARC Mattermost 
+   server <https://www.dns-oarc.net/oarc/services/chat>`_, or
+   mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
 
    Examples of things we're interested in:
 
