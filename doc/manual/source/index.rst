@@ -13,8 +13,10 @@ Cascade
       :alt: Mastodon
       :target: https://social.nlnetlabs.nl/@nlnetlabs
 
-A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing solution written in Rust, a programming language
-designed for performance and memory safety.
+A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing
+solution written in Rust, a programming language designed for performance and
+memory safety. Cascade is liberally licensed under the `BSD 3-Clause license
+<https://github.com/NLnetLabs/cascade/blob/main/LICENSE>`_.
 
 Cascade has the following design goals:
 
@@ -38,8 +40,7 @@ Observability
 Open-source with professional support services
    NLnet Labs offers `professional support and consultancy services
    <https://www.nlnetlabs.nl/services/contracts/>`_ with a service-level
-   agreement. Cascade is liberally licensed under the `BSD 3-Clause license
-   <https://github.com/NLnetLabs/cascade/blob/main/LICENSE>`_.
+   agreement. 
 
 We would love for you to :doc:`get to know Cascade
 <before-you-start>`.
