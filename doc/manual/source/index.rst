@@ -76,6 +76,7 @@ Examples of things we're interested in:
    :caption: Getting Started
    :name: toc-getting-started
 
+   intro
    before-you-start
    architecture
    installation
