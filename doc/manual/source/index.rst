@@ -45,32 +45,35 @@ Open-source with professional support services
 We would love for you to :doc:`get to know Cascade
 <before-you-start>`.
 
+.. note:: Cascade is currently in its first **alpha** version, with documented 
+   :doc:`limitations`. 
+
 .. _reach-out:
 
-.. tip:: Cascade is currently in its first **alpha** version, with documented 
-   :doc:`limitations`. 
-   
-   Our goal is to gather operator feedback. Don't be shy and reach out by 
-   creating a `GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
-   sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
-   `NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
-   channel on the `DNS OARC Mattermost 
-   server <https://www.dns-oarc.net/oarc/services/chat>`_, or
-   mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
+Feedback
+--------
 
-   Examples of things we're interested in:
+Our goal is to gather operator feedback. Don't be shy and reach out by 
+creating a `GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
+sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
+`NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
+channel on the `DNS OARC Mattermost 
+server <https://www.dns-oarc.net/oarc/services/chat>`_, or
+mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
 
-     - If these documentation pages don't answer your question, tell us what
-       we missed.
-     - Performance and memory usage are expected to improve but if you think
-       it won't meet your needs, tell us about your use case.
-     - Not all intended functionality has been implemented at this point. If
-       a feature that you need is missing, please let us know.
-     - We are actively working to shape the user experience to operator
-       needs. We have a lot more ideas for improvement and we'd love to hear
-       yours too.
-     - Do tell us about your positive experiences. We particularly appreciate
-       hearing O/S, HSM and size/number of zones you worked with.
+Examples of things we're interested in:
+
+   - If these documentation pages don't answer your question, tell us what
+      we missed.
+   - Performance and memory usage are expected to improve but if you think
+      it won't meet your needs, tell us about your use case.
+   - Not all intended functionality has been implemented at this point. If
+      a feature that you need is missing, please let us know.
+   - We are actively working to shape the user experience to operator
+      needs. We have a lot more ideas for improvement and we'd love to hear
+      yours too.
+   - Do tell us about your positive experiences. We particularly appreciate
+      hearing O/S, HSM and size/number of zones you worked with.
 
 .. toctree::
    :maxdepth: 2
