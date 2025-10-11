@@ -13,12 +13,14 @@ Cascade
       :alt: Mastodon
       :target: https://social.nlnetlabs.nl/@nlnetlabs
 
-A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing
-solution written in Rust, a programming language designed for performance and
-memory safety. Cascade is currently in its first **alpha** version, with
-documented :doc:`limitations`. We would love for you to :doc:`get to know
-Cascade <before-you-start>` and are eager to hear your :ref:`feedback
-<reach-out>`.
+A friendly, stand-alone DNSSEC signing solution designed to communicate how
+it's doing, doesn't assume your feelings, is open to your needs and is easy
+to interact with. 
+
+Cascade is currently in its first **alpha** version. We would love for you to
+:doc:`get to know Cascade <before-you-start>` and are eager to hear :ref:`how
+it makes you feel <reach-out>` so we can improve every aspect. Please
+consider the current :doc:`limitations`.
 
 Cascade has the following design goals:
 
