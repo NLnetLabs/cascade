@@ -55,7 +55,7 @@ We would love for you to :doc:`get to know Cascade
    Mattermost <https://www.dns-oarc.net/oarc/services/chat>`_, or
    mention us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
 
-         Examples of things we're interested in:
+   Examples of things we're interested in:
 
      - If these documentation pages don't answer your question, tell us what
        we missed.
