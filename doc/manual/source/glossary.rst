@@ -7,7 +7,7 @@ Glossary
 .. glossary::
   :sorted:
 
-  Apex
+  Apex (Zone)
     The point in the tree at an owner of an SOA and corresponding
     authoritative NS RRset.  This is also called the "zone apex". :RFC:`4033`
     defines it as "the name at the child's side of a zone cut".  The "apex"
@@ -19,6 +19,22 @@ Glossary
     synonym of "apex", but that term is not widely used.  These days, the
     first sense of "origin" (above) and "apex" are often used
     interchangeably.
+
+  Origin (Zone)
+    There are two different uses for this term:
+
+      1. "The domain name that appears at the top of a zone (just
+         below the cut that separates the zone from its parent)... The
+         name of the zone is the same as the name of the domain at the
+         zone's origin."  (Quoted from :RFC:`2181#section-6`) These
+         days, this sense of "origin" and "apex" (defined below) are
+         often used interchangeably.
+      2. The domain name within which a given relative domain name appears in
+         zone files.  Generally seen in the context of "$ORIGIN", which is a
+         control entry defined in :RFC:`1035#section-5.1`, as part of the
+         master file format.  For example, if the $ORIGIN is set to
+         ``example.org.``, then a master file line for "www" is in fact an
+         entry for ``www.example.org.``.
 
   Resource Record Set (RRSET)
     A set of resource records "with the same label, class and type, but with
