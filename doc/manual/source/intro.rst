@@ -58,11 +58,11 @@ Signature (RRSIG) records, which are cryptographic signatures over the data
 in your zone. 
 
 Rather than signing each RR individually, the DNSKEY is used to sign a
-Resource Record Set (RRSET), which is a collection of individual DNS records
-that share the same name and type. For example, all the A (IPv4) or AAAA
-(IPv6) records for a specific domain are grouped into a single RRSET. RRSETs
-are the fundamental records for DNSSEC signing, as the entire set is signed
-digitally to ensure its integrity. 
+:term:`Resource Record Set (RRSET)`, which is a collection of individual DNS
+records that share the same name and type. For example, all the A (IPv4) or
+AAAA (IPv6) records for a specific domain are grouped into a single RRSET.
+RRSETs are the fundamental records for DNSSEC signing, as the entire set is
+signed digitally to ensure its integrity. 
 
 Chain of Trust
 """"""""""""""
