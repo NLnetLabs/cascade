@@ -3,8 +3,8 @@ An Intro to DNSSEC
 
 DNS Security Extensions (DNSSEC) protects against attacks on the DNS
 infrastructure by digitally signing data to help ensure its validity. In
-order to ensure a secure lookup, signing must happen at every level in the
-DNS lookup process.
+order to ensure authenticity of the DNS responses that resolvers receive,
+a chain of trust using digital signatures is built. 
 
 Though DNSSEC is often perceived as a complicated topic, Cascade tries to
 make the experience as understandable and robust as possible. In this section
