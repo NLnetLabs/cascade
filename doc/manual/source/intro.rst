@@ -99,13 +99,16 @@ Key Signing Keys
 """"""""""""""""
 
 In addition to a zone signing key, DNSSEC name servers also have a :term:`Key
-signing key (KSK)`. The KSK validates the DNSKEY record in exactly the same
-way as our ZSK secured the rest of our RRsets in the previous section: It
-signs the public ZSK (which is stored in a DNSKEY record), creating an RRSIG
-for the DNSKEY.
+signing key (KSK)`. The KSK only signs the :term:`apex <Apex (Zone)>` DNSKEY
+RRset in a zone. The KSK signs the public ZSK, creating an RRSIG for the
+DNSKEY.
 
-Chain of Trust
-""""""""""""""
+The public part of the KSK in published in another DNSKEY record. Both the
+public KSK and public ZSK are signed by the private KSK. Validating resolvers
+can use the public KSK to validate the public ZSK.
+
+Building a Chain of Trust
+"""""""""""""""""""""""""
 
 DNSSEC relies on a chain of trust by creating a hierarchical system where
 each DNS zone is cryptographically validated by the zone above it, starting
