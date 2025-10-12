@@ -307,50 +307,50 @@ in this documentation. For a full overview, refer to :rfc:`9499`.
     description of the relationship between parents and children.
 
   Secure (DNSSEC State)
-    :RFC:`4033#section-5` says: The validating resolver has a trust anchor,
+    :RFC:`4033#section-5` says: "The validating resolver has a trust anchor,
     has a chain of trust, and is able to verify all the signatures in the
-    response.
+    response."
 
-    :RFC:`4035#section-4.3` says: An RRset for which the resolver is able to
+    :RFC:`4035#section-4.3` says: "An RRset for which the resolver is able to
     build a chain of signed DNSKEY and DS RRs from a trusted security anchor
     to the RRset.  In this case, the RRset should be signed and is subject to
-    signature validation, as described above.
+    signature validation, as described above."
 
   Insecure (DNSSEC State)
-    :RFC:`4033#section-5` says: The validating resolver has a trust anchor, a
-    chain of trust, and, at some delegation point, signed proof of the non-
+    :RFC:`4033#section-5` says: "The validating resolver has a trust anchor,
+    a chain of trust, and, at some delegation point, signed proof of the non-
     existence of a DS record.  This indicates that subsequent branches in the
     tree are provably insecure.  A validating resolver may have a local
-    policy to mark parts of the domain space as insecure.
+    policy to mark parts of the domain space as insecure."
 
-    :RFC:`4035#section-4.3` says: An RRset for which the resolver knows that
+    :RFC:`4035#section-4.3` says: "An RRset for which the resolver knows that
     it has no chain of signed DNSKEY and DS RRs from any trusted starting
     point to the RRset.  This can occur when the target RRset lies in an
     unsigned zone or in a descendent [sic] of an unsigned zone.  In this
     case, the RRset may or may not be signed, but the resolver will not be
-    able to verify the signature.
+    able to verify the signature."
 
   Bogus (DNSSEC State)
-    :RFC:`4033#section-5` says: The validating resolver has a trust anchor
+    :RFC:`4033#section-5` says: "The validating resolver has a trust anchor
     and a secure delegation indicating that subsidiary data is signed, but
     the response fails to validate for some reason: missing signatures,
     expired signatures, signatures with unsupported algorithms, data missing
-    that the relevant NSEC RR says should be present, and so forth.
+    that the relevant NSEC RR says should be present, and so forth."
 
-    :RFC:`4035#section-4.3` says: An RRset for which the resolver believes
+    :RFC:`4035#section-4.3` says: "An RRset for which the resolver believes
     that it ought to be able to establish a chain of trust but for which it
     is unable to do so, either due to signatures that for some reason fail to
     validate or due to missing data that the relevant DNSSEC RRs indicate
     should be present. This case may indicate an attack but may also indicate
-    a configuration error or some form of data corruption.
+    a configuration error or some form of data corruption."
 
   Indeterminate (DNSSEC State)
-    :RFC:`4033#section-5` says: There is no trust anchor that would indicate
+    :RFC:`4033#section-5` says: "There is no trust anchor that would indicate
     that a specific portion of the tree is secure.  This is the default 
-    operation mode.
+    operation mode."
 
-    :RFC:`4035#section-4.3` says: An RRset for which the resolver is not able to
-    determine whether the RRset should be signed, as the resolver
-    is not able to obtain the necessary DNSSEC RRs.  This can occur
-    when the security-aware resolver is not able to contact
-    security-aware name servers for the relevant zones.
+    :RFC:`4035#section-4.3` says: "An RRset for which the resolver is not
+    able to determine whether the RRset should be signed, as the resolver is
+    not able to obtain the necessary DNSSEC RRs.  This can occur when the
+    security-aware resolver is not able to contact security-aware name
+    servers for the relevant zones."
