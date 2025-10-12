@@ -1,8 +1,8 @@
 Glossary
 ========
 
-This page contains a subset of all DNS-related terms for additional context
-in this documentation. For a full overview, refer to :RFC:`9499`.
+.. note:: This page contains a subset of all DNS-related terms for additional
+   context in this documentation. For a full overview, refer to :RFC:`9499`.
 
 .. glossary::
   :sorted:
