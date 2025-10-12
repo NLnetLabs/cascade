@@ -7,6 +7,19 @@ in this documentation. For a full overview, refer to :rfc:`9499`.
 .. glossary::
   :sorted:
 
+  Apex
+    The point in the tree at an owner of an SOA and corresponding
+    authoritative NS RRset.  This is also called the "zone apex". :RFC:`4033`
+    defines it as "the name at the child's side of a zone cut".  The "apex"
+    can usefully be thought of as a data-theoretic description of a tree
+    structure, and "origin" is the name of the same concept when it is
+    implemented in zone files.  The distinction is not always maintained in
+    use, however, and one can find uses that conflict subtly with this
+    definition.  :RFC:`1034` uses the term "top node of the zone" as a
+    synonym of "apex", but that term is not widely used.  These days, the
+    first sense of "origin" (above) and "apex" are often used
+    interchangeably.
+
   Resource Record Set (RRSET)
     A set of resource records "with the same label, class and type, but with
     different data" (according to :RFC:`2181#section-5`).  Also written as
