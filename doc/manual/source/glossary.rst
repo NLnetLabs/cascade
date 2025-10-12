@@ -36,7 +36,7 @@ Glossary
          ``example.org.``, then a master file line for "www" is in fact an
          entry for ``www.example.org.``.
 
-  Resource Record Set (RRSET)
+  Resource Record Set (RRset)
     A set of resource records "with the same label, class and type, but with
     different data" (according to :RFC:`2181#section-5`).  Also written as
     "RRSet" in some documents.  As a clarification, "same label" in this
