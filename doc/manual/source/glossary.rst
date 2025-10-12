@@ -2,7 +2,7 @@ Glossary
 ========
 
 This page contains a subset of all DNS-related terms for additional context
-in this documentation. For a full overview, refer to :rfc:`9499`.
+in this documentation. For a full overview, refer to :RFC:`9499`.
 
 .. glossary::
   :sorted:
@@ -30,12 +30,12 @@ in this documentation. For a full overview, refer to :rfc:`9499`.
       Note that RRSIG resource records do not match this definition.
       :RFC:`4035` says:
 
-         An RRset MAY have multiple RRSIG RRs associated with it. Note that
+         "An RRset MAY have multiple RRSIG RRs associated with it. Note that
          as RRSIG RRs are closely tied to the RRsets whose signatures they
          contain, RRSIG RRs, unlike all other DNS RR types, do not form
          RRsets.  In particular, the :term:`TTL`` values among RRSIG RRs with
          a common owner name do not follow the RRset rules described in
-         :RFC:`2181`.
+         :RFC:`2181`."
     
   TTL 
     The maximum "time to live" of a resource record. "A TTL value is an
@@ -280,7 +280,7 @@ in this documentation. For a full overview, refer to :rfc:`9499`.
     "A practices disclosure document that may support and be a supplemental
     document to the DNSSEC Policy (if such exists), and it states how the
     management of a given zone implements procedures and controls at a high
-    level." (Quoted from :RFC:`6841#aection-2`)
+    level." (Quoted from :RFC:`6841#section-2`)
 
   Hardware security module (HSM)
     A specialized piece of hardware that is used to create keys for
