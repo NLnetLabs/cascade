@@ -287,3 +287,21 @@ in this documentation. For a full overview, refer to :rfc:`9499`.
     signatures and to sign messages without ever disclosing the private key.
     In DNSSEC, HSMs are often used to hold the private keys for KSKs and ZSKs
     and to create the signatures used in RRSIG records at periodic intervals.
+
+  Zone 
+    "Authoritative information is organized into units called ZONEs, and
+    these zones can be automatically distributed to the name servers which
+    provide redundant service for the data in a zone."  (Quoted from
+    :RFC:`1034#section-2.4`)
+
+  Child
+    "The entity on record that has the delegation of the domain from the
+    Parent."  (Quoted from :RFC:`7344#section-1.1`)
+
+  Parent
+    "The domain in which the Child is registered."  (Quoted from
+    :RFC:`7344#section-1.1`) Earlier, "parent name server" was defined in
+    :RFC:`0882` as "the name server that has authority over the place in the
+    domain name space that will hold the new domain".  (Note that :RFC:`0882`
+    was obsoleted by :RFC:`1034` and :RFC:`1035`.) :RFC:`819` also has some
+    description of the relationship between parents and children.
