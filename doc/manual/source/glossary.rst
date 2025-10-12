@@ -370,3 +370,20 @@ Glossary
     not able to obtain the necessary DNSSEC RRs.  This can occur when the
     security-aware resolver is not able to contact security-aware name
     servers for the relevant zones."
+
+  Primary server
+    "Any authoritative server configured to be the source of zone transfer
+    for one or more [secondary] servers." (Quoted from
+    :RFC:`1996#section-2.1`) Or, more specifically, :RFC:`2136` calls it "an
+    authoritative server configured to be the source of AXFR or IXFR data for
+    one or more [secondary] servers". Primary servers are also discussed in
+    :RFC:`1034`.  Although early DNS RFCs such as :RFC:`1996` referred to
+    this as a "master", the current common usage has shifted to "primary".
+
+  Secondary server
+    "An authoritative server which uses zone transfer to retrieve the zone."
+    (Quoted from :RFC:`1996#section-2.1`) Secondary servers are also
+    discussed in :RFC:`1034`.  :RFC:`2182` describes secondary servers in
+    more detail.  Although early DNS RFCs such as :RFC:`1996` referred to
+    this as a "slave", the current common usage has shifted to calling it a
+    "secondary".
