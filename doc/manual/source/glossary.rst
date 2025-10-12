@@ -294,11 +294,11 @@ Glossary
     provide redundant service for the data in a zone."  (Quoted from
     :RFC:`1034#section-2.4`)
 
-  Child
+  Child (Zone)
     "The entity on record that has the delegation of the domain from the
     Parent."  (Quoted from :RFC:`7344#section-1.1`)
 
-  Parent
+  Parent (Zone)
     "The domain in which the Child is registered."  (Quoted from
     :RFC:`7344#section-1.1`) Earlier, "parent name server" was defined in
     :RFC:`0882` as "the name server that has authority over the place in the
