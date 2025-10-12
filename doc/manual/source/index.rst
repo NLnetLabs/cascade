@@ -133,6 +133,7 @@ Examples of things we're interested in:
    :name: toc-reference
 
    limitations
+   glossary
 
 .. toctree::
    :maxdepth: 2
