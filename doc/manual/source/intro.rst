@@ -42,13 +42,24 @@ How DNSSEC Works
 ----------------
 
 DNSSEC adds an extra layer of information to DNS responses, allowing
-resolvers to verify that each answer is authentic. This is done by adding a 
-digital signature to each Resource Record (RR) in a zone. 
+resolvers to verify that each answer is authentic. This is done by adding a
+digital signature to each Resource Record (RR) in a zone. These digital
+signatures are stored in DNS nameservers alongside common record types like
+A, AAAA, MX, CNAME, etc.
 
-The keys that are used for DNSSEC asymmetric, such as RSA and ECDSA (Elliptic
-Curve Digital Signature Algorithm). The private part is used for signing and
-must be kept secret all all times. The the public part of the key is
-published in DNS as a DNSKEY record, which is used for verification.
+The keys that are used for DNSSEC are asymmetric, such as RSA and ECDSA
+(Elliptic Curve Digital Signature Algorithm). The private part is used for
+signing and must be kept secret all all times.
+
+DNSSEC adds these record types:
+
+- RRSIG, which contains a cryptographic signature
+- DNSKEY, which contains a public signing key
+- DS, which stores a hashed representation of a DNSKEY record
+- NSEC and NSEC3, which offer validated assurance that a DNS record *doesn't*
+  exist
+- CDNSKEY and CDS, allowing a child zone to request updates to DS record(s)
+  in the parent zone
 
 Each DNSSEC-enabled zone, including the root ``(.)``, a Top-Level Domain
 (TLD) such as ``.com``, or a Second-Level Domain (SLD) such as
@@ -57,12 +68,41 @@ corresponding private key is used to generate so-called Resource Record
 Signature (RRSIG) records, which are cryptographic signatures over the data
 in your zone. 
 
-Rather than signing each RR individually, the DNSKEY is used to sign a
-:term:`Resource Record Set (RRSET)`, which is a collection of individual DNS
-records that share the same name and type. For example, all the A (IPv4) or
-AAAA (IPv6) records for a specific domain are grouped into a single RRSET.
-RRSETs are the fundamental records for DNSSEC signing, as the entire set is
-signed digitally to ensure its integrity. 
+Resource Record Sets
+""""""""""""""""""""
+
+Rather than signing each resource record individually, the DNSKEY is used to
+sign a :term:`Resource Record Set (RRset)`, which is a collection of
+individual DNS records that share the same name and type. For example, all
+the A (IPv4) or AAAA (IPv6) records for a specific domain are grouped into a
+single RRset. RRsets are the fundamental records for DNSSEC signing, as the
+entire set is signed digitally to ensure its integrity. 
+
+Zone Signing Keys
+"""""""""""""""""
+
+Each zone in DNSSEC has a :term:`Zone signing key (ZSK)` set. The private
+portion of this key set key digitally signs each RRset in the zone. The the
+public portion of the set is used to verify the signature. You create digital
+signatures for each RRset using the private ZSK and stores them on your
+nameserver as RRSIG records. 
+
+We now almost have all the puzzle pieces in place for a :term:`Validating 
+resolver` to verify the signatures. The remaining part you need to make
+available is the public part of the ZSK by adding it to your nameserver in a
+DNSKEY record. 
+
+Now, the resolver can use the RRset, RRSIG, and public ZSK to validate if the
+response is authentic.
+
+Key Signing Keys
+""""""""""""""""
+
+In addition to a zone signing key, DNSSEC name servers also have a :term:`Key
+signing key (KSK)`. The KSK validates the DNSKEY record in exactly the same
+way as our ZSK secured the rest of our RRsets in the previous section: It
+signs the public ZSK (which is stored in a DNSKEY record), creating an RRSIG
+for the DNSKEY.
 
 Chain of Trust
 """"""""""""""
@@ -95,8 +135,9 @@ Validation
 The chain of trust must remain unbroken at all times. If, for example, a DS
 record points to an incorrect DNSKEY, or if a signature is invalid or
 missing, resolvers will not be able to verify the data. This results in a
-"bogus" status, telling you that the DNS record does not pass DNSSEC
-authentication checks. 
+:term:`"bogus" <Bogus (DNSSEC State)>` status, telling you that the DNS
+record does not pass DNSSEC authentication checks. 
 
-The other possible DNSSEC validation states are "secure" (valid) or
-"insecure" (unsigned or DNSSEC not implemented). 
+The other possible DNSSEC validation states are :term:`"secure" <Secure
+(DNSSEC State)>`, :term:`"insecure" <Insecure (DNSSEC State)>` and
+:term:`"indeterminate" <Indeterminate (DNSSEC State)>`. 
