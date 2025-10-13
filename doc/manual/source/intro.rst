@@ -21,7 +21,7 @@ DNS data. These can be categorised into roughly four types:
    malicious, cached information. DNSSEC's validation process prevents this
    by ensuring the cached data is cryptographically signed by the
    authoritative source. 
-3. Man-in-the-Middle Attacks: DNSSEC helps prevent attackers from
+3. On-Path Attacks: DNSSEC helps prevent attackers from
    intercepting and altering DNS queries and responses, ensuring data
    integrity during transit. 
 4. Authenticated Denial of Existence: attackers can try to exploit
