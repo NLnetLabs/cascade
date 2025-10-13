@@ -1,8 +1,7 @@
 Glossary
 ========
 
-.. note:: This page contains a subset of all DNS-related terms for additional
-   context in this documentation. For a full overview, refer to :RFC:`9499`.
+.. note:: This page lists DNS-related terms used in the Cascade documentation, sourced from :RFC:`9499`.
 
 .. glossary::
   :sorted:
