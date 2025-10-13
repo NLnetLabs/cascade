@@ -1827,8 +1827,6 @@ impl ZoneSignerStatus {
             .map_err(|_| SignerError::SignerNotReady)?;
         debug!("SIGNER[{zone_name}]: Queue permit acquired");
 
-        status.write().await.current_action = "Waiting for a free signing slot".to_string();
-
         // If we were able to acquire a permit that means that a signing operation completed
         // and so we are safe to remove one item from the ring buffer.
         let mut zones_being_signed = self.zones_being_signed.write().await;
@@ -1836,16 +1834,21 @@ impl ZoneSignerStatus {
             // Discard oldest.
             let signing_status = zones_being_signed.pop_front();
             if let Some(signing_status) = signing_status {
+                // Old items in the queue should have reached a final state,
+                // either finished or aborted. If not, something is wrong with
+                // the queueing logic.
                 if !matches!(
                     signing_status.read().await.status,
-                    ZoneSigningStatus::Finished(_)
+                    ZoneSigningStatus::Finished(_)|ZoneSigningStatus::Aborted
                 ) {
                     return Err(SignerError::InternalError(
-                        "Cannot acquire the queue semaphore".to_string(),
+                        "Signing queue not in the expected state".to_string(),
                     ));
                 }
             }
         }
+
+        status.write().await.current_action = "Queued for signing".to_string();
 
         debug!("SIGNER[{zone_name}]: Enqueuing complete.");
         Ok((approx_q_size, queue_permit, zone_permit, status))
