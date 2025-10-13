@@ -70,7 +70,7 @@ Resource Record Sets
 Rather than signing each resource record individually, the DNSKEY is used to
 sign a :term:`Resource Record Set (RRset)`, which is a collection of
 individual DNS records that share the same name and type. For example, all
-the A (IPv4) or AAAA (IPv6) records for a specific domain are grouped into a
+the A (IPv4) records for a specific domain are grouped into a
 single RRset. RRsets are the fundamental records for DNSSEC signing, as the
 entire set is signed digitally to ensure its integrity. 
 
