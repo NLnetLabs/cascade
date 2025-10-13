@@ -647,7 +647,6 @@ impl ZoneSigner {
             zonefile.extend_from_slice(dnskey_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
             if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
-                eprintln!("Adding RR {dnskey_rr}");
                 records.push(rec.flatten_into());
             }
         }
