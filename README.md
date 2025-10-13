@@ -12,8 +12,9 @@ An [alpha release](https://github.com/NLnetLabs/cascade/releases) is
 available now, we encourage you to test it.
 
 If you have questions, suggestions or feature requests, don't hesitate to
-create an [issue on GitGub](https://github.com/NLnetLabs/cascade/issues) or
-send us [an email](mailto:cascade@nlnetlabs.nl)! You can also find us in the
+create an [issue on GitGub](https://github.com/NLnetLabs/cascade/issues),
+send us [an email](mailto:cascade@nlnetlabs.nl) or mention us on 
+[Mastodon](https://social.nlnetlabs.nl/@nlnetlabs/)! You can also find us in the
 [NLnet Labs DNS](https://chat.dns-oarc.net/community/channels/ldns) channel
 on the [DNS OARC Mattermost
 server](https://www.dns-oarc.net/oarc/services/chat).
