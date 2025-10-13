@@ -33,10 +33,9 @@ DNS data. These can be categorised into roughly four types:
    signed proof that a record does not exist, making the zone resistant to
    this type of attack. 
 
-DNSSEC does not encrypt DNS data, but rather uses digital signatures to
-ensure the response is authentic and has not been tampered with. By verifying
-DNS responses, DNSSEC prevents malicious actors from for example redirecting
-users to fake or malicious websites. 
+DNSSEC uses digital signatures to ensure the response is authentic and has
+not been tampered with. By verifying DNS responses, DNSSEC prevents malicious
+actors from for example redirecting users to fake or malicious websites. 
 
 How DNSSEC Works 
 ----------------
