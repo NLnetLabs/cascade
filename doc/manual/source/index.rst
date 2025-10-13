@@ -13,13 +13,12 @@ Cascade
       :alt: Mastodon
       :target: https://social.nlnetlabs.nl/@nlnetlabs
 
-A friendly, stand-alone DNSSEC signing solution designed to communicate how
-it's doing, doesn't assume your feelings, is open to your needs and is easy
-to interact with. 
+A friendly, stand-alone :doc:`DNSSEC <intro>` signing solution designed to
+communicate what it's doing and is easy to interact with. 
 
 Cascade is currently in its first **alpha** version. We would love for you to
-:doc:`get to know Cascade <before-you-start>` and are eager to hear :ref:`how
-it makes you feel <reach-out>` so we can improve every aspect. Please
+:doc:`get to know Cascade <before-you-start>` and are eager to hear
+:ref:`your experiences <reach-out>` so we can improve every aspect. Please
 consider the current :doc:`limitations`.
 
 Cascade has the following design goals:
