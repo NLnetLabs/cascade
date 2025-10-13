@@ -17,6 +17,10 @@ pub enum Command {
     #[command(name = "config")]
     Config(self::config::Config),
 
+    /// Check if Cascade is healthy.
+    #[command(name = "health")]
+    Health,
+
     /// Manage zones
     #[command(name = "zone")]
     Zone(self::zone::Zone),
@@ -61,6 +65,15 @@ impl Command {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
             Self::Config(cmd) => cmd.execute(client).await,
+            Self::Health => {
+                client
+                    .get("health")
+                    .send()
+                    .await
+                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                println!("Ok");
+                Ok(())
+            }
             Self::Zone(zone) => zone.execute(client).await,
             // Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,

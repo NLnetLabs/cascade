@@ -93,6 +93,7 @@ impl HttpServer {
 
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
+            .route("/health", get(Self::health))
             .route("/status", get(Self::status))
             .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
@@ -837,6 +838,11 @@ impl HttpServer {
             signer,
             server,
         }))
+    }
+
+    /// If this endpoint responds, the deamon is considered healthy.
+    async fn health() -> Json<()> {
+        Json(())
     }
 
     async fn status() -> Json<ServerStatusResult> {
