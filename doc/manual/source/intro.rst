@@ -122,7 +122,7 @@ secure delegation, the parent zone signs a hash of the child zone's KSK.
 This is called a DS record.
 
 To do this, the operator of a child zone (such as example.com) generates a
-KSK and then calculates a hash over it. This digest is then given to the
+KSK and then calculates a hash over it. This hash (aka digest) is then given to the
 parent zone (in this case .com). The parent zone publishes this digest as a
 DS record within its own zone file and signs it with its own Key Signing Key.
 This DS record effectively acts as a secure pointer to the child zone's KSK.
