@@ -108,7 +108,7 @@ Building a Chain of Trust
 
 DNSSEC relies on a chain of trust by creating a hierarchical system where
 trust in each DNS zone is bootstrapped from the zone above it, starting
-from the root zone, which acts as a trusted starting point. Without a chain
+from the root zone, which acts as a trusted starting point with signatures that ship with DNS resolver software. Without a chain
 of trust, a DNSSEC-validating resolver wouldn't know where to begin trusting
 DNS data.
 
