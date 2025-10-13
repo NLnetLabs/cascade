@@ -1043,11 +1043,11 @@ impl AsyncHistoricalCommand {
                 String::from_utf8_lossy(&output.stderr),
             );
             error!("{err}");
-            return Err(KeySetCommandError {
+            Err(KeySetCommandError {
                 cmd: cmd_string,
                 err,
                 output: Some(output),
-            });
+            })
         } else {
             let warning = match output.stderr.is_empty() {
                 true => None,
