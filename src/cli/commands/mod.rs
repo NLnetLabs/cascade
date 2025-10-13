@@ -8,6 +8,8 @@ pub mod status;
 pub mod template;
 pub mod zone;
 
+use crate::cli::client::format_http_error;
+
 use super::client::CascadeApiClient;
 
 #[allow(clippy::large_enum_variant)]
@@ -70,7 +72,7 @@ impl Command {
                     .get("health")
                     .send()
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                    .map_err(format_http_error)?;
                 println!("Ok");
                 Ok(())
             }
