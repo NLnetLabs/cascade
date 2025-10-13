@@ -80,7 +80,7 @@ Zone Signing Keys
 Each zone in DNSSEC has a :term:`Zone signing key (ZSK)` set. The private
 portion of this key set key digitally signs each RRset in the zone. The the
 public portion of the set is used to verify the signature. You create digital
-signatures for each RRset using the private ZSK and stores them on your
+signatures for each RRset using the private ZSK and store them on your
 nameserver as RRSIG records. 
 
 We now almost have all the puzzle pieces in place for a :term:`Validating 
