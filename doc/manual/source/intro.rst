@@ -118,7 +118,7 @@ Anchor is the top of this chain, representing a public Key Signing Key (KSK)
 that is implicitly trusted by a DNSSEC-validating resolver. 
 
 A parent zone doesn't directly sign the data in a child zone. To establish a
-secure delegation, the parent zone signs a a hash of the child zone's KSK. 
+secure delegation, the parent zone signs a hash of the child zone's KSK. 
 This is called a DS record.
 
 To do this, the operator of a child zone (such as example.com) generates a
