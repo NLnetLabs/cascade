@@ -87,7 +87,7 @@ async fn roll_command(
     cmd: KeyRollCommand,
     variant: KeyRollVariant,
 ) -> Result<(), String> {
-    let res: Result<KeyRollResult, KeyRollError> = client
+    let res: Result<KeySetCommandResult, KeySetCommandError> = client
         .post(&format!("key/{zone}/roll"))
         .json(&KeyRoll { variant, cmd })
         .send()
@@ -100,10 +100,10 @@ async fn roll_command(
             Ok(())
         }
         Err(e) => match e {
-            KeyRollError::DnstCommandError(err) => {
+            KeySetCommandError::DnstCommandError(err) => {
                 Err(format!("Failed manual key roll for {zone}: {err}"))
             }
-            KeyRollError::RxError => Err(format!(
+            KeySetCommandError::RxError => Err(format!(
                 "Failed manual key roll for {zone}: Internal Server Error"
             )),
         },
@@ -117,7 +117,7 @@ async fn remove_key_command(
     force: bool,
     continue_flag: bool,
 ) -> Result<(), String> {
-    let res: Result<KeyRemoveResult, KeyRemoveError> = client
+    let res: Result<KeySetCommandResult, KeySetCommandError> = client
         .post(&format!("key/{zone}/remove"))
         .json(&KeyRemove {
             key: key.clone(),
@@ -134,10 +134,10 @@ async fn remove_key_command(
             Ok(())
         }
         Err(e) => match e {
-            KeyRemoveError::DnstCommandError(err) => {
+            KeySetCommandError::DnstCommandError(err) => {
                 Err(format!("Failed to remove key {key} from {zone}: {err}"))
             }
-            KeyRemoveError::RxError => Err(format!(
+            KeySetCommandError::RxError => Err(format!(
                 "Failed to remove key {key} from {zone}: Internal Server Error"
             )),
         },

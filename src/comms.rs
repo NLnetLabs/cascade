@@ -71,6 +71,7 @@ use std::fmt::{self, Debug};
 use std::net::IpAddr;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::api::keyset::KeySetCommandError;
 use crate::api::{self, KeyImport};
 use crate::center::{Change, ZoneAddError};
 use crate::units::zone_loader::ZoneLoaderReport;
@@ -219,11 +220,16 @@ pub enum ApplicationCommand {
     RollKey {
         zone: StoredName,
         key_roll: api::keyset::KeyRoll,
-        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRollError>>,
+        http_tx: mpsc::Sender<Result<(), KeySetCommandError>>,
     },
     RemoveKey {
         zone: StoredName,
         key_remove: api::keyset::KeyRemove,
-        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRemoveError>>,
+        http_tx: mpsc::Sender<Result<(), KeySetCommandError>>,
     },
+
+    KeySetStatus {
+        zone: StoredName,
+        http_tx: oneshot::Sender<Result<String, KeySetCommandError>>,
+    }
 }

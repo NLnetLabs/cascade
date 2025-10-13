@@ -256,6 +256,8 @@ pub enum HistoricalEvent {
             deserialize_with = "deserialize_duration_from_secs"
         )]
         elapsed: Duration,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        warning: Option<String>,
     },
     KeySetError {
         cmd: String,

@@ -435,9 +435,23 @@ impl Zone {
                                         ZoneReviewStatus::Rejected => "rejected",
                                     }
                                 ),
-                                HistoricalEvent::KeySetCommand { cmd, elapsed } => {
+                                HistoricalEvent::KeySetCommand {
+                                    cmd,
+                                    elapsed,
+                                    warning: None,
+                                } => {
                                     format!(
                                         "Keyset command '{cmd}' succeeded in {}s",
+                                        elapsed.as_secs()
+                                    )
+                                }
+                                HistoricalEvent::KeySetCommand {
+                                    cmd,
+                                    elapsed,
+                                    warning: Some(warning),
+                                } => {
+                                    format!(
+                                        "Keyset command '{cmd}' succeeded in {}s with warning: {warning}",
                                         elapsed.as_secs()
                                     )
                                 }

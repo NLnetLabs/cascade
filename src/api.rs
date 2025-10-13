@@ -611,17 +611,6 @@ pub mod keyset {
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub struct KeyRollResult {
-        pub zone: Name<Bytes>,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub enum KeyRollError {
-        DnstCommandError(String),
-        RxError,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct KeyRemove {
         pub key: String,
         pub force: bool,
@@ -629,14 +618,25 @@ pub mod keyset {
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub struct KeyRemoveResult {
+    pub struct KeySetCommandResult {
         pub zone: Name<Bytes>,
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub enum KeyRemoveError {
+    pub enum KeySetCommandError {
         DnstCommandError(String),
         RxError,
+    }
+
+    impl std::fmt::Display for KeySetCommandError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                KeySetCommandError::DnstCommandError(err) => write!(f, "dnst command error: {err}"),
+                KeySetCommandError::RxError => {
+                    f.write_str("Internal error: message receive failed")
+                }
+            }
+        }
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
