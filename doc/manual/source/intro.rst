@@ -43,9 +43,9 @@ How DNSSEC Works
 
 DNSSEC adds an extra layer of information to DNS responses, allowing
 resolvers to verify that each answer is authentic. This is done by adding a
-digital signature to each Resource Record (RR) in a zone. These digital
-signatures are stored in DNS nameservers alongside common record types like
-A, AAAA, MX, CNAME, etc.
+digital signature to resource records grouped by type (RRsets) in a zone.
+These digital signatures are stored in DNS nameservers alongside common
+record types like A, AAAA, MX, CNAME, etc.
 
 The keys that are used for DNSSEC are asymmetric, such as RSA and ECDSA
 (Elliptic Curve Digital Signature Algorithm). The private part is used for
