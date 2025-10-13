@@ -49,7 +49,7 @@ signing and must be kept secret all all times.
 
 DNSSEC adds these record types:
 
-- RRSIG, which contains a cryptographic signature
+- RRSIG, which contains a cryptographic signature over an :term:`Resource Record Set (RRset)`
 - DNSKEY, which contains a public signing key
 - DS, which stores a hashed representation of a DNSKEY record
 - NSEC and NSEC3, which offer proof that a DNS record *doesn't*
