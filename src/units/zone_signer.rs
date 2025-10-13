@@ -2,6 +2,7 @@ use std::cmp::{min, Ordering};
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::str::EscapeDebug;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
@@ -15,6 +16,7 @@ use domain::crypto::kmip::KeyUrl;
 use domain::crypto::kmip::{self, ClientCertificate, ConnectionSettings};
 use domain::crypto::sign::{KeyPair, SecretKeyBytes, SignRaw};
 use domain::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
+use domain::dep::kmip::rustls::pki_types::SignatureVerificationAlgorithm;
 use domain::dnssec::common::parse_from_bind;
 use domain::dnssec::sign::denial::config::DenialConfig;
 use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode};
@@ -390,24 +392,7 @@ impl ZoneSigner {
     ) -> Result<(), SignerError> {
         info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
 
-        // Dump the queue:
-        if log_enabled!(Level::Debug) {
-            let signer_status = self.signer_status.read().await;
-            let zones_being_signed = signer_status.zones_being_signed.read().await;
-            for q_item in zones_being_signed.iter() {
-                let q_item = q_item.read().await;
-                match q_item.status {
-                    ZoneSigningStatus::Requested(_) => {
-                        debug!("[ZS]: Queue item: {} => requested", q_item.zone_name)
-                    }
-                    ZoneSigningStatus::InProgress(_) => {
-                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone_name)
-                    }
-                    ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted => { /* Don't log */
-                    }
-                };
-            }
-        }
+        self.signer_status.read().await.dump_queue().await;
 
         let (q_size, _q_permit, _zone_permit, status) = {
             let signer_status = self.signer_status.read().await;
@@ -1752,7 +1737,7 @@ impl ZoneSignerStatus {
     pub fn new() -> Self {
         Self {
             zones_being_signed: Arc::new(tokio::sync::RwLock::new(VecDeque::with_capacity(
-                SIGNING_QUEUE_SIZE,
+                SIGNING_QUEUE_SIZE + 1, // +1 so that there is a free slot to push_back() to even when "full"
             ))),
             zone_semaphores: Default::default(),
             queue_semaphore: Arc::new(Semaphore::new(SIGNING_QUEUE_SIZE)),
@@ -1764,13 +1749,41 @@ impl ZoneSignerStatus {
         &self,
         wanted_zone_name: &StoredName,
     ) -> Option<Arc<tokio::sync::RwLock<NamedZoneSigningStatus>>> {
+        self.dump_queue().await;
+
         let zones_being_signed = self.zones_being_signed.read().await;
-        for q_item in zones_being_signed.iter() {
-            if q_item.read().await.zone_name == wanted_zone_name {
+        for q_item in zones_being_signed.iter().rev() {
+            let readable_q_item = q_item.read().await;
+            if readable_q_item.zone_name == wanted_zone_name
+                && !matches!(readable_q_item.status, ZoneSigningStatus::Aborted)
+            {
                 return Some(q_item.clone());
             }
         }
         None
+    }
+
+    async fn dump_queue(&self) {
+        if log_enabled!(Level::Debug) {
+            let zones_being_signed = self.zones_being_signed.read().await;
+            for q_item in zones_being_signed.iter().rev() {
+                let q_item = q_item.read().await;
+                match q_item.status {
+                    ZoneSigningStatus::Requested(_) => {
+                        debug!("[ZS]: Queue item: {} => requested", q_item.zone_name)
+                    }
+                    ZoneSigningStatus::InProgress(_) => {
+                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone_name)
+                    }
+                    ZoneSigningStatus::Finished(_) => {
+                        debug!("[ZS]: Queue item: {} => finished", q_item.zone_name)
+                    }
+                    ZoneSigningStatus::Aborted => {
+                        debug!("[ZS]: Queue item: {} => aborted", q_item.zone_name)
+                    }
+                };
+            }
+        }
     }
 
     /// Enqueue a zone for signing.
@@ -1839,7 +1852,7 @@ impl ZoneSignerStatus {
                 // the queueing logic.
                 if !matches!(
                     signing_status.read().await.status,
-                    ZoneSigningStatus::Finished(_)|ZoneSigningStatus::Aborted
+                    ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted
                 ) {
                     return Err(SignerError::InternalError(
                         "Signing queue not in the expected state".to_string(),
