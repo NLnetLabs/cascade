@@ -36,12 +36,13 @@ behaviour, as well as limiting resource usage.
 Flexible Signing
 ----------------
 
-Cascade does not *require* an HSM to operate. While it is common practice
-to secure cryptographic key material using an HSM, not all operators use an
-HSM. Cascade is able to use `OpenSSL <https://www.openssl.org>`_ and/or `ring
-<https://crates.io/crates/ring/>`_ software cryptography to generate signing
-keys and to cryptographically sign DNS RRSET data, storing the generated keys
-in on-disk files.
+Cascade does not *require* a :term:`Hardware security module (HSM)` to
+operate. While it is common practice to secure cryptographic key material
+using an HSM, not all operators use an HSM. Cascade is able to use `OpenSSL
+<https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
+software cryptography to generate signing keys and to cryptographically sign
+DNS :term:`RRSET <Resource Record Set (RRset)>` data, storing the generated
+keys in on-disk files.
 
 For operators wishing to use an HSM, Cascade can connect directly to KMIP
 compatible HSMs, or to PKCS#11 compatible HSMs via our :program:`kmip2pkcs11`
@@ -58,10 +59,10 @@ In both cases verification consists of executing an operator supplied script
 or application which can verify the zone using whatever mechanisms are
 required to satisfy your policy.
 
-Verification of the zone can be done by retrieving it using the DNS XFR
-protocol from dedicated "review" nameservers within Cascade, either verifying
-the zone directly or writing the zone to disk for verification by tools that
-only support working with files.
+Verification of the zone can be done by retrieving it using the :term:`Zone
+transfer` protocol from dedicated "review" nameservers within Cascade, either
+verifying the zone directly or writing the zone to disk for verification by
+tools that only support working with files.
 
 On completion of the verification process, approval or rejection is signalled
 back to Cascade via the script exit code.

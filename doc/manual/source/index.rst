@@ -78,6 +78,7 @@ Examples of things we're interested in:
    :caption: Getting Started
    :name: toc-getting-started
 
+   intro
    before-you-start
    architecture
    installation
@@ -134,6 +135,7 @@ Examples of things we're interested in:
    :name: toc-reference
 
    limitations
+   glossary
 
 .. toctree::
    :maxdepth: 2
