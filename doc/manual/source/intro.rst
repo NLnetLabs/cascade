@@ -58,8 +58,8 @@ DNSSEC adds these record types:
   in the parent zone
 
 Each DNSSEC-enabled zone, including the root ``(.)``, a Top-Level Domain
-(TLD) such as ``.com``, or a Second-Level Domain (SLD) such as
-``example.com`` has its public key stored in DNSKEY records. The
+(TLD) such as ``(.com)``, or a Second-Level Domain (SLD) such as
+``(.example.com)`` has its public key stored in DNSKEY records. The
 corresponding private key is used to generate so-called Resource Record
 Signature (RRSIG) records, which are cryptographic signatures over the data
 in your zone. 
