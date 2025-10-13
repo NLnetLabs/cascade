@@ -52,7 +52,7 @@ DNSSEC adds these record types:
 - RRSIG, which contains a cryptographic signature
 - DNSKEY, which contains a public signing key
 - DS, which stores a hashed representation of a DNSKEY record
-- NSEC and NSEC3, which offer validated assurance that a DNS record *doesn't*
+- NSEC and NSEC3, which offer proof that a DNS record *doesn't*
   exist
 - CDNSKEY and CDS, allowing a child zone to request updates to DS record(s)
   in the parent zone
