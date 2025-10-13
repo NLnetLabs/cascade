@@ -1,7 +1,9 @@
 An Intro to DNSSEC
 ==================
 
-DNS Security Extensions (DNSSEC) protect end users against forged or modified DNS responses, both deliberate and accidental, by digitally signing DNS record data to allow its authenticity to be verified. 
+DNS Security Extensions (DNSSEC) protect end users against forged or modified
+DNS responses, both deliberate and accidental, by digitally signing DNS
+record data to allow its authenticity to be verified. 
 
 Though DNSSEC is often perceived as a complicated topic, Cascade tries to
 make the experience as understandable and robust as possible. In this section
@@ -49,7 +51,8 @@ signing and must be kept secret all all times.
 
 DNSSEC adds these record types:
 
-- RRSIG, which contains a cryptographic signature over an :term:`Resource Record Set (RRset)`
+- RRSIG, which contains a cryptographic signature over an :term:`Resource
+  Record Set (RRset)`
 - DNSKEY, which contains a public signing key
 - DS, which stores a hashed representation of a DNSKEY record
 - NSEC and NSEC3, which offer proof that a DNS record *doesn't*
@@ -107,10 +110,10 @@ Building a Chain of Trust
 """""""""""""""""""""""""
 
 DNSSEC relies on a chain of trust by creating a hierarchical system where
-trust in each DNS zone is bootstrapped from the zone above it, starting
-from the root zone, which acts as a trusted starting point with signatures that ship with DNS resolver software. Without a chain
-of trust, a DNSSEC-validating resolver wouldn't know where to begin trusting
-DNS data.
+trust in each DNS zone is bootstrapped from the zone above it, starting from
+the root zone, which acts as a trusted starting point with signatures that
+ship with DNS resolver software. Without a chain of trust, a
+DNSSEC-validating resolver wouldn't know where to begin trusting DNS data.
 
 The chain of trust works though the interaction of two key DNSSEC record
 types: DNSKEY records and Delegation Signer (DS) records. The DNSSEC Trust
@@ -122,11 +125,11 @@ secure delegation, the parent zone signs a hash of the child zone's KSK.
 This is called a DS record.
 
 To do this, the operator of a child zone (such as example.com) generates a
-KSK and then calculates a hash over it. This hash (aka digest) is then given to the
-parent zone (in this case .com). The parent zone publishes this digest as a
-DS record within its own zone file and signs it with its own Key Signing Key.
-This DS record effectively acts as a secure pointer to the child zone's KSK.
-This process is repeated all the way down the hierarchy. 
+KSK and then calculates a hash over it. This hash (aka digest) is then given
+to the parent zone (in this case .com). The parent zone publishes this digest
+as a DS record within its own zone file and signs it with its own Key Signing
+Key. This DS record effectively acts as a secure pointer to the child zone's
+KSK. This process is repeated all the way down the hierarchy. 
 
 Validation
 """"""""""
@@ -144,4 +147,7 @@ The other possible DNSSEC validation states are :term:`"secure" <Secure
 Variants
 """"""""
 
-Some operators prefer to combine the role of the :term:`Key Signing Key (KSK)` with that of the :term:`Zone Signing Key (KSK)`. In this setup, the DS record points to a so-called :term:`Combined Signing Key (CSK)` that signs all RRsets, not just the DNSKEY RRset. 
+Some operators prefer to combine the role of the :term:`Key Signing Key
+(KSK)` with that of the :term:`Zone Signing Key (KSK)`. In this setup, the DS
+record points to a so-called :term:`Combined Signing Key (CSK)` that signs
+all RRsets, not just the DNSKEY RRset. 
