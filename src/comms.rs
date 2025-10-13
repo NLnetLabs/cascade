@@ -231,5 +231,5 @@ pub enum ApplicationCommand {
     KeySetStatus {
         zone: StoredName,
         http_tx: oneshot::Sender<Result<String, KeySetCommandError>>,
-    }
+    },
 }
