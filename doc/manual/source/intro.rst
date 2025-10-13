@@ -20,17 +20,17 @@ DNS data. These can be categorised into roughly four types:
    resolver. 
 2. Cache Poisoning: an attacker injects fake DNS data into a DNS resolver's
    cache. When other users request the same record, the resolver serves the
-   malicious, cached information. DNSSEC's validation process prevents this
-   by ensuring the cached data is cryptographically signed by the
-   authoritative source. 
+   malicious, cached information. DNSSEC's :term:`validation <Validation>`
+   process prevents this by ensuring the cached data is cryptographically
+   signed by the authoritative source. 
 3. On-Path Attacks: DNSSEC helps prevent attackers from
    intercepting and altering DNS queries and responses, ensuring data
    integrity during transit. 
 4. Authenticated Denial of Existence: attackers can try to exploit
    vulnerabilities to forge an "unauthenticated" response to a non-existent
-   record (NXDOMAIN). DNSSEC uses NSEC records to provide a cryptographically
-   signed proof that a record does not exist, making the zone resistant to
-   this type of attack. 
+   record (NXDOMAIN). DNSSEC uses :term:`NSEC` or :term:`NSEC3` records to
+   provide a cryptographically signed proof that a record does not exist,
+   making the zone resistant to this type of attack. 
 
 DNSSEC uses digital signatures to ensure the response is authentic and has
 not been tampered with. By verifying DNS responses, DNSSEC prevents malicious
@@ -41,13 +41,15 @@ How DNSSEC Works
 
 DNSSEC adds an extra layer of information to DNS responses, allowing
 resolvers to verify that each answer is authentic. This is done by adding a
-digital signature to resource records grouped by type (RRsets) in a zone.
-These digital signatures are stored in DNS nameservers alongside common
-record types like A, AAAA, MX, CNAME, etc.
+digital signature to resource records grouped by type (:term:`RRsets
+<Resource Record Set (RRset)>`) in a zone. These digital signatures are
+stored in DNS nameservers alongside common record types like A, AAAA, MX,
+CNAME, etc.
 
-The keys that are used for DNSSEC are asymmetric, such as RSA and ECDSA
-(Elliptic Curve Digital Signature Algorithm). The private part is used for
-signing and must be kept secret all all times.
+The keys that are used for DNSSEC are asymmetric, such as :abbr:`RSA
+(Rivest-Shamir-Adleman cryptosystem)` and :abbr:`ECDSA (Elliptic Curve
+Digital Signature Algorithm)`. The private part is used for signing and must
+be kept secret all all times.
 
 DNSSEC adds these record types:
 
@@ -117,19 +119,20 @@ DNSSEC-validating resolver wouldn't know where to begin trusting DNS data.
 
 The chain of trust works though the interaction of two key DNSSEC record
 types: DNSKEY records and Delegation Signer (DS) records. The DNSSEC Trust
-Anchor is the top of this chain, representing a public Key Signing Key (KSK)
-that is implicitly trusted by a DNSSEC-validating resolver. 
+Anchor is the top of this chain, representing a public :term:`Key signing key
+(KSK)` that is implicitly trusted by a DNSSEC-validating resolver. 
 
 A parent zone doesn't directly sign the data in a child zone. To establish a
 secure delegation, the parent zone signs a hash of the child zone's KSK. 
 This is called a DS record.
 
-To do this, the operator of a child zone (such as example.com) generates a
-KSK and then calculates a hash over it. This hash (aka digest) is then given
-to the parent zone (in this case .com). The parent zone publishes this digest
-as a DS record within its own zone file and signs it with its own Zone
-Signing Key. This DS record effectively acts as a secure pointer to the child
-zone's KSK. This process is repeated all the way down the hierarchy. 
+To do this, the operator of a :term:`child zone <Child (Zone)>` (such as
+example.com) generates a KSK and then calculates a hash over it. This hash
+(aka digest) is then given to the :term:`parent zone <Parent (Zone)>` (in
+this case .com). The parent zone publishes this digest as a DS record within
+its own zone file and signs it with its own Zone Signing Key. This DS record
+effectively acts as a secure pointer to the child zone's KSK. This process is
+repeated all the way down the hierarchy. 
 
 Validation
 """"""""""
