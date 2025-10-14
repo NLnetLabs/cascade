@@ -540,6 +540,11 @@ impl ZoneServer {
                 ("CASCADE_ZONE", &*zone_name.to_string()),
                 ("CASCADE_SERIAL", &*zone_serial.to_string()),
                 ("CASCADE_SERVER", &*review_server.addr().to_string()),
+                ("CASCADE_SERVER_IP", &*review_server.addr().ip().to_string()),
+                (
+                    "CASCADE_SERVER_PORT",
+                    &*review_server.addr().port().to_string(),
+                ),
             ])
             .spawn()
         {
