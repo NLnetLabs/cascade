@@ -435,9 +435,23 @@ impl Zone {
                                         ZoneReviewStatus::Rejected => "rejected",
                                     }
                                 ),
-                                HistoricalEvent::KeySetCommand { cmd, elapsed } => {
+                                HistoricalEvent::KeySetCommand {
+                                    cmd,
+                                    elapsed,
+                                    warning: None,
+                                } => {
                                     format!(
                                         "Keyset command '{cmd}' succeeded in {}s",
+                                        elapsed.as_secs()
+                                    )
+                                }
+                                HistoricalEvent::KeySetCommand {
+                                    cmd,
+                                    elapsed,
+                                    warning: Some(warning),
+                                } => {
+                                    format!(
+                                        "Keyset command '{cmd}' succeeded in {}s with warning: {warning}",
                                         elapsed.as_secs()
                                     )
                                 }
@@ -519,11 +533,9 @@ impl Zone {
                     println!("    Actively used for signing");
                 }
             }
-            if let Some(key_status) = zone.key_status {
-                println!("  Details:");
-                for line in key_status.lines() {
-                    println!("    {line}");
-                }
+            println!("  Details:");
+            for line in zone.key_status.lines() {
+                println!("    {line}");
             }
         }
 

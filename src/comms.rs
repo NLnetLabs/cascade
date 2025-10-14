@@ -219,11 +219,16 @@ pub enum ApplicationCommand {
     RollKey {
         zone: StoredName,
         key_roll: api::keyset::KeyRoll,
-        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRollError>>,
+        http_tx: mpsc::Sender<Result<(), String>>,
     },
     RemoveKey {
         zone: StoredName,
         key_remove: api::keyset::KeyRemove,
-        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRemoveError>>,
+        http_tx: mpsc::Sender<Result<(), String>>,
+    },
+
+    KeySetStatus {
+        zone: StoredName,
+        http_tx: oneshot::Sender<Result<String, String>>,
     },
 }

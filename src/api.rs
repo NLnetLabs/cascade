@@ -286,7 +286,7 @@ pub struct ZoneStatus {
     pub policy: String,
     pub stage: ZoneStage,
     pub keys: Vec<KeyInfo>,
-    pub key_status: Option<String>,
+    pub key_status: String,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
@@ -611,32 +611,10 @@ pub mod keyset {
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub struct KeyRollResult {
-        pub zone: Name<Bytes>,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub enum KeyRollError {
-        DnstCommandError(String),
-        RxError,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct KeyRemove {
         pub key: String,
         pub force: bool,
         pub continue_flag: bool,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub struct KeyRemoveResult {
-        pub zone: Name<Bytes>,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub enum KeyRemoveError {
-        DnstCommandError(String),
-        RxError,
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]

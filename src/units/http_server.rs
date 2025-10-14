@@ -1,4 +1,3 @@
-use std::process::Command;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -36,7 +35,6 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
-use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
@@ -253,8 +251,6 @@ impl HttpServer {
         let mut zone_loaded_in = None;
         let mut zone_loaded_bytes = 0;
         let mut zone_loaded_record_count = 0;
-        let dnst_binary_path;
-        let cfg_path;
         let state_path;
         let app_cmd_tx;
         let policy;
@@ -267,9 +263,7 @@ impl HttpServer {
         let pipeline_mode;
         {
             let locked_state = state.center.state.lock().unwrap();
-            dnst_binary_path = locked_state.config.dnst_binary_path.clone();
             let keys_dir = &locked_state.config.keys_dir;
-            cfg_path = mk_dnst_keyset_cfg_file_path(keys_dir, &name);
             state_path = mk_dnst_keyset_state_file_path(keys_dir, &name);
             app_cmd_tx = state.center.app_cmd_tx.clone();
             let zone = locked_state
@@ -358,55 +352,54 @@ impl HttpServer {
 
         // Query key status
         let key_status = {
-            // TODO: Move this into key manager as that is the component that knows
-            // about dnst?
-            if let Some(stdout) = Command::new(dnst_binary_path.as_std_path())
-                .arg("keyset")
-                .arg("-c")
-                .arg(cfg_path)
-                .arg("status")
-                .arg("-v")
-                .output()
-                .ok()
-                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            {
-                // Invoke dnst to get status information about the keys for the
-                // zone. Strip out lines that would be correct for a dnst user but
-                // confusing for a cascade user, and rewrite advice to invoke dnst
-                // to be equivalent advice to invoke cascade.
-                let mut sanitized_output = String::new();
-                for line in stdout.lines() {
-                    if line.contains("Next time to run the 'cron' subcommand") {
-                        continue;
-                    }
+            let (tx, rx) = oneshot::channel();
+            app_cmd_tx
+                .send((
+                    "KM".to_owned(),
+                    ApplicationCommand::KeySetStatus {
+                        zone: name.clone(),
+                        http_tx: tx,
+                    },
+                ))
+                .ok();
+            match rx.await {
+                Err(_) => "Internal error: Could not retrieve status response".to_string(),
+                Ok(Err(output)) | Ok(Ok(output)) => {
+                    // Strip out lines that would be correct for a dnst user
+                    // but confusing for a cascade user, and rewrite advice to
+                    // invoke dnst to be equivalent advice to invoke cascade.
+                    let mut sanitized_output = String::new();
+                    for line in output.lines() {
+                        if line.contains("Next time to run the 'cron' subcommand") {
+                            continue;
+                        }
 
-                    if line.contains("dnst keyset -c") {
-                        // The config file path after -c should NOT contain a
-                        // space as it is based on a zone name, and zone names
-                        // cannot contain spaces. Find the config file path so
-                        // that we can strip it out (as users of the cascade
-                        // CLI should not need to know or care what internal
-                        // dnst config files are being used).
-                        let mut parts = line.split(' ');
-                        if parts.any(|part| part == "-c") {
-                            if let Some(dnst_config_path) = parts.next() {
-                                let sanitized_line = line.replace(
-                                    &format!("dnst keyset -c {dnst_config_path}"),
-                                    &format!("cascade keyset {name}"),
-                                );
-                                sanitized_output.push_str(&sanitized_line);
-                                sanitized_output.push('\n');
-                                continue;
+                        if line.contains("dnst keyset -c") {
+                            // The config file path after -c should NOT contain a
+                            // space as it is based on a zone name, and zone names
+                            // cannot contain spaces. Find the config file path so
+                            // that we can strip it out (as users of the cascade
+                            // CLI should not need to know or care what internal
+                            // dnst config files are being used).
+                            let mut parts = line.split(' ');
+                            if parts.any(|part| part == "-c") {
+                                if let Some(dnst_config_path) = parts.next() {
+                                    let sanitized_line = line.replace(
+                                        &format!("dnst keyset -c {dnst_config_path}"),
+                                        &format!("cascade keyset {name}"),
+                                    );
+                                    sanitized_output.push_str(&sanitized_line);
+                                    sanitized_output.push('\n');
+                                    continue;
+                                }
                             }
                         }
-                    }
 
-                    sanitized_output.push_str(line);
-                    sanitized_output.push('\n');
+                        sanitized_output.push_str(line);
+                        sanitized_output.push('\n');
+                    }
+                    sanitized_output
                 }
-                Some(sanitized_output)
-            } else {
-                None
             }
         };
 
@@ -853,7 +846,7 @@ impl HttpServer {
         State(state): State<Arc<HttpServerState>>,
         Path(zone): Path<Name<Bytes>>,
         Json(key_roll): Json<KeyRoll>,
-    ) -> Json<Result<KeyRollResult, KeyRollError>> {
+    ) -> Json<Result<(), String>> {
         let (tx, mut rx) = mpsc::channel(10);
         state
             .center
@@ -870,21 +863,23 @@ impl HttpServer {
 
         let res = rx.recv().await;
         let Some(res) = res else {
-            return Json(Err(KeyRollError::RxError));
+            return Json(Err(
+                "Internal error: Failed to send RollKey command to KeyManager.".to_string(),
+            ));
         };
 
         if let Err(e) = res {
             return Json(Err(e));
         }
 
-        Json(Ok(KeyRollResult { zone }))
+        Json(Ok(()))
     }
 
     async fn key_remove(
         State(state): State<Arc<HttpServerState>>,
         Path(zone): Path<Name<Bytes>>,
         Json(key_remove): Json<KeyRemove>,
-    ) -> Json<Result<KeyRemoveResult, KeyRemoveError>> {
+    ) -> Json<Result<(), String>> {
         let (tx, mut rx) = mpsc::channel(10);
         state
             .center
@@ -901,14 +896,16 @@ impl HttpServer {
 
         let res = rx.recv().await;
         let Some(res) = res else {
-            return Json(Err(KeyRemoveError::RxError));
+            return Json(Err(
+                "Internal error: Failed to send RemoveKey command to KeyManager.".to_string(),
+            ));
         };
 
         if let Err(e) = res {
             return Json(Err(e));
         }
 
-        Json(Ok(KeyRemoveResult { zone }))
+        Json(Ok(()))
     }
 }
 
