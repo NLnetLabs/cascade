@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread::available_parallelism;
 
@@ -17,7 +16,6 @@ use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServerUnit};
 use crate::units::zone_signer::ZoneSignerUnit;
 use daemonbase::process::EnvSocketsError;
-use domain::zonetree::StoredName;
 use futures::future::join_all;
 use log::debug;
 use tokio::sync::mpsc::{self};
@@ -76,34 +74,6 @@ pub async fn spawn(
     tokio::spawn(target.run(center_rx, update_rx));
     *center_tx_slot = Some(center_tx);
 
-    // let mut kmip_server_conn_settings = HashMap::new();
-
-    // let hsm_relay_host = std::env::var("KMIP2PKCS11_HOST").ok();
-    // let hsm_relay_port = std::env::var("KMIP2PKCS11_PORT")
-    //     .ok()
-    //     .and_then(|v| v.parse::<u16>().ok());
-
-    // if let Some(server_addr) = hsm_relay_host {
-    //     if let Some(server_port) = hsm_relay_port {
-    //         kmip_server_conn_settings.insert(
-    //             "hsmrelay".to_string(),
-    //             KmipServerConnectionSettings {
-    //                 server_addr,
-    //                 server_port,
-    //                 server_insecure: true,
-    //                 server_username: std::env::var("KMIP2PKCS11_USERNAME").ok(),
-    //                 server_password: std::env::var("KMIP2PKCS11_PASSWORD").ok(),
-    //                 ..Default::default()
-    //             },
-    //         );
-    //     }
-    // }
-
-    let zone_name =
-        StoredName::from_str(&std::env::var("ZL_IN_ZONE").unwrap_or("example.com.".to_string()))
-            .unwrap();
-    let xfr_out = std::env::var("PS_XFR_OUT").unwrap_or("127.0.0.1:8055 KEY sec1-key".into());
-
     // Collate oneshot unit ready signal receivers by unit name.
     let mut unit_ready_rxs = vec![];
     let mut unit_join_handles = HashMap::new();
@@ -123,7 +93,6 @@ pub async fn spawn(
     log::info!("Starting unit 'RS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
-        _xfr_out: HashMap::from([(zone_name.clone(), xfr_out)]),
         mode: zone_server::Mode::Prepublish,
         source: zone_server::Source::UnsignedZones,
     };
@@ -170,7 +139,6 @@ pub async fn spawn(
     log::info!("Starting unit 'RS2'");
     let unit = ZoneServerUnit {
         center: center.clone(),
-        _xfr_out: HashMap::from([(zone_name.clone(), "127.0.0.1:8055 KEY sec1-key".into())]),
         mode: zone_server::Mode::Prepublish,
         source: zone_server::Source::SignedZones,
     };
@@ -214,7 +182,6 @@ pub async fn spawn(
     log::info!("Starting unit 'PS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
-        _xfr_out: HashMap::from([(zone_name, "127.0.0.1:8055".into())]),
         mode: zone_server::Mode::Publish,
         source: zone_server::Source::PublishedZones,
     };

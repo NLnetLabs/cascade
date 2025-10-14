@@ -80,9 +80,6 @@ pub enum Source {
 pub struct ZoneServerUnit {
     pub center: Arc<Center>,
 
-    /// XFR out per zone: Allow XFR to, and when with a port also send NOTIFY to.
-    pub _xfr_out: HashMap<StoredName, String>,
-
     pub mode: Mode,
 
     pub source: Source,
