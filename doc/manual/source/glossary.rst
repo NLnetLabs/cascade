@@ -48,7 +48,7 @@ Glossary
          "An RRset MAY have multiple RRSIG RRs associated with it. Note that
          as RRSIG RRs are closely tied to the RRsets whose signatures they
          contain, RRSIG RRs, unlike all other DNS RR types, do not form
-         RRsets.  In particular, the :term:`TTL`` values among RRSIG RRs with
+         RRsets.  In particular, the :term:`TTL` values among RRSIG RRs with
          a common owner name do not follow the RRset rules described in
          :RFC:`2181`."
     

@@ -151,6 +151,6 @@ Variants
 """"""""
 
 Some operators prefer to combine the role of the :term:`Key Signing Key
-(KSK)` with that of the :term:`Zone Signing Key (KSK)`. In this setup, the DS
+(KSK)` with that of the :term:`Zone Signing Key (ZSK)`. In this setup, the DS
 record points to a so-called :term:`Combined Signing Key (CSK)` that signs
-all RRsets, not just the DNSKEY RRset. 
+all RRsets, not just the DNSKEY RRset.
