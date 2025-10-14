@@ -21,9 +21,12 @@ use domain::{
         iana::{Class, Rcode},
         name::Label,
         Name, NameBuilder, Rtype,
-    }, rdata::ZoneRecordData, zonetree::{
-        error::OutOfZone, types::StoredRecordData, Answer, InMemoryZoneDiff, ReadableZone, Rrset, SharedRrset, StoredName, StoredRecord, WalkOp, WritableZone, WritableZoneNode, ZoneStore
-    }
+    },
+    rdata::ZoneRecordData,
+    zonetree::{
+        error::OutOfZone, Answer, InMemoryZoneDiff, ReadableZone, Rrset, SharedRrset, StoredName,
+        WalkOp, WritableZone, WritableZoneNode, ZoneStore,
+    },
 };
 use log::trace;
 
