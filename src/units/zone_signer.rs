@@ -368,7 +368,7 @@ impl ZoneSigner {
                 let mut report = vec![];
                 let zone_signer_status = self.signer_status.read().await;
                 let q = zone_signer_status.zones_being_signed.read().await;
-                for q_item in q.iter().rev() {
+                for q_item in q.iter() {
                     if let Some(stage_report) = self.mk_signing_report(q_item.clone()).await {
                         report.push(SigningQueueReport {
                             zone_name: q_item.read().await.zone_name.clone(),
