@@ -64,6 +64,7 @@ impl Status {
                         ansi::GRAY,
                         ansi::RESET
                     );
+                    println!("  [{:>2}]: {:<25} {:<16} Action", "#", "When", "Zone");
                     for (i, report) in response.signing_queue.iter().enumerate() {
                         let zone_name = report.zone_name.to_string();
                         let action = &report.signing_report.current_action;
@@ -74,7 +75,6 @@ impl Status {
                         };
                         let when = DateTime::<Utc>::from(when)
                             .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
-                        println!("  [{:>2}]: {:<25} {:<16} Action", "#", "When", "Zone");
                         println!(
                             "{colour}  [{i:>2}]: {when:<25} {zone_name:<16} {action}{}",
                             ansi::RESET
