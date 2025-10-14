@@ -56,7 +56,7 @@ impl Status {
                     println!("  The signing queue is currently empty.");
                 } else {
                     println!(
-                        "  Key: {}In Progress{}, {}Pending{}, {}Finished{}",
+                        "  Key: {}In Progress (>){}, {}Pending (-){}, {}Finished (<){}",
                         ansi::GREEN,
                         ansi::RESET,
                         ansi::CYAN,
@@ -64,19 +64,19 @@ impl Status {
                         ansi::GRAY,
                         ansi::RESET
                     );
-                    println!("  [{:>2}]: {:<25} {:<16} Action", "#", "When", "Zone");
+                    println!("  {:>2}:   {:<25} {:<16} Action", "#", "When", "Zone");
                     for (i, report) in response.signing_queue.iter().enumerate() {
                         let zone_name = report.zone_name.to_string();
                         let action = &report.signing_report.current_action;
-                        let (colour, when) = match &report.signing_report.stage_report {
-                            SigningStageReport::Requested(r) => (ansi::CYAN, r.requested_at),
-                            SigningStageReport::InProgress(r) => (ansi::GREEN, r.started_at),
-                            SigningStageReport::Finished(r) => (ansi::GRAY, r.finished_at),
+                        let (colour, state, when) = match &report.signing_report.stage_report {
+                            SigningStageReport::Requested(r) => (ansi::CYAN, " ", r.requested_at),
+                            SigningStageReport::InProgress(r) => (ansi::GREEN, ">", r.started_at),
+                            SigningStageReport::Finished(r) => (ansi::GRAY, "<", r.finished_at),
                         };
                         let when = DateTime::<Utc>::from(when)
                             .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
                         println!(
-                            "{colour}  [{i:>2}]: {when:<25} {zone_name:<16} {action}{}",
+                            "{colour}  {i:>2}: {state} {when:<25} {zone_name:<16} {action}{}",
                             ansi::RESET
                         );
                     }
