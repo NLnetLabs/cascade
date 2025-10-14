@@ -81,6 +81,11 @@ fn main() -> ExitCode {
             logger.apply(x)
         }
 
+        if !check_dnst_version(&state) {
+            // Error is already logged in the function
+            return ExitCode::FAILURE;
+        }
+
         // Create required subdirectories (and their parents) if they don't
         // exist. This is only needed for directories to which we write files
         // without using util::write_file() as that function creates the
@@ -114,6 +119,11 @@ fn main() -> ExitCode {
         // Update the configured logging setup from state.
         if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
             logger.apply(x)
+        }
+
+        if !check_dnst_version(&state) {
+            // Error is already logged in the function
+            return ExitCode::FAILURE;
         }
 
         log::info!("Successfully loaded the global state file");
@@ -150,11 +160,6 @@ fn main() -> ExitCode {
             log::error!("Failed to load the TSIG store: {err}");
             return ExitCode::FAILURE;
         }
-    }
-
-    if !check_dnst_version(&state) {
-        // Error is already logged in the function
-        return ExitCode::FAILURE;
     }
 
     // Bind to listen addresses before daemonizing.
