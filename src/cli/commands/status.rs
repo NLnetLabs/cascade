@@ -66,7 +66,10 @@ impl Status {
                         let when = DateTime::<Utc>::from(when)
                             .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
                         println!("  [{:>2}]: {:<25} {:<16} Action", "#", "When", "Zone");
-                        println!("{colour}  [{i:>2}]: {when:<25} {zone_name:<16} {action}{}", ansi::RESET);
+                        println!(
+                            "{colour}  [{i:>2}]: {when:<25} {zone_name:<16} {action}{}",
+                            ansi::RESET
+                        );
                     }
                 }
             }
