@@ -369,7 +369,7 @@ fn check_dnst_version(state: &State) -> bool {
     let mut version_parts = dnst_version.split([' ', '\n']);
     let (Some(name), Some(version)) = (version_parts.next(), version_parts.next()) else {
         log::error!(
-            "Incorrect dnst binary configured: '{} --version' output was inproper",
+            "Incorrect dnst binary configured: '{} --version' output was improper",
             state.config.dnst_binary_path
         );
         return false;
