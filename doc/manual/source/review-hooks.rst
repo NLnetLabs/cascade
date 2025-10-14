@@ -1,11 +1,6 @@
 Review Hooks
 ============
 
-.. TODO:
-    - [kinda?] emphasise review steps (loaded, signed)
-    - [x] emphasise usability of 3rd-party tools
-    - [x] provide cookbook example (validns/dnssec-verify)
-
 Cascade offers two review hook points in its signing pipeline for automated zone validation by user provided review scripts.
 These review hooks can be used to perform any validation the user requires to ensure their zone is correct at all stages, using any (3rd-party) tools desired.
 
