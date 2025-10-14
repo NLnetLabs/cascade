@@ -55,6 +55,15 @@ impl Status {
                 if response.signing_queue.is_empty() {
                     println!("  The signing queue is currently empty.");
                 } else {
+                    println!(
+                        "  Key: {}In Progress{}, {}Pending{}, {}Finished{}",
+                        ansi::GREEN,
+                        ansi::RESET,
+                        ansi::CYAN,
+                        ansi::RESET,
+                        ansi::GRAY,
+                        ansi::RESET
+                    );
                     for (i, report) in response.signing_queue.iter().enumerate() {
                         let zone_name = report.zone_name.to_string();
                         let action = &report.signing_report.current_action;
