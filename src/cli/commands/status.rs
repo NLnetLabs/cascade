@@ -1,7 +1,10 @@
+use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 
 use crate::api::ServerStatusResult;
 use crate::cli::client::{format_http_error, CascadeApiClient};
+use crate::common::ansi;
+use crate::zonemaintenance::types::SigningStageReport;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Status {
@@ -33,7 +36,39 @@ impl Status {
                     .await
                     .map_err(format_http_error)?;
 
-                println!("Server status: {:?}", response)
+                if !response.hard_halted_zones.is_empty() {
+                    eprintln!("The following zones are hard-halted due to a serious problem:");
+                    for (zone_name, err) in response.hard_halted_zones {
+                        eprintln!("  - {zone_name}: {err}");
+                    }
+                    eprintln!();
+                }
+
+                if !response.soft_halted_zones.is_empty() {
+                    eprintln!("The following zones are soft-halted:");
+                    for (zone_name, err) in response.soft_halted_zones {
+                        eprintln!("  - {zone_name}: {err}");
+                    }
+                }
+
+                println!("Signing queue:");
+                if response.signing_queue.is_empty() {
+                    println!("  The signing queue is currently empty.");
+                } else {
+                    for (i, report) in response.signing_queue.iter().enumerate() {
+                        let zone_name = report.zone_name.to_string();
+                        let action = &report.signing_report.current_action;
+                        let (colour, when) = match &report.signing_report.stage_report {
+                            SigningStageReport::Requested(r) => (ansi::CYAN, r.requested_at),
+                            SigningStageReport::InProgress(r) => (ansi::GREEN, r.started_at),
+                            SigningStageReport::Finished(r) => (ansi::GRAY, r.finished_at),
+                        };
+                        let when = DateTime::<Utc>::from(when)
+                            .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+                        println!("  [{:>2}]: {:<25} {:<16} Action", "#", "When", "Zone");
+                        println!("{colour}  [{i:>2}]: {when:<25} {zone_name:<16} {action}{}", ansi::RESET);
+                    }
+                }
             }
         }
         Ok(())

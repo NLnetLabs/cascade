@@ -12,7 +12,7 @@ use crate::center;
 use crate::units::http_server::KmipServerState;
 use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zone::{HistoryItem, PipelineMode};
-use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
+use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
@@ -375,7 +375,9 @@ impl fmt::Display for ZoneReloadError {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
-    // pub name: Name<Bytes>,
+    pub soft_halted_zones: Vec<(StoredName, String)>,
+    pub hard_halted_zones: Vec<(StoredName, String)>,
+    pub signing_queue: Vec<SigningQueueReport>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

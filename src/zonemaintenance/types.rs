@@ -1157,6 +1157,14 @@ pub struct SigningReport {
     pub stage_report: SigningStageReport,
 }
 
+//------------ SigningQueueReport -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningQueueReport {
+    pub zone_name: StoredName,
+    pub signing_report: SigningReport,
+}
+
 //------------ SigningStageReport -------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -45,6 +45,7 @@ use crate::units::zone_loader::ZoneLoaderReport;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
+use crate::zone::PipelineMode;
 use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::read_soa;
 use crate::zonemaintenance::types::ZoneReportDetails;
@@ -845,8 +846,45 @@ impl HttpServer {
         Json(())
     }
 
-    async fn status() -> Json<ServerStatusResult> {
-        Json(ServerStatusResult {})
+    async fn status(State(state): State<Arc<HttpServerState>>) -> Json<ServerStatusResult> {
+        let mut soft_halted_zones = vec![];
+        let mut hard_halted_zones = vec![];
+
+        // Determine which pipelines are halted.
+        for zone in state.center.state.lock().unwrap().zones.iter() {
+            if let Ok(zone_state) = zone.0.state.lock() {
+                match &zone_state.pipeline_mode {
+                    PipelineMode::Running => { /* Nothing to do */ }
+                    PipelineMode::SoftHalt(err) => {
+                        soft_halted_zones.push((zone.0.name.clone(), err.clone()))
+                    }
+                    PipelineMode::HardHalt(err) => {
+                        hard_halted_zones.push((zone.0.name.clone(), err.clone()))
+                    }
+                }
+            }
+        }
+
+        // Fetch the signing queue.
+        let (tx, rx) = oneshot::channel();
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "ZS".to_owned(),
+                ApplicationCommand::GetQueueReport { report_tx: tx },
+            ))
+            .ok();
+        let signing_queue = match rx.await {
+            Ok(q) => q,
+            Err(_) => vec![],
+        };
+
+        Json(ServerStatusResult {
+            soft_halted_zones,
+            hard_halted_zones,
+            signing_queue,
+        })
     }
 
     async fn key_roll(
