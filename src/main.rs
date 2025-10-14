@@ -404,7 +404,7 @@ fn check_dnst_version(state: &State) -> bool {
     log::debug!("Checking dnst version string '{version}'");
     let Ok((major, minor, patch)) = unpack_version_string(version) else {
         log::error!(
-            "Incorrect dnst binary configured: '{} --version' version string was inproper",
+            "Incorrect dnst binary configured: '{} --version' version string was improper",
             state.config.dnst_binary_path
         );
         return false;
