@@ -1,5 +1,5 @@
 use cascade::{
-    center::{self, Center},
+    center::{self, Center, State},
     comms::ApplicationCommand,
     config::{Config, SocketConfig},
     daemon::{daemonize, PreBindError, SocketProvider},
@@ -87,6 +87,11 @@ fn main() -> ExitCode {
             Err(e) => eprintln!("ERROR: Failed to update logging with settings from config... {e}"),
         }
 
+        if !check_dnst_version(&state) {
+            // Error is already logged in the function
+            return ExitCode::FAILURE;
+        }
+
         // Create required subdirectories (and their parents) if they don't
         // exist. This is only needed for directories to which we write files
         // without using util::write_file() as that function creates the
@@ -124,6 +129,11 @@ fn main() -> ExitCode {
             Err(e) => eprintln!(
                 "ERROR: Failed to update logging with settings from existing state... {e}"
             ),
+        }
+
+        if !check_dnst_version(&state) {
+            // Error is already logged in the function
+            return ExitCode::FAILURE;
         }
 
         log::info!("Successfully loaded the global state file");
@@ -323,4 +333,118 @@ fn pre_bind_server_sockets_as_needed<'a, T: Iterator<Item = &'a SocketConfig>>(
         }
     }
     Ok(())
+}
+
+/// Check that the configured dnst binary is executable, prints the correct
+/// version, and has the keyset subcommand.
+fn check_dnst_version(state: &State) -> bool {
+    log::debug!(
+        "Checking dnst binary version ('{}')",
+        state.config.dnst_binary_path
+    );
+    let dnst_version = match std::process::Command::new(state.config.dnst_binary_path.as_os_str())
+        .arg("--version")
+        .output()
+    {
+        Err(e) => {
+            log::error!(
+                "Unable to verify version of dnst binary (configured as '{}'): {e}",
+                state.config.dnst_binary_path
+            );
+            return false;
+        }
+        Ok(o) => String::from_utf8_lossy(&o.stderr).into_owned(),
+    };
+
+    log::debug!("Checking dnst keyset subcommand capability");
+    // Check if the keyset subcommand exists
+    match std::process::Command::new(state.config.dnst_binary_path.as_os_str())
+        .args(["keyset", "--help"])
+        .output()
+    {
+        Err(e) => {
+            log::error!(
+                "Unable to verify keyset capability of dnst binary (configured as '{}'): {e}",
+                state.config.dnst_binary_path
+            );
+            return false;
+        }
+        Ok(s) => {
+            if !s.status.success() {
+                log::error!(
+                    "Unsupported dnst binary (configured as '{}'): keyset subcommand not supported",
+                    state.config.dnst_binary_path
+                );
+                return false;
+            }
+        }
+    }
+
+    // dnst --version prints: 'dnst 0.1.0-alpha'; but could be include more information in the
+    // future. This will make sure to only read the first two segments.
+    let mut version_parts = dnst_version.split([' ', '\n']);
+    let (Some(name), Some(version)) = (version_parts.next(), version_parts.next()) else {
+        log::error!(
+            "Incorrect dnst binary configured: '{} --version' output was improper",
+            state.config.dnst_binary_path
+        );
+        return false;
+    };
+
+    // split off any suffix (like '-alpha' or '-rc1') from version string
+    let version = match version.split_once('-') {
+        None => version,
+        Some((v, _)) => v,
+    };
+
+    // The version string can be wrong in many ways, but we don't really
+    // care in which way it is wrong. Therefore, using this function and only
+    // printing one error message at the call-site below.
+    fn unpack_version_string(version: &str) -> Result<(u32, u32, u32), ()> {
+        let (Ok(major), Ok(minor), Ok(patch)) = ({
+            let mut v = version.split('.');
+            let (Some(major), Some(minor), Some(patch)) = (v.next(), v.next(), v.next()) else {
+                return Err(());
+            };
+            (
+                major.parse::<u32>(),
+                minor.parse::<u32>(),
+                patch.parse::<u32>(),
+            )
+        }) else {
+            return Err(());
+        };
+        Ok((major, minor, patch))
+    }
+
+    log::debug!("Checking dnst version string '{version}'");
+    let Ok((major, minor, patch)) = unpack_version_string(version) else {
+        log::error!(
+            "Incorrect dnst binary configured: '{} --version' version string was improper",
+            state.config.dnst_binary_path
+        );
+        return false;
+    };
+
+    // Change this string and the match pattern to whatever version we require in the future
+    let required_version = ">0.1.0";
+    let res = match (major, minor, patch) {
+        // major = 0; minor >= 1; patch = *
+        (0, 1.., ..) => true,
+        _ => false,
+    };
+
+    if res {
+        log::info!(
+            "Using dnst binary '{}' with name '{name}' and version '{version}'",
+            state.config.dnst_binary_path
+        );
+    } else {
+        log::error!(
+            "Configured dnst binary '{}' version ({version}) is unsupported. Expected {required_version}",
+            state.config.dnst_binary_path
+        );
+    }
+
+    res
 }
