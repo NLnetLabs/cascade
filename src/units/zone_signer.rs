@@ -1735,7 +1735,7 @@ impl ZoneSignerStatus {
     pub fn new() -> Self {
         Self {
             zones_being_signed: Arc::new(tokio::sync::RwLock::new(VecDeque::with_capacity(
-                SIGNING_QUEUE_SIZE + 1, // +1 so that there is a free slot to push_back() to even when "full"
+                SIGNING_QUEUE_SIZE,
             ))),
             zone_semaphores: Default::default(),
             queue_semaphore: Arc::new(Semaphore::new(SIGNING_QUEUE_SIZE)),
