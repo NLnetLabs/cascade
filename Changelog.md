@@ -36,6 +36,8 @@ Released yyyy-mm-dd.
 - Fix home directory for useradd cascade in packages by @mozzieongit ([#171])
 - Fix error on startup "Could not load the state file: invalid type: map,
   expected a string" by @mozzieongit ([#184], [#189])
+- Ensure `dnst keyset` warnings are logged and included in zone history
+  by @ximon18 ([#207])
 - Fix "Cannot acquire the queue semaphore" causing signing to be cancelled
   by @ximon18 ([#209])
 
@@ -46,7 +48,6 @@ Released yyyy-mm-dd.
 - Check for compatible `dnst` on startup by @mozzieongit ([#180])
 - Remove non-existing variable in example review script comment by @jpmens
   ([#196])
-- Check for compatible `dnst` on startup
 - Set homepage and documentation properties in Cargo.toml by @maertsen
   (98d988d0)
 
@@ -89,6 +90,7 @@ Cascade and extensively reporting the issues they found.
 [#189]: https://github.com/NLnetLabs/cascade/pull/189
 [#191]: https://github.com/NLnetLabs/cascade/pull/191
 [#196]: https://github.com/NLnetLabs/cascade/pull/196
+[#207]: https://github.com/NLnetLabs/cascade/pull/207
 [#208]: https://github.com/NLnetLabs/cascade/pull/208
 [#209]: https://github.com/NLnetLabs/cascade/pull/209
 [#210]: https://github.com/NLnetLabs/cascade/pull/210
