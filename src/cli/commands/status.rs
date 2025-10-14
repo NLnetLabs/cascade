@@ -69,7 +69,7 @@ impl Status {
                         let zone_name = report.zone_name.to_string();
                         let action = &report.signing_report.current_action;
                         let (colour, state, when) = match &report.signing_report.stage_report {
-                            SigningStageReport::Requested(r) => (ansi::CYAN, " ", r.requested_at),
+                            SigningStageReport::Requested(r) => (ansi::CYAN, "-", r.requested_at),
                             SigningStageReport::InProgress(r) => (ansi::GREEN, ">", r.started_at),
                             SigningStageReport::Finished(r) => (ansi::GRAY, "<", r.finished_at),
                         };
