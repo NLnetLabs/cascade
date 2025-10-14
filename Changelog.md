@@ -50,6 +50,8 @@ Released yyyy-mm-dd.
   ([#196])
 - Set homepage and documentation properties in Cargo.toml by @maertsen
   (98d988d0)
+- Add CASCADE_SERVER_IP and CASCADE_SERVER_PORT environment variables for
+  review hooks by @mozzieongit ([#213])
 
 ### Documentation improvements
 
@@ -94,6 +96,7 @@ Cascade and extensively reporting the issues they found.
 [#208]: https://github.com/NLnetLabs/cascade/pull/208
 [#209]: https://github.com/NLnetLabs/cascade/pull/209
 [#210]: https://github.com/NLnetLabs/cascade/pull/210
+[#213]: https://github.com/NLnetLabs/cascade/pull/213
 
 
 ## 0.1.0-alpha 'Globen'
