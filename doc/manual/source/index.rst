@@ -147,6 +147,7 @@ Examples of things we're interested in:
    man/cascaded-config.toml
    man/cascaded-policy.toml
    man/cascade-config
+   man/cascade-health
    man/cascade-hsm
    man/cascade-keyset
    man/cascade-policy
