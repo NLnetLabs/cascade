@@ -1,6 +1,5 @@
 use core::future::ready;
 
-use std::collections::HashMap;
 use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
@@ -79,9 +78,6 @@ pub enum Source {
 #[derive(Debug)]
 pub struct ZoneServerUnit {
     pub center: Arc<Center>,
-
-    /// XFR out per zone: Allow XFR to, and when with a port also send NOTIFY to.
-    pub _xfr_out: HashMap<StoredName, String>,
 
     pub mode: Mode,
 
