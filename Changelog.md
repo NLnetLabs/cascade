@@ -20,9 +20,12 @@ Released yyyy-mm-dd.
 
 ### Breaking changes
 
+- Introduce stdout/stderr log targets to replace using File to log to stdout by
+  @mozzieongit ([#176])
 
 ### New
 
+- Added a `cascade health` CLI subcommand by @ximon18 ([#208])
 
 ### Bug fixes
 
@@ -38,13 +41,10 @@ Released yyyy-mm-dd.
 
 ### Other changes
 
-- Introduce stdout/stderr log targets to replace using File to log to stdout by
-  @mozzieongit ([#176])
 - Remove non-existing variable in example review script comment by @jpmens
   ([#196])
 - Set homepage and documentation properties in Cargo.toml by @maertsen
   (98d988d0)
-- Added a `cascade health` CLI subcommand by @ximon18 ([#208])
 
 ### Documentation improvements
 
