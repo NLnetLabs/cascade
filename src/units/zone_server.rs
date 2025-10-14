@@ -1,6 +1,5 @@
 use core::future::ready;
 
-use std::collections::HashMap;
 use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
