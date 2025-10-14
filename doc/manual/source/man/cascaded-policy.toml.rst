@@ -147,7 +147,7 @@ loaded by Cascade.
    - ``CASCADE_ZONE``: The name of the zone, formatted without a trailing dot.
    - ``CASCADE_SERIAL``: The serial number of the zone (decimal integer).
    - ``CASCADE_SERVER``: The combined address and port where Cascade is serving
-       the zone for review, formatted as ``<ip-addr>:<port>``.
+     the zone for review, formatted as ``<ip-addr>:<port>``.
    - ``CASCADE_SERVER_IP``: Just the address of the above server.
    - ``CASCADE_SERVER_PORT``: Just the port of the above server.
    
@@ -468,7 +468,7 @@ The ``[signer.review]`` section.
    - ``CASCADE_ZONE``: The name of the zone, formatted without a trailing dot.
    - ``CASCADE_SERIAL``: The serial number of the signed zone (decimal integer).
    - ``CASCADE_SERVER``: The combined address and port where Cascade is serving
-       the zone for review, formatted as ``<ip-addr>:<port>``.
+     the zone for review, formatted as ``<ip-addr>:<port>``.
    - ``CASCADE_SERVER_IP``: Just the address of the above server.
    - ``CASCADE_SERVER_PORT``: Just the port of the above server.
 
