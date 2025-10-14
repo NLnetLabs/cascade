@@ -29,6 +29,7 @@ Released yyyy-mm-dd.
 ### Bug fixes
 
 - Resume the pipeline when a new zone is loaded by @bal-e and @ximon18 ([#153])
+- Fix confusing error message when `dnst` is missing by @mozzieongit ([#158])
 - Fix panic when started via systemd due to "No such device or address" by
   @mozzieongit ([163])
 - Set default CLASS for loaded zone files to IN by @mozzieongit ([#164])
@@ -42,8 +43,10 @@ Released yyyy-mm-dd.
 
 - Introduce stdout/stderr log targets to replace using File to log to stdout by
   @mozzieongit ([#176])
+- Check for compatible `dnst` on startup by @mozzieongit ([#180])
 - Remove non-existing variable in example review script comment by @jpmens
   ([#196])
+- Check for compatible `dnst` on startup
 - Set homepage and documentation properties in Cargo.toml by @maertsen
   (98d988d0)
 
@@ -72,12 +75,14 @@ Many thanks go to @jpmens and @bortzmeyer for trying out the alpha release of
 Cascade and extensively reporting the issues they found.
 
 [#153]: https://github.com/NLnetLabs/cascade/pull/153
+[#158]: https://github.com/NLnetLabs/cascade/pull/158
 [#163]: https://github.com/NLnetLabs/cascade/pull/163
 [#164]: https://github.com/NLnetLabs/cascade/pull/164
 [#167]: https://github.com/NLnetLabs/cascade/pull/167
 [#170]: https://github.com/NLnetLabs/cascade/pull/170
 [#171]: https://github.com/NLnetLabs/cascade/pull/171
 [#176]: https://github.com/NLnetLabs/cascade/pull/176
+[#180]: https://github.com/NLnetLabs/cascade/pull/180
 [#181]: https://github.com/NLnetLabs/cascade/pull/181
 [#184]: https://github.com/NLnetLabs/cascade/pull/184
 [#188]: https://github.com/NLnetLabs/cascade/pull/188
