@@ -390,24 +390,7 @@ impl ZoneSigner {
     ) -> Result<(), SignerError> {
         info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
 
-        // Dump the queue:
-        if log_enabled!(Level::Debug) {
-            let signer_status = self.signer_status.read().await;
-            let zones_being_signed = signer_status.zones_being_signed.read().await;
-            for q_item in zones_being_signed.iter() {
-                let q_item = q_item.read().await;
-                match q_item.status {
-                    ZoneSigningStatus::Requested(_) => {
-                        debug!("[ZS]: Queue item: {} => requested", q_item.zone_name)
-                    }
-                    ZoneSigningStatus::InProgress(_) => {
-                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone_name)
-                    }
-                    ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted => { /* Don't log */
-                    }
-                };
-            }
-        }
+        self.signer_status.read().await.dump_queue().await;
 
         let (q_size, _q_permit, _zone_permit, status) = {
             let signer_status = self.signer_status.read().await;
@@ -1739,6 +1722,9 @@ struct ZoneSignerStatus {
     // Maps zone names to signing status, keeping records of previous signing.
     // Use VecDeque for its ability to act as a ring buffer: check size, if
     // at max desired capacity pop_front(), then in both cases push_back().
+    //
+    // TODO: Separate out signing request queuing from signing statistics
+    // tracking.
     zones_being_signed:
         Arc<tokio::sync::RwLock<VecDeque<Arc<tokio::sync::RwLock<NamedZoneSigningStatus>>>>>,
 
@@ -1764,13 +1750,41 @@ impl ZoneSignerStatus {
         &self,
         wanted_zone_name: &StoredName,
     ) -> Option<Arc<tokio::sync::RwLock<NamedZoneSigningStatus>>> {
+        self.dump_queue().await;
+
         let zones_being_signed = self.zones_being_signed.read().await;
-        for q_item in zones_being_signed.iter() {
-            if q_item.read().await.zone_name == wanted_zone_name {
+        for q_item in zones_being_signed.iter().rev() {
+            let readable_q_item = q_item.read().await;
+            if readable_q_item.zone_name == wanted_zone_name
+                && !matches!(readable_q_item.status, ZoneSigningStatus::Aborted)
+            {
                 return Some(q_item.clone());
             }
         }
         None
+    }
+
+    async fn dump_queue(&self) {
+        if log_enabled!(Level::Debug) {
+            let zones_being_signed = self.zones_being_signed.read().await;
+            for q_item in zones_being_signed.iter().rev() {
+                let q_item = q_item.read().await;
+                match q_item.status {
+                    ZoneSigningStatus::Requested(_) => {
+                        debug!("[ZS]: Queue item: {} => requested", q_item.zone_name)
+                    }
+                    ZoneSigningStatus::InProgress(_) => {
+                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone_name)
+                    }
+                    ZoneSigningStatus::Finished(_) => {
+                        debug!("[ZS]: Queue item: {} => finished", q_item.zone_name)
+                    }
+                    ZoneSigningStatus::Aborted => {
+                        debug!("[ZS]: Queue item: {} => aborted", q_item.zone_name)
+                    }
+                };
+            }
+        }
     }
 
     /// Enqueue a zone for signing.
@@ -1827,8 +1841,6 @@ impl ZoneSignerStatus {
             .map_err(|_| SignerError::SignerNotReady)?;
         debug!("SIGNER[{zone_name}]: Queue permit acquired");
 
-        status.write().await.current_action = "Waiting for a free signing slot".to_string();
-
         // If we were able to acquire a permit that means that a signing operation completed
         // and so we are safe to remove one item from the ring buffer.
         let mut zones_being_signed = self.zones_being_signed.write().await;
@@ -1836,16 +1848,21 @@ impl ZoneSignerStatus {
             // Discard oldest.
             let signing_status = zones_being_signed.pop_front();
             if let Some(signing_status) = signing_status {
+                // Old items in the queue should have reached a final state,
+                // either finished or aborted. If not, something is wrong with
+                // the queueing logic.
                 if !matches!(
                     signing_status.read().await.status,
-                    ZoneSigningStatus::Finished(_)
+                    ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted
                 ) {
                     return Err(SignerError::InternalError(
-                        "Cannot acquire the queue semaphore".to_string(),
+                        "Signing queue not in the expected state".to_string(),
                     ));
                 }
             }
         }
+
+        status.write().await.current_action = "Queued for signing".to_string();
 
         debug!("SIGNER[{zone_name}]: Enqueuing complete.");
         Ok((approx_q_size, queue_permit, zone_permit, status))
