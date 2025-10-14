@@ -26,14 +26,14 @@ The review script then needs to use the address provided in the environment vari
 Configuring a review hook
 -------------------------
 
-To configure a review hook, you set the review :option:`required = true <required = false>` option, and specify the review script using the :option:`cmd-hook <cmd-hook = "">` option in the :ref:`[loader.review] <policy-loaded-review>` and/or :ref:`[signer.review] <policy-signed-review>` sections.
+To configure a review hook, you set the review :option:`required = true <required = false>` policy option, and specify the review script using the :option:`cmd-hook <cmd-hook = "">` option in the :ref:`[loader.review] <policy-loaded-review>` and/or :ref:`[signer.review] <policy-signed-review>` policy file sections.
 
 Review scripts (or programs) are called using ``sh -c``, so you can provide arguments to your review script, e.g.: :option:`cmd-hook = "script.sh --stage unsigned" <cmd-hook = "">`.
 
 Manual Review
 -------------
 
-You can also enable manual review by enabling the review :option:`required = true <required = false>` option under :ref:`[loader.review] <policy-loaded-review>` or :ref:`[signer.review] <policy-signed-review>` without providing a :option:`cmd-hook <cmd-hook = "">` command.
+You can also enable manual review by setting the review :option:`required = true <required = false>` option under :ref:`[loader.review] <policy-loaded-review>` or :ref:`[signer.review] <policy-signed-review>` without providing a :option:`cmd-hook <cmd-hook = "">` command.
 
 If no hook command is provided, but review is required, manual approval or rejection has to be performed using the CLI commands ``cascade zone approve`` or ``cascade zone reject``.
 
