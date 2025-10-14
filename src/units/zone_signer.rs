@@ -1722,6 +1722,9 @@ struct ZoneSignerStatus {
     // Maps zone names to signing status, keeping records of previous signing.
     // Use VecDeque for its ability to act as a ring buffer: check size, if
     // at max desired capacity pop_front(), then in both cases push_back().
+    //
+    // TODO: Separate out signing request queuing from signing statistics
+    // tracking.
     zones_being_signed:
         Arc<tokio::sync::RwLock<VecDeque<Arc<tokio::sync::RwLock<NamedZoneSigningStatus>>>>>,
 
