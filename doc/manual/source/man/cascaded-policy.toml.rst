@@ -134,6 +134,8 @@ loaded by Cascade.
    signed immediately.  At the moment, the review hook will only be run if this
    is set to true.
 
+.. _policy-loaded-review-cmd:
+
 .. option:: cmd-hook = ""
 
    A hook for reviewing a loaded zone. This is a path to an executable.
