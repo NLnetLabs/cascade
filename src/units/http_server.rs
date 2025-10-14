@@ -875,10 +875,8 @@ impl HttpServer {
                 ApplicationCommand::GetQueueReport { report_tx: tx },
             ))
             .ok();
-        let signing_queue = match rx.await {
-            Ok(q) => q,
-            Err(_) => vec![],
-        };
+
+        let signing_queue = (rx.await).unwrap_or_default();
 
         Json(ServerStatusResult {
             soft_halted_zones,
