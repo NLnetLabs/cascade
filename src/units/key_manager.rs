@@ -144,7 +144,7 @@ impl KeyManager {
                     },
                 http_tx,
             } => {
-                let mut cmd = self.keyset_cmd(zone);
+                let mut cmd = self.keyset_cmd(zone, RecordingMode::Record);
 
                 cmd.arg(match roll_variant {
                     api::keyset::KeyRollVariant::Ksk => "ksk",
@@ -175,13 +175,10 @@ impl KeyManager {
                 }
 
                 if let Err(KeySetCommandError { err, output, .. }) = cmd.output().await {
-                    let client_err = match output {
-                        Some(output) => api::keyset::KeySetCommandError::DnstCommandError(
-                            String::from_utf8_lossy(&output.stderr).into(),
-                        ),
-                        None => api::keyset::KeySetCommandError::DnstCommandError(err.clone()),
-                    };
-                    http_tx.send(Err(client_err)).await.unwrap();
+                    http_tx
+                        .send(Err(format_cmd_error(&err, output)))
+                        .await
+                        .unwrap();
                     return Err(format!("key roll command failed: {err}"));
                 }
 
@@ -200,7 +197,7 @@ impl KeyManager {
                     },
                 http_tx,
             } => {
-                let mut cmd = self.keyset_cmd(zone);
+                let mut cmd = self.keyset_cmd(zone, RecordingMode::Record);
 
                 cmd.arg("remove-key").arg(key);
 
@@ -213,13 +210,10 @@ impl KeyManager {
                 }
 
                 if let Err(KeySetCommandError { err, output, .. }) = cmd.output().await {
-                    let client_err = match output {
-                        Some(output) => api::keyset::KeySetCommandError::DnstCommandError(
-                            String::from_utf8_lossy(&output.stderr).into(),
-                        ),
-                        None => api::keyset::KeySetCommandError::DnstCommandError(err.clone()),
-                    };
-                    http_tx.send(Err(client_err)).await.unwrap();
+                    http_tx
+                        .send(Err(format_cmd_error(&err, output)))
+                        .await
+                        .unwrap();
                     return Err(format!("key removal command failed: {err}"));
                 }
 
@@ -230,29 +224,30 @@ impl KeyManager {
 
             ApplicationCommand::KeySetStatus { zone, http_tx } => {
                 let res = self
-                    .silent_keyset_cmd(zone)
+                    .keyset_cmd(zone, RecordingMode::RecordOnlyOnWarningOrError)
                     .arg("status")
                     .arg("-v")
                     .output()
                     .await;
                 match res {
                     Err(KeySetCommandError { err, output, .. }) => {
-                        let client_err = match output {
-                            Some(output) => api::keyset::KeySetCommandError::DnstCommandError(
-                                String::from_utf8_lossy(&output.stderr).into(),
-                            ),
-                            None => api::keyset::KeySetCommandError::DnstCommandError(err.clone()),
-                        };
-                        http_tx.send(Err(client_err)).unwrap();
+                        // The dnst keyset status command failed.
+                        http_tx.send(Err(format_cmd_error(&err, output))).unwrap();
                         Err(format!("key status command failed: {err}"))
                     }
+
                     Ok(output) => {
                         let mut status = String::from_utf8_lossy(&output.stdout).to_string();
+
+                        // Include any stderr output under a warning heading
+                        // in the status text that we send to the client.
                         if !output.stderr.is_empty() {
                             status.push_str("Warning:\n");
                             status.push_str(&String::from_utf8_lossy(&output.stderr));
                         }
+
                         http_tx.send(Ok(status)).unwrap();
+
                         Ok(())
                     }
                 }
@@ -297,7 +292,7 @@ impl KeyManager {
 
         let state_path = mk_dnst_keyset_state_file_path(&self.keys_dir, &name);
 
-        let mut cmd = self.keyset_cmd(name.clone());
+        let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
 
         cmd.arg("create")
             .arg("-n")
@@ -340,7 +335,7 @@ impl KeyManager {
                 has_credentials,
             } = kmip_server;
 
-            let mut cmd = self.keyset_cmd(name.clone());
+            let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
 
             cmd.arg("kmip")
                 .arg("add-server")
@@ -388,7 +383,7 @@ impl KeyManager {
         );
 
         for c in config_commands {
-            let mut cmd = self.keyset_cmd(name.clone());
+            let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
 
             for a in c {
                 cmd.arg(a);
@@ -403,7 +398,7 @@ impl KeyManager {
         // `keyset create` but only once the zone is enabled.
         // We currently do not have a good mechanism for that
         // so we init the key immediately.
-        self.keyset_cmd(name.clone())
+        self.keyset_cmd(name.clone(), RecordingMode::Record)
             .arg("init")
             .output()
             .await
@@ -413,30 +408,13 @@ impl KeyManager {
     }
 
     /// Create a keyset command with the config file for the given zone.
-    fn keyset_cmd(&self, name: StoredName) -> KeySetCommand {
+    fn keyset_cmd(&self, name: StoredName, recording_mode: RecordingMode) -> KeySetCommand {
         KeySetCommand::new(
             name,
             self.center.clone(),
             self.keys_dir.clone(),
             self.dnst_binary_path.clone(),
-            true,
-        )
-    }
-
-    /// Create a keyset command with the config file for the given zone.
-    ///
-    /// Note: Unlike `keyset_cmd()` this function will NOT record the command
-    /// in zone history unless it fails. This is useful for commands that will
-    /// not add value to the history, e.g. keyset status executed every time a
-    /// user wants a status report for the zone. If the command fails that IS
-    /// interesting so will still be recorded.
-    fn silent_keyset_cmd(&self, name: StoredName) -> KeySetCommand {
-        KeySetCommand::new(
-            name,
-            self.center.clone(),
-            self.keys_dir.clone(),
-            self.dnst_binary_path.clone(),
-            false,
+            recording_mode,
         )
     }
 
@@ -512,7 +490,7 @@ impl KeyManager {
                 // block the loop so we won't check the keyset state for the
                 // next zone till after the call to cron finishes.
                 let Ok(res) = self
-                    .keyset_cmd(zone.apex_name().clone())
+                    .keyset_cmd(zone.apex_name().clone(), RecordingMode::Record)
                     .arg("cron")
                     .output()
                     .await
@@ -563,6 +541,20 @@ impl KeyManager {
             }
         }
     }
+}
+
+fn format_cmd_error(err: &str, output: Option<Output>) -> String {
+    format!(
+        "{err}:\nstdout:\n{}\nstderr:\n{}",
+        output
+            .as_ref()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default(),
+        output
+            .as_ref()
+            .map(|o| String::from_utf8_lossy(&o.stderr).to_string())
+            .unwrap_or_default()
+    )
 }
 
 pub fn mk_dnst_keyset_cfg_file_path(keys_dir: &Utf8Path, name: &Name<Bytes>) -> Utf8PathBuf {
@@ -1072,11 +1064,21 @@ impl AsyncHistoricalCommand {
     }
 }
 
+//------------ RecordingMode -------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecordingMode {
+    #[allow(dead_code)]
+    DoNotRecord,
+    Record,
+    RecordOnlyOnWarningOrError,
+}
+
 pub struct KeySetCommand {
     cmd: Option<AsyncHistoricalCommand>,
     name: StoredName,
     center: Arc<Center>,
-    record_success: bool,
+    recording_mode: RecordingMode,
 }
 
 pub struct KeySetCommandSuccess {
@@ -1103,7 +1105,7 @@ impl KeySetCommand {
         center: Arc<Center>,
         #[allow(clippy::boxed_local)] keys_dir: Box<Utf8Path>,
         #[allow(clippy::boxed_local)] dnst_binary_path: Box<Utf8Path>,
-        record_success: bool,
+        recording_mode: RecordingMode,
     ) -> Self {
         let cfg_path = mk_dnst_keyset_cfg_file_path(&keys_dir, &name);
         let mut cmd = std::process::Command::new(dnst_binary_path.as_std_path());
@@ -1112,7 +1114,7 @@ impl KeySetCommand {
             cmd: Some(AsyncHistoricalCommand::new(cmd)),
             name,
             center,
-            record_success,
+            recording_mode,
         }
     }
 
@@ -1133,42 +1135,52 @@ impl KeySetCommand {
             .await;
         let elapsed = Instant::now().duration_since(start);
 
-        match res {
+        let (res, history_event) = match res {
             Ok(KeySetCommandSuccess {
                 cmd,
                 output,
                 warning,
             }) => {
-                if self.record_success || warning.is_some() {
-                    record_zone_event(
-                        &self.center,
-                        &self.name,
-                        HistoricalEvent::KeySetCommand {
-                            cmd,
-                            elapsed,
-                            warning,
-                        },
-                        None,
-                    );
-                }
-                Ok(output)
+                // Determine whether and what to record in zone history
+                let record = match self.recording_mode {
+                    RecordingMode::DoNotRecord => false,
+                    RecordingMode::Record => true,
+                    RecordingMode::RecordOnlyOnWarningOrError => warning.is_some(),
+                };
+                let history_event = record.then_some(HistoricalEvent::KeySetCommand {
+                    cmd,
+                    warning,
+                    elapsed,
+                });
+                (Ok(output), history_event)
             }
             Err(err) => {
                 let err_string = err.err.to_string();
+
+                // Hard halt the zone
                 halt_zone(&self.center, &self.name, true, &err_string);
-                record_zone_event(
-                    &self.center,
-                    &self.name,
-                    HistoricalEvent::KeySetError {
-                        cmd: err.cmd.clone(),
-                        err: err_string,
-                        elapsed,
-                    },
-                    None,
-                );
-                Err(err)
+
+                // Determine whether and what to record in zone history
+                let record = match self.recording_mode {
+                    RecordingMode::DoNotRecord => false,
+                    RecordingMode::Record => true,
+                    RecordingMode::RecordOnlyOnWarningOrError => true,
+                };
+                let history_event = record.then_some(HistoricalEvent::KeySetError {
+                    cmd: err.cmd.clone(),
+                    err: err_string,
+                    elapsed,
+                });
+                (Err(err), history_event)
             }
+        };
+
+        if let Some(history_event) = history_event {
+            // Record the error in the zone history
+            record_zone_event(&self.center, &self.name, history_event, None);
         }
+
+        res
     }
 }
 

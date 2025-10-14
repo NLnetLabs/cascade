@@ -251,13 +251,13 @@ pub enum HistoricalEvent {
     },
     KeySetCommand {
         cmd: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        warning: Option<String>,
         #[serde(
             serialize_with = "serialize_duration_as_secs",
             deserialize_with = "deserialize_duration_from_secs"
         )]
         elapsed: Duration,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        warning: Option<String>,
     },
     KeySetError {
         cmd: String,

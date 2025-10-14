@@ -533,11 +533,9 @@ impl Zone {
                     println!("    Actively used for signing");
                 }
             }
-            if let Some(key_status) = zone.key_status {
-                println!("  Details:");
-                for line in key_status.lines() {
-                    println!("    {line}");
-                }
+            println!("  Details:");
+            for line in zone.key_status.lines() {
+                println!("    {line}");
             }
         }
 

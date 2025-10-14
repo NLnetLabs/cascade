@@ -362,14 +362,13 @@ impl HttpServer {
                 ))
                 .ok();
             match rx.await {
-                Err(_) => Some("Internal error: Could not retrieve status response".to_string()),
-                Ok(Err(err)) => Some(err.to_string()),
-                Ok(Ok(status)) => {
-                    // Strip out lines that would be correct for a dnst user but
-                    // confusing for a cascade user, and rewrite advice to invoke dnst
-                    // to be equivalent advice to invoke cascade.
+                Err(_) => "Internal error: Could not retrieve status response".to_string(),
+                Ok(Err(output)) | Ok(Ok(output)) => {
+                    // Strip out lines that would be correct for a dnst user
+                    // but confusing for a cascade user, and rewrite advice to
+                    // invoke dnst to be equivalent advice to invoke cascade.
                     let mut sanitized_output = String::new();
-                    for line in status.lines() {
+                    for line in output.lines() {
                         if line.contains("Next time to run the 'cron' subcommand") {
                             continue;
                         }
@@ -398,7 +397,7 @@ impl HttpServer {
                         sanitized_output.push_str(line);
                         sanitized_output.push('\n');
                     }
-                    Some(sanitized_output)
+                    sanitized_output
                 }
             }
         };
@@ -841,7 +840,7 @@ impl HttpServer {
         State(state): State<Arc<HttpServerState>>,
         Path(zone): Path<Name<Bytes>>,
         Json(key_roll): Json<KeyRoll>,
-    ) -> Json<Result<KeySetCommandResult, KeySetCommandError>> {
+    ) -> Json<Result<(), String>> {
         let (tx, mut rx) = mpsc::channel(10);
         state
             .center
@@ -858,21 +857,23 @@ impl HttpServer {
 
         let res = rx.recv().await;
         let Some(res) = res else {
-            return Json(Err(KeySetCommandError::RxError));
+            return Json(Err(
+                "Internal error: Failed to send RollKey command to KeyManager.".to_string(),
+            ));
         };
 
         if let Err(e) = res {
             return Json(Err(e));
         }
 
-        Json(Ok(KeySetCommandResult { zone }))
+        Json(Ok(()))
     }
 
     async fn key_remove(
         State(state): State<Arc<HttpServerState>>,
         Path(zone): Path<Name<Bytes>>,
         Json(key_remove): Json<KeyRemove>,
-    ) -> Json<Result<KeySetCommandResult, KeySetCommandError>> {
+    ) -> Json<Result<(), String>> {
         let (tx, mut rx) = mpsc::channel(10);
         state
             .center
@@ -889,14 +890,16 @@ impl HttpServer {
 
         let res = rx.recv().await;
         let Some(res) = res else {
-            return Json(Err(KeySetCommandError::RxError));
+            return Json(Err(
+                "Internal error: Failed to send RemoveKey command to KeyManager.".to_string(),
+            ));
         };
 
         if let Err(e) = res {
             return Json(Err(e));
         }
 
-        Json(Ok(KeySetCommandResult { zone }))
+        Json(Ok(()))
     }
 }
 

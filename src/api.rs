@@ -286,7 +286,7 @@ pub struct ZoneStatus {
     pub policy: String,
     pub stage: ZoneStage,
     pub keys: Vec<KeyInfo>,
-    pub key_status: Option<String>,
+    pub key_status: String,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
@@ -615,28 +615,6 @@ pub mod keyset {
         pub key: String,
         pub force: bool,
         pub continue_flag: bool,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub struct KeySetCommandResult {
-        pub zone: Name<Bytes>,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub enum KeySetCommandError {
-        DnstCommandError(String),
-        RxError,
-    }
-
-    impl std::fmt::Display for KeySetCommandError {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                KeySetCommandError::DnstCommandError(err) => write!(f, "dnst command error: {err}"),
-                KeySetCommandError::RxError => {
-                    f.write_str("Internal error: message receive failed")
-                }
-            }
-        }
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
