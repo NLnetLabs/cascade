@@ -21,11 +21,9 @@ use domain::{
         iana::{Class, Rcode},
         name::Label,
         Name, NameBuilder, Rtype,
-    },
-    zonetree::{
-        error::OutOfZone, Answer, InMemoryZoneDiff, ReadableZone, SharedRrset, StoredName, WalkOp,
-        WritableZone, WritableZoneNode, ZoneStore,
-    },
+    }, rdata::ZoneRecordData, zonetree::{
+        error::OutOfZone, types::StoredRecordData, Answer, InMemoryZoneDiff, ReadableZone, Rrset, SharedRrset, StoredName, StoredRecord, WalkOp, WritableZone, WritableZoneNode, ZoneStore
+    }
 };
 use log::trace;
 
@@ -130,8 +128,19 @@ impl ReadableZone for SimpleZoneInner {
         trace!("WALK");
         for (name, rrsets) in self.tree.read().unwrap().iter() {
             for rrset in rrsets {
-                // TODO: Set false to proper value for "at zone cut or not"
-                (op)(name.clone(), rrset, false)
+                if rrset.rtype() == Rtype::RRSIG {
+                    for data in rrset.data() {
+                        let ZoneRecordData::Rrsig(rrsig) = data else {
+                            unreachable!();
+                        };
+                        let mut rrset = Rrset::new(Rtype::RRSIG, rrsig.original_ttl());
+                        rrset.push_data(data.clone());
+                        (op)(name.clone(), &rrset.into_shared(), false)
+                    }
+                } else {
+                    // TODO: Set false to proper value for "at zone cut or not"
+                    (op)(name.clone(), rrset, false)
+                }
             }
         }
         trace!("WALK FINISHED");
