@@ -107,6 +107,12 @@ pub enum LogTargetSpec {
 
     /// Write logs to the UNIX syslog.
     Syslog,
+
+    /// Write logs to stdout.
+    Stdout,
+
+    /// Write logs to stderr.
+    Stderr,
 }
 
 //--- Parsing
@@ -135,9 +141,9 @@ impl clap::builder::TypedValueParser for LogTargetSpecParser {
         })?;
 
         if s == "stdout" {
-            Ok(LogTargetSpec::File("/dev/stdout".into()))
+            Ok(LogTargetSpec::Stdout)
         } else if s == "stderr" {
-            Ok(LogTargetSpec::File("/dev/stderr".into()))
+            Ok(LogTargetSpec::Stderr)
         } else if let Some(s) = s.strip_prefix("file:") {
             let path = <&Utf8Path>::from(s);
             Ok(LogTargetSpec::File(path.into()))
@@ -170,6 +176,8 @@ impl LogTargetSpec {
         match self {
             Self::File(path) => LogTarget::File(path),
             Self::Syslog => LogTarget::Syslog,
+            Self::Stdout => LogTarget::Stdout,
+            Self::Stderr => LogTarget::Stderr,
         }
     }
 }

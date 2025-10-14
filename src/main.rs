@@ -47,14 +47,18 @@ fn main() -> ExitCode {
     };
 
     // Initially activate the logging with the setting from the config
-    logger.apply(logger.prepare(&config.daemon.logging).unwrap().unwrap());
+    match logger.prepare(&config.daemon.logging) {
+        Ok(Some(lg)) => logger.apply(lg),
+        Ok(None) => { /* logger update would not change anything */ }
+        Err(e) => eprintln!("ERROR: Failed to initialize default logging... {e}"),
+    }
 
     if matches.get_flag("check_config") {
         // Try reading the configuration file.
         match config.init_from_file() {
             Ok(()) => return ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("Cascade couldn't be configured: {error}");
+                log::error!("Cascade couldn't be configured: {error}");
                 return ExitCode::FAILURE;
             }
         }
@@ -77,8 +81,10 @@ fn main() -> ExitCode {
         }
 
         // Update the configured logging setup with settings from the config file.
-        if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
-            logger.apply(x)
+        match logger.prepare(&state.config.daemon.logging) {
+            Ok(Some(lg)) => logger.apply(lg),
+            Ok(None) => { /* logger update would not change anything */ }
+            Err(e) => eprintln!("ERROR: Failed to update logging with settings from config... {e}"),
         }
 
         // Create required subdirectories (and their parents) if they don't
@@ -112,8 +118,12 @@ fn main() -> ExitCode {
         // TODO: Fail if any zone state files exist.
     } else {
         // Update the configured logging setup from state.
-        if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
-            logger.apply(x)
+        match logger.prepare(&state.config.daemon.logging) {
+            Ok(Some(lg)) => logger.apply(lg),
+            Ok(None) => { /* logger update would not change anything */ }
+            Err(e) => eprintln!(
+                "ERROR: Failed to update logging with settings from existing state... {e}"
+            ),
         }
 
         log::info!("Successfully loaded the global state file");
