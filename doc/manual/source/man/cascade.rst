@@ -43,6 +43,10 @@ Commands
 
           Manage Cascade's configuration.
 
+        :doc:`cascade-health`\ (1)
+
+          Check the health of Cascade. 
+
         :doc:`cascade-zone <cascade-zone>`\ (1)
 
           Manage zones.
@@ -67,6 +71,9 @@ Commands
 
     **cascade-config**\ (1)
         Manage Cascade's configuration.
+
+    **cascade-health**\ (1)
+        Check the health of Cascade.
 
     **cascade-zone**\ (1)
         Manage zones.
