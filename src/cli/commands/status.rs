@@ -70,9 +70,15 @@ impl Status {
                         let zone_name = report.zone_name.to_string();
                         let action = &report.signing_report.current_action;
                         let (colour, state, when) = match &report.signing_report.stage_report {
-                            SigningStageReport::Requested(r) => (ansi::GRAY, "\u{23F8}", r.requested_at),
-                            SigningStageReport::InProgress(r) => (ansi::YELLOW, "\u{23F5}", r.started_at),
-                            SigningStageReport::Finished(r) => (ansi::GREEN, "\u{2714}", r.finished_at),
+                            SigningStageReport::Requested(r) => {
+                                (ansi::GRAY, "\u{23F8}", r.requested_at)
+                            }
+                            SigningStageReport::InProgress(r) => {
+                                (ansi::YELLOW, "\u{23F5}", r.started_at)
+                            }
+                            SigningStageReport::Finished(r) => {
+                                (ansi::GREEN, "\u{2714}", r.finished_at)
+                            }
                         };
                         let when = DateTime::<Utc>::from(when)
                             .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
