@@ -67,6 +67,7 @@ Released yyyy-mm-dd.
   (6cdc126)
 - Don't fail to show signing statistics for a finished signing operation when
   a signing operation was subsequently aborted by @ximon18 ([#210])
+- Improve documentation about review hooks by @mozzieongit ([#216])
 
 ### Known issues
 
@@ -97,6 +98,7 @@ Cascade and extensively reporting the issues they found.
 [#209]: https://github.com/NLnetLabs/cascade/pull/209
 [#210]: https://github.com/NLnetLabs/cascade/pull/210
 [#213]: https://github.com/NLnetLabs/cascade/pull/213
+[#216]: https://github.com/NLnetLabs/cascade/pull/216
 
 
 ## 0.1.0-alpha 'Globen'
