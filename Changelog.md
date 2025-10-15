@@ -25,6 +25,8 @@ Released yyyy-mm-dd.
 ### New
 
 - Added a `cascade health` CLI subcommand by @ximon18 ([#208])
+- Add CASCADE_SERVER_IP and CASCADE_SERVER_PORT environment variables for
+  review hooks by @mozzieongit ([#213])
 
 ### Bug fixes
 
@@ -50,8 +52,6 @@ Released yyyy-mm-dd.
   ([#196])
 - Set homepage and documentation properties in Cargo.toml by @maertsen
   (98d988d0)
-- Add CASCADE_SERVER_IP and CASCADE_SERVER_PORT environment variables for
-  review hooks by @mozzieongit ([#213])
 
 ### Documentation improvements
 
