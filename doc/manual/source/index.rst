@@ -151,5 +151,6 @@ Examples of things we're interested in:
    man/cascade-hsm
    man/cascade-keyset
    man/cascade-policy
+   man/cascade-status
    man/cascade-template
    man/cascade-zone

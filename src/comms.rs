@@ -76,7 +76,7 @@ use crate::center::{Change, ZoneAddError};
 use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zone::SigningTrigger;
 use crate::zone::ZoneLoadSource;
-use crate::zonemaintenance::types::{SigningReport, ZoneReport};
+use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneReport};
 
 //------------ GraphMetrics --------------------------------------------------
 pub trait GraphStatus: Send + Sync {
@@ -214,6 +214,9 @@ pub enum ApplicationCommand {
     GetSigningReport {
         zone_name: StoredName,
         report_tx: oneshot::Sender<SigningReport>,
+    },
+    GetQueueReport {
+        report_tx: oneshot::Sender<Vec<SigningQueueReport>>,
     },
 
     RollKey {

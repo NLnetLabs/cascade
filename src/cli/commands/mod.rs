@@ -27,12 +27,10 @@ pub enum Command {
     #[command(name = "zone")]
     Zone(self::zone::Zone),
 
-    // /// Get the status of different systems
-    // #[command(name = "status")]
-    // Status(self::status::Status),
-    // - get status (what zones are there, what are things doing)
-    // - get dnssec status on zone
-    //
+    /// Get the status of different systems
+    #[command(name = "status")]
+    Status(self::status::Status),
+
     /// Manage policies
     #[command(name = "policy")]
     Policy(self::policy::Policy),
@@ -77,7 +75,7 @@ impl Command {
                 Ok(())
             }
             Self::Zone(zone) => zone.execute(client).await,
-            // Self::Status(status) => status.execute(client).await,
+            Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,
             Self::KeySet(keyset) => keyset.execute(client).await,
             Self::Hsm(hsm) => hsm.execute(client).await,

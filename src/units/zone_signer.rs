@@ -57,8 +57,8 @@ use crate::units::key_manager::{
 use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
-    SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
-    SigningStageReport,
+    SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
+    SigningRequestedReport, SigningStageReport,
 };
 
 // Re-signing zones before signatures expire works as follows:
@@ -363,6 +363,22 @@ impl ZoneSigner {
                     };
                 }
             }
+
+            ApplicationCommand::GetQueueReport { report_tx } => {
+                let mut report = vec![];
+                let zone_signer_status = self.signer_status.read().await;
+                let q = zone_signer_status.zones_being_signed.read().await;
+                for q_item in q.iter().rev() {
+                    if let Some(stage_report) = self.mk_signing_report(q_item.clone()).await {
+                        report.push(SigningQueueReport {
+                            zone_name: q_item.read().await.zone_name.clone(),
+                            signing_report: stage_report,
+                        });
+                    }
+                }
+                let _ = report_tx.send(report).ok();
+            }
+
             ApplicationCommand::PublishSignedZone { .. } => {
                 trace!("[ZS]: a zone is published, recompute next time to re-sign");
                 *next_resign_time = self
