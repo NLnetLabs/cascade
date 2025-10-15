@@ -25,6 +25,7 @@ Released yyyy-mm-dd.
 ### New
 
 - Added a `cascade health` CLI subcommand by @ximon18 ([#208])
+- Added a `cascade status` CLI subcommand by @ximon18 ([#211])
 - Add CASCADE_SERVER_IP and CASCADE_SERVER_PORT environment variables for
   review hooks by @mozzieongit ([#213])
 
@@ -97,6 +98,7 @@ Cascade and extensively reporting the issues they found.
 [#208]: https://github.com/NLnetLabs/cascade/pull/208
 [#209]: https://github.com/NLnetLabs/cascade/pull/209
 [#210]: https://github.com/NLnetLabs/cascade/pull/210
+[#211]: https://github.com/NLnetLabs/cascade/pull/211
 [#213]: https://github.com/NLnetLabs/cascade/pull/213
 [#216]: https://github.com/NLnetLabs/cascade/pull/216
 
