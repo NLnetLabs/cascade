@@ -21,7 +21,7 @@ use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode
 use domain::dnssec::sign::error::SigningError;
 use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
 use domain::dnssec::sign::keys::SigningKey;
-use domain::dnssec::sign::records::{DefaultSorter, RecordsIter, Sorter};
+use domain::dnssec::sign::records::{RecordsIter, Sorter};
 use domain::dnssec::sign::signatures::rrsigs::{sign_sorted_zone_records, GenerateRrsigConfig};
 use domain::dnssec::sign::traits::SignableZoneInPlace;
 use domain::dnssec::sign::SigningConfig;
@@ -597,6 +597,8 @@ impl ZoneSigner {
         let rrsig_cfg =
             GenerateRrsigConfig::new(signing_config.inception, signing_config.expiration);
 
+        let mut extra_apex_rrs = Vec::<StoredRecord>::new();
+
         //
         // Convert zone records into a form we can sign.
         //
@@ -606,6 +608,7 @@ impl ZoneSigner {
         let passed_zone = signable_zone.clone();
         let mut records = spawn_blocking(|| collect_zone(passed_zone)).await.unwrap();
         records.push(soa_rr.clone());
+        extra_apex_rrs.push(soa_rr.clone());
         let walk_time = walk_start.elapsed();
         let unsigned_rr_count = records.len();
 
@@ -630,7 +633,8 @@ impl ZoneSigner {
             zonefile.extend_from_slice(dnskey_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
             if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
-                records.push(rec.flatten_into());
+                records.push(rec.clone().flatten_into());
+                extra_apex_rrs.push(rec.flatten_into());
             }
         }
 
@@ -793,7 +797,7 @@ impl ZoneSigner {
         status.write().await.current_action = "Sorting records".to_string();
         let sort_start = Instant::now();
         let mut records = spawn_blocking(|| {
-            DefaultSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
+            MultiThreadedSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
             records.dedup();
             records
         })
@@ -894,18 +898,28 @@ impl ZoneSigner {
 
             move || {
                 runtime.block_on(async move {
-                    let start = Instant::now();
+                    // let start = Instant::now();
 
-                    for record in &unsigned_records {
+                    for record in &extra_apex_rrs {
                         let record = Record::from_record(record.clone());
                         updater.apply(ZoneUpdate::AddRecord(record)).await.unwrap();
                     }
 
-                    debug!(
-                        "Inserted {} unsigned records in {:.1}s",
-                        unsigned_records.len(),
-                        start.elapsed().as_secs_f64()
-                    );
+                    for record in &unsigned_records {
+                        if matches!(
+                            record.rtype(),
+                            Rtype::NSEC | Rtype::NSEC3 | Rtype::NSEC3PARAM
+                        ) {
+                            let record = Record::from_record(record.clone());
+                            updater.apply(ZoneUpdate::AddRecord(record)).await.unwrap();
+                        }
+                    }
+
+                    // debug!(
+                    //     "Inserted {} unsigned records in {:.1}s",
+                    //     unsigned_records.len(),
+                    //     start.elapsed().as_secs_f64()
+                    // );
 
                     (unsigned_records, updater)
                 })
@@ -1023,7 +1037,7 @@ impl ZoneSigner {
         let apex_name = zone_name.clone();
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
-        reader.walk(Box::new(move |name, rrset, _cut| {
+        let _op = reader.walk(Box::new(move |name, rrset, _cut| {
             for r in rrset.data() {
                 if let ZoneRecordData::Rrsig(rrsig) = r {
                     if name == apex_name
@@ -1122,7 +1136,13 @@ impl ZoneSigner {
 
     fn get_or_insert_signed_zone(&self, zone_name: &StoredName) -> Zone {
         // Create an empty zone to sign into if no existing signed zone exists.
+        let signable_zones = self.center.signable_zones.load();
         let signed_zones = self.center.signed_zones.load();
+
+        let signable_zone = signable_zones
+            .get_zone(zone_name, Class::IN)
+            .unwrap()
+            .clone();
 
         signed_zones
             .get_zone(zone_name, Class::IN)
@@ -1131,7 +1151,11 @@ impl ZoneSigner {
                 let mut new_zones = Arc::unwrap_or_clone(signed_zones.clone());
 
                 let new_zone = if self.use_lightweight_zone_tree {
-                    Zone::new(LightWeightZone::new(zone_name.clone(), false))
+                    Zone::new(LightWeightZone::new(
+                        zone_name.clone(),
+                        Some(signable_zone),
+                        false,
+                    ))
                 } else {
                     ZoneBuilder::new(zone_name.clone(), Class::IN).build()
                 };
@@ -1485,33 +1509,32 @@ fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
     let passed_records = records.clone();
 
     trace!("SIGNER: Walking");
-    zone.read()
-        .walk(Box::new(move |owner, rrset, _at_zone_cut| {
-            let mut unlocked_records = passed_records.lock().unwrap();
+    let _op =
+        zone.read()
+            .walk(Box::new(move |owner, rrset, _at_zone_cut| {
+                let mut unlocked_records = passed_records.lock().unwrap();
 
-            // SKIP DNSSEC records that should be generated by the signing
-            // process (these will be present if re-signing a published signed
-            // zone rather than signing an unsigned zone). Skip The SOA as
-            // well. A new SOA will be added later.
-            if matches!(
-                rrset.rtype(),
-                Rtype::DNSKEY
-                    | Rtype::RRSIG
-                    | Rtype::NSEC
-                    | Rtype::NSEC3
-                    | Rtype::CDS
-                    | Rtype::CDNSKEY
-                    | Rtype::SOA
-            ) {
-                return;
-            }
+                // SKIP DNSSEC records that should be generated by the signing
+                // process (these will be present if re-signing a published signed
+                // zone rather than signing an unsigned zone). Skip The SOA as
+                // well. A new SOA will be added later.
+                if matches!(
+                    rrset.rtype(),
+                    Rtype::DNSKEY
+                        | Rtype::RRSIG
+                        | Rtype::NSEC
+                        | Rtype::NSEC3
+                        | Rtype::CDS
+                        | Rtype::CDNSKEY
+                        | Rtype::SOA
+                ) {
+                    return;
+                }
 
-            unlocked_records.extend(
-                rrset.data().iter().map(|rdata| {
+                unlocked_records.extend(rrset.data().iter().map(|rdata| {
                     Record::new(owner.clone(), Class::IN, rrset.ttl(), rdata.to_owned())
-                }),
-            );
-        }));
+                }));
+            }));
 
     let records = Arc::into_inner(records).unwrap().into_inner().unwrap();
 

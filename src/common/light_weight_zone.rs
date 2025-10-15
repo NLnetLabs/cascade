@@ -5,7 +5,7 @@
 /// IXFR diff generation.
 use std::{
     any::Any,
-    collections::{btree_map::Entry, BTreeMap, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     future::{ready, Future},
     ops::Deref,
     pin::Pin,
@@ -25,7 +25,7 @@ use domain::{
     rdata::ZoneRecordData,
     zonetree::{
         error::OutOfZone, Answer, InMemoryZoneDiff, ReadableZone, Rrset, SharedRrset, StoredName,
-        WalkOp, WritableZone, WritableZoneNode, ZoneStore,
+        WalkOp, WritableZone, WritableZoneNode, Zone, ZoneStore,
     },
 };
 use log::trace;
@@ -56,7 +56,8 @@ impl PartialEq for HashedByRtypeSharedRrset {
 #[derive(Clone, Debug)]
 struct SimpleZoneInner {
     root: StoredName,
-    tree: Arc<std::sync::RwLock<BTreeMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
+    unsigned_zone: Option<Zone>,
+    tree: Arc<std::sync::RwLock<HashMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
     skipped: Arc<AtomicUsize>,
     skip_signed: bool,
 }
@@ -67,10 +68,11 @@ pub struct LightWeightZone {
 }
 
 impl LightWeightZone {
-    pub fn new(root: StoredName, skip_signed: bool) -> Self {
+    pub fn new(root: StoredName, unsigned_zone: Option<Zone>, skip_signed: bool) -> Self {
         Self {
             inner: SimpleZoneInner {
                 root,
+                unsigned_zone,
                 tree: Default::default(),
                 skipped: Default::default(),
                 skip_signed,
@@ -146,6 +148,24 @@ impl ReadableZone for SimpleZoneInner {
                 }
             }
         }
+
+        struct OpContainer {
+            op: WalkOp,
+        }
+
+        if let Some(unsigned_zone) = &self.unsigned_zone {
+            let c = Arc::new(OpContainer { op });
+
+            let op = Box::new(move |owner, rrset: &SharedRrset, _at_zone_cut| {
+                // Skip the SOA, use the new one that was part of the signed data.
+                if matches!(rrset.rtype(), Rtype::SOA) {
+                    return;
+                }
+
+                (c.op)(owner, rrset, _at_zone_cut)
+            });
+            unsigned_zone.read().walk(op);
+        }
         trace!("WALK FINISHED");
     }
 
@@ -185,7 +205,7 @@ impl WritableZone for SimpleZoneInner {
 }
 
 struct SimpleZoneNode {
-    pub tree: Arc<std::sync::RwLock<BTreeMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
+    pub tree: Arc<std::sync::RwLock<HashMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
     pub name: StoredName,
     pub skipped: Arc<AtomicUsize>,
     pub skip_signed: bool,
@@ -193,7 +213,7 @@ struct SimpleZoneNode {
 
 impl SimpleZoneNode {
     fn new(
-        tree: Arc<std::sync::RwLock<BTreeMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
+        tree: Arc<std::sync::RwLock<HashMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
         name: StoredName,
         skipped: Arc<AtomicUsize>,
         skip_signed: bool,

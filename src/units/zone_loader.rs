@@ -405,7 +405,7 @@ impl ZoneLoader {
         zone_updated_tx: Sender<(Name<Bytes>, Serial)>,
     ) -> TypedZone {
         let zone_cfg = Self::determine_secondary_zone_cfg(&zone_name, source);
-        let zone = Zone::new(LightWeightZone::new(zone_name, true));
+        let zone = Zone::new(LightWeightZone::new(zone_name, None, true));
         let zone = Zone::new(NotifyOnWriteZone::new(zone, zone_updated_tx));
         TypedZone::new(zone, zone_cfg)
     }
