@@ -898,8 +898,6 @@ impl ZoneSigner {
 
             move || {
                 runtime.block_on(async move {
-                    // let start = Instant::now();
-
                     for record in &extra_apex_rrs {
                         let record = Record::from_record(record.clone());
                         updater.apply(ZoneUpdate::AddRecord(record)).await.unwrap();
@@ -914,12 +912,6 @@ impl ZoneSigner {
                             updater.apply(ZoneUpdate::AddRecord(record)).await.unwrap();
                         }
                     }
-
-                    // debug!(
-                    //     "Inserted {} unsigned records in {:.1}s",
-                    //     unsigned_records.len(),
-                    //     start.elapsed().as_secs_f64()
-                    // );
 
                     (unsigned_records, updater)
                 })
