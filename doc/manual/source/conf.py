@@ -238,6 +238,7 @@ man_pages = [
     ('man/cascaded-policy.toml', 'cascaded-policy.toml', 'Cascade policy file format', author, 5),
     ('man/cascade', 'cascade', 'Cascade CLI', author, 1),
     ('man/cascade-config', 'cascade-config', 'Manage configuration', author, 1),
+    ('man/cascade-health', 'cascade-health', 'Check health', author, 1),
     ('man/cascade-hsm', 'cascade-hsm', 'Manage HSMs', author, 1),
     ('man/cascade-keyset', 'cascade-keyset', 'Execute manual key roll or key removal commands', author, 1),
     ('man/cascade-policy', 'cascade-policy', 'Manage policies', author, 1),
