@@ -21,7 +21,7 @@ use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode
 use domain::dnssec::sign::error::SigningError;
 use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
 use domain::dnssec::sign::keys::SigningKey;
-use domain::dnssec::sign::records::{DefaultSorter, RecordsIter, Sorter};
+use domain::dnssec::sign::records::{RecordsIter, Sorter};
 use domain::dnssec::sign::signatures::rrsigs::{sign_sorted_zone_records, GenerateRrsigConfig};
 use domain::dnssec::sign::traits::SignableZoneInPlace;
 use domain::dnssec::sign::SigningConfig;
