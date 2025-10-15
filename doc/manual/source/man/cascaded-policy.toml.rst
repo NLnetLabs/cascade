@@ -152,6 +152,9 @@ loaded by Cascade.
      the zone for review, formatted as ``<ip-addr>:<port>``.
    - ``CASCADE_SERVER_IP``: Just the address of the above server.
    - ``CASCADE_SERVER_PORT``: Just the port of the above server.
+
+   .. versionadded:: 0.1.0-alpha2
+      ``CASCADE_SERVER_IP`` and ``CASCADE_SERVER_PORT``.`
    
    The command will be called from an unspecified directory, and it must be
    accessible to Cascade (i.e. after it has dropped privileges). Its exit code
