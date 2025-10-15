@@ -1,6 +1,8 @@
 cascade health
 ==============
 
+.. versionadded:: 0.1.0-alpha2
+
 Synopsis
 --------
 
