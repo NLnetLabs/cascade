@@ -37,7 +37,7 @@ impl Status {
                     .map_err(format_http_error)?;
 
                 if !response.hard_halted_zones.is_empty() {
-                    eprintln!("The following zones are halted due to a serious problem:");
+                    eprintln!("The following zones are hard halted due to a serious problem:");
                     for (zone_name, err) in response.hard_halted_zones {
                         eprintln!("   {}\u{78}{} {zone_name}: {err}", ansi::RED, ansi::RESET);
                     }
