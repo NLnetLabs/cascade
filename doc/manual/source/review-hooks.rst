@@ -47,22 +47,16 @@ To do this, we need to write a shell script that fetches the zone using AXFR and
 
     logger -p daemon.notice -t cascade "Validating ${CASCADE_ZONE} of serial ${CASCADE_SERIAL} from ${CASCADE_SERVER}"
 
-    tmp_zone=$(mktemp /tmp/cascade_zone.XXXXXXXXXX)
-    # Clean up when leaving
-    trap  "rm -f ${tmp_zone}; exit 1" 1 2 3 15
-    trap  "rm -f ${tmp_zone}" EXIT
-
-    # Unfortunately, dig logs some errors on standard output... Nothing to do there
-    dig @${CASCADE_SERVER_IP} -p ${CASCADE_SERVER_PORT} "${CASCADE_ZONE}" AXFR > ${tmp_zone}
-
     # Using `validns` to check the unsigned zone
     # and `dnssec-verify` to check the signed zone
-    if [ "$1" = "unsigned" ]; then
-        # validns does not handle Ed25519
-        validns -z "${CASCADE_ZONE}" -p all ${tmp_zone}
-    else
-        dnssec-verify -q -o "${CASCADE_ZONE}" ${tmp_zone}
-    fi
+    # Unfortunately, dig logs some errors on standard output... Nothing to do there
+    dig @${CASCADE_SERVER_IP} -p ${CASCADE_SERVER_PORT} "${CASCADE_ZONE}" AXFR | \
+        if [ "$1" = "unsigned" ]; then
+            # validns does not handle Ed25519
+            validns -z "${CASCADE_ZONE}" -p all -
+        else
+            dnssec-verify -q -o "${CASCADE_ZONE}" /dev/stdin
+        fi
 
 
 Next, we update the zone's policy to use the review script for both stages:
