@@ -497,7 +497,7 @@ impl Zone {
             }
             PipelineMode::HardHalt(err) => {
                 println!(
-                    "{}\u{78} The pipeline for this zone is halted due to a serious error:{}",
+                    "{}\u{78} The pipeline for this zone is hard halted due to a serious error:{}",
                     ansi::RED,
                     ansi::RESET
                 );
