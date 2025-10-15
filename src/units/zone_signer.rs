@@ -809,7 +809,7 @@ impl ZoneSigner {
         status.write().await.current_action = "Sorting records".to_string();
         let sort_start = Instant::now();
         let mut records = spawn_blocking(|| {
-            DefaultSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
+            MultiThreadedSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
             records.dedup();
             records
         })
