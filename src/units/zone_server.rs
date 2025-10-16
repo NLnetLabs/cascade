@@ -32,7 +32,7 @@ use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
 use domain::zonetree::{StoredName, ZoneTree};
 use futures::Future;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot, RwLock};
 
@@ -469,11 +469,11 @@ impl ZoneServer {
             let status = ZoneReviewStatus::Pending;
             match self.source {
                 Source::UnsignedZones => (
-                    state.config.loader.review.servers[0].clone(),
+                    state.config.loader.review.servers.first().cloned(),
                     HistoricalEvent::UnsignedZoneReview { status },
                 ),
                 Source::SignedZones => (
-                    state.config.signer.review.servers[0].clone(),
+                    state.config.signer.review.servers.first().cloned(),
                     HistoricalEvent::SignedZoneReview { status },
                 ),
                 Source::PublishedZones => unreachable!(),
@@ -521,12 +521,20 @@ impl ZoneServer {
 
         record_zone_event(&self.center, &zone_name, pending_event, Some(zone_serial));
 
-        let Some(hook) = review.cmd_hook else {
-            info!("[{unit_name}] No review hook set; waiting for manual review");
+        if review.cmd_hook.is_none() || review_server.is_none() {
+            match (review_server, review.cmd_hook) {
+                (None, None) => warn!("[{unit_name}] Review required, but neither a review server nor a review hook is set; use the CLI to approve or reject the zone"),
+                (None, Some(_)) => warn!("[{unit_name}] Review required, but no review server configured; use the CLI to approve or reject the zone"),
+                (Some(_), None) => info!("[{unit_name}] No review hook set; waiting for manual review"),
+                (Some(_), Some(_)) => unreachable!(),
+            }
             info!("[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}");
             info!("[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}");
             return None;
-        };
+        }
+
+        let hook = review.cmd_hook.unwrap();
+        let review_server = review_server.unwrap();
 
         // TODO: Windows support?
         // TODO: Set 'CASCADE_UNSIGNED_SERIAL' and 'CASCADE_UNSIGNED_SERVER'.

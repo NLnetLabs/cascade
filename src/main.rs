@@ -158,6 +158,14 @@ fn main() -> ExitCode {
         }
     }
 
+    if state.config.loader.review.servers.is_empty() {
+        log::warn!("No review server configured for [loader.review], therefore no unsigned zone transfer available for review.");
+    }
+
+    if state.config.signer.review.servers.is_empty() {
+        log::warn!("No review server configured for [signer.review], therefore no signed zone transfer available for review.");
+    }
+
     // Load the TSIG store file.
     //
     // TODO: Track which TSIG keys are in use by zones.
