@@ -53,8 +53,6 @@ Released yyyy-mm-dd.
 - Introduce stdout/stderr log targets to replace using File to log to stdout by
   @mozzieongit ([#176])
 - Check for compatible `dnst` on startup by @mozzieongit ([#180])
-- Remove non-existing variable in example review script comment by @jpmens
-  ([#196])
 - Use MultiThreadedSorter for faster sorting before signing by @ximon18
   ([#219])
 - Set homepage and documentation properties in Cargo.toml by @maertsen
@@ -70,13 +68,15 @@ Released yyyy-mm-dd.
 - Use proposed/testing names where appropriate by @ximon18 ([#170])
 - Remove a broken link by @ximon18 (bbae66af)
 - Fix the "unit-time" policy setting documentation by @jpmens ([#167])
-- Document that some policy options also require a restart by @mozzieongit
-  (6cdc126)
+- Remove non-existing variable in example review script comment by @jpmens
+  ([#196])
 - Don't fail to show signing statistics for a finished signing operation when
   a signing operation was subsequently aborted by @ximon18 ([#210])
 - Improve documentation about review hooks by @mozzieongit ([#216])
 - Simplify review script example mention need for faster sorting before
   signing by @mozzieongit ([#218])
+- Document that some policy options also require a restart by @mozzieongit
+  (6cdc126)
 
 ### Known issues
 
