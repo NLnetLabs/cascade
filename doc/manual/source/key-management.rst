@@ -1,0 +1,225 @@
+Key Management
+==============
+
+The key manager is responsible for two things: for each zone, maintaining a
+set of keys that are used to sign and signing DNSKEY, CDS, and CDNSKEY RRsets.
+As part of maintaining a set of keys, the key manager also provides key rolls.
+
+Cascade uses an external key manager.
+The program that key management is called ```dnst``` and the actual
+key management is provided by the ```keyset``` subcommand of ```dnst```.
+
+The reason for having an external key manager is to have the flexibility to
+use different key managers. 
+The current one requires that keys are online, either in files or in an
+HSM and does not (explicitly) support a multi-signer setup.
+
+We envision future key managers that support offline keys or that support
+multi-signing.
+Finally, a separate key manager makes it relatively easy for Cascade to 
+support high-availability setups, though it does not do that at the moment.
+
+Under normal circumstances, user interaction with the key manager is through
+Cascade. 
+In the unlikely event that something goes wrong and direct interaction with
+key manager is required, the ```keyset``` subcommand of ```dnst``` has its
+own manual page: XXX
+
+
+The key manager manages a set of DNSSEC (`RFC 9364`_) signing keys.
+It manages signing keys and generates a signed DNSKEY RRset.
+The key manager expect a separate signer, in this Cascade, to use the zone
+signing keys in the key set,
+sign the zone and include the DNSKEY RRset (as well as the CDS and CDNSKEY
+RRsets).
+The key manager supports keys stored in files and keys stored in a
+Hardware Security Module (HSM) that can be accessed using the
+Key Management Interoperability Protocol (KMIP).
+
+.. _RFC 9364: https://www.rfc-editor.org/rfc/rfc9364
+
+The key manager operates on one zone at a time.
+For each zone, the key manager has configuration parameters for
+key generation (which algorithm to use, whether to use a CSK or a
+KSK and ZSK pair), parameters for key rolls (whether key rolls are automatic
+or not), the lifetimes of keys and signatures, etc.
+The key manager maintains a state file for each zone.
+The state file lists the keys in the key set, the current key roll state,
+and has the DNSKEY, CDS, and CDNSKEY RRsets.
+key generation (which algorithm to use, whether to use a CSK and a
+KSK and a ZSK), parameters for key rolls (whether key rolls are automatic
+or not), the lifetimes of keys and signatures, etc.
+
+In addition to the configuration and state files, the key manager maintains
+files for keys that are stored on in the filesystem.
+
+The key manager supports importing existing keys, both standalone
+public keys as well as public/private key pairs can be imported.
+A standalone public key can only be imported from a file whereas public/private
+key pairs can be either files or references to keys stored in an HSM.
+Note that the public and private key either need to be both files or both
+stored in an HSM.
+
+The signatures of the DNSKEY, CDS and CDNSKEY RRsets need to updated
+periodically.
+In addition, key roll automation requires periodic invocation of the key
+manager to start new key rolls and to make progress on ones that are currently
+executing. For this purpose, Cascade invokes the key manager periodically.
+
+When a new zone is added to Cascade, Cascade will invoke the key manager
+to create empty key state for the new zone.
+When adding a zone it is possible to either let the key manager generate new
+keys or import key from an existing signer.
+
+When the key manager creates new keys, it will start an algorithm roll instead
+of using the new keys directly.
+The reason for this is that the new zone may be an existing unsigned zone
+that now needs to become a DNSSEC signed zone.
+The algorithm roll makes sure that the DNSKEY RRset and the zone signatures
+have propagated before adding the DS record at the parent.
+
+Key Rolls
+~~~~~~~~~
+
+The key manager can perform four different types of key rolls:
+KSK rolls, ZSK rolls, CSK rolls and algorithm rolls.
+A KSK roll replaces one KSK with a new KSK.
+Similarly, a ZSK roll replaces one ZSK with a new ZSK.
+A CSK roll also replaces a CSK with a new CSK but the roll also treats a
+pair of KSK and ZSK keys as equivalent to a CSK.
+So a CSK roll can also roll from KSK plus ZSK to a new CSK or from a CSK
+to new a KSK and ZSK pair.
+Note that a roll from KSK plus ZSK to a new KSK plus ZSK pair
+is also supported.
+Finally, an algorithm roll is similar to a CSK roll, but designed in
+a specific way to handle the case where the new key or keys have an algorithm
+that is different from one used by the current signing keys.
+
+The KSK and ZSK rolls are completely independent and can run in parallel.
+Consistency checks are performed at the start of a key roll.
+For example, a KSK key roll cannot start when another KSK is in progress or
+when a CSK or algorithm roll is in progress.
+A KSK roll cannot start either when the current signing key is a CSK or
+when the configuration specifies that the new signing key has to be a CSK.
+Finally, KSK rolls are also prevented when the algorithm for new keys is
+different from the one used by the current key.
+Similar limitations apply to the other roll types. Note however that an
+algorithm roll can be started even when it is not needed.
+
+A key roll consists of six steps: ``start-roll``, ``propagation1-complete``,
+``cache-expired1``, ``propagation2-complete``, ``cache-expired2``, and
+``roll-done``.
+For each key roll these six steps follow in the same order.
+Associated which each step is a (possibly empty) list of actions.
+Actions fall in three categories.
+The first category consists of actions that require updating the zone or the
+parent zone.
+The second category consists of actions that require checking if changes
+have propagated to all nameservers and require reporting of the
+TTLs of the changed RRset as seen at the nameservers.
+Finally, the last category requires waiting for changes to propagate to
+all nameservers but there is no need to report the TTL.
+
+Typically, in a list of actions, an action of the first category is paired
+with one from the second of third category.
+For example, ``UpdateDnskeyRrset`` is paired with eiher
+``ReportDnskeyPropagated`` or ``WaitDnskeyPropagated``.
+
+A key roll starts with the ``start-roll`` step, which creates new keys.
+The next step, ``propagation1-complete`` has a TTL argument which is the
+maximum of the TTLs of the Report actions.
+The ``cache-expired1`` and ``cache-expired2`` have no associated actions.
+They simply require waiting for the TTL (in seconds) reported by the
+previous ``propagation1-complete`` or ``propagation2-complete``.
+The ``propagation2-complete`` step is similar to the ``propagation1-complete`` step.
+Finally, the ``roll-done`` step typically has associated Wait actions.
+These actions are cleanup actions and are harmless but confusing if they
+are skipped.
+
+The key manager provides fine grained control over automation.
+Automation is configured separately for each of the four roll types.
+For each roll type, there are four booleans called ``start``, ``report``,
+``expire`` and ``done``.
+
+When set, the ``start`` boolean directs the key manager to start a key roll
+when a relevant key has expired.
+A KSK or a ZSK key roll can start automatically if respectively a KSK or a ZSK
+has expired.
+A CSK roll can start automatically when a CSK has expired but also when a KSK or
+ZSK has expired and the new key will be a CSK.
+Finally, an algorithm roll can start automatically when the new algorithm is
+different from the one used by the existing keys and any key has expired.
+
+The ``report`` flags control the automation of the ``propagation1-complete``
+and ``propagation2-complete`` steps.
+When enabled, the cron subcommand contacts the nameservers of the zone or
+(in the case of ``ReportDsPropagated``, the nameservers of the parent zone)
+to check if changes have propagated to all nameservers.
+The check obtains the list of nameservers from the apex of the (parent) zone
+and collects all IPv4 and IPv6 addresses.
+For the ``ReportDnskeyPropagated`` and ``ReportDsPropagated`` actions, each address is
+the queried to see if the DNSKEY RRset or DS RRset match
+the KSKs.
+The ``ReportRrsigPropagated`` action is more complex.
+First the entire zone is transferred from the primary nameserver listed in the
+SOA record.
+Then all relevant signatures are checked if they have the expected key tags.
+The maximum TTL in the zone is recorded to be reported.
+Finally, all addresses of listed nameservers are checked to see if they
+have a SOA serial that is greater than or equal to the one that was checked.
+
+Automation of ``cache-expired1`` and ``cache-expired2`` is enabled by the
+``expire`` boolean.
+When enabled, the cron subcommand simply checks if enough time has passed
+to invoke ``cache-expired1`` or ``cache-expired2``.
+
+Finally the ``done`` boolean enables automation of the ``roll-done`` step.
+This automation is very similar to the ``report`` automation.
+The only difference is that the Wait actions are automated so propagation
+is tracked but no TTL is reported.
+
+Fine grained control of over automation makes it possible to automate
+KSK or algorithm without starting them automatically.
+Or let a key roll progress automatically except that the ``cache-expired``
+steps must be done manually in order to be able to insert extra manual steps.
+
+The ``report`` and ``done`` automations require that keyset has network access
+to all nameservers of the zone and all nameservers of the parent.
+
+Importing Keys
+~~~~~~~~~~~~~~
+
+There are three basic ways to import exiting keys: public-key,
+a public/private key pair from files or a public/private key pair in an HSM.
+
+A public key can only be imported from a file.
+When the key is imported the name of the file is converted to a URL and stored in the key set and
+the key will be included in the DNSKEY RRset.
+This is useful for certain migrations and to manually implement a
+multi-signer DNSSEC signing setup.
+Note that automation does not work for this case.
+
+A public/private key pair can be imported from files.
+It is sufficient to give the name of the file that holds the public key if
+the filename ends in ``.key`` and the filename of the private key is the
+same except that it ends in ``.private``.
+If this is not the case then the private key filename must be specified
+separately.
+
+Importing a public/private key stored in an HSM requires specifying the KMIP
+server ID, the ID of the public key, the ID of the private key, the
+DNSSEC algorithm of the key and the flags (typically 256 for a ZSK and
+257 for a KSK).
+
+Normally, the key manager assumes ownership of any keys it holds.
+This means that when a key is deleted from the key set, the key manager
+will also delete the files that hold the public and private keys or delete the
+keys from the HSM that was used to create them.
+
+For an imported public/private key pair this is considered too dangerous
+because another signer may need the keys.
+For this reason keys are imported in so-called ``decoupled`` state.
+When a decoupled key is deleted, only the reference to the key is deleted
+from the key set, the underlying keys are left untouched.
+There is a ``--coupled`` option to tell keyset to take ownership of the key.
+

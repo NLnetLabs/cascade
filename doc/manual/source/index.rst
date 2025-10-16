@@ -81,6 +81,7 @@ We would love for you to :doc:`get to know Cascade
    :name: toc-core
 
    cli
+   key-management
    hsms
    review-hooks
 
