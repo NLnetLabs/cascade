@@ -44,8 +44,8 @@ Options
           file:<PATH>, syslog].
 
 .. versionchanged:: 0.1.0-alpha2
-   Added types `stdout` and `stderr`. Type `file` with values `/dev/stdout`
-   and `/dev/stderr` can still be used but may not work properly in some
+   Added types ``stdout`` and ``stderr``. Type ``file`` with values ``/dev/stdout``
+   and ``/dev/stderr`` can still be used but may not work properly in some
    cases, e.g. when running under systemd.
 
 .. option:: -d, --daemonize
