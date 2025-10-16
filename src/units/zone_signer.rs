@@ -30,7 +30,7 @@ use domain::rdata::{Dnskey, Nsec3param, Rrsig, Soa, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
 use domain::zonetree::types::{StoredRecordData, ZoneUpdate};
 use domain::zonetree::update::ZoneUpdater;
-use domain::zonetree::{StoredName, StoredRecord, Zone, ZoneBuilder};
+use domain::zonetree::{StoredName, StoredRecord, Zone};
 use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use log::{debug, error, info, trace, Level};
