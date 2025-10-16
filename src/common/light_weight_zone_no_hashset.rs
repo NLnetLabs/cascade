@@ -1,9 +1,8 @@
-/// A simple zone store that trades the advanced functionality of the
-/// in-memory zone store for reduced memory usage, specifically: proper
-/// answers to queries, versioning and IXFR diff generation. Memory usage is
-/// reduced by having a less complex data structure, and also for signed zones
-/// not storing a copy of the unsigned records but instead referencing the
-/// actual unsigned zone store.
+/// A quick PoC to see if using a BTree compared to default in-memory zone
+/// store uses less memory, and it does, even with its dumb way of storing
+/// values in the tree. It's not a fair comparison either as the default
+/// in-memory store also supports proper answers to queries, versioning and
+/// IXFR diff generation.
 use std::{
     any::Any,
     collections::{hash_map::Entry, HashMap, HashSet},
@@ -31,48 +30,35 @@ use domain::{
 };
 use log::trace;
 
-#[derive(Debug, Eq)]
-struct HashedByRtypeSharedRrset(SharedRrset);
+// #[derive(Debug, Eq)]
+// struct HashedByRtypeSharedRrset(SharedRrset);
 
-impl std::hash::Hash for HashedByRtypeSharedRrset {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.rtype().hash(state);
-    }
-}
+// impl std::hash::Hash for HashedByRtypeSharedRrset {
+//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+//         self.0.rtype().hash(state);
+//     }
+// }
 
-impl std::ops::Deref for HashedByRtypeSharedRrset {
-    type Target = SharedRrset;
+// impl std::ops::Deref for HashedByRtypeSharedRrset {
+//     type Target = SharedRrset;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
 
-impl PartialEq for HashedByRtypeSharedRrset {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.rtype() == other.0.rtype()
-    }
-}
+// impl PartialEq for HashedByRtypeSharedRrset {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.0.rtype() == other.0.rtype()
+//     }
+// }
 
 #[derive(Clone, Debug)]
 struct SimpleZoneInner {
     root: StoredName,
-
-    /// Optional reference to a zone that contains the unsigned records of a
-    /// signed zone.
-    ///
-    /// Avoids copying the unsigned records into this zone thus reduces memory
-    /// usage.
     unsigned_zone: Option<Zone>,
-
-    /// The records of the zone, either unsigned or signed.
-    tree: Arc<std::sync::RwLock<HashMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
-
-    /// The count of records skipped when skip_signed is true.
+    tree: Arc<std::sync::RwLock<HashMap<(StoredName, Rtype), SharedRrset>>>,
     skipped: Arc<AtomicUsize>,
-
-    /// Whether or not to prevent DNSSEC records being added to this zone via
-    /// its WritableZoneInterface.
     skip_signed: bool,
 }
 
@@ -130,14 +116,11 @@ impl ReadableZone for SimpleZoneInner {
             .tree
             .read()
             .unwrap()
-            .get(&qname)
-            .map(|rrsets| {
+            .get(&(qname, qtype))
+            .map(|rrset| {
                 trace!("QUERY RRSETS");
                 let mut answer = Answer::new(Rcode::NOERROR);
-                if let Some(rrset) = rrsets.iter().find(|rrset| rrset.rtype() == qtype) {
-                    trace!("QUERY RRSETS: FOUND {qtype}");
-                    answer.add_answer(rrset.deref().clone());
-                }
+                answer.add_answer(rrset.clone());
                 answer
             })
             .unwrap_or(Answer::new(Rcode::NOERROR)))
@@ -145,51 +128,29 @@ impl ReadableZone for SimpleZoneInner {
 
     fn walk(&self, op: WalkOp) {
         trace!("WALK");
-
-        // Emit the records that we have, either unsigned or signed.
-        for (name, rrsets) in self.tree.read().unwrap().iter() {
-            for rrset in rrsets {
-                // If a DNSSEC RRSIG is encountered, ignore the RRSET TTL and
-                // instead emit it with the TTL of the original record the
-                // RRSIG covered, as for DNSSEC RRSIGs should not be grouped
-                // into RRSETs with a common TTL.
-                if rrset.rtype() == Rtype::RRSIG {
-                    for data in rrset.data() {
-                        let ZoneRecordData::Rrsig(rrsig) = data else {
-                            unreachable!();
-                        };
-                        let mut rrset = Rrset::new(Rtype::RRSIG, rrsig.original_ttl());
-                        rrset.push_data(data.clone());
-                        (op)(name.clone(), &rrset.into_shared(), false)
-                    }
-                } else {
-                    // TODO: Set false to proper value for "at zone cut or not"
-                    (op)(name.clone(), rrset, false)
+        for ((name, _rtype), rrset) in self.tree.read().unwrap().iter() {
+            if rrset.rtype() == Rtype::RRSIG {
+                for data in rrset.data() {
+                    let ZoneRecordData::Rrsig(rrsig) = data else {
+                        unreachable!();
+                    };
+                    let mut rrset = Rrset::new(Rtype::RRSIG, rrsig.original_ttl());
+                    rrset.push_data(data.clone());
+                    (op)(name.clone(), &rrset.into_shared(), false)
                 }
+            } else {
+                // TODO: Set false to proper value for "at zone cut or not"
+                (op)(name.clone(), rrset, false)
             }
         }
 
-        /// A type for storing the passed op callback.
-        ///
-        /// A workaround for not being able to clone or store the op in an
-        /// Arc.
         struct OpContainer {
             op: WalkOp,
         }
 
-        // Do we have an unsigned zone reference? Yes, walk over its records
-        // too.
-        //
-        // This allows us to store the signed records and refer to an
-        // existing copy of the unsigned records instead of duplicating them
-        // into our own storage.
         if let Some(unsigned_zone) = &self.unsigned_zone {
             let c = Arc::new(OpContainer { op });
 
-            // Wrap the real op inside a new one that allows us to omit the
-            // SOA RR when walking the unsigned records. We do this because
-            // the signed records contain the bumped SOA RR that should be
-            // used, not the original one in the unsigned records.
             let op = Box::new(move |owner, rrset: &SharedRrset, _at_zone_cut| {
                 // Skip the SOA, use the new one that was part of the signed data.
                 if matches!(rrset.rtype(), Rtype::SOA) {
@@ -239,7 +200,7 @@ impl WritableZone for SimpleZoneInner {
 }
 
 struct SimpleZoneNode {
-    pub tree: Arc<std::sync::RwLock<HashMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
+    pub tree: Arc<std::sync::RwLock<HashMap<(StoredName, Rtype), SharedRrset>>>,
     pub name: StoredName,
     pub skipped: Arc<AtomicUsize>,
     pub skip_signed: bool,
@@ -247,7 +208,7 @@ struct SimpleZoneNode {
 
 impl SimpleZoneNode {
     fn new(
-        tree: Arc<std::sync::RwLock<HashMap<StoredName, HashSet<HashedByRtypeSharedRrset>>>>,
+        tree: Arc<std::sync::RwLock<HashMap<(StoredName, Rtype), SharedRrset>>>,
         name: StoredName,
         skipped: Arc<AtomicUsize>,
         skip_signed: bool,
@@ -285,15 +246,12 @@ impl WritableZoneNode for SimpleZoneNode {
         rtype: Rtype,
     ) -> Pin<Box<dyn Future<Output = Result<Option<SharedRrset>, std::io::Error>> + Send + Sync>>
     {
-        let rrset = self
+        Box::pin(ready(Ok(self
             .tree
             .read()
             .unwrap()
-            .get(&self.name)
-            .and_then(|v| v.iter().find(|rrset| rrset.rtype() == rtype))
-            .map(|hashed_shared_rrset| hashed_shared_rrset.deref().clone());
-
-        Box::pin(ready(Ok(rrset)))
+            .get(&(self.name.clone(), rtype))
+            .cloned())))
     }
 
     fn update_rrset(
@@ -315,15 +273,16 @@ impl WritableZoneNode for SimpleZoneNode {
             }
 
             _ => {
-                match self.tree.write().unwrap().entry(self.name.clone()) {
+                match self.tree.write().unwrap().entry((self.name.clone(), rrset.rtype())) {
                     Entry::Vacant(e) => {
-                        let _ = e.insert(HashSet::from([HashedByRtypeSharedRrset(rrset)]));
+                        let _ = e.insert(rrset);
                     }
                     Entry::Occupied(mut e) => {
-                        let rrsets = e.get_mut();
-                        let new_rrset = HashedByRtypeSharedRrset(rrset);
-                        // There can only be one RRset of a given RType at a given name.
-                        let _ = rrsets.replace(new_rrset);
+                        let existing_rrset = e.get_mut();
+                        *existing_rrset = rrset;
+                        // let new_rrset = HashedByRtypeSharedRrset(rrset);
+                        // // There can only be one RRset of a given RType at a given name.
+                        // let _ = rrsets.replace(new_rrset);
                     }
                 }
 
@@ -336,10 +295,7 @@ impl WritableZoneNode for SimpleZoneNode {
         &self,
         rtype: Rtype,
     ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + Sync>> {
-        if let Some(rrsets) = self.tree.write().unwrap().get_mut(&self.name) {
-            rrsets.retain(|rrset| rrset.rtype() != rtype);
-        }
-
+        let _ = self.tree.write().unwrap().remove(&(self.name.clone(), rtype));
         Box::pin(ready(Ok(())))
     }
 

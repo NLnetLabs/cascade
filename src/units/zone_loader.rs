@@ -405,7 +405,7 @@ impl ZoneLoader {
         zone_updated_tx: Sender<(Name<Bytes>, Serial)>,
     ) -> TypedZone {
         let zone_cfg = Self::determine_secondary_zone_cfg(&zone_name, source);
-        let zone = Zone::new(LightWeightZone::new(zone_name, true));
+        let zone = Zone::new(LightWeightZone::new(zone_name, None, true));
         let zone = Zone::new(NotifyOnWriteZone::new(zone, zone_updated_tx));
         TypedZone::new(zone, zone_cfg)
     }
@@ -494,8 +494,15 @@ fn load_file_into_zone(
     for res in reader {
         match res.map_err(RecordError::MalformedRecord) {
             Ok(Entry::Record(r)) => {
+                // Note: Do NOT strip out DNSSEC records here:
+                //   - For passthrough mode we need the original DNSSEC records.
+                //   - That would break unsigned review clients ability to
+                //     check ZONEMD in the incoming zone data.
+                //   - It would be inconsistent with how zone data received via
+                //     XFR is handled.
+                //   - They are ignored by the signing process later if
+                //     appropriate.
                 let stored_rec = r.flatten_into();
-                // let name = stored_rec.owner().clone();
                 if let Err(err) = parsed_zone_file.insert(stored_rec) {
                     error!("Unable to parse record in '{zone_name}': {err}");
                     loading_error = Some(err.to_string());

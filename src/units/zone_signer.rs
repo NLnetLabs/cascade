@@ -21,7 +21,7 @@ use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode
 use domain::dnssec::sign::error::SigningError;
 use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
 use domain::dnssec::sign::keys::SigningKey;
-use domain::dnssec::sign::records::{DefaultSorter, RecordsIter, Sorter};
+use domain::dnssec::sign::records::{RecordsIter, Sorter};
 use domain::dnssec::sign::signatures::rrsigs::{sign_sorted_zone_records, GenerateRrsigConfig};
 use domain::dnssec::sign::traits::SignableZoneInPlace;
 use domain::dnssec::sign::SigningConfig;
@@ -620,10 +620,10 @@ impl ZoneSigner {
         debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
         let passed_zone = signable_zone.clone();
-        let mut records = spawn_blocking(|| collect_zone(passed_zone)).await.unwrap();
-        records.push(soa_rr.clone());
+        let mut records_to_sort = spawn_blocking(|| collect_zone(passed_zone)).await.unwrap();
+        records_to_sort.push(soa_rr.clone());
         let walk_time = walk_start.elapsed();
-        let unsigned_rr_count = records.len();
+        let unsigned_rr_count = records_to_sort.len();
 
         {
             let mut v = status.write().await;
@@ -646,7 +646,9 @@ impl ZoneSigner {
             zonefile.extend_from_slice(dnskey_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
             if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
-                records.push(rec.flatten_into());
+                // Make sure we generate an RRSIG for the DNSKEY RR that we
+                // retrieved from the `dnst keyset` state file.
+                records_to_sort.push(rec.clone().flatten_into());
             }
         }
 
@@ -808,10 +810,10 @@ impl ZoneSigner {
         debug!("[ZS]: Sorting collected records for zone '{zone_name}'.");
         status.write().await.current_action = "Sorting records".to_string();
         let sort_start = Instant::now();
-        let mut records = spawn_blocking(|| {
-            DefaultSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
-            records.dedup();
-            records
+        let mut sorted_records_to_generate_denial_records_for = spawn_blocking(|| {
+            MultiThreadedSorter::sort_by(&mut records_to_sort, CanonicalOrd::canonical_cmp);
+            records_to_sort.dedup();
+            records_to_sort
         })
         .await
         .unwrap();
@@ -832,13 +834,17 @@ impl ZoneSigner {
         status.write().await.current_action = "Generating denial records".to_string();
         let denial_start = Instant::now();
         let apex_owner = zone_name.clone();
-        let unsigned_records = spawn_blocking(move || {
+        let records_to_generate_signatures_for = spawn_blocking(move || {
             // By not passing any keys to sign_zone() will only add denial RRs,
             // not RRSIGs. We could invoke generate_nsecs() or generate_nsec3s()
             // directly here instead.
             let no_keys: [&SigningKey<Bytes, KeyPair>; 0] = Default::default();
-            records.sign_zone(&apex_owner, &signing_config, &no_keys)?;
-            Ok(records)
+            sorted_records_to_generate_denial_records_for.sign_zone(
+                &apex_owner,
+                &signing_config,
+                &no_keys,
+            )?;
+            Ok(sorted_records_to_generate_denial_records_for)
         })
         .await
         .unwrap()
@@ -846,7 +852,7 @@ impl ZoneSigner {
             SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
         })?;
         let denial_time = denial_start.elapsed();
-        let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
+        let denial_rr_count = records_to_generate_signatures_for.len() - unsigned_rr_count;
 
         {
             let mut v = status.write().await;
@@ -856,6 +862,9 @@ impl ZoneSigner {
                 s.denial_time = Some(denial_time);
             }
         }
+
+        // extra_unsigned_records now contains a bumped SOA RR, DNSKEY RRs, and
+        // NSEC(3) RRs.
 
         //
         // Generate RRSIG RRs concurrently.
@@ -870,7 +879,7 @@ impl ZoneSigner {
 
         // Work out how many RRs have to be signed and how many concurrent
         // threads to sign with and how big each chunk to be signed should be.
-        let rr_count = RecordsIter::new(&unsigned_records).count();
+        let rr_count = RecordsIter::new(&records_to_generate_signatures_for).count();
         let (parallelism, chunk_size) = self.determine_signing_concurrency(rr_count);
         info!("SIGNER: Using {parallelism} threads to sign {rr_count} owners in chunks of {chunk_size}.",);
 
@@ -902,7 +911,11 @@ impl ZoneSigner {
         // us to wrap the whole thing in a future, so we spawn a relatively
         // lightweight single-threaded Tokio runtime to handle it for us.
 
-        // Insert all unsigned records into the updater.
+        // Copy the unsigned records that we generated earlier for signing
+        // into the final signed zone. The rest of the unsigned records
+        // are already in the unsigned zone copy that exists in the center
+        // unsigned_zones collection, and which will we reference from the
+        // LightWeightZone used to hold the outputs of signing.
         let unsigned_updater_task = spawn_blocking({
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .build()
@@ -910,20 +923,21 @@ impl ZoneSigner {
 
             move || {
                 runtime.block_on(async move {
-                    let start = Instant::now();
-
-                    for record in &unsigned_records {
-                        let record = Record::from_record(record.clone());
-                        updater.apply(ZoneUpdate::AddRecord(record)).await.unwrap();
+                    for record in &records_to_generate_signatures_for {
+                        if matches!(
+                            record.rtype(),
+                            Rtype::SOA
+                                | Rtype::DNSKEY
+                                | Rtype::NSEC
+                                | Rtype::NSEC3
+                                | Rtype::NSEC3PARAM
+                        ) {
+                            let record = Record::from_record(record.clone());
+                            updater.apply(ZoneUpdate::AddRecord(record)).await.unwrap();
+                        }
                     }
 
-                    debug!(
-                        "Inserted {} unsigned records in {:.1}s",
-                        unsigned_records.len(),
-                        start.elapsed().as_secs_f64()
-                    );
-
-                    (unsigned_records, updater)
+                    (records_to_generate_signatures_for, updater)
                 })
             }
         });
@@ -1138,7 +1152,13 @@ impl ZoneSigner {
 
     fn get_or_insert_signed_zone(&self, zone_name: &StoredName) -> Zone {
         // Create an empty zone to sign into if no existing signed zone exists.
+        let signable_zones = self.center.signable_zones.load();
         let signed_zones = self.center.signed_zones.load();
+
+        let signable_zone = signable_zones
+            .get_zone(zone_name, Class::IN)
+            .unwrap()
+            .clone();
 
         signed_zones
             .get_zone(zone_name, Class::IN)
@@ -1147,7 +1167,11 @@ impl ZoneSigner {
                 let mut new_zones = Arc::unwrap_or_clone(signed_zones.clone());
 
                 let new_zone = if self.use_lightweight_zone_tree {
-                    Zone::new(LightWeightZone::new(zone_name.clone(), false))
+                    Zone::new(LightWeightZone::new(
+                        zone_name.clone(),
+                        Some(signable_zone),
+                        false,
+                    ))
                 } else {
                     ZoneBuilder::new(zone_name.clone(), Class::IN).build()
                 };
