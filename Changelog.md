@@ -77,6 +77,7 @@ Released yyyy-mm-dd.
   signing by @mozzieongit ([#218])
 - Document that some policy options also require a restart by @mozzieongit
   (6cdc126)
+- Add an intro to DNSSEC and a Glossary by @alexanderband ([#206]) 
 
 ### Known issues
 
