@@ -126,7 +126,6 @@ pub async fn spawn(
         treat_single_keys_as_csks: true,
         max_concurrent_operations: 1, // TODO: Increase this, maybe to 3.clamp(1, max_concurrent_rrsig_generation_tasks)?
         max_concurrent_rrsig_generation_tasks,
-        use_lightweight_zone_tree: false,
         // kmip_server_conn_settings,
     };
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
