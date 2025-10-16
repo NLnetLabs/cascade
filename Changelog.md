@@ -74,10 +74,10 @@ Released yyyy-mm-dd.
 - Explicitly mention the need for config reload in the config file format man
   page by @mozzieongit ([#181])
 - Use proposed/testing names where appropriate by @ximon18 ([#170])
-- Remove a broken link by @ximon18 (bbae66af)
 - Fix the "unit-time" policy setting documentation by @jpmens ([#167])
 - Remove non-existing variable in example review script comment by @jpmens
   ([#196])
+- Add an intro to DNSSEC and a Glossary by @alexanderband ([#206]) 
 - Don't fail to show signing statistics for a finished signing operation when
   a signing operation was subsequently aborted by @ximon18 ([#210])
 - Improve documentation about review hooks by @mozzieongit ([#216])
@@ -85,7 +85,7 @@ Released yyyy-mm-dd.
   signing by @mozzieongit ([#218])
 - Document that some policy options also require a restart by @mozzieongit
   (6cdc126)
-- Add an intro to DNSSEC and a Glossary by @alexanderband ([#206]) 
+- Remove a broken link by @ximon18 (bbae66af)
 
 ### Acknowledgements
 
@@ -109,6 +109,7 @@ Cascade and extensively reporting the issues they found.
 [#189]: https://github.com/NLnetLabs/cascade/pull/189
 [#191]: https://github.com/NLnetLabs/cascade/pull/191
 [#196]: https://github.com/NLnetLabs/cascade/pull/196
+[#206]: https://github.com/NLnetLabs/cascade/pull/206
 [#207]: https://github.com/NLnetLabs/cascade/pull/207
 [#208]: https://github.com/NLnetLabs/cascade/pull/208
 [#209]: https://github.com/NLnetLabs/cascade/pull/209
