@@ -43,7 +43,7 @@ Released yyyy-mm-dd.
 - Resume the pipeline when a new zone is loaded by @bal-e and @ximon18 ([#153])
 - Fix confusing error message when `dnst` is missing by @mozzieongit ([#158])
 - Fix panic when started via systemd due to "No such device or address" by
-  @mozzieongit ([163])
+  @mozzieongit ([#163])
 - Set default CLASS for loaded zone files to IN by @mozzieongit ([#164])
 - Fix home directory for useradd cascade in packages by @mozzieongit ([#171])
 - Crashes when server not specified by @mozzieongit ([#172])
@@ -55,7 +55,6 @@ Released yyyy-mm-dd.
   by @ximon18 ([#207])
 - Fix "Cannot acquire the queue semaphore" causing signing to be cancelled
   by @ximon18 ([#209])
-- Warna bout and don't crash on lack of review servers
 
 ### Other changes
 
