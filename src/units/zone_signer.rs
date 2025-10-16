@@ -86,8 +86,6 @@ pub struct ZoneSignerUnit {
 
     pub treat_single_keys_as_csks: bool,
 
-    pub use_lightweight_zone_tree: bool,
-
     pub max_concurrent_operations: usize,
 
     pub max_concurrent_rrsig_generation_tasks: usize,
@@ -118,7 +116,6 @@ impl ZoneSignerUnit {
 
         ZoneSigner::new(
             self.center,
-            self.use_lightweight_zone_tree,
             self.max_concurrent_operations,
             self.max_concurrent_rrsig_generation_tasks,
             self.treat_single_keys_as_csks,
@@ -178,7 +175,6 @@ impl ZoneSignerUnit {
 
 struct ZoneSigner {
     center: Arc<Center>,
-    use_lightweight_zone_tree: bool,
     max_concurrent_operations: usize,
     concurrent_operation_permits: Semaphore,
     max_concurrent_rrsig_generation_tasks: usize,
@@ -192,7 +188,6 @@ impl ZoneSigner {
     #[allow(clippy::too_many_arguments)]
     fn new(
         center: Arc<Center>,
-        use_lightweight_zone_tree: bool,
         max_concurrent_operations: usize,
         max_concurrent_rrsig_generation_tasks: usize,
         treat_single_keys_as_csks: bool,
@@ -204,7 +199,6 @@ impl ZoneSigner {
 
         Self {
             center,
-            use_lightweight_zone_tree,
             max_concurrent_operations,
             concurrent_operation_permits: Semaphore::new(max_concurrent_operations),
             max_concurrent_rrsig_generation_tasks,
@@ -1129,13 +1123,10 @@ impl ZoneSigner {
             .cloned()
             .unwrap_or_else(move || {
                 let mut new_zones = Arc::unwrap_or_clone(signed_zones.clone());
-
-                let new_zone = if self.use_lightweight_zone_tree {
-                    Zone::new(LightWeightZone::new(zone_name.clone(), false))
-                } else {
-                    ZoneBuilder::new(zone_name.clone(), Class::IN).build()
-                };
-
+                // Use a LightWeightZone as it is able to fix RRSIG TTLs to
+                // be the same when walked as the record they sign, rather
+                // than being forced into a common RRSET with a common TTL.
+                let new_zone = Zone::new(LightWeightZone::new(zone_name.clone(), false));
                 new_zones.insert_zone(new_zone.clone()).unwrap();
                 self.center.signed_zones.store(Arc::new(new_zones));
 
