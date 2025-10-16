@@ -96,7 +96,9 @@ extensions = [
 if versionbanner:
     extensions.append('versionwarning.extension')
 
-intersphinx_mapping = {}
+intersphinx_mapping = {
+    'dnst': ('https://dnst.docs.nlnetlabs.nl/en/latest/', None)
+}
 
 autosectionlabel_prefix_document = True
 
