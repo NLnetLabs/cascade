@@ -494,23 +494,25 @@ fn load_file_into_zone(
     for res in reader {
         match res.map_err(RecordError::MalformedRecord) {
             Ok(Entry::Record(r)) => {
-                // Strip out DNSSEC records.
-                if !matches!(
-                    r.rtype(),
-                    Rtype::RRSIG | Rtype::NSEC | Rtype::NSEC3 | Rtype::NSEC3PARAM | Rtype::DNSKEY
-                ) {
-                    let stored_rec = r.flatten_into();
-                    if let Err(err) = parsed_zone_file.insert(stored_rec) {
-                        error!("Unable to parse record in '{zone_name}': {err}");
-                        loading_error = Some(err.to_string());
-                        break;
-                    }
+                // Note: Do NOT strip out DNSSEC records here:
+                //   - For passthrough mode we need the original DNSSEC records.
+                //   - That would break unsigned review clients ability to
+                //     check ZONEMD in the incoming zone data.
+                //   - It would be inconsistent with how zone data received via
+                //     XFR is handled.
+                //   - They are ignored by the signing process later if
+                //     appropriate.
+                let stored_rec = r.flatten_into();
+                if let Err(err) = parsed_zone_file.insert(stored_rec) {
+                    error!("Unable to parse record in '{zone_name}': {err}");
+                    loading_error = Some(err.to_string());
+                    break;
+                }
 
-                    rr_count += 1;
-                    if rr_count % 1000 == 0 {
-                        if let Some(ri) = receipt_info.lock().unwrap().get_mut(zone_name) {
-                            ri.record_count = rr_count;
-                        }
+                rr_count += 1;
+                if rr_count % 1000 == 0 {
+                    if let Some(ri) = receipt_info.lock().unwrap().get_mut(zone_name) {
+                        ri.record_count = rr_count;
                     }
                 }
             }
