@@ -132,6 +132,14 @@ impl ReadableZone for SimpleZoneInner {
         for (name, rrsets) in self.tree.read().unwrap().iter() {
             for rrset in rrsets {
                 if rrset.rtype() == Rtype::RRSIG {
+                    // RRSIG RRs need special treatment because the zone
+                    // structures we currently use group RRSIG RRs together
+                    // into RRSETs, but all RRs in an RRSET are required
+                    // to have the same TTL while the TTL of RRSIG RRs are
+                    // required to match that of the record they sign. We
+                    // explode the RRSET into individual RRSETs of a single
+                    // RRSIG each and ensure they have the TTL of the record
+                    // they sign, the so-called "original TTL".
                     for data in rrset.data() {
                         let ZoneRecordData::Rrsig(rrsig) = data else {
                             unreachable!();
