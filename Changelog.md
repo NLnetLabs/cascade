@@ -24,60 +24,60 @@ Released yyyy-mm-dd.
 
 ### New
 
-- Added a `cascade health` CLI subcommand by @ximon18 ([#208])
-- Added a `cascade status` CLI subcommand by @ximon18 ([#211])
+- Added a `cascade health` CLI subcommand by [@ximon18] ([#208])
+- Added a `cascade status` CLI subcommand by [@ximon18] ([#211])
 - Add CASCADE_SERVER_IP and CASCADE_SERVER_PORT environment variables for
-  review hooks by @mozzieongit ([#213])
+  review hooks by [@mozzieongit] ([#213])
 
 ### Bug fixes
 
-- Resume the pipeline when a new zone is loaded by @bal-e and @ximon18 ([#153])
-- Fix confusing error message when `dnst` is missing by @mozzieongit ([#158])
+- Resume the pipeline when a new zone is loaded by [@bal-e] and [@ximon18] ([#153])
+- Fix confusing error message when `dnst` is missing by [@mozzieongit] ([#158])
 - Fix panic when started via systemd due to "No such device or address" by
-  @mozzieongit ([163])
-- Set default CLASS for loaded zone files to IN by @mozzieongit ([#164])
-- Fix home directory for useradd cascade in packages by @mozzieongit ([#171])
-- Crashes when server not specified by @mozzieongit ([#172])
+  [@mozzieongit] ([163])
+- Set default CLASS for loaded zone files to IN by [@mozzieongit] ([#164])
+- Fix home directory for useradd cascade in packages by [@mozzieongit] ([#171])
+- Crashes when server not specified by [@mozzieongit] ([#172])
 - "The TTL of the RRSIG exceeds the value of its Original TTL field" by
-  @ximon18 ([#174])
+  [@ximon18] ([#174])
 - Fix error on startup "Could not load the state file: invalid type: map,
-  expected a string" by @mozzieongit ([#184], [#189])
+  expected a string" by [@mozzieongit] ([#184], [#189])
 - Ensure `dnst keyset` warnings are logged and included in zone history
-  by @ximon18 ([#207])
+  by [@ximon18] ([#207])
 - Fix "Cannot acquire the queue semaphore" causing signing to be cancelled
-  by @ximon18 ([#209])
-- Warna bout and don't crash on lack of review servers
+  by [@ximon18] ([#209])
+- Warn about and don't crash on lack of review servers
 
 ### Other changes
 
 - Introduce stdout/stderr log targets to replace using File to log to stdout by
-  @mozzieongit ([#176])
-- Check for compatible `dnst` on startup by @mozzieongit ([#180])
-- Use MultiThreadedSorter for faster sorting before signing by @ximon18
+  [@mozzieongit] ([#176])
+- Check for compatible `dnst` on startup by [@mozzieongit] ([#180])
+- Use MultiThreadedSorter for faster sorting before signing by [@ximon18]
   ([#219])
-- Set homepage and documentation properties in Cargo.toml by @maertsen
+- Set homepage and documentation properties in Cargo.toml by [@maertsen]
   (98d988d0)
 
 ### Documentation improvements
 
-- Add documentation about integrating with a SmartCard-HSM by @jpmens ([#191])
-- Make it clear that state is human-readable but not writable by @mozzieongit
-  and @maertsen ([#188])
+- Add documentation about integrating with a SmartCard-HSM by [@jpmens] ([#191])
+- Make it clear that state is human-readable but not writable by [@mozzieongit]
+  and [@maertsen] ([#188])
 - Explicitly mention the need for config reload in the config file format man
-  page by @mozzieongit ([#181])
-- Use proposed/testing names where appropriate by @ximon18 ([#170])
-- Remove a broken link by @ximon18 (bbae66af)
-- Fix the "unit-time" policy setting documentation by @jpmens ([#167])
-- Remove non-existing variable in example review script comment by @jpmens
+  page by [@mozzieongit] ([#181])
+- Use proposed/testing names where appropriate by [@ximon18] ([#170])
+- Remove a broken link by [@ximon18] (bbae66af)
+- Fix the "unit-time" policy setting documentation by [@jpmens] ([#167])
+- Remove non-existing variable in example review script comment by [@jpmens]
   ([#196])
 - Don't fail to show signing statistics for a finished signing operation when
-  a signing operation was subsequently aborted by @ximon18 ([#210])
-- Improve documentation about review hooks by @mozzieongit ([#216])
+  a signing operation was subsequently aborted by [@ximon18] ([#210])
+- Improve documentation about review hooks by [@mozzieongit] ([#216])
 - Simplify review script example mention need for faster sorting before
-  signing by @mozzieongit ([#218])
-- Document that some policy options also require a restart by @mozzieongit
+  signing by [@mozzieongit] ([#218])
+- Document that some policy options also require a restart by [@mozzieongit]
   (6cdc126)
-- Add an intro to DNSSEC and a Glossary by @alexanderband ([#206]) 
+- Add an intro to DNSSEC and a Glossary by [@alexanderband] ([#206]) 
 
 ### Known issues
 
@@ -85,7 +85,7 @@ Released yyyy-mm-dd.
 
 ### Acknowledgements
 
-Many thanks go to @jpmens and @bortzmeyer for trying out the alpha release of
+Many thanks go to [@jpmens] and [@bortzmeyer] for trying out the alpha release of
 Cascade and extensively reporting the issues they found.
 
 [#153]: https://github.com/NLnetLabs/cascade/pull/153
@@ -105,6 +105,7 @@ Cascade and extensively reporting the issues they found.
 [#189]: https://github.com/NLnetLabs/cascade/pull/189
 [#191]: https://github.com/NLnetLabs/cascade/pull/191
 [#196]: https://github.com/NLnetLabs/cascade/pull/196
+[#206]: https://github.com/NLnetLabs/cascade/pull/206
 [#207]: https://github.com/NLnetLabs/cascade/pull/207
 [#208]: https://github.com/NLnetLabs/cascade/pull/208
 [#209]: https://github.com/NLnetLabs/cascade/pull/209
@@ -114,7 +115,13 @@ Cascade and extensively reporting the issues they found.
 [#216]: https://github.com/NLnetLabs/cascade/pull/216
 [#218]: https://github.com/NLnetLabs/cascade/pull/218
 [#219]: https://github.com/NLnetLabs/cascade/pull/219
-
+[@jpmens]: https://github.com/jpmens
+[@bortzmeyer]: https://github.com/bortzmeyer
+[@alexanderband]: https://github.com/alexanderband
+[@maertsen]: https://github.com/maertsen
+[@mozzieongit]: https://github.com/mozzieongit
+[@ximon18]: https://github.com/ximon18
+[@bal-e]: https://github.com/bal-e
 
 ## 0.1.0-alpha 'Globen'
 
