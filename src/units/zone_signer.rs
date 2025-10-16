@@ -21,7 +21,7 @@ use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode
 use domain::dnssec::sign::error::SigningError;
 use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
 use domain::dnssec::sign::keys::SigningKey;
-use domain::dnssec::sign::records::{DefaultSorter, RecordsIter, Sorter};
+use domain::dnssec::sign::records::{RecordsIter, Sorter};
 use domain::dnssec::sign::signatures::rrsigs::{sign_sorted_zone_records, GenerateRrsigConfig};
 use domain::dnssec::sign::traits::SignableZoneInPlace;
 use domain::dnssec::sign::SigningConfig;
@@ -809,7 +809,8 @@ impl ZoneSigner {
         status.write().await.current_action = "Sorting records".to_string();
         let sort_start = Instant::now();
         let mut records = spawn_blocking(|| {
-            DefaultSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
+            // Note: This may briefly use lots of CPU and many CPU cores.
+            MultiThreadedSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
             records.dedup();
             records
         })
