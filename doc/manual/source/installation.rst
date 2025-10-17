@@ -241,8 +241,45 @@ started.
 
        .. Note:: Docker images are coming soon.
 
+.. _updating:
+
 Updating
 --------
+
+.. danger::
+
+   In its current alpha version form Cascade will likely report errors if a
+   newer version is started using existing state and policy files created by
+   an older version.
+
+   Before updating, delete all state and policy files. Note that **this will
+   delete signing keys stored on disk**. Signing keys stored in HSMs will NOT
+   be affected but Cascade will no longer know about them. If left behind HSM
+   signing keys are no longer wanted you will need to remove them manually.
+
+   First stop Cascade, using systemd if in use on your system:
+
+   .. code-block:: bash
+
+      sudo systemctl stop cascaded.socket
+      sudo systemclt stop cascaded.service
+
+   Or by killing the Cascade daemon process otherwise:
+
+   .. code-block:: bash
+
+      pkill cascaded
+
+   Next, delete the state and policy files:
+
+   *(if you modified any of the filesystem locations specified in your Cascade
+   config file, use the updated paths instead of the default paths shown in
+   these instructions)*
+
+   .. code-block:: bash
+
+      sudo rm -R /var/lib/cascade
+      sudo rm -R /etc/cascade/policies
 
 .. tabs::
 

@@ -52,8 +52,8 @@ Assuming you already have :program:`curl` installed, you can install
 Alternatively, visit the `Rust website
 <https://www.rust-lang.org/tools/install>`_ for other installation methods.
 
-Building and Updating
----------------------
+Building
+--------
 
 In Rust, a library or executable program such as Cascade is called a *crate*.
 Crates are published on `crates.io <https://crates.io/>`_, the Rust package
@@ -111,6 +111,10 @@ Then update the ``config.toml`` to use the appropriate paths.
 
 Updating
 """"""""
+
+.. tip::
+
+   Read the :ref:`general updating instructions <updating>` first.
 
 If you want to update to the latest version of Cascade, it’s recommended
 to update Rust itself as well, using:
