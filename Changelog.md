@@ -63,6 +63,7 @@ Released 2025-10-17.
 - Check for compatible `dnst` on startup by @mozzieongit ([#180])
 - Use MultiThreadedSorter for faster sorting before signing by @ximon18
   ([#219])
+- Pre-create /etc/cascade/policies when installing via DEB/RPM package ([#233])
 - Set homepage and documentation properties in Cargo.toml by @maertsen
   (98d988d0)
 
@@ -126,6 +127,7 @@ Cascade and extensively reporting the issues they found.
 [#225]: https://github.com/NLnetLabs/cascade/pull/225
 [#227]: https://github.com/NLnetLabs/cascade/pull/227
 [#230]: https://github.com/NLnetLabs/cascade/pull/230
+[#233]: https://github.com/NLnetLabs/cascade/pull/233
 
 
 ## 0.1.0-alpha 'Globen'
