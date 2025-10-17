@@ -8,6 +8,7 @@ the settings relating to daemonization.
 .. important:: The machine running Cascade needs access to all 
    nameservers of all zones and parent zones as well as authorized transfer (AXFR)
    access to the primary nameserver of all zones.
+If that is not possible then it is best to disable automatic key rolls.
 
 Configuring Cascade
 ---------------------
