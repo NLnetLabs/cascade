@@ -17,6 +17,9 @@ if [ $1 -eq 1 ] ; then
         useradd --system --user-group ${USER_ID} --home-dir /var/lib/${USER_ID} --create-home
     fi
 
+    mkdir -p /etc/cascade/policies
+    chown -R ${USER_ID}: /etc/cascade
+
     # Run commands equivalent to what the RPM systemd macros would do
     systemd_post cascaded.service
     systemd_triggers

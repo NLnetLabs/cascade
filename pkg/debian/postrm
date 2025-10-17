@@ -11,7 +11,7 @@ purge)
         rm ${CONFIG_FILE_PATH}
     fi
 
-    # TODO: Remove the user account and home dir?
+    # TODO: Remove the user account and home dir and /etc/cascade/policies?
     ;;
 esac
 
