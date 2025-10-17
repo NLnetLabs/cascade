@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Oct 06, 2025" "0.1.0-rc1" "Cascade"
+.TH "CASCADE-ZONE" "1" "Oct 17, 2025" "0.1.0-alpha2" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -41,6 +41,10 @@ cascade-zone \- Manage zones
 \fBcascade zone\fP \fB[OPTIONS]\fP \fI\%list\fP
 .sp
 \fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reload\fP \fB<NAME>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
 \fBcascade zone\fP \fB[OPTIONS]\fP \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
 .sp
@@ -74,6 +78,16 @@ List registered zones.
 .TP
 .B reload
 Reload a zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B approve
+Approve a zone being reviewed.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B reject
+Reject a zone being reviewed.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -152,6 +166,38 @@ Import a CSK from an HSM.
 .B \-h, \-\-help
 Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
 .UNINDENT
+.SH OPTIONS FOR ZONE APPROVE
+.INDENT 0.0
+.TP
+.B <\-\-unsigned|\-\-signed>
+Whether the zone to approve is at the unsigned or signed review stage.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to approve.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <SERIAL>
+The serial number of the zone to approve.
+.UNINDENT
+.SH OPTIONS FOR ZONE REJECT
+.INDENT 0.0
+.TP
+.B <\-\-unsigned|\-\-signed>
+Whether the zone to reject is at the unsigned or signed review stage.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to reject.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <SERIAL>
+The serial number of the zone to reject.
+.UNINDENT
 .SH OPTIONS FOR ZONE STATUS
 .INDENT 0.0
 .TP
@@ -162,7 +208,7 @@ identifiers in use, as well as the new DNSKEY records during key rolls.
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
+.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
 Cascade online documentation
 .TP
 \fBcascade\fP(1)

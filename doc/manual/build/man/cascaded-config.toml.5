@@ -27,19 +27,27 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-CONFIG.TOML" "5" "Oct 06, 2025" "0.1.0-rc1" "Cascade"
+.TH "CASCADED-CONFIG.TOML" "5" "Oct 17, 2025" "0.1.0-alpha2" "Cascade"
 .SH NAME
 cascaded-config.toml \- Cascade configuration file
 .sp
 Cascade uses the TOML format for its configuration file. A template can be
 generated using \fBcascade template config\fP\&. The provided values to the options
 below are the default values and are serving as a hint to the option\(aqs format.
+.sp
+\fBNOTE:\fP
+.INDENT 0.0
+.INDENT 3.5
+All changes to the configuration file require running \fBcascade config
+reload\fP for them to take effect. Currently, most options additionally
+require a restart of the server.
+.UNINDENT
+.UNINDENT
 .SH EXAMPLE
 .INDENT 0.0
 .INDENT 3.5
 .sp
-.nf
-.ft C
+.EX
 version = \(dqv1\(dq
 policy\-dir = \(dq/etc/cascade/policies\(dq
 zone\-state\-dir = \(dq/var/lib/cascade/zone\-state\(dq
@@ -51,7 +59,7 @@ dnst\-binary\-path = \(dq/usr/libexec/cascade/cascade\-dnst\(dq
 
 [daemon]
 log\-level = \(dqinfo\(dq
-log\-target = { type = \(dqfile\(dq, path = \(dq/dev/stdout\(dq }
+log\-target = { type = \(dqstdout\(dq }
 daemonize = false
 
 [remote\-control]
@@ -71,8 +79,7 @@ servers = [\(dq127.0.0.1:4542\(dq, \(dq[::1]:4542\(dq]
 
 [server]
 servers = [\(dq127.0.0.1:4543\(dq, \(dq[::1]:4543\(dq]
-.ft P
-.fi
+.EE
 .UNINDENT
 .UNINDENT
 .SH OPTIONS
@@ -161,7 +168,7 @@ can be backed up and restored in the event of filesystem corruption.
 The path to the dnst binary Cascade should use.
 .sp
 Cascade relies on a Cascade specific verison of the (not yet officially
-released) \fBdnst\fP program (<\fI\%https://github.com/NLnetLabs/dnst\fP>) in order
+released) \fBdnst\fP program (<\X'tty: link https://github.com/NLnetLabs/dnst'\fI\%https://github.com/NLnetLabs/dnst\fP\X'tty: link'>) in order
 to perform DNSSEC key management.  You can specify an absolute path here, or
 just \fBdnst\fP if it is in $PATH.
 .UNINDENT
@@ -192,23 +199,45 @@ following levels are defined:
 .UNINDENT
 .INDENT 0.0
 .TP
-.B log\-target = { type = \(dqfile\(dq, path = \(dq/dev/stdout\(dq }
+.B log\-target = { type = \(dqstdout\(dq }
+.UNINDENT
+.INDENT 0.0
+.TP
+.B log\-target = { type = \(dqstderr\(dq }
 .UNINDENT
 .INDENT 0.0
 .TP
 .B log\-target = { type = \(dqsyslog\(dq }
+.UNINDENT
+.INDENT 0.0
+.TP
+.B log\-target = { type = \(dqfile\(dq, path = \(dqcascaded.log\(dq }
 The location the daemon writes logs to.
 .INDENT 7.0
 .IP \(bu 2
 type \fBfile\fP: Logs are appended line\-by\-line to the specified file path.
 .sp
-It can be set to \fB/dev/stdout\fP or \fB/dev/stderr\fP for standard output and
-error, respectively.  If it is a terminal, ANSI escape codes may be used
-to style the output.
+If it is a terminal, ANSI escape codes may be used to style the output.
+.IP \(bu 2
+type \fBstdout\fP: Logs are written to stdout. (The default)
+.sp
+If it is a terminal, ANSI escape codes may be used to style the output.
+.IP \(bu 2
+type \fBstderr\fP: Logs are written to stderr.
+.sp
+If it is a terminal, ANSI escape codes may be used to style the output.
 .IP \(bu 2
 type \fBsyslog\fP: Logs are written to the UNIX syslog.
 .sp
 This option is only supported on UNIX systems.
+.INDENT 2.0
+.INDENT 3.5
+Changed in version 0.1.0\-alpha2: Added types \fBstdout\fP and \fBstderr\fP which should be used instead of
+\fBfile\fP values \fB/dev/stdout\fP and \fB/dev/stderr\fP which do not work
+properly in some cases, e.g. when running under systemd.
+
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .UNINDENT
 .INDENT 0.0
@@ -260,7 +289,7 @@ supported; only names can be used.
 .INDENT 7.0
 .INDENT 3.5
 When using systemd, you should rely on its \(aqUser=\(aq and \(aqGroup=\(aq
-options instead.  See <\fI\%https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#User=\fP>.
+options instead.  See <\X'tty: link https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#User='\fI\%https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#User=\fP\X'tty: link'>.
 .UNINDENT
 .UNINDENT
 .UNINDENT
@@ -370,7 +399,7 @@ Default Cascade config file
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
+.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
 Cascade online documentation
 .TP
 \fBcascade\fP(1)
