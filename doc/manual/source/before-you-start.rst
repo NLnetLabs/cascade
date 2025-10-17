@@ -22,7 +22,13 @@ Intended Audience
 -----------------
 
 Cascade is currently targeted for use by TLD operators, but will evolve over
-time to cater to other audiences. 
+time to cater to other audiences. As a successor to OpenDNSSEC, Cascade is
+clearly intended to offer continuity and a migration path for current users,
+but will also offer superior performance, flexibility and user experience.
+
+Cascade does not require the use of a :term:`Hardware security module (HSM)`.
+If desired, it can make use of on-disk key files, as well as PKCS#11 and KMIP
+compatible HSMs.
 
 Right now, signing speed is not likely to be a bottle neck for most use
 cases, but there are many improvements in the pipeline, especially when using
@@ -30,45 +36,31 @@ an HSM. Cascade's memory use is considerable, using about 30GiB of RAM when
 signing a ~1GB zone file with about ~25M resource records and adding ~10M
 records while signing. Reducing the memory footprint is a priority.
 
-As such, Cascade can currently be used by TLD operators with at most a few
+As such, Cascade can currently be used by operators with at most a few
 small to medium size zones. As development progresses, it will also support
 operators with very large zones or operators with many zones.
 
 Cascade is *not* yet intended for operation as a clustered deployment.
-
-As a successor to OpenDNSSEC, Cascade is clearly intended to offer continuity
-and a migration path for current users, but should also be usable by anyone.
-In particular while Cascade offers most of the functionality of OpenDNSSEC,
-it uses different terminology and has a different architecture in order to
-offer a superior experience.
-
-Cascade does not require the use of a :term:`Hardware security module (HSM)`.
-It can make use of on-disk key files, as well as PKCS#11 and KMIP compatible 
-HSMs.
 
 The Moving Parts
 ----------------
 
 Cascade consists of three, possibly four, pieces:
 
-- The :program:`cascaded` daemon, receiving zone data, signing it, and serving the signed
-  result, with support for :doc:`review-hooks`during the processing pipeline to
-  allow you to use your preferred solutions to verify the unsigned and/or
-  signed zone before publishing it.
+- The :program:`cascaded` daemon for receiving zone data, signing it, and
+  serving the signed result. It supports :doc:`review-hooks` during the
+  processing pipeline, allowing you to use your preferred solutions to verify
+  the unsigned and/or signed zone before publishing it.
 
-- The :program:`cascade` command line interface (CLI) for controlling and interacting
-  with the :program:`cascaded` daemon.
+- The :program:`cascade` command line interface (CLI) for controlling and
+  interacting with the :program:`cascaded` daemon.
 
-- A tool called :program:`dnst keyset`, which is responsible for the
-  :doc:`key management <key-management>` of Cascade and is invoked as needed
-  by the :program:`cascaded` daemon. The reason for having an external key
-  manager is to have the flexibility to use different key managers. The
-  current implementation requires that keys are online, either in files or in
-  an HSM and does not (explicitly) support a multi-signer setup.
-
-   We envision future key managers that support offline keys or that support
-   multi-signing. Finally, a separate key manager makes it relatively easy 
-   for Cascade to support high-availability setups in the future.
+- A tool called :program:`dnst keyset`, which is responsible for the key
+  management of Cascade. It is invoked as needed by the :program:`cascaded`
+  daemon. The reason for having an external key manager is to have the
+  flexibility of swapping it out in the future, for example to support
+  offline keys or multi-signing. You can read more about this in the
+  :doc:`key management <key-management>` section.
 
 - The *optional* :program:`kmip2pkcs11` daemon, which is only required when
   using an PKCS#11 compatible HSM. You can read more about this in the
