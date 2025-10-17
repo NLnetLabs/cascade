@@ -255,10 +255,10 @@ Updating
           started without first deleting the state and policy files
           created by an older version.
 
-          Before upgrading do the following: _(if you modified any of the
+          Before upgrading do the following: *(if you modified any of the
           filesystem locations specified in your Cascade config file, use
           the updated paths instead of the default paths shown in these
-          instructions)_
+          instructions)*
 
           .. code-block:: bash
 
@@ -296,10 +296,10 @@ Updating
           started without first deleting the state and policy files
           created by an older version.
 
-          Before upgrading do the following: _(if you modified any of the
+          Before upgrading do the following: *(if you modified any of the
           filesystem locations specified in your Cascade config file, use
           the updated paths instead of the default paths shown in these
-          instructions)_
+          instructions)*
 
           .. code-block:: bash
 
@@ -337,10 +337,10 @@ Updating
           started without first deleting the state and policy files
           created by an older version.
 
-          Before upgrading do the following: _(if you modified any of the
+          Before upgrading do the following: *(if you modified any of the
           filesystem locations specified in your Cascade config file, use
           the updated paths instead of the default paths shown in these
-          instructions)_
+          instructions)*
 
           .. code-block:: bash
 
