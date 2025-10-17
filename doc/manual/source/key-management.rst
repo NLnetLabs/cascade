@@ -108,7 +108,7 @@ algorithm roll can be started even when it is not needed.
 Cascade has support for fully automatic key rolls, which is enabled by
 default.
 It can be disabled in a policy. See the section on
-:doc:`defining policy <defining-policy>`.
+:ref:`defining policy <defining-policy>`.
 For automatic key rolls, the key manager will check the propagation of 
 changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
 signatures to all nameservers of the zone or the parent zone.
