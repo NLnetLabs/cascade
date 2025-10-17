@@ -5,6 +5,10 @@ After :doc:`installing <installation>` Cascade you can immediately start using
 it, unless you need to adjust the addresses it listens on or need to modify
 the settings relating to daemonization.
 
+.. important:: The machine running Cascade needs authorized access to all 
+   nameservers of all zones and parent zones as well as zone transfer (AXFR)
+   access to the primary nameserver of all zones.
+
 Configuring Cascade
 ---------------------
 
