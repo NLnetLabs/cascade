@@ -254,14 +254,11 @@ Updating
           if a newer version is started using existing state and policy files
           created by an older version.
 
-          Before upgrading delete all state and policy files. To enable you
-          to keep using existing signing keys after upgrade, the instructions
-          below backup your on-disk key files. Keys stored in HSMs are not
-          affected by these instructions. After upgrade you will need to use
-          the ``--import-xxx`` options to the `cascade zone add` command to
-          use them with any zones that you (re)create.  will delete signing
-          keys stored on disk**. If HSM signing keys from the previous version
-          are no longer wanted you will need to remove them manually.
+          Before upgrading delete all state and policy files. Note that **this
+          will delete signing keys stored on disk**. Signing keys stored in
+          HSMs will NOT be affected but Cascade will no longer know about
+          them. If left behind HSM signing keys are no longer wanted you will
+          need to remove them manually.
 
           *(if you modified any of the filesystem locations specified in your
           Cascade config file, use the updated paths instead of the default
@@ -271,8 +268,6 @@ Updating
 
              sudo systemctl stop cascaded.socket
              sudo systemclt stop cascaded.service
-             sudo mkdir /tmp/keys
-             sudp cp /var/lib/cascade/keys/{*.key,*.private} /tmp/keys/
              sudo rm -R /var/lib/cascade
              sudo rm -R /etc/cascade/policies
 
@@ -304,14 +299,11 @@ Updating
           if a newer version is started using existing state and policy files
           created by an older version.
 
-          Before upgrading delete all state and policy files. To enable you
-          to keep using existing signing keys after upgrade, the instructions
-          below backup your on-disk key files. Keys stored in HSMs are not
-          affected by these instructions. After upgrade you will need to use
-          the ``--import-xxx`` options to the `cascade zone add` command to
-          use them with any zones that you (re)create.  will delete signing
-          keys stored on disk**. If HSM signing keys from the previous version
-          are no longer wanted you will need to remove them manually.
+          Before upgrading delete all state and policy files. Note that **this
+          will delete signing keys stored on disk**. Signing keys stored in
+          HSMs will NOT be affected but Cascade will no longer know about
+          them. If left behind HSM signing keys are no longer wanted you will
+          need to remove them manually.
 
           *(if you modified any of the filesystem locations specified in your
           Cascade config file, use the updated paths instead of the default
@@ -321,8 +313,6 @@ Updating
 
              sudo systemctl stop cascaded.socket
              sudo systemclt stop cascaded.service
-             sudo mkdir /tmp/keys
-             sudp cp /var/lib/cascade/keys/{*.key,*.private} /tmp/keys/
              sudo rm -R /var/lib/cascade
              sudo rm -R /etc/cascade/policies
 
@@ -354,14 +344,11 @@ Updating
           if a newer version is started using existing state and policy files
           created by an older version.
 
-          Before upgrading delete all state and policy files. To enable you
-          to keep using existing signing keys after upgrade, the instructions
-          below backup your on-disk key files. Keys stored in HSMs are not
-          affected by these instructions. After upgrade you will need to use
-          the ``--import-xxx`` options to the `cascade zone add` command to
-          use them with any zones that you (re)create.  will delete signing
-          keys stored on disk**. If HSM signing keys from the previous version
-          are no longer wanted you will need to remove them manually.
+          Before upgrading delete all state and policy files. Note that **this
+          will delete signing keys stored on disk**. Signing keys stored in
+          HSMs will NOT be affected but Cascade will no longer know about
+          them. If left behind HSM signing keys are no longer wanted you will
+          need to remove them manually.
 
           *(if you modified any of the filesystem locations specified in your
           Cascade config file, use the updated paths instead of the default
@@ -371,8 +358,6 @@ Updating
 
              sudo systemctl stop cascaded.socket
              sudo systemclt stop cascaded.service
-             sudo mkdir /tmp/keys
-             sudp cp /var/lib/cascade/keys/{*.key,*.private} /tmp/keys/
              sudo rm -R /var/lib/cascade
              sudo rm -R /etc/cascade/policies
 
