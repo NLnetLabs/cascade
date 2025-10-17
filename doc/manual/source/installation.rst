@@ -250,15 +250,19 @@ Updating
 
        .. danger::
 
-          In its current alpha version form Cascade does not yet support
-          upgrading and will likely report errors if a newer version is
-          started without first deleting the state and policy files
+          In its current alpha version form Cascade will likely report errors
+          if a newer version is started using existing state and policy files
           created by an older version.
 
-          Before upgrading do the following: *(if you modified any of the
-          filesystem locations specified in your Cascade config file, use
-          the updated paths instead of the default paths shown in these
-          instructions)*
+          Before upgrading delete all state and policy files. Note that **this
+          will delete signing keys stored on disk**. Signing keys stored in
+          HSMs will NOT be affected but Cascade will no longer know about
+          them. If left behind HSM signing keys are no longer wanted you will
+          need to remove them manually.
+
+          *(if you modified any of the filesystem locations specified in your
+          Cascade config file, use the updated paths instead of the default
+          paths shown in these instructions)*
 
           .. code-block:: bash
 
@@ -291,15 +295,19 @@ Updating
 
        .. danger::
 
-          In its current alpha version form Cascade does not yet support
-          upgrading and will likely report errors if a newer version is
-          started without first deleting the state and policy files
+          In its current alpha version form Cascade will likely report errors
+          if a newer version is started using existing state and policy files
           created by an older version.
 
-          Before upgrading do the following: *(if you modified any of the
-          filesystem locations specified in your Cascade config file, use
-          the updated paths instead of the default paths shown in these
-          instructions)*
+          Before upgrading delete all state and policy files. Note that **this
+          will delete signing keys stored on disk**. Signing keys stored in
+          HSMs will NOT be affected but Cascade will no longer know about
+          them. If left behind HSM signing keys are no longer wanted you will
+          need to remove them manually.
+
+          *(if you modified any of the filesystem locations specified in your
+          Cascade config file, use the updated paths instead of the default
+          paths shown in these instructions)*
 
           .. code-block:: bash
 
@@ -332,15 +340,19 @@ Updating
 
        .. danger::
 
-          In its current alpha version form Cascade does not yet support
-          upgrading and will likely report errors if a newer version is
-          started without first deleting the state and policy files
+          In its current alpha version form Cascade will likely report errors
+          if a newer version is started using existing state and policy files
           created by an older version.
 
-          Before upgrading do the following: *(if you modified any of the
-          filesystem locations specified in your Cascade config file, use
-          the updated paths instead of the default paths shown in these
-          instructions)*
+          Before upgrading delete all state and policy files. Note that **this
+          will delete signing keys stored on disk**. Signing keys stored in
+          HSMs will NOT be affected but Cascade will no longer know about
+          them. If left behind HSM signing keys are no longer wanted you will
+          need to remove them manually.
+
+          *(if you modified any of the filesystem locations specified in your
+          Cascade config file, use the updated paths instead of the default
+          paths shown in these instructions)*
 
           .. code-block:: bash
 
