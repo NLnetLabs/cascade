@@ -68,6 +68,8 @@ systemd features used instead.
 
             cascade --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
 
+.. _defining-policy:
+
 Defining policy
 ---------------
 
