@@ -105,6 +105,39 @@ different from the one used by the current key.
 Similar limitations apply to the other roll types. Note however that an
 algorithm roll can be started even when it is not needed.
 
+Cascade has support for fully automatic key rolls, which is enabled by
+default.
+It can be disabled in a policy. See the section on
+:doc:`defining policy <defining policy>`.
+For automatic key rolls, the key manager will check the propagation of 
+changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
+signatures to all nameservers of the zone or the parent zone.
+To be able to do this, the key manager needs network access to those
+nameservers.
+If Cascade is running in an isolated network, then this will fail and it is
+best to disable (part of) automatic key rolls.
+To check the signatures in the zone, the key manager will issue an AXFR
+request to the primary nameserver listed in the SOA record of the zone.
+In the future we plan to make it possible to configure which nameserver
+should be used and which TSIG keys should be used for authentication.
+
+The automatic key roll checks have two limitations. 
+First one is that they do not work in a multi-signer setup where signers use
+different keys to sign the zone.
+The second limitation is that propagation cannot be checked in an any-cast
+setup.
+The key manager may continue with the key roll before all node in the any-cast
+cluster have received the new version of the zone.
+
+We explicitly solicit input from operators on how to improve this feature.
+We would like to avoid time-based solutions (because that could mean that
+the key roll will continue even if propagation is not complete). 
+Solutions we are thinking about are a measurement program at the edge of
+the operator's network that reports back to the key manager about the state
+of propagation.
+For propagation in an any-cast cluster, a system such as RIPE Atlas could be
+used to check propagation across the Internet.
+
 A key roll consists of six steps: ``start-roll``, ``propagation1-complete``,
 ``cache-expired1``, ``propagation2-complete``, ``cache-expired2``, and
 ``roll-done``.
