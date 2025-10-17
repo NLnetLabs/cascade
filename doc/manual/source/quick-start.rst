@@ -9,7 +9,7 @@ the settings relating to daemonization.
    of all zones and parent zones, as well as authorized transfer (AXFR)
    access to the primary nameserver of all zones. If that is not possible, 
    then it is best to disable automatic key rolls in the :ref:`policy 
-   file <quick-start/defining policy>`.
+   file <Defining policy>`.
 
 Configuring Cascade
 -------------------
@@ -17,7 +17,7 @@ Configuring Cascade
 By default, Cascade only listens on the localhost address. If you want Cascade
 to listen on other addresses too, you need to configure them.
 
-The ``/etc/cascade/config.toml`` file controls listen addresses, which
+The :file:`/etc/cascade/config.toml` file controls listen addresses, which
 filesystem paths Cascade uses, daemonization settings (running in the
 background, running as a different user), and log settings.
 
@@ -101,11 +101,11 @@ zone to use.
 
 The name of the policy is taken from the filename. The directory to save the
 policy file to is determined by the ``policy-dir`` setting as configured in
-``/etc/cascade/config.toml``. The filename can be any valid filename and will
-be used as the name of the policy.
+:file:`/etc/cascade/config.toml`. The filename can be any valid filename and
+will be used as the name of the policy.
 
-In the example below the `sudo tee` command is needed because the default
-policy directory is not writable by the current user.
+In the example below the :command:`sudo tee` command is needed because the
+default policy directory is not writable by the current user.
 
 .. Tip::
 
