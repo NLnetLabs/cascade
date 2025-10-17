@@ -248,6 +248,25 @@ Updating
 
    .. group-tab:: Debian
 
+       .. danger::
+
+          In its current alpha version form Cascade does not yet support
+          upgrading and will likely report errors if a newer version is
+          started without first deleting the state and policy files
+          created by an older version.
+
+          Before upgrading do the following: _(if you modified any of the
+          filesystem locations specified in your Cascade config file, use
+          the updated paths instead of the default paths shown in these
+          instructions)_
+
+          .. code-block:: bash
+
+             sudo systemctl stop cascaded.socket
+             sudo systemclt stop cascaded.service
+             sudo rm -R /var/lib/cascade
+             sudo rm -R /etc/cascade/policies
+
        To update an existing Cascade installation, first update the 
        repository using:
 
@@ -270,6 +289,25 @@ Updating
 
    .. group-tab:: Ubuntu
 
+       .. danger::
+
+          In its current alpha version form Cascade does not yet support
+          upgrading and will likely report errors if a newer version is
+          started without first deleting the state and policy files
+          created by an older version.
+
+          Before upgrading do the following: _(if you modified any of the
+          filesystem locations specified in your Cascade config file, use
+          the updated paths instead of the default paths shown in these
+          instructions)_
+
+          .. code-block:: bash
+
+             sudo systemctl stop cascaded.socket
+             sudo systemclt stop cascaded.service
+             sudo rm -R /var/lib/cascade
+             sudo rm -R /etc/cascade/policies
+
        To update an existing Cascade installation, first update the 
        repository using:
 
@@ -291,6 +329,25 @@ Updating
           sudo apt --only-upgrade install cascade
 
    .. group-tab:: RHEL
+
+       .. danger::
+
+          In its current alpha version form Cascade does not yet support
+          upgrading and will likely report errors if a newer version is
+          started without first deleting the state and policy files
+          created by an older version.
+
+          Before upgrading do the following: _(if you modified any of the
+          filesystem locations specified in your Cascade config file, use
+          the updated paths instead of the default paths shown in these
+          instructions)_
+
+          .. code-block:: bash
+
+             sudo systemctl stop cascaded.socket
+             sudo systemclt stop cascaded.service
+             sudo rm -R /var/lib/cascade
+             sudo rm -R /etc/cascade/policies
 
        To update an existing Cascade installation, you can use this
        command to get an overview of the available versions:
