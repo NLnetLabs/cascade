@@ -114,7 +114,7 @@ Updating
 
 .. tip::
 
-   Read the :ref:`general upgrading instructions <updating>` first.
+   Read the :ref:`general updating instructions <updating>` first.
 
 If you want to update to the latest version of Cascade, it’s recommended
 to update Rust itself as well, using:
