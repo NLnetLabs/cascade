@@ -1,6 +1,15 @@
 Key Management
 ==============
 
+.. note:: The key management strategy is fundamentally different than the
+   the implementation in OpenDNSSEC and for example BIND. 
+   
+   The goal is that key rolls should always go through the same sequence of 
+   steps. As much as possible, we strive get all key rolls in a single mold.
+   They will always follow the same pattern, while the details of a 
+   :term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key 
+   (ZSK)>` roll will be different.
+
 The key manager is responsible for two things: for each zone, maintaining a
 set of keys that are used to sign and signing DNSKEY, CDS, and CDNSKEY RRsets.
 As part of maintaining a set of keys, the key manager also provides key rolls.
