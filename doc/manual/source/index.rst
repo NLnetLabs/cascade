@@ -91,6 +91,7 @@ Examples of things we're interested in:
    :name: toc-core
 
    cli
+   key-management
    hsms
    review-hooks
 
