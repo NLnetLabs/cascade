@@ -184,6 +184,12 @@ started.
        
        First create a file named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`,
        enter this configuration and save it:
+
+       .. tip::
+
+          On Fedora systems replace $releasever with 10 (or 8 or 9 if 10 is too
+          new for your Fedora) as there is no repository with Fedora numbers, e.g.
+          42, in our package repository.
        
        .. code-block:: text
        
