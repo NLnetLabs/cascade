@@ -19,12 +19,8 @@ multi-signing.
 Finally, a separate key manager makes it relatively easy for Cascade to 
 support high-availability setups, though it does not do that at the moment.
 
-Under normal circumstances, user interaction with the key manager is through
+User interaction with the key manager is designed to be done through
 Cascade. 
-In the unlikely event that something goes wrong and direct interaction with
-key manager is required, the :subcmd:`keyset` subcommand of :program:`dnst` has its
-own manual page: XXX
-
 
 The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys.
 It manages signing keys and generates a signed DNSKEY :term:`RRset <Resource Record Set (RRset)>`.
