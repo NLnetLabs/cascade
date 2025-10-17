@@ -122,7 +122,7 @@ Updating
    using existing signing keys after upgrade, the instructions below backup
    your on-disk key files. Keys stored in HSMs are not affected by these
    instructions. After upgrade you will need to use the ``--import-xxx``
-   options to the ``cascade zone add`` command to use them with any zones that
+   options to the `cascade zone add` command to use them with any zones that
    you (re)create.  will delete signing keys stored on disk**. If HSM signing
    keys from the previous version are no longer wanted you will need to remove
    them manually.
