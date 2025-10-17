@@ -9,7 +9,7 @@ the settings relating to daemonization.
    of all zones and parent zones, as well as authorized transfer (AXFR)
    access to the primary nameserver of all zones. If that is not possible, 
    then it is best to disable automatic key rolls in the :ref:`policy 
-   file <Defining policy>`.
+   file <defining-policy>`.
 
 Configuring Cascade
 -------------------
