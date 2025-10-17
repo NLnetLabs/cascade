@@ -176,6 +176,11 @@ The ``[daemon]`` section.
 
      This option is only supported on UNIX systems.
 
+      .. versionchanged:: 0.1.0-alpha2
+         Added types ``stdout`` and ``stderr`` which should be used instead of
+         ``file`` values ``/dev/stdout`` and ``/dev/stderr`` which do not work
+         properly in some cases, e.g. when running under systemd.
+
 .. option:: daemonize = false
 
    Whether to apply internal daemonization.

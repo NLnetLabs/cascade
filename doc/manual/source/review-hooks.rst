@@ -58,6 +58,8 @@ To do this, we need to write a shell script that fetches the zone using AXFR and
             dnssec-verify -q -o "${CASCADE_ZONE}" /dev/stdin
         fi
 
+.. versionadded:: 0.1.0-alpha2
+   Environment variables ``CASCADE_SERVER_IP`` and ``CASCADE_SERVER_PORT``.
 
 Next, we update the zone's policy to use the review script for both stages:
 
