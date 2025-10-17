@@ -91,7 +91,6 @@ We would love for you to :doc:`get to know Cascade
    :caption: Guides
    :name: toc-guides
 
-   importing-keys
    cascade-for-opendnssec-users
 
 .. toctree::
