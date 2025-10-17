@@ -5,8 +5,14 @@ After :doc:`installing <installation>` Cascade you can immediately start using
 it, unless you need to adjust the addresses it listens on or need to modify
 the settings relating to daemonization.
 
+.. important:: The machine running Cascade needs access to all nameservers 
+   of all zones and parent zones, as well as authorized transfer (AXFR)
+   access to the primary nameserver of all zones. If that is not possible, 
+   then it is best to disable automatic key rolls in the :ref:`policy 
+   file <quick-start/defining policy>`.
+
 Configuring Cascade
----------------------
+-------------------
 
 By default, Cascade only listens on the localhost address. If you want Cascade
 to listen on other addresses too, you need to configure them.
