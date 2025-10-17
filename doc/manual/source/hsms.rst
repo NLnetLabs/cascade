@@ -20,7 +20,7 @@ iinterface.
 HSM Interfaces
 ~~~~~~~~~~~~~~
 
-Typically HSMs are interacted with programatically via an interface that
+Typically HSMs are interacted with programmatically via an interface that
 is compliant with the Oasis PKCS#11 (Public-Key Cryptography Standard)
 specification. Some HSMs also or alternatively support a newer Oasis
 specification called KMIP (Key Management Interoperability Protocol).
@@ -110,7 +110,7 @@ because you will need to:
   you omit these settings :program:`kmip2pkcs11` will generate a long-lived
   self-signed TLS certificate each time it starts.
 
-.. Note:: There is no currently no provided way to test that the configuration
+.. Note:: There is currently no way to test that the configuration
    of :program:`kmip2pkcs11` is correct other than to try using it with
    Cascade.
 
