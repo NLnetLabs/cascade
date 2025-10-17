@@ -112,26 +112,9 @@ Then update the ``config.toml`` to use the appropriate paths.
 Updating
 """"""""
 
-.. danger::
+.. tip::
 
-   In its current alpha version form Cascade will likely report errors if a
-   newer version is started using existing state and policy files created by
-   an older version.
-
-   Before upgrading delete all state and policy files. Note that **this will
-   delete signing keys stored on disk**. Signing keys stored in HSMs will NOT
-   be affected but Cascade will no longer know about them. If left behind HSM
-   signing keys are no longer wanted you will need to remove them manually.
-
-   *(if you modified any of the filesystem locations specified in your Cascade
-   config file, use the updated paths instead of the default paths shown in
-   these instructions)*
- 
-   .. code-block:: bash
- 
-      sudo pkill cascaded
-      sudo rm -R /var/lib/cascade
-      sudo rm -R /etc/cascade/policies
+   Read the :ref:`general upgrading instructions <updating>` first.
 
 If you want to update to the latest version of Cascade, it’s recommended
 to update Rust itself as well, using:
