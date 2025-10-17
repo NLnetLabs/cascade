@@ -29,7 +29,7 @@ Released yyyy-mm-dd.
 
 ## 0.1.0-alpha2 "Cascader la vertu'
 
-Released 2025-10-17..
+Released 2025-10-17.
 
 ### New
 
