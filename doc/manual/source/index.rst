@@ -90,7 +90,6 @@ Examples of things we're interested in:
    :caption: Core
    :name: toc-core
 
-   cli
    key-management
    hsms
    review-hooks
