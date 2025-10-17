@@ -27,66 +27,28 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE" "1" "Oct 17, 2025" "0.1.0-alpha2" "Cascade"
+.TH "CASCADE-HEALTH" "1" "Oct 17, 2025" "0.1.0-alpha2" "Cascade"
 .SH NAME
-cascade \- Cascade CLI
+cascade-health \- Check the health of Cascade
+.sp
+Added in version 0.1.0\-alpha2.
+
 .SH SYNOPSIS
 .sp
-\fBcascade\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+\fBcascade health\fP
 .SH DESCRIPTION
 .sp
-\fBcascade\fP is the CLI to the \fI\%Cascade Daemon\fP\&.
-.SH OPTIONS
-.INDENT 0.0
-.TP
-.B \-s, \-\-server <IP:PORT>
-The cascade server instance to connect to [default: 127.0.0.1:4539].
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-log\-level <LEVEL>
-The minimum severity of messages to log [default: warning] [possible values:
-trace, debug, info, warning, error, critical].
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-V, \-\-version
-Print version.
-.UNINDENT
-.SH COMMANDS
-.INDENT 0.0
-.TP
-\fBcascade\-config\fP(1)
-Manage Cascade\(aqs configuration.
-.TP
-\fBcascade\-health\fP(1)
 Check the health of Cascade.
-.TP
-\fBcascade\-zone\fP(1)
-Manage zones.
-.TP
-\fBcascade\-policy\fP(1)
-Manage policies.
-.TP
-\fBcascade\-keyset\fP(1)
-Execute manual key roll or key removal commands.
-.TP
-\fBcascade\-hsm\fP(1)
-Manage HSMs.
-.TP
-\fBcascade\-template\fP(1)
-Print example config or policy files.
-.UNINDENT
+.sp
+Exits with code zero if Cascade is healthy, non\-zero otherwise.
 .SH SEE ALSO
 .INDENT 0.0
 .TP
 .B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
 Cascade online documentation
+.TP
+\fBcascade\fP(1)
+\fI\%Cascade CLI\fP
 .TP
 \fBcascaded\fP(1)
 \fI\%Cascade Daemon\fP

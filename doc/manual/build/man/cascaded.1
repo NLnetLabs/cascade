@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED" "1" "Oct 06, 2025" "0.1.0-rc1" "Cascade"
+.TH "CASCADED" "1" "Oct 17, 2025" "0.1.0-alpha2" "Cascade"
 .SH NAME
 cascaded \- DNSSEC signer
 .SH SYNOPSIS
@@ -39,7 +39,7 @@ cascaded \- DNSSEC signer
 solution.
 .sp
 For more information about Cascade, please refer to the Cascade documentation
-at \fI\%https://cascade.docs.nlnetlabs.nl\fP\&.
+at \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'\&.
 .SH OPTIONS
 .INDENT 0.0
 .TP
@@ -71,6 +71,11 @@ Defaults to \fBinfo\fP, unless set in the config file.
 Where logs should be written to [possible values: stdout, stderr,
 file:<PATH>, syslog].
 .UNINDENT
+.sp
+Changed in version 0.1.0\-alpha2: Added types \fBstdout\fP and \fBstderr\fP\&. Type \fBfile\fP with values \fB/dev/stdout\fP
+and \fB/dev/stderr\fP can still be used but may not work properly in some
+cases, e.g. when running under systemd.
+
 .INDENT 0.0
 .TP
 .B \-d, \-\-daemonize
@@ -117,7 +122,7 @@ Default directory for KMIP state files
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
+.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
 Cascade online documentation
 .TP
 \fBcascade\fP(1)

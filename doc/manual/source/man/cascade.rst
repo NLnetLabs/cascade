@@ -43,7 +43,7 @@ Commands
 
           Manage Cascade's configuration.
 
-        :doc:`cascade-health`\ (1)
+        :doc:`cascade-health <cascade-health>`\ (1)
 
           Check the health of Cascade. 
 
