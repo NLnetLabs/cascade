@@ -6,7 +6,7 @@ it, unless you need to adjust the addresses it listens on or need to modify
 the settings relating to daemonization.
 
 .. important:: The machine running Cascade needs access to all 
-   nameservers of all zones and parent zones as well as zone transfer (AXFR)
+   nameservers of all zones and parent zones as well as authorized transfer (AXFR)
    access to the primary nameserver of all zones.
 
 Configuring Cascade
