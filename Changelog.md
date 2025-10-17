@@ -83,6 +83,9 @@ Released yyyy-mm-dd.
 - Improve documentation about review hooks by @mozzieongit ([#216])
 - Simplify review script example mention need for faster sorting before
   signing by @mozzieongit ([#218])
+- Add key management documentation by @Philip-NLnetLabs ([#225])
+- Add approve/reject to cascade-zone man page by @ximon18 ([#227])
+- Note steps required to upgare an alpha version of Cascade by @ximon18 ([#230])
 - Document that some policy options also require a restart by @mozzieongit
   (6cdc126)
 - Remove a broken link by @ximon18 (bbae66af)
@@ -117,8 +120,11 @@ Cascade and extensively reporting the issues they found.
 [#211]: https://github.com/NLnetLabs/cascade/pull/211
 [#213]: https://github.com/NLnetLabs/cascade/pull/213
 [#216]: https://github.com/NLnetLabs/cascade/pull/216
+[#217]: https://github.com/NLnetLabs/cascade/pull/217
 [#218]: https://github.com/NLnetLabs/cascade/pull/218
-[#219]: https://github.com/NLnetLabs/cascade/pull/219
+[#225]: https://github.com/NLnetLabs/cascade/pull/225
+[#227]: https://github.com/NLnetLabs/cascade/pull/227
+[#230]: https://github.com/NLnetLabs/cascade/pull/230
 
 
 ## 0.1.0-alpha 'Globen'
