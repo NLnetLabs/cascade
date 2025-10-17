@@ -14,6 +14,10 @@ Synopsis
 
 :program:`cascade zone` ``[OPTIONS]`` :subcmd:`reload` ``<NAME>``
 
+:program:`cascade zone` ``[OPTIONS]`` :subcmd:`approve` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
+
+:program:`cascade zone` ``[OPTIONS]`` :subcmd:`reject` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
+
 :program:`cascade zone` ``[OPTIONS]`` :subcmd:`status` ``[--detailed]`` ``<NAME>``
 
 :program:`cascade zone` ``[OPTIONS]`` :subcmd:`history` ``<NAME>``
@@ -48,6 +52,14 @@ Commands
 .. subcmd:: reload
 
    Reload a zone.
+
+.. subcmd:: approve
+
+   Approve a zone being reviewed.
+
+.. subcmd:: reject
+
+   Reject a zone being reviewed.
 
 .. subcmd:: status
 
@@ -115,6 +127,36 @@ Options for :subcmd:`zone add`
 .. option:: -h, --help
 
    Print the help text (short summary with ``-h``, long help with ``--help``).
+
+Options for :subcmd:`zone approve`
+---------------------------------
+
+.. option:: <--unsigned|--signed>
+
+   Whether the zone to approve is at the unsigned or signed review stage.
+
+.. option:: <NAME>
+
+   The name of the zone to approve.
+
+.. option:: <SERIAL>
+
+   The serial number of the zone to approve.
+
+Options for :subcmd:`zone reject`
+---------------------------------
+
+.. option:: <--unsigned|--signed>
+
+   Whether the zone to reject is at the unsigned or signed review stage.
+
+.. option:: <NAME>
+
+   The name of the zone to reject.
+
+.. option:: <SERIAL>
+
+   The serial number of the zone to reject.
 
 
 Options for :subcmd:`zone status`
