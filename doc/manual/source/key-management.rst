@@ -6,8 +6,8 @@ set of keys that are used to sign and signing DNSKEY, CDS, and CDNSKEY RRsets.
 As part of maintaining a set of keys, the key manager also provides key rolls.
 
 Cascade uses an external key manager.
-The program that key management is called ```dnst``` and the actual
-key management is provided by the ```keyset``` subcommand of ```dnst```.
+The program that key management is called :program:`dnst` and the actual
+key management is provided by the :subcmd:`keyset` subcommand of :program:`dnst`.
 
 The reason for having an external key manager is to have the flexibility to
 use different key managers. 
@@ -22,26 +22,25 @@ support high-availability setups, though it does not do that at the moment.
 Under normal circumstances, user interaction with the key manager is through
 Cascade. 
 In the unlikely event that something goes wrong and direct interaction with
-key manager is required, the ```keyset``` subcommand of ```dnst``` has its
+key manager is required, the :subcmd:`keyset` subcommand of :program:`dnst` has its
 own manual page: XXX
 
 
-The key manager manages a set of DNSSEC (`RFC 9364`_) signing keys.
-It manages signing keys and generates a signed DNSKEY RRset.
-The key manager expect a separate signer, in this Cascade, to use the zone
+The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys.
+It manages signing keys and generates a signed DNSKEY :term:`RRset <Resource Record Set (RRset)>`.
+The key manager expects a separate signer, in this case Cascade, to use the zone
 signing keys in the key set,
 sign the zone and include the DNSKEY RRset (as well as the CDS and CDNSKEY
 RRsets).
 The key manager supports keys stored in files and keys stored in a
-Hardware Security Module (HSM) that can be accessed using the
+:term:`Hardware Security Module (HSM)` that can be accessed using the
 Key Management Interoperability Protocol (KMIP).
 
-.. _RFC 9364: https://www.rfc-editor.org/rfc/rfc9364
 
 The key manager operates on one zone at a time.
 For each zone, the key manager has configuration parameters for
-key generation (which algorithm to use, whether to use a CSK or a
-KSK and ZSK pair), parameters for key rolls (whether key rolls are automatic
+key generation (which algorithm to use, whether to use a :term:`CSK <Combined signing key (CSK)>` or a
+:term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key (ZSK)>` pair), parameters for key rolls (whether key rolls are automatic
 or not), the lifetimes of keys and signatures, etc.
 The key manager maintains a state file for each zone.
 The state file lists the keys in the key set, the current key roll state,
@@ -51,7 +50,7 @@ KSK and a ZSK), parameters for key rolls (whether key rolls are automatic
 or not), the lifetimes of keys and signatures, etc.
 
 In addition to the configuration and state files, the key manager maintains
-files for keys that are stored on in the filesystem.
+files for keys that are stored in the filesystem.
 
 The key manager supports importing existing keys, both standalone
 public keys as well as public/private key pairs can be imported.
@@ -69,7 +68,7 @@ executing. For this purpose, Cascade invokes the key manager periodically.
 When a new zone is added to Cascade, Cascade will invoke the key manager
 to create empty key state for the new zone.
 When adding a zone it is possible to either let the key manager generate new
-keys or import key from an existing signer.
+keys or import keys from an existing signer.
 
 When the key manager creates new keys, it will start an algorithm roll instead
 of using the new keys directly.
@@ -97,7 +96,7 @@ that is different from one used by the current signing keys.
 
 The KSK and ZSK rolls are completely independent and can run in parallel.
 Consistency checks are performed at the start of a key roll.
-For example, a KSK key roll cannot start when another KSK is in progress or
+For example, a KSK key roll cannot start when another KSK roll is in progress or
 when a CSK or algorithm roll is in progress.
 A KSK roll cannot start either when the current signing key is a CSK or
 when the configuration specifies that the new signing key has to be a CSK.
@@ -110,7 +109,7 @@ A key roll consists of six steps: ``start-roll``, ``propagation1-complete``,
 ``cache-expired1``, ``propagation2-complete``, ``cache-expired2``, and
 ``roll-done``.
 For each key roll these six steps follow in the same order.
-Associated which each step is a (possibly empty) list of actions.
+Associated with each step is a (possibly empty) list of actions.
 Actions fall in three categories.
 The first category consists of actions that require updating the zone or the
 parent zone.
