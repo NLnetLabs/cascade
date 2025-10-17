@@ -66,7 +66,7 @@ systemd features used instead.
 
         .. code-block:: bash
 
-            cascade --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
+            cascaded --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
 
 .. _defining-policy:
 
@@ -74,7 +74,7 @@ Defining policy
 ---------------
 
 After configuring Cascade, you can begin adding zones. Cascade supports zones
-sourced from a local file or fetched from another name server using XFR.
+sourced from a local file or fetched from another nameserver using XFR.
 
 .. Note:: No TSIG or passthrough support yet.
 
@@ -100,6 +100,11 @@ be used as the name of the policy.
 
 In the example below the `sudo tee` command is needed because the default
 policy directory is not writable by the current user.
+
+.. Tip::
+
+   Cascade needs to running before you proceed further. See "Configuring
+   Cascade" above for how to configure and start Cascade.
 
 .. code-block:: bash
 
@@ -146,21 +151,21 @@ For example:
       Signed 3 records in 0s
     ✔ Auto approving publication of version 2025093001, no checks enabled in policy.
     ✔ Published version 2025093001
-      Published zone available on 127.0.0.1:8053
+      Published zone available on 127.0.0.1:4543
 
 From the above you can see that the signed zone can be retrieved from
-``127.0.0.1:8053`` using a DNS client, e.g.:
+``127.0.0.1:4543`` using a DNS client, e.g.:
 
 .. code-block:: bash
 
-    dig @127.0.0.1 -p 8053 AXFR example.com
+    dig @127.0.0.1 -p 4543 AXFR example.com
 
 If you have the BIND `dnssec-verify <https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_
 tool installed you can check that the zone is correctly DNSSEC signed:
 
 .. code-block:: bash
 
-   $ dig @127.0.0.1 -p 8053 example.com AXFR | dnssec-verify -o example.com /dev/stdin
+   $ dig @127.0.0.1 -p 4543 example.com AXFR | dnssec-verify -o example.com /dev/stdin
    Loading zone 'example.com' from file '/dev/stdin'
 
    Verifying the zone using the following algorithms:
@@ -173,7 +178,7 @@ Next steps
 ----------
 
 - Establishing the chain of trust to the parent.
-- Automating pre-publication checks.
-- Using a Hardware Security Module.
+- :doc:`Automating pre-publication checks <review-hooks>`.
+- :doc:`Using a Hardware Security Module <hsms>`.
 - Migrating an existing DNSSEC signed zone.
-- Getting support.
+- `Getting support <https://nlnetlabs.nl/services/contracts/>`_.

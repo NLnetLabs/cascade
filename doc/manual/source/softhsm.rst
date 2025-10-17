@@ -41,19 +41,20 @@ directory. Let's set this all up and start the daemon:
 Create a Cascade Policy that uses SoftHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a Cascade policy called ``default`` and set it to use a HSM
+Create a Cascade policy called ``softhsm`` and set it to use a HSM
 called ``kmip2pkcs11``.
 
 .. code-block:: bash
 
-   # cascade template policy | tee /etc/cascade/policies/default.toml
-   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "kmip2pkcs11"|' /etc/cascade/policies/default.toml
+   # cascade template policy | tee /etc/cascade/policies/softhsm.toml
+   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "kmip2pkcs11"|' /etc/cascade/policies/softhsm.toml
 
 Start the Cascade daemon:
 
 .. code-block:: bash
 
    # systemctl start cascaded
+   # cascade policy reload
 
 Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
 locally running :program:`kmip2pkcs11` daemon:
@@ -61,7 +62,7 @@ locally running :program:`kmip2pkcs11` daemon:
 .. code-block:: bash
 
    # cascade hsm add --insecure --username Cascade --password 1234 kmip2pkcs11 127.0.0.1
-   Added KMIP server 'kmip2pkcs11 0.1.0-rc1 using PKCS#11 token with label Cascade in slot SoftHSM slot ID 0x1948bafd via library libsofthsm2.so'.
+   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label Cascade in slot SoftHSM slot ID 0x1948bafd via library libsofthsm2.so'.
 
 Sign a Test Zone with SoftHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -83,7 +84,7 @@ the zone:
 
 .. code-block:: bash
 
-   # cascade zone add --source /etc/cascade/zones/example.com --policy default example.com
+   # cascade zone add --source /etc/cascade/zones/example.com --policy softhsm example.com
    Added zone example.com
 
 Check that the zone has been signed, and print out additional information
@@ -92,7 +93,7 @@ which includes the identifiers of the signing keys that were used:
 .. code-block:: bash
 
    # cascade zone status example.com --detailed
-   Status report for zone 'example.com' using policy 'default'
+   Status report for zone 'example.com' using policy 'softhsm'
    ✔ Waited for a new version of the example.com zone
    ✔ Loaded version 1
      Loaded at 2025-10-01T21:44:13+00:00 (1m 46s ago)
@@ -104,7 +105,7 @@ which includes the identifiers of the signing keys that were used:
      Signed 3 records in 0s
    ✔ Auto approving publication of version 2025100101, no checks enabled in policy.
    ✔ Published version 2025100101
-     Published zone available on 127.0.0.1:8053
+     Published zone available on 127.0.0.1:4543
    DNSSEC keys:
      KSK tagged 16598:
        Reference: kmip://kmip2pkcs11/keys/C9623EAF300AF8E4A3DF6D5F6AD6674B49CCD322_pub?algorithm=13&flags=257

@@ -1,5 +1,5 @@
 use cascade::{
-    center::{self, Center},
+    center::{self, Center, State},
     comms::ApplicationCommand,
     config::{Config, SocketConfig},
     daemon::{daemonize, PreBindError, SocketProvider},
@@ -47,14 +47,18 @@ fn main() -> ExitCode {
     };
 
     // Initially activate the logging with the setting from the config
-    logger.apply(logger.prepare(&config.daemon.logging).unwrap().unwrap());
+    match logger.prepare(&config.daemon.logging) {
+        Ok(Some(lg)) => logger.apply(lg),
+        Ok(None) => { /* logger update would not change anything */ }
+        Err(e) => eprintln!("ERROR: Failed to initialize default logging... {e}"),
+    }
 
     if matches.get_flag("check_config") {
         // Try reading the configuration file.
         match config.init_from_file() {
             Ok(()) => return ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("Cascade couldn't be configured: {error}");
+                log::error!("Cascade couldn't be configured: {error}");
                 return ExitCode::FAILURE;
             }
         }
@@ -73,6 +77,18 @@ fn main() -> ExitCode {
         // Load the configuration file from scratch.
         if let Err(err) = state.config.init_from_file() {
             log::error!("Cascade couldn't be configured: {err}");
+            return ExitCode::FAILURE;
+        }
+
+        // Update the configured logging setup with settings from the config file.
+        match logger.prepare(&state.config.daemon.logging) {
+            Ok(Some(lg)) => logger.apply(lg),
+            Ok(None) => { /* logger update would not change anything */ }
+            Err(e) => eprintln!("ERROR: Failed to update logging with settings from config... {e}"),
+        }
+
+        if !check_dnst_version(&state) {
+            // Error is already logged in the function
             return ExitCode::FAILURE;
         }
 
@@ -106,10 +122,18 @@ fn main() -> ExitCode {
 
         // TODO: Fail if any zone state files exist.
     } else {
-        // If continuing from state update the configured logging setup.
-        // Only update logger if a log setting was persisted in state before
-        if let Some(x) = logger.prepare(&state.config.daemon.logging).unwrap() {
-            logger.apply(x)
+        // Update the configured logging setup from state.
+        match logger.prepare(&state.config.daemon.logging) {
+            Ok(Some(lg)) => logger.apply(lg),
+            Ok(None) => { /* logger update would not change anything */ }
+            Err(e) => eprintln!(
+                "ERROR: Failed to update logging with settings from existing state... {e}"
+            ),
+        }
+
+        if !check_dnst_version(&state) {
+            // Error is already logged in the function
+            return ExitCode::FAILURE;
         }
 
         log::info!("Successfully loaded the global state file");
@@ -132,6 +156,14 @@ fn main() -> ExitCode {
             let mut state = zone.0.state.lock().unwrap();
             spec.parse_into(&zone.0, &mut state, policies);
         }
+    }
+
+    if state.config.loader.review.servers.is_empty() {
+        log::warn!("No review server configured for [loader.review], therefore no unsigned zone transfer available for review.");
+    }
+
+    if state.config.signer.review.servers.is_empty() {
+        log::warn!("No review server configured for [signer.review], therefore no signed zone transfer available for review.");
     }
 
     // Load the TSIG store file.
@@ -165,6 +197,7 @@ fn main() -> ExitCode {
         state: Mutex::new(state),
         logger,
         unsigned_zones: Default::default(),
+        signable_zones: Default::default(),
         signed_zones: Default::default(),
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),
@@ -308,4 +341,118 @@ fn pre_bind_server_sockets_as_needed<'a, T: Iterator<Item = &'a SocketConfig>>(
         }
     }
     Ok(())
+}
+
+/// Check that the configured dnst binary is executable, prints the correct
+/// version, and has the keyset subcommand.
+fn check_dnst_version(state: &State) -> bool {
+    log::debug!(
+        "Checking dnst binary version ('{}')",
+        state.config.dnst_binary_path
+    );
+    let dnst_version = match std::process::Command::new(state.config.dnst_binary_path.as_os_str())
+        .arg("--version")
+        .output()
+    {
+        Err(e) => {
+            log::error!(
+                "Unable to verify version of dnst binary (configured as '{}'): {e}",
+                state.config.dnst_binary_path
+            );
+            return false;
+        }
+        Ok(o) => String::from_utf8_lossy(&o.stderr).into_owned(),
+    };
+
+    log::debug!("Checking dnst keyset subcommand capability");
+    // Check if the keyset subcommand exists
+    match std::process::Command::new(state.config.dnst_binary_path.as_os_str())
+        .args(["keyset", "--help"])
+        .output()
+    {
+        Err(e) => {
+            log::error!(
+                "Unable to verify keyset capability of dnst binary (configured as '{}'): {e}",
+                state.config.dnst_binary_path
+            );
+            return false;
+        }
+        Ok(s) => {
+            if !s.status.success() {
+                log::error!(
+                    "Unsupported dnst binary (configured as '{}'): keyset subcommand not supported",
+                    state.config.dnst_binary_path
+                );
+                return false;
+            }
+        }
+    }
+
+    // dnst --version prints: 'dnst 0.1.0-alpha'; but could be include more information in the
+    // future. This will make sure to only read the first two segments.
+    let mut version_parts = dnst_version.split([' ', '\n']);
+    let (Some(name), Some(version)) = (version_parts.next(), version_parts.next()) else {
+        log::error!(
+            "Incorrect dnst binary configured: '{} --version' output was improper",
+            state.config.dnst_binary_path
+        );
+        return false;
+    };
+
+    // split off any suffix (like '-alpha' or '-rc1') from version string
+    let version = match version.split_once('-') {
+        None => version,
+        Some((v, _)) => v,
+    };
+
+    // The version string can be wrong in many ways, but we don't really
+    // care in which way it is wrong. Therefore, using this function and only
+    // printing one error message at the call-site below.
+    fn unpack_version_string(version: &str) -> Result<(u32, u32, u32), ()> {
+        let (Ok(major), Ok(minor), Ok(patch)) = ({
+            let mut v = version.split('.');
+            let (Some(major), Some(minor), Some(patch)) = (v.next(), v.next(), v.next()) else {
+                return Err(());
+            };
+            (
+                major.parse::<u32>(),
+                minor.parse::<u32>(),
+                patch.parse::<u32>(),
+            )
+        }) else {
+            return Err(());
+        };
+        Ok((major, minor, patch))
+    }
+
+    log::debug!("Checking dnst version string '{version}'");
+    let Ok((major, minor, patch)) = unpack_version_string(version) else {
+        log::error!(
+            "Incorrect dnst binary configured: '{} --version' version string was improper",
+            state.config.dnst_binary_path
+        );
+        return false;
+    };
+
+    // Change this string and the match pattern to whatever version we require in the future
+    let required_version = ">0.1.0";
+    let res = match (major, minor, patch) {
+        // major = 0; minor >= 1; patch = *
+        (0, 1.., ..) => true,
+        _ => false,
+    };
+
+    if res {
+        log::info!(
+            "Using dnst binary '{}' with name '{name}' and version '{version}'",
+            state.config.dnst_binary_path
+        );
+    } else {
+        log::error!(
+            "Configured dnst binary '{}' version ({version}) is unsupported. Expected {required_version}",
+            state.config.dnst_binary_path
+        );
+    }
+
+    res
 }

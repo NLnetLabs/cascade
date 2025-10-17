@@ -179,7 +179,7 @@ impl Default for RemoteControlSpec {
 impl RemoteControlSpec {
     /// The default value for `servers`.
     fn servers_default() -> Vec<SocketAddr> {
-        vec![SocketAddr::from(([127, 0, 0, 1], 8950))]
+        vec![SocketAddr::from(([127, 0, 0, 1], 4539))]
     }
 }
 
@@ -275,6 +275,12 @@ pub enum LogTargetSpec {
 
     /// Write logs to the UNIX syslog.
     Syslog,
+
+    /// Write logs to stdout.
+    Stdout,
+
+    /// Write logs to stderr.
+    Stderr,
 }
 
 //--- Conversion
@@ -285,6 +291,8 @@ impl LogTargetSpec {
         match self {
             Self::File { path } => LogTarget::File(path),
             Self::Syslog => LogTarget::Syslog,
+            Self::Stdout => LogTarget::Stdout,
+            Self::Stderr => LogTarget::Stderr,
         }
     }
 }

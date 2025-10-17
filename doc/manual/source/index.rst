@@ -1,8 +1,25 @@
 Cascade
 =======
 
-A friendly `DNSSEC <https://www.rfc-editor.org/rfc/rfc9364>`_ signing solution written in Rust, a programming language
-designed for performance and memory safety.
+.. only:: html
+
+   |lastupdated| |mastodon|
+
+   .. |lastupdated| image:: https://img.shields.io/github/last-commit/NLnetLabs/cascade?path=%2Fdoc%2Fmanual&label=last%20updated
+      :alt: Last docs update
+      :target: https://github.com/NLnetLabs/cascade/commits/main/doc/manual/source
+
+   .. |mastodon| image:: https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social
+      :alt: Mastodon
+      :target: https://social.nlnetlabs.nl/@nlnetlabs
+
+A friendly, stand-alone :doc:`DNSSEC <intro>` signing solution designed to
+communicate what it's doing and is easy to interact with. 
+
+Cascade is currently in its first **alpha** version. We would love for you to
+:doc:`get to know Cascade <before-you-start>` and are eager to hear
+:ref:`your experiences <reach-out>` so we can improve every aspect. Please
+consider the current :doc:`limitations`.
 
 Cascade has the following design goals:
 
@@ -26,41 +43,33 @@ Observability
 Open-source with professional support services
    NLnet Labs offers `professional support and consultancy services
    <https://www.nlnetlabs.nl/services/contracts/>`_ with a service-level
-   agreement. Cascade is liberally licensed under the `BSD 3-Clause license
-   <https://github.com/NLnetLabs/cascade/blob/main/LICENSE>`_.
-
-We would love for you to :doc:`get to know Cascade
-<before-you-start>`.
+   agreement. 
 
 .. _reach-out:
 
-.. tip:: Cascade is currently in its first *alpha version*, with documented :doc:`limitations`. Our goal is to gather operator feedback. Don't be shy and reach out. In particular:
+Feedback
+--------
 
-     - If these documentation pages don't answer your question,
-       `tell us what we missed <https://github.com/NLnetLabs/cascade/issues/new>`_.
-     - Performance and memory usage are expected to improve but if
-       you think it won't meet your needs `tell us about your use case
-       <https://github.com/NLnetLabs/cascade/issues/new>`_.
-     - Not all intended functionality has been implemented at this
-       point. If a feature that you need is missing `please let us know
-       <https://github.com/NLnetLabs/cascade/issues/new>`_.
-     - We are actively working to shape the user experience to operator needs.
-       We have a lot more ideas for improvement and `we'd love to hear yours
-       too <https://github.com/NLnetLabs/cascade/issues/new>`_.
-     - Do tell us about your positive experiences. Use social media (#cascade)
-       or `create an issue <https://github.com/NLnetLabs/cascade/issues/new>`_.
-       We particularly appreciate hearing O/S, HSM and size/number of zones you
-       worked with.
+Our goal is to gather operator feedback. Don't be shy and reach out by 
+creating a `GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
+sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
+`NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
+channel on the `DNS OARC Mattermost 
+server <https://www.dns-oarc.net/oarc/services/chat>`_, or
+mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
 
-   If GitHub isn't your thing you can also `contact us by email <mailto://cascade@nlnetlabs.nl>`_.
+Examples of things we're interested in:
 
-.. only:: html
-
-      |mastodon|
-
-      .. |mastodon| image:: https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social
-         :alt: Mastodon
-         :target: https://social.nlnetlabs.nl/@nlnetlabs
+- If these documentation pages don't answer your question, tell us what we
+  missed.
+- Performance and memory usage are expected to improve but if you think it
+  won't meet your needs, tell us about your use case.
+- Not all intended functionality has been implemented at this point. If a
+  feature that you need is missing, please let us know.
+- We are actively working to shape the user experience to operator needs. We
+  have a lot more ideas for improvement and we'd love to hear yours too.
+- Do tell us about your positive experiences. We particularly appreciate
+  hearing O/S, HSM and size/number of zones you worked with.
 
 .. toctree::
    :maxdepth: 2
@@ -68,6 +77,7 @@ We would love for you to :doc:`get to know Cascade
    :caption: Getting Started
    :name: toc-getting-started
 
+   intro
    before-you-start
    architecture
    installation
@@ -91,7 +101,8 @@ We would love for you to :doc:`get to know Cascade
    :caption: Guides
    :name: toc-guides
 
-   cascade-for-opendnssec-users
+   importing-keys
+.. cascade-for-opendnssec-users
 
 .. toctree::
    :maxdepth: 2
@@ -99,21 +110,23 @@ We would love for you to :doc:`get to know Cascade
    :caption: Integrations
    :name: toc-integrations
 
-   fortanix
-   nitrokey
    softhsm
    thales
+   smartcard-hsm
+.. fortanix
+   nitrokey
    yubihsm
 
 
-.. toctree::
-   :maxdepth: 2
-   :hidden:
-   :caption: Advanced
-   :name: toc-advanced
+.. Commented out until these pages are written
+.. .. toctree::
+..    :maxdepth: 2
+..    :hidden:
+..    :caption: Advanced
+..    :name: toc-advanced
 
-   migration
-   offline-ksk
+..    migration
+..    offline-ksk
 
 .. toctree::
    :maxdepth: 2
@@ -122,3 +135,23 @@ We would love for you to :doc:`get to know Cascade
    :name: toc-reference
 
    limitations
+   glossary
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Manual Pages
+   :name: toc-manual-pages
+
+   man/cascade
+   man/cascaded
+   man/cascaded-config.toml
+   man/cascaded-policy.toml
+   man/cascade-config
+   man/cascade-health
+   man/cascade-hsm
+   man/cascade-keyset
+   man/cascade-policy
+   man/cascade-status
+   man/cascade-template
+   man/cascade-zone

@@ -313,6 +313,17 @@ pub enum SignerSerialPolicy {
     DateCounter,
 }
 
+impl std::fmt::Display for SignerSerialPolicy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SignerSerialPolicy::Keep => f.write_str("keep"),
+            SignerSerialPolicy::Counter => f.write_str("counter"),
+            SignerSerialPolicy::UnixTime => f.write_str("unix time"),
+            SignerSerialPolicy::DateCounter => f.write_str("date counter"),
+        }
+    }
+}
+
 //----------- SignerDenialPolicy -----------------------------------------------
 
 /// Policy for generating denial-of-existence records.

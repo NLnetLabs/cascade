@@ -76,7 +76,7 @@ use crate::center::{Change, ZoneAddError};
 use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zone::SigningTrigger;
 use crate::zone::ZoneLoadSource;
-use crate::zonemaintenance::types::{SigningReport, ZoneReport};
+use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneReport};
 
 //------------ GraphMetrics --------------------------------------------------
 pub trait GraphStatus: Send + Sync {
@@ -140,20 +140,25 @@ pub enum ApplicationCommand {
     Changed(Change),
 
     Terminate,
-    HandleZoneReviewApi {
-        zone_name: StoredName,
-        zone_serial: Serial,
-        approval_token: String,
-        operation: String,
-        http_tx: mpsc::Sender<Result<(), ()>>,
+
+    /// Review a zone.
+    ReviewZone {
+        /// The name of the zone.
+        name: StoredName,
+
+        /// The serial number of the zone.
+        serial: Serial,
+
+        /// Whether to approve or reject the zone.
+        decision: api::ZoneReviewDecision,
+
+        /// A handle for returning a response.
+        tx: tokio::sync::oneshot::Sender<api::ZoneReviewResult>,
     },
+
     SeekApprovalForUnsignedZone {
         zone_name: StoredName,
         zone_serial: Serial,
-    },
-    IsZonePendingApproval {
-        zone_name: StoredName,
-        tx: oneshot::Sender<bool>,
     },
 
     /// Refresh a zone.
@@ -210,15 +215,23 @@ pub enum ApplicationCommand {
         zone_name: StoredName,
         report_tx: oneshot::Sender<SigningReport>,
     },
+    GetQueueReport {
+        report_tx: oneshot::Sender<Vec<SigningQueueReport>>,
+    },
 
     RollKey {
         zone: StoredName,
         key_roll: api::keyset::KeyRoll,
-        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRollError>>,
+        http_tx: mpsc::Sender<Result<(), String>>,
     },
     RemoveKey {
         zone: StoredName,
         key_remove: api::keyset::KeyRemove,
-        http_tx: mpsc::Sender<Result<(), api::keyset::KeyRemoveError>>,
+        http_tx: mpsc::Sender<Result<(), String>>,
+    },
+
+    KeySetStatus {
+        zone: StoredName,
+        http_tx: oneshot::Sender<Result<String, String>>,
     },
 }

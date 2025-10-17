@@ -232,7 +232,7 @@ If you have Cascade setup, the command to add the Thales HSM is:
        --username MyPartition \
        --password <THE PASSWORD YOU CHOSE IN STEP 11 ABOVE>
    [2025-10-03T21:43:43.486Z] INFO cascade::units::http_server: Writing to KMIP server file './kmip/thales
-   Added KMIP server 'kmip2pkcs11 0.1.0-rc1 using PKCS#11 token with label MyPartition in slot Net Token Slot via library libCryptoki2.so'.
+   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label MyPartition in slot Net Token Slot via library libCryptoki2.so'.
 
 Note that the username is the PKCS#11 slot label, and the password is the
 password you chose in step 11 above when setting up the Luna Cloud HSM.

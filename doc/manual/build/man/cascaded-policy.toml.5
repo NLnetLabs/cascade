@@ -1,0 +1,626 @@
+.\" Man page generated from reStructuredText.
+.
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.TH "CASCADED-POLICY.TOML" "5" "Oct 06, 2025" "0.1.0-rc1" "Cascade"
+.SH NAME
+cascaded-policy.toml \- Cascade policy file format
+.sp
+A policy is a collection of settings that apply to a group of zones known to
+Cascade.  Policy controls how Cascade operates on those zones, e.g. how they
+are signed. This page describes all possible settings and their defaults. You
+can generate a template with these default values using \fBcascade template
+policy\fP\&.
+.sp
+Policy files are managed by the user, and are stored at a configurable path
+(by default, \fB/etc/cascade/policies\fP).  You can add, modify, and remove
+policy files, then update Cascade with \fBcascade policy reload\fP\&.  Note that:
+.INDENT 0.0
+.IP \(bu 2
+Cascade maintains an internal copy of all policies, and will use this until
+\fBcascade policy reload\fP is used.  If reloading fails, Cascade will continue
+to use its existing internal copy.  It won\(aqt reload policies if it restarts.
+.IP \(bu 2
+Policies cannot be removed if they are attached to zones; those zones need
+to be deleted or shifted to a different policy first.  If you remove a used
+policy and reload policies in Cascade, it will fail and continue to use its
+internal copy of the policy.
+.IP \(bu 2
+Only policy files stored in the configured policy directory and having a
+\fB\&.toml\fP extension will be loaded by Cascade.\(ga
+.UNINDENT
+.SH EXAMPLE
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+version = \(dqv1\(dq
+
+[loader]
+[loader.review]
+required = false
+
+[key\-manager]
+ksk.validity = \(dq31536000\(dq
+zsk.validity = \(dq2592000\(dq
+csk.validity = \(dq31536000\(dq
+ksk.auto\-start = true
+zsk.auto\-start = true
+csk.auto\-start = true
+algorithm.auto\-start = true
+ksk.auto\-report = true
+zsk.auto\-report = true
+csk.auto\-report = true
+algorithm.auto\-report = true
+ksk.auto\-expire = true
+zsk.auto\-expire = true
+csk.auto\-expire = true
+algorithm.auto\-expire = true
+ksk.auto\-done = true
+zsk.auto\-done = true
+csk.auto\-done = true
+algorithm.auto\-done = true
+ds\-algorithm = \(dqSHA256\(dq
+auto\-remove = true
+
+[key\-manager.records]
+ttl = 3600
+dnskey.signature\-inception\-offset = 86400
+cds.signature\-inception\-offset = 86400
+dnskey.signature\-lifetime = 1209600
+cds.signature\-lifetime = 1209600
+dnskey.signature\-remain\-time = 604800
+cds.signature\-remain\-time = 604800
+
+[key\-manager.generation]
+use\-csk = false
+algorithm = \(dqECDSAP256SHA256\(dq
+
+[signer]
+serial\-policy = \(dqdate\-counter\(dq
+signature\-inception\-offset = 86400
+signature\-lifetime = 1209600
+signature\-remain\-time = 604800
+
+[signer.denial]
+type = \(dqnsec\(dq
+
+[signer.review]
+required = false
+
+[server.outbound]
+send\-notify\-to = []
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SH OPTIONS
+.SS Global Options
+.INDENT 0.0
+.TP
+.B version = \(dqv1\(dq
+The policy file version. (REQUIRED)
+.sp
+This is the only required option.  All other settings, and their defaults,
+are associated with this version number.  More versions may be added in the
+future and Cascade may drop support for older versions over time.
+.INDENT 7.0
+.IP \(bu 2
+\fBv1\fP: This format.
+.UNINDENT
+.UNINDENT
+.SS How zones are loaded.
+.sp
+The \fB[loader]\fP section.
+.SS How loaded zones are reviewed.
+.sp
+The \fB[loader.review]\fP section.
+.sp
+Review offers an opportunity to perform external checks on the zone contents
+loaded by Cascade.
+.INDENT 0.0
+.TP
+.B required = false
+Whether review is required.
+.sp
+If this is \fBtrue\fP, a loaded version of a zone will not be signed or
+published until it is approved.  If it is \fBfalse\fP, loaded zones will be
+signed immediately.  At the moment, the review hook will only be run if this
+is set to true.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B cmd\-hook = \(dq\(dq
+A hook for reviewing a loaded zone. This is a path to an executable.
+.sp
+This command string will be executed in the user\(aqs shell when a new version
+of a zone is loaded.  At the moment, it will only be run if \fBrequired\fP is
+true.
+.sp
+It will receive the following information via environment variables:
+.INDENT 7.0
+.IP \(bu 2
+\fBCASCADE_ZONE\fP: The name of the zone, formatted without a trailing dot.
+.IP \(bu 2
+\fBCASCADE_SERIAL\fP: The serial number of the zone (decimal integer).
+.IP \(bu 2
+\fBCASCADE_SERVER\fP: The TCP/UDP port where Cascade is serving the zone for
+review, formatted \fB<ip\-addr>:<port>\fP\&.
+.IP \(bu 2
+\fBCASCADE_CONTROL\fP: The address of Cascade\(aqs HTTP API server, for sending
+approvals and rejections.
+.UNINDENT
+.sp
+The command will be called from an unspecified directory, and it must be
+accessible to Cascade (i.e. after it has dropped privileges). Its exit code
+will determine whether the zone is approved or not.
+.UNINDENT
+.SS DNSSEC key management.
+.sp
+The \fB[key\-manager]\fP section.
+.INDENT 0.0
+.TP
+.B ksk.validity = \(dq31536000\(dq
+.UNINDENT
+.INDENT 0.0
+.TP
+.B zsk.validity = \(dq2592000\(dq
+.UNINDENT
+.INDENT 0.0
+.TP
+.B csk.validity = \(dq31536000\(dq
+How long keys are considered valid for.
+.sp
+If a key has been used for longer than this time, it is considered expired,
+and (if enabled) it will automatically be rolled over to a new key.  Even if
+automatic rollovers are not enabled, the key will be reported as expired.
+This is a soft condition \-\- DNSSEC does not have a concept of key expiry,
+and it will not break DNSSEC validation, but it is usually important to the
+security of the zone.
+.sp
+Independent validity times are set for KSKs, ZSKs, and CSKs.  An integer
+value will be interpreted as seconds; \fBforever\fP means keys never expire.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B ksk.auto\-start = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B zsk.auto\-start = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B csk.auto\-start = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B algorithm.auto\-start = true
+Whether to automatically start key rollovers.
+.sp
+If this is enabled, Cascade will automatically start rolling over keys when
+they expire (as per \fBvalidity\fP).  When using this setting, \fBvalidity\fP must
+not be set to \fBforever\fP\&.
+.sp
+The first step in a rollover will be to generate new keys to replace old
+ones. By disabling this setting, the user can manually control how new keys
+are generated, and when rollovers happen.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B ksk.auto\-report = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B zsk.auto\-report = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B csk.auto\-report = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B algorithm.auto\-report = true
+Whether to automatically check for record propagation.
+.sp
+If this is enabled, Cascade will automatically contact public DNS servers to
+detect when new records (e.g. DNSKEY) are visible globally.  It is necessary
+to wait until some records are visible globally to progress key rollovers.  If
+this is disabled, the user will have to inform Cascade when these conditions
+are reached manually.
+.sp
+For this setting to work, Cascade must have network access to the zone\(aqs
+public nameservers and the parent zone\(aqs public nameservers.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B ksk.auto\-expire = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B zsk.auto\-expire = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B csk.auto\-expire = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B algorithm.auto\-expire = true
+Whether to automatically wait for cache expiry.
+.sp
+If this is enabled, Cascade will automatically progress through key rollover
+steps that need to wait for downstream users\(aq DNS caches to expire.  It will
+estimate the right amount of time to wait based on record TTLs.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B ksk.auto\-done = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B zsk.auto\-done = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B csk.auto\-done = true
+.UNINDENT
+.INDENT 0.0
+.TP
+.B algorithm.auto\-done = true
+Whether to automatically check for rollover completion.
+.sp
+Like \fBauto\-report\fP, if this setting is enabled, Cascade will automatically
+contact public DNS servers to detect when new records are visible globally.
+\fBauto\-done\fP specifically affects automatic checks for the last step of key
+rollovers, and is independent from \fBauto\-report\fP\&.
+.sp
+For this setting to work, Cascade must have network access to the zone\(aqs
+public nameservers and the parent zone\(aqs public nameservers.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B ds\-algorithm = \(dqSHA\-256\(dq
+The hash algorithm used by the parent zones\(aq DS records.
+.sp
+Supported options:
+.INDENT 7.0
+.IP \(bu 2
+\fBSHA\-256\fP: SHA\-256.
+.IP \(bu 2
+\fBSHA\-384\fP: SHA\-384.
+.UNINDENT
+.UNINDENT
+.INDENT 0.0
+.TP
+.B auto\-remove = true
+Whether to automatically remove expired keys.
+.sp
+If this is set, expired keys will be removed automatically (by deleting the
+files for on\-disk keys or removing it from the HSM).
+.UNINDENT
+.SS The management of DNS records by the key manager.
+.sp
+The \fB[key\-manager.records]\fP section.
+.sp
+The key manager generates and signs several records (DNSKEY and CDS).  This
+section controls its behaviour towards them.
+.INDENT 0.0
+.TP
+.B ttl = 3600
+The TTL for the generated records.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B dnskey.signature\-inception\-offset = 86400
+.UNINDENT
+.INDENT 0.0
+.TP
+.B cds.signature\-inception\-offset = 86400
+The offset for generated signature inceptions.
+.sp
+Record signatures have a fixed inception time, from when they are considered
+valid.  An imprecise computer clock could cause signatures to be considered
+invalid, because their inception point appears to be some time in the future.
+To prevent such cases, this setting allows the inception time to be offset
+into the past.
+.sp
+Independent offsets can be set for each type of record.  An integer value is
+intepreted as seconds; inception times will be calculated as \fBnow \- offset\fP
+at the time of signing.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B dnskey.signature\-lifetime = 1209600
+.UNINDENT
+.INDENT 0.0
+.TP
+.B cds.signature\-lifetime = 1209600
+The lifetime of generated signatures.
+.sp
+Record signatures have a fixed lifetime, after which they are considered
+invalid.  To keep the zone valid, the signatures should be regenerated before
+they expire; see \fBsignature\-remain\-time\fP to control regeneration time.
+.sp
+Independent lifetimes can be set for each type of record.  An integer value is
+interpreted as seconds.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B dnskey.signature\-remain\-time = 604800
+.UNINDENT
+.INDENT 0.0
+.TP
+.B cds.signature\-remain\-time = 604800
+The amount of time remaining before expiry when signatures will be
+regenerated.
+.sp
+In order to prevent a zone\(aqs signatures from appearing invalid, they
+have to be regenerated before they expire.  That hard limit is set by
+\fBsignature\-lifetime\fP above.  This setting controls how long before expiry
+signatures will be regenerated; it must be less than the \fBsignature\-lifetime\fP
+setting.
+.sp
+Independent waiting times can be set for each type of record.  An integer
+value is interpreted as seconds.
+.UNINDENT
+.SS How keys are generated.
+.sp
+The \fB[key\-manager.generation]\fP section.
+.INDENT 0.0
+.TP
+.B hsm\-server\-id = \(dq\(dq
+The HSM server to use.
+.sp
+If this is set, the named HSM server (which must be configured via \fBcascade
+hsm add\fP) will be used for generating new DNSSEC keys.
+.sp
+See \fI\%https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html\fP for more
+information.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B use\-csk = false
+Whether to generate CSKs, instead of separate ZSKs and KSKs.
+.sp
+A CSK (Combined Signing Key) takes the role of both ZSK and KSK for a zone,
+unlike the standard practice of using separate keys for ZSK and KSK.  This
+setting does not affect how DNSSEC validation is performed, only procedures
+for key rollovers.
+.sp
+If this is enabled, Cascade will generate CSKs for the associated zones.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B algorithm = \(dqECDSAP256SHA256\(dq
+The cryptographic algorithm (and parameters) for generated keys.
+.sp
+DNSSEC supports various cryptographic algorithms for signatures; one must be
+selected, and for some algorithms, additional parameters are also necessary.
+The same algorithm and parameters will be applied to the ZSK and KSK.
+.INDENT 7.0
+.IP \(bu 2
+\fBRSASHA256[:<bits>]\fP, algorithm 8, with a public key size of
+\fB<bits>\fP (default 2048) bits.
+.IP \(bu 2
+\fBRSASHA512[:<bits>]\fP, algorithm 10, with a public key size of
+\fB<bits>\fP (default 2048) bits.
+.IP \(bu 2
+\fBECDSAP256SHA256\fP, algorithm 13.
+.IP \(bu 2
+\fBECDSAP384SHA384\fP, algorithm 14.
+.IP \(bu 2
+\fBED25519\fP, algorithm 15.
+.IP \(bu 2
+\fBED448\fP, algorithm 16.
+.UNINDENT
+.sp
+There are additional algorithms, but many are now considered insecure, and
+it is recommended or mandated to avoid them.  In addition, RSA keys smaller
+than 2048 bits are not recommended.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+At the moment, only RSASHA256 and ECDSAP256SHA256 work with HSMs.
+Other algorithms cannot be used with HSMs, and will cause generation
+failures.
+.UNINDENT
+.UNINDENT
+.UNINDENT
+.SS How zones are signed.
+.sp
+The \fB[signer]\fP section.
+.sp
+Note that certain records (e.g. DNSKEY and CDS records at the apex of the
+zone) are signed by the key manager, rather than the zone signer; see the
+\fB[key\-manager.records]\fP section for configuring the signing of those records.
+.INDENT 0.0
+.TP
+.B serial\-policy = \(dqdate\-counter\(dq
+How SOA serial numbers are generated for signed zones.
+.sp
+Supported options:
+.INDENT 7.0
+.IP \(bu 2
+\fBkeep\fP: use the same serial number as the unsigned zone.
+.IP \(bu 2
+\fBcounter\fP: increment the serial number every time.
+.IP \(bu 2
+\fBunixtime\fP: use the current Unix time, in seconds.
+.IP \(bu 2
+\fBdate\-counter\fP: format the number as \fB<YYYY><MM><DD><xx>\fP in decimal.
+\fB<xx>\fP is a simple counter to allow up to 100 versions per day.
+.UNINDENT
+.UNINDENT
+.INDENT 0.0
+.TP
+.B signature\-inception\-offset = 86400
+The offset for generated signature inceptions.
+.sp
+Record signatures have a fixed inception time, from when they are considered
+valid.  An imprecise computer clock could cause signatures to be considered
+invalid, because their inception point appears to be some time in the
+future. To prevent such cases, this setting allows the inception time to be
+offset into the past.
+.sp
+An integer value is interpreted as seconds; inception times will be
+calculated as \fBnow \- offset\fP at the time of signing.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B signature\-lifetime = 1209600
+The lifetime of generated signatures.
+.sp
+Record signatures have a fixed lifetime, after which they are considered
+invalid.  To keep the zone valid, the signatures should be regenerated before
+they expire; see \fBsignature\-remain\-time\fP to control regeneration time.
+.sp
+An integer value is interpreted as seconds.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B signature\-remain\-time = 604800
+The amount of time remaining before expiry when signatures will be
+regenerated.
+.sp
+In order to prevent a zone\(aqs signatures from appearing invalid, they
+have to be regenerated before they expire.  That hard limit is set by
+\fBsignature\-lifetime\fP above.  This setting controls how long before expiry
+signatures will be regenerated; it must be less than the \fBsignature\-lifetime\fP
+setting.
+.sp
+An integer value is interpreted as seconds.
+.UNINDENT
+.SS How denial\-of\-existence records are generated.
+.sp
+The \fB[signer.denial]\fP section.
+.INDENT 0.0
+.TP
+.B type = \(dqnsec\(dq
+The type of denial\-of\-existence records to generate.
+.sp
+Supported options:
+\- \fBnsec\fP: Use NSEC records (RFC 4034).
+\- \fBnsec3\fP: Use NSEC3 records (RFC 5155).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B opt\-out = false
+(Only set when using NSEC3)
+.sp
+Whether to skip NSEC3 records for unsigned delegations.
+.sp
+This enables the NSEC3 Opt\-Out flag, and skips delegations to unsigned zones
+when generating NSEC3 records.  This affects the security of the zone, so be
+careful if you wish to enable it.
+.UNINDENT
+.SS How signed zones are reviewed.
+.sp
+The \fB[signer.review]\fP section.
+.INDENT 0.0
+.TP
+.B [signer.review]
+How signed zones are reviewed.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B required = false
+Whether review is required.
+.sp
+If this is \fBtrue\fP, a signed version of a zone will not be published until it
+is approved.  If it is \fBfalse\fP, signed zones will be published immediately.
+At the moment, the review hook will only be run if this is set to true.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B cmd\-hook = \(dq\(dq
+A hook for reviewing a signed zone. This is a path to an executable.
+.sp
+This command string will be executed in the user\(aqs shell when a new version of
+a zone is signed.  At the moment, it will only be run if \fBrequired\fP is true.
+.sp
+It will receive the following information via environment variables:
+.INDENT 7.0
+.IP \(bu 2
+\fBCASCADE_ZONE\fP: The name of the zone, formatted without a trailing dot.
+.IP \(bu 2
+\fBCASCADE_SERIAL\fP: The serial number of the signed zone (decimal integer).
+.IP \(bu 2
+\fBCASCADE_SERVER\fP: The TCP/UDP port where Cascade is serving the zone for
+review, formatted \fB<ip\-addr>:<port>\fP\&.
+.UNINDENT
+.sp
+The command will be called from an unspecified directory, and it must be
+accessible to Cascade (i.e. after it has dropped privileges). Its exit code
+will determine whether the zone is approved or not.
+.UNINDENT
+.SS How published zones are served.
+.sp
+The \fB[server.outbound]\fP section.
+.INDENT 0.0
+.TP
+.B send\-notify\-to = []
+The set of nameservers to which NOTIFY messages should be sent.
+.sp
+If empty, no NOTIFY messages will be sent.
+.sp
+A collection of \fBIP:[port]\fP, defaulting to port 53 when not specified, e.g.:
+\fBsend\-notify\-to = [\(dq[::1]:53\(dq]\fP
+.UNINDENT
+.SH FILES
+.INDENT 0.0
+.TP
+.B /etc/cascade/config.toml
+Default Cascade config file
+.TP
+.B /etc/cascade/policies
+Default policies directory
+.UNINDENT
+.SH SEE ALSO
+.INDENT 0.0
+.TP
+.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
+Cascade online documentation
+.TP
+\fBcascade\fP(1)
+\fI\%Cascade CLI\fP
+.TP
+\fBcascaded\fP(1)
+\fI\%Cascade Daemon\fP
+.TP
+\fBcascaded\-config.toml\fP(5)
+\fI\%Configuration File Format\fP
+.UNINDENT
+.SH AUTHOR
+NLnet Labs <cascade@nlnetlabs.nl>
+.SH COPYRIGHT
+2025–2025, NLnet Labs
+.\" Generated by docutils manpage writer.
+.

@@ -679,6 +679,12 @@ pub enum LogTarget {
 
     /// Write logs to the UNIX syslog.
     Syslog,
+
+    /// Write logs to stdout.
+    Stdout,
+
+    /// Write logs to stderr.
+    Stderr,
 }
 
 //--- Conversion
@@ -688,6 +694,8 @@ impl From<config::LogTarget> for LogTarget {
         match value {
             config::LogTarget::File(path) => Self::File { path },
             config::LogTarget::Syslog => Self::Syslog,
+            config::LogTarget::Stdout => Self::Stdout,
+            config::LogTarget::Stderr => Self::Stderr,
         }
     }
 }
@@ -697,6 +705,8 @@ impl From<LogTarget> for config::LogTarget {
         match value {
             LogTarget::File { path } => Self::File(path),
             LogTarget::Syslog => Self::Syslog,
+            LogTarget::Stdout => Self::Stdout,
+            LogTarget::Stderr => Self::Stderr,
         }
     }
 }

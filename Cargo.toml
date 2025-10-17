@@ -2,7 +2,9 @@
 name = "cascade"
 default-run = "cascaded"
 description = "friendly DNSSEC signing solution: sensible defaults, controllability, observability and flexibility"
-version = "0.1.0-rc1"
+version = "0.1.0-alpha"
+homepage = "https://nlnetlabs.nl/projects/cascade"
+documentation = "https://cascade.docs.nlnetlabs.nl"
 edition = "2021"
 license = "BSD-3-Clause"
 exclude = [".github", ".gitignore"]
@@ -34,10 +36,9 @@ futures            = "0.3.17"
 futures-util       = "0.3"
 humantime          = "2.3.0"
 octseq             = { version = "0.5.2", default-features = false }
-tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
+tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
 serde              = { version = "1.0", features = ["derive", "rc"] }
 toml               = "0.8"
-tokio-rustls       = { version = "0.23.4", optional = true }
 tracing            = { version = "0.1.40" }
 # Added for CLI to access HTTP API
 # `default-features = false` was copied from previous import from the Rotonda base
@@ -50,7 +51,6 @@ crossbeam-utils    = "0.8"
 serde_json         = "1.0"
 serde_with         = "3"
 url                = { version = "2.4", features = ["serde"] }
-uuid               = { version = "1.4", features = ["v4", "fast-rng"] }
 rayon = "1.10.0"
 
 # Jiff is used by zone_signer for the DateCounter serial policy.
@@ -102,7 +102,6 @@ syslog = "7.0"
 
 [features]
 default = []
-tls = ["tokio-rustls"]
 
 [profile.release]
 panic = "abort"
@@ -112,8 +111,18 @@ assets = [
 ["target/release/cascade", "usr/bin/", "755"],
 ["target/release/cascaded", "usr/bin/","755"],
 ["README.md","usr/share/doc/cascade/","644"],
-#["doc/cascade.1", "usr/share/man/man1/cascade.1", "644"],
-#["doc/cascaded.1", "usr/share/man/man1/cascaded.1", "644"],
+["doc/manual/build/man/cascade.1", "usr/share/man/man1/cascade.1", "644"],
+["doc/manual/build/man/cascade-config.1", "usr/share/man/man1/cascade-config.1", "644"],
+["doc/manual/build/man/cascade-health.1", "usr/share/man/man1/cascade-health.1", "644"],
+["doc/manual/build/man/cascade-hsm.1", "usr/share/man/man1/cascade-hsm.1", "644"],
+["doc/manual/build/man/cascade-keyset.1", "usr/share/man/man1/cascade-keyset.1", "644"],
+["doc/manual/build/man/cascade-policy.1", "usr/share/man/man1/cascade-policy.1", "644"],
+["doc/manual/build/man/cascade-status.1", "usr/share/man/man1/cascade-status.1", "644"],
+["doc/manual/build/man/cascade-template.1", "usr/share/man/man1/cascade-template.1", "644"],
+["doc/manual/build/man/cascade-zone.1", "usr/share/man/man1/cascade-zone.1", "644"],
+["doc/manual/build/man/cascaded.1", "usr/share/man/man1/cascaded.1", "644"],
+["doc/manual/build/man/cascaded-config.toml.5", "usr/share/man/man5/cascaded-config.toml.5", "644"],
+["doc/manual/build/man/cascaded-policy.toml.5", "usr/share/man/man5/cascaded-policy.toml.5", "644"],
 ["etc/config.system.toml", "etc/cascade/config.toml", "644"],
 ["pkg/common/service.preset","usr/lib/systemd/service-preset/50-cascaded.preset", "644"],
 ]
@@ -155,8 +164,18 @@ assets = [
 { source = "target/release/cascaded", dest = "/usr/bin/cascaded", mode = "755" },
 { source = "target/rpm/cascaded.service", dest = "/usr/lib/systemd/system/cascaded.service", mode = "644" },
 { source = "target/rpm/cascaded.socket", dest = "/usr/lib/systemd/system/cascaded.socket", mode = "644" },
-#{ source = "doc/cascade.1", dest = "/usr/share/man/man1/cascade.1", mode = "644", doc = true },
-#{ source = "doc/cascaded.1", dest = "/usr/share/man/man1/cascaded.1", mode = "644", doc = true },
+{ source = "doc/manual/build/man/cascade.1", dest = "/usr/share/man/man1/cascade.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-config.1", dest = "/usr/share/man/man1/cascade-config.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-health.1", dest = "/usr/share/man/man1/cascade-health.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-hsm.1", dest = "/usr/share/man/man1/cascade-hsm.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-keyset.1", dest = "/usr/share/man/man1/cascade-keyset.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-policy.1", dest = "/usr/share/man/man1/cascade-policy.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-status.1", dest = "/usr/share/man/man1/cascade-status.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-template.1", dest = "/usr/share/man/man1/cascade-template.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-zone.1", dest = "/usr/share/man/man1/cascade-zone.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascaded.1", dest = "/usr/share/man/man1/cascaded.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascaded-config.toml.5", dest = "/usr/share/man/man5/cascaded-config.toml.5", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascaded-policy.toml.5", dest = "/usr/share/man/man5/cascaded-policy.toml.5", mode = "644", doc = true},
 { source = "etc/config.system.toml", dest = "/etc/cascade/config.toml", mode = "644", config = true },
 { source = "pkg/common/service.preset", dest = "/usr/lib/systemd/system-preset/50-cascaded.preset", mode = "644" },
 ]

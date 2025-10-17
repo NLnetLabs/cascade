@@ -937,7 +937,7 @@ pub struct ZoneReport {
 }
 
 impl ZoneReport {
-    pub(super) fn new(
+    pub fn new(
         zone_id: ZoneId,
         details: ZoneReportDetails,
         timers: Vec<ZoneRefreshInstant>,
@@ -1149,10 +1149,26 @@ pub(super) enum Event {
     ZoneRemoved(ZoneId),
 }
 
-//------------ SigningReport -------------------------------------------------
+//------------ SigningReport ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum SigningReport {
+pub struct SigningReport {
+    pub current_action: String,
+    pub stage_report: SigningStageReport,
+}
+
+//------------ SigningQueueReport -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningQueueReport {
+    pub zone_name: StoredName,
+    pub signing_report: SigningReport,
+}
+
+//------------ SigningStageReport -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SigningStageReport {
     Requested(SigningRequestedReport),
     InProgress(SigningInProgressReport),
     Finished(SigningFinishedReport),
@@ -1246,4 +1262,5 @@ pub struct SigningFinishedReport {
     pub total_time: Duration,
     pub threads_used: usize,
     pub finished_at: SystemTime,
+    pub succeeded: bool,
 }

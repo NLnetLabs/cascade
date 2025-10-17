@@ -12,7 +12,7 @@ use crate::center;
 use crate::units::http_server::KmipServerState;
 use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zone::{HistoryItem, PipelineMode};
-use crate::zonemaintenance::types::{SigningReport, ZoneRefreshStatus};
+use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
@@ -41,6 +41,58 @@ pub enum ConfigReloadError {
 
     /// The file could not be parsed.
     Parse(Utf8PathBuf, String),
+}
+
+//----------- ZoneReview -------------------------------------------------------
+
+/// Review a version of a zone.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneReview {}
+
+/// A stage for reviewing a zone.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneReviewStage {
+    /// Before signing.
+    Unsigned,
+
+    /// After signing.
+    Signed,
+}
+
+/// A decision upon reviewing a zone.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneReviewDecision {
+    /// Approve the zone.
+    Approve,
+
+    /// Reject the zone.
+    Reject,
+}
+
+/// The result of a [`ZoneReview`] command.
+pub type ZoneReviewResult = Result<ZoneReviewOutput, ZoneReviewError>;
+
+/// The output of a [`ZoneReview`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneReviewOutput {}
+
+/// An error from a [`ZoneReview`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneReviewError {
+    /// The specified zone could not be found.
+    NoSuchZone,
+
+    /// The specified version of the zone was not being reviewed.
+    NotUnderReview,
+}
+
+impl std::fmt::Display for ZoneReviewError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ZoneReviewError::NoSuchZone => f.write_str("No such zone"),
+            ZoneReviewError::NotUnderReview => f.write_str("Zone not under review"),
+        }
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -234,7 +286,7 @@ pub struct ZoneStatus {
     pub policy: String,
     pub stage: ZoneStage,
     pub keys: Vec<KeyInfo>,
-    pub key_status: Option<String>,
+    pub key_status: String,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
@@ -323,7 +375,9 @@ impl fmt::Display for ZoneReloadError {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
-    // pub name: Name<Bytes>,
+    pub soft_halted_zones: Vec<(StoredName, String)>,
+    pub hard_halted_zones: Vec<(StoredName, String)>,
+    pub signing_queue: Vec<SigningQueueReport>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -559,32 +613,10 @@ pub mod keyset {
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub struct KeyRollResult {
-        pub zone: Name<Bytes>,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub enum KeyRollError {
-        DnstCommandError(String),
-        RxError,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub struct KeyRemove {
         pub key: String,
         pub force: bool,
         pub continue_flag: bool,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub struct KeyRemoveResult {
-        pub zone: Name<Bytes>,
-    }
-
-    #[derive(Deserialize, Serialize, Debug, Clone)]
-    pub enum KeyRemoveError {
-        DnstCommandError(String),
-        RxError,
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]

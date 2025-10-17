@@ -1,16 +1,10 @@
-use std::collections::HashMap;
-use std::process::Command;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use axum::extract::OriginalUri;
 use axum::extract::Path;
-use axum::extract::Query;
 use axum::extract::State;
-use axum::http::StatusCode;
 use axum::routing::get;
 use axum::routing::post;
 use axum::Json;
@@ -22,8 +16,7 @@ use domain::base::Serial;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
 use domain::dnssec::sign::keys::keyset::KeyType;
-use log::warn;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -42,6 +35,7 @@ use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -49,6 +43,7 @@ use crate::units::zone_loader::ZoneLoaderReport;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
+use crate::zone::PipelineMode;
 use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::read_soa;
 use crate::zonemaintenance::types::ZoneReportDetails;
@@ -80,7 +75,7 @@ impl HttpServer {
                 let Some(cmd) = cmd else {
                     return Result::<(), Terminated>::Err(Terminated);
                 };
-                info!("[{HTTP_UNIT_NAME}] Received command: {cmd:?}");
+                debug!("[{HTTP_UNIT_NAME}] Received command: {cmd:?}");
                 match &cmd {
                     ApplicationCommand::Terminate => {
                         return Err(Terminated);
@@ -95,13 +90,9 @@ impl HttpServer {
             center: self.center,
         });
 
-        let unit_router = Router::new()
-            .route("/review-unsigned/{action}/{token}", get(Self::handle_rs))
-            .route("/review-signed/{action}/{token}", get(Self::handle_rs2));
-
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
-            .nest("/hook", unit_router)
+            .route("/health", get(Self::health))
             .route("/status", get(Self::status))
             .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
@@ -111,6 +102,22 @@ impl HttpServer {
             .route("/zone/{name}/status", get(Self::zone_status))
             .route("/zone/{name}/history", get(Self::zone_history))
             .route("/zone/{name}/reload", post(Self::zone_reload))
+            .route(
+                "/zone/{name}/unsigned/{serial}/approve",
+                post(Self::approve_unsigned),
+            )
+            .route(
+                "/zone/{name}/unsigned/{serial}/reject",
+                post(Self::reject_unsigned),
+            )
+            .route(
+                "/zone/{name}/signed/{serial}/approve",
+                post(Self::approve_signed),
+            )
+            .route(
+                "/zone/{name}/signed/{serial}/reject",
+                post(Self::reject_signed),
+            )
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/{name}", get(Self::policy_show))
@@ -240,11 +247,11 @@ impl HttpServer {
         state: Arc<HttpServerState>,
         name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
+        let mut zone_started_at = None;
         let mut zone_loaded_at = None;
         let mut zone_loaded_in = None;
         let mut zone_loaded_bytes = 0;
-        let dnst_binary_path;
-        let cfg_path;
+        let mut zone_loaded_record_count = 0;
         let state_path;
         let app_cmd_tx;
         let policy;
@@ -257,10 +264,8 @@ impl HttpServer {
         let pipeline_mode;
         {
             let locked_state = state.center.state.lock().unwrap();
-            dnst_binary_path = locked_state.config.dnst_binary_path.clone();
             let keys_dir = &locked_state.config.keys_dir;
-            cfg_path = keys_dir.join(format!("{name}.cfg"));
-            state_path = keys_dir.join(format!("{name}.state"));
+            state_path = mk_dnst_keyset_state_file_path(keys_dir, &name);
             app_cmd_tx = state.center.app_cmd_tx.clone();
             let zone = locked_state
                 .zones
@@ -307,19 +312,25 @@ impl HttpServer {
             unsigned_review_status = zone_state
                 .find_last_event(HistoricalEventType::UnsignedZoneReview, None)
                 .map(|item| {
-                    let HistoricalEvent::UnsignedZoneReview { status, when } = item.event else {
+                    let HistoricalEvent::UnsignedZoneReview { status } = item.event else {
                         unreachable!()
                     };
-                    TimestampedZoneReviewStatus { status, when }
+                    TimestampedZoneReviewStatus {
+                        status,
+                        when: item.when,
+                    }
                 });
 
             signed_review_status = zone_state
                 .find_last_event(HistoricalEventType::SignedZoneReview, None)
                 .map(|item| {
-                    let HistoricalEvent::SignedZoneReview { status, when } = item.event else {
+                    let HistoricalEvent::SignedZoneReview { status } = item.event else {
                         unreachable!()
                     };
-                    TimestampedZoneReviewStatus { status, when }
+                    TimestampedZoneReviewStatus {
+                        status,
+                        when: item.when,
+                    }
                 });
         }
 
@@ -342,55 +353,54 @@ impl HttpServer {
 
         // Query key status
         let key_status = {
-            // TODO: Move this into key manager as that is the component that knows
-            // about dnst?
-            if let Some(stdout) = Command::new(dnst_binary_path.as_std_path())
-                .arg("keyset")
-                .arg("-c")
-                .arg(cfg_path)
-                .arg("status")
-                .arg("-v")
-                .output()
-                .ok()
-                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            {
-                // Invoke dnst to get status information about the keys for the
-                // zone. Strip out lines that would be correct for a dnst user but
-                // confusing for a cascade user, and rewrite advice to invoke dnst
-                // to be equivalent advice to invoke cascade.
-                let mut sanitized_output = String::new();
-                for line in stdout.lines() {
-                    if line.contains("Next time to run the 'cron' subcommand") {
-                        continue;
-                    }
+            let (tx, rx) = oneshot::channel();
+            app_cmd_tx
+                .send((
+                    "KM".to_owned(),
+                    ApplicationCommand::KeySetStatus {
+                        zone: name.clone(),
+                        http_tx: tx,
+                    },
+                ))
+                .ok();
+            match rx.await {
+                Err(_) => "Internal error: Could not retrieve status response".to_string(),
+                Ok(Err(output)) | Ok(Ok(output)) => {
+                    // Strip out lines that would be correct for a dnst user
+                    // but confusing for a cascade user, and rewrite advice to
+                    // invoke dnst to be equivalent advice to invoke cascade.
+                    let mut sanitized_output = String::new();
+                    for line in output.lines() {
+                        if line.contains("Next time to run the 'cron' subcommand") {
+                            continue;
+                        }
 
-                    if line.contains("dnst keyset -c") {
-                        // The config file path after -c should NOT contain a
-                        // space as it is based on a zone name, and zone names
-                        // cannot contain spaces. Find the config file path so
-                        // that we can strip it out (as users of the cascade
-                        // CLI should not need to know or care what internal
-                        // dnst config files are being used).
-                        let mut parts = line.split(' ');
-                        if parts.any(|part| part == "-c") {
-                            if let Some(dnst_config_path) = parts.next() {
-                                let sanitized_line = line.replace(
-                                    &format!("dnst keyset -c {dnst_config_path}"),
-                                    &format!("cascade keyset {name}"),
-                                );
-                                sanitized_output.push_str(&sanitized_line);
-                                sanitized_output.push('\n');
-                                continue;
+                        if line.contains("dnst keyset -c") {
+                            // The config file path after -c should NOT contain a
+                            // space as it is based on a zone name, and zone names
+                            // cannot contain spaces. Find the config file path so
+                            // that we can strip it out (as users of the cascade
+                            // CLI should not need to know or care what internal
+                            // dnst config files are being used).
+                            let mut parts = line.split(' ');
+                            if parts.any(|part| part == "-c") {
+                                if let Some(dnst_config_path) = parts.next() {
+                                    let sanitized_line = line.replace(
+                                        &format!("dnst keyset -c {dnst_config_path}"),
+                                        &format!("cascade keyset {name}"),
+                                    );
+                                    sanitized_output.push_str(&sanitized_line);
+                                    sanitized_output.push('\n');
+                                    continue;
+                                }
                             }
                         }
-                    }
 
-                    sanitized_output.push_str(line);
-                    sanitized_output.push('\n');
+                        sanitized_output.push_str(line);
+                        sanitized_output.push('\n');
+                    }
+                    sanitized_output
                 }
-                Some(sanitized_output)
-            } else {
-                None
             }
         };
 
@@ -409,10 +419,26 @@ impl HttpServer {
             match zone_maintainer_report.details() {
                 ZoneReportDetails::Primary => {
                     if let Some(report) = zone_loader_report {
-                        if let Ok(duration) = report.finished_at.duration_since(report.started_at) {
-                            zone_loaded_in = Some(duration);
-                            zone_loaded_at = Some(report.finished_at);
+                        zone_started_at = Some(report.started_at);
+                        if let Some(finished_at) = report.finished_at {
+                            if let Ok(duration) = finished_at.duration_since(report.started_at) {
+                                zone_loaded_in = Some(duration);
+                                zone_loaded_at = Some(finished_at);
+                                zone_loaded_bytes = report.byte_count;
+                                zone_loaded_record_count = report.record_count;
+                            } else {
+                                zone_loaded_in = Some(
+                                    SystemTime::now().duration_since(report.started_at).unwrap(),
+                                );
+                                zone_loaded_at = None;
+                                zone_loaded_bytes = report.byte_count;
+                                zone_loaded_record_count = report.record_count;
+                            }
+                        } else {
+                            zone_loaded_in = None;
+                            zone_loaded_at = None;
                             zone_loaded_bytes = report.byte_count;
+                            zone_loaded_record_count = report.record_count;
                         }
                     }
                 }
@@ -479,17 +505,30 @@ impl HttpServer {
             }
         }
 
-        let receipt_report =
-            if let (Some(finished_at), Some(zone_loaded_in)) = (zone_loaded_at, zone_loaded_in) {
-                let started_at = finished_at.checked_sub(zone_loaded_in).unwrap();
+        let receipt_report = match (zone_loaded_at, zone_loaded_in, zone_started_at) {
+            (Some(finished_at), Some(zone_loaded_in), started_at) => {
+                let started_at = match started_at {
+                    Some(started_at) => started_at,
+                    None => finished_at.checked_sub(zone_loaded_in).unwrap(),
+                };
                 Some(ZoneLoaderReport {
                     started_at,
-                    finished_at,
+                    finished_at: Some(finished_at),
                     byte_count: zone_loaded_bytes,
+                    record_count: zone_loaded_record_count,
                 })
-            } else {
+            }
+            (finished_at, None, Some(started_at)) => Some(ZoneLoaderReport {
+                started_at,
+                finished_at,
+                byte_count: zone_loaded_bytes,
+                record_count: zone_loaded_record_count,
+            }),
+            other => {
+                warn!("Unable to provide receipt report for zone '{name}': {other:?}");
                 None
-            };
+            }
+        };
 
         // Query zone serials
         let mut unsigned_serial = None;
@@ -592,6 +631,102 @@ impl HttpServer {
                 Ok(ZoneReloadResult { name })
             }
         }
+    }
+
+    /// Approve an unsigned version of a zone.
+    async fn approve_unsigned(
+        State(state): State<Arc<HttpServerState>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+    ) -> Json<ZoneReviewResult> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "RS".into(),
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision: ZoneReviewDecision::Approve,
+                    tx,
+                },
+            ))
+            .unwrap();
+
+        Json(rx.await.unwrap())
+    }
+
+    /// Reject an unsigned version of a zone.
+    async fn reject_unsigned(
+        State(state): State<Arc<HttpServerState>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+    ) -> Json<ZoneReviewResult> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "RS".into(),
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision: ZoneReviewDecision::Reject,
+                    tx,
+                },
+            ))
+            .unwrap();
+
+        Json(rx.await.unwrap())
+    }
+
+    /// Approve a signed version of a zone.
+    async fn approve_signed(
+        State(state): State<Arc<HttpServerState>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+    ) -> Json<ZoneReviewResult> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "RS2".into(),
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision: ZoneReviewDecision::Approve,
+                    tx,
+                },
+            ))
+            .unwrap();
+
+        Json(rx.await.unwrap())
+    }
+
+    /// Reject a signed version of a zone.
+    async fn reject_signed(
+        State(state): State<Arc<HttpServerState>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+    ) -> Json<ZoneReviewResult> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "RS2".into(),
+                ApplicationCommand::ReviewZone {
+                    name,
+                    serial,
+                    decision: ZoneReviewDecision::Reject,
+                    tx,
+                },
+            ))
+            .unwrap();
+
+        Json(rx.await.unwrap())
     }
 
     async fn policy_list(State(state): State<Arc<HttpServerState>>) -> Json<PolicyListResult> {
@@ -699,15 +834,55 @@ impl HttpServer {
         }))
     }
 
-    async fn status() -> Json<ServerStatusResult> {
-        Json(ServerStatusResult {})
+    /// If this endpoint responds, the deamon is considered healthy.
+    async fn health() -> Json<()> {
+        Json(())
+    }
+
+    async fn status(State(state): State<Arc<HttpServerState>>) -> Json<ServerStatusResult> {
+        let mut soft_halted_zones = vec![];
+        let mut hard_halted_zones = vec![];
+
+        // Determine which pipelines are halted.
+        for zone in state.center.state.lock().unwrap().zones.iter() {
+            if let Ok(zone_state) = zone.0.state.lock() {
+                match &zone_state.pipeline_mode {
+                    PipelineMode::Running => { /* Nothing to do */ }
+                    PipelineMode::SoftHalt(err) => {
+                        soft_halted_zones.push((zone.0.name.clone(), err.clone()))
+                    }
+                    PipelineMode::HardHalt(err) => {
+                        hard_halted_zones.push((zone.0.name.clone(), err.clone()))
+                    }
+                }
+            }
+        }
+
+        // Fetch the signing queue.
+        let (tx, rx) = oneshot::channel();
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "ZS".to_owned(),
+                ApplicationCommand::GetQueueReport { report_tx: tx },
+            ))
+            .ok();
+
+        let signing_queue = (rx.await).unwrap_or_default();
+
+        Json(ServerStatusResult {
+            soft_halted_zones,
+            hard_halted_zones,
+            signing_queue,
+        })
     }
 
     async fn key_roll(
         State(state): State<Arc<HttpServerState>>,
         Path(zone): Path<Name<Bytes>>,
         Json(key_roll): Json<KeyRoll>,
-    ) -> Json<Result<KeyRollResult, KeyRollError>> {
+    ) -> Json<Result<(), String>> {
         let (tx, mut rx) = mpsc::channel(10);
         state
             .center
@@ -724,21 +899,23 @@ impl HttpServer {
 
         let res = rx.recv().await;
         let Some(res) = res else {
-            return Json(Err(KeyRollError::RxError));
+            return Json(Err(
+                "Internal error: Failed to send RollKey command to KeyManager.".to_string(),
+            ));
         };
 
         if let Err(e) = res {
             return Json(Err(e));
         }
 
-        Json(Ok(KeyRollResult { zone }))
+        Json(Ok(()))
     }
 
     async fn key_remove(
         State(state): State<Arc<HttpServerState>>,
         Path(zone): Path<Name<Bytes>>,
         Json(key_remove): Json<KeyRemove>,
-    ) -> Json<Result<KeyRemoveResult, KeyRemoveError>> {
+    ) -> Json<Result<(), String>> {
         let (tx, mut rx) = mpsc::channel(10);
         state
             .center
@@ -755,14 +932,16 @@ impl HttpServer {
 
         let res = rx.recv().await;
         let Some(res) = res else {
-            return Json(Err(KeyRemoveError::RxError));
+            return Json(Err(
+                "Internal error: Failed to send RemoveKey command to KeyManager.".to_string(),
+            ));
         };
 
         if let Err(e) = res {
             return Json(Err(e));
         }
 
-        Json(Ok(KeyRemoveResult { zone }))
+        Json(Ok(()))
     }
 }
 
@@ -997,105 +1176,5 @@ impl HttpServer {
         }
 
         Json(Err(()))
-    }
-}
-
-//------------ HttpServer Handler for /<unit>/ -------------------------------
-
-impl HttpServer {
-    async fn handle_rs(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-        Path((action, token)): Path<(String, String)>,
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Result<(), StatusCode> {
-        Self::zone_server_unit_api_common("RS", uri, state, action, token, params).await
-    }
-
-    async fn handle_rs2(
-        uri: OriginalUri,
-        State(state): State<Arc<HttpServerState>>,
-        Path((action, token)): Path<(String, String)>,
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Result<(), StatusCode> {
-        Self::zone_server_unit_api_common("RS2", uri, state, action, token, params).await
-    }
-
-    //--- common api implementations
-
-    // All ZoneServerUnit's have the same review API
-    //
-    // API: GET /{approve,reject}/<approval token>?zone=<zone name>&serial=<zone serial>
-    //
-    // NOTE: We use query parameters for the zone details because dots that appear in zone names
-    // are decoded specially by HTTP standards compliant libraries, especially occurences of
-    // handling of /./ are problematic as that gets collapsed to /.
-    async fn zone_server_unit_api_common(
-        unit: &str,
-        uri: OriginalUri,
-        state: Arc<HttpServerState>,
-        action: String,
-        token: String,
-        params: HashMap<String, String>,
-    ) -> Result<(), StatusCode> {
-        let uri = uri.path_and_query().map(|p| p.as_str()).unwrap_or_default();
-        debug!("[{HTTP_UNIT_NAME}]: Got HTTP approval hook request: {uri}");
-
-        let Some(zone_name) = params.get("zone") else {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid HTTP request: {uri}");
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        let Some(zone_serial) = params.get("serial") else {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid HTTP request: {uri}");
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        if token.is_empty() || !["approve", "reject"].contains(&action.as_ref()) {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid HTTP request: {uri}");
-            return Err(StatusCode::BAD_REQUEST);
-        }
-
-        let Ok(zone_name) = Name::<Bytes>::from_str(zone_name) else {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid zone name '{zone_name}' in request.");
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        let Ok(zone_serial) = Serial::from_str(zone_serial) else {
-            warn!("[{HTTP_UNIT_NAME}]: Invalid zone serial '{zone_serial}' in request.");
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        let (tx, mut rx) = mpsc::channel(10);
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                unit.into(),
-                ApplicationCommand::HandleZoneReviewApi {
-                    zone_name,
-                    zone_serial,
-                    approval_token: token,
-                    operation: action,
-                    http_tx: tx,
-                },
-            ))
-            .unwrap();
-
-        let res = rx.recv().await;
-        let Some(res) = res else {
-            // Failed to receive response... When would that happen?
-            error!("[{HTTP_UNIT_NAME}]: Failed to receive response from unit {unit} while handling HTTP request: {uri}");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        };
-
-        let ret = match res {
-            Ok(_) => Ok(()),
-            Err(_) => Err(StatusCode::BAD_REQUEST),
-        };
-
-        debug!("[{HTTP_UNIT_NAME}]: Handled HTTP request: {uri} :: {ret:?}");
-
-        ret
     }
 }

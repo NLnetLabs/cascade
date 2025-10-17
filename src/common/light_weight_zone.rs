@@ -22,9 +22,10 @@ use domain::{
         name::Label,
         Name, NameBuilder, Rtype,
     },
+    rdata::ZoneRecordData,
     zonetree::{
-        error::OutOfZone, Answer, InMemoryZoneDiff, ReadableZone, SharedRrset, StoredName, WalkOp,
-        WritableZone, WritableZoneNode, ZoneStore,
+        error::OutOfZone, Answer, InMemoryZoneDiff, ReadableZone, Rrset, SharedRrset, StoredName,
+        WalkOp, WritableZone, WritableZoneNode, ZoneStore,
     },
 };
 use log::trace;
@@ -130,8 +131,27 @@ impl ReadableZone for SimpleZoneInner {
         trace!("WALK");
         for (name, rrsets) in self.tree.read().unwrap().iter() {
             for rrset in rrsets {
-                // TODO: Set false to proper value for "at zone cut or not"
-                (op)(name.clone(), rrset, false)
+                if rrset.rtype() == Rtype::RRSIG {
+                    // RRSIG RRs need special treatment because the zone
+                    // structures we currently use group RRSIG RRs together
+                    // into RRSETs, but all RRs in an RRSET are required
+                    // to have the same TTL while the TTL of RRSIG RRs are
+                    // required to match that of the record they sign. We
+                    // explode the RRSET into individual RRSETs of a single
+                    // RRSIG each and ensure they have the TTL of the record
+                    // they sign, the so-called "original TTL".
+                    for data in rrset.data() {
+                        let ZoneRecordData::Rrsig(rrsig) = data else {
+                            unreachable!();
+                        };
+                        let mut rrset = Rrset::new(Rtype::RRSIG, rrsig.original_ttl());
+                        rrset.push_data(data.clone());
+                        (op)(name.clone(), &rrset.into_shared(), false)
+                    }
+                } else {
+                    // TODO: Set false to proper value for "at zone cut or not"
+                    (op)(name.clone(), rrset, false)
+                }
             }
         }
         trace!("WALK FINISHED");

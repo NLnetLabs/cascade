@@ -850,14 +850,30 @@ impl OutboundSpec {
 //----------- NameserverCommsSpec --------------------------------------------
 
 /// Policy for communicating with another namesever.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged, expecting = "a string ('<IP>[:<PORT>]') or an inline table")]
+pub enum NameserverCommsSpec {
+    /// A simple notify specification.
+    Simple(SimpleNameserverCommsSpec),
+
+    /// A complex notify specification.
+    Complex(ComplexNameserverCommsSpec),
+}
+
+/// Policy for communicating with another namesever.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ComplexNameserverCommsSpec {
+    /// The address to send NOTIFYs to.
+    pub addr: SocketAddr,
+    // TODO: Support TSIG key names?
+}
+
+/// Policy for communicating with another namesever.
 #[derive(Clone, Debug, DeserializeFromStr, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct NameserverCommsSpec {
-    /// The address to send to/receive from.
-    ///
-    /// For sending the port MUST NOT be zero.
-    ///
-    /// TODO: Support IP prefixes?
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SimpleNameserverCommsSpec {
+    /// The address to send NOTIFYs to.
     pub addr: SocketAddr,
     // TODO: Support TSIG key names?
 }
@@ -867,23 +883,40 @@ pub struct NameserverCommsSpec {
 impl NameserverCommsSpec {
     /// Parse from this specification.
     pub fn parse(self) -> NameserverCommsPolicy {
-        NameserverCommsPolicy { addr: self.addr }
+        match self {
+            NameserverCommsSpec::Complex(spec) => spec.parse(),
+            NameserverCommsSpec::Simple(spec) => spec.parse(),
+        }
     }
 
     /// Build into this specification.
     pub fn build(policy: &NameserverCommsPolicy) -> Self {
-        Self { addr: policy.addr }
+        Self::Complex(ComplexNameserverCommsSpec { addr: policy.addr })
+    }
+}
+
+impl SimpleNameserverCommsSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> NameserverCommsPolicy {
+        NameserverCommsPolicy { addr: self.addr }
+    }
+}
+
+impl ComplexNameserverCommsSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> NameserverCommsPolicy {
+        NameserverCommsPolicy { addr: self.addr }
     }
 }
 
 /// Parse as an IpAddr (assuming port 53), or as a SocketAddr.
-impl FromStr for NameserverCommsSpec {
+impl FromStr for SimpleNameserverCommsSpec {
     type Err = AddrParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let addr = IpAddr::from_str(s)
             .map(|ip| SocketAddr::new(ip, 53))
             .or_else(|_| SocketAddr::from_str(s))?;
-        Ok(NameserverCommsSpec { addr })
+        Ok(SimpleNameserverCommsSpec { addr })
     }
 }

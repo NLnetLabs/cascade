@@ -93,15 +93,22 @@ log-level = "info"
 #
 # - type 'file': Logs are appended line-by-line to the specified file path.
 #
-#   It can be set to '/dev/stdout' or '/dev/stderr' for standard output and
-#   error, respectively.  If it is a terminal, ANSI escape codes may be used to
-#   style the output.
+#   If it is a terminal, ANSI escape codes may be used to style the output.
+#
+# - type 'stdout': Logs are written to stdout. (The default)
+#
+#   If it is a terminal, ANSI escape codes may be used to style the output.
+#
+# - type 'stderr': Logs are written to stderr.
+#
+#   If it is a terminal, ANSI escape codes may be used to style the output.
 #
 # - type 'syslog': Logs are written to the UNIX syslog.
 #
 #   This option is only supported on UNIX systems.
-log-target = { type = "file", path = "/dev/stdout" }
+log-target = { type = "stdout" }
 #log-target = { type = "syslog" }
+#log-target = { type = "file", path = "/dev/stdout" }
 
 # Whether to apply internal daemonization.
 #
@@ -152,7 +159,7 @@ daemonize = false
 # These sockets may be bound by systemd and passed into Cascade.  If systemd
 # does not provide them, Cascade will bind them itself (and will do so before
 # dropping privileges, if that is enabled).
-servers = ["127.0.0.1:8950", "[::1]:8950"] # TODO: Pick a good default port
+servers = ["127.0.0.1:4539", "[::1]:4539"]
 
 
 # How zones are loaded.
@@ -162,13 +169,13 @@ servers = ["127.0.0.1:8950", "[::1]:8950"] # TODO: Pick a good default port
 # A DNS server will be bound to these addresses.  If a DNS NOTIFY message for a
 # known zone is received there, the zone will be reloaded appropriately.
 #
-# Unless explicitly specified (e.g. 'udp://localhost:8050'), each address will
+# Unless explicitly specified (e.g. 'udp://localhost:4540'), each address will
 # be served over UDP and TCP.  An empty array will disable listening entirely.
 #
 # These sockets may be bound by systemd and passed into Cascade.  If systemd
 # does not provide them, Cascade will bind them itself (and will do so before
 # dropping privileges, if that is enabled).
-notify-listeners = ["127.0.0.1:8050", "[::1]:8050"] # TODO: Pick a good default port
+notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
 
 # How loaded zones are reviewed.
 [loader.review]
@@ -177,13 +184,13 @@ notify-listeners = ["127.0.0.1:8050", "[::1]:8050"] # TODO: Pick a good default 
 # A DNS server will be bound to these addresses, and will serve the contents of
 # all loaded zones.  This can be used to verify the consistency of these zones.
 #
-# Unless explicitly specified (e.g. 'udp://localhost:8051'), each address will
+# Unless explicitly specified (e.g. 'udp://localhost:4541'), each address will
 # be served over UDP and TCP.  An empty array will disable serving entirely.
 #
 # These sockets may be bound by systemd and passed into Cascade.  If systemd
 # does not provide them, Cascade will bind them itself (and will do so before
 # dropping privileges, if that is enabled).
-servers = ["127.0.0.1:8051", "[::1]:8051"] # TODO: Pick a good default port
+servers = ["127.0.0.1:4541", "[::1]:4541"]
 
 
 # How zones are signed.
@@ -197,13 +204,13 @@ servers = ["127.0.0.1:8051", "[::1]:8051"] # TODO: Pick a good default port
 # all signed (but not necessarily published) zones.  This can be used to check
 # the correctness of the signer.
 #
-# Unless explicitly specified (e.g. 'udp://localhost:8052'), each address will
+# Unless explicitly specified (e.g. 'udp://localhost:4542'), each address will
 # be served over UDP and TCP.  An empty array will disable serving entirely.
 #
 # These sockets may be bound by systemd and passed into Cascade.  If systemd
 # does not provide them, Cascade will bind them itself (and will do so before
 # dropping privileges, if that is enabled).
-servers = ["127.0.0.1:8052", "[::1]:8052"] # TODO: Pick a good default port.
+servers = ["127.0.0.1:4542", "[::1]:4542"]
 
 
 # DNSSEC key management.
@@ -217,10 +224,10 @@ servers = ["127.0.0.1:8052", "[::1]:8052"] # TODO: Pick a good default port.
 # A DNS server will be bound to these addresses, and will serve the contents of
 # all published zones.  This is the final output from Cascade.
 #
-# Unless explicitly specified (e.g. 'udp://localhost:8053'), each address will
+# Unless explicitly specified (e.g. 'udp://localhost:4543'), each address will
 # be served over UDP and TCP.  At least one address must be specified.
 #
 # These sockets may be bound by systemd and passed into Cascade.  If systemd
 # does not provide them, Cascade will bind them itself (and will do so before
 # dropping privileges, if that is enabled).
-servers = ["127.0.0.1:8053", "[::1]:8053"] # TODO: Pick a good default port.
+servers = ["127.0.0.1:4543", "[::1]:4543"]

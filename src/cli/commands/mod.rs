@@ -8,6 +8,8 @@ pub mod status;
 pub mod template;
 pub mod zone;
 
+use crate::cli::client::format_http_error;
+
 use super::client::CascadeApiClient;
 
 #[allow(clippy::large_enum_variant)]
@@ -17,16 +19,18 @@ pub enum Command {
     #[command(name = "config")]
     Config(self::config::Config),
 
+    /// Check if Cascade is healthy.
+    #[command(name = "health")]
+    Health,
+
     /// Manage zones
     #[command(name = "zone")]
     Zone(self::zone::Zone),
 
-    // /// Get the status of different systems
-    // #[command(name = "status")]
-    // Status(self::status::Status),
-    // - get status (what zones are there, what are things doing)
-    // - get dnssec status on zone
-    //
+    /// Get the status of different systems
+    #[command(name = "status")]
+    Status(self::status::Status),
+
     /// Manage policies
     #[command(name = "policy")]
     Policy(self::policy::Policy),
@@ -61,8 +65,17 @@ impl Command {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
             Self::Config(cmd) => cmd.execute(client).await,
+            Self::Health => {
+                client
+                    .get("health")
+                    .send()
+                    .await
+                    .map_err(format_http_error)?;
+                println!("Ok");
+                Ok(())
+            }
             Self::Zone(zone) => zone.execute(client).await,
-            // Self::Status(status) => status.execute(client).await,
+            Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,
             Self::KeySet(keyset) => keyset.execute(client).await,
             Self::Hsm(hsm) => hsm.execute(client).await,
