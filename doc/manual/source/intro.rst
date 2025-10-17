@@ -1,9 +1,10 @@
 An Intro to DNSSEC
 ==================
 
-DNS Security Extensions (DNSSEC) protect end users against forged or modified
-DNS responses, both deliberate and accidental, by digitally signing DNS
-record data to allow its authenticity to be verified. 
+DNS Security Extensions (`DNSSEC
+<https://datatracker.ietf.org/doc/html/rfc9364.html>`__) protect end users
+against forged or modified DNS responses, both deliberate and accidental, by
+digitally signing DNS record data to allow its authenticity to be verified. 
 
 Though DNSSEC is often perceived as a complicated topic, Cascade tries to
 make the experience as understandable and robust as possible. In this section

@@ -6,7 +6,7 @@ Hardware Security Modules (HSMs)
    operators use an HSM. Cascade is able to use `OpenSSL
    <https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
    software cryptography to generate signing keys and to cryptographically sign
-   DNS RRSET data, storing the generated keys in on-disk files.
+   DNS RRset data, storing the generated keys in on-disk files.
 
 An Introduction to HSMs
 -----------------------

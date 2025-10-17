@@ -16,8 +16,8 @@ Cascade
 A friendly, stand-alone :doc:`DNSSEC <intro>` signing solution designed to
 communicate what it's doing and is easy to interact with. 
 
-Cascade is currently in its first **alpha** version. We would love for you to
-:doc:`get to know Cascade <before-you-start>` and are eager to hear
+Cascade is currently in the **alpha** development phase. We would love for
+you to :doc:`get to know Cascade <before-you-start>` and are eager to hear
 :ref:`your experiences <reach-out>` so we can improve every aspect. Please
 consider the current :doc:`limitations`.
 
