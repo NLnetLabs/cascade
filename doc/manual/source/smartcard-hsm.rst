@@ -13,6 +13,7 @@ Integrating with a SmartCard-HSM
    MicroSD or USB form factors and protect your RSA and ECC keys in hardware.
    They are accessible through a PKCS #11 interface. You can use them to
    experiment with PKCS #11 without having to purchase an expensive HSM.
+   (Hint: do not expect wonders in terms of performance.)
 
    -- https://www.smartcard-hsm.com
 
@@ -42,7 +43,8 @@ Initialize the smartcard
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 The card is configured with the SO PIN and user PIN as per the vendor. You can
-later change these.
+initialize (i.e. fully reset_ the card and change these using ``sc-hsm-tool``
+which is provided in the ``opensc`` package:
 
 .. code-block:: bash
 
@@ -86,8 +88,8 @@ the host application.
 Create a Cascade Policy that uses your HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a Cascade policy called ``smartcard`` and set it to use a HSM
-called ``kmip2pkcs11``.
+Create a Cascade policy called ``smartcard`` and set it to use the HSM
+called ``kmip2pkcs11`` we configured earlier.
 
 .. code-block:: bash
 
@@ -107,7 +109,8 @@ Start the Cascade daemon:
 Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
 locally running :program:`kmip2pkcs11` daemon. The ``username`` is the slot
 identifier we found our card in earlier, and the ``password`` is the user PIN
-configured for the card.
+configured for the card. Note we're using the slot-ID (``0``) instead of the token
+name here; either ought to work.
 
 .. code-block:: bash
 
