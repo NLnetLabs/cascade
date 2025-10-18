@@ -24,28 +24,17 @@ Intended Audience
 Cascade is currently targeted for use by TLD operators, but will evolve over
 time to cater to other audiences. As a successor to OpenDNSSEC, Cascade is
 clearly intended to offer continuity and a migration path for current users,
-but will also offer superior performance, flexibility and user experience.
+but Cascade will also offer superior performance, flexibility and user
+experience.
 
 Cascade does not require the use of a :term:`Hardware security module (HSM)`.
-If desired, it can make use of on-disk key files, as well as PKCS#11 and KMIP
+It can make use of on-disk key files, and, if desired, use PKCS#11 and KMIP
 compatible HSMs.
-
-Right now, signing speed is not likely to be a bottle neck for most use
-cases, but there are many improvements in the pipeline, especially when using
-an HSM. Cascade's memory use is considerable, using about 30GiB of RAM when
-signing a ~1GB zone file with about ~25M resource records and adding ~10M
-records while signing. Reducing the memory footprint is a priority.
-
-As such, Cascade can currently be used by operators with at most a few
-small to medium size zones. As development progresses, it will also support
-operators with very large zones or operators with many zones.
-
-Cascade is *not* yet intended for operation as a clustered deployment.
 
 The Moving Parts
 ----------------
 
-Cascade consists of three, possibly four, pieces:
+Cascade consists of three main components and an optional fourth:
 
 - The :program:`cascaded` daemon for receiving zone data, signing it, and
   serving the signed result. It supports :doc:`review-hooks` during the
@@ -60,7 +49,7 @@ Cascade consists of three, possibly four, pieces:
   daemon. The reason for having an external key manager is to have the
   flexibility of swapping it out in the future, for example to support
   offline keys or multi-signing. You can read more about this in the
-  :doc:`key management <key-management>` section.
+  :doc:`<key-management>` section.
 
 - The *optional* :program:`kmip2pkcs11` daemon, which is only required when
   using an PKCS#11 compatible HSM. You can read more about this in the
@@ -82,3 +71,19 @@ Cascade is able to run with fairly limited CPU and memory. Exact figures are
 not yet available, but in principle with more CPU cores more operations will
 benefit from parallelization, and with more memory it will be possible to load
 and sign larger zones.
+
+Right now, signing speed is not likely to be a bottle neck for most use
+cases, but there are many speed improvements in the pipeline, especially when
+using an HSM. 
+
+.. note:: Cascade's memory use is still considerable with large zones. It 
+          uses using about 30GiB of RAM when signing a ~1GB zone file with 
+          about ~25M resource records and adding ~10M records while signing. 
+          Reducing the memory footprint is a priority.
+
+Cascade can currently be used by operators with at most a few small to medium
+size zones. As development progresses, it will also support operators with
+very large zones or operators with many zones.
+
+Cascade is *not* yet intended for operation as a clustered deployment.
+
