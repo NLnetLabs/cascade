@@ -7,12 +7,12 @@ The Pipeline
 Zone changes are said to cascade through a pipeline consisting of several
 stages, letting you review and approve at each step:
 
-.. image:: img/cascade-pipeline.svg
+.. figure:: img/cascade-pipeline.svg
    :width: 100%
    :align: center
-   :alt: Cascade pipeline
+   :alt: Schematic view of of the Cascade pipeline
 
-|
+   A schematic view of of the Cascade pipeline with the verification stages.
 
 Robustness
 ----------
