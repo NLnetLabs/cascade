@@ -49,7 +49,7 @@ Cascade consists of three main components and an optional fourth:
   daemon. The reason for having an external key manager is to have the
   flexibility of swapping it out in the future, for example to support
   offline keys or multi-signing. You can read more about this in the
-  :doc:`<key-management>` section.
+  :doc:`key-management` section.
 
 - The *optional* :program:`kmip2pkcs11` daemon, which is only required when
   using an PKCS#11 compatible HSM. You can read more about this in the
@@ -59,10 +59,13 @@ Supported Inputs/Outputs
 ------------------------
 
 Cascade supports:
-  - Receiving zone data via AXFR, IXFR or from on-disk files.
-  - Publishing data via AXFR (IXFR coming soon, on-disk files while not
-    supported directly could be achieved by XFR of the signed zone to an
-    on-disk file).
+  - Receiving zone data via AXFR or IXFR :term:`zone transfers <Zone
+    transfer>`, or from on-disk files.
+  - Publishing data via AXFR.
+
+.. note:: Publishing data via IXFR is coming soon. On-disk files, while not
+          supported directly, could be achieved by XFR of the signed zone to
+          an on-disk file.
 
 System Requirements
 -------------------
