@@ -43,13 +43,33 @@ Initialize the smartcard
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 The card is configured with the SO PIN and user PIN as per the vendor. You can
-initialize (i.e. fully reset_ the card and change these using ``sc-hsm-tool``
-which is provided in the ``opensc`` package:
+initialize (i.e. fully reset) the card and change these using :program:`sc-hsm-tool`
+which is provided in the :program:`opensc` package:
 
 .. code-block:: bash
 
-   # sc-hsm-tool --initialize --so-pin 0123012301230123 --pin 123456
+   # sc-hsm-tool --initialize --so-pin 0123012301230123 --pin 123456 --label NL-smartcard
    Using reader with a card: Identive CLOUD 2700 R Smart Card Reader [CCID Interface]
+
+Show the card's slot information
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+We display a list of available slots and take note of our slot ID (``0``) to
+which our card label (``NL-smartcard``) is associated:
+
+.. code-block:: bash
+
+   # pkcs11-tool --list-slots
+   Available slots:
+   Slot 0 (0x0): Identive CLOUD 2700 R Smart Card Reader [CCID Interface] (536...
+     token label        : NL-smartcard (UserPIN)
+     token manufacturer : www.CardContact.de
+     token model        : PKCS#15 emulated
+     token flags        : login required, rng, token initialized, PIN initialized
+     hardware version   : 24.13
+     firmware version   : 4.1
+     serial num         : DECC1206715
+     pin min/max        : 6/15
 
 List the Smart Card's mechanisms
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -109,13 +129,12 @@ Start the Cascade daemon:
 Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
 locally running :program:`kmip2pkcs11` daemon. The ``username`` is the slot
 identifier we found our card in earlier, and the ``password`` is the user PIN
-configured for the card. Note we're using the slot-ID (``0``) instead of the token
-name here; either ought to work.
+configured for the card.
 
 .. code-block:: bash
 
-   # cascade hsm add --insecure --username "0" --password 123456 kmip2pkcs11 127.0.0.1
-   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label SmartCard-HSM (UserPIN) in slot Identive CLOUD 2700 R Smart Card Reader [CCID Interface] (536... via library opensc-pkcs11.so'.
+   # cascade hsm add --insecure --username 0 --password "123456" kmip2pkcs11 127.0.0.1
+   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label NL-smartcard (UserPIN) in slot Identive CLOUD 2700 R Smart Card Reader [CCID Interface] (536... via library opensc-pkcs11.so'.
 
 Sign a Test Zone with SmartCard-HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -178,7 +197,7 @@ which includes the identifiers of the signing keys that were used:
 Inspect the SmartCard HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Use the ``pkcs11-tool`` program from the ``opensc`` package installed earlier
+Use the :program:`pkcs11-tool` program from the :program:`opensc` package installed earlier
 to list objects on the SmartCard-HSM. Initially the card will likely be empty,
 but after Cascade has created some keys you should see the objects on the card.
 
