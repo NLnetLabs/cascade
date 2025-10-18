@@ -44,7 +44,7 @@ daemon which is installed automatically as part of our Cascade packages.
 Bespoke Zone Verification
 -------------------------
 
-Using :doc:`reviews-hooks`, Cascade supports optional verification of your
+Using :doc:`review-hooks`, Cascade supports optional verification of your
 zone data at two critical stages: verification of the unsigned zone, and
 verification of the signed zone.
 
