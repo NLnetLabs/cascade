@@ -12,6 +12,8 @@ stages, letting you review and approve at each step:
    :align: center
    :alt: Cascade pipeline
 
+|
+
 Robustness
 ----------
 
@@ -46,11 +48,9 @@ Bespoke Zone Verification
 
 Using :doc:`review-hooks`, Cascade supports optional verification of your
 zone data at two critical stages: verification of the unsigned zone, and
-verification of the signed zone.
-
-In both cases verification consists of executing an operator supplied script
-or application which can verify the zone using whatever mechanisms are
-required to satisfy your policy.
+verification of the signed zone. In both cases verification consists of
+executing an operator supplied script or application which can verify the
+zone using whatever mechanisms are required to satisfy your policy.
 
 Verification of the zone can be done by retrieving it using the :term:`zone
 transfer <Zone transfer>` protocol from dedicated "review" nameservers within
