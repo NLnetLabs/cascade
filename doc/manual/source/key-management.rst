@@ -36,12 +36,11 @@ Operations
 ----------
 
 User interaction with the key manager is designed to be done through Cascade.
-The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys. It
-manages signing keys and generates a signed DNSKEY RRset. The key manager
-expects a separate signer, in this case Cascade, to use the zone signing keys
-in the key set, sign the zone and include the DNSKEY RRset (as well as the
-CDS and CDNSKEY RRsets). The key manager supports keys stored in files and
-keys stored in an HSM.
+The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys and
+generates a signed DNSKEY RRset. The key manager expects a separate signer,
+in this case Cascade, to use the zone signing keys in the key set, sign the
+zone and include the DNSKEY RRset (as well as the CDS and CDNSKEY RRsets).
+The key manager supports keys stored in files and keys stored in an HSM.
 
 The key manager operates on one zone at a time. For each zone, the key
 manager has configuration parameters for key generation (which algorithm to
