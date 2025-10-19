@@ -26,11 +26,11 @@ subcommand of :program:`dnst`.
 
 The reason for having an external key manager is to have the flexibility to
 use different ones. The current key manager requires that keys are online,
-either in files or in an HSM and does not (explicitly) support a multi-signer
-setup. We envision future key managers that support offline keys or
-multi-signing. Finally, a separate key manager makes it relatively easy for
-Cascade to support high-availability setups, though it does not do that at
-the moment.
+either in files or in a :doc:`Hardware Security Module (HSM) <hsms>` and does
+not (explicitly) support a multi-signer setup. We envision future key
+managers that support offline keys or multi-signing. Finally, a separate key
+manager makes it relatively easy for Cascade to support high-availability
+setups, though it does not do that at the moment.
 
 Operations
 ----------
@@ -41,7 +41,7 @@ manages signing keys and generates a signed DNSKEY RRset. The key manager
 expects a separate signer, in this case Cascade, to use the zone signing keys
 in the key set, sign the zone and include the DNSKEY RRset (as well as the
 CDS and CDNSKEY RRsets). The key manager supports keys stored in files and
-keys stored in a :doc:`Hardware Security Module (HSM) <hsms>`.
+keys stored in an HSM.
 
 The key manager operates on one zone at a time. For each zone, the key
 manager has configuration parameters for key generation (which algorithm to
@@ -119,31 +119,42 @@ different from the one used by the current key.
 Similar limitations apply to the other roll types. Note however that an
 algorithm roll can be started even when it is not needed.
 
-.. note:: Cascade has support for fully automatic key rolls, which is enabled
-   by default. It can be disabled in a policy. See the section on
-   :ref:`defining policy <defining-policy>`.
+Automatic Key Rolls
+"""""""""""""""""""
 
-For automatic key rolls, the key manager will check the propagation of 
+.. important:: Cascade has support for fully automatic key rolls, which is 
+   enabled by default. If Cascade is for example running in an isolated 
+   network, it will not have access to all nameservers of the zone or the 
+   parent zone. In that case it's best to disable automatic key rolls in your 
+   :ref:`policy <defining-policy>`.
+
+For automatic key rolls, the key manager will check the propagation of
 changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
-signatures to all nameservers of the zone or the parent zone.
-To be able to do this, the key manager needs network access to those
-nameservers.
-If Cascade is running in an isolated network, then this will fail and it is
-best to disable (part of) automatic key rolls.
+signatures to all nameservers of the zone or the parent zone. To be able to
+do this, the key manager needs network access to those nameservers. If
+Cascade is running in an isolated network, then this will fail and it is best
+to disable (part of) automatic key rolls in your :ref:`policy
+<defining-policy>`. 
+
 To check the signatures in the zone, the key manager will issue an AXFR
-request to the primary nameserver listed in the SOA record of the zone.
-In the future we plan to make it possible to configure which nameserver
-should be used and which TSIG keys should be used for authentication.
+request to the primary nameserver listed in the SOA record of the zone. In
+the future we plan to make it possible to configure which nameserver should
+be used and which TSIG keys should be used for authentication.
 
-The automatic key roll checks have two limitations. 
-First one is that they do not work in a multi-signer setup where signers use
-different keys to sign the zone.
-The second limitation is that propagation cannot be checked in an any-cast
-setup.
-The key manager may continue with the key roll before all node in the any-cast
-cluster have received the new version of the zone.
+The automatic key roll checks have two limitations:
 
-We explicitly solicit input from operators on how to improve this feature.
+1. They do not work in a multi-signer setup where signers use different keys
+   to sign the zone.
+2. Propagation cannot be checked in an any-cast setup.The key manager may
+   continue with the key roll before all nodes in the any-cast
+   cluster have received the new version of the zone.
+
+Future Development
+~~~~~~~~~~~~~~~~~~
+
+.. tip:: We explicitly solicit :ref:`your input <reach-out>` on how to 
+   improve this feature.
+
 We would like to avoid time-based solutions (because that could mean that
 the key roll will continue even if propagation is not complete). 
 Solutions we are thinking about are a measurement program at the edge of
@@ -151,6 +162,9 @@ the operator's network that reports back to the key manager about the state
 of propagation.
 For propagation in an any-cast cluster, a system such as RIPE Atlas could be
 used to check propagation across the Internet.
+
+Key Roll Steps
+""""""""""""""
 
 A key roll consists of six steps:
 
@@ -163,6 +177,9 @@ A key roll consists of six steps:
    
 For each key roll these six steps follow in the same order.
 Associated with each step is a (possibly empty) list of actions.
+
+Actions
+~~~~~~~
 
 Actions fall in three categories:
 
@@ -189,10 +206,17 @@ Finally, the ``roll-done`` step typically has associated Wait actions.
 These actions are cleanup actions and are harmless but confusing if they
 are skipped.
 
+Control over Automation
+~~~~~~~~~~~~~~~~~~~~~~~
+
 The key manager provides fine grained control over automation.
 Automation is configured separately for each of the four roll types.
-For each roll type, there are four booleans called ``start``, ``report``,
-``expire`` and ``done``.
+For each roll type, there are four booleans:
+
+1. ``start``
+2. ``report``
+3. ``expire``
+4. ``done``
 
 When set, the ``start`` boolean directs the key manager to start a key roll
 when a relevant key has expired.
@@ -256,12 +280,18 @@ There are three basic ways to import existing keys:
 2. A public/private key pair stored in files
 3. A public/private key pair stored on an HSM
 
+Public Key from in a File
+"""""""""""""""""""""""""
+
 A public key can only be imported from a file.
 When the key is imported the name of the file is converted to a URL and stored in the key set and
 the key will be included in the DNSKEY RRset.
 This is useful for certain migrations and to manually implement a
 multi-signer DNSSEC signing setup.
 Note that automation does not work for this case.
+
+Public/Private Key Pair in Files
+""""""""""""""""""""""""""""""""
 
 A public/private key pair can be imported from files.
 It is sufficient to give the name of the file that holds the public key if
@@ -270,10 +300,16 @@ same except that it ends in ``.private``.
 If this is not the case then the private key filename must be specified
 separately.
 
+Public/Private Key Pair in an HSM
+"""""""""""""""""""""""""""""""""
+
 Importing a public/private key stored in an HSM requires specifying the KMIP
 server ID, the ID of the public key, the ID of the private key, the
 DNSSEC algorithm of the key and the flags (typically 256 for a ZSK and
 257 for a KSK).
+
+Ownership
+"""""""""
 
 Normally, the key manager assumes ownership of any keys it holds.
 This means that when a key is deleted from the key set, the key manager
