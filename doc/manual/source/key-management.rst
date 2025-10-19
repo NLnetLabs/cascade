@@ -10,65 +10,65 @@ Key Management
    :term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key 
    (ZSK)>` roll will be different.
 
-The key manager is responsible for two things: for each zone, maintaining a
-set of keys that are used to sign and signing DNSKEY, CDS, and CDNSKEY RRsets.
-As part of maintaining a set of keys, the key manager also provides key rolls.
+Implementation
+--------------
 
-Cascade uses an external key manager.
-The program that key management is called :program:`dnst` and the actual
-key management is provided by the :subcmd:`keyset` subcommand of :program:`dnst`.
+The key manager is responsible for two things: 
+
+1. For each zone, it maintains and provides key rolls for a set of keys that
+   are used to sign. 
+2. Signing DNSKEY, CDS, and CDNSKEY RRsets.
+
+Cascade uses an external key manager, which is part of our :program:`dnst` 
+toolset. The actual key management is provided by the :subcmd:`keyset` 
+subcommand of :program:`dnst`.
 
 The reason for having an external key manager is to have the flexibility to
-use different key managers. 
-The current one requires that keys are online, either in files or in an
-HSM and does not (explicitly) support a multi-signer setup.
+use different ones. The current key manager requires that keys are online,
+either in files or in an HSM and does not (explicitly) support a multi-signer
+setup. We envision future key managers that support offline keys or
+multi-signing. Finally, a separate key manager makes it relatively easy for
+Cascade to support high-availability setups, though it does not do that at
+the moment.
 
-We envision future key managers that support offline keys or that support
-multi-signing.
-Finally, a separate key manager makes it relatively easy for Cascade to 
-support high-availability setups, though it does not do that at the moment.
+Operations
+----------
 
 User interaction with the key manager is designed to be done through
-Cascade. 
+Cascade. The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys. It
+manages signing keys and generates a signed DNSKEY :term:`RRset <Resource
+Record Set (RRset)>`. The key manager expects a separate signer, in this case
+Cascade, to use the zone signing keys in the key set, sign the zone and
+include the DNSKEY RRset (as well as the CDS and CDNSKEY RRsets). The key
+manager supports keys stored in files and keys stored in a :doc:`Hardware
+Security Module (HSM) <hsms>`.
 
-The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys.
-It manages signing keys and generates a signed DNSKEY :term:`RRset <Resource Record Set (RRset)>`.
-The key manager expects a separate signer, in this case Cascade, to use the zone
-signing keys in the key set,
-sign the zone and include the DNSKEY RRset (as well as the CDS and CDNSKEY
-RRsets).
-The key manager supports keys stored in files and keys stored in a
-:term:`Hardware Security Module (HSM)` that can be accessed using the
-Key Management Interoperability Protocol (KMIP).
-
-
-The key manager operates on one zone at a time.
-For each zone, the key manager has configuration parameters for
-key generation (which algorithm to use, whether to use a :term:`CSK <Combined signing key (CSK)>` or a
-:term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key (ZSK)>` pair), parameters for key rolls (whether key rolls are automatic
-or not), the lifetimes of keys and signatures, etc.
-The key manager maintains a state file for each zone.
-The state file lists the keys in the key set, the current key roll state,
-and has the DNSKEY, CDS, and CDNSKEY RRsets.
-key generation (which algorithm to use, whether to use a CSK and a
-KSK and a ZSK), parameters for key rolls (whether key rolls are automatic
-or not), the lifetimes of keys and signatures, etc.
+The key manager operates on one zone at a time. For each zone, the key
+manager has configuration parameters for key generation (which algorithm to
+use, whether to use a :term:`CSK <Combined signing key (CSK)>` or a
+:term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key (ZSK)>`
+pair), parameters for key rolls (whether key rolls are automatic or not), the
+lifetimes of keys and signatures, etc. The key manager maintains a state file
+for each zone. The state file lists the keys in the key set, the current key
+roll state, and has the DNSKEY, CDS, and CDNSKEY RRsets. key generation
+(which algorithm to use, whether to use a CSK and a KSK and a ZSK),
+parameters for key rolls (whether key rolls are automatic or not), the
+lifetimes of keys and signatures, etc.
 
 In addition to the configuration and state files, the key manager maintains
 files for keys that are stored in the filesystem.
 
-The key manager supports importing existing keys, both standalone
-public keys as well as public/private key pairs can be imported.
-A standalone public key can only be imported from a file whereas public/private
-key pairs can be either files or references to keys stored in an HSM.
-Note that the public and private key either need to be both files or both
-stored in an HSM.
+Updating Keys 
+-------------
 
 The signatures of the DNSKEY, CDS and CDNSKEY RRsets need to updated
+periodically. In addition, key roll automation requires periodic invocation
+of the key manager to start new key rolls and to make progress on ones that
+are currently executing. For this purpose, Cascade invokes the key manager
 periodically.
-In addition, key roll automation requires periodic invocation of the key
-manager to start new key rolls and to make progress on ones that are currently
-executing. For this purpose, Cascade invokes the key manager periodically.
+
+New Zones and Keys 
+------------------
 
 When a new zone is added to Cascade, Cascade will invoke the key manager
 to create empty key state for the new zone.
@@ -83,15 +83,20 @@ The algorithm roll makes sure that the DNSKEY RRset and the zone signatures
 have propagated before adding the DS record at the parent.
 
 Key Rolls
-~~~~~~~~~
+---------
 
 The key manager can perform four different types of key rolls:
-KSK rolls, ZSK rolls, CSK rolls and algorithm rolls.
+
+1. KSK rolls
+2. ZSK rolls
+3. CSK rolls
+4. Algorithm rolls
+   
 A KSK roll replaces one KSK with a new KSK.
 Similarly, a ZSK roll replaces one ZSK with a new ZSK.
 A CSK roll also replaces a CSK with a new CSK but the roll also treats a
 pair of KSK and ZSK keys as equivalent to a CSK.
-So a CSK roll can also roll from KSK plus ZSK to a new CSK or from a CSK
+So, a CSK roll can also roll from KSK plus ZSK to a new CSK or from a CSK
 to new a KSK and ZSK pair.
 Note that a roll from KSK plus ZSK to a new KSK plus ZSK pair
 is also supported.
@@ -143,23 +148,31 @@ of propagation.
 For propagation in an any-cast cluster, a system such as RIPE Atlas could be
 used to check propagation across the Internet.
 
-A key roll consists of six steps: ``start-roll``, ``propagation1-complete``,
-``cache-expired1``, ``propagation2-complete``, ``cache-expired2``, and
-``roll-done``.
+A key roll consists of six steps:
+
+1. ``start-roll``
+2. ``propagation1-complete``
+3. ``cache-expired1``
+4. ``propagation2-complete``
+5. ``cache-expired2``
+6. ``roll-done``
+   
 For each key roll these six steps follow in the same order.
 Associated with each step is a (possibly empty) list of actions.
-Actions fall in three categories.
-The first category consists of actions that require updating the zone or the
-parent zone.
-The second category consists of actions that require checking if changes
-have propagated to all nameservers and require reporting of the
-TTLs of the changed RRset as seen at the nameservers.
-Finally, the last category requires waiting for changes to propagate to
-all nameservers but there is no need to report the TTL.
+
+Actions fall in three categories:
+
+1. The first category consists of actions that require updating the zone or
+   the parent zone.
+2. The second category consists of actions that require checking if changes
+   have propagated to all nameservers and require reporting of the TTLs of
+   the changed RRset as seen at the nameservers.
+3. Finally, the last category requires waiting for changes to propagate to
+   all nameservers but there is no need to report the TTL.
 
 Typically, in a list of actions, an action of the first category is paired
 with one from the second of third category.
-For example, ``UpdateDnskeyRrset`` is paired with eiher
+For example, ``UpdateDnskeyRrset`` is paired with either
 ``ReportDnskeyPropagated`` or ``WaitDnskeyPropagated``.
 
 A key roll starts with the ``start-roll`` step, which creates new keys.
@@ -224,10 +237,21 @@ The ``report`` and ``done`` automations require that keyset has network access
 to all nameservers of the zone and all nameservers of the parent.
 
 Importing Keys
-~~~~~~~~~~~~~~
+--------------
 
-There are three basic ways to import exiting keys: public-key,
-a public/private key pair from files or a public/private key pair in an HSM.
+The key manager supports importing existing keys. Both standalone public keys
+as well as public/private key pairs can be imported. A standalone public key
+can only be imported from a file whereas public/private key pairs can be
+either files or references to keys stored in an HSM. 
+
+.. note:: The public and private key either need to be both files or both 
+   stored in an HSM.
+
+There are three basic ways to import existing keys: 
+
+1. A public-key stored in a file
+2. A public/private key pair stored in files
+3. A public/private key pair stored on an HSM
 
 A public key can only be imported from a file.
 When the key is imported the name of the file is converted to a URL and stored in the key set and
