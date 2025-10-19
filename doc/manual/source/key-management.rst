@@ -276,8 +276,8 @@ There are three basic ways to import existing keys:
 2. A public/private key pair stored in files
 3. A public/private key pair stored on an HSM
 
-Public Key from in a File
-"""""""""""""""""""""""""
+Public Key in a File
+""""""""""""""""""""
 
 A public key can only be imported from a file.
 When the key is imported the name of the file is converted to a URL and stored in the key set and
