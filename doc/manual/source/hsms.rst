@@ -1,21 +1,22 @@
 Hardware Security Modules (HSMs)
 ================================
 
-.. Note:: Cascade does not *require* an HSM to operate. While it is common
-   practice to secure cryptographic key material using an HSM, not all
-   operators use an HSM. Cascade is able to use `OpenSSL
-   <https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
-   software cryptography to generate signing keys and to cryptographically sign
-   DNS RRset data, storing the generated keys in on-disk files.
+.. Note:: Cascade does not *require* a :term:`Hardware Security Module (HSM)`
+   to operate. While it is common practice to secure cryptographic key 
+   material using an HSM, not all operators use an HSM. Cascade is able to 
+   use `OpenSSL <https://www.openssl.org>`_ and/or 
+   `ring <https://crates.io/crates/ring/>`_ software cryptography to generate
+   signing keys and to cryptographically sign DNS :term:`RRset <Resource 
+   Record Set (RRset)>` data, storing the generated keys in on-disk files.
 
 An Introduction to HSMs
 -----------------------
 
-A hardware security module is typically a tamper proof hardware vault (though
+A Hardware Security Module is typically a tamper proof hardware vault (though
 software variants exist as well) capable of generating and securely storing
 cryptographic keys and performing signing operations using those keys on
 data provided via an interface and returning the signed result via the same
-iinterface.
+interface.
 
 HSM Interfaces
 ~~~~~~~~~~~~~~
@@ -44,11 +45,11 @@ natively, while PKCS#11 is supported through our :program:`kmip2pkcs11` bridge.
 As Cascade is a Rust powered application, crossing the divide between the Rust
 host application and a loaded C library means giving up the stability and
 memory safety guarantees offered by Rust. As such Cascade was designed to
-*NOT* load PKCS#11 modules directly but instead to hand that risk off to a
+*not* load PKCS#11 modules directly but instead to hand that risk off to a
 helper tool: :program:`kmip2pkcs11`.
 
 To interact with a HSM over its PKCS#11 interface, Cascade sends KMIP requests
-to :program:`kmip2pkcs11` which executes them against a loaded PKCS#11 vendor
+to :program:`kmip2pkcs11`, which executes them against a loaded PKCS#11 vendor
 library.
 
 Supported HSMs

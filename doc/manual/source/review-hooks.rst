@@ -1,43 +1,72 @@
 Review Hooks
 ============
 
-Cascade offers two review hook points in its signing pipeline for automated zone validation by user provided review scripts.
-These review hooks can be used to perform any validation the user requires to ensure their zone is correct at all stages, using any (3rd-party) tools desired.
+Cascade offers two review hook points in its signing pipeline for automated
+zone validation by user provided review scripts. These review hooks can be
+used to perform any validation the user requires to ensure their zone is
+correct at all stages, using any (third-party) tools desired.
 
-A review script in Cascade is a custom program created by the user (and configured in the zone's policy as shown below in `Configuring a review hook`_) that performs the desired validation and signals approval or rejection to Cascade via the program's exit code.
-An exit code of 0 means the zone is approved, and any other exit code means the zone is rejected.
+A review script in Cascade is a custom program created by the user and
+configured in the zone's policy, as shown below in `Configuration`_. It
+performs the desired validation and signals approval or rejection to Cascade
+via the program's exit code. An exit code of 0 means the zone is approved,
+and any other exit code means the zone is rejected.
 
-The first review hook is available after a zone is loaded by Cascade before it is signed.
-The second review hook is available after the zone is signed and not yet published.
-The review script can approve or reject a zone at either of these stages.
+The first review hook is available after a zone is loaded by Cascade before
+it is signed. The second review hook is available after the zone is signed
+and not yet published. The review script can approve or reject a zone at
+either of these stages.
 
-If a review script approves the zone, then that version of the zone will continue through the pipeline as usual.
-If a review script rejects the zone instead, then that version of the zone will be halted and not proceed further.
-However, a subsequently loaded version of the zone will be processed and traverse the pipeline as usual, unless it too is rejected by a review script.
+If a review script approves the zone, then that version of the zone will
+continue through the pipeline as usual. If a review script rejects the zone
+instead, then that version of the zone will be halted and not proceed
+further. However, a subsequently loaded version of the zone will be processed
+and traverse the pipeline as usual, unless it too is rejected by a review
+script.
 
-A review script receives relevant information about the zone in environment variables listed in the :ref:`policy file manual <policy-loaded-review-cmd>`.
-The review script then needs to use the address provided in the environment variables to fetch the zone via AXFR and perform the required checks.
+A review script receives relevant information about the zone in environment
+variables listed in the :ref:`policy file manual <policy-loaded-review-cmd>`.
+The review script then needs to use the address provided in the environment
+variables to fetch the zone via AXFR :term:`zone transfer <Zone transfer>`
+and perform the required checks.
 
-Configuring a review hook
--------------------------
+Configuration
+-------------
 
-To configure a review hook, you set the review :option:`required = true <required = false>` policy option, and specify the review script using the :option:`cmd-hook <cmd-hook = "">` option in the :ref:`[loader.review] <policy-loaded-review>` and/or :ref:`[signer.review] <policy-signed-review>` policy file sections.
+To configure a review hook, you set the review :option:`required = true
+<required = false>` policy option, and specify the review script using the
+:option:`cmd-hook <cmd-hook = "">` option in the :ref:`[loader.review]
+<policy-loaded-review>` and/or :ref:`[signer.review] <policy-signed-review>`
+policy file sections.
 
-Review scripts (or programs) are called using ``sh -c``, so you can provide arguments to your review script, e.g.: :option:`cmd-hook = "script.sh --stage unsigned" <cmd-hook = "">`.
+Review scripts (or programs) are called using ``sh -c``, so you can provide
+arguments to your review script, e.g.: :option:`cmd-hook = "script.sh --stage
+unsigned" <cmd-hook = "">`.
 
 Manual Review
 -------------
 
-You can also enable manual review by setting the review :option:`required = true <required = false>` option under :ref:`[loader.review] <policy-loaded-review>` or :ref:`[signer.review] <policy-signed-review>` without providing a :option:`cmd-hook <cmd-hook = "">` command.
+You can also enable manual review by setting the review :option:`required =
+true <required = false>` option under :ref:`[loader.review]
+<policy-loaded-review>` or :ref:`[signer.review] <policy-signed-review>`
+without providing a :option:`cmd-hook <cmd-hook = "">` command.
 
-If no hook command is provided, but review is required, manual approval or rejection has to be performed using the CLI commands ``cascade zone approve`` or ``cascade zone reject``.
+If no hook command is provided, but review is required, manual approval or
+rejection has to be performed using the CLI commands :command:`cascade zone
+approve` or :command:`cascade zone reject`.
 
 Example
 -------
 
-In this example we will use `validns <https://codeberg.org/DNS-OARC/validns>`_ to validate the unsigned zone, and `dnssec-verify <https://bind9.readthedocs.io/en/v9.20.13/manpages.html#dnssec-verify-dnssec-zone-verification-tool>`_ to validate the signed zone.
+In this example we will use `validns
+<https://codeberg.org/DNS-OARC/validns>`_ to validate the unsigned zone, and
+`dnssec-verify
+<https://bind9.readthedocs.io/en/v9.20.13/manpages.html#dnssec-verify-dnssec-zone-verification-tool>`_
+to validate the signed zone.
 
-To do this, we need to write a shell script that fetches the zone using AXFR and performs the relevant checks. Let's save the following review script\ [1]_ as ``/usr/local/bin/cascade-review.sh``:
+To do this, we need to write a shell script that fetches the zone using AXFR 
+and performs the relevant checks. Let's save the following review 
+script\ [1]_ as ``/usr/local/bin/cascade-review.sh``:
 
 .. code-block:: sh
 
@@ -76,8 +105,9 @@ Next, we update the zone's policy to use the review script for both stages:
     cmd-hook = "/usr/local/bin/cascade-review.sh"
 
 
-Finally, we need to reload the policy with ``cascade policy reload`` (and in
-the current alpha release, also restart the server) to apply the policy
-changes.
+Finally, we need to reload the policy with :commmand:`cascade policy reload` 
+(and in the current alpha release, also restart the server) to apply the 
+policy changes.
 
-.. [1] Original review script example by Stéphane Bortzmeyer on `GitHub <https://github.com/NLnetLabs/cascade/issues/198#issuecomment-3389957031>`_
+.. [1] Original review script example by Stéphane Bortzmeyer on 
+   `GitHub <https://github.com/NLnetLabs/cascade/issues/198#issuecomment-3389957031>`_

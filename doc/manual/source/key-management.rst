@@ -253,11 +253,12 @@ is tracked but no TTL is reported.
 
 Fine grained control of over automation makes it possible to automate
 KSK or algorithm without starting them automatically.
-Or let a key roll progress automatically except that the ``cache-expired``
-steps must be done manually in order to be able to insert extra manual steps.
+You can also let a key roll progress automatically except for doing the ``cache-expired``
+steps manually, in order to be able to insert extra manual steps.
 
-The ``report`` and ``done`` automations require that keyset has network access
-to all nameservers of the zone and all nameservers of the parent.
+The ``report`` and ``done`` automations require that :subcmd:`keyset`` has
+network access to all nameservers of the zone and all nameservers of the
+parent.
 
 Importing Keys
 --------------
