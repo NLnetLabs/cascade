@@ -203,7 +203,7 @@ These actions are cleanup actions and are harmless but confusing if they
 are skipped.
 
 Control over Automation
-~~~~~~~~~~~~~~~~~~~~~~~
+"""""""""""""""""""""""
 
 The key manager provides fine grained control over automation.
 Automation is configured separately for each of the four roll types.
