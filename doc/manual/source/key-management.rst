@@ -176,12 +176,8 @@ A key roll consists of six steps:
 6. ``roll-done``
    
 For each key roll these six steps follow in the same order.
-Associated with each step is a (possibly empty) list of actions.
-
-Actions
-~~~~~~~
-
-Actions fall in three categories:
+Associated with each step is a (possibly empty) list of actions, which fall 
+in three categories:
 
 1. Actions that require updating the zone or the parent zone.
 2. Actions that require checking if changes have propagated to all
