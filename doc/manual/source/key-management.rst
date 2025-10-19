@@ -167,12 +167,12 @@ Key Roll Steps
 
 A key roll consists of six steps:
 
-1. ``start-roll``
-2. ``propagation1-complete``
-3. ``cache-expired1``
-4. ``propagation2-complete``
-5. ``cache-expired2``
-6. ``roll-done``
+1. :option:`start-roll`
+2. :option:`propagation1-complete`
+3. :option:`cache-expired1`
+4. :option:`propagation2-complete`
+5. :option:`cache-expired2`
+6. :option:`roll-done`
    
 For each key roll these six steps follow in the same order.
 Associated with each step is a (possibly empty) list of actions, which fall 
