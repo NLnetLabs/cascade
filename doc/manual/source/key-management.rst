@@ -90,10 +90,10 @@ Key Rolls
 
 The key manager can perform four different types of key rolls:
 
-1. KSK rolls
-2. ZSK rolls
-3. CSK rolls
-4. Algorithm rolls
+1. :subcmd:`ksk` rolls
+2. :subcmd:`zsk` rolls
+3. :subcmd:`csk` rolls
+4. :subcmd:`algorithm` rolls
    
 A KSK roll replaces one KSK with a new KSK.
 Similarly, a ZSK roll replaces one ZSK with a new ZSK.
