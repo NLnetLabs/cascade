@@ -17,7 +17,8 @@ The key manager is responsible for two things:
 
 1. For each zone, it maintains and provides key rolls for a set of keys that
    are used to sign. 
-2. Signing DNSKEY, CDS, and CDNSKEY RRsets.
+2. Signing DNSKEY, CDS, and CDNSKEY :term:`RRsets <Resource Record Set
+   (RRset)>`.
 
 Cascade uses an external key manager, which is part of our :program:`dnst` 
 toolset. The actual key management is provided by the :subcmd:`keyset` 
@@ -34,32 +35,35 @@ the moment.
 Operations
 ----------
 
-User interaction with the key manager is designed to be done through
-Cascade. The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys. It
-manages signing keys and generates a signed DNSKEY :term:`RRset <Resource
-Record Set (RRset)>`. The key manager expects a separate signer, in this case
-Cascade, to use the zone signing keys in the key set, sign the zone and
-include the DNSKEY RRset (as well as the CDS and CDNSKEY RRsets). The key
-manager supports keys stored in files and keys stored in a :doc:`Hardware
-Security Module (HSM) <hsms>`.
+User interaction with the key manager is designed to be done through Cascade.
+The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys. It
+manages signing keys and generates a signed DNSKEY RRset. The key manager
+expects a separate signer, in this case Cascade, to use the zone signing keys
+in the key set, sign the zone and include the DNSKEY RRset (as well as the
+CDS and CDNSKEY RRsets). The key manager supports keys stored in files and
+keys stored in a :doc:`Hardware Security Module (HSM) <hsms>`.
 
 The key manager operates on one zone at a time. For each zone, the key
 manager has configuration parameters for key generation (which algorithm to
 use, whether to use a :term:`CSK <Combined signing key (CSK)>` or a
 :term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key (ZSK)>`
 pair), parameters for key rolls (whether key rolls are automatic or not), the
-lifetimes of keys and signatures, etc. The key manager maintains a state file
-for each zone. The state file lists the keys in the key set, the current key
-roll state, and has the DNSKEY, CDS, and CDNSKEY RRsets. key generation
-(which algorithm to use, whether to use a CSK and a KSK and a ZSK),
-parameters for key rolls (whether key rolls are automatic or not), the
-lifetimes of keys and signatures, etc.
+lifetimes of keys and signatures, etc. 
+
+Maintaining State
+"""""""""""""""""
+
+The key manager maintains a state file for each zone. The state file lists
+the keys in the key set, the current key roll state, and has the DNSKEY, CDS,
+and CDNSKEY RRsets. key generation (which algorithm to use, whether to use a
+CSK and a KSK and a ZSK), parameters for key rolls (whether key rolls are
+automatic or not), the lifetimes of keys and signatures, etc.
 
 In addition to the configuration and state files, the key manager maintains
 files for keys that are stored in the filesystem.
 
 Updating Keys 
--------------
+"""""""""""""
 
 The signatures of the DNSKEY, CDS and CDNSKEY RRsets need to updated
 periodically. In addition, key roll automation requires periodic invocation
@@ -162,13 +166,12 @@ Associated with each step is a (possibly empty) list of actions.
 
 Actions fall in three categories:
 
-1. The first category consists of actions that require updating the zone or
-   the parent zone.
-2. The second category consists of actions that require checking if changes
-   have propagated to all nameservers and require reporting of the TTLs of
-   the changed RRset as seen at the nameservers.
-3. Finally, the last category requires waiting for changes to propagate to
-   all nameservers but there is no need to report the TTL.
+1. Actions that require updating the zone or the parent zone.
+2. Actions that require checking if changes have propagated to all
+   nameservers and require reporting of the TTLs of the changed RRset as seen
+   at the nameservers.
+3. Waiting for changes to propagate to all nameservers but there is no need
+   to report the TTL.
 
 Typically, in a list of actions, an action of the first category is paired
 with one from the second of third category.
