@@ -20,14 +20,14 @@ Integrating with a SmartCard-HSM
 .. image:: img/smartcard-and-reader.jpg
 
 
-Install the prerequisites
+Install the Prerequisites
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
    # apt install -y opensc opensc-pkcs11
 
-Identify the card reader 
+Identify the Card Reader 
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 Your card reader may well be of a different vendor and type.
@@ -39,7 +39,7 @@ Your card reader may well be of a different vendor and type.
    Nr.  Card  Features  Name
    0    Yes             Identive CLOUD 2700 R Smart Card Reader [CCID Interface]
 
-Initialize the smartcard 
+Initialize the Smartcard 
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 The card is configured with the SO PIN and user PIN as per the vendor. You can
@@ -51,7 +51,7 @@ which is provided in the ``opensc`` package:
    # sc-hsm-tool --initialize --so-pin 0123012301230123 --pin 123456
    Using reader with a card: Identive CLOUD 2700 R Smart Card Reader [CCID Interface]
 
-List the Smart Card's mechanisms
+List the Smart Card's Mechanisms
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
