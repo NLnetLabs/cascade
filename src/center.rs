@@ -294,8 +294,7 @@ impl State {
     pub fn init_from_file(&mut self) -> io::Result<()> {
         let path = self.config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        let mut _changes = Vec::new();
-        spec.parse_into(self, &mut _changes);
+        spec.parse_into(self, |_| {});
         Ok(())
     }
 
@@ -350,11 +349,35 @@ pub enum Change {
     /// The configuration has been changed.
     ConfigChanged,
 
+    /// A policy has been added.
+    PolicyAdded(Arc<PolicyVersion>),
+
+    /// A policy has been changed.
+    PolicyChanged(Arc<PolicyVersion>, Arc<PolicyVersion>),
+
+    /// A policy has been removed.
+    PolicyRemoved(Arc<PolicyVersion>),
+
     /// A zone has been added.
     ZoneAdded(Name<Bytes>),
 
     /// The policy of a zone has changed.
-    ZonePolicyChanged(Name<Bytes>, Arc<PolicyVersion>),
+    ZonePolicyChanged {
+        /// The name of the zone.
+        name: Name<Bytes>,
+
+        /// The previous policy used by the zone.
+        ///
+        /// If this is [`None`], the zone did not previously have a policy.
+        old: Option<Arc<PolicyVersion>>,
+
+        /// The new policy used by the zone.
+        ///
+        /// If this has the same name as the old policy, the policy was updated
+        /// (as per [`Self::PolicyChanged`]); if this has a different name, the
+        /// policy for this zone was explicitly changed.
+        new: Arc<PolicyVersion>,
+    },
 
     /// The source of a zone has changed.
     ZoneSourceChanged(Name<Bytes>, ZoneLoadSource),

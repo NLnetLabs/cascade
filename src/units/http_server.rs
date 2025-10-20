@@ -33,6 +33,7 @@ use crate::center::get_zone;
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::daemon::SocketProvider;
+use crate::payload::Update;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
@@ -747,18 +748,45 @@ impl HttpServer {
     async fn policy_reload(
         State(state): State<Arc<HttpServerState>>,
     ) -> Json<Result<PolicyChanges, PolicyReloadError>> {
+        let center = &state.center;
         let mut state = state.center.state.lock().unwrap();
         let state = &mut *state;
 
-        let res = crate::policy::reload_all(&mut state.policies, &state.config);
-        let changes = match res {
-            Ok(c) => c,
-            Err(e) => {
-                return Json(Err(e));
-            }
-        };
-        let mut changes: Vec<_> = changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
-        changes.sort_by_key(|x: &(String, _)| x.0.clone());
+        let mut changes = state
+            .policies
+            .keys()
+            .map(|p| (p.clone(), PolicyChange::Unchanged))
+            .collect::<foldhash::HashMap<_, _>>();
+        let mut changed = false;
+        let res = crate::policy::reload_all(&mut state.policies, &state.config, |change| {
+            changed = true;
+
+            // Update 'changes' based on what happened.
+            match &change {
+                center::Change::PolicyAdded(p) => {
+                    changes.insert(p.name.clone(), PolicyChange::Added);
+                }
+                center::Change::PolicyChanged(p, _) => {
+                    *changes.get_mut(&p.name).unwrap() = PolicyChange::Updated;
+                }
+                center::Change::PolicyRemoved(p) => {
+                    *changes.get_mut(&p.name).unwrap() = PolicyChange::Removed;
+                }
+                _ => {}
+            };
+
+            // Propagate the changes globally.
+            let _ = center.update_tx.send(Update::Changed(change));
+        });
+        if changed {
+            state.mark_dirty(center);
+        }
+        if let Err(err) = res {
+            return Json(Err(err));
+        }
+        let mut changes: Vec<(String, _)> =
+            changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
+        changes.sort_unstable_by(|l, r| l.0.cmp(&r.0));
 
         Json(Ok(PolicyChanges { changes }))
     }

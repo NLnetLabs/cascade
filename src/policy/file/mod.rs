@@ -5,6 +5,8 @@ use std::{fs, io, sync::Arc};
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
 
+use crate::center::Change;
+
 use super::Policy;
 
 pub mod v1;
@@ -36,7 +38,9 @@ impl Spec {
     }
 
     /// Merge with an existing [`Policy`].
-    pub fn parse_into(self, existing: &mut Policy) {
+    ///
+    /// Returns `true` if the policy has changed.
+    pub fn parse_into(self, existing: &mut Policy, mut on_change: impl FnMut(Change)) -> bool {
         let latest = &*existing.latest;
         let new = match self {
             Self::V1(spec) => spec.parse(&latest.name),
@@ -44,12 +48,24 @@ impl Spec {
 
         if *latest == new {
             // The policy has not changed.
-            return;
+            return false;
         }
 
         // The policy has changed.
-        existing.latest = Arc::new(new);
-        // TODO: Enqueue policy refreshes for associated zones?
+        let new = Arc::new(new);
+        let old = core::mem::replace(&mut existing.latest, new.clone());
+
+        // Output change notifications.
+        log::info!("Updated policy '{}'", new.name);
+        (on_change)(Change::PolicyChanged(old.clone(), new.clone()));
+        for zone in &existing.zones {
+            (on_change)(Change::ZonePolicyChanged {
+                name: zone.clone(),
+                old: Some(old.clone()),
+                new: new.clone(),
+            });
+        }
+        true
     }
 
     /// Build into this specification.

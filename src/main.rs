@@ -115,7 +115,7 @@ fn main() -> ExitCode {
         }
 
         // Load all policies.
-        if let Err(err) = policy::reload_all(&mut state.policies, &state.config) {
+        if let Err(err) = policy::reload_all(&mut state.policies, &state.config, |_| {}) {
             log::error!("Cascade couldn't load all policies: {err}");
             return ExitCode::FAILURE;
         }

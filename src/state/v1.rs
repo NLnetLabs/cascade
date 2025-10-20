@@ -47,13 +47,17 @@ pub struct Spec {
 
 impl Spec {
     /// Parse from this specification.
-    pub fn parse_into(self, state: &mut State, changes: &mut Vec<Change>) {
+    pub fn parse_into(self, state: &mut State, mut on_change: impl FnMut(Change)) {
         // Update the configuration.
         let mut changed = false;
         self.config.parse_into(&mut state.config, &mut changed);
         if changed {
-            changes.push(Change::ConfigChanged);
+            (on_change)(Change::ConfigChanged);
         }
+
+        // TODO: There may be interdependencies between zones and policies
+        // (e.g. if a removed policy was being used by a removed zone), so we
+        // can't just update them one after the other.
 
         // Update the policy set.
         let mut new_policies = foldhash::HashMap::default();
@@ -61,18 +65,14 @@ impl Spec {
             let policy = match state.policies.remove(&name) {
                 Some(mut policy) => {
                     log::trace!("Retaining existing policy '{name}'");
-                    let mut changed = false;
-                    spec.parse_into(&mut policy, &mut changed);
-                    if changed {
-                        changes.extend(policy.zones.iter().map(|zone| {
-                            Change::ZonePolicyChanged(zone.clone(), policy.latest.clone())
-                        }));
-                    }
+                    spec.parse_into(&mut policy, &mut on_change);
                     policy
                 }
                 None => {
                     log::info!("Adding policy '{name}' from global state");
-                    spec.parse(&name)
+                    let policy = spec.parse(&name);
+                    (on_change)(Change::PolicyAdded(policy.latest.clone()));
+                    policy
                 }
             };
             new_policies.insert(name, policy);
@@ -83,6 +83,7 @@ impl Spec {
                 new_policies.insert(name, policy);
             } else {
                 log::info!("Removing policy '{name}'");
+                (on_change)(Change::PolicyRemoved(policy.latest));
             }
         }
         state.policies = new_policies;
@@ -105,7 +106,7 @@ impl Spec {
             .collect();
         for zone in state.zones.drain() {
             log::info!("Removing zone '{}'", zone.0.name);
-            changes.push(Change::ZoneRemoved(zone.0.name.clone()));
+            (on_change)(Change::ZoneRemoved(zone.0.name.clone()));
         }
         state.zones = new_zones;
     }
@@ -737,10 +738,21 @@ impl PolicySpec {
     }
 
     /// Merge from this specification.
-    pub fn parse_into(self, policy: &mut Policy, changed: &mut bool) {
+    pub fn parse_into(self, policy: &mut Policy, mut on_change: impl FnMut(Change)) {
         let name = &policy.latest.name;
-        let latest = Arc::new(self.latest.parse(name));
-        update_value(&mut policy.latest, latest, changed);
+        let latest = self.latest.parse(name);
+        if *policy.latest != latest {
+            let new = Arc::new(latest);
+            let old = core::mem::replace(&mut policy.latest, new.clone());
+            (on_change)(Change::PolicyChanged(old.clone(), new.clone()));
+            for zone in &policy.zones {
+                (on_change)(Change::ZonePolicyChanged {
+                    name: zone.clone(),
+                    old: Some(old.clone()),
+                    new: new.clone(),
+                });
+            }
+        }
         // TODO: How does this affect zones using the policy?
         policy.mid_deletion |= self.mid_deletion;
     }

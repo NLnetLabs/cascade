@@ -79,11 +79,15 @@ impl CentralCommand {
             Update::Changed(change) => {
                 {
                     match &change {
-                        Change::ConfigChanged => { /* No zone name, nothing to do */ }
+                        Change::ConfigChanged
+                        | Change::PolicyAdded(_)
+                        | Change::PolicyChanged(..)
+                        | Change::PolicyRemoved(_) => { /* No zone name, nothing to do */ }
+
                         Change::ZoneAdded(name) => {
                             record_zone_event(&self.center, name, HistoricalEvent::Added, None);
                         }
-                        Change::ZonePolicyChanged(name, _) => {
+                        Change::ZonePolicyChanged { name, .. } => {
                             record_zone_event(
                                 &self.center,
                                 name,
