@@ -121,12 +121,11 @@ algorithm roll can be started even when it is not needed.
 Automatic Key Rolls
 """""""""""""""""""
 
-.. important:: Cascade has support for fully automatic key rolls, which is 
-   enabled by default. If Cascade is for example running in an isolated 
-   network, it will not have access to all nameservers of the zone or the 
-   parent zone. In that case it's best to disable automatic key rolls in your 
-   :ref:`policy <defining-policy>`.
-
+.. important:: Fully automatic key rolls are enabled by default. For this to 
+   work, Cascade requires access to all nameservers of the zone and the 
+   parent zone. If this is not available, make sure to 
+   :ref:`disable automatic key rolls <automation-control>`.
+   
 For automatic key rolls, the key manager will check the propagation of
 changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
 signatures to all nameservers of the zone or the parent zone. To be able to
@@ -201,8 +200,10 @@ waiting for the TTL (in seconds) reported by the preceding
 typically has associated Wait actions. These actions are cleanup actions and
 are harmless but confusing if they are skipped.
 
-Control over Automation
-"""""""""""""""""""""""
+.. _automation-control:
+
+Controlling Automation
+""""""""""""""""""""""
 
 The key manager provides fine grained control over automation, which can be
 configured separately for each of the four roll types: KSK, ZSK, CSK and
@@ -212,14 +213,15 @@ Algorithm. For each roll type, there are four booleans:
 :option:`expire <ksk.auto-expire = true>` and 
 :option:`done <ksk.auto-done = true>`.
 
-Fine grained control of over automation makes it possible to automate KSK or
-algorithm without starting them automatically. You can also let a key roll
-progress automatically except for doing the ``cache-expired`` steps manually,
-in order to be able to insert extra manual steps.
+Automation control makes it possible to automate KSK or algorithm without
+starting them automatically. You can also let a key roll progress
+automatically except for doing the ``cache-expired`` steps manually, in order
+to be able to insert extra manual steps.
 
 .. important:: The ``report`` and ``done`` automations require that 
    :subcmd:`keyset` has network access to all nameservers of the zone and
-   all nameservers of the parent.
+   all nameservers of the parent. If network access is unavailable, make sure
+   to disable them.
 
 Start
 ~~~~~

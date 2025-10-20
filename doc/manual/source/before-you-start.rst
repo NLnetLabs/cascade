@@ -66,11 +66,10 @@ Cascade supports:
 Publishing data via IXFR is coming soon. On-disk files, while not supported
 directly, could be achieved by XFR of the signed zone to an on-disk file.
 
-.. important:: The machine running Cascade needs access to all nameservers 
-   of all zones and parent zones, as well as authorized transfer (AXFR)
-   access to the primary nameserver of all zones. If that is not possible, 
-   then it is best to disable automatic key rolls in the :ref:`policy 
-   file <defining-policy>`.
+.. important:: Fully automatic key rolls are enabled by default. For this to 
+   work, Cascade requires access to all nameservers of the zone and the 
+   parent zone. If this is not available, make sure to 
+   :ref:`disable automatic key rolls <automation-control>`.
 
 System Requirements
 -------------------
