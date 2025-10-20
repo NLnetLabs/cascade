@@ -748,12 +748,9 @@ impl HttpServer {
         State(state): State<Arc<HttpServerState>>,
     ) -> Json<Result<PolicyChanges, PolicyReloadError>> {
         let mut state = state.center.state.lock().unwrap();
+        let state = &mut *state;
 
-        // TODO: This clone is a bit unfortunate. Looks like that's necessary because of the
-        // mutex guard. We could make `reload_all` a function that takes the whole state to fix
-        // this.
-        let mut policies = state.policies.clone();
-        let res = crate::policy::reload_all(&mut policies, &state.config);
+        let res = crate::policy::reload_all(&mut state.policies, &state.config);
         let changes = match res {
             Ok(c) => c,
             Err(e) => {
@@ -762,8 +759,6 @@ impl HttpServer {
         };
         let mut changes: Vec<_> = changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
         changes.sort_by_key(|x: &(String, _)| x.0.clone());
-
-        state.policies = policies;
 
         Json(Ok(PolicyChanges { changes }))
     }
