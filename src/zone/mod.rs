@@ -476,7 +476,8 @@ pub fn change_policy(
     let mut zone_state = zone.0.state.lock().unwrap();
 
     // Unlink the previous policy of the zone.
-    if let Some(policy) = zone_state.policy.take() {
+    let old_policy = zone_state.policy.take();
+    if let Some(policy) = &old_policy {
         let policy = state
             .policies
             .get_mut(&policy.name)
@@ -500,10 +501,11 @@ pub fn change_policy(
 
     center
         .update_tx
-        .send(Update::Changed(Change::ZonePolicyChanged(
-            name.clone(),
-            policy.latest.clone(),
-        )))
+        .send(Update::Changed(Change::ZonePolicyChanged {
+            name: name.clone(),
+            old: old_policy,
+            new: policy.latest.clone(),
+        }))
         .unwrap();
 
     zone.0.mark_dirty(&mut zone_state, center);

@@ -10,10 +10,8 @@ use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    api::{PolicyChange, PolicyReloadError},
-    config::Config,
-};
+use crate::center::Change;
+use crate::{api::PolicyReloadError, config::Config};
 
 pub mod file;
 
@@ -40,12 +38,12 @@ pub struct Policy {
 
 impl Policy {
     /// Reload this policy.
-    pub fn reload(&mut self, config: &Config) -> io::Result<()> {
+    pub fn reload(&mut self, config: &Config, on_change: impl FnMut(Change)) -> io::Result<()> {
         // TODO: Carefully consider how 'config.policy_dir' and the path last
         // loaded from are synchronized.
 
         let path = config.policy_dir.join(format!("{}.toml", self.latest.name));
-        file::Spec::load(&path)?.parse_into(self);
+        file::Spec::load(&path)?.parse_into(self, on_change);
         Ok(())
     }
 }
@@ -54,16 +52,13 @@ impl Policy {
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
-) -> Result<foldhash::HashMap<Box<str>, PolicyChange>, PolicyReloadError> {
+    mut on_change: impl FnMut(Change),
+) -> Result<(), PolicyReloadError> {
+    // TODO: This function is not atomic: it may have effects even if it fails.
+
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
     let mut new_policies = foldhash::HashMap::<_, _>::default();
-
-    // Keep track of the changes to report to the user
-    let mut changes: foldhash::HashMap<_, _> = policies
-        .keys()
-        .map(|p| (p.clone(), PolicyChange::Unchanged))
-        .collect();
 
     // Traverse all objects in the policy directory.
     for entry in fs::read_dir(&*config.policy_dir)
@@ -119,17 +114,13 @@ pub fn reload_all(
             .file_stem()
             .expect("this path points to a readable file, so it must have a file name");
         let policy = if let Some(mut policy) = policies.remove(name) {
-            let old_policy = policy.clone();
-            spec.parse_into(&mut policy);
-            if old_policy != policy {
-                log::info!("Updated policy '{name}'");
-                changes.insert(name.into(), PolicyChange::Updated);
-            }
+            spec.parse_into(&mut policy, &mut on_change);
             policy
         } else {
             log::info!("Loaded new policy '{name}'");
-            changes.insert(name.into(), PolicyChange::Added);
-            spec.parse(name)
+            let policy = spec.parse(name);
+            (on_change)(Change::PolicyAdded(policy.latest.clone()));
+            policy
         };
 
         // Record the new policy.
@@ -149,14 +140,14 @@ pub fn reload_all(
             );
         } else {
             log::info!("Forgetting now-removed policy '{name}'");
-            changes.insert(name, PolicyChange::Removed);
+            (on_change)(Change::PolicyRemoved(policy.latest));
         }
     }
 
     // Update the set of policies.
     *policies = new_policies;
 
-    Ok(changes)
+    Ok(())
 }
 
 //----------- PolicyVersion ----------------------------------------------------
