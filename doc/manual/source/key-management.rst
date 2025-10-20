@@ -88,51 +88,43 @@ have propagated before adding the DS record at the parent.
 Key Rolls
 ---------
 
-The key manager can perform four different types of key rolls:
-
-1. :subcmd:`ksk` rolls
-2. :subcmd:`zsk` rolls
-3. :subcmd:`csk` rolls
-4. :subcmd:`algorithm` rolls
+The key manager can perform :subcmd:`ksk`, :subcmd:`zsk`, :subcmd:`csk` and 
+:subcmd:`algorithm` rolls.
    
-A KSK roll replaces one KSK with a new KSK.
-Similarly, a ZSK roll replaces one ZSK with a new ZSK.
-A CSK roll also replaces a CSK with a new CSK but the roll also treats a
-pair of KSK and ZSK keys as equivalent to a CSK.
-So, a CSK roll can also roll from KSK plus ZSK to a new CSK or from a CSK
-to new a KSK and ZSK pair.
-Note that a roll from KSK plus ZSK to a new KSK plus ZSK pair
+A KSK roll replaces one KSK with a new KSK. Similarly, a ZSK roll replaces
+one ZSK with a new ZSK. A CSK roll also replaces a CSK with a new CSK but the
+roll also treats a pair of KSK and ZSK keys as equivalent to a CSK. So, a CSK
+roll can also roll from KSK plus ZSK to a new CSK or from a CSK to new a KSK
+and ZSK pair. Note that a roll from KSK plus ZSK to a new KSK plus ZSK pair
 is also supported.
-Finally, an algorithm roll is similar to a CSK roll, but designed in
-a specific way to handle the case where the new key or keys have an algorithm
+
+Finally, an algorithm roll is similar to a CSK roll, but designed in a
+specific way to handle the case where the new key or keys have an algorithm
 that is different from one used by the current signing keys.
 
 The KSK and ZSK rolls are completely independent and can run in parallel.
-Consistency checks are performed at the start of a key roll.
-For example, a KSK key roll cannot start when another KSK roll is in progress or
-when a CSK or algorithm roll is in progress.
-A KSK roll cannot start either when the current signing key is a CSK or
-when the configuration specifies that the new signing key has to be a CSK.
+Consistency checks are performed at the start of a key roll. For example, a
+KSK key roll cannot start when another KSK roll is in progress or when a CSK
+or algorithm roll is in progress. A KSK roll cannot start either when the
+current signing key is a CSK or when the configuration specifies that the new
+signing key has to be a CSK.
+
 Finally, KSK rolls are also prevented when the algorithm for new keys is
-different from the one used by the current key.
-Similar limitations apply to the other roll types. Note however that an
-algorithm roll can be started even when it is not needed.
+different from the one used by the current key. Similar limitations apply to
+the other roll types. Note however that an algorithm roll can be started even
+when it is not needed.
 
 Automatic Key Rolls
 """""""""""""""""""
-
-.. important:: Fully automatic key rolls are enabled by default. For this to 
-   work, Cascade requires access to all nameservers of the zone and the 
-   parent zone. If this is not available, make sure to 
-   :ref:`disable automatic key rolls <automation-control>`.
-   
+  
 For automatic key rolls, the key manager will check the propagation of
 changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
 signatures to all nameservers of the zone or the parent zone. To be able to
-do this, the key manager needs network access to those nameservers. If
-Cascade is running in an isolated network, then this will fail and it is best
-to disable (part of) automatic key rolls in your :ref:`policy
-<defining-policy>`. 
+do this, the key manager needs network access to those nameservers. 
+
+.. important:: If Cascade is running in an isolated network, automation will
+   fail. In that case it is best to :ref:`disable (part of) this 
+   functionality <automation-control>`. 
 
 To check the signatures in the zone, the key manager will issue an AXFR
 request to the primary nameserver listed in the SOA record of the zone. In
@@ -218,10 +210,10 @@ starting them automatically. You can also let a key roll progress
 automatically except for doing the ``cache-expired`` steps manually, in order
 to be able to insert extra manual steps.
 
-.. important:: The ``report`` and ``done`` automations require that 
-   :subcmd:`keyset` has network access to all nameservers of the zone and
-   all nameservers of the parent. If network access is unavailable, make sure
-   to disable them.
+.. important:: The :option:`report <ksk.auto-report = true>` and 
+   :option:`done <ksk.auto-done = true>` automations require that Cascade has
+   network access to all nameservers of the zone and all nameservers of the 
+   parent. If network access is unavailable, make sure to disable them.
 
 Start
 ~~~~~
@@ -229,6 +221,7 @@ Start
 When set, the 
 :option:`ksk|zsk|csk|algorithm.auto-start <ksk.auto-start = true>` booleans 
 direct the key manager to start a key roll when a relevant key has expired.
+
 A KSK or a ZSK key roll can start automatically if respectively a KSK or a
 ZSK has expired. A CSK roll can start automatically when a CSK has expired
 but also when a KSK or ZSK has expired and the new key will be a CSK.
@@ -240,19 +233,22 @@ Report
 
 The :option:`ksk|zsk|csk|algorithm.auto-report <ksk.auto-report = true>`
 options control the automation of the :subcmd:`propagation1-complete` and
-:subcmd:`propagation2-complete` steps. When enabled, the cron subcommand
-contacts the nameservers of the zone or (in the case of
+:subcmd:`propagation2-complete` steps. When enabled, the :subcmd:`cron` 
+subcommand contacts the nameservers of the zone or (in the case of
 ``ReportDsPropagated``, the nameservers of the parent zone) to check if
-changes have propagated to all nameservers. The check obtains the list of
-nameservers from the apex of the (parent) zone and collects all IPv4 and IPv6
-addresses. For the ``ReportDnskeyPropagated`` and ``ReportDsPropagated``
-actions, each address is the queried to see if the DNSKEY RRset or DS RRset
-match the KSKs. The ``ReportRrsigPropagated`` action is more complex. First
-the entire zone is transferred from the primary nameserver listed in the SOA
-record. Then all relevant signatures are checked if they have the expected
-key tags. The maximum TTL in the zone is recorded to be reported. Finally,
-all addresses of listed nameservers are checked to see if they have a SOA
-serial that is greater than or equal to the one that was checked.
+changes have propagated to all nameservers. 
+
+The check obtains the list of nameservers from the apex of the (parent) zone
+and collects all IPv4 and IPv6 addresses. For the ``ReportDnskeyPropagated``
+and ``ReportDsPropagated`` actions, each address is the queried to see if the
+DNSKEY RRset or DS RRset match the KSKs. The ``ReportRrsigPropagated`` action
+is more complex. 
+
+First, the entire zone is transferred from the primary nameserver listed in
+the SOA record. Then all relevant signatures are checked if they have the
+expected key tags. The maximum TTL in the zone is recorded to be reported.
+Finally, all addresses of listed nameservers are checked to see if they have
+a SOA serial that is greater than or equal to the one that was checked.
 
 Expire
 ~~~~~~
