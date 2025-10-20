@@ -241,7 +241,8 @@ Finally, all addresses of listed nameservers are checked to see if they
 have a SOA serial that is greater than or equal to the one that was checked.
 
 Automation of :subcmd:`cache-expired1` and :subcmd:`cache-expired2` is
-enabled by the ``expire`` boolean. When enabled, the cron subcommand simply
+controlled by the :option:`ksk|zsk|csk|algorithm.auto-expire <ksk.auto-expire
+= true>` policy options. When enabled, the cron subcommand simply
 checks if enough time has passed to invoke :subcmd:`cache-expired1` or
 :subcmd:`cache-expired2`.
 
