@@ -8,15 +8,15 @@ These instructions show how to run :program:`kmip2pkcs11` (the tool Cascade
 uses to connect to PKCS#11 compatible :doc:`hsms`) inside a Docker container
 and connect to its listen port from a server or another Docker container.
 
-Docker is NOT required to use Cascade or :program:`kmip2pkcs11`.
+Docker is **not** required to use Cascade or :program:`kmip2pkcs11`.
 This example uses Docker because the `Thales documentation
 <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_insta
-ll/linux_minimal_client_access_dpod.htm>`_ describes how one can easily get
+ll/linux_minimal_client_access_dpod.htm>`_ describes how you can easily get
 PKCS#11 connectivity to a Thales Luna Cloud HSM working using Docker.
 
 .. Warning::
 
-   DPoD is **NOT** free. An initial free trial is available but
+   DPoD is **not** free. An initial free trial is available but
    thereafter it is a paid service.
 
 .. Note::

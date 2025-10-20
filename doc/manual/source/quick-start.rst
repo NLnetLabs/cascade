@@ -5,11 +5,10 @@ After :doc:`installing <installation>` Cascade you can immediately start using
 it, unless you need to adjust the addresses it listens on or need to modify
 the settings relating to daemonization.
 
-.. important:: The machine running Cascade needs access to all nameservers 
-   of all zones and parent zones, as well as authorized transfer (AXFR)
-   access to the primary nameserver of all zones. If that is not possible, 
-   then it is best to disable automatic key rolls in the :ref:`policy 
-   file <defining-policy>`.
+.. important:: Fully automatic key rolls are enabled by default. For this to 
+   work, Cascade requires access to all nameservers of the zone and the 
+   parent zone. If this is not available, make sure to 
+   :ref:`disable automatic key rolls <automation-control>`.
 
 Configuring Cascade
 -------------------
@@ -76,7 +75,7 @@ systemd features used instead.
 
 .. _defining-policy:
 
-Defining policy
+Defining Policy
 ---------------
 
 After configuring Cascade, you can begin adding zones. Cascade supports zones
@@ -117,7 +116,7 @@ default policy directory is not writable by the current user.
    cascade template policy | sudo tee /etc/cascade/policies/default.toml
    cascade policy reload
 
-Signing your first zone
+Signing Your First Zone
 -----------------------
 
 Adding a zone to Cascade will cause Cascade to attempt to load, sign and
@@ -132,7 +131,7 @@ To add a zone use:
 
 Cascade will now generate signing keys for the zone and attempt to load and sign it.
 
-Checking the result
+Checking the Result
 -------------------
 
 You can view the status of a zone with:
@@ -180,7 +179,7 @@ tool installed you can check that the zone is correctly DNSSEC signed:
    Algorithm: ECDSAP256SHA256: KSKs: 1 active, 0 stand-by, 0 revoked
                                ZSKs: 1 active, 0 stand-by, 0 revoked
 
-Next steps
+Next Steps
 ----------
 
 - Establishing the chain of trust to the parent.

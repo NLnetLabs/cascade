@@ -20,14 +20,14 @@ Integrating with a SmartCard-HSM
 .. image:: img/smartcard-and-reader.jpg
 
 
-Install the prerequisites
+Install the Prerequisites
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
    # apt install -y opensc opensc-pkcs11
 
-Identify the card reader 
+Identify the Card Reader 
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 Your card reader may well be of a different vendor and type.
@@ -39,7 +39,7 @@ Your card reader may well be of a different vendor and type.
    Nr.  Card  Features  Name
    0    Yes             Identive CLOUD 2700 R Smart Card Reader [CCID Interface]
 
-Initialize the smartcard 
+Initialize the Smartcard 
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 The card is configured with the SO PIN and user PIN as per the vendor. You can

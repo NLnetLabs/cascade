@@ -4,7 +4,7 @@ Known Limitations
 Cascade is a hidden signer. This has implications for :doc:`before-you-start`.
 
 
-Expectations for the alpha release
+Expectations for the Alpha Release
 ----------------------------------
 
 .. tip:: This page details what you can expect from Cascade in its alpha form.
