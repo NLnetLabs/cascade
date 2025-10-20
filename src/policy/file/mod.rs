@@ -5,7 +5,7 @@ use std::{fs, io, sync::Arc};
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
 
-use crate::center::Change;
+use crate::{center::Change, zone::ZoneByName};
 
 use super::Policy;
 
@@ -40,7 +40,13 @@ impl Spec {
     /// Merge with an existing [`Policy`].
     ///
     /// Returns `true` if the policy has changed.
-    pub fn parse_into(self, existing: &mut Policy, mut on_change: impl FnMut(Change)) -> bool {
+    #[allow(clippy::mutable_key_type)]
+    pub fn parse_into(
+        self,
+        existing: &mut Policy,
+        zones: &foldhash::HashSet<ZoneByName>,
+        mut on_change: impl FnMut(Change),
+    ) -> bool {
         let latest = &*existing.latest;
         let new = match self {
             Self::V1(spec) => spec.parse(&latest.name),
@@ -59,8 +65,16 @@ impl Spec {
         log::info!("Updated policy '{}'", new.name);
         (on_change)(Change::PolicyChanged(old.clone(), new.clone()));
         for zone in &existing.zones {
+            let zone = zones.get(zone).expect("zones and policies are consistent");
+            let mut state = zone.0.state.lock().unwrap();
+            let old_for_zone = state.policy.replace(new.clone());
+            assert_eq!(
+                Some(&old.name),
+                old_for_zone.as_ref().map(|z| &z.name),
+                "zones and policies are consistent"
+            );
             (on_change)(Change::ZonePolicyChanged {
-                name: zone.clone(),
+                name: zone.0.name.clone(),
                 old: Some(old.clone()),
                 new: new.clone(),
             });

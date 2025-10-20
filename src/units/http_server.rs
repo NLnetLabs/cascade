@@ -758,26 +758,27 @@ impl HttpServer {
             .map(|p| (p.clone(), PolicyChange::Unchanged))
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
-        let res = crate::policy::reload_all(&mut state.policies, &state.config, |change| {
-            changed = true;
+        let res =
+            crate::policy::reload_all(&mut state.policies, &state.zones, &state.config, |change| {
+                changed = true;
 
-            // Update 'changes' based on what happened.
-            match &change {
-                center::Change::PolicyAdded(p) => {
-                    changes.insert(p.name.clone(), PolicyChange::Added);
-                }
-                center::Change::PolicyChanged(p, _) => {
-                    *changes.get_mut(&p.name).unwrap() = PolicyChange::Updated;
-                }
-                center::Change::PolicyRemoved(p) => {
-                    *changes.get_mut(&p.name).unwrap() = PolicyChange::Removed;
-                }
-                _ => {}
-            };
+                // Update 'changes' based on what happened.
+                match &change {
+                    center::Change::PolicyAdded(p) => {
+                        changes.insert(p.name.clone(), PolicyChange::Added);
+                    }
+                    center::Change::PolicyChanged(p, _) => {
+                        *changes.get_mut(&p.name).unwrap() = PolicyChange::Updated;
+                    }
+                    center::Change::PolicyRemoved(p) => {
+                        *changes.get_mut(&p.name).unwrap() = PolicyChange::Removed;
+                    }
+                    _ => {}
+                };
 
-            // Propagate the changes globally.
-            let _ = center.update_tx.send(Update::Changed(change));
-        });
+                // Propagate the changes globally.
+                let _ = center.update_tx.send(Update::Changed(change));
+            });
         if changed {
             state.mark_dirty(center);
         }

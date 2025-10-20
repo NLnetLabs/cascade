@@ -11,6 +11,7 @@ use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 
 use crate::center::Change;
+use crate::zone::ZoneByName;
 use crate::{api::PolicyReloadError, config::Config};
 
 pub mod file;
@@ -38,19 +39,27 @@ pub struct Policy {
 
 impl Policy {
     /// Reload this policy.
-    pub fn reload(&mut self, config: &Config, on_change: impl FnMut(Change)) -> io::Result<()> {
+    #[allow(clippy::mutable_key_type)]
+    pub fn reload(
+        &mut self,
+        config: &Config,
+        zones: &foldhash::HashSet<ZoneByName>,
+        on_change: impl FnMut(Change),
+    ) -> io::Result<()> {
         // TODO: Carefully consider how 'config.policy_dir' and the path last
         // loaded from are synchronized.
 
         let path = config.policy_dir.join(format!("{}.toml", self.latest.name));
-        file::Spec::load(&path)?.parse_into(self, on_change);
+        file::Spec::load(&path)?.parse_into(self, zones, on_change);
         Ok(())
     }
 }
 
 /// Reload all policies.
+#[allow(clippy::mutable_key_type)]
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
+    zones: &foldhash::HashSet<ZoneByName>,
     config: &Config,
     mut on_change: impl FnMut(Change),
 ) -> Result<(), PolicyReloadError> {
@@ -114,7 +123,7 @@ pub fn reload_all(
             .file_stem()
             .expect("this path points to a readable file, so it must have a file name");
         let policy = if let Some(mut policy) = policies.remove(name) {
-            spec.parse_into(&mut policy, &mut on_change);
+            spec.parse_into(&mut policy, zones, &mut on_change);
             policy
         } else {
             log::info!("Loaded new policy '{name}'");
