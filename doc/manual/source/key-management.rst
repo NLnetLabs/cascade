@@ -120,9 +120,9 @@ changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
 signatures to all nameservers of the zone or the parent zone. To be able to
 do this, the key manager needs network access to those nameservers. 
 
-.. important:: If Cascade is running in an isolated network, automation will
-   fail. In that case it is best to :ref:`disable (part of) this 
-   functionality <automation-control>`. 
+.. important:: If Cascade cannot access the nameservers of the zone and 
+   parent zone, automation will fail. In that case it is best to 
+   :ref:`disable (part of) this functionality <automation-control>`. 
 
 To check the signatures in the zone, the key manager will issue an AXFR
 request to the primary nameserver listed in the SOA record of the zone. In
