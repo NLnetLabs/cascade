@@ -85,8 +85,7 @@ using an HSM.
 
 .. note:: Cascade's memory use is still considerable with large zones. It 
           uses using about 30GiB of RAM when signing a ~1GB zone file with 
-          about ~25M resource records and adding ~10M records while signing. 
-          Reducing the memory footprint is a priority.
+          about ~25M resource records and adding ~10M records while signing.
 
 Cascade can currently be used by operators with at most a few small to medium
 size zones. As development progresses, it will also support operators with

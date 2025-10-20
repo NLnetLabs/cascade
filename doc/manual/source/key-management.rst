@@ -133,9 +133,9 @@ The automatic key roll checks have two limitations:
 
 1. They do not work in a multi-signer setup where signers use different keys
    to sign the zone.
-2. Propagation cannot be checked in an any-cast setup.The key manager may
-   continue with the key roll before all nodes in the any-cast
-   cluster have received the new version of the zone.
+2. Propagation cannot be checked in an any-cast setup. The key manager may
+   continue with the key roll before all nodes in the any-cast cluster have 
+   received the new version of the zone.
 
 Future Development
 ~~~~~~~~~~~~~~~~~~
@@ -206,8 +206,8 @@ algorithm. For each roll type, there are four booleans:
 :option:`expire <ksk.auto-expire = true>` and 
 :option:`done <ksk.auto-done = true>`.
 
-Automation control makes it possible to automate KSK or algorithm rolls
-without starting them automatically. You can also let a key roll progress
+These booleans make it possible to automate KSK or algorithm rolls without
+starting them automatically. You can also let a key roll progress
 automatically except for doing the ``cache-expired`` steps manually, in order
 to be able to insert extra manual steps.
 
