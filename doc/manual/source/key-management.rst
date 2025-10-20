@@ -213,32 +213,48 @@ For each roll type, there are four booleans:
 3. ``expire``
 4. ``done``
 
-When set, the ``start`` boolean directs the key manager to start a key roll
-when a relevant key has expired.
-A KSK or a ZSK key roll can start automatically if respectively a KSK or a ZSK
-has expired.
-A CSK roll can start automatically when a CSK has expired but also when a KSK or
-ZSK has expired and the new key will be a CSK.
+Fine grained control of over automation makes it possible to automate KSK or
+algorithm without starting them automatically. You can also let a key roll
+progress automatically except for doing the ``cache-expired`` steps manually,
+in order to be able to insert extra manual steps.
+
+.. important:: The ``report`` and ``done`` automations require that 
+   :subcmd:`keyset` has network access to all nameservers of the zone and
+   all nameservers of the parent.
+
+Start
+~~~~~
+
+When set, the 
+:option:`ksk|zsk|csk|algorithm.auto-start <ksk.auto-start = true>` booleans 
+direct the key manager to start a key roll when a relevant key has expired.
+A KSK or a ZSK key roll can start automatically if respectively a KSK or a
+ZSK has expired. A CSK roll can start automatically when a CSK has expired
+but also when a KSK or ZSK has expired and the new key will be a CSK.
 Finally, an algorithm roll can start automatically when the new algorithm is
 different from the one used by the existing keys and any key has expired.
 
-The ``report`` flags control the automation of the :subcmd:`propagation1-complete`
-and :subcmd:`propagation2-complete` steps.
-When enabled, the cron subcommand contacts the nameservers of the zone or
-(in the case of ``ReportDsPropagated``, the nameservers of the parent zone)
-to check if changes have propagated to all nameservers.
-The check obtains the list of nameservers from the apex of the (parent) zone
-and collects all IPv4 and IPv6 addresses.
-For the ``ReportDnskeyPropagated`` and ``ReportDsPropagated`` actions, each address is
-the queried to see if the DNSKEY RRset or DS RRset match
-the KSKs.
-The ``ReportRrsigPropagated`` action is more complex.
-First the entire zone is transferred from the primary nameserver listed in the
-SOA record.
-Then all relevant signatures are checked if they have the expected key tags.
-The maximum TTL in the zone is recorded to be reported.
-Finally, all addresses of listed nameservers are checked to see if they
-have a SOA serial that is greater than or equal to the one that was checked.
+Report
+~~~~~~
+
+The :option:`ksk|zsk|csk|algorithm.auto-report <ksk.auto-report = true>`
+options control the automation of the :subcmd:`propagation1-complete` and
+:subcmd:`propagation2-complete` steps. When enabled, the cron subcommand
+contacts the nameservers of the zone or (in the case of
+``ReportDsPropagated``, the nameservers of the parent zone) to check if
+changes have propagated to all nameservers. The check obtains the list of
+nameservers from the apex of the (parent) zone and collects all IPv4 and IPv6
+addresses. For the ``ReportDnskeyPropagated`` and ``ReportDsPropagated``
+actions, each address is the queried to see if the DNSKEY RRset or DS RRset
+match the KSKs. The ``ReportRrsigPropagated`` action is more complex. First
+the entire zone is transferred from the primary nameserver listed in the SOA
+record. Then all relevant signatures are checked if they have the expected
+key tags. The maximum TTL in the zone is recorded to be reported. Finally,
+all addresses of listed nameservers are checked to see if they have a SOA
+serial that is greater than or equal to the one that was checked.
+
+Expire
+~~~~~~
 
 Automation of :subcmd:`cache-expired1` and :subcmd:`cache-expired2` is
 controlled by the 
@@ -247,19 +263,14 @@ policy options. When enabled, the cron subcommand simply checks if enough
 time has passed to invoke :subcmd:`cache-expired1` or
 :subcmd:`cache-expired2`.
 
-Finally the ``done`` boolean enables automation of the :subcmd:`roll-done`
-step. This automation is very similar to the ``report`` automation. The only
-difference is that the Wait actions are automated so propagation is tracked
-but no TTL is reported.
+Done
+~~~~
 
-Fine grained control of over automation makes it possible to automate
-KSK or algorithm without starting them automatically.
-You can also let a key roll progress automatically except for doing the ``cache-expired``
-steps manually, in order to be able to insert extra manual steps.
-
-The ``report`` and ``done`` automations require that :subcmd:`keyset` has
-network access to all nameservers of the zone and all nameservers of the
-parent.
+Finally the 
+:option:`ksk|zsk|csk|algorithm.auto-done <ksk.auto-done = true>` booleans 
+enable automation of the :subcmd:`roll-done` step. This automation is very
+similar to the ``report`` automation. The only difference is that the Wait
+actions are automated so propagation is tracked but no TTL is reported.
 
 Importing Keys
 --------------
