@@ -3,7 +3,7 @@ use futures::TryFutureExt;
 
 use crate::api::ServerStatusResult;
 use crate::cli::client::{format_http_error, CascadeApiClient};
-use crate::common::ansi;
+use crate::common::ansi::{self, eprintln, println};
 use crate::zonemaintenance::types::SigningStageReport;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -39,7 +39,7 @@ impl Status {
                 if !response.hard_halted_zones.is_empty() {
                     eprintln!("The following zones are hard halted due to a serious problem:");
                     for (zone_name, err) in response.hard_halted_zones {
-                        eprintln!("   {}\u{78}{} {zone_name}: {err}", ansi::RED, ansi::RESET);
+                        eprintln!("   {} {zone_name}: {err}", ansi::red("\u{78}"));
                     }
                     eprintln!();
                 }
@@ -47,7 +47,7 @@ impl Status {
                 if !response.soft_halted_zones.is_empty() {
                     eprintln!("The following zones are halted due to resolvable issues:");
                     for (zone_name, err) in response.soft_halted_zones {
-                        eprintln!("   {}\u{78}{} {zone_name}: {err}", ansi::RED, ansi::RESET);
+                        eprintln!("   {} {zone_name}: {err}", ansi::red("\u{78}"));
                     }
                     eprintln!();
                 }
@@ -57,35 +57,29 @@ impl Status {
                     println!("  The signing queue is currently empty.");
                 } else {
                     println!(
-                        "  Key: {}In Progress (\u{23F5}){}, {}Pending (\u{23F8}){}, {}Finished (\u{2714}){}",
-                        ansi::YELLOW,
-                        ansi::RESET,
-                        ansi::GRAY,
-                        ansi::RESET,
-                        ansi::GREEN,
-                        ansi::RESET
+                        "  Key: {}, {}, {}",
+                        ansi::yellow("In Progress (\u{23F5})"),
+                        ansi::gray("Pending (\u{23F8})"),
+                        ansi::green("Finished (\u{2714})"),
                     );
                     println!("  {:>2}:   {:<25} {:<16} Action", "#", "When", "Zone");
                     for (i, report) in response.signing_queue.iter().enumerate() {
                         let zone_name = report.zone_name.to_string();
                         let action = &report.signing_report.current_action;
-                        let (colour, state, when) = match &report.signing_report.stage_report {
+                        let (state, when) = match &report.signing_report.stage_report {
                             SigningStageReport::Requested(r) => {
-                                (ansi::GRAY, "\u{23F8}", r.requested_at)
+                                (ansi::gray("\u{23F8}"), r.requested_at)
                             }
                             SigningStageReport::InProgress(r) => {
-                                (ansi::YELLOW, "\u{23F5}", r.started_at)
+                                (ansi::yellow("\u{23F5}"), r.started_at)
                             }
                             SigningStageReport::Finished(r) => {
-                                (ansi::GREEN, "\u{2714}", r.finished_at)
+                                (ansi::green("\u{2714}"), r.finished_at)
                             }
                         };
                         let when = DateTime::<Utc>::from(when)
                             .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
-                        println!(
-                            "  {i:>2}: {colour}{state}{} {when:<25} {zone_name:<16} {action}",
-                            ansi::RESET
-                        );
+                        println!("  {i:>2}: {} {when:<25} {zone_name:<16} {action}", state);
                     }
                 }
             }

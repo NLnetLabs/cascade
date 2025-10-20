@@ -10,7 +10,7 @@ use humantime::FormattedDuration;
 
 use crate::api::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
-use crate::common::ansi;
+use crate::common::ansi::{self, println, Styled};
 use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::SigningStageReport;
 
@@ -506,16 +506,17 @@ impl Zone {
         match zone.pipeline_mode {
             PipelineMode::Running => { /* Nothing to do */ }
             PipelineMode::SoftHalt(err) => {
-                println!("{}\u{78} An error occurred that prevents further processing of this zone version:{}", ansi::RED, ansi::RESET);
-                println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
+                println!("{}", ansi::red("\u{78} An error occurred that prevents further processing of this zone version:"));
+                println!("{}", ansi::red(format_args!("\u{78} {err}")));
             }
             PipelineMode::HardHalt(err) => {
                 println!(
-                    "{}\u{78} The pipeline for this zone is hard halted due to a serious error:{}",
-                    ansi::RED,
-                    ansi::RESET
+                    "{}",
+                    ansi::red(
+                        "\u{78} The pipeline for this zone is hard halted due to a serious error:"
+                    )
                 );
-                println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
+                println!("{}", ansi::red(format_args!("\u{78} {err}")));
             }
         }
 
@@ -691,9 +692,8 @@ impl Progress {
         let Some(report) = &zone.receipt_report else {
             // This shouldn't happen.
             println!(
-                "{}\u{78} The receipt report for this zone is unavailable.{}",
-                ansi::RED,
-                ansi::RESET
+                "{}",
+                ansi::red("\u{78} The receipt report for this zone is unavailable."),
             );
             return;
         };
@@ -790,13 +790,11 @@ impl Progress {
     fn print_signed(&self, zone: &ZoneStatus, succeeded: bool) {
         let (signed_failed, icon) = match succeeded {
             true => ("Signed", status_icon(true)),
-            false => (
-                "Signing failed",
-                format!("{}\u{78}{}", ansi::RED, ansi::RESET),
-            ),
+            false => ("Signing failed", ansi::red("\u{78}")),
         };
         println!(
-            "{icon} {signed_failed} {} as {}",
+            "{} {signed_failed} {} as {}",
+            icon,
             serial_to_string(zone.unsigned_serial),
             serial_to_string(zone.signed_serial)
         );
@@ -977,10 +975,10 @@ impl Progress {
     }
 }
 
-fn status_icon(done: bool) -> String {
+fn status_icon(done: bool) -> Styled<&'static str> {
     match done {
-        true => format!("{}\u{2714}{}", ansi::GREEN, ansi::RESET), // tick ✔
-        false => format!("{}\u{2022}{}", ansi::YELLOW, ansi::RESET), // bullet •
+        true => ansi::green("\u{2714}"),   // tick ✔
+        false => ansi::yellow("\u{2022}"), // bullet •
     }
 }
 

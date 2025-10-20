@@ -7,7 +7,7 @@ use crate::{
         SignerSerialPolicyInfo,
     },
     cli::client::{format_http_error, CascadeApiClient},
-    common::ansi,
+    common::ansi::{self, println},
 };
 
 #[derive(Clone, Debug, clap::Args)]
@@ -93,16 +93,18 @@ impl Policy {
                     };
 
                     let color = match p.1 {
-                        PolicyChange::Added => ansi::GREEN,
-                        PolicyChange::Removed => ansi::RED,
-                        PolicyChange::Updated => ansi::BLUE,
-                        PolicyChange::Unchanged => ansi::GRAY,
+                        PolicyChange::Added => ansi::green,
+                        PolicyChange::Removed => ansi::red,
+                        PolicyChange::Updated => ansi::blue,
+                        PolicyChange::Unchanged => ansi::gray,
                     };
 
                     println!(
-                        "{color} - {name:<width$} {change}{reset}",
-                        width = max_width,
-                        reset = ansi::RESET
+                        "{}",
+                        color(format_args!(
+                            " - {name:<width$} {change}",
+                            width = max_width
+                        )),
                     );
                 }
             }
