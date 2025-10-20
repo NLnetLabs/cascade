@@ -204,14 +204,13 @@ are harmless but confusing if they are skipped.
 Control over Automation
 """""""""""""""""""""""
 
-The key manager provides fine grained control over automation.
-Automation is configured separately for each of the four roll types.
-For each roll type, there are four booleans:
-
-1. ``start``
-2. ``report``
-3. ``expire``
-4. ``done``
+The key manager provides fine grained control over automation, which can be
+configured separately for each of the four roll types: KSK, ZSK, CSK and
+Algorithm. For each roll type, there are four booleans: 
+:option:`start <ksk.auto-start = true>`, 
+:option:`report <ksk.auto-report = true>`,
+:option:`expire <ksk.auto-expire = true>` and 
+:option:`done <ksk.auto-done = true>`.
 
 Fine grained control of over automation makes it possible to automate KSK or
 algorithm without starting them automatically. You can also let a key roll
