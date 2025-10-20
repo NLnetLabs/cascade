@@ -54,7 +54,7 @@ Maintaining State
 
 The key manager maintains a state file for each zone. The state file lists
 the keys in the key set, the current key roll state, and has the DNSKEY, CDS,
-and CDNSKEY RRsets. key generation (which algorithm to use, whether to use a
+and CDNSKEY RRsets, key generation (which algorithm to use, whether to use a
 CSK and a KSK and a ZSK), parameters for key rolls (whether key rolls are
 automatic or not), the lifetimes of keys and signatures, etc.
 
@@ -73,23 +73,21 @@ periodically.
 New Zones and Keys 
 ------------------
 
-When a new zone is added to Cascade, Cascade will invoke the key manager
-to create empty key state for the new zone.
-When adding a zone it is possible to either let the key manager generate new
-keys or import keys from an existing signer.
+When a new zone is added to Cascade, Cascade will invoke the key manager to
+create empty key state for the new zone. When adding a zone it is possible to
+either let the key manager generate new keys or import keys from an existing
+signer.
 
-When the key manager creates new keys, it will start an algorithm roll instead
-of using the new keys directly.
-The reason for this is that the new zone may be an existing unsigned zone
-that now needs to become a DNSSEC signed zone.
-The algorithm roll makes sure that the DNSKEY RRset and the zone signatures
-have propagated before adding the DS record at the parent.
+When the key manager creates new keys, it will start an algorithm roll
+instead of using the new keys directly. The reason for this is that the new
+zone may be an existing unsigned zone that now needs to become a DNSSEC
+signed zone. The algorithm roll makes sure that the DNSKEY RRset and the zone
+signatures have propagated before adding the DS record at the parent.
 
 Key Rolls
 ---------
 
-The key manager can perform :subcmd:`ksk`, :subcmd:`zsk`, :subcmd:`csk` and 
-:subcmd:`algorithm` rolls.
+The key manager can perform KSK, ZSK, CSK, and algorithm rolls.
    
 A KSK roll replaces one KSK with a new KSK. Similarly, a ZSK roll replaces
 one ZSK with a new ZSK. A CSK roll also replaces a CSK with a new CSK but the
@@ -145,13 +143,13 @@ Future Development
 .. tip:: We explicitly solicit :ref:`your input <reach-out>` on how to 
    improve this feature.
 
-We would like to avoid time-based solutions (because that could mean that
-the key roll will continue even if propagation is not complete). 
-Solutions we are thinking about are a measurement program at the edge of
-the operator's network that reports back to the key manager about the state
-of propagation.
-For propagation in an any-cast cluster, a system such as RIPE Atlas could be
-used to check propagation across the Internet.
+We would like to avoid time-based solutions, because that could mean that the
+key roll will continue even if propagation is not complete. Solutions we are
+thinking about are a measurement program at the edge of the operator's
+network that reports back to the key manager about the state of propagation.
+For propagation in an any-cast cluster, a system such as `RIPE Atlas
+<https://atlas.ripe.net>`_ could be used to check propagation across the
+Internet.
 
 Key Roll Steps
 """"""""""""""
@@ -182,15 +180,18 @@ For example, ``UpdateDnskeyRrset`` is paired with either
 ``ReportDnskeyPropagated`` or ``WaitDnskeyPropagated``.
 
 A key roll starts with the :subcmd:`start-roll` step, which creates new keys.
-The next step, :subcmd:`propagation1-complete` has a TTL argument which is
+
+The next step, :subcmd:`propagation1-complete`, has a TTL argument which is
 the maximum of the TTLs of the Report actions. The :subcmd:`cache-expired1`
 and :subcmd:`cache-expired2` have no associated actions. They simply require
 waiting for the TTL (in seconds) reported by the preceding
 :subcmd:`propagation1-complete` or :subcmd:`propagation2-complete` steps. The
 :subcmd:`propagation2-complete` step is similar to the
-:subcmd:`propagation1-complete` step. Finally, the :subcmd:`roll-done` step
-typically has associated Wait actions. These actions are cleanup actions and
-are harmless but confusing if they are skipped.
+:subcmd:`propagation1-complete` step. 
+
+Finally, the :subcmd:`roll-done` step typically has associated Wait actions.
+These actions are cleanup actions and are harmless but confusing if they are
+skipped.
 
 .. _automation-control:
 
@@ -199,14 +200,14 @@ Controlling Automation
 
 The key manager provides fine grained control over automation, which can be
 configured separately for each of the four roll types: KSK, ZSK, CSK and
-Algorithm. For each roll type, there are four booleans: 
+algorithm. For each roll type, there are four booleans: 
 :option:`start <ksk.auto-start = true>`, 
 :option:`report <ksk.auto-report = true>`,
 :option:`expire <ksk.auto-expire = true>` and 
 :option:`done <ksk.auto-done = true>`.
 
-Automation control makes it possible to automate KSK or algorithm without
-starting them automatically. You can also let a key roll progress
+Automation control makes it possible to automate KSK or algorithm rolls
+without starting them automatically. You can also let a key roll progress
 automatically except for doing the ``cache-expired`` steps manually, in order
 to be able to insert extra manual steps.
 
@@ -263,11 +264,11 @@ time has passed to invoke :subcmd:`cache-expired1` or
 Done
 ~~~~
 
-Finally the 
-:option:`ksk|zsk|csk|algorithm.auto-done <ksk.auto-done = true>` booleans 
-enable automation of the :subcmd:`roll-done` step. This automation is very
-similar to the ``report`` automation. The only difference is that the Wait
-actions are automated so propagation is tracked but no TTL is reported.
+Finally, the :option:`ksk|zsk|csk|algorithm.auto-done <ksk.auto-done = true>`
+booleans enable automation of the :subcmd:`roll-done` step. This automation
+is very similar to the :option:`report <ksk.auto-report = true>` automation.
+The only difference is that the Wait actions are automated so propagation is
+tracked but no TTL is reported.
 
 Importing Keys
 --------------
