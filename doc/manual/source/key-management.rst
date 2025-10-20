@@ -190,16 +190,16 @@ with one from the second of third category.
 For example, ``UpdateDnskeyRrset`` is paired with either
 ``ReportDnskeyPropagated`` or ``WaitDnskeyPropagated``.
 
-A key roll starts with the ``start-roll`` step, which creates new keys.
-The next step, ``propagation1-complete`` has a TTL argument which is the
-maximum of the TTLs of the Report actions.
-The ``cache-expired1`` and ``cache-expired2`` have no associated actions.
-They simply require waiting for the TTL (in seconds) reported by the
-previous ``propagation1-complete`` or ``propagation2-complete``.
-The ``propagation2-complete`` step is similar to the ``propagation1-complete`` step.
-Finally, the ``roll-done`` step typically has associated Wait actions.
-These actions are cleanup actions and are harmless but confusing if they
-are skipped.
+A key roll starts with the :subcmd:`start-roll` step, which creates new keys.
+The next step, :subcmd:`propagation1-complete` has a TTL argument which is
+the maximum of the TTLs of the Report actions. The :subcmd:`cache-expired1`
+and :subcmd:`cache-expired2` have no associated actions. They simply require
+waiting for the TTL (in seconds) reported by the preceding
+:subcmd:`propagation1-complete` or :subcmd:`propagation2-complete` steps. The
+:subcmd:`propagation2-complete` step is similar to the
+:subcmd:`propagation1-complete` step. Finally, the :subcmd:`roll-done` step
+typically has associated Wait actions. These actions are cleanup actions and
+are harmless but confusing if they are skipped.
 
 Control over Automation
 """""""""""""""""""""""
@@ -222,8 +222,8 @@ ZSK has expired and the new key will be a CSK.
 Finally, an algorithm roll can start automatically when the new algorithm is
 different from the one used by the existing keys and any key has expired.
 
-The ``report`` flags control the automation of the ``propagation1-complete``
-and ``propagation2-complete`` steps.
+The ``report`` flags control the automation of the :subcmd:`propagation1-complete`
+and :subcmd:`propagation2-complete` steps.
 When enabled, the cron subcommand contacts the nameservers of the zone or
 (in the case of ``ReportDsPropagated``, the nameservers of the parent zone)
 to check if changes have propagated to all nameservers.
@@ -240,15 +240,15 @@ The maximum TTL in the zone is recorded to be reported.
 Finally, all addresses of listed nameservers are checked to see if they
 have a SOA serial that is greater than or equal to the one that was checked.
 
-Automation of ``cache-expired1`` and ``cache-expired2`` is enabled by the
-``expire`` boolean.
-When enabled, the cron subcommand simply checks if enough time has passed
-to invoke ``cache-expired1`` or ``cache-expired2``.
+Automation of :subcmd:`cache-expired1` and :subcmd:`cache-expired2` is
+enabled by the ``expire`` boolean. When enabled, the cron subcommand simply
+checks if enough time has passed to invoke :subcmd:`cache-expired1` or
+:subcmd:`cache-expired2`.
 
-Finally the ``done`` boolean enables automation of the ``roll-done`` step.
-This automation is very similar to the ``report`` automation.
-The only difference is that the Wait actions are automated so propagation
-is tracked but no TTL is reported.
+Finally the ``done`` boolean enables automation of the :subcmd:`roll-done`
+step. This automation is very similar to the ``report`` automation. The only
+difference is that the Wait actions are automated so propagation is tracked
+but no TTL is reported.
 
 Fine grained control of over automation makes it possible to automate
 KSK or algorithm without starting them automatically.
@@ -317,5 +317,5 @@ because another signer may need the keys.
 For this reason keys are imported in so-called ``decoupled`` state.
 When a decoupled key is deleted, only the reference to the key is deleted
 from the key set, the underlying keys are left untouched.
-There is a ``--coupled`` option to tell keyset to take ownership of the key.
+There is a :option:`--coupled` option to tell keyset to take ownership of the key.
 
