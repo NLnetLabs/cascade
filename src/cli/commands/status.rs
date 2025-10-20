@@ -5,6 +5,7 @@ use crate::api::ServerStatusResult;
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::common::ansi;
 use crate::zonemaintenance::types::SigningStageReport;
+use crate::{eprintln, println};
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Status {

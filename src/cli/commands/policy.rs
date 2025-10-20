@@ -8,6 +8,7 @@ use crate::{
     },
     cli::client::{format_http_error, CascadeApiClient},
     common::ansi,
+    println,
 };
 
 #[derive(Clone, Debug, clap::Args)]

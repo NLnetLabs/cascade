@@ -3,6 +3,7 @@ use futures::TryFutureExt;
 use crate::{
     api::{ConfigReload, ConfigReloadError, ConfigReloadOutput, ConfigReloadResult},
     cli::client::{format_http_error, CascadeApiClient},
+    println,
 };
 
 #[derive(Clone, Debug, clap::Args)]

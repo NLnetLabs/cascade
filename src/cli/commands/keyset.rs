@@ -4,6 +4,7 @@ use futures::TryFutureExt;
 
 use crate::api::keyset::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
+use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct KeySet {

@@ -22,3 +22,21 @@ pub mod zonemaintenance;
 
 #[cfg(test)]
 pub mod tests;
+
+#[macro_export]
+macro_rules! println {
+    ($($t:tt)*) => {{
+        #[allow(clippy::disallowed_macros)]
+        let x = anstream::println!($($t)*);
+        x
+    }};
+}
+
+#[macro_export]
+macro_rules! eprintln {
+    ($($t:tt)*) => {{
+        #[allow(clippy::disallowed_macros)]
+        let x = anstream::eprintln!($($t)*);
+        x
+    }};
+}

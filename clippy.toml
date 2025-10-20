@@ -1,0 +1,7 @@
+[[disallowed-macros]]
+path = "std::println"
+reason = "this macro will always print color even when that is undesidered, use cascade::println instead"
+
+[[disallowed-macros]]
+path = "std::eprintln"
+reason = "this macro will always print color even when that is undesidered, use cascade::eprintln instead"
