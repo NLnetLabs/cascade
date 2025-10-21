@@ -213,7 +213,8 @@ cds.signature-remain-time = 604800
 # If this is set, the named HSM server (which must be configured via 'cascade
 # hsm add') will be used for generating new DNSSEC keys.
 #
-# TODO: Link to a guide for using HSMs with Cascade.
+# Information about using a HSM with Cascade is at
+# https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html
 #hsm-server-id = "softhsm"
 
 # Whether to generate CSKs, instead of separate ZSKs and KSKs.
