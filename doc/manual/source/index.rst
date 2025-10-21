@@ -38,8 +38,8 @@ Controllability
 
 Observability
    With Cascade you cut out the guesswork. :doc:`review-hooks` offer 
-   optional third-party checks of your zone data at two critical 
-   stages: verification of the unsigned zone, and of the signed zone.
+   optional third-party checks at two critical stages: verification of the
+   unsigned zone, and of the signed zone.
 
 Open-source with professional support services
    NLnet Labs offers `professional support and consultancy services
