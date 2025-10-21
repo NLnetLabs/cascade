@@ -181,6 +181,11 @@ The ``[daemon]`` section.
          ``file`` values ``/dev/stdout`` and ``/dev/stderr`` which do not work
          properly in some cases, e.g. when running under systemd.
 
+   .. note::
+        When using systemd, ``syslog`` and ``stdout`` are the most reliable
+        options. Systemd environments are often heavily isolated, making
+        file-based logging difficult.
+
 .. option:: daemonize = false
 
    Whether to apply internal daemonization.
