@@ -106,6 +106,10 @@ log-level = "info"
 # - type 'syslog': Logs are written to the UNIX syslog.
 #
 #   This option is only supported on UNIX systems.
+#
+# NOTE: When using systemd, 'syslog' and 'stdout' are the most reliable options.
+# systemd environments are often heavily isolated, making file-based logging
+# difficult.
 log-target = { type = "stdout" }
 #log-target = { type = "syslog" }
 #log-target = { type = "file", path = "/dev/stdout" }
