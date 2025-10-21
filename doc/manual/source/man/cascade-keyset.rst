@@ -4,13 +4,13 @@ cascade keyset
 Synopsis
 --------
 
-.. :program:`cascade keyset` ``[OPTIONS]`` ``<ROLL TYPE>`` ``<ROLL COMMAND>`` ``[OPTIONS]``
+.. :program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` ``<ROLL TYPE>`` ``<ROLL COMMAND>`` ``[OPTIONS]``
 
-:program:`cascade keyset` ``[OPTIONS]`` :subcmd:`ksk|zsk|csk|algorithm` ``<ROLL COMMAND>`` ``[OPTIONS]``
+:program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` :subcmd:`ksk|zsk|csk|algorithm` ``<ROLL COMMAND>`` ``[OPTIONS]``
 
-.. :program:`cascade keyset` ``[OPTIONS]`` ``<COMMAND>`` ``[OPTIONS]``
+.. :program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` ``<COMMAND>`` ``[OPTIONS]``
 
-:program:`cascade keyset` ``[OPTIONS]`` :subcmd:`remove-key` ``[OPTIONS]`` ``<KEY>``
+:program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` :subcmd:`remove-key` ``[OPTIONS]`` ``<KEY>``
 
 Description
 -----------
