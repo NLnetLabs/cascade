@@ -27,8 +27,8 @@ clearly intended to offer continuity and a migration path for current users,
 but Cascade will also offer superior performance, flexibility and user
 experience.
 
-Cascade does not require the use of a :term:`Hardware security module (HSM)`.
-It can make use of on-disk key files, and, if desired, use PKCS#11 and KMIP
+Cascade does not require the use of a Hardware security module (HSM). It can
+make use of on-disk key files and, if desired, use PKCS#11 and KMIP
 compatible HSMs.
 
 The Moving Parts
@@ -38,22 +38,19 @@ Cascade consists of three main components and an optional fourth:
 
 - The :program:`cascaded` daemon for receiving zone data, signing it, and
   serving the signed result. It supports :doc:`review-hooks` during the
-  processing pipeline, allowing you to use your preferred solutions to verify
-  the unsigned and/or signed zone before publishing it.
+  processing pipeline, allowing you to use your preferred solutions to 
+  automate verification of the unsigned and signed zone, before publishing 
+  it.
 
 - The :program:`cascade` command line interface (CLI) for controlling and
   interacting with the :program:`cascaded` daemon.
 
-- A tool called :program:`dnst keyset`, which is responsible for the key
-  management of Cascade. It is invoked as needed by the :program:`cascaded`
-  daemon. The reason for having an external key manager is to have the
-  flexibility of swapping it out in the future, for example to support
-  offline keys or multi-signing. You can read more about this in the
-  :doc:`key-management` section.
+- A tool called :program:`dnst keyset`, which is responsible for the 
+  :doc:`key management <key-management>` of Cascade, including automation of
+  key rolls. It is invoked as needed by the :program:`cascaded` daemon. 
 
 - The *optional* :program:`kmip2pkcs11` daemon, which is only required when
-  using an PKCS#11 compatible HSM. You can read more about this in the
-  :doc:`hsms` section.
+  using an PKCS#11 compatible :doc:`HSM <hsms>`. 
 
 Supported Inputs/Outputs
 ------------------------
@@ -83,9 +80,9 @@ Right now, signing speed is not likely to be a bottle neck for most use
 cases, but there are many speed improvements in the pipeline, especially when
 using an HSM. 
 
-.. note:: Cascade's memory use is still considerable with large zones. It 
-          uses using about 30GiB of RAM when signing a ~1GB zone file with 
-          about ~25M resource records and adding ~10M records while signing.
+.. note:: During testing, Cascade currently uses using about 30GiB of RAM 
+   when signing a ~1GB zone file with about ~25M resource records and 
+   adding ~10M records while signing.
 
 Cascade can currently be used by operators with at most a few small to medium
 size zones. As development progresses, it will also support operators with

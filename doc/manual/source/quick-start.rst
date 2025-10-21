@@ -10,6 +10,8 @@ the settings relating to daemonization.
    parent zone. If this is not available, make sure to 
    :ref:`disable automatic key rolls <automation-control>`.
 
+.. _cascade-config:
+
 Configuring Cascade
 -------------------
 
@@ -79,7 +81,8 @@ Defining Policy
 ---------------
 
 After configuring Cascade, you can begin adding zones. Cascade supports zones
-sourced from a local file or fetched from another nameserver using XFR.
+sourced from a local file or fetched from another nameserver using XFR 
+:term:`zone transfers <Zone transfer>`.
 
 .. Note:: No TSIG or passthrough support yet.
 
@@ -108,8 +111,9 @@ default policy directory is not writable by the current user.
 
 .. Tip::
 
-   Cascade needs to running before you proceed further. See "Configuring
-   Cascade" above for how to configure and start Cascade.
+   Cascade needs to running before you proceed further. See 
+   :ref:`Configuring Cascade <cascade-config>` above on how to configure 
+   and start Cascade.
 
 .. code-block:: bash
 

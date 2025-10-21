@@ -37,9 +37,9 @@ Controllability
    <key-management>` automation and the DNSSEC signing process.
 
 Observability
-   With Cascade you cut out the guesswork. :doc:`review-hooks` offer 
-   optional third-party checks at two critical stages: verification of the
-   unsigned zone, and of the signed zone.
+   With Cascade you cut out the guesswork. :doc:`review-hooks` allow you to 
+   use your preferred solutions to automate verification of the unsigned and
+   signed zone, before publishing it.
 
 Open-source with professional support services
    NLnet Labs offers `professional support and consultancy services
