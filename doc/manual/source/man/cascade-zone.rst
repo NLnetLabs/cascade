@@ -129,7 +129,7 @@ Options for :subcmd:`zone add`
    Print the help text (short summary with ``-h``, long help with ``--help``).
 
 Options for :subcmd:`zone approve`
----------------------------------
+----------------------------------
 
 .. option:: <--unsigned|--signed>
 

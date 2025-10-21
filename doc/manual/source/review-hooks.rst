@@ -105,7 +105,7 @@ Next, we update the zone's policy to use the review script for both stages:
     cmd-hook = "/usr/local/bin/cascade-review.sh"
 
 
-Finally, we need to reload the policy with :commmand:`cascade policy reload` 
+Finally, we need to reload the policy with :command:`cascade policy reload` 
 (and in the current alpha release, also restart the server) to apply the 
 policy changes.
 
