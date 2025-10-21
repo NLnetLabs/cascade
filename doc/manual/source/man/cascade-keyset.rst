@@ -6,7 +6,7 @@ Synopsis
 
 .. :program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` ``<ROLL TYPE>`` ``<ROLL COMMAND>`` ``[OPTIONS]``
 
-:program:`cascade keyset` ``[OPTIONS]`` :subcmd:`ksk|zsk|csk|algorithm` ``<ROLL COMMAND>`` ``[OPTIONS]``
+:program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` :subcmd:`ksk|zsk|csk|algorithm` ``<ROLL COMMAND>`` ``[OPTIONS]``
 
 .. :program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` ``<COMMAND>`` ``[OPTIONS]``
 
