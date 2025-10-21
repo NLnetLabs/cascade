@@ -100,7 +100,6 @@ Examples of things we're interested in:
    :caption: Guides
    :name: toc-guides
 
-   importing-keys
 .. cascade-for-opendnssec-users
 
 .. toctree::
