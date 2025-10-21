@@ -237,8 +237,9 @@ pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reaso
 pub struct State {
     /// Configuration.
     ///
-    /// This need not correspond to the live contents of the configuration file;
-    /// this field is only refreshed when the user requests it.
+    /// The configuration file is loaded at startup and combined with other
+    /// sources (environment variables and command-line arguments).  The user
+    /// can change the file again and request Cascade to reload it live.
     pub config: Config,
 
     /// Known zones.

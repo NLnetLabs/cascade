@@ -97,9 +97,6 @@ impl Config {
     }
 
     /// Initialize Cascade's configuration.
-    ///
-    /// The configuration file is not read here; it should only be read on
-    /// explicit user request or if a global state file is not available.
     pub fn init(cli_matches: &clap::ArgMatches) -> Result<Self, ConfigError> {
         // Process environment variables and command-line arguments.
         let env = env::EnvSpec::process()?;
@@ -110,16 +107,10 @@ impl Config {
         args.merge(&mut this);
         env.merge(&mut this);
 
-        // Return the prepared configuration.
-        Ok(this)
-    }
+        // Based on the combined data, find the config file.
+        let path = this.daemon.config_file.value();
 
-    /// Initialize this with the configuration file.
-    ///
-    /// This should be called if a global state file is not available.  It will
-    /// load the configuration file and integrate it into `self`.
-    pub fn init_from_file(&mut self) -> Result<(), ConfigError> {
-        let path = self.daemon.config_file.value();
+        // Load the config file and integrate its data.
         let spec = match file::Spec::load(path) {
             Ok(spec) => spec,
             Err(error) => {
@@ -129,8 +120,9 @@ impl Config {
                 });
             }
         };
-        spec.parse_into(self);
-        Ok(())
+        spec.parse_into(&mut this);
+
+        Ok(this)
     }
 }
 

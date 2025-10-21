@@ -38,7 +38,7 @@ fn main() -> ExitCode {
     let matches = cmd.get_matches();
 
     // Construct the configuration.
-    let mut config = match Config::init(&matches) {
+    let config = match Config::init(&matches) {
         Ok(config) => config,
         Err(error) => {
             eprintln!("Cascade couldn't be configured: {error}");
@@ -46,22 +46,16 @@ fn main() -> ExitCode {
         }
     };
 
-    // Initially activate the logging with the setting from the config
+    if matches.get_flag("check_config") {
+        // The configuration was loaded successfully; stop now.
+        return ExitCode::SUCCESS;
+    }
+
+    // Set up the logger.
     match logger.prepare(&config.daemon.logging) {
         Ok(Some(lg)) => logger.apply(lg),
         Ok(None) => { /* logger update would not change anything */ }
-        Err(e) => eprintln!("ERROR: Failed to initialize default logging... {e}"),
-    }
-
-    if matches.get_flag("check_config") {
-        // Try reading the configuration file.
-        match config.init_from_file() {
-            Ok(()) => return ExitCode::SUCCESS,
-            Err(error) => {
-                log::error!("Cascade couldn't be configured: {error}");
-                return ExitCode::FAILURE;
-            }
-        }
+        Err(e) => eprintln!("ERROR: Failed to initialize logging: {e}"),
     }
 
     // Load the global state file or build one from scratch.
@@ -73,19 +67,6 @@ fn main() -> ExitCode {
         }
 
         log::info!("State file not found; starting from scratch");
-
-        // Load the configuration file from scratch.
-        if let Err(err) = state.config.init_from_file() {
-            log::error!("Cascade couldn't be configured: {err}");
-            return ExitCode::FAILURE;
-        }
-
-        // Update the configured logging setup with settings from the config file.
-        match logger.prepare(&state.config.daemon.logging) {
-            Ok(Some(lg)) => logger.apply(lg),
-            Ok(None) => { /* logger update would not change anything */ }
-            Err(e) => eprintln!("ERROR: Failed to update logging with settings from config... {e}"),
-        }
 
         if !check_dnst_version(&state) {
             // Error is already logged in the function
@@ -124,15 +105,6 @@ fn main() -> ExitCode {
 
         // TODO: Fail if any zone state files exist.
     } else {
-        // Update the configured logging setup from state.
-        match logger.prepare(&state.config.daemon.logging) {
-            Ok(Some(lg)) => logger.apply(lg),
-            Ok(None) => { /* logger update would not change anything */ }
-            Err(e) => eprintln!(
-                "ERROR: Failed to update logging with settings from existing state... {e}"
-            ),
-        }
-
         if !check_dnst_version(&state) {
             // Error is already logged in the function
             return ExitCode::FAILURE;
