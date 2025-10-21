@@ -34,7 +34,7 @@ Sensible defaults
 
 Controllability
    Cascade gives you tight control over the DNSSEC signing process and
-   offers validation hooks at each stage of the process.
+   offers review hooks at each stage of the process.
 
 Observability
    With Cascade you cut out the guesswork. You will know what the
