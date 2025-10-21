@@ -64,6 +64,9 @@ ring = "0.17.0"
 # 'tempfile' is used to generate temporary files as part of atomic file writes.
 tempfile = "3.21.0"
 
+# Anstream can strip ansi codes for TERM=dumb and other similar situations
+anstream = "0.6.21"
+
 # 'log' is a very popular logging crate, and is the primary means for Cascade
 # to indicate what it's doing at any time.
 [dependencies.log]

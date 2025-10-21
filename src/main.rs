@@ -3,6 +3,7 @@ use cascade::{
     comms::ApplicationCommand,
     config::{Config, SocketConfig},
     daemon::{daemonize, PreBindError, SocketProvider},
+    eprintln,
     manager::{self, TargetCommand},
     policy,
 };

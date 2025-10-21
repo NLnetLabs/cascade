@@ -9,6 +9,7 @@ pub mod template;
 pub mod zone;
 
 use crate::cli::client::format_http_error;
+use crate::println;
 
 use super::client::CascadeApiClient;
 

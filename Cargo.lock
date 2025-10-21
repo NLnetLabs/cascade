@@ -250,6 +250,7 @@ dependencies = [
 name = "cascade"
 version = "0.1.0-alpha2"
 dependencies = [
+ "anstream",
  "arc-swap",
  "assert-json-diff",
  "async-trait",

@@ -1,4 +1,5 @@
 use crate::cli::client::CascadeApiClient;
+use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Template {
