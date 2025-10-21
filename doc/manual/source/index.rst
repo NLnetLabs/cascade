@@ -33,8 +33,8 @@ Sensible defaults
    industry best practices.
 
 Controllability
-   Cascade gives you tight control over :doc:`key 
-   management <key-management>` and the DNSSEC signing process.
+   Cascade gives you tight control over :doc:`key management 
+   <key-management>` automation and the DNSSEC signing process.
 
 Observability
    With Cascade you cut out the guesswork. :doc:`review-hooks` offer 
