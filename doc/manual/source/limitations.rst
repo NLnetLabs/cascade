@@ -23,15 +23,14 @@ Expectations for the Alpha Release
   future. But we're not there yet, we have more ideas but :ref:`we'd love to
   hear yours too <reach-out>`.
 
-Config & Policy Require Explicit Reload
----------------------------------------
+Policy Edits Require Explicit Reload
+------------------------------------
 
-Users may expect that edits to the Cascade configuration file or to policy
-files will take effect if Cascade is restarted, however this is not the case.
+Users may expect that edits to policy files will take effect if Cascade is
+restarted, however this is not the case.
 
-Cascade deliberately does not reload the configuration or policy files until
-explicitly told to do so via ``cascade config reload`` and ``cascade policy
-reload`` respectively.
+Cascade deliberately does not reload the policy files until explicitly told to
+do so via ``cascade policy reload``.
 
 This design ensures that a restart doesn't suddenly cause unexpected changes
 in behaviour, e.g. config file edits that were made but never actually used
