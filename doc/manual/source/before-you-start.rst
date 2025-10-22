@@ -27,7 +27,7 @@ clearly intended to offer continuity and a migration path for current users,
 but Cascade will also offer superior performance, flexibility and user
 experience.
 
-Cascade does not require the use of a Hardware security module (HSM). It can
+Cascade does not require the use of a Hardware Security Module (HSM). It can
 make use of on-disk key files and, if desired, use PKCS#11 and KMIP
 compatible HSMs.
 
