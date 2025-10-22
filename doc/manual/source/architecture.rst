@@ -14,24 +14,10 @@ stages, letting you review and approve at each step:
 
    A schematic view of of the Cascade pipeline with the verification stages.
 
-Robustness
-----------
-
-Cascade is written in the Rust programming language making it significantly
-less likely to crash or suffer from memory safety issues, and at the same
-time making it easier to leverage the higher core count of modern computers
-via Rust's "`fearless concurrency
-<https://doc.rust-lang.org/book/ch16-00-concurrency.html>`_" when needed.
-
-Cascade outsources PKCS#11 module loading to a separate :program:`kmip2pkcs11`
-daemon to avoid running untrusted third-party code inside the main Cascade
-process. This eliminates a source of potential instability and unpredictable
-behaviour, as well as limiting resource usage.
-
 Flexible Signing
 ----------------
 
-Cascade does not *require* a :term:`Hardware security module (HSM)` to
+Cascade does not require a :term:`Hardware security module (HSM)` to
 operate. While it is common practice to secure cryptographic key material
 using an HSM, not all operators use an HSM. Cascade is able to use `OpenSSL
 <https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
@@ -41,7 +27,12 @@ keys in on-disk files.
 
 For operators wishing to use an HSM, Cascade can connect directly to KMIP
 compatible HSMs, or to PKCS#11 compatible HSMs via our :program:`kmip2pkcs11`
-daemon which is installed automatically as part of our Cascade packages.
+daemon, which is installed automatically as part of our Cascade packages.
+
+.. hint:: Separating the main Cascade and HSM-relay daemons avoids running 
+   untrusted third-party code inside the main Cascade process. This 
+   eliminates a source of potential instability and unpredictable behaviour,
+   as well as limiting resource usage.
 
 Bespoke Zone Verification
 -------------------------
@@ -68,15 +59,6 @@ Serious errors in the pipeline may result in a "hard" halt for the pipeline
 of a zone, preventing any further processing of that zone for the current and
 future versions until an operator manually resumes the pipeline.
 
-Daemon Processes
-----------------
-
-Cascade runs as a single daemon when using on-disk signing keys or when using
-a KMIP compatible HSM. If you want to use a PKCS#11 compatible HSM, you will
-also need to run the :program:`kmip2pkcs11` daemon which will receive KMIP
-TCP TLS requests from Cascade and convert them into operations to execute
-against a loaded PKCS#11 module.
-
 Managing State
 --------------
 
@@ -95,3 +77,12 @@ signalled to stop, reloading them on next start.
 As Cascade outsources PKCS#11 support to :program:`kmip2pkcs11`, it does not
 require access to PKCS#11 related configuration files or other PKCS#11 module
 dependencies.
+
+Robustness
+----------
+
+Cascade is written in the Rust programming language making it significantly
+less likely to crash or suffer from memory safety issues, and at the same
+time making it easier to leverage the higher core count of modern computers
+via Rust's "`fearless concurrency
+<https://doc.rust-lang.org/book/ch16-00-concurrency.html>`_" when needed.

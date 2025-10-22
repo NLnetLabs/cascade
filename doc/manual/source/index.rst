@@ -24,21 +24,22 @@ consider the current :doc:`limitations`.
 Cascade has the following design goals:
 
 Flexibility
-   Run Cascade the way that you want: from a package or a Docker image,
-   on-premise or in the cloud, with keys on disk or an HSM of your
-   choice.
+   Run Cascade the way that you want: from a :doc:`package or a Docker image
+   <installation>`, on-premise or in the cloud, with keys on disk or a 
+   :doc:`Hardware Security Module <hsms>` of your choice.
 
 Sensible defaults
-   Get started easily with default settings based on industry
-   best practices.
+   :doc:`Get started easily <quick-start>` with default settings based on 
+   industry best practices.
 
 Controllability
-   Cascade gives you tight control over the DNSSEC signing process and
-   offers validation hooks at each stage of the process.
+   Cascade gives you tight control over :doc:`key management 
+   <key-management>` automation and the DNSSEC signing process.
 
 Observability
-   With Cascade you cut out the guesswork. You will know what the
-   pipeline is doing and why, and what you can expect to happen next.
+   With Cascade you cut out the guesswork. :doc:`review-hooks` allow you to 
+   use your preferred solutions to automate verification of the unsigned and
+   signed zone, before publishing it.
 
 Open-source with professional support services
    NLnet Labs offers `professional support and consultancy services
