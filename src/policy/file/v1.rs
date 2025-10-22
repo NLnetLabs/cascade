@@ -4,16 +4,21 @@ use std::{
     fmt::{self, Display},
     net::{AddrParseError, IpAddr, SocketAddr},
     str::FromStr,
-    time::Duration,
 };
 
 use domain::base::Ttl;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Serialize,
+};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
-use crate::policy::{
-    KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
-    ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+use crate::{
+    common::datetime::TimeSpan,
+    policy::{
+        KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
+        ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+    },
 };
 
 use super::super::{AutoConfig, DsAlgorithm, KeyParameters};
@@ -243,21 +248,21 @@ impl KeyManagerSpec {
         Self {
             ksk: KeyKindSpec {
                 validity: Some(match policy.ksk_validity {
-                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    Some(span) => KeyValiditySpec::Finite(TimeSpan::from_secs(span)),
                     None => KeyValiditySpec::Forever,
                 }),
                 rollover: RolloverSpec::build(&policy.auto_ksk),
             },
             zsk: KeyKindSpec {
                 validity: Some(match policy.zsk_validity {
-                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    Some(span) => KeyValiditySpec::Finite(TimeSpan::from_secs(span)),
                     None => KeyValiditySpec::Forever,
                 }),
                 rollover: RolloverSpec::build(&policy.auto_zsk),
             },
             csk: KeyKindSpec {
                 validity: Some(match policy.csk_validity {
-                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    Some(span) => KeyValiditySpec::Finite(TimeSpan::from_secs(span)),
                     None => KeyValiditySpec::Forever,
                 }),
                 rollover: RolloverSpec::build(&policy.auto_csk),
@@ -331,34 +336,64 @@ pub struct KeyKindSpec {
 }
 
 /// The validity of a key.
-#[derive(Clone, Debug, SerializeDisplay, DeserializeFromStr)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeyValiditySpec {
     /// The key is valid for a finite duration.
-    Finite(Duration),
+    Finite(TimeSpan),
 
     /// The key is valid forever.
     Forever,
 }
 
-impl fmt::Display for KeyValiditySpec {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Finite(duration) => write!(f, "{}", duration.as_secs()),
-            Self::Forever => f.write_str("forever"),
+struct ValidityVisitor;
+
+impl<'de> Visitor<'de> for ValidityVisitor {
+    type Value = KeyValiditySpec;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("string, int, or \"forever\"")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if value == "forever" {
+            return Ok(KeyValiditySpec::Forever);
         }
+        let span = value.parse().map_err(E::custom)?;
+        Ok(KeyValiditySpec::Finite(span))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(KeyValiditySpec::Finite(TimeSpan::from_secs(
+            value
+                .try_into()
+                .map_err(|_| E::custom("timespan must be non-negative"))?,
+        )))
     }
 }
 
-impl FromStr for KeyValiditySpec {
-    type Err = String;
+impl<'de> Deserialize<'de> for KeyValiditySpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(ValidityVisitor)
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "forever" => Ok(Self::Forever),
-            _ => match s.parse::<u64>() {
-                Ok(secs) => Ok(Self::Finite(Duration::from_secs(secs))),
-                Err(_err) => Err(format!("{s:?} is not 'forever' or an integer")),
-            },
+impl Serialize for KeyValiditySpec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            KeyValiditySpec::Finite(time_span) => time_span.serialize(serializer),
+            KeyValiditySpec::Forever => "forever".serialize(serializer),
         }
     }
 }
@@ -537,14 +572,14 @@ pub struct SignerSpec {
     pub serial_policy: SignerSerialPolicySpec,
 
     /// The offset for record signature inceptions, in seconds.
-    pub signature_inception_offset: u64,
+    pub signature_inception_offset: TimeSpan,
 
     /// How long record signatures will be valid for, in seconds.
-    pub signature_lifetime: u64,
+    pub signature_lifetime: TimeSpan,
 
     /// How long before expiration a new signature has to be
     /// generated, in seconds.
-    pub signature_remain_time: u64,
+    pub signature_remain_time: TimeSpan,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialSpec,
@@ -563,9 +598,9 @@ impl SignerSpec {
     pub fn parse(self) -> SignerPolicy {
         SignerPolicy {
             serial_policy: self.serial_policy.parse(),
-            sig_inception_offset: Duration::from_secs(self.signature_inception_offset),
-            sig_validity_time: Duration::from_secs(self.signature_lifetime),
-            sig_remain_time: Duration::from_secs(self.signature_remain_time),
+            sig_inception_offset: self.signature_inception_offset.duration(),
+            sig_validity_time: self.signature_lifetime.duration(),
+            sig_remain_time: self.signature_remain_time.duration(),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -575,9 +610,9 @@ impl SignerSpec {
     pub fn build(policy: &SignerPolicy) -> Self {
         Self {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
-            signature_inception_offset: policy.sig_inception_offset.as_secs(),
-            signature_lifetime: policy.sig_validity_time.as_secs(),
-            signature_remain_time: policy.sig_remain_time.as_secs(),
+            signature_inception_offset: policy.sig_inception_offset.into(),
+            signature_lifetime: policy.sig_validity_time.into(),
+            signature_remain_time: policy.sig_remain_time.into(),
             denial: SignerDenialSpec::build(&policy.denial),
             review: ReviewSpec::build(&policy.review),
         }
@@ -589,9 +624,9 @@ impl Default for SignerSpec {
         Self {
             serial_policy: Default::default(),
 
-            signature_inception_offset: SIGNATURE_INCEPTION_OFFSET,
-            signature_lifetime: SIGNATURE_VALIDITY_TIME,
-            signature_remain_time: SIGNATURE_REMAIN_TIME,
+            signature_inception_offset: TimeSpan::from_secs(SIGNATURE_INCEPTION_OFFSET),
+            signature_lifetime: TimeSpan::from_secs(SIGNATURE_VALIDITY_TIME),
+            signature_remain_time: TimeSpan::from_secs(SIGNATURE_REMAIN_TIME),
 
             denial: Default::default(),
 
@@ -918,5 +953,49 @@ impl FromStr for SimpleNameserverCommsSpec {
             .map(|ip| SocketAddr::new(ip, 53))
             .or_else(|_| SocketAddr::from_str(s))?;
         Ok(SimpleNameserverCommsSpec { addr })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KeyValiditySpec;
+    use crate::common::datetime::TimeSpan;
+    use serde::Deserialize;
+
+    #[test]
+    fn parse_key_validity_spec() {
+        #[derive(Deserialize)]
+        struct Foo {
+            val: Vec<KeyValiditySpec>,
+        }
+
+        let foo: Foo = toml::from_str(
+            r#"
+            val = [
+              10,
+              "10",
+              "10s",
+              "10m",
+              "10h",
+              "10d",
+              "10w",
+              "forever",
+            ]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            foo.val,
+            vec![
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60 * 24)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60 * 24 * 7)),
+                KeyValiditySpec::Forever,
+            ]
+        )
     }
 }
