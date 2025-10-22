@@ -98,7 +98,7 @@ Test:
 - :doc:`kmip2pkcs11 main page<kmip2pkcs11:index>`
 - :doc:`dnst:installation`
 - :option:`user`, :option:`group`
-- :ref:`RTR-TLS Unit<rtrtr:configuration:rtr unit>`
+- :ref:`man/kmip2pkcs11-config.toml:options`
 
 When installed via a package the daemon will not be run automatically. This is
 because you will need to:
