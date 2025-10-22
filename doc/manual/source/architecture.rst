@@ -29,7 +29,7 @@ For operators wishing to use an HSM, Cascade can connect directly to KMIP
 compatible HSMs, or to PKCS#11 compatible HSMs via our :program:`kmip2pkcs11`
 daemon, which is installed automatically as part of our Cascade packages.
 
-.. note:: Separating the main Cascade and HSM-relay daemons avoids running 
+.. hint:: Separating the main Cascade and HSM-relay daemons avoids running 
    untrusted third-party code inside the main Cascade process. This 
    eliminates a source of potential instability and unpredictable behaviour,
    as well as limiting resource usage.
