@@ -1,3 +1,4 @@
+@media (prefers-color-scheme: dark) {
 /*!
  * @name          Readthedocs
  * @namespace     http://userstyles.org
@@ -99,4 +100,5 @@ li.toctree-l1 {
 
 .wy-menu-vertical .xref {
     color: #2980B9 !important;
+}
 }
