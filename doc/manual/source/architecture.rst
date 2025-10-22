@@ -23,15 +23,10 @@ time making it easier to leverage the higher core count of modern computers
 via Rust's "`fearless concurrency
 <https://doc.rust-lang.org/book/ch16-00-concurrency.html>`_" when needed.
 
-Cascade outsources PKCS#11 module loading to a separate :program:`kmip2pkcs11`
-daemon to avoid running untrusted third-party code inside the main Cascade
-process. This eliminates a source of potential instability and unpredictable
-behaviour, as well as limiting resource usage.
-
 Flexible Signing
 ----------------
 
-Cascade does not *require* a :term:`Hardware security module (HSM)` to
+Cascade does not require a :term:`Hardware security module (HSM)` to
 operate. While it is common practice to secure cryptographic key material
 using an HSM, not all operators use an HSM. Cascade is able to use `OpenSSL
 <https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
@@ -41,7 +36,12 @@ keys in on-disk files.
 
 For operators wishing to use an HSM, Cascade can connect directly to KMIP
 compatible HSMs, or to PKCS#11 compatible HSMs via our :program:`kmip2pkcs11`
-daemon which is installed automatically as part of our Cascade packages.
+daemon, which is installed automatically as part of our Cascade packages.
+
+.. note:: Separating the main Cascade and HSM-relay daemons avoids running 
+   untrusted third-party code inside the main Cascade process. This 
+   eliminates a source of potential instability and unpredictable behaviour,
+   as well as limiting resource usage.
 
 Bespoke Zone Verification
 -------------------------
