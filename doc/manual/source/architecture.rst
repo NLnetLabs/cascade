@@ -68,15 +68,6 @@ Serious errors in the pipeline may result in a "hard" halt for the pipeline
 of a zone, preventing any further processing of that zone for the current and
 future versions until an operator manually resumes the pipeline.
 
-Daemon Processes
-----------------
-
-Cascade runs as a single daemon when using on-disk signing keys or when using
-a KMIP compatible HSM. If you want to use a PKCS#11 compatible HSM, you will
-also need to run the :program:`kmip2pkcs11` daemon which will receive KMIP
-TCP TLS requests from Cascade and convert them into operations to execute
-against a loaded PKCS#11 module.
-
 Managing State
 --------------
 
