@@ -14,15 +14,6 @@ stages, letting you review and approve at each step:
 
    A schematic view of of the Cascade pipeline with the verification stages.
 
-Robustness
-----------
-
-Cascade is written in the Rust programming language making it significantly
-less likely to crash or suffer from memory safety issues, and at the same
-time making it easier to leverage the higher core count of modern computers
-via Rust's "`fearless concurrency
-<https://doc.rust-lang.org/book/ch16-00-concurrency.html>`_" when needed.
-
 Flexible Signing
 ----------------
 
@@ -86,3 +77,12 @@ signalled to stop, reloading them on next start.
 As Cascade outsources PKCS#11 support to :program:`kmip2pkcs11`, it does not
 require access to PKCS#11 related configuration files or other PKCS#11 module
 dependencies.
+
+Robustness
+----------
+
+Cascade is written in the Rust programming language making it significantly
+less likely to crash or suffer from memory safety issues, and at the same
+time making it easier to leverage the higher core count of modern computers
+via Rust's "`fearless concurrency
+<https://doc.rust-lang.org/book/ch16-00-concurrency.html>`_" when needed.
