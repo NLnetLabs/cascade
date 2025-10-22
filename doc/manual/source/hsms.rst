@@ -97,7 +97,7 @@ Test:
 - :ref:`kmip2pkcs11 use cases<kmip2pkcs11:index:use cases>`
 - :doc:`kmip2pkcs11 main page<kmip2pkcs11:index>`
 - :doc:`dnst:installation`
-- :option:`--user`, :option:`--group`
+- :option:`kmip2pkcs11:--user`, :option:`kmip2pkcs11:--group`, :option:`kmip2pkcs11:--pid-file`
 - :ref:`kmip2pkcs11 config options<kmip2pkcs11:man/kmip2pkcs11-config.toml:options>`
 
 Any Test:
@@ -105,7 +105,7 @@ Any Test:
 - :any:`kmip2pkcs11 use cases<kmip2pkcs11:index:use cases>`
 - :any:`kmip2pkcs11 main page<kmip2pkcs11:index>`
 - :any:`dnst:installation`
-- :any:`kmip2pkcs11:--user`, :option:`kmip2pkcs11:--group`
+- :any:`kmip2pkcs11:--user`, :any:`kmip2pkcs11:--group`, :any:`kmip2pkcs11:--pid-file`
 - :any:`kmip2pkcs11 config options<kmip2pkcs11:man/kmip2pkcs11-config.toml:options>`
 
 When installed via a package the daemon will not be run automatically. This is
