@@ -89,56 +89,42 @@ Setting up kmip2pkcs11
 
 If you installed Cascade via a DEB or RPM package you should also already
 have the :program:`kmip2pkcs11` software installed, unless you explicitly
-opted not to install it. If installing via building from sources the
-instructions we provide also describe how to install :program:`kmip2pkcs11`.
+opted not to install it. If you :doc:`build from source <building>`,
+we also provide instructions how to install :program:`kmip2pkcs11`.
 
-Test:
+When installed via a package the daemon will not be run automatically. This
+is because you will need to:
 
-- :ref:`kmip2pkcs11 use cases<kmip2pkcs11:index:use cases>`
-- :doc:`kmip2pkcs11 main page<kmip2pkcs11:index>`
-- :doc:`dnst:installation`
-- :option:`kmip2pkcs11:--user`, :option:`kmip2pkcs11:--group`, :option:`kmip2pkcs11:--pid-file`
-- :ref:`kmip2pkcs11 config options<kmip2pkcs11:man/kmip2pkcs11-config.toml:options>`
-
-Any Test:
-
-- :any:`kmip2pkcs11 use cases<kmip2pkcs11:index:use cases>`
-- :any:`kmip2pkcs11 main page<kmip2pkcs11:index>`
-- :any:`dnst:installation`
-- :any:`kmip2pkcs11:--user`, :any:`kmip2pkcs11:--group`, :any:`kmip2pkcs11:--pid-file`
-- :any:`kmip2pkcs11 config options<kmip2pkcs11:man/kmip2pkcs11-config.toml:options>`
-
-When installed via a package the daemon will not be run automatically. This is
-because you will need to:
-
-- Edit the :file:`/etc/kmip2pkcs11/config.toml` file to tell
-  :program:`kmip2pkcs111` where to find the PKCS#11 module to load.
-- Depending on your PKCS#11 module you may need to set PKCS#11 vendor
-  specific environment variables for the :program:`kmip2pkcs11` process,
-  and/or ensure that PKCS#11 vendor specific configuration files and possibly
-  also other software are installed and correctly configured.
+- Edit the :doc:`kmip2pkcs11 configuration file<man/kmip2pkcs11-config.toml>`
+  to set the location of your PKCS#11 module.
+- Depending on your PKCS#11 module you may need to set vendor specific
+  environment variables for the :program:`kmip2pkcs11` process. 
+  Alternatively, you may need to ensure that vendor specific configuration 
+  files and possibly other software is installed and correctly configured.
 - Ensure that the :program:`kmip2pkcs11` user has access to the resources
   needed by the PKCS#11 module to be loaded.
 - Use the (vendor specific) PKCS#11 module setup process to create a token
   label and PIN that Cascade should use to authenticate with the HSM.
-- Optionally generate a proper TLS certificate for use by :program:`kmip2pkcs11`
-  and set the :file:`/etc/kmip2pkcs11/config.toml` settings ``cert_path`` and
-  ``key_path`` to point the certificate file and accompanying private key. If
-  you omit these settings :program:`kmip2pkcs11` will generate a long-lived
-  self-signed TLS certificate each time it starts.
+- Optionally, generate a proper TLS certificate for use by
+  :program:`kmip2pkcs11` and set the :option:`kmip2pkcs11:cert_path` and
+  :option:`kmip2pkcs11:key_path` in :file:`/etc/kmip2pkcs11/config.toml` to
+  point the certificate file and accompanying private key. If you omit these
+  settings, :program:`kmip2pkcs11` will generate a long-lived self-signed TLS
+  certificate each time it starts.
 
-.. Note:: There is currently no way to test that the configuration
-   of :program:`kmip2pkcs11` is correct other than to try using it with
-   Cascade.
+.. note:: There is currently no way to test that the 
+   :doc:`kmip2pkcs11 configuration<man/kmip2pkcs11-config.toml>` is correct
+   other than trying to use it with Cascade.
 
-When ready, start :program:`kmip2pkcs11` either via systemd (if installed from
-a package) or directly:
+When ready, start :program:`kmip2pkcs11` either via systemd (if installed
+from a package) or directly:
 
 .. code-block:: bash
 
    kmip2pkcs11 --config /etc/kmip2pkcs11/config.toml -d --user <USER> --group <GROUP>
 
-.. Tip:: Use the ``--user`` and ``--group`` arguments to make :program:`kmip2pkcs11`
+.. tip:: Use the :option:`kmip2pkcs11:--user` and 
+   :option:`kmip2pkcs11:--group` arguments to make :program:`kmip2pkcs11`
    run as the same user that has access to any necessary resources required by
    PKCS#11 module vendor.
 
@@ -153,8 +139,8 @@ and PIN are the values you configured above.
 
    cascade hsm add --insecure --username <PKCS#11 token label> --password <PKCS#11 PIN> kmip2pkcs11 127.0.0.1
 
-.. Note:: ``--insecure`` must be used if using a self-signed TLS certificate (the
-   default) with :program:`kmip2pkcs11`. 127.0.0.1 should be changed if your
+.. Note:: :option:`--insecure` must be used if using a self-signed TLS 
+   certificate, which is the default. 127.0.0.1 should be changed if your 
    :program:`kmip2pkcs11` instance is running on a different address.
 
 Cascade will verify that it can connect and that the target server appears to be a
@@ -164,7 +150,7 @@ KMIP compatible HSM.
    the features needed by Cascade. For :program:`kmip2pkcs11` this isn't a problem
    as it is designed to work with Cascade.
 
-Next we need to add the HSM to a policy so that when zones are added the keys for the
+Next, we need to add the HSM to a policy so that when zones are added the keys for the
 zones will be generated using the HSM.
 
 To do this, edit :file:`/etc/cascade/policies/<your_policy>.toml` and set:
