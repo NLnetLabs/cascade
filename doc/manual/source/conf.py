@@ -97,8 +97,17 @@ if versionbanner:
     extensions.append('versionwarning.extension')
 
 intersphinx_mapping = {
-    'dnst': ('https://dnst.docs.nlnetlabs.nl/en/latest/', None)
+    'dnst': ('https://dnst.docs.nlnetlabs.nl/en/latest/', None),
+    'kmip2pkcs11': ('https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/', None)
 }
+
+# We recommend adding the following config value.
+# Sphinx defaults to automatically resolve *unresolved* labels using all your Intersphinx mappings.
+# This behavior has unintended side-effects, namely that documentations local references can
+# suddenly resolve to an external location.
+# See also:
+# https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html#confval-intersphinx_disabled_reftypes
+intersphinx_disabled_reftypes = ["*"]
 
 autosectionlabel_prefix_document = True
 
