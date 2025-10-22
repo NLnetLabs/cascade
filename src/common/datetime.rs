@@ -1,12 +1,67 @@
 use std::{fmt, ops::Deref, str::FromStr, time::Duration};
 
+use domain::base::Ttl;
 use jiff::{Span, SpanRelativeTo};
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer, Serialize,
 };
 
+/// A wrapper around [`Ttl`] with fancier (de)serialization
 #[derive(Clone, Debug)]
+pub struct TtlSpec {
+    ttl: Ttl,
+}
+
+impl TtlSpec {
+    pub fn from_secs(secs: u32) -> Self {
+        Self {
+            ttl: Ttl::from_secs(secs),
+        }
+    }
+}
+
+impl From<Ttl> for TtlSpec {
+    fn from(value: Ttl) -> Self {
+        Self { ttl: value }
+    }
+}
+
+impl From<TtlSpec> for Ttl {
+    fn from(value: TtlSpec) -> Self {
+        value.ttl
+    }
+}
+
+impl Serialize for TtlSpec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        TimeSpan::from_secs(self.ttl.as_secs().into()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for TtlSpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let span = TimeSpan::deserialize(deserializer)?;
+        if let Ok(secs) = span.as_secs().try_into() {
+            Ok(Self {
+                ttl: Ttl::from_secs(secs),
+            })
+        } else {
+            Err(<D::Error as de::Error>::custom(
+                "value is too large for a TTL",
+            ))
+        }
+    }
+}
+
+/// A wrapper around [`Duration`] with fancier (de)serialization
+#[derive(Copy, Clone, Debug)]
 pub struct TimeSpan {
     duration: std::time::Duration,
 }
@@ -39,11 +94,9 @@ impl<'de> Visitor<'de> for TimeSpanVisitor {
     where
         E: de::Error,
     {
-        Ok(TimeSpan::from_secs(
-            value
-                .try_into()
-                .map_err(|_| E::custom("timespan must be non-negative"))?,
-        ))
+        Ok(TimeSpan::from_secs(value.try_into().map_err(|_| {
+            E::custom("duration value must be non-negative")
+        })?))
     }
 }
 

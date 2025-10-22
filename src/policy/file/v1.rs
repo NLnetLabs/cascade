@@ -6,7 +6,6 @@ use std::{
     str::FromStr,
 };
 
-use domain::base::Ttl;
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
@@ -14,7 +13,7 @@ use serde::{
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 use crate::{
-    common::datetime::TimeSpan,
+    common::datetime::{TimeSpan, TtlSpec},
     policy::{
         KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
         ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
@@ -210,34 +209,34 @@ impl KeyManagerSpec {
                 .records
                 .dnskey
                 .signature_inception_offset
-                .unwrap_or(SIGNATURE_INCEPTION_OFFSET),
+                .map_or(SIGNATURE_INCEPTION_OFFSET, |s| s.as_secs()),
             dnskey_signature_lifetime: self
                 .records
                 .dnskey
                 .signature_lifetime
-                .unwrap_or(SIGNATURE_VALIDITY_TIME),
+                .map_or(SIGNATURE_VALIDITY_TIME, |s| s.as_secs()),
             dnskey_remain_time: self
                 .records
                 .dnskey
                 .signature_remain_time
-                .unwrap_or(SIGNATURE_REMAIN_TIME),
+                .map_or(SIGNATURE_REMAIN_TIME, |s| s.as_secs()),
             cds_inception_offset: self
                 .records
                 .cds
                 .signature_inception_offset
-                .unwrap_or(SIGNATURE_INCEPTION_OFFSET),
+                .map_or(SIGNATURE_INCEPTION_OFFSET, |s| s.as_secs()),
             cds_signature_lifetime: self
                 .records
                 .cds
                 .signature_lifetime
-                .unwrap_or(SIGNATURE_VALIDITY_TIME),
+                .map_or(SIGNATURE_VALIDITY_TIME, |s| s.as_secs()),
             cds_remain_time: self
                 .records
                 .cds
                 .signature_remain_time
-                .unwrap_or(SIGNATURE_REMAIN_TIME),
+                .map_or(SIGNATURE_REMAIN_TIME, |s| s.as_secs()),
 
-            default_ttl: self.records.ttl,
+            default_ttl: self.records.ttl.into(),
             ds_algorithm: self.ds_algorithm,
             auto_remove: self.auto_remove,
         }
@@ -273,16 +272,20 @@ impl KeyManagerSpec {
             auto_remove: policy.auto_remove,
 
             records: KeyManagerRecordsSpec {
-                ttl: policy.default_ttl,
+                ttl: policy.default_ttl.into(),
                 dnskey: RecordSigningSpec {
-                    signature_inception_offset: Some(policy.dnskey_inception_offset),
-                    signature_lifetime: Some(policy.dnskey_signature_lifetime),
-                    signature_remain_time: Some(policy.dnskey_remain_time),
+                    signature_inception_offset: Some(TimeSpan::from_secs(
+                        policy.dnskey_inception_offset,
+                    )),
+                    signature_lifetime: Some(TimeSpan::from_secs(policy.dnskey_signature_lifetime)),
+                    signature_remain_time: Some(TimeSpan::from_secs(policy.dnskey_remain_time)),
                 },
                 cds: RecordSigningSpec {
-                    signature_inception_offset: Some(policy.cds_inception_offset),
-                    signature_lifetime: Some(policy.cds_signature_lifetime),
-                    signature_remain_time: Some(policy.cds_remain_time),
+                    signature_inception_offset: Some(TimeSpan::from_secs(
+                        policy.cds_inception_offset,
+                    )),
+                    signature_lifetime: Some(TimeSpan::from_secs(policy.cds_signature_lifetime)),
+                    signature_remain_time: Some(TimeSpan::from_secs(policy.cds_remain_time)),
                 },
             },
 
@@ -453,7 +456,7 @@ impl RolloverSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct KeyManagerRecordsSpec {
     /// The TTL to use when creating special records.
-    pub ttl: Ttl,
+    pub ttl: TtlSpec,
 
     /// Signing parameters for DNSKEY records.
     pub dnskey: RecordSigningSpec,
@@ -469,7 +472,7 @@ impl Default for KeyManagerRecordsSpec {
         Self {
             // It would be best to default to the SOA minimum. However,
             // keyset doesn't have access to that. No official reference.
-            ttl: Ttl::from_secs(3600), // Reference?
+            ttl: TtlSpec::from_secs(3600), // Reference?
 
             dnskey: Default::default(),
             cds: Default::default(),
@@ -642,14 +645,14 @@ impl Default for SignerSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RecordSigningSpec {
     /// The offset for generated signature inceptions.
-    pub signature_inception_offset: Option<u64>,
+    pub signature_inception_offset: Option<TimeSpan>,
 
     /// The lifetime of generated signatures.
-    pub signature_lifetime: Option<u64>,
+    pub signature_lifetime: Option<TimeSpan>,
 
     /// The amount of time remaining before expiry when signatures will be
     /// regenerated.
-    pub signature_remain_time: Option<u64>,
+    pub signature_remain_time: Option<TimeSpan>,
 }
 
 //----------- SignerSerialPolicySpec -------------------------------------------
