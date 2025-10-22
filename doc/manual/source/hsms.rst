@@ -89,18 +89,22 @@ Setting up kmip2pkcs11
 
 If you installed Cascade via a DEB or RPM package you should also already
 have the :program:`kmip2pkcs11` software installed, unless you explicitly
-opted not to install it. If you :doc:`build from source <building>`,
-we also provide instructions how to install :program:`kmip2pkcs11`.
+opted not to install it. You can also :doc:`build the software <building>`,
+from source.
+
+.. seealso:: We provide man pages for both the 
+   :doc:`kmip2pkcs11 daemon<kmip2pkcs11:man/kmip2pkcs11>` and
+   :doc:`configuration file<kmip2pkcs11:man/kmip2pkcs11-config.toml>`.
 
 When installed via a package the daemon will not be run automatically. This
 is because you will need to:
 
-- Edit the :doc:`kmip2pkcs11 configuration file<man/kmip2pkcs11-config.toml>`
+- Edit the :doc:`kmip2pkcs11 configuration file<kmip2pkcs11:man/kmip2pkcs11-config.toml>`
   to set the location of your PKCS#11 module.
-- Depending on your PKCS#11 module you may need to set vendor specific
+- Depending on your PKCS#11 module, you may need to set vendor specific
   environment variables for the :program:`kmip2pkcs11` process. 
-  Alternatively, you may need to ensure that vendor specific configuration 
-  files and possibly other software is installed and correctly configured.
+  You may also need to ensure that vendor specific configuration files and 
+  possibly other software is installed and correctly configured.
 - Ensure that the :program:`kmip2pkcs11` user has access to the resources
   needed by the PKCS#11 module to be loaded.
 - Use the (vendor specific) PKCS#11 module setup process to create a token
@@ -139,16 +143,17 @@ and PIN are the values you configured above.
 
    cascade hsm add --insecure --username <PKCS#11 token label> --password <PKCS#11 PIN> kmip2pkcs11 127.0.0.1
 
-.. Note:: :option:`--insecure` must be used if using a self-signed TLS 
-   certificate, which is the default. 127.0.0.1 should be changed if your 
+.. Note:: The :option:`--insecure` option must be used if using a self-signed
+   TLS certificate, which is the default. 127.0.0.1 should be changed if your 
    :program:`kmip2pkcs11` instance is running on a different address.
 
 Cascade will verify that it can connect and that the target server appears to be a
 KMIP compatible HSM.
 
 .. Note:: Cascade does **not** yet verify that the target KMIP server supports
-   the features needed by Cascade. For :program:`kmip2pkcs11` this isn't a problem
-   as it is designed to work with Cascade.
+   the :ref:`operations<kmip2pkcs11:index:supported operations>` needed by 
+   Cascade. For :program:`kmip2pkcs11` this isn't a problem as it is designed
+   to work with Cascade.
 
 Next, we need to add the HSM to a policy so that when zones are added the keys for the
 zones will be generated using the HSM.
