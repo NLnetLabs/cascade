@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
-use std::{fs, io, sync::Arc, time::Duration};
+use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
 use camino::Utf8PathBuf;
@@ -204,11 +204,11 @@ pub struct KeyManagerPolicy {
     pub algorithm: KeyParameters,
 
     /// Validity of KSKs.
-    pub ksk_validity: Option<u64>,
+    pub ksk_validity: Option<u32>,
     /// Validity of ZSKs.
-    pub zsk_validity: Option<u64>,
+    pub zsk_validity: Option<u32>,
     /// Validity of CSKs.
-    pub csk_validity: Option<u64>,
+    pub csk_validity: Option<u32>,
 
     /// Configuration variable for automatic KSK rolls.
     pub auto_ksk: AutoConfig,
@@ -221,22 +221,22 @@ pub struct KeyManagerPolicy {
 
     /// DNSKEY signature inception offset (positive values are subtracted
     ///from the current time).
-    pub dnskey_inception_offset: u64,
+    pub dnskey_inception_offset: u32,
 
     /// DNSKEY signature lifetime
-    pub dnskey_signature_lifetime: u64,
+    pub dnskey_signature_lifetime: u32,
 
     /// The required remaining signature lifetime.
-    pub dnskey_remain_time: u64,
+    pub dnskey_remain_time: u32,
 
     /// CDS/CDNSKEY signature inception offset
-    pub cds_inception_offset: u64,
+    pub cds_inception_offset: u32,
 
     /// CDS/CDNSKEY signature lifetime
-    pub cds_signature_lifetime: u64,
+    pub cds_signature_lifetime: u32,
 
     /// The required remaining signature lifetime.
-    pub cds_remain_time: u64,
+    pub cds_remain_time: u32,
 
     /// The DS hash algorithm.
     pub ds_algorithm: DsAlgorithm,
@@ -265,13 +265,13 @@ pub struct SignerPolicy {
     /// that the signature was made this far in the past.  This can help DNSSEC
     /// validation pass in case the signer and validator disagree on the current
     /// time (by a small amount).
-    pub sig_inception_offset: Duration,
+    pub sig_inception_offset: u32,
 
     /// How long record signatures will be valid for.
-    pub sig_validity_time: Duration,
+    pub sig_validity_time: u32,
 
     /// How long before expiration a new signature has to be generated.
-    pub sig_remain_time: Duration,
+    pub sig_remain_time: u32,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicy,

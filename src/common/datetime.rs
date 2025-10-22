@@ -1,4 +1,4 @@
-use std::{fmt, ops::Deref, str::FromStr, time::Duration};
+use std::{fmt, str::FromStr, time::Duration};
 
 use domain::base::Ttl;
 use jiff::{Span, SpanRelativeTo};
@@ -7,70 +7,25 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-/// A wrapper around [`Ttl`] with fancier (de)serialization
-#[derive(Clone, Debug)]
-pub struct TtlSpec {
-    ttl: Ttl,
-}
-
-impl TtlSpec {
-    pub fn from_secs(secs: u32) -> Self {
-        Self {
-            ttl: Ttl::from_secs(secs),
-        }
-    }
-}
-
-impl From<Ttl> for TtlSpec {
-    fn from(value: Ttl) -> Self {
-        Self { ttl: value }
-    }
-}
-
-impl From<TtlSpec> for Ttl {
-    fn from(value: TtlSpec) -> Self {
-        value.ttl
-    }
-}
-
-impl Serialize for TtlSpec {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        TimeSpan::from_secs(self.ttl.as_secs().into()).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for TtlSpec {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let span = TimeSpan::deserialize(deserializer)?;
-        if let Ok(secs) = span.as_secs().try_into() {
-            Ok(Self {
-                ttl: Ttl::from_secs(secs),
-            })
-        } else {
-            Err(<D::Error as de::Error>::custom(
-                "value is too large for a TTL",
-            ))
-        }
-    }
-}
-
 /// A wrapper around [`Duration`] with fancier (de)serialization
-#[derive(Copy, Clone, Debug)]
-pub struct TimeSpan {
-    duration: std::time::Duration,
-}
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TimeSpan(u32);
 
-impl Deref for TimeSpan {
-    type Target = Duration;
+impl TimeSpan {
+    pub fn as_secs(&self) -> u32 {
+        self.0
+    }
 
-    fn deref(&self) -> &Self::Target {
-        &self.duration
+    pub fn as_ttl(&self) -> Ttl {
+        Ttl::from_secs(self.0)
+    }
+
+    pub fn from_secs(x: u32) -> Self {
+        Self(x)
+    }
+
+    pub fn from_ttl(x: Ttl) -> Self {
+        Self(x.as_secs())
     }
 }
 
@@ -95,7 +50,7 @@ impl<'de> Visitor<'de> for TimeSpanVisitor {
         E: de::Error,
     {
         Ok(TimeSpan::from_secs(value.try_into().map_err(|_| {
-            E::custom("duration value must be non-negative")
+            E::custom(format!("duration value must be between 0 and {}", u32::MAX))
         })?))
     }
 }
@@ -118,18 +73,6 @@ impl Serialize for TimeSpan {
     }
 }
 
-impl TimeSpan {
-    pub fn duration(&self) -> Duration {
-        self.duration
-    }
-
-    pub fn from_secs(secs: u64) -> Self {
-        Self {
-            duration: Duration::from_secs(secs),
-        }
-    }
-}
-
 impl TryFrom<Span> for TimeSpan {
     type Error = String;
 
@@ -141,13 +84,12 @@ impl TryFrom<Span> for TimeSpan {
         let duration = Duration::try_from(signeddur)
             .map_err(|e| format!("unable to convert duration: {e}\n"))?;
 
-        Ok(Self { duration })
-    }
-}
+        let secs = duration
+            .as_secs()
+            .try_into()
+            .map_err(|_| format!("duration value must be between 0 and {}", u32::MAX))?;
 
-impl From<Duration> for TimeSpan {
-    fn from(value: Duration) -> Self {
-        TimeSpan { duration: value }
+        Ok(Self(secs))
     }
 }
 
@@ -156,7 +98,7 @@ impl FromStr for TimeSpan {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Handle a small edge case to treat the string "10" as 10 seconds.
-        if let Ok(secs) = s.parse::<u64>() {
+        if let Ok(secs) = s.parse() {
             return Ok(Self::from_secs(secs));
         }
         let span: Span = s
@@ -164,26 +106,6 @@ impl FromStr for TimeSpan {
             .map_err(|e| format!("unable to parse {s} as timespan: {e}\n"))?;
 
         Self::try_from(span)
-    }
-}
-
-impl PartialEq for TimeSpan {
-    fn eq(&self, other: &Self) -> bool {
-        self.duration == other.duration
-    }
-}
-
-impl Eq for TimeSpan {}
-
-impl PartialOrd for TimeSpan {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for TimeSpan {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.duration.cmp(&other.duration)
     }
 }
 

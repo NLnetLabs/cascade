@@ -1,6 +1,6 @@
 //! Version 1 of the zone state file.
 
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
 use bytes::Bytes;
 use camino::Utf8Path;
@@ -154,11 +154,11 @@ pub struct KeyManagerPolicySpec {
     algorithm: KeyParameters,
 
     /// Validity of KSKs.
-    ksk_validity: Option<u64>,
+    ksk_validity: Option<u32>,
     /// Validity of ZSKs.
-    zsk_validity: Option<u64>,
+    zsk_validity: Option<u32>,
     /// Validity of CSKs.
-    csk_validity: Option<u64>,
+    csk_validity: Option<u32>,
 
     /// Configuration variable for automatic KSK rolls.
     auto_ksk: AutoConfig,
@@ -171,22 +171,22 @@ pub struct KeyManagerPolicySpec {
 
     /// DNSKEY signature inception offset (positive values are subtracted
     ///from the current time).
-    dnskey_inception_offset: u64,
+    dnskey_inception_offset: u32,
 
     /// DNSKEY signature lifetime
-    dnskey_signature_lifetime: u64,
+    dnskey_signature_lifetime: u32,
 
     /// The required remaining signature lifetime.
-    dnskey_remain_time: u64,
+    dnskey_remain_time: u32,
 
     /// CDS/CDNSKEY signature inception offset
-    cds_inception_offset: u64,
+    cds_inception_offset: u32,
 
     /// CDS/CDNSKEY signature lifetime
-    cds_signature_lifetime: u64,
+    cds_signature_lifetime: u32,
 
     /// The required remaining signature lifetime.
-    cds_remain_time: u64,
+    cds_remain_time: u32,
 
     /// The DS hash algorithm.
     ds_algorithm: DsAlgorithm,
@@ -262,13 +262,13 @@ pub struct SignerPolicySpec {
     pub serial_policy: SignerSerialPolicySpec,
 
     /// The offset for record signature inceptions, in seconds.
-    pub sig_inception_offset: u64,
+    pub sig_inception_offset: u32,
 
     /// How long record signatures will be valid for, in seconds.
-    pub sig_validity_time: u64,
+    pub sig_validity_time: u32,
 
     /// How long before expiration a new signature has to be generated, in seconds.
-    pub sig_remain_time: u64,
+    pub sig_remain_time: u32,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicySpec,
@@ -284,9 +284,9 @@ impl SignerPolicySpec {
     pub fn parse(self) -> SignerPolicy {
         SignerPolicy {
             serial_policy: self.serial_policy.parse(),
-            sig_inception_offset: Duration::from_secs(self.sig_inception_offset),
-            sig_validity_time: Duration::from_secs(self.sig_validity_time),
-            sig_remain_time: Duration::from_secs(self.sig_remain_time),
+            sig_inception_offset: self.sig_inception_offset,
+            sig_validity_time: self.sig_validity_time,
+            sig_remain_time: self.sig_remain_time,
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -296,9 +296,9 @@ impl SignerPolicySpec {
     pub fn build(policy: &SignerPolicy) -> Self {
         Self {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
-            sig_inception_offset: policy.sig_inception_offset.as_secs(),
-            sig_validity_time: policy.sig_validity_time.as_secs(),
-            sig_remain_time: policy.sig_remain_time.as_secs(),
+            sig_inception_offset: policy.sig_inception_offset,
+            sig_validity_time: policy.sig_validity_time,
+            sig_remain_time: policy.sig_remain_time,
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
         }

@@ -13,7 +13,7 @@ use serde::{
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 use crate::{
-    common::datetime::{TimeSpan, TtlSpec},
+    common::datetime::TimeSpan,
     policy::{
         KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
         ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
@@ -30,18 +30,18 @@ use super::super::{AutoConfig, DsAlgorithm, KeyParameters};
 // .net SOA: 7 days
 // .org SOA: 21 days
 // No official reference.
-const SIGNATURE_VALIDITY_TIME: u64 = 14 * 24 * 3600;
+const SIGNATURE_VALIDITY_TIME: u32 = 14 * 24 * 3600;
 
 // Set the remain time to half of the validity time. Note that the maximum
 // TTL should be taken into account. Assume that the maximum TTL is small
 // compared to the remain time and can be ignored. No official reference.
-const SIGNATURE_REMAIN_TIME: u64 = SIGNATURE_VALIDITY_TIME / 2;
+const SIGNATURE_REMAIN_TIME: u32 = SIGNATURE_VALIDITY_TIME / 2;
 
 // There is small risk that either the signer or a validator
 // has the wrong time zone settings. Back dating signatures by
 // one day should solve that problem and not introduce any
 // security risks. No official reference.
-const SIGNATURE_INCEPTION_OFFSET: u64 = 24 * 3600;
+const SIGNATURE_INCEPTION_OFFSET: u32 = 24 * 3600;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -236,7 +236,7 @@ impl KeyManagerSpec {
                 .signature_remain_time
                 .map_or(SIGNATURE_REMAIN_TIME, |s| s.as_secs()),
 
-            default_ttl: self.records.ttl.into(),
+            default_ttl: self.records.ttl.as_ttl(),
             ds_algorithm: self.ds_algorithm,
             auto_remove: self.auto_remove,
         }
@@ -272,7 +272,7 @@ impl KeyManagerSpec {
             auto_remove: policy.auto_remove,
 
             records: KeyManagerRecordsSpec {
-                ttl: policy.default_ttl.into(),
+                ttl: TimeSpan::from_ttl(policy.default_ttl),
                 dnskey: RecordSigningSpec {
                     signature_inception_offset: Some(TimeSpan::from_secs(
                         policy.dnskey_inception_offset,
@@ -456,7 +456,7 @@ impl RolloverSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct KeyManagerRecordsSpec {
     /// The TTL to use when creating special records.
-    pub ttl: TtlSpec,
+    pub ttl: TimeSpan,
 
     /// Signing parameters for DNSKEY records.
     pub dnskey: RecordSigningSpec,
@@ -472,7 +472,7 @@ impl Default for KeyManagerRecordsSpec {
         Self {
             // It would be best to default to the SOA minimum. However,
             // keyset doesn't have access to that. No official reference.
-            ttl: TtlSpec::from_secs(3600), // Reference?
+            ttl: TimeSpan::from_secs(3600), // Reference?
 
             dnskey: Default::default(),
             cds: Default::default(),
@@ -601,9 +601,9 @@ impl SignerSpec {
     pub fn parse(self) -> SignerPolicy {
         SignerPolicy {
             serial_policy: self.serial_policy.parse(),
-            sig_inception_offset: self.signature_inception_offset.duration(),
-            sig_validity_time: self.signature_lifetime.duration(),
-            sig_remain_time: self.signature_remain_time.duration(),
+            sig_inception_offset: self.signature_inception_offset.as_secs(),
+            sig_validity_time: self.signature_lifetime.as_secs(),
+            sig_remain_time: self.signature_remain_time.as_secs(),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -613,9 +613,9 @@ impl SignerSpec {
     pub fn build(policy: &SignerPolicy) -> Self {
         Self {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
-            signature_inception_offset: policy.sig_inception_offset.into(),
-            signature_lifetime: policy.sig_validity_time.into(),
-            signature_remain_time: policy.sig_remain_time.into(),
+            signature_inception_offset: TimeSpan::from_secs(policy.sig_inception_offset),
+            signature_lifetime: TimeSpan::from_secs(policy.sig_validity_time),
+            signature_remain_time: TimeSpan::from_secs(policy.sig_remain_time),
             denial: SignerDenialSpec::build(&policy.denial),
             review: ReviewSpec::build(&policy.review),
         }
