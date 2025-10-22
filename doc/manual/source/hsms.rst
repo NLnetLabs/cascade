@@ -94,10 +94,11 @@ instructions we provide also describe how to install :program:`kmip2pkcs11`.
 
 Test:
 
-- :ref:`kmip2pkcs11 logging <man:kmip2pkcs11:logging options>`
-- :ref:`kmip2pkcs11 installation <kmip2pkcs11:installation>`
+- :ref:`kmip2pkcs11 use cases<kmip2pkcs11:use cases>`
+- :ref:`kmip2pkcs11 installation<kmip2pkcs11:installation>`
 - :ref:`dnst:installation`
 - :option:`user`, :option:`group`
+- :ref:`RTR-TLS Unit<rtrtr:configuration:rtr unit>`
 
 When installed via a package the daemon will not be run automatically. This is
 because you will need to:
