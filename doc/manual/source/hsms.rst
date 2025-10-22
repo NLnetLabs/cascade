@@ -92,6 +92,10 @@ have the :program:`kmip2pkcs11` software installed, unless you explicitly
 opted not to install it. If installing via building from sources the
 instructions we provide also describe how to install :program:`kmip2pkcs11`.
 
+Test:
+:ref:`kmip2pkcs11 logging <kmip2pkcs11:logging-options>`
+:option:`user`, :option:`group`
+
 When installed via a package the daemon will not be run automatically. This is
 because you will need to:
 
