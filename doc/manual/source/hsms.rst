@@ -12,28 +12,27 @@ Hardware Security Modules (HSMs)
 An Introduction to HSMs
 -----------------------
 
-A Hardware Security Module is typically a tamper proof hardware vault (though
-software variants exist as well) capable of generating and securely storing
-cryptographic keys and performing signing operations using those keys on
-data provided via an interface and returning the signed result via the same
-interface.
+A Hardware Security Module is typically a tamper proof hardware vault capable
+of generating and securely storing cryptographic keys and performing signing
+operations using those keys on data provided via an interface and returning
+the signed result via the same interface.
 
 HSM Interfaces
 ~~~~~~~~~~~~~~
 
-Typically HSMs are interacted with programmatically via an interface that
-is compliant with the Oasis PKCS#11 (Public-Key Cryptography Standard)
-specification. Some HSMs also or alternatively support a newer Oasis
-specification called KMIP (Key Management Interoperability Protocol).
+In most cases, you interact with an HSM via an interface that is compliant
+with the Oasis PKCS#11 (Public-Key Cryptography Standard) specification. Some
+HSMs also or alternatively support a newer Oasis specification called KMIP
+(Key Management Interoperability Protocol).
 
 KMIP is a data (de)serialization protocol that operates on top of the widely
-used TCP and TLS combination of protocols. As such it requires no additional
+used TCP and TLS combination of protocols. As such, it requires no additional
 software or special configuration to use and poses no direct security or
 stability threat to the client process.
 
-This is quite different to PKCS#11 which requires the HSM vendor to provide
+This is quite different to PKCS#11, which requires the HSM vendor to provide
 a library of code that offers a C language style interface to be used by the
-client at runtime by loading the library (aka module) into its own process
+client at runtime by loading the library (a.k.a. module) into its own process
 with no knowledge of or control over what that code is going to do.
 
 Cascade and HSMs
@@ -42,9 +41,9 @@ Cascade and HSMs
 Cascade supports both PKCS#11 and KMIP compatible HSMs. KMIP is supported
 natively, while PKCS#11 is supported through our :program:`kmip2pkcs11` bridge.
 
-As Cascade is a Rust powered application, crossing the divide between the Rust
+Cascade is an application written in Rust. Crossing the divide between the Rust
 host application and a loaded C library means giving up the stability and
-memory safety guarantees offered by Rust. As such Cascade was designed to
+memory safety guarantees offered by Rust. As such, Cascade was designed to
 *not* load PKCS#11 modules directly but instead to hand that risk off to a
 helper tool: :program:`kmip2pkcs11`.
 
@@ -59,10 +58,9 @@ In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
 To work with an HSM using its PKCS#11 interface, Cascade requires our
 :program:`kmip2pkcs11` relay. 
 
-Several HSMs have been tested in limited fashion with Cascade. Limited here
-meaning normal usage only, not attempting to deliberately cause problems, and
-not attempting to stress or performance test the interface. The tested HSMs
-are:
+Several HSMs have been tested with Cascade. Our testing was limited to normal
+usage only, not attempting to deliberately cause problems, and not attempting
+to stress or performance test the interface. The tested HSMs are:
 
 .. table:: Supported HSMs
    :widths: auto
@@ -80,8 +78,8 @@ are:
 
 .. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
    though KMIP 1.2 requires servers to offer support for old versions of the
-   TLS protocol with known security vulnerabilities. For this reason Cascade
-   **cannot** be used with PyKMIP as this implementation only supports older,
+   TLS protocol with known security vulnerabilities. For this reason, Cascade
+   cannot be used with PyKMIP as this implementation only supports older,
    vulnerable TLS versions.
 
 Setting up kmip2pkcs11
@@ -89,7 +87,7 @@ Setting up kmip2pkcs11
 
 If you installed Cascade via a DEB or RPM package you should also already
 have the :program:`kmip2pkcs11` software installed, unless you explicitly
-opted not to install it. You can also :doc:`build the software <building>`,
+opted not to install it. You can also :doc:`build the software <building>`
 from source.
 
 .. seealso:: We provide man pages for both the 
@@ -99,8 +97,9 @@ from source.
 When installed via a package the daemon will not be run automatically. This
 is because you will need to:
 
-- Edit the :doc:`kmip2pkcs11 configuration file<kmip2pkcs11:man/kmip2pkcs11-config.toml>`
-  to set the location of your PKCS#11 module.
+- Edit the :doc:`kmip2pkcs11 configuration
+  file<kmip2pkcs11:man/kmip2pkcs11-config.toml>` to set the location of your
+  PKCS#11 module.
 - Depending on your PKCS#11 module, you may need to set vendor specific
   environment variables for the :program:`kmip2pkcs11` process. 
   You may also need to ensure that vendor specific configuration files and 
