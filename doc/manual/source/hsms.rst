@@ -94,19 +94,19 @@ instructions we provide also describe how to install :program:`kmip2pkcs11`.
 
 Test:
 
-- :ref:`kmip2pkcs11 use cases<kmip2pkcs11:use cases>`
+- :ref:`kmip2pkcs11 use cases<kmip2pkcs11:index:use cases>`
 - :doc:`kmip2pkcs11 main page<kmip2pkcs11:index>`
 - :doc:`dnst:installation`
 - :option:`--user`, :option:`--group`
-- :ref:`kmpi2pkcs11 config options<man/kmip2pkcs11-config.toml:options>`
+- :ref:`kmip2pkcs11 config options<kmip2pkcs11:man/kmip2pkcs11-config.toml:options>`
 
 Any Test:
 
-- :any:`kmip2pkcs11 use cases<kmip2pkcs11:use cases>`
+- :any:`kmip2pkcs11 use cases<kmip2pkcs11:index:use cases>`
 - :any:`kmip2pkcs11 main page<kmip2pkcs11:index>`
 - :any:`dnst:installation`
-- :any:`--user`, :option:`--group`
-- :any:`kmpi2pkcs11 config options<man/kmip2pkcs11-config.toml:options>`
+- :any:`kmip2pkcs11:--user`, :option:`kmip2pkcs11:--group`
+- :any:`kmip2pkcs11 config options<kmip2pkcs11:man/kmip2pkcs11-config.toml:options>`
 
 When installed via a package the daemon will not be run automatically. This is
 because you will need to:
