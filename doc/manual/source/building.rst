@@ -9,11 +9,10 @@ Dependencies
 ------------
 
 To get started, you need a C toolchain because the cryptographic primitives
-used by Cascade require it. You also need Rust, because that’s the programming
-language that Cascade has been written in.
-
-Additionally, you need a few tools used by Cascade. However, they are
-installed together with Cascade in the steps below.
+used by Cascade require it. You also need Rust, because that's the
+programming language that Cascade has been written in. Additionally, you need
+a few tools used by Cascade. However, they are installed together with
+Cascade in the steps below.
 
 C Toolchain
 """""""""""
