@@ -1,8 +1,10 @@
 Known Limitations
 =================
 
-Cascade is a hidden signer. This has implications for :doc:`before-you-start`.
-
+Cascade is a hidden signer. As such, it is *not* a complete authoritative DNS
+server. Cascade will not reply with the AA or AD flag set, nor can it reply
+to DNSSEC queries. Instead, Cascade is intended to be used with a proper
+secondary serving the signed zones to actual clients.
 
 Expectations for the Alpha Release
 ----------------------------------
@@ -27,10 +29,9 @@ Policy Edits Require Explicit Reload
 ------------------------------------
 
 Users may expect that edits to policy files will take effect if Cascade is
-restarted, however this is not the case.
-
-Cascade deliberately does not reload the policy files until explicitly told to
-do so via ``cascade policy reload``.
+restarted, however this is not the case. Cascade deliberately does not reload
+the policy files until explicitly told to do so via ``cascade policy
+reload``.
 
 This design ensures that a restart doesn't suddenly cause unexpected changes
 in behaviour, e.g. config file edits that were made but never actually used
@@ -61,28 +62,20 @@ Missing features
 The alpha release of Cascade is missing some of the features provided by
 OpenDNSSEC that will be added in a future release:
 
-- No jitter support.
-- No IXFR out.
-- No file output.
-- No delay before automatic key deletion.
-- No holding keys for use until a backup flag is set.
-- No sharing of keys between zones.
-- No passthrough mode.
-- No incremental signing.
-- No TSIG support.
-- No inbound XFR/NOTIFY access control.
-- No prefix based access control.
+- Jitter support.
+- IXFR out.
+- File output.
+- Delay before automatic key deletion.
+- Holding keys for use until a backup flag is set.
+- Sharing of keys between zones.
+- Passthrough mode.
+- Incremental signing.
+- TSIG support.
+- Inbound XFR/NOTIFY access control.
+- Prefix based access control.
+- CAA record support.
 - Terminology differences, Cascade does not use the term "omnipresent" for
   example.
-- No CAA record support.
-
-Not a complete authoritative nameserver
----------------------------------------
-
-Cascade is *not* a complete authoritative DNS server. It will not reply with
-the AA or AD flag set, nor can it reply to DNSSEC queries. Instead, Cascade
-is intended to be used as a hidden signer with a proper secondary such as NSD
-serving the signed zones to actual clients.
 
 Other known limitations
 -----------------------
@@ -92,5 +85,5 @@ Other known limitations
 - No KMIP batching support.
 - No DNS UPDATE support.
 - HSM algorithm support is limited to RSASHA256 and ECDSAP256SHA256.
-- Changing a policy to use a HSM will not affect existing zones.
+- Changing a policy to use an HSM will not affect existing zones.
 - Memory usage can be improved.
