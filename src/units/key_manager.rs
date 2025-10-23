@@ -1,6 +1,6 @@
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{halt_zone, Center, ZoneAddError};
+use crate::center::{Center, ZoneAddError};
 use crate::cli::commands::hsm::Error;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
@@ -1157,8 +1157,7 @@ impl KeySetCommand {
             Err(err) => {
                 let err_string = err.err.to_string();
 
-                // Hard halt the zone
-                halt_zone(&self.center, &self.name, true, &err_string);
+                // TODO: Possibly halt the zone depending on the keyset exit code
 
                 // Determine whether and what to record in zone history
                 let record = match self.recording_mode {
