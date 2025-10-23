@@ -60,7 +60,7 @@ systemd features used instead.
    .. group-tab:: Without systemd
 
         When using Cascade without systemd, you need to configure the listen
-        address in Cascade's ``config.toml`` in the ``[servers]`` section:
+        address in the ``[server]`` section of Cascade's ``config.toml``:
 
         .. code-block:: text
 
@@ -95,12 +95,11 @@ should be reviewed and how, what DNSSEC settings should be used to sign the
 zone, and more.
 
 Adding a policy is done by creating a file. To make it easy to get started we
-provide a default policy template so we'll use that to create a policy for our
-zone to use.
-
-The name of the policy is taken from the file name. The directory to save the
-policy file to is determined by the :option:`policy-dir` setting as
-configured in :file:`/etc/cascade/config.toml`. 
+provide a default policy template so we'll use that to create a policy for
+our zone to use. The name of the policy is taken from the file name. The
+directory to save the policy file to is determined by the
+:option:`policy-dir` setting as configured in
+:file:`/etc/cascade/config.toml`. 
 
 In the example below, the :command:`sudo tee` command is needed because the
 default policy directory is not writable by the current user.
