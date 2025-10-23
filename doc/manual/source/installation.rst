@@ -25,9 +25,7 @@ started.
          -  Debian Bookworm 12
          -  Debian Bullseye 11
 
-       Packages for the ``amd64``/``x86_64`` architecture are available for
-       all listed versions. In addition, we offer ``armhf`` architecture
-       packages for Debian/Raspbian Bullseye, and ``arm64`` for Buster.
+       Packages are available for the ``amd64``/``x86_64`` architecture only.
        
        First update the :program:`apt` package index: 
 
@@ -179,7 +177,7 @@ started.
    .. group-tab:: RHEL
 
        To install a Cascade package, you need Red Hat Enterprise Linux
-       (RHEL) 8 or 9, or compatible operating system such as Rocky Linux.
+       (RHEL) 8, 9 or 10 or compatible operating system such as Rocky Linux.
        Packages are available for the ``amd64``/``x86_64`` architecture only.
        
        First create a file named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`,
