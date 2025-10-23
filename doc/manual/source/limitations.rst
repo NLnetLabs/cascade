@@ -1,10 +1,11 @@
 Known Limitations
 =================
 
-Cascade is a hidden signer. As such, it is *not* a complete authoritative DNS
-server. Cascade will not reply with the AA or AD flag set, nor can it reply
-to DNSSEC queries. Instead, Cascade is intended to be used with a proper
-secondary serving the signed zones to actual clients.
+.. important:: Cascade is a hidden signer. As such, it is *not* a complete 
+   authoritative DNS server. Cascade will not reply with the AA or AD flag 
+   set, nor can it reply to DNSSEC queries. Instead, Cascade is intended to
+   be used with a proper secondary serving the signed zones to actual 
+   clients.
 
 Expectations for the Alpha Release
 ----------------------------------
