@@ -52,6 +52,13 @@ Assuming you already have :program:`curl` installed, you can install
 Alternatively, visit the `Rust website
 <https://www.rust-lang.org/tools/install>`_ for other installation methods.
 
+During installation :program:`rustup` will attempt to configure the ``PATH``.
+Modifications to ``PATH`` may not take effect until the console is restarted,
+or the user is logged out, or it may not succeed at all.
+
+If, after installation, running ``rustc --version`` in the console fails, 
+this is the most likely reason.
+
 Building
 --------
 
@@ -107,7 +114,7 @@ config file:
   mkdir ./cascade
   cascade template config > ./cascade/config.toml
 
-Then update the ``config.toml`` to use the appropriate paths.
+Then update the :file:`config.toml` to use the appropriate paths.
 
 Updating
 """"""""
@@ -142,9 +149,9 @@ Also for the KMIP to PKCS#11 relay if you are using it:
 Installing Specific Versions
 """"""""""""""""""""""""""""
 
-If you want to install a specific version of
-Cascade using Cargo, explicitly use the ``--version`` option. If needed,
-use the ``--force`` option to overwrite an existing version:
+If you want to install a specific version of Cascade using Cargo, explicitly
+use the ``--version`` option. If needed, use the ``--force`` option to
+overwrite an existing version:
         
 .. code-block:: text
 
@@ -200,17 +207,3 @@ run so it’s not guaranteed to produce a working build, but they often work to
 quite a good degree.
 
 .. _Rust Platform Support:  https://doc.rust-lang.org/nightly/rustc/platform-support.html
-
-OpenBSD
-"""""""
-
-On OpenBSD, `patches
-<https://github.com/openbsd/ports/tree/master/lang/rust/patches>`_ are
-required to get Rust running correctly, but these are well maintained and
-offer the latest version of Rust quite quickly.
-
-Rust can be installed on OpenBSD by running:
-
-.. code-block:: bash
-
-   pkg_add rust
