@@ -6,11 +6,11 @@ Integrating with SoftHSMv2
 
 .. epigraph::
 
-   SoftHSM is an implementation of a cryptographic store accessible through
-   a PKCS #11 interface. You can use it to explore PKCS #11 without having
-   a Hardware Security Module. It was originally developed as a part of the
-   OpenDNSSEC project. SoftHSM uses Botan or OpenSSL for its cryptographic
-   operations.
+   SoftHSM is an implementation of a cryptographic store accessible through a
+   PKCS#11 interface. You can use it to explore PKCS#11 without having a
+   Hardware Security Module. It was originally developed as a part of the
+   OpenDNSSEC project, but is now a standalone project. SoftHSM uses Botan or
+   OpenSSL for its cryptographic operations.
 
    -- https://www.softhsm.org/
 

@@ -9,14 +9,14 @@ dedicated server with restricted access that takes local zones or zones
 received from an upstream primary nameserver, signs those zones and makes the
 results available to downstream, Internet facing *secondary* nameservers. 
 
-.. Warning:: Cascade must *not* be run as an Internet facing service as it is
+.. Warning:: Do *not* run Cascade as an Internet facing service, as it is
    designed to answer a limited subset of the DNS protocol that a full
    authoritative nameserver must support.
 
 One possible authoritative server that could be used up and downstream of
 Cascade is our authoritative nameserver `NSD <https://nlnetlabs.nl/nsd>`__, but
 any authoritative nameserver can be used instead, assuming that it supports
-transferring zones via XFR transfers to and from Cascade.
+transferring zones via XFR zone transfers to and from Cascade.
 
 Intended Audience
 -----------------
@@ -27,9 +27,9 @@ clearly intended to offer continuity and a migration path for current users,
 but Cascade will also offer superior performance, flexibility and user
 experience.
 
-Cascade does not require the use of a Hardware Security Module (HSM). It can
-make use of on-disk key files and, if desired, use PKCS#11 and KMIP
-compatible HSMs.
+.. important:: Cascade does *not* require the use of a Hardware Security 
+  Module (HSM). It can make use of on-disk key files and, if desired, use 
+  PKCS#11 and KMIP compatible HSMs.
 
 The Moving Parts
 ----------------
@@ -50,7 +50,7 @@ Cascade consists of three main components and an optional fourth:
   key rolls. It is invoked as needed by the :program:`cascaded` daemon. 
 
 - The *optional* :program:`kmip2pkcs11` daemon, which is only required when
-  using an PKCS#11 compatible :doc:`HSM <hsms>`. 
+  using a PKCS#11 compatible :doc:`HSM <hsms>`. 
 
 Supported Inputs/Outputs
 ------------------------
@@ -72,21 +72,19 @@ System Requirements
 -------------------
 
 Cascade is able to run with fairly limited CPU and memory. Exact figures are
-not yet available, but in principle with more CPU cores more operations will
-benefit from parallelization, and with more memory it will be possible to load
-and sign larger zones.
+not yet available, but in principle more CPU cores allow for more parallel 
+operations and more memory makes it possible to load and sign larger zones.
 
-Right now, signing speed is not likely to be a bottle neck for most use
-cases, but there are many speed improvements in the pipeline, especially when
-using an HSM. 
+.. hint:: During testing, Cascade currently uses using about 30GiB of RAM 
+   when signing a 1GiB zone file with about 25 million resource records and 
+   adding roughly 10 million records while signing.
 
-.. note:: During testing, Cascade currently uses using about 30GiB of RAM 
-   when signing a ~1GB zone file with about ~25M resource records and 
-   adding ~10M records while signing.
+Right now, signing speed is not likely to be a bottleneck for most use cases,
+but there are many speed improvements in the pipeline, especially when using
+an HSM. 
 
 Cascade can currently be used by operators with at most a few small to medium
 size zones. As development progresses, it will also support operators with
 very large zones or operators with many zones.
 
 Cascade is *not* yet intended for operation as a clustered deployment.
-

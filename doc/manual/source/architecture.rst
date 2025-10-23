@@ -17,13 +17,11 @@ stages, letting you review and approve at each step:
 Flexible Signing
 ----------------
 
-Cascade does not require a :term:`Hardware security module (HSM)` to
-operate. While it is common practice to secure cryptographic key material
-using an HSM, not all operators use an HSM. Cascade is able to use `OpenSSL
-<https://www.openssl.org>`_ and/or `ring <https://crates.io/crates/ring/>`_
-software cryptography to generate signing keys and to cryptographically sign
-DNS :term:`RRset <Resource Record Set (RRset)>` data, storing the generated
-keys in on-disk files.
+Cascade does not require a :term:`Hardware security module (HSM)` to operate.
+Cascade is able to use `OpenSSL <https://www.openssl.org>`_ and `ring
+<https://crates.io/crates/ring/>`_ software cryptography to generate signing
+keys and to cryptographically sign DNS :term:`RRset <Resource Record Set
+(RRset)>` data, storing the generated keys in on-disk files.
 
 For operators wishing to use an HSM, Cascade can connect directly to KMIP
 compatible HSMs, or to PKCS#11 compatible HSMs via our :program:`kmip2pkcs11`
@@ -67,15 +65,16 @@ various locations under a single parent directory. No additional database
 software is required. As such, state is human-readable and easily backed up.
 Note however, that state files are not intended to be modified by the user.
 
-Some configuration is done via the Cascade CLI (adding zones and HSMs), other
-configuration is done by editing on-disk policy and application configuration
-files and instructing the Cascade daemon via the CLI to reload them.
+Some configuration is done via the Cascade command line interface (CLI), such
+as adding zones and HSMs. Other configuration is done by editing policy and
+application configuration files and instructing the Cascade daemon via the
+CLI to reload them.
 
 The Cascade daemon updates its on-disk state files periodically, and when
 signalled to stop, reloading them on next start.
 
 As Cascade outsources PKCS#11 support to :program:`kmip2pkcs11`, it does not
-require access to PKCS#11 related configuration files or other PKCS#11 module
+require access to related configuration files or other vendor specific module
 dependencies.
 
 Robustness

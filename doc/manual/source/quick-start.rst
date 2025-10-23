@@ -60,7 +60,7 @@ systemd features used instead.
    .. group-tab:: Without systemd
 
         When using Cascade without systemd, you need to configure the listen
-        address in Cascade's ``config.toml`` in the ``[servers]`` section:
+        address in the ``[server]`` section of Cascade's ``config.toml``:
 
         .. code-block:: text
 
@@ -84,29 +84,24 @@ After configuring Cascade, you can begin adding zones. Cascade supports zones
 sourced from a local file or fetched from another nameserver using XFR 
 :term:`zone transfers <Zone transfer>`.
 
-.. Note:: No TSIG or passthrough support yet.
+.. Note:: The current version of Cascade does not yet support TSIG 
+   authenticated XFR nor can it pass through a signed zone intact. Any DNSSEC
+   records will be stripped from the zone before signing. We expect to add 
+   support for these features soon.
 
-   The current version of Cascade does not yet support TSIG authenticated XFR
-   nor can it pass through a signed zone intact, any DNSSEC records will be
-   stripped from the zone before signing. We expect to add support for these
-   features soon.
-
-Zones take a lot of their settings from policy.
-
-Policies allow easy re-use of settings across multiple zones and control
-things like whether or not zones should be reviewed and how, what DNSSEC
-settings should be used to sign the zone, and more.
+Zones take a lot of their settings from policy. Policies allow easy re-use of
+settings across multiple zones and control things like whether or not zones
+should be reviewed and how, what DNSSEC settings should be used to sign the
+zone, and more.
 
 Adding a policy is done by creating a file. To make it easy to get started we
-provide a default policy template so we'll use that to create a policy for our
-zone to use.
+provide a default policy template so we'll use that to create a policy for
+our zone to use. The name of the policy is taken from the file name. The
+directory to save the policy file to is determined by the
+:option:`policy-dir` setting as configured in
+:file:`/etc/cascade/config.toml`. 
 
-The name of the policy is taken from the filename. The directory to save the
-policy file to is determined by the ``policy-dir`` setting as configured in
-:file:`/etc/cascade/config.toml`. The filename can be any valid filename and
-will be used as the name of the policy.
-
-In the example below the :command:`sudo tee` command is needed because the
+In the example below, the :command:`sudo tee` command is needed because the
 default policy directory is not writable by the current user.
 
 .. Tip::
@@ -123,9 +118,9 @@ default policy directory is not writable by the current user.
 Signing Your First Zone
 -----------------------
 
-Adding a zone to Cascade will cause Cascade to attempt to load, sign and
-publish it. If you configured review hooks, they will be executed (and may
-intentionally prevent your zone reaching publication).
+Adding a zone will trigger Cascade to load, sign and publish it. If you have
+configured :doc:`review-hooks`, they will be executed and may intentionally
+prevent your zone reaching publication.
 
 To add a zone use:
 
@@ -133,7 +128,8 @@ To add a zone use:
 
    cascade zone add --source <file-path|ip-address> --policy default <zone-name>
 
-Cascade will now generate signing keys for the zone and attempt to load and sign it.
+Cascade will now generate signing keys for the zone and attempt to load and
+sign it.
 
 Checking the Result
 -------------------
@@ -169,8 +165,9 @@ From the above you can see that the signed zone can be retrieved from
 
     dig @127.0.0.1 -p 4543 AXFR example.com
 
-If you have the BIND `dnssec-verify <https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_
-tool installed you can check that the zone is correctly DNSSEC signed:
+If you have the BIND `dnssec-verify
+<https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_
+tool installed, you can check that the zone is correctly DNSSEC signed:
 
 .. code-block:: bash
 

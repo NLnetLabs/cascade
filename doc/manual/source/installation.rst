@@ -25,9 +25,7 @@ started.
          -  Debian Bookworm 12
          -  Debian Bullseye 11
 
-       Packages for the ``amd64``/``x86_64`` architecture are available for
-       all listed versions. In addition, we offer ``armhf`` architecture
-       packages for Debian/Raspbian Bullseye, and ``arm64`` for Buster.
+       Packages are available for the ``amd64``/``x86_64`` architecture only.
        
        First update the :program:`apt` package index: 
 
@@ -179,7 +177,7 @@ started.
    .. group-tab:: RHEL
 
        To install a Cascade package, you need Red Hat Enterprise Linux
-       (RHEL) 8 or 9, or compatible operating system such as Rocky Linux.
+       (RHEL) 8, 9 or 10 or compatible operating system such as Rocky Linux.
        Packages are available for the ``amd64``/``x86_64`` architecture only.
        
        First create a file named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`,
@@ -259,9 +257,10 @@ Updating
    an older version.
 
    Before updating, delete all state and policy files. Note that **this will
-   delete signing keys stored on disk**. Signing keys stored in HSMs will NOT
-   be affected but Cascade will no longer know about them. If left behind HSM
-   signing keys are no longer wanted you will need to remove them manually.
+   delete signing keys stored on disk**. Signing keys stored in HSMs will
+   **not** be affected but Cascade will no longer know about them. If HSM
+   signing keys that are left behind are no longer wanted, you will need to
+   remove them manually.
 
    First stop Cascade, using systemd if in use on your system:
 
