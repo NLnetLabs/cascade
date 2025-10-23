@@ -257,9 +257,10 @@ Updating
    an older version.
 
    Before updating, delete all state and policy files. Note that **this will
-   delete signing keys stored on disk**. Signing keys stored in HSMs will NOT
-   be affected but Cascade will no longer know about them. If left behind HSM
-   signing keys are no longer wanted you will need to remove them manually.
+   delete signing keys stored on disk**. Signing keys stored in HSMs will
+   **not** be affected but Cascade will no longer know about them. If HSM
+   signing keys that are left behind are no longer wanted, you will need to
+   remove them manually.
 
    First stop Cascade, using systemd if in use on your system:
 
