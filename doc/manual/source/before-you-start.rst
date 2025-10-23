@@ -27,7 +27,7 @@ clearly intended to offer continuity and a migration path for current users,
 but Cascade will also offer superior performance, flexibility and user
 experience.
 
-.. important:: Cascade does not require the use of a Hardware Security 
+.. important:: Cascade does *not* require the use of a Hardware Security 
   Module (HSM). It can make use of on-disk key files and, if desired, use 
   PKCS#11 and KMIP compatible HSMs.
 
@@ -50,7 +50,7 @@ Cascade consists of three main components and an optional fourth:
   key rolls. It is invoked as needed by the :program:`cascaded` daemon. 
 
 - The *optional* :program:`kmip2pkcs11` daemon, which is only required when
-  using an PKCS#11 compatible :doc:`HSM <hsms>`. 
+  using a PKCS#11 compatible :doc:`HSM <hsms>`. 
 
 Supported Inputs/Outputs
 ------------------------
@@ -75,7 +75,7 @@ Cascade is able to run with fairly limited CPU and memory. Exact figures are
 not yet available, but in principle more CPU cores allow for more parallel 
 operations and more memory makes it possible to load and sign larger zones.
 
-.. note:: During testing, Cascade currently uses using about 30GiB of RAM 
+.. hint:: During testing, Cascade currently uses using about 30GiB of RAM 
    when signing a ~1GB zone file with about ~25M resource records and 
    adding ~10M records while signing.
 
