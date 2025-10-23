@@ -11,6 +11,10 @@ An [alpha release](https://github.com/NLnetLabs/cascade/releases) is
 available now, we encourage you to test it. Read our [comprehensive
 documentation](https://cascade.docs.nlnetlabs.nl/) to get started.
 
+Based on your feedback, we will continue work to offer a production grade
+release of Cascade in the first half of 2026. Please do *not* use the current
+codebase in production.
+
 If you have questions, suggestions or feature requests, don't hesitate to
 create an [issue on GitGub](https://github.com/NLnetLabs/cascade/issues),
 send us [an email](mailto:cascade@nlnetlabs.nl) or mention us on
@@ -66,8 +70,3 @@ compatible systems such as Rocky Linux.
 Alternatively, you can build from the source code using Cargo, Rust’s build
 system and package manager.
 
-## Join Us On Our Journey
-
-Based on your feedback, we will continue work to offer a production grade
-release of Cascade in the first half of 2026. Please do not use the current
-codebase in production.
