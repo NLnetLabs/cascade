@@ -76,8 +76,8 @@ not yet available, but in principle more CPU cores allow for more parallel
 operations and more memory makes it possible to load and sign larger zones.
 
 .. hint:: During testing, Cascade currently uses using about 30GiB of RAM 
-   when signing a ~1GB zone file with about ~25M resource records and 
-   adding ~10M records while signing.
+   when signing a 1GiB zone file with about 25 million resource records and 
+   adding roughly 10 million records while signing.
 
 Right now, signing speed is not likely to be a bottleneck for most use cases,
 but there are many speed improvements in the pipeline, especially when using
