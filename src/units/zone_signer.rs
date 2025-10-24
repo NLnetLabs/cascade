@@ -35,6 +35,7 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use log::{debug, error, info, trace, Level};
 use log::{log_enabled, warn};
+use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
 use tokio::select;
@@ -990,7 +991,9 @@ impl ZoneSigner {
                     updater_tx: &updater_tx,
                 };
 
-                task.execute().map(|_| start.elapsed())
+                rayon::iter::split(task, SignTask::split)
+                    .try_for_each(|task| task.execute())
+                    .map(|_| start.elapsed())
             }
         });
 
@@ -1369,34 +1372,12 @@ impl SignTask<'_> {
     /// or smaller.
     const BATCH_SIZE: usize = 4096;
 
-    /// Execute this task.
-    ///
-    /// If the task is too big, it will be split into two and executed through
-    /// Rayon.  This follows Rayon's concurrency paradigm, known as Cilk-style
-    /// parallelism.  It's ideal for Rayon's work-stealing implementation.
-    pub fn execute(self) -> Result<(), SigningError> {
-        if self.range.len() <= Self::BATCH_SIZE {
-            // This task should take little enough time that we'll do it all
-            // on this thread, immediately.
-
-            self.execute_now()
-        } else {
-            // Split the task into two and allow Rayon to execute them in
-            // parallel if it can.
-
-            let (a, b) = self.split();
-            match rayon::join(|| a.execute(), || b.execute()) {
-                (Ok(()), Ok(())) => Ok(()),
-                (Err(err), Ok(())) | (Ok(()), Err(err)) => Err(err),
-                // TODO: Do we want to combine errors somehow?
-                (Err(a), Err(_b)) => Err(a),
-            }
-        }
-    }
-
     /// Split this task in two.
-    fn split(self) -> (Self, Self) {
-        debug_assert!(self.range.len() > Self::BATCH_SIZE);
+    fn split(self) -> (Self, Option<Self>) {
+        // If the range is too small, don't split it.
+        if self.range.len() <= Self::BATCH_SIZE {
+            return (self, None);
+        }
 
         // Just split the apparent range in two.
         let midpoint = self.range.start + self.range.len() / 2;
@@ -1408,15 +1389,15 @@ impl SignTask<'_> {
                 range: left_range,
                 ..self.clone()
             },
-            Self {
+            Some(Self {
                 range: right_range,
                 ..self.clone()
-            },
+            }),
         )
     }
 
-    /// Execute this task right here.
-    fn execute_now(self) -> Result<(), SigningError> {
+    /// Execute this task immediately.
+    fn execute(self) -> Result<(), SigningError> {
         // Determine the true range we want to sign.
 
         if self.range.is_empty() {
