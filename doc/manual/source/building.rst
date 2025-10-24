@@ -153,7 +153,7 @@ overwrite an existing version:
         
 .. code-block:: text
 
-    cargo install --locked --force --git https://github.com/nlnetlabs/cascade --tag 0.1.0-alpha2
+    cargo install --locked --force --git https://github.com/nlnetlabs/cascade --tag 0.1.0-alpha3
 ..  cargo install --locked --force cascade --version 0.1.0-alpha
 
 Make sure to install a compatible version of :program:`dnst`.

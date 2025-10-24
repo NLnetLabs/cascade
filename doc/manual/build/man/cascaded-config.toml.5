@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-CONFIG.TOML" "5" "Oct 17, 2025" "0.1.0-alpha2" "Cascade"
+.TH "CASCADED-CONFIG.TOML" "5" "Oct 24, 2025" "0.1.0-alpha3" "Cascade"
 .SH NAME
 cascaded-config.toml \- Cascade configuration file
 .sp
@@ -230,13 +230,19 @@ If it is a terminal, ANSI escape codes may be used to style the output.
 type \fBsyslog\fP: Logs are written to the UNIX syslog.
 .sp
 This option is only supported on UNIX systems.
-.INDENT 2.0
-.INDENT 3.5
+.UNINDENT
+.sp
 Changed in version 0.1.0\-alpha2: Added types \fBstdout\fP and \fBstderr\fP which should be used instead of
 \fBfile\fP values \fB/dev/stdout\fP and \fB/dev/stderr\fP which do not work
 properly in some cases, e.g. when running under systemd.
 
-.UNINDENT
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+When using systemd, \fBsyslog\fP and \fBstdout\fP are the most reliable
+options. Systemd environments are often heavily isolated, making
+file\-based logging difficult.
 .UNINDENT
 .UNINDENT
 .UNINDENT

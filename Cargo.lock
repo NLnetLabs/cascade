@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "cascade"
-version = "0.1.0-alpha2"
+version = "0.1.0-alpha3"
 dependencies = [
  "anstream",
  "arc-swap",

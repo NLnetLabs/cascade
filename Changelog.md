@@ -14,20 +14,57 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-alpha3 'Rue des Cascades'
 
-Released yyyy-mm-dd.
+Released 2025-10-24.
 
 ### Breaking changes
-### New
+
+- Cascade now loads configuration files when it (re)starts, instead of waiting
+  for an explicit `cascade config reload` command. ([#258] by @bal-e)
+
 ### Bug fixes
-### Other changes
+
+- The Cascade CLI only produces color output on terminals, while respecting
+  relevant environment variables. Previously it would unconditionally output
+  color, even when called from a script or in a pipeline. ([#256] by
+  @tertsdiepraam)
+
+- Errors from `cascade keyset` will no longer halt the pipeline ([#265] by
+  @tertsdiepraam)
+
+- Resolve systemd startup failure ([#233] by @ximon18)
+
 ### Documentation improvements
-### Known issues
+
+- General refinement ([#239], [#240], [#241], [#257], [#263], [#264] by
+  @AlexanderBand)
+- Expand HSM documentation ([#236], [#246], [#259] by @jpmens)
+- Add man page for `kmip2pkcs11` ([#260] by @mozzieongit)
+
 ### Acknowledgements
 
+Many thanks go to @jpmens and @bortzmeyer for trying out the alpha release of
+Cascade and extensively reporting the issues they found, even contributing
+documentation.
 
-## 0.1.0-alpha2 "Cascader la vertu'
+[#233]: https://github.com/NLnetLabs/cascade/pull/233
+[#236]: https://github.com/NLnetLabs/cascade/pull/236
+[#239]: https://github.com/NLnetLabs/cascade/pull/239
+[#240]: https://github.com/NLnetLabs/cascade/pull/240
+[#241]: https://github.com/NLnetLabs/cascade/pull/241
+[#246]: https://github.com/NLnetLabs/cascade/pull/246
+[#256]: https://github.com/NLnetLabs/cascade/pull/256
+[#257]: https://github.com/NLnetLabs/cascade/pull/257
+[#258]: https://github.com/NLnetLabs/cascade/pull/258
+[#259]: https://github.com/NLnetLabs/cascade/pull/259
+[#260]: https://github.com/NLnetLabs/cascade/pull/260
+[#263]: https://github.com/NLnetLabs/cascade/pull/263
+[#264]: https://github.com/NLnetLabs/cascade/pull/264
+[#265]: https://github.com/NLnetLabs/cascade/pull/265
+
+
+## 0.1.0-alpha2 'Cascader la vertu'
 
 Released 2025-10-17.
 
