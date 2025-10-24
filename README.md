@@ -5,12 +5,11 @@
 [![Documentation Status](https://app.readthedocs.org/projects/cascade-signer/badge/?version=latest)](https://cascade.docs.nlnetlabs.nl/)
 [![Mastodon Follow](https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social)](https://social.nlnetlabs.nl/@nlnetlabs)
 
-Cascade is a flexible DNSSEC signing pipeline. 
+Cascade is a friendly DNSSEC signing pipeline. 
 
 An [alpha release](https://github.com/NLnetLabs/cascade/releases) is
 available now, we encourage you to test it. Read our [comprehensive
 documentation](https://cascade.docs.nlnetlabs.nl/) to get started.
-
 Based on your feedback, we will continue work to offer a production grade
 release of Cascade in the first half of 2026. Please do *not* use the current
 codebase in production.
@@ -32,11 +31,11 @@ several stages, letting you review and approve with automation at each step:
 
 ### Flexible Signing
 
-Cascade does *not* require a Hardware Security Module (HSM) to operate. It is
-able to use OpenSSL and ring software cryptography to generate keys in
-on-disk files. For operators wishing to use an HSM, Cascade can connect to
-KMIP and PKCS#11 compatible
-[HSMs](https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html).
+Get started easily with sensible default settings based on industry best 
+practices. Cascade can generate and use on-disk key files and does *not 
+require* a Hardware Security Module (HSM) to operate. For operators 
+wishing to use an HSM, Cascade can connect to [PKCS#11 and KMIP 
+compatible HSMs](https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html).
 
 ### Bespoke Zone Verification
 
@@ -54,19 +53,12 @@ Cascade gives you tight control over [key
 management](https://cascade.docs.nlnetlabs.nl/en/latest/key-management.html),
 automation of key rolls and the DNSSEC signing process.
 
-### Robustness
-
-Cascade is written in the Rust programming language making it significantly
-less likely to crash or suffer from memory safety issues, and at the same
-time making it easier to leverage the higher core count of modern computers
-via Rust's "fearless concurrency" when needed.
-
 ## Installation
 
-Getting started with Cascade is really easy by installing a binary package
-for either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL) and
-compatible systems such as Rocky Linux.
-
-Alternatively, you can build from the source code using Cargo, Rust’s build
-system and package manager.
+Install Cascade from a [binary 
+package](https://cascade.docs.nlnetlabs.nl/en/latest/installation.html) for 
+either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL) and compatible 
+systems, such as Rocky Linux. Alternatively, you can [build from the source 
+code](https://cascade.docs.nlnetlabs.nl/en/latest/building.html) using Cargo, 
+Rust’s build system and package manager.
 
