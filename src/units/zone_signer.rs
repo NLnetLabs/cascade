@@ -811,6 +811,7 @@ impl ZoneSigner {
         .await
         .unwrap();
         let sort_time = sort_start.elapsed();
+        let unsigned_rr_count = records.len();
 
         {
             let mut v = status.write().await;
