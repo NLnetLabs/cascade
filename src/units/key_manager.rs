@@ -1157,8 +1157,6 @@ impl KeySetCommand {
             Err(err) => {
                 let err_string = err.err.to_string();
 
-                // TODO: Possibly halt the zone depending on the keyset exit code
-
                 // Determine whether and what to record in zone history
                 let record = match self.recording_mode {
                     RecordingMode::DoNotRecord => false,
