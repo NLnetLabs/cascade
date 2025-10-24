@@ -619,6 +619,7 @@ impl ZoneSigner {
         records.push(soa_rr.clone());
         let walk_time = walk_start.elapsed();
         let unsigned_rr_count = records.len();
+        debug!("[ZS] Collected {} records", records.len());
 
         {
             let mut v = status.write().await;
@@ -644,6 +645,10 @@ impl ZoneSigner {
                 records.push(rec.flatten_into());
             }
         }
+        debug!(
+            "[ZS] Have {} records after adding DNSKEY RRs",
+            records.len()
+        );
 
         debug!("Loading dnst keyset signing keys");
         status.write().await.current_action = "Loading signing keys".to_string();
@@ -812,6 +817,7 @@ impl ZoneSigner {
         .await
         .unwrap();
         let sort_time = sort_start.elapsed();
+        debug!("[ZS] Have {} records after sorting", records.len());
 
         {
             let mut v = status.write().await;
@@ -842,6 +848,10 @@ impl ZoneSigner {
             SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
         })?;
         let denial_time = denial_start.elapsed();
+        debug!(
+            "[ZS] Have {} records after NSEC(3) generation",
+            unsigned_records.len()
+        );
         let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
 
         {
