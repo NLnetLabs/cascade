@@ -20,11 +20,11 @@ Design and Architecture
 Why did you build this project in Rust?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Cascade is written in the Rust programming language making it significantly
-less likely to crash or suffer from memory safety issues, and at the same
-time making it easier to leverage the higher core count of modern computers
-via Rust's "`fearless concurrency
-<https://doc.rust-lang.org/book/ch16-00-concurrency.html>`_" when needed.
+Cascade is written in the Rust programming language, making it significantly
+less likely to crash or suffer from memory safety issues. When needed, Rust
+makes it easier to leverage the higher core count of modern computers through
+"`fearless concurrency
+<https://doc.rust-lang.org/book/ch16-00-concurrency.html>`_".
 
 .. seealso::
 
