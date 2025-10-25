@@ -135,6 +135,7 @@ Examples of things we're interested in:
    :caption: Reference
    :name: toc-reference
 
+   faq
    limitations
    glossary
 
