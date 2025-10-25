@@ -25,6 +25,7 @@ less likely to crash or suffer from memory safety issues, and at the same
 time making it easier to leverage the higher core count of modern computers
 via Rust's "`fearless concurrency
 <https://doc.rust-lang.org/book/ch16-00-concurrency.html>`_" when needed.
+
 .. seealso::
 
    :doc:`architecture`
