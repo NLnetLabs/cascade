@@ -24,8 +24,9 @@ server](https://www.dns-oarc.net/oarc/services/chat).
 
 ## Feature Set
 
-Cascade offers a pipeline where zones are loaded, signed and published in
-several stages, letting you review and approve with automation at each step:
+The Cascade pipeline runs as a single binary, without the need for additional
+database software. Zones are loaded, signed and published in several stages,
+letting you review and approve with automation at each step:
 
 ![cascade-pipeline](https://github.com/user-attachments/assets/8427c617-bb73-44a4-a47e-90e9699157e0)
 

@@ -4,8 +4,9 @@ Architecture
 The Pipeline
 ------------
 
-Zone changes are said to cascade through a pipeline consisting of several
-stages, letting you review and approve at each step:
+The Cascade pipeline runs as a single binary and no additional database
+software is required. Zone changes cascade through several stages, letting 
+you review and approve at each step:
 
 .. figure:: img/cascade-pipeline.svg
    :width: 100%

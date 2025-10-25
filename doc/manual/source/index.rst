@@ -24,9 +24,11 @@ consider the current :doc:`limitations`.
 Cascade has the following design goals:
 
 Flexibility
-   Run Cascade the way that you want: from a :doc:`package or a Docker image
-   <installation>`, on-premise or in the cloud, with keys on disk or a 
-   :doc:`Hardware Security Module <hsms>` of your choice.
+   The Cascade pipeline runs as a single binary and does not require
+   additional database software. Install with ease using a :doc:`binary
+   package <installation>` or build from source. Run on-premise or in the
+   cloud, with keys on disk or a :doc:`Hardware Security Module <hsms>` of
+   your choice.
 
 Sensible defaults
    :doc:`Get started easily <quick-start>` with default settings based on 
