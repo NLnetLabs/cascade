@@ -13,10 +13,6 @@ Frequently Asked Questions
 Design and Architecture
 -----------------------
 
-
-.. Old reference
-.. _My project isn't building correctly:
-
 Why did you build this project in Rust?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -28,8 +24,8 @@ makes it easier to leverage the higher core count of modern computers through
 
 .. seealso::
 
-   :doc:`architecture`
-      An overview of Cascade's design.
+   `Rust Programming Language website <https://rust-lang.org>`_
+      An overview of Rust's feature set.
 
 
 Do I need separate database software to run Cascade?
