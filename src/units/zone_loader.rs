@@ -310,7 +310,7 @@ impl ZoneLoader {
                         &zone_updated_tx,
                         receipt_info,
                     )
-                    .await?
+                    .await
                 }
                 ZoneLoadSource::Server { .. } => {
                     zone_maintainer
@@ -334,8 +334,7 @@ impl ZoneLoader {
         zone_maintainer: Arc<ZoneMaintainer<KS, CF>>,
         zone_updated_tx: &Sender<(StoredName, Serial)>,
         receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
-    ) -> Result<(), Terminated>
-    where
+    ) where
         KS: Deref + Send + Sync + 'static,
         KS::Target: KeyStore,
         <KS::Target as KeyStore>::Key: Clone + Debug + Display + Sync + Send + 'static,
@@ -348,13 +347,15 @@ impl ZoneLoader {
         };
         zone_maintainer.remove_zone(id).await;
 
-        let (zone, _) =
+        let Ok((zone, _)) =
             Self::register_primary_zone(center, name.clone(), &path, zone_updated_tx, receipt_info)
-                .await?;
+                .await
+        else {
+            return;
+        };
 
         // TODO: Handle (or iron out) potential errors here.
         let _ = zone_maintainer.insert_zone(zone).await;
-        Ok(())
     }
 
     async fn register_primary_zone(
@@ -374,7 +375,7 @@ impl ZoneLoader {
             .await
             .map_err(|_| Terminated)?
             .inspect_err(|err| {
-                halt_zone(&center, &zone_name, true, err);
+                halt_zone(&center, &zone_name, false, err);
                 error!("[ZL]: {err}");
             })
             .map_err(|_| Terminated)?
