@@ -64,11 +64,11 @@ Assuming you already have :program:`curl` installed, you can install
 Alternatively, visit the `Rust website
 <https://www.rust-lang.org/tools/install>`_ for other installation methods.
 
-During installation :program:`rustup` will attempt to configure the ``PATH``.
-Modifications to ``PATH`` may not take effect until the console is restarted,
-or the user is logged out, or it may not succeed at all. If, after
-installation, running :command:`rustc --version` in the console fails, this
-is the most likely reason.
+.. tip:: During installation :program:`rustup` will attempt to configure the
+  ``PATH``. Modifications to ``PATH`` may not take effect until the console 
+  is restarted, or the user is logged out, or it may not succeed at all. If,
+  after installation, running :command:`rustc --version` in the console 
+  fails, this is the most likely reason.
 
 Building
 --------
