@@ -177,7 +177,7 @@ ttl = "1h"
 # into the past.
 #
 # Independent offsets can be set for each type of record.  An integer value is
-# intepreted as seconds;  A string is interpreted as time string with a number
+# interpreted as seconds;  A string is interpreted as time string with a number
 # followed by a unit (i.e. "s", "m", "h", "d", or "w"). Inception times will be
 # calculated as 'now - offset' at the time of signing.
 dnskey.signature-inception-offset = "1d"
@@ -288,7 +288,7 @@ serial-policy = "date-counter"
 # An integer value is interpreted as seconds. A string is interpreted as time
 # string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
 # Inception times will be calculated as 'now - offset' at the time of signing.
-dsignature-inception-offset = "1d"
+signature-inception-offset = "1d"
 
 # The lifetime of generated signatures.
 #
@@ -298,7 +298,7 @@ dsignature-inception-offset = "1d"
 #
 # An integer value is interpreted as seconds. A string is interpreted as time
 # string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
-dsignature-lifetime = "2w"
+signature-lifetime = "2w"
 
 # The amount of time remaining before expiry when signatures will be
 # regenerated.
