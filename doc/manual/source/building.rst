@@ -46,7 +46,8 @@ Rust
 
 The Rust compiler runs on, and compiles to, a great number of platforms,
 though not all of them are equally supported. The official `Rust Platform
-Support`_ page provides an overview of the various support levels.
+Support <https://doc.rust-lang.org/nightly/rustc/platform-support.html>`_
+page provides an overview of the various support levels.
 
 While some system distributions include Rust as system packages, Cascade
 relies on a relatively new version of Rust, currently |rustversion| or newer.
