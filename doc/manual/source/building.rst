@@ -33,9 +33,9 @@ OpenSSL
 """""""
 
 Your system will likely have a package manager that will allow you to install
-OpenSSL in a few easy steps. For Krill, you will need :command:`libssl-dev`,
-sometimes called :command:`openssl-dev`. On Debian-like Linux distributions,
-this should be as simple as running:
+OpenSSL in a few easy steps. For Cascade, you will need
+:command:`libssl-dev`, sometimes called :command:`openssl-dev`. On
+Debian-like Linux distributions, this should be as simple as running:
 
 .. code-block:: bash
 
@@ -182,38 +182,3 @@ the repository you can use the ``--git`` and ``--branch`` options:
 .. Seealso:: For more installation options refer to the `Cargo book
              <https://doc.rust-lang.org/cargo/commands/cargo-install.html#install-options>`_.
 
-Statically Linked Cascade
--------------------------
-
-While Rust binaries are mostly statically linked, they depend on
-:program:`libc` which, as least as :program:`glibc` that is standard on Linux
-systems, is somewhat difficult to link statically. This is why Cascade
-binaries are actually dynamically linked on :program:`glibc` systems and can
-only be transferred between systems with the same :program:`glibc` versions.
-
-However, Rust can build binaries based on the alternative implementation
-named :program:`musl`, allowing you to statically link them. Building such
-binaries is easy with :program:`rustup`. You need to install :program:`musl`
-and the correct :program:`musl` target such as ``x86_64-unknown-linux-musl``
-for x86\_64 Linux systems. Then you can just build Cascade for that
-target.
-
-On a Debian (and presumably Ubuntu) system, enter the following:
-
-.. code-block:: bash
-
-   sudo apt-get install musl-tools
-   rustup target add x86_64-unknown-linux-musl
-   cargo build --target=x86_64-unknown-linux-musl --release
-
-Platform Specific Instructions
-------------------------------
-
-For some platforms, :program:`rustup` cannot provide binary releases to
-install directly. The `Rust Platform Support`_ page lists
-several platforms where official binary releases are not available, but Rust
-is still guaranteed to build. For these platforms, automated tests are not
-run so it’s not guaranteed to produce a working build, but they often work to
-quite a good degree.
-
-.. _Rust Platform Support:  https://doc.rust-lang.org/nightly/rustc/platform-support.html
