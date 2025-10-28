@@ -33,13 +33,16 @@ OpenSSL
 """""""
 
 Your system will likely have a package manager that will allow you to install
-OpenSSL in a few easy steps. For Cascade, you will need
-:command:`libssl-dev`, sometimes called :command:`openssl-dev`. On
-Debian-like Linux distributions, this should be as simple as running:
+OpenSSL in a few easy steps. On Debian and Ubuntu this is usually
+:command:`libssl-dev`. You will also need :command:`pkg-config` for discovery
+of system libraries. On Red Hat Enterprise (RHEL) you will most likely need
+to install :command:`openssl-devel`. 
+
+On Debian-like Linux distributions it should be as simple as running:
 
 .. code-block:: bash
 
-    apt install libssl-dev openssl pkg-config
+    apt install libssl-dev pkg-config
 
 Rust
 """"
