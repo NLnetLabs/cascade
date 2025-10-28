@@ -180,9 +180,9 @@ The ``[key-manager]`` section.
    security of the zone.
 
    Independent validity times are set for KSKs, ZSKs, and CSKs.  An integer
-   value will be interpreted as seconds, 'forever' means keys never expire, and
-   a time string such as "365d" will be interpreted as 365 days. Supported
-   suffixes include "s", "m", "h", "d" and "w".
+   value will be interpreted as seconds, ``"forever"`` means keys never expire,
+   and a time string such as ``"365d"`` will be interpreted as 365 days.
+   Supported suffixes include ``s``, ``m``, ``h``, ``d`` and ``w``.
 
 .. option:: ksk.auto-start = true
 .. option:: zsk.auto-start = true
@@ -193,7 +193,7 @@ The ``[key-manager]`` section.
 
    If this is enabled, Cascade will automatically start rolling over keys when
    they expire (as per ``validity``).  When using this setting, ``validity`` must
-   not be set to ``forever``.
+   not be set to ``"forever"``.
 
    The first step in a rollover will be to generate new keys to replace old
    ones. By disabling this setting, the user can manually control how new keys
@@ -282,9 +282,10 @@ section controls its behaviour towards them.
    into the past.
 
    Independent offsets can be set for each type of record.  An integer value is
-   interpreted as seconds;  A string is interpreted as time string with a number
-   followed by a unit (i.e. "s", "m", "h", "d", or "w"). Inception times will be
-   calculated as ``now - offset`` at the time of signing.
+   interpreted as seconds.  A string is interpreted as a time string consisting
+   of a number  followed by a unit (i.e. ``s``, ``m``, ``h``, ``d``, or
+   ``w``). Inception times will be calculated as ``now - offset`` at the time
+   of signing.
 
 .. option:: dnskey.signature-lifetime = "2w"
 .. option:: cds.signature-lifetime = "2w"
@@ -295,9 +296,10 @@ section controls its behaviour towards them.
    invalid.  To keep the zone valid, the signatures should be regenerated before
    they expire; see ``signature-remain-time`` to control regeneration time.
 
-   Independent lifetimes can be set for each type of record.  An integer value
-   is interpreted as seconds. A string is interpreted as time string with a
-   number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+   Independent lifetimes can be set for each type of record.  An integer
+   value is interpreted as seconds.  A string is interpreted as a time string
+   consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``, ``d``,
+   or ``w``).
 
 .. option:: dnskey.signature-remain-time = "1w"
 .. option:: cds.signature-remain-time = "1w"
@@ -312,8 +314,9 @@ section controls its behaviour towards them.
    setting.
 
    Independent waiting times can be set for each type of record.  An integer
-   value is interpreted as seconds. A string is interpreted as time string with
-   a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+   value is interpreted as seconds.  A string is interpreted as a time string
+   consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``, ``d``,
+   or ``w``).
 
 How keys are generated.
 +++++++++++++++++++++++
@@ -398,9 +401,10 @@ zone) are signed by the key manager, rather than the zone signer; see the
    future. To prevent such cases, this setting allows the inception time to be
    offset into the past.
 
-   An integer value is interpreted as seconds. A string is interpreted as time
-   string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
-   Inception times will be calculated as ``now - offset`` at the time of signing.
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``). Inception times will be calculated as ``now - offset`` at
+   the time of signing.
 
 .. option:: signature-lifetime = "2w"
 
@@ -410,8 +414,9 @@ zone) are signed by the key manager, rather than the zone signer; see the
    invalid.  To keep the zone valid, the signatures should be regenerated before
    they expire; see ``signature-remain-time`` to control regeneration time.
 
-   An integer value is interpreted as seconds. A string is interpreted as time
-   string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
 
 .. option:: signature-remain-time = "1w"
 
@@ -424,8 +429,9 @@ zone) are signed by the key manager, rather than the zone signer; see the
    signatures will be regenerated; it must be less than the ``signature-lifetime``
    setting.
 
-   An integer value is interpreted as seconds. A string is interpreted as time
-   string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
 
 How denial-of-existence records are generated.
 ++++++++++++++++++++++++++++++++++++++++++++++
