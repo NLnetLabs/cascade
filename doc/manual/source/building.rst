@@ -1,15 +1,15 @@
 Building From Source
 ====================
 
-There are two things you need to build Cascade: a C toolchain and Rust. You
-can run Cascade on any operating system and CPU architecture where you can
-fulfil these requirements.
+There are three things you need to build Cascade: a C toolchain, OpenSSL, and
+Rust. You can run Cascade on any operating system and CPU architecture
+where you can fulfil these requirements.
 
 Dependencies
 ------------
 
-To get started, you need a C toolchain because the cryptographic primitives
-used by Cascade require it. You also need Rust, because that's the
+To get started, you need a C toolchain and OpenSSL because the cryptographic
+primitives used by Cascade require it. You also need Rust, because that's the
 programming language that Cascade has been written in. Additionally, you need
 a few tools used by Cascade. However, they are installed together with
 Cascade in the steps below.
@@ -22,12 +22,24 @@ present. Your system probably has some easy way to install the minimum set of
 packages to build from C sources. For example, this command will install
 everything you need on Debian/Ubuntu:
 
-.. code-block:: text
+.. code-block:: bash
 
   apt install build-essential
 
 If you are unsure, try to run :command:`cc` on a command line. If there is a
 complaint about missing input files, you are probably good to go.
+
+OpenSSL
+"""""""
+
+Your system will likely have a package manager that will allow you to install
+OpenSSL in a few easy steps. For Krill, you will need :command:`libssl-dev`,
+sometimes called :command:`openssl-dev`. On Debian-like Linux distributions,
+this should be as simple as running:
+
+.. code-block:: bash
+
+    apt install libssl-dev openssl pkg-config
 
 Rust
 """"
@@ -44,7 +56,7 @@ We therefore suggest using the canonical Rust installation via a tool called
 Assuming you already have :program:`curl` installed, you can install
 :program:`rustup` and Rust by simply entering:
 
-.. code-block:: text
+.. code-block:: bash
 
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
@@ -81,7 +93,7 @@ as simple as running:
 
   cargo install --locked cascade dnst
 
-.. code-block:: text
+.. code-block:: bash
 
   cargo install --locked --git https://github.com/nlnetlabs/cascade
   cargo install --locked --branch keyset --git https://github.com/nlnetlabs/dnst
@@ -98,7 +110,7 @@ Cascade, also install the KMIP to PKCS#11 relay with:
 
   cargo install --locked kmip2pkcs11
 
-.. code-block:: text
+.. code-block:: bash
 
   cargo install --locked --git https://github.com/nlnetlabs/kmip2pkcs11
 
@@ -107,7 +119,7 @@ Cascade's config file. Create the directory where you want to store the config
 (let's say ``./cascade`` for this example), and generate an example
 config file:
 
-.. code-block:: text
+.. code-block:: bash
 
   mkdir ./cascade
   cascade template config > ./cascade/config.toml
@@ -124,7 +136,7 @@ Updating
 If you want to update to the latest version of Cascade, it’s recommended
 to update Rust itself as well, using:
 
-.. code-block:: text
+.. code-block:: bash
 
     rustup update
 
@@ -139,7 +151,7 @@ Cascade release:
 
 Also for the KMIP to PKCS#11 relay if you are using it:
 
-.. code-block:: text
+.. code-block:: bash
 
     cargo install --locked --force --git https://github.com/nlnetlabs/kmip2pkcs11
 ..  cargo install --locked --force kmip2pkcs11
@@ -151,7 +163,7 @@ If you want to install a specific version of Cascade using Cargo, explicitly
 use the ``--version`` option. If needed, use the ``--force`` option to
 overwrite an existing version:
         
-.. code-block:: text
+.. code-block:: bash
 
     cargo install --locked --force --git https://github.com/nlnetlabs/cascade --tag 0.1.0-alpha3
 ..  cargo install --locked --force cascade --version 0.1.0-alpha
@@ -163,7 +175,7 @@ request <https://github.com/NLnetLabs/Cascade/pulls>`_, allowing you to
 easily try them out using Cargo. If you want to try a specific branch from
 the repository you can use the ``--git`` and ``--branch`` options:
 
-.. code-block:: text
+.. code-block:: bash
 
     cargo install --git https://github.com/NLnetLabs/cascade.git --branch main
     
