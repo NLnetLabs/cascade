@@ -150,7 +150,8 @@ Cascade release:
     cargo install --locked --force --branch keyset --git https://github.com/nlnetlabs/dnst
 ..  cargo install --locked --force cascade dnst
 
-Also for the KMIP to PKCS#11 relay if you are using it:
+If you intend to use a PKCS#11 compatible :doc:`HSM <hsms>`, make sure you
+also install the :program:`kmip2pkcs11` relay:
 
 .. code-block:: bash
 
