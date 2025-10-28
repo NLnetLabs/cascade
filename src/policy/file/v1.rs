@@ -981,6 +981,7 @@ mod tests {
               "10m",
               "10h",
               "10d",
+              "365d",
               "10w",
               "forever",
             ]
@@ -996,6 +997,7 @@ mod tests {
                 KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60)),
                 KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60)),
                 KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60 * 24)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(365 * 60 * 60 * 24)),
                 KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60 * 24 * 7)),
                 KeyValiditySpec::Forever,
             ]

@@ -80,10 +80,12 @@ required = false
 # security of the zone.
 #
 # Independent validity times are set for KSKs, ZSKs, and CSKs.  An integer
-# value will be interpreted as seconds; 'forever' means keys never expire.
-ksk.validity = "31536000" # TODO: "1Y"
-zsk.validity = "2592000" # TODO: "1M"
-csk.validity = "31536000"
+# value will be interpreted as seconds, 'forever' means keys never expire, and
+# a time string such as "365d" will be interpreted as 365 days. Supported
+# suffixes include "s", "m", "h", "d" and "w".
+ksk.validity = "365d"
+zsk.validity = "30d"
+csk.validity = "365d"
 
 # Whether to automatically start key rollovers.
 #
@@ -164,7 +166,7 @@ auto-remove = true
 #
 # TODO: Perhaps Cascade can automatically set this to the SOA minimum.  The
 #   key manager would have to be sent that information somehow.
-ttl = 3600 # TODO: "1h"
+ttl = "1h"
 
 # The offset for generated signature inceptions.
 #
@@ -175,10 +177,11 @@ ttl = 3600 # TODO: "1h"
 # into the past.
 #
 # Independent offsets can be set for each type of record.  An integer value is
-# intepreted as seconds; inception times will be calculated as 'now - offset'
-# at the time of signing.
-dnskey.signature-inception-offset = 86400 # TODO: "1d"
-cds.signature-inception-offset = 86400
+# intepreted as seconds;  A string is interpreted as time string with a number
+# followed by a unit (i.e. "s", "m", "h", "d", or "w"). Inception times will be
+# calculated as 'now - offset' at the time of signing.
+dnskey.signature-inception-offset = "1d"
+cds.signature-inception-offset = "1d"
 
 # The lifetime of generated signatures.
 #
@@ -186,10 +189,11 @@ cds.signature-inception-offset = 86400
 # invalid.  To keep the zone valid, the signatures should be regenerated before
 # they expire; see 'signature-remain-time' to control regeneration time.
 #
-# Independent lifetimes can be set for each type of record.  An integer value is
-# interpreted as seconds.
-dnskey.signature-lifetime = 1209600 # TODO: "2w"
-cds.signature-lifetime = 1209600
+# Independent lifetimes can be set for each type of record.  An integer value
+# is interpreted as seconds. A string is interpreted as time string with a
+# number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+dnskey.signature-lifetime = "2w"
+cds.signature-lifetime = "2w"
 
 # The amount of time remaining before expiry when signatures will be
 # regenerated.
@@ -201,9 +205,10 @@ cds.signature-lifetime = 1209600
 # setting.
 #
 # Independent waiting times can be set for each type of record.  An integer
-# value is interpreted as seconds.
-dnskey.signature-remain-time = 604800 # TODO: "1w"
-cds.signature-remain-time = 604800
+# value is interpreted as seconds. A string is interpreted as time string with
+# a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+dnskey.signature-remain-time = "1w"
+cds.signature-remain-time = "1w"
 
 # How keys are generated.
 [key-manager.generation]
@@ -280,9 +285,10 @@ serial-policy = "date-counter"
 # To prevent such cases, this setting allows the inception time to be offset
 # into the past.
 #
-# An integer value is interpreted as seconds; inception times will be calculated
-# as 'now - offset' at the time of signing.
-signature-inception-offset = 86400 # TODO: "1d"
+# An integer value is interpreted as seconds. A string is interpreted as time
+# string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+# Inception times will be calculated as 'now - offset' at the time of signing.
+dsignature-inception-offset = "1d"
 
 # The lifetime of generated signatures.
 #
@@ -290,8 +296,9 @@ signature-inception-offset = 86400 # TODO: "1d"
 # invalid.  To keep the zone valid, the signatures should be regenerated before
 # they expire; see 'signature-remain-time' to control regeneration time.
 #
-# An integer value is interpreted as seconds.
-signature-lifetime = 1209600 # TODO: "2w"
+# An integer value is interpreted as seconds. A string is interpreted as time
+# string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+dsignature-lifetime = "2w"
 
 # The amount of time remaining before expiry when signatures will be
 # regenerated.
@@ -302,8 +309,9 @@ signature-lifetime = 1209600 # TODO: "2w"
 # signatures will be regenerated; it must be less than the 'signature-lifetime'
 # setting.
 #
-# An integer value is interpreted as seconds.
-signature-remain-time = 604800 # TODO: "1w"
+# An integer value is interpreted as seconds. A string is interpreted as time
+# string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+signature-remain-time = "1w"
 
 # How denial-of-existence records are generated.
 [signer.denial]
