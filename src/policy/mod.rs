@@ -78,7 +78,7 @@ pub fn reload_all(
 
         // Filter for UTF-8 paths.
         let Ok(path) = Utf8PathBuf::from_path_buf(entry.path()) else {
-            log::warn!(
+            tracing::warn!(
                 "Ignoring potential policy '{}' as the path is non-UTF-8",
                 entry.path().display()
             );
@@ -91,7 +91,7 @@ pub fn reload_all(
             .expect("this path has a known parent directory")
             .starts_with('.')
         {
-            log::debug!("Ignoring hidden file '{path}' among policies");
+            tracing::debug!("Ignoring hidden file '{path}' among policies");
             continue;
         }
 
@@ -100,7 +100,7 @@ pub fn reload_all(
             .extension()
             .is_none_or(|e| !e.eq_ignore_ascii_case("toml"))
         {
-            log::warn!("Ignoring potential policy '{path}'; policies must end in '.toml'");
+            tracing::warn!("Ignoring potential policy '{path}'; policies must end in '.toml'");
             continue;
         }
 
@@ -112,7 +112,7 @@ pub fn reload_all(
             Ok(spec) => spec,
             // Ignore a directory ending in '.toml'.
             Err(err) if err.kind() == io::ErrorKind::IsADirectory => {
-                log::warn!("Ignoring potential policy '{path}'; policies must be files");
+                tracing::warn!("Ignoring potential policy '{path}'; policies must be files");
                 continue;
             }
             Err(err) => return Err(PolicyReloadError::Io(path, err.to_string())),
@@ -126,7 +126,7 @@ pub fn reload_all(
             spec.parse_into(&mut policy, zones, &mut on_change);
             policy
         } else {
-            log::info!("Loaded new policy '{name}'");
+            tracing::info!("Loaded new policy '{name}'");
             let policy = spec.parse(name);
             (on_change)(Change::PolicyAdded(policy.latest.clone()));
             policy
@@ -141,14 +141,14 @@ pub fn reload_all(
     for (name, policy) in policies.drain() {
         // If any zones are using this policy, keep it.
         if !policy.zones.is_empty() {
-            log::error!("The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy");
+            tracing::error!("The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy");
             let prev = new_policies.insert(name, policy);
             assert!(
                 prev.is_none(),
                 "'new_policies' and 'policies' are disjoint sets"
             );
         } else {
-            log::info!("Forgetting now-removed policy '{name}'");
+            tracing::info!("Forgetting now-removed policy '{name}'");
             (on_change)(Change::PolicyRemoved(policy.latest));
         }
     }

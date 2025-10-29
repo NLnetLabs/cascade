@@ -63,7 +63,7 @@ impl TsigStore {
                 else {
                     // 'enqueued_save' does not match what we set, so somebody
                     // else set it to 'None' first.  Don't do anything.
-                    log::trace!("Ignoring enqueued save due to race");
+                    tracing::trace!("Ignoring enqueued save due to race");
                     return;
                 };
 
@@ -73,9 +73,9 @@ impl TsigStore {
 
             // Save the TSIG store.
             match spec.save(&path) {
-                Ok(()) => log::debug!("Saved the TSIG store (to '{path}')"),
+                Ok(()) => tracing::debug!("Saved the TSIG store (to '{path}')"),
                 Err(err) => {
-                    log::error!("Could not save the TSIG store to '{path}': {err}");
+                    tracing::error!("Could not save the TSIG store to '{path}': {err}");
                 }
             }
         });
@@ -103,9 +103,9 @@ pub fn save_now(center: &Center) {
 
     // Save the TSIG store.
     match spec.save(&path) {
-        Ok(()) => log::debug!("Saved the TSIG store (to '{path}')"),
+        Ok(()) => tracing::debug!("Saved the TSIG store (to '{path}')"),
         Err(err) => {
-            log::error!("Could not save the TSIG store to '{path}': {err}");
+            tracing::error!("Could not save the TSIG store to '{path}': {err}");
         }
     }
 }
@@ -158,7 +158,7 @@ pub fn reload(center: &Arc<Center>) {
     let spec = match file::Spec::load(&path) {
         Ok(spec) => spec,
         Err(err) => {
-            log::error!("Could not reload the TSIG store: {err}");
+            tracing::error!("Could not reload the TSIG store: {err}");
             return;
         }
     };

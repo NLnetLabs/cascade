@@ -7,7 +7,7 @@ use domain::base::name::FromStrError;
 use domain::base::ToName;
 use domain::tsig::{Algorithm, AlgorithmError, Key, KeyName, KeyStore, NewKeyError};
 use domain::utils::base64::{self, DecodeError};
-use log::info;
+use tracing::info;
 
 #[allow(dead_code)]
 pub type KeyId = (KeyName, Algorithm);

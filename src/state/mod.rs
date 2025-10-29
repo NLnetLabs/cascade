@@ -32,9 +32,9 @@ pub fn save_now(center: &Center) {
 
     // Save the global state.
     match spec.save(&path) {
-        Ok(()) => log::debug!("Saved the global state (to '{path}')"),
+        Ok(()) => tracing::debug!("Saved the global state (to '{path}')"),
         Err(err) => {
-            log::error!("Could not save the global state to '{path}': {err}");
+            tracing::error!("Could not save the global state to '{path}': {err}");
         }
     }
 }

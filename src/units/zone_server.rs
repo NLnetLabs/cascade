@@ -33,9 +33,9 @@ use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
 use domain::zonetree::{StoredName, ZoneTree};
 use futures::Future;
-use log::{debug, error, info, warn};
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot, RwLock};
+use tracing::{debug, error, info, warn};
 
 use crate::api::{
     ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage,
@@ -564,10 +564,10 @@ impl ZoneServer {
                 let stderr = child.stderr.take().expect("we use Stdio::piped");
 
                 tokio::spawn(async move {
-                    let _: Result<_, _> = Self::process_output(stdout, log::Level::Info).await;
+                    let _: Result<_, _> = Self::process_output(stdout, false).await;
                 });
                 tokio::spawn(async move {
-                    let _: Result<_, _> = Self::process_output(stderr, log::Level::Warn).await;
+                    let _: Result<_, _> = Self::process_output(stderr, true).await;
                 });
                 tokio::spawn(async move {
                     let status = match child.wait().await {
@@ -610,14 +610,18 @@ impl ZoneServer {
 
     async fn process_output(
         pipe: impl tokio::io::AsyncRead + Unpin,
-        level: log::Level,
+        is_warn: bool,
     ) -> Result<(), std::io::Error> {
         use tokio::io::{AsyncBufReadExt, BufReader};
 
         let pipe = BufReader::new(pipe);
         let mut lines = pipe.lines();
         while let Some(line) = lines.next_line().await? {
-            log::log!(level, "{}", line);
+            if is_warn {
+                tracing::warn!("{}", line);
+            } else {
+                tracing::info!("{}", line);
+            }
         }
         Ok(())
     }

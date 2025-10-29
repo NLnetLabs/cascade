@@ -48,12 +48,12 @@ impl Spec {
         for (name, spec) in self.policies {
             let policy = match state.policies.remove(&name) {
                 Some(mut policy) => {
-                    log::trace!("Retaining existing policy '{name}'");
+                    tracing::trace!("Retaining existing policy '{name}'");
                     spec.parse_into(&mut policy, &mut on_change);
                     policy
                 }
                 None => {
-                    log::info!("Adding policy '{name}' from global state");
+                    tracing::info!("Adding policy '{name}' from global state");
                     let policy = spec.parse(&name);
                     (on_change)(Change::PolicyAdded(policy.latest.clone()));
                     policy
@@ -63,10 +63,10 @@ impl Spec {
         }
         for (name, policy) in state.policies.drain() {
             if !policy.zones.is_empty() {
-                log::error!("The policy '{name}' has been removed from the global state, but some zones are still using it; Cascade will preserve its internal copy");
+                tracing::error!("The policy '{name}' has been removed from the global state, but some zones are still using it; Cascade will preserve its internal copy");
                 new_policies.insert(name, policy);
             } else {
-                log::info!("Removing policy '{name}'");
+                tracing::info!("Removing policy '{name}'");
                 (on_change)(Change::PolicyRemoved(policy.latest));
             }
         }
@@ -79,17 +79,17 @@ impl Spec {
             .into_iter()
             .map(|name| match state.zones.take(&name) {
                 Some(zone) => {
-                    log::trace!("Retaining existing zone '{name}'");
+                    tracing::trace!("Retaining existing zone '{name}'");
                     zone
                 }
                 None => {
-                    log::info!("Adding zone '{name}' from global state");
+                    tracing::info!("Adding zone '{name}' from global state");
                     ZoneByName(Arc::new(Zone::new(name.clone())))
                 }
             })
             .collect();
         for zone in state.zones.drain() {
-            log::info!("Removing zone '{}'", zone.0.name);
+            tracing::info!("Removing zone '{}'", zone.0.name);
             (on_change)(Change::ZoneRemoved(zone.0.name.clone()));
         }
         state.zones = new_zones;

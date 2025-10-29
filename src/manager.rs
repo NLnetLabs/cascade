@@ -17,10 +17,10 @@ use crate::units::zone_server::{self, ZoneServerUnit};
 use crate::units::zone_signer::ZoneSignerUnit;
 use daemonbase::process::EnvSocketsError;
 use futures::future::join_all;
-use log::debug;
 use tokio::sync::mpsc::{self};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::RecvError;
+use tracing::debug;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -66,7 +66,7 @@ pub async fn spawn(
     let socket_provider = Arc::new(Mutex::new(socket_provider));
 
     // Spawn the central command.
-    log::info!("Starting target 'CC'");
+    tracing::info!("Starting target 'CC'");
     let target = CentralCommand {
         center: center.clone(),
     };
@@ -79,7 +79,7 @@ pub async fn spawn(
     let mut unit_join_handles = HashMap::new();
 
     // Spawn the zone loader.
-    log::info!("Starting unit 'ZL'");
+    tracing::info!("Starting unit 'ZL'");
     let unit = ZoneLoader {
         center: center.clone(),
     };
@@ -90,7 +90,7 @@ pub async fn spawn(
     unit_tx_slots.insert("ZL".into(), cmd_tx);
 
     // Spawn the unsigned zone review server.
-    log::info!("Starting unit 'RS'");
+    tracing::info!("Starting unit 'RS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
         mode: zone_server::Mode::Prepublish,
@@ -106,7 +106,7 @@ pub async fn spawn(
     unit_tx_slots.insert("RS".into(), cmd_tx);
 
     // Spawn the key manager.
-    log::info!("Starting unit 'KM'");
+    tracing::info!("Starting unit 'KM'");
     let unit = KeyManagerUnit {
         center: center.clone(),
     };
@@ -120,7 +120,7 @@ pub async fn spawn(
     let max_concurrent_rrsig_generation_tasks = (available_parallelism - 1).clamp(1, 32);
 
     // Spawn the zone signer.
-    log::info!("Starting unit 'ZS'");
+    tracing::info!("Starting unit 'ZS'");
     let unit = ZoneSignerUnit {
         center: center.clone(),
         treat_single_keys_as_csks: true,
@@ -135,7 +135,7 @@ pub async fn spawn(
     unit_tx_slots.insert("ZS".into(), cmd_tx);
 
     // Spawn the signed zone review server.
-    log::info!("Starting unit 'RS2'");
+    tracing::info!("Starting unit 'RS2'");
     let unit = ZoneServerUnit {
         center: center.clone(),
         mode: zone_server::Mode::Prepublish,
@@ -151,7 +151,7 @@ pub async fn spawn(
     unit_tx_slots.insert("RS2".into(), cmd_tx);
 
     // Spawn the HTTP server.
-    log::info!("Starting unit 'HS'");
+    tracing::info!("Starting unit 'HS'");
     let unit = HttpServer {
         center: center.clone(),
     };
@@ -174,11 +174,11 @@ pub async fn spawn(
         .iter()
         .find_map(|(unit, handle)| handle.is_finished().then_some(unit))
     {
-        log::error!("Unit '{failed_unit}' terminated unexpectedly. Aborting.");
+        tracing::error!("Unit '{failed_unit}' terminated unexpectedly. Aborting.");
         return Err(Terminated.into());
     }
 
-    log::info!("Starting unit 'PS'");
+    tracing::info!("Starting unit 'PS'");
     let unit = ZoneServerUnit {
         center: center.clone(),
         mode: zone_server::Mode::Publish,
@@ -191,7 +191,7 @@ pub async fn spawn(
 
     ready_rx.await?;
 
-    log::info!("All units report ready.");
+    tracing::info!("All units report ready.");
 
     Ok(())
 }

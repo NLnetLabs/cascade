@@ -282,7 +282,6 @@ dependencies = [
  "futures-util",
  "humantime",
  "jiff",
- "log",
  "octseq",
  "rayon",
  "reqwest",

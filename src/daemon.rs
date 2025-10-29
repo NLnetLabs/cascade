@@ -52,14 +52,14 @@ pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
     let mut process = Process::from_config(daemon_config);
 
     if *config.daemonize.value() {
-        log::debug!("Becoming daemon process");
+        tracing::debug!("Becoming daemon process");
         if process.setup_daemon(true).is_err() {
             return Err("Failed to become daemon process: unknown error".to_string());
         }
     }
 
     if let Some((user, group)) = &config.identity {
-        log::debug!("Dropping privileges to {user} {group}");
+        tracing::debug!("Dropping privileges to {user} {group}");
         if process.drop_privileges().is_err() {
             return Err("Failed to drop privileges: unknown error".to_string());
         }
@@ -192,12 +192,12 @@ impl SocketProvider {
                 EnvSocketsError::NotForUs => { /* No problem, ignore */ }
                 EnvSocketsError::NotAvailable => { /* No problem, ignore */ }
                 EnvSocketsError::Malformed => {
-                    log::warn!(
+                    tracing::warn!(
                     "Ignoring malformed systemd LISTEN_PID/LISTEN_FDS environment variable value"
                 );
                 }
                 EnvSocketsError::Unusable => {
-                    log::warn!(
+                    tracing::warn!(
                         "Ignoring unusable systemd LISTEN_FDS environment variable socket(s)"
                     );
                 }
@@ -297,13 +297,13 @@ impl SocketProvider {
     /// the socket and convert it into a Tokio type.
     fn prepare_udp_socket(sock: UdpSocket) -> Option<tokio::net::UdpSocket> {
         if let Err(err) = sock.set_nonblocking(true) {
-            log::debug!("Cannot use UDP socket as setting it to non-blocking failed: {err}");
+            tracing::debug!("Cannot use UDP socket as setting it to non-blocking failed: {err}");
             return None;
         }
 
         tokio::net::UdpSocket::from_std(sock)
             .inspect_err(|err| {
-                log::debug!("Cannot use UDP socket as type conversion failed: {err}")
+                tracing::debug!("Cannot use UDP socket as type conversion failed: {err}")
             })
             .ok()
     }
@@ -314,13 +314,13 @@ impl SocketProvider {
     /// the socket and convert it into a Tokio type.
     fn prepare_tcp_listener(listener: TcpListener) -> Option<tokio::net::TcpListener> {
         if let Err(err) = listener.set_nonblocking(true) {
-            log::debug!("Cannot use TCP listener as setting it to non-blocking failed: {err}");
+            tracing::debug!("Cannot use TCP listener as setting it to non-blocking failed: {err}");
             return None;
         }
 
         tokio::net::TcpListener::from_std(listener)
             .inspect_err(|err| {
-                log::debug!("Cannot use TCP listener as type conversion failed: {err}")
+                tracing::debug!("Cannot use TCP listener as type conversion failed: {err}")
             })
             .ok()
     }

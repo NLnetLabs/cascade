@@ -31,7 +31,7 @@ impl CascadeApiClient {
             .build()
             .unwrap();
 
-        log::debug!("Sending HTTP {method} request to '{path}'");
+        tracing::debug!("Sending HTTP {method} request to '{path}'");
 
         client.request(method, path)
     }

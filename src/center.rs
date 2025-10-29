@@ -146,7 +146,7 @@ pub async fn add_zone(
         // NOTE: The zone is marked as dirty by the above operation.
     }
 
-    log::info!("Added zone '{name}'");
+    tracing::info!("Added zone '{name}'");
     Ok(())
 }
 
@@ -203,7 +203,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
         state.mark_dirty(center);
     }
 
-    log::info!("Removed zone '{name}'");
+    tracing::info!("Removed zone '{name}'");
     Ok(())
 }
 
@@ -322,7 +322,7 @@ impl State {
                 let Some(_) = state.enqueued_save.take_if(|s| s.id() == tokio::task::id()) else {
                     // 'enqueued_save' does not match what we set, so somebody
                     // else set it to 'None' first.  Don't do anything.
-                    log::trace!("Ignoring enqueued save due to race");
+                    tracing::trace!("Ignoring enqueued save due to race");
                     return;
                 };
 
@@ -332,9 +332,9 @@ impl State {
 
             // Save the global state.
             match spec.save(&path) {
-                Ok(()) => log::debug!("Saved global state (to '{path}')"),
+                Ok(()) => tracing::debug!("Saved global state (to '{path}')"),
                 Err(err) => {
-                    log::error!("Could not save global state to '{path}': {err}");
+                    tracing::error!("Could not save global state to '{path}': {err}");
                 }
             }
         });

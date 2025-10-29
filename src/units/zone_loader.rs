@@ -25,11 +25,11 @@ use domain::zonetree::{
 };
 use foldhash::HashMap;
 use futures::Future;
-use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::{oneshot, Semaphore};
 use tokio::time::Instant;
+use tracing::{debug, error, info};
 
 use crate::center::{halt_zone, Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
@@ -458,7 +458,7 @@ fn load_file_into_zone(
     receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
 ) -> Result<(Zone, usize), String> {
     let before = Instant::now();
-    log::info!("[ZL]: Loading primary zone '{zone_name}' from '{zone_path}'..");
+    tracing::info!("[ZL]: Loading primary zone '{zone_name}' from '{zone_path}'..");
     let mut zone_file = File::open(zone_path)
         .map_err(|err| format!("Failed to open zone file '{zone_path}': {err}"))?;
     let zone_file_len = zone_file

@@ -76,11 +76,11 @@ fn main() -> ExitCode {
     let mut state = center::State::new(config);
     if let Err(err) = state.init_from_file() {
         if err.kind() != io::ErrorKind::NotFound {
-            log::error!("Could not load the state file: {err}");
+            tracing::error!("Could not load the state file: {err}");
             return ExitCode::FAILURE;
         }
 
-        log::info!("State file not found; starting from scratch");
+        tracing::info!("State file not found; starting from scratch");
 
         // Create required subdirectories (and their parents) if they don't
         // exist. This is only needed for directories to which we write files
@@ -99,7 +99,7 @@ fn main() -> ExitCode {
             &*state.config.zone_state_dir,
         ] {
             if let Err(e) = create_dir_all(dir) {
-                log::error!("Unable to create directory '{dir}': {e}",);
+                tracing::error!("Unable to create directory '{dir}': {e}",);
                 return ExitCode::FAILURE;
             };
         }
@@ -108,13 +108,13 @@ fn main() -> ExitCode {
         if let Err(err) =
             policy::reload_all(&mut state.policies, &state.zones, &state.config, |_| {})
         {
-            log::error!("Cascade couldn't load all policies: {err}");
+            tracing::error!("Cascade couldn't load all policies: {err}");
             return ExitCode::FAILURE;
         }
 
         // TODO: Fail if any zone state files exist.
     } else {
-        log::info!("Successfully loaded the global state file");
+        tracing::info!("Successfully loaded the global state file");
 
         let zone_state_dir = &state.config.zone_state_dir;
         let policies = &mut state.policies;
@@ -123,11 +123,11 @@ fn main() -> ExitCode {
             let path = zone_state_dir.join(format!("{name}.db"));
             let spec = match cascade::zone::state::Spec::load(&path) {
                 Ok(spec) => {
-                    log::debug!("Loaded state of zone '{name}' (from {path})");
+                    tracing::debug!("Loaded state of zone '{name}' (from {path})");
                     spec
                 }
                 Err(err) => {
-                    log::error!("Failed to load zone state '{name}' from '{path}': {err}");
+                    tracing::error!("Failed to load zone state '{name}' from '{path}': {err}");
                     return ExitCode::FAILURE;
                 }
             };
@@ -137,23 +137,23 @@ fn main() -> ExitCode {
     }
 
     if state.config.loader.review.servers.is_empty() {
-        log::warn!("No review server configured for [loader.review], therefore no unsigned zone transfer available for review.");
+        tracing::warn!("No review server configured for [loader.review], therefore no unsigned zone transfer available for review.");
     }
 
     if state.config.signer.review.servers.is_empty() {
-        log::warn!("No review server configured for [signer.review], therefore no signed zone transfer available for review.");
+        tracing::warn!("No review server configured for [signer.review], therefore no signed zone transfer available for review.");
     }
 
     // Load the TSIG store file.
     //
     // TODO: Track which TSIG keys are in use by zones.
     match state.tsig_store.init_from_file(&state.config) {
-        Ok(()) => log::debug!("Loaded the TSIG store"),
+        Ok(()) => tracing::debug!("Loaded the TSIG store"),
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            log::debug!("No TSIG store found; will create one");
+            tracing::debug!("No TSIG store found; will create one");
         }
         Err(err) => {
-            log::error!("Failed to load the TSIG store: {err}");
+            tracing::error!("Failed to load the TSIG store: {err}");
             return ExitCode::FAILURE;
         }
     }
@@ -164,7 +164,7 @@ fn main() -> ExitCode {
     };
 
     if let Err(err) = daemonize(&state.config.daemon) {
-        log::error!("Failed to daemonize: {err}");
+        tracing::error!("Failed to daemonize: {err}");
         return ExitCode::FAILURE;
     }
 
@@ -210,7 +210,7 @@ fn main() -> ExitCode {
         )
         .await
         {
-            log::error!("Failed to spawn units: {err}");
+            tracing::error!("Failed to spawn units: {err}");
             return ExitCode::FAILURE;
         }
 
@@ -219,7 +219,7 @@ fn main() -> ExitCode {
                 // Watch for CTRL-C (SIGINT).
                 res = tokio::signal::ctrl_c() => {
                     if let Err(error) = res {
-                        log::error!(
+                        tracing::error!(
                             "Listening for CTRL-C (SIGINT) failed: {error}"
                         );
                         break ExitCode::FAILURE;
@@ -293,7 +293,7 @@ fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvi
 
     // Bind to each of the specified sockets if needed.
     if let Err(err) = pre_bind_server_sockets_as_needed(&mut socket_provider, socket_configs) {
-        log::error!("{err}");
+        tracing::error!("{err}");
         return Err(());
     }
 
@@ -326,30 +326,32 @@ fn pre_bind_server_sockets_as_needed<'a, T: Iterator<Item = &'a SocketConfig>>(
 fn check_dnst_version(config: &Config) -> bool {
     let path = &*config.dnst_binary_path;
 
-    log::debug!("Checking dnst binary version ('{path}')",);
+    tracing::debug!("Checking dnst binary version ('{path}')",);
     let dnst_version = match std::process::Command::new(path).arg("--version").output() {
         Err(e) => {
-            log::error!("Unable to verify version of dnst binary (configured as '{path}'): {e}",);
+            tracing::error!(
+                "Unable to verify version of dnst binary (configured as '{path}'): {e}",
+            );
             return false;
         }
         Ok(o) => String::from_utf8_lossy(&o.stderr).into_owned(),
     };
 
-    log::debug!("Checking dnst keyset subcommand capability");
+    tracing::debug!("Checking dnst keyset subcommand capability");
     // Check if the keyset subcommand exists
     match std::process::Command::new(path)
         .args(["keyset", "--help"])
         .output()
     {
         Err(e) => {
-            log::error!(
+            tracing::error!(
                 "Unable to verify keyset capability of dnst binary (configured as '{path}'): {e}",
             );
             return false;
         }
         Ok(s) => {
             if !s.status.success() {
-                log::error!(
+                tracing::error!(
                     "Unsupported dnst binary (configured as '{path}'): keyset subcommand not supported",
                 );
                 return false;
@@ -361,7 +363,7 @@ fn check_dnst_version(config: &Config) -> bool {
     // future. This will make sure to only read the first two segments.
     let mut version_parts = dnst_version.split([' ', '\n']);
     let (Some(name), Some(version)) = (version_parts.next(), version_parts.next()) else {
-        log::error!("Incorrect dnst binary configured: '{path} --version' output was improper",);
+        tracing::error!("Incorrect dnst binary configured: '{path} --version' output was improper",);
         return false;
     };
 
@@ -391,9 +393,9 @@ fn check_dnst_version(config: &Config) -> bool {
         Ok((major, minor, patch))
     }
 
-    log::debug!("Checking dnst version string '{version}'");
+    tracing::debug!("Checking dnst version string '{version}'");
     let Ok((major, minor, patch)) = unpack_version_string(version) else {
-        log::error!(
+        tracing::error!(
             "Incorrect dnst binary configured: '{path} --version' version string was improper",
         );
         return false;
@@ -408,9 +410,9 @@ fn check_dnst_version(config: &Config) -> bool {
     };
 
     if res {
-        log::info!("Using dnst binary '{path}' with name '{name}' and version '{version}'",);
+        tracing::info!("Using dnst binary '{path}' with name '{name}' and version '{version}'",);
     } else {
-        log::error!(
+        tracing::error!(
             "Configured dnst binary '{path}' version ({version}) is unsupported. Expected {required_version}",
         );
     }
