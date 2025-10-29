@@ -66,6 +66,9 @@ tempfile = "3.21.0"
 
 # Anstream can strip ansi codes for TERM=dumb and other similar situations
 anstream = "0.6.21"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing-rfc-5424 = "0.1.4"
+supports-color = "3.0.2"
 
 # 'log' is a very popular logging crate, and is the primary means for Cascade
 # to indicate what it's doing at any time.

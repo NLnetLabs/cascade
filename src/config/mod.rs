@@ -147,6 +147,10 @@ pub fn reload(center: &Center) -> Result<(), file::FileError> {
     // Merge the parsed configuration file.
     spec.parse_into(&mut state.config);
 
+    if let Err(e) = center.logger.apply(&state.config.daemon.logging) {
+        log::error!("could not update logger config: {e}");
+    }
+
     // Inform everybody the state has changed.
     center
         .update_tx

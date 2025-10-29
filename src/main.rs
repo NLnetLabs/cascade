@@ -15,12 +15,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc;
+use tracing_subscriber::FmtSubscriber;
 
 const MAX_SYSTEMD_FD_SOCKETS: usize = 32;
 
 fn main() -> ExitCode {
-    // Initialize the logger in fallback mode.
-    let logger = cascade::log::Logger::launch();
+    // Make a temporary subscriber to catch logging events happening before we
+    // set up the proper logger.
+    let guard = tracing::subscriber::set_default(FmtSubscriber::new());
 
     // Set up the command-line interface.
     let cmd = clap::Command::new("cascade")
@@ -52,12 +54,17 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // Set up the logger.
-    match logger.prepare(&config.daemon.logging) {
-        Ok(Some(lg)) => logger.apply(lg),
-        Ok(None) => { /* logger update would not change anything */ }
-        Err(e) => eprintln!("ERROR: Failed to initialize logging: {e}"),
-    }
+    // Drop the temporary logger just before we start making the proper logger
+    drop(guard);
+
+    // Initialize the actual logger
+    let logger = match cascade::log::Logger::launch(&config.daemon.logging) {
+        Ok(logger) => logger,
+        Err(e) => {
+            eprintln!("ERROR: Failed to initialize logging: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     // Confirm the right version of 'dnst' is available.
     if !check_dnst_version(&config) {
