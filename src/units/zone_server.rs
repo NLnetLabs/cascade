@@ -3,6 +3,7 @@ use core::future::ready;
 use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -550,6 +551,8 @@ impl ZoneServer {
                     &*review_server.addr().port().to_string(),
                 ),
             ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
         {
             Ok(mut child) => {
@@ -557,6 +560,15 @@ impl ZoneServer {
 
                 // Wait for the child to complete.
                 let update_tx = self.center.update_tx.clone();
+                let stdout = child.stdout.take().expect("we use Stdio::piped");
+                let stderr = child.stderr.take().expect("we use Stdio::piped");
+
+                tokio::spawn(async move {
+                    let _: Result<_, _> = Self::process_output(stdout, log::Level::Info).await;
+                });
+                tokio::spawn(async move {
+                    let _: Result<_, _> = Self::process_output(stderr, log::Level::Warn).await;
+                });
                 tokio::spawn(async move {
                     let status = match child.wait().await {
                         Ok(status) => status,
@@ -594,6 +606,20 @@ impl ZoneServer {
             }
         }
         None
+    }
+
+    async fn process_output(
+        pipe: impl tokio::io::AsyncRead + Unpin,
+        level: log::Level,
+    ) -> Result<(), std::io::Error> {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let pipe = BufReader::new(pipe);
+        let mut lines = pipe.lines();
+        while let Some(line) = lines.next_line().await? {
+            log::log!(level, "{}", line);
+        }
+        Ok(())
     }
 
     async fn on_zone_review_api_cmd(
