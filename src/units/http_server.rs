@@ -37,6 +37,7 @@ use crate::daemon::SocketProvider;
 use crate::payload::Update;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
@@ -998,15 +999,37 @@ impl HttpServer {
         for zone in state.zones.iter() {
             let mut zone_keys = Vec::new();
 
-            let cfg_path = keys_dir.join(format!("{}.cfg", zone.0.name.to_string().to_lowercase()));
-            let cfg_str = std::fs::read_to_string(cfg_path).unwrap();
-            let ksc: KeySetConfig = serde_json::from_str(&cfg_str).unwrap();
+            let cfg_path = mk_dnst_keyset_cfg_file_path(keys_dir, &zone.0.name);
+            let cfg_str = match std::fs::read_to_string(&cfg_path) {
+                Ok(cfg_str) => cfg_str,
+                Err(e) => {
+                    warn!("Could not read `{cfg_path}`: {e}");
+                    continue;
+                }
+            };
+            let ksc = match serde_json::from_str::<KeySetConfig>(&cfg_str) {
+                Ok(ksc) => ksc,
+                Err(e) => {
+                    warn!("Could not parse `{cfg_path}`: {e}");
+                    continue;
+                }
+            };
 
-            let state_path =
-                keys_dir.join(format!("{}.state", zone.0.name.to_string().to_lowercase()));
-            // TODO: Nice error
-            let state_str = std::fs::read_to_string(state_path).unwrap();
-            let keyset_state: KeySetState = serde_json::from_str(&state_str).unwrap();
+            let state_path = mk_dnst_keyset_state_file_path(keys_dir, &zone.0.name);
+            let state_str = match std::fs::read_to_string(&state_path) {
+                Ok(state_str) => state_str,
+                Err(e) => {
+                    error!("Could not read `{state_path}`: {e}");
+                    continue;
+                }
+            };
+            let keyset_state = match serde_json::from_str::<KeySetState>(&state_str) {
+                Ok(keyset_state) => keyset_state,
+                Err(e) => {
+                    warn!("Could not parse `{state_path}`: {e}");
+                    continue;
+                }
+            };
 
             let keyset_keys = keyset_state.keyset.keys();
             for (pubref, key) in keyset_keys {
@@ -1018,7 +1041,7 @@ impl HttpServer {
                 };
                 let msg = if keystate.stale() {
                     if ksc.autoremove {
-                        "stale (removed automatically)".into()
+                        "stale (will be removed automatically)".into()
                     } else {
                         "state (must be removed manually)".into()
                     }
@@ -1063,7 +1086,11 @@ impl HttpServer {
             });
         }
 
+        // Sort by time until expiration
         expirations.sort_by_key(|e| e.time_left);
+
+        // Sort the zones alphabetically for a predictable order
+        zones.sort_by(|a, b| a.zone.cmp(&b.zone));
 
         Json(KeyStatusResult { expirations, zones })
     }

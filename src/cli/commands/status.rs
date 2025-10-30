@@ -52,7 +52,7 @@ impl Status {
                                 .round(jiff::Unit::Second)
                                 .unwrap()
                         ),
-                        None => println!("   EXPIRED"),
+                        None => println!("   {}EXPIRED{}", ansi::RED, ansi::RESET),
                     };
                 }
 
