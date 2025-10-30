@@ -54,3 +54,16 @@ DNS RRset data, storing the generated keys in on-disk files.
 
    :doc:`hsms`
       Hardware Security Modules (HSMs).
+
+Installing ang Building
+-----------------------
+
+Can I build Cascade with LibreSSL?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+No, OpenSSL 3.x is required, as these versions fully support DNSSEC algorithm
+16 (Ed448). In contrast, LibreSSL `does not yet have support
+<https://github.com/libressl/portable/issues/552>`_ for Ed448. 
+
+Ed448 was standardized for use with DNSSEC in February 2017 (:RFC:`8080`) and
+has been a RECOMMENDED algorithm since June 2019 (:RFC:`8624`). 
