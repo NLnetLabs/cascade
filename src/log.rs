@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use domain::dep::kmip::rustls::crypto::cipher::make_tls12_aad;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::Layer as FmtLayer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -33,15 +34,7 @@ impl Logger {
     ///
     /// Panics if a [`log`] logger has been set already.
     pub fn launch(config: &LoggingConfig) -> Result<&'static Logger, String> {
-        let mut filter = EnvFilter::from_env("CASCADE_LOG");
-        filter = filter.add_directive(LevelFilter::from(*config.level.value()).into());
-        for target in config.trace_targets.value().iter() {
-            filter = filter.add_directive(
-                target
-                    .parse()
-                    .map_err(|_| format!("invalid trace target: \'{}\'", target))?,
-            );
-        }
+        let filter = make_env_filter(&config)?;
         let (filter, filter_handle) = reload::Layer::new(filter);
 
         let target = PrimaryLogger::new(config.target.value()).map_err(|e| e.to_string())?;
@@ -104,7 +97,10 @@ impl Logger {
 }
 
 fn make_env_filter(config: &LoggingConfig) -> Result<EnvFilter, String> {
-    let mut filter = EnvFilter::from_env("CASCADE_LOG");
+    // Create an envfilter with the empty string, which won't read any env vars
+    // and only print ERROR by default. Which we then immediately override with
+    // another LevelFilter.
+    let mut filter = EnvFilter::new("");
     filter = filter.add_directive(LevelFilter::from(*config.level.value()).into());
     for target in config.trace_targets.value().iter() {
         filter = filter.add_directive(
