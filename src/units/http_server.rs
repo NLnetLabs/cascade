@@ -15,6 +15,7 @@ use domain::base::Name;
 use domain::base::Serial;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
+use domain::dnssec::sign::keys::keyset::KeySet;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use log::{debug, error, info, warn};
 use serde::Deserialize;
@@ -95,6 +96,7 @@ impl HttpServer {
             .route("/", get(|| async { "Hello, World!" }))
             .route("/health", get(Self::health))
             .route("/status", get(Self::status))
+            .route("/status/keys", get(Self::status_keys))
             .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
@@ -966,6 +968,104 @@ impl HttpServer {
         }
 
         Json(Ok(()))
+    }
+
+    async fn status_keys(State(state): State<Arc<HttpServerState>>) -> Json<KeyStatusResult> {
+        #[derive(Deserialize)]
+        struct KeySetState {
+            keyset: KeySet,
+        }
+
+        #[derive(Deserialize)]
+        struct KeySetConfig {
+            ksk_validity: Option<Duration>,
+            zsk_validity: Option<Duration>,
+            csk_validity: Option<Duration>,
+            autoremove: bool,
+        }
+
+        let state = state.center.state.lock().unwrap();
+
+        let keys_dir = &state.config.keys_dir;
+
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("System time is expected to be after UNIX_EPOCH");
+
+        let mut zones = Vec::new();
+        let mut expirations = Vec::new();
+
+        for zone in state.zones.iter() {
+            let mut zone_keys = Vec::new();
+
+            let cfg_path = keys_dir.join(format!("{}.cfg", zone.0.name.to_string().to_lowercase()));
+            let cfg_str = std::fs::read_to_string(cfg_path).unwrap();
+            let ksc: KeySetConfig = serde_json::from_str(&cfg_str).unwrap();
+
+            let state_path =
+                keys_dir.join(format!("{}.state", zone.0.name.to_string().to_lowercase()));
+            // TODO: Nice error
+            let state_str = std::fs::read_to_string(state_path).unwrap();
+            let keyset_state: KeySetState = serde_json::from_str(&state_str).unwrap();
+
+            let keyset_keys = keyset_state.keyset.keys();
+            for (pubref, key) in keyset_keys {
+                let (keystate, validity) = match key.keytype() {
+                    KeyType::Ksk(keystate) => (keystate, Some(ksc.ksk_validity)),
+                    KeyType::Zsk(keystate) => (keystate, Some(ksc.zsk_validity)),
+                    KeyType::Csk(ksk_keystate, _) => (ksk_keystate, Some(ksc.csk_validity)),
+                    KeyType::Include(keystate) => (keystate, None),
+                };
+                let msg = if keystate.stale() {
+                    if ksc.autoremove {
+                        "stale (removed automatically)".into()
+                    } else {
+                        "state (must be removed manually)".into()
+                    }
+                } else if let Some(opt_validity) = validity {
+                    if let Some(validity) = opt_validity {
+                        match key.timestamps().published() {
+                            None => "not yet published".into(),
+                            Some(timestamp) if timestamp.elapsed() > validity => {
+                                expirations.push(KeyExpiration {
+                                    zone: zone.0.name.to_string(),
+                                    key: pubref.clone(),
+                                    time_left: None,
+                                });
+                                "expired".into()
+                            }
+                            Some(timestamp) => {
+                                let timestamp_duration: Duration = timestamp.clone().into();
+                                expirations.push(KeyExpiration {
+                                    zone: zone.0.name.to_string(),
+                                    key: pubref.clone(),
+                                    time_left: Some(now - timestamp_duration),
+                                });
+                                format!("expires at {}", timestamp + validity)
+                            }
+                        }
+                    } else {
+                        "does not expire".into()
+                    }
+                } else {
+                    "does not expire (imported key)".into()
+                };
+
+                zone_keys.push(KeyMsg {
+                    name: pubref.clone(),
+                    msg,
+                })
+            }
+
+            zones.push(KeysPerZone {
+                zone: zone.0.name.to_string(),
+                keys: zone_keys,
+            });
+        }
+
+        expirations.sort_by_key(|e| e.time_left);
+
+        Json(KeyStatusResult { expirations, zones })
     }
 }
 

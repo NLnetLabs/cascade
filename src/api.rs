@@ -381,6 +381,31 @@ pub struct ServerStatusResult {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KeyStatusResult {
+    pub expirations: Vec<KeyExpiration>,
+    pub zones: Vec<KeysPerZone>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KeyExpiration {
+    pub zone: String,
+    pub key: String,
+    pub time_left: Option<Duration>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KeysPerZone {
+    pub zone: String,
+    pub keys: Vec<KeyMsg>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KeyMsg {
+    pub name: String,
+    pub msg: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum PolicyReloadError {
     Io(Utf8PathBuf, String),
 }
