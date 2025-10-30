@@ -61,8 +61,9 @@ Installing ang Building
 Can I build Cascade with LibreSSL?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-No, OpenSSL 3.x is required, as these versions fully support DNSSEC algorithm
-16 (Ed448). In contrast, LibreSSL `does not yet have support
+No, OpenSSL 3.x is required as these versions fully support Edwards-curve
+Digital Security Algorithm (EdDSA) keys and signatures using the Ed448 curve.
+In contrast, LibreSSL `does not yet have support
 <https://github.com/libressl/portable/issues/552>`_ for Ed448. 
 
 Ed448 was standardized for use with DNSSEC in February 2017 (:RFC:`8080`) and
