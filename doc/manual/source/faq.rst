@@ -40,3 +40,17 @@ such, state is human-readable and easily backed up.
 
    :doc:`architecture`
       An overview of Cascade's design.
+
+Do I need to use a HSM to run Cascade?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+No, Cascade does not require a Hardware Security Module (HSM) to operate.
+While it is common practice to secure cryptographic key material using an HSM,
+not all operators use an HSM. Cascade is able to use OpenSSL and/or ring
+software cryptography to generate signing keys and to cryptographically sign
+DNS RRset data, storing the generated keys in on-disk files.
+
+.. seealso::
+
+   :doc:`hsms`
+      Hardware Security Modules (HSMs).
