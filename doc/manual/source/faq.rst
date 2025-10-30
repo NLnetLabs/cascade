@@ -68,3 +68,9 @@ Digital Security Algorithm (EdDSA) keys and signatures using the Ed448 curve
 
 Ed448 was standardized for use with DNSSEC in February 2017 (:RFC:`8080`) and
 has been a RECOMMENDED algorithm since June 2019 (:RFC:`8624`). 
+
+.. seealso::
+
+   :ref:`building:openssl`
+      Installing OpenSSL on common distributions, such as Debian, Ubuntu and
+      Red Hat Enterprise Linux. 
