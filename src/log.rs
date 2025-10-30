@@ -2,7 +2,6 @@
 
 use std::fmt;
 
-use domain::dep::kmip::rustls::crypto::cipher::make_tls12_aad;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::Layer as FmtLayer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -34,7 +33,7 @@ impl Logger {
     ///
     /// Panics if a [`log`] logger has been set already.
     pub fn launch(config: &LoggingConfig) -> Result<&'static Logger, String> {
-        let filter = make_env_filter(&config)?;
+        let filter = make_env_filter(config)?;
         let (filter, filter_handle) = reload::Layer::new(filter);
 
         let target = PrimaryLogger::new(config.target.value()).map_err(|e| e.to_string())?;
