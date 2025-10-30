@@ -15,7 +15,6 @@ use domain::base::Name;
 use domain::base::Serial;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
-use domain::dnssec::sign::keys::keyset::KeySet;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use log::{debug, error, info, warn};
 use serde::Deserialize;
@@ -972,11 +971,6 @@ impl HttpServer {
     }
 
     async fn status_keys(State(state): State<Arc<HttpServerState>>) -> Json<KeyStatusResult> {
-        #[derive(Deserialize)]
-        struct KeySetState {
-            keyset: KeySet,
-        }
-
         #[derive(Deserialize)]
         struct KeySetConfig {
             ksk_validity: Option<Duration>,
