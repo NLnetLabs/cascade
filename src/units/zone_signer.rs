@@ -695,7 +695,7 @@ impl ZoneSigner {
                                 std::collections::hash_map::Entry::Vacant(e) => {
                                     // Try and load the KMIP server settings.
                                     let p = kmip_server_state_dir.join(priv_key_url.server_id());
-                                    tracing::info!("Reading KMIP server state from '{p}'");
+                                    info!("Reading KMIP server state from '{p}'");
                                     let f = std::fs::File::open(p).unwrap();
                                     let kmip_server: KmipServerState = serde_json::from_reader(f).unwrap();
                                     let KmipServerState {

@@ -618,9 +618,9 @@ impl ZoneServer {
         let mut lines = pipe.lines();
         while let Some(line) = lines.next_line().await? {
             if is_warn {
-                tracing::warn!("{}", line);
+                warn!("{}", line);
             } else {
-                tracing::info!("{}", line);
+                info!("{}", line);
             }
         }
         Ok(())

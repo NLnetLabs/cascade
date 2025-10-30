@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use reqwest::{IntoUrl, Method, RequestBuilder};
+use tracing::debug;
 use url::Url;
 
 const HTTP_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -31,7 +32,7 @@ impl CascadeApiClient {
             .build()
             .unwrap();
 
-        tracing::debug!("Sending HTTP {method} request to '{path}'");
+        debug!("Sending HTTP {method} request to '{path}'");
 
         client.request(method, path)
     }

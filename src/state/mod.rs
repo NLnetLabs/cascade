@@ -7,6 +7,7 @@ use std::{
 
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error};
 
 use crate::center::{Center, Change, State};
 
@@ -32,9 +33,9 @@ pub fn save_now(center: &Center) {
 
     // Save the global state.
     match spec.save(&path) {
-        Ok(()) => tracing::debug!("Saved the global state (to '{path}')"),
+        Ok(()) => debug!("Saved the global state (to '{path}')"),
         Err(err) => {
-            tracing::error!("Could not save the global state to '{path}': {err}");
+            error!("Could not save the global state to '{path}': {err}");
         }
     }
 }

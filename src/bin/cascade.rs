@@ -6,6 +6,7 @@ use cascade::{
     log::Logger,
 };
 use clap::Parser;
+use tracing::error;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -22,7 +23,7 @@ async fn main() -> ExitCode {
     match args.execute().await {
         Ok(_) => ExitCode::SUCCESS,
         Err(err) => {
-            tracing::error!("Error: {err}");
+            error!("Error: {err}");
             ExitCode::FAILURE
         }
     }

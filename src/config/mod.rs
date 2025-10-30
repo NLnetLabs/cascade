@@ -11,6 +11,7 @@ use std::{
 };
 
 use camino::Utf8Path;
+use tracing::{error, info};
 
 use crate::{
     center::{Center, Change},
@@ -136,7 +137,7 @@ pub fn reload(center: &Center) -> Result<(), file::FileError> {
         state.config.daemon.config_file.value().clone()
     };
 
-    tracing::info!("Reloading the configuration file (from {path:?})");
+    info!("Reloading the configuration file (from {path:?})");
 
     // Load and parse the configuration file.
     let spec = file::Spec::load(&path)?;
@@ -148,7 +149,7 @@ pub fn reload(center: &Center) -> Result<(), file::FileError> {
     spec.parse_into(&mut state.config);
 
     if let Err(e) = center.logger.apply(&state.config.daemon.logging) {
-        tracing::error!("could not update logger config: {e}");
+        error!("could not update logger config: {e}");
     }
 
     // Inform everybody the state has changed.
