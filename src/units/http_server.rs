@@ -16,13 +16,13 @@ use domain::base::Serial;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
 use domain::dnssec::sign::keys::keyset::KeyType;
-use log::{debug, error, info, warn};
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::Instant;
+use tracing::{debug, error, info, warn};
 
 use crate::api;
 use crate::api::keyset::*;

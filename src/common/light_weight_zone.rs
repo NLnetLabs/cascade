@@ -28,7 +28,7 @@ use domain::{
         WalkOp, WritableZone, WritableZoneNode, ZoneStore,
     },
 };
-use log::trace;
+use tracing::trace;
 
 #[derive(Debug, Eq)]
 struct HashedByRtypeSharedRrset(SharedRrset);

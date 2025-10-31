@@ -4,6 +4,7 @@ use std::{fs, io, sync::Arc};
 
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::{center::Change, zone::ZoneByName};
 
@@ -62,7 +63,7 @@ impl Spec {
         let old = core::mem::replace(&mut existing.latest, new.clone());
 
         // Output change notifications.
-        log::info!("Updated policy '{}'", new.name);
+        info!("Updated policy '{}'", new.name);
         (on_change)(Change::PolicyChanged(old.clone(), new.clone()));
         for zone in &existing.zones {
             let zone = zones.get(zone).expect("zones and policies are consistent");

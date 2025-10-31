@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use domain::base::Serial;
 use domain::zonetree::StoredName;
-use log::{debug, info, warn};
 use tokio::sync::mpsc;
+use tracing::{debug, info, warn};
 
 use crate::api::{self, ZoneReviewStatus};
 use crate::center::{get_zone, halt_zone, Center, Change};

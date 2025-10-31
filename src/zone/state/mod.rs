@@ -9,6 +9,7 @@ use std::{
 
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::{
     policy::{Policy, PolicyVersion},
@@ -55,19 +56,17 @@ impl Spec {
                     // TODO: Continue using the older version of the policy, and
                     // enqueue an explicit change to the zone, so that any
                     // necessary hooks (e.g. re-signing) can be activated.
-                    log::warn!(
+                    warn!(
                         "Zone '{}' is using an older version of policy '{}'; it will be updated",
-                        zone.name,
-                        policy.name
+                        zone.name, policy.name
                     );
                     existing.clone()
                 }
 
                 hash_map::Entry::Vacant(entry) => {
-                    log::warn!(
+                    warn!(
                         "Zone '{}' is using an unknown policy '{}'; the policy has been restored",
-                        zone.name,
-                        policy.name
+                        zone.name, policy.name
                     );
 
                     let policy = Arc::new(policy);

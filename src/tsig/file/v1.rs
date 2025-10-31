@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use domain::tsig;
 use serde::{Deserialize, Serialize};
+use tracing::{error, info};
 
 use crate::tsig::{TsigKey, TsigStore};
 
@@ -33,7 +34,7 @@ impl Spec {
                 spec.parse_into(&mut key);
                 key
             } else {
-                log::info!("Loaded new TSIG key '{name}'");
+                info!("Loaded new TSIG key '{name}'");
                 spec.parse(&name)
             };
 
@@ -46,14 +47,14 @@ impl Spec {
         for (name, key) in store.map.drain() {
             // If any zones are using this key, keep it.
             if !key.zones.is_empty() {
-                log::error!("The TSIG key '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy");
+                error!("The TSIG key '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy");
                 let prev = new_keys.insert(name, key);
                 assert!(
                     prev.is_none(),
                     "'new_keys' and 'store.map' are disjoint sets"
                 );
             } else {
-                log::info!("Forgetting now-removed TSIG key '{name}'");
+                info!("Forgetting now-removed TSIG key '{name}'");
             }
         }
 

@@ -33,8 +33,6 @@ use domain::zonetree::update::ZoneUpdater;
 use domain::zonetree::{StoredName, StoredRecord, Zone};
 use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
-use log::{debug, error, info, trace, Level};
-use log::{log_enabled, warn};
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
 use tokio::select;
@@ -42,6 +40,7 @@ use tokio::sync::{mpsc, OwnedSemaphorePermit};
 use tokio::sync::{oneshot, RwLock, Semaphore};
 use tokio::task::spawn_blocking;
 use tokio::time::{sleep_until, Instant};
+use tracing::{debug, error, info, trace, warn, Level};
 use url::Url;
 
 use crate::center::{get_zone, Center};
@@ -696,7 +695,7 @@ impl ZoneSigner {
                                 std::collections::hash_map::Entry::Vacant(e) => {
                                     // Try and load the KMIP server settings.
                                     let p = kmip_server_state_dir.join(priv_key_url.server_id());
-                                    log::info!("Reading KMIP server state from '{p}'");
+                                    info!("Reading KMIP server state from '{p}'");
                                     let f = std::fs::File::open(p).unwrap();
                                     let kmip_server: KmipServerState = serde_json::from_reader(f).unwrap();
                                     let KmipServerState {
@@ -1774,7 +1773,7 @@ impl ZoneSignerStatus {
     }
 
     async fn dump_queue(&self) {
-        if log_enabled!(Level::Debug) {
+        if tracing::event_enabled!(Level::DEBUG) {
             let zones_being_signed = self.zones_being_signed.read().await;
             for q_item in zones_being_signed.iter().rev() {
                 let q_item = q_item.read().await;
