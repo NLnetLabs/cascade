@@ -4,16 +4,20 @@ use std::{
     fmt::{self, Display},
     net::{AddrParseError, IpAddr, SocketAddr},
     str::FromStr,
-    time::Duration,
 };
 
-use domain::base::Ttl;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Serialize,
+};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
-use crate::policy::{
-    KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
-    ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+use crate::{
+    common::datetime::TimeSpan,
+    policy::{
+        KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
+        ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+    },
 };
 
 use super::super::{AutoConfig, DsAlgorithm, KeyParameters};
@@ -26,18 +30,18 @@ use super::super::{AutoConfig, DsAlgorithm, KeyParameters};
 // .net SOA: 7 days
 // .org SOA: 21 days
 // No official reference.
-const SIGNATURE_VALIDITY_TIME: u64 = 14 * 24 * 3600;
+const SIGNATURE_VALIDITY_TIME: u32 = 14 * 24 * 3600;
 
 // Set the remain time to half of the validity time. Note that the maximum
 // TTL should be taken into account. Assume that the maximum TTL is small
 // compared to the remain time and can be ignored. No official reference.
-const SIGNATURE_REMAIN_TIME: u64 = SIGNATURE_VALIDITY_TIME / 2;
+const SIGNATURE_REMAIN_TIME: u32 = SIGNATURE_VALIDITY_TIME / 2;
 
 // There is small risk that either the signer or a validator
 // has the wrong time zone settings. Back dating signatures by
 // one day should solve that problem and not introduce any
 // security risks. No official reference.
-const SIGNATURE_INCEPTION_OFFSET: u64 = 24 * 3600;
+const SIGNATURE_INCEPTION_OFFSET: u32 = 24 * 3600;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -205,34 +209,34 @@ impl KeyManagerSpec {
                 .records
                 .dnskey
                 .signature_inception_offset
-                .unwrap_or(SIGNATURE_INCEPTION_OFFSET),
+                .map_or(SIGNATURE_INCEPTION_OFFSET, |s| s.as_secs()),
             dnskey_signature_lifetime: self
                 .records
                 .dnskey
                 .signature_lifetime
-                .unwrap_or(SIGNATURE_VALIDITY_TIME),
+                .map_or(SIGNATURE_VALIDITY_TIME, |s| s.as_secs()),
             dnskey_remain_time: self
                 .records
                 .dnskey
                 .signature_remain_time
-                .unwrap_or(SIGNATURE_REMAIN_TIME),
+                .map_or(SIGNATURE_REMAIN_TIME, |s| s.as_secs()),
             cds_inception_offset: self
                 .records
                 .cds
                 .signature_inception_offset
-                .unwrap_or(SIGNATURE_INCEPTION_OFFSET),
+                .map_or(SIGNATURE_INCEPTION_OFFSET, |s| s.as_secs()),
             cds_signature_lifetime: self
                 .records
                 .cds
                 .signature_lifetime
-                .unwrap_or(SIGNATURE_VALIDITY_TIME),
+                .map_or(SIGNATURE_VALIDITY_TIME, |s| s.as_secs()),
             cds_remain_time: self
                 .records
                 .cds
                 .signature_remain_time
-                .unwrap_or(SIGNATURE_REMAIN_TIME),
+                .map_or(SIGNATURE_REMAIN_TIME, |s| s.as_secs()),
 
-            default_ttl: self.records.ttl,
+            default_ttl: self.records.ttl.as_ttl(),
             ds_algorithm: self.ds_algorithm,
             auto_remove: self.auto_remove,
         }
@@ -243,21 +247,21 @@ impl KeyManagerSpec {
         Self {
             ksk: KeyKindSpec {
                 validity: Some(match policy.ksk_validity {
-                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    Some(span) => KeyValiditySpec::Finite(TimeSpan::from_secs(span)),
                     None => KeyValiditySpec::Forever,
                 }),
                 rollover: RolloverSpec::build(&policy.auto_ksk),
             },
             zsk: KeyKindSpec {
                 validity: Some(match policy.zsk_validity {
-                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    Some(span) => KeyValiditySpec::Finite(TimeSpan::from_secs(span)),
                     None => KeyValiditySpec::Forever,
                 }),
                 rollover: RolloverSpec::build(&policy.auto_zsk),
             },
             csk: KeyKindSpec {
                 validity: Some(match policy.csk_validity {
-                    Some(secs) => KeyValiditySpec::Finite(Duration::from_secs(secs)),
+                    Some(span) => KeyValiditySpec::Finite(TimeSpan::from_secs(span)),
                     None => KeyValiditySpec::Forever,
                 }),
                 rollover: RolloverSpec::build(&policy.auto_csk),
@@ -268,16 +272,20 @@ impl KeyManagerSpec {
             auto_remove: policy.auto_remove,
 
             records: KeyManagerRecordsSpec {
-                ttl: policy.default_ttl,
+                ttl: TimeSpan::from_ttl(policy.default_ttl),
                 dnskey: RecordSigningSpec {
-                    signature_inception_offset: Some(policy.dnskey_inception_offset),
-                    signature_lifetime: Some(policy.dnskey_signature_lifetime),
-                    signature_remain_time: Some(policy.dnskey_remain_time),
+                    signature_inception_offset: Some(TimeSpan::from_secs(
+                        policy.dnskey_inception_offset,
+                    )),
+                    signature_lifetime: Some(TimeSpan::from_secs(policy.dnskey_signature_lifetime)),
+                    signature_remain_time: Some(TimeSpan::from_secs(policy.dnskey_remain_time)),
                 },
                 cds: RecordSigningSpec {
-                    signature_inception_offset: Some(policy.cds_inception_offset),
-                    signature_lifetime: Some(policy.cds_signature_lifetime),
-                    signature_remain_time: Some(policy.cds_remain_time),
+                    signature_inception_offset: Some(TimeSpan::from_secs(
+                        policy.cds_inception_offset,
+                    )),
+                    signature_lifetime: Some(TimeSpan::from_secs(policy.cds_signature_lifetime)),
+                    signature_remain_time: Some(TimeSpan::from_secs(policy.cds_remain_time)),
                 },
             },
 
@@ -331,34 +339,64 @@ pub struct KeyKindSpec {
 }
 
 /// The validity of a key.
-#[derive(Clone, Debug, SerializeDisplay, DeserializeFromStr)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeyValiditySpec {
     /// The key is valid for a finite duration.
-    Finite(Duration),
+    Finite(TimeSpan),
 
     /// The key is valid forever.
     Forever,
 }
 
-impl fmt::Display for KeyValiditySpec {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Finite(duration) => write!(f, "{}", duration.as_secs()),
-            Self::Forever => f.write_str("forever"),
+struct ValidityVisitor;
+
+impl<'de> Visitor<'de> for ValidityVisitor {
+    type Value = KeyValiditySpec;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("string, int, or \"forever\"")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if value == "forever" {
+            return Ok(KeyValiditySpec::Forever);
         }
+        let span = value.parse().map_err(E::custom)?;
+        Ok(KeyValiditySpec::Finite(span))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(KeyValiditySpec::Finite(TimeSpan::from_secs(
+            value
+                .try_into()
+                .map_err(|_| E::custom("timespan must be non-negative"))?,
+        )))
     }
 }
 
-impl FromStr for KeyValiditySpec {
-    type Err = String;
+impl<'de> Deserialize<'de> for KeyValiditySpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(ValidityVisitor)
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "forever" => Ok(Self::Forever),
-            _ => match s.parse::<u64>() {
-                Ok(secs) => Ok(Self::Finite(Duration::from_secs(secs))),
-                Err(_err) => Err(format!("{s:?} is not 'forever' or an integer")),
-            },
+impl Serialize for KeyValiditySpec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            KeyValiditySpec::Finite(time_span) => time_span.serialize(serializer),
+            KeyValiditySpec::Forever => "forever".serialize(serializer),
         }
     }
 }
@@ -418,7 +456,7 @@ impl RolloverSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct KeyManagerRecordsSpec {
     /// The TTL to use when creating special records.
-    pub ttl: Ttl,
+    pub ttl: TimeSpan,
 
     /// Signing parameters for DNSKEY records.
     pub dnskey: RecordSigningSpec,
@@ -434,7 +472,7 @@ impl Default for KeyManagerRecordsSpec {
         Self {
             // It would be best to default to the SOA minimum. However,
             // keyset doesn't have access to that. No official reference.
-            ttl: Ttl::from_secs(3600), // Reference?
+            ttl: TimeSpan::from_secs(3600), // Reference?
 
             dnskey: Default::default(),
             cds: Default::default(),
@@ -537,14 +575,14 @@ pub struct SignerSpec {
     pub serial_policy: SignerSerialPolicySpec,
 
     /// The offset for record signature inceptions, in seconds.
-    pub signature_inception_offset: u64,
+    pub signature_inception_offset: TimeSpan,
 
     /// How long record signatures will be valid for, in seconds.
-    pub signature_lifetime: u64,
+    pub signature_lifetime: TimeSpan,
 
     /// How long before expiration a new signature has to be
     /// generated, in seconds.
-    pub signature_remain_time: u64,
+    pub signature_remain_time: TimeSpan,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialSpec,
@@ -563,9 +601,9 @@ impl SignerSpec {
     pub fn parse(self) -> SignerPolicy {
         SignerPolicy {
             serial_policy: self.serial_policy.parse(),
-            sig_inception_offset: Duration::from_secs(self.signature_inception_offset),
-            sig_validity_time: Duration::from_secs(self.signature_lifetime),
-            sig_remain_time: Duration::from_secs(self.signature_remain_time),
+            sig_inception_offset: self.signature_inception_offset.as_secs(),
+            sig_validity_time: self.signature_lifetime.as_secs(),
+            sig_remain_time: self.signature_remain_time.as_secs(),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -575,9 +613,9 @@ impl SignerSpec {
     pub fn build(policy: &SignerPolicy) -> Self {
         Self {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
-            signature_inception_offset: policy.sig_inception_offset.as_secs(),
-            signature_lifetime: policy.sig_validity_time.as_secs(),
-            signature_remain_time: policy.sig_remain_time.as_secs(),
+            signature_inception_offset: TimeSpan::from_secs(policy.sig_inception_offset),
+            signature_lifetime: TimeSpan::from_secs(policy.sig_validity_time),
+            signature_remain_time: TimeSpan::from_secs(policy.sig_remain_time),
             denial: SignerDenialSpec::build(&policy.denial),
             review: ReviewSpec::build(&policy.review),
         }
@@ -589,9 +627,9 @@ impl Default for SignerSpec {
         Self {
             serial_policy: Default::default(),
 
-            signature_inception_offset: SIGNATURE_INCEPTION_OFFSET,
-            signature_lifetime: SIGNATURE_VALIDITY_TIME,
-            signature_remain_time: SIGNATURE_REMAIN_TIME,
+            signature_inception_offset: TimeSpan::from_secs(SIGNATURE_INCEPTION_OFFSET),
+            signature_lifetime: TimeSpan::from_secs(SIGNATURE_VALIDITY_TIME),
+            signature_remain_time: TimeSpan::from_secs(SIGNATURE_REMAIN_TIME),
 
             denial: Default::default(),
 
@@ -607,14 +645,14 @@ impl Default for SignerSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RecordSigningSpec {
     /// The offset for generated signature inceptions.
-    pub signature_inception_offset: Option<u64>,
+    pub signature_inception_offset: Option<TimeSpan>,
 
     /// The lifetime of generated signatures.
-    pub signature_lifetime: Option<u64>,
+    pub signature_lifetime: Option<TimeSpan>,
 
     /// The amount of time remaining before expiry when signatures will be
     /// regenerated.
-    pub signature_remain_time: Option<u64>,
+    pub signature_remain_time: Option<TimeSpan>,
 }
 
 //----------- SignerSerialPolicySpec -------------------------------------------
@@ -918,5 +956,51 @@ impl FromStr for SimpleNameserverCommsSpec {
             .map(|ip| SocketAddr::new(ip, 53))
             .or_else(|_| SocketAddr::from_str(s))?;
         Ok(SimpleNameserverCommsSpec { addr })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KeyValiditySpec;
+    use crate::common::datetime::TimeSpan;
+    use serde::Deserialize;
+
+    #[test]
+    fn parse_key_validity_spec() {
+        #[derive(Deserialize)]
+        struct Foo {
+            val: Vec<KeyValiditySpec>,
+        }
+
+        let foo: Foo = toml::from_str(
+            r#"
+            val = [
+              10,
+              "10",
+              "10s",
+              "10m",
+              "10h",
+              "10d",
+              "365d",
+              "10w",
+              "forever",
+            ]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            foo.val,
+            vec![
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60 * 24)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(365 * 60 * 60 * 24)),
+                KeyValiditySpec::Finite(TimeSpan::from_secs(10 * 60 * 60 * 24 * 7)),
+                KeyValiditySpec::Forever,
+            ]
+        )
     }
 }

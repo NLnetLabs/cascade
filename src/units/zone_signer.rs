@@ -1162,8 +1162,8 @@ impl ZoneSigner {
         };
 
         let now = Timestamp::now().into_int();
-        let inception = now.wrapping_sub(policy.signer.sig_inception_offset.as_secs() as u32);
-        let expiration = now.wrapping_add(policy.signer.sig_validity_time.as_secs() as u32);
+        let inception = now.wrapping_sub(policy.signer.sig_inception_offset);
+        let expiration = now.wrapping_add(policy.signer.sig_validity_time);
         SigningConfig::new(denial, inception.into(), expiration.into())
     }
 
@@ -1214,7 +1214,7 @@ impl ZoneSigner {
             };
 
             let exp_time = min_expiration.to_system_time(now);
-            let exp_time = exp_time - remain_time;
+            let exp_time = exp_time - Duration::from_secs(remain_time as u64);
 
             min_time = if let Some(time) = min_time {
                 Some(min(time, exp_time))
@@ -1277,7 +1277,7 @@ impl ZoneSigner {
             };
 
             let exp_time = min_expiration.to_system_time(now);
-            let exp_time = exp_time - remain_time;
+            let exp_time = exp_time - Duration::from_secs(remain_time as u64);
 
             if exp_time < now {
                 trace!("[ZS]: re-signing: request signing of zone {zone_name}");
