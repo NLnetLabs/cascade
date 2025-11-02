@@ -62,7 +62,7 @@ impl Logger {
 
                 let paths = ["/dev/log", "/var/run/syslog", "/var/run/log"];
 
-                let transport = if let Some(unix) = paths.iter().find_map(|p| connect_unix(&p).ok())
+                let transport = if let Some(unix) = paths.iter().find_map(|p| connect_unix(p).ok())
                 {
                     Transport::Unix(unix)
                 } else if let Ok(tcp) = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, 601)) {
@@ -168,7 +168,7 @@ fn get_process_info() -> (OsString, u32) {
     let name = std::env::current_exe()
         .ok()
         .and_then(|path| path.file_name().map(|os_name| os_name.to_owned()))
-        .unwrap_or_else(OsString::new);
+        .unwrap_or_default();
 
     (name, std::process::id())
 }
@@ -262,14 +262,14 @@ impl Transport {
         use std::io::Write;
         match self {
             Transport::Unix(unix_stream) => {
-                unix_stream.send(&buf)?;
+                unix_stream.send(buf)?;
             }
             Transport::Udp { local, server } => {
-                local.send_to(&buf, server)?;
+                local.send_to(buf, server)?;
             }
             Transport::Tcp(tcp_stream) => {
-                let mut s: &std::net::TcpStream = &tcp_stream;
-                s.write_all(&buf)?;
+                let mut s: &std::net::TcpStream = tcp_stream;
+                s.write_all(buf)?;
                 s.flush()?;
             }
         }
