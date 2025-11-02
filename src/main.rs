@@ -67,6 +67,8 @@ fn main() -> ExitCode {
         }
     };
 
+    info!("Cascade version {}", env!("CARGO_PKG_VERSION"));
+
     // Confirm the right version of 'dnst' is available.
     if !check_dnst_version(&config) {
         // Error is already logged in the function
