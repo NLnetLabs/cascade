@@ -1,5 +1,5 @@
+use std::future::IntoFuture;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use std::time::SystemTime;
 
@@ -22,7 +22,7 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::api;
 use crate::api::keyset::*;
@@ -58,38 +58,13 @@ pub struct HttpServer {
     pub center: Arc<Center>,
 }
 
-struct HttpServerState {
-    pub center: Arc<Center>,
-}
-
 impl HttpServer {
-    pub async fn run(
-        self,
-        mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-        ready_tx: oneshot::Sender<bool>,
-        socket_provider: Arc<Mutex<SocketProvider>>,
-    ) -> Result<(), Terminated> {
-        // Spawn the application command handler
-        tokio::task::spawn(async move {
-            loop {
-                let cmd = cmd_rx.recv().await;
-                let Some(cmd) = cmd else {
-                    return Result::<(), Terminated>::Err(Terminated);
-                };
-                debug!("[{HTTP_UNIT_NAME}] Received command: {cmd:?}");
-                match &cmd {
-                    ApplicationCommand::Terminate => {
-                        return Err(Terminated);
-                    }
-                    // ...
-                    _ => { /* not for us */ }
-                }
-            }
-        });
-
-        let state = Arc::new(HttpServerState {
-            center: self.center,
-        });
+    /// Launch the HTTP server.
+    pub fn launch(
+        center: Arc<Center>,
+        socket_provider: &mut SocketProvider,
+    ) -> Result<Arc<Self>, Terminated> {
+        let this = Arc::new(Self { center });
 
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
@@ -127,49 +102,45 @@ impl HttpServer {
             .route("/kmip/{server_id}", get(Self::hsm_server_get))
             .route("/key/{zone}/roll", post(Self::key_roll))
             .route("/key/{zone}/remove", post(Self::key_remove))
-            .with_state(state.clone());
+            .with_state(this.clone());
 
         // Setup listen sockets
         let mut socks = vec![];
         {
-            let state = state.center.state.lock().unwrap();
+            let state = this.center.state.lock().unwrap();
             for addr in &state.config.remote_control.servers {
-                let sock = socket_provider
-                    .lock()
-                    .unwrap()
-                    .take_tcp(addr)
-                    .ok_or_else(|| {
-                        error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}");
-                        Terminated
-                    })?;
+                let sock = socket_provider.take_tcp(addr).ok_or_else(|| {
+                    error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}");
+                    Terminated
+                })?;
                 socks.push(sock);
             }
         }
 
-        // Notify the manager that we are ready.
-        ready_tx.send(true).map_err(|_| Terminated)?;
-
-        // Serve our HTTP endpoints on each listener that has been configured.
-        let mut set = JoinSet::new();
-        for sock in socks {
-            let app = app.clone();
-            set.spawn(async move { axum::serve(sock, app).await });
-        }
-
-        // Wait for each future in the order they complete.
-        while let Some(res) = set.join_next().await {
-            if let Err(err) = res {
-                error!("[{HTTP_UNIT_NAME}]: {err}");
-                return Err(Terminated);
+        // Serve at the configured endpoints.
+        tokio::spawn(async move {
+            let mut set = JoinSet::new();
+            for sock in socks {
+                set.spawn(axum::serve(sock, app.clone()).into_future());
             }
-        }
 
-        Ok(())
+            // Wait for each future in the order they complete.
+            while let Some(res) = set.join_next().await {
+                if let Err(err) = res {
+                    error!("HTTP serving failed: {err}");
+                    return Err(Terminated);
+                }
+            }
+
+            Ok(())
+        });
+
+        Ok(this)
     }
 
     /// Reload the configuration file.
     async fn config_reload(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Json(command): Json<ConfigReload>,
     ) -> Json<ConfigReloadResult> {
         let ConfigReload {} = command;
@@ -194,7 +165,7 @@ impl HttpServer {
     }
 
     async fn zone_add(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Json(zone_register): Json<ZoneAdd>,
     ) -> Json<Result<ZoneAddResult, ZoneAddError>> {
         let res = center::add_zone(
@@ -216,7 +187,7 @@ impl HttpServer {
     }
 
     async fn zone_remove(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path(name): Path<Name<Bytes>>,
     ) -> Json<Result<ZoneRemoveResult, ZoneRemoveError>> {
         // TODO: Use the result.
@@ -227,7 +198,7 @@ impl HttpServer {
         )
     }
 
-    async fn zones_list(State(http_state): State<Arc<HttpServerState>>) -> Json<ZonesListResult> {
+    async fn zones_list(State(http_state): State<Arc<HttpServer>>) -> Json<ZonesListResult> {
         let state = http_state.center.state.lock().unwrap();
         let zones = state
             .zones
@@ -238,14 +209,14 @@ impl HttpServer {
     }
 
     async fn zone_status(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path(name): Path<Name<Bytes>>,
     ) -> Json<Result<ZoneStatus, ZoneStatusError>> {
         Json(Self::get_zone_status(state, name).await)
     }
 
     async fn get_zone_status(
-        state: Arc<HttpServerState>,
+        state: Arc<HttpServer>,
         name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
         let mut zone_started_at = None;
@@ -580,7 +551,7 @@ impl HttpServer {
     }
 
     async fn zone_history(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path(name): Path<Name<Bytes>>,
     ) -> Json<Result<ZoneHistory, ZoneHistoryError>> {
         let zone = match get_zone(&state.center, &name) {
@@ -594,14 +565,14 @@ impl HttpServer {
     }
 
     async fn zone_reload(
-        State(api_state): State<Arc<HttpServerState>>,
+        State(api_state): State<Arc<HttpServer>>,
         Path(name): Path<Name<Bytes>>,
     ) -> Json<Result<ZoneReloadResult, ZoneReloadError>> {
         Json(Self::do_zone_reload(api_state, name))
     }
 
     fn do_zone_reload(
-        api_state: Arc<HttpServerState>,
+        api_state: Arc<HttpServer>,
         name: Name<Bytes>,
     ) -> Result<ZoneReloadResult, ZoneReloadError> {
         let the_state = api_state.center.state.lock().unwrap();
@@ -636,7 +607,7 @@ impl HttpServer {
 
     /// Approve an unsigned version of a zone.
     async fn approve_unsigned(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -660,7 +631,7 @@ impl HttpServer {
 
     /// Reject an unsigned version of a zone.
     async fn reject_unsigned(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -684,7 +655,7 @@ impl HttpServer {
 
     /// Approve a signed version of a zone.
     async fn approve_signed(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -708,7 +679,7 @@ impl HttpServer {
 
     /// Reject a signed version of a zone.
     async fn reject_signed(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -730,7 +701,7 @@ impl HttpServer {
         Json(rx.await.unwrap())
     }
 
-    async fn policy_list(State(state): State<Arc<HttpServerState>>) -> Json<PolicyListResult> {
+    async fn policy_list(State(state): State<Arc<HttpServer>>) -> Json<PolicyListResult> {
         let state = state.center.state.lock().unwrap();
 
         let mut policies: Vec<String> = state
@@ -746,7 +717,7 @@ impl HttpServer {
     }
 
     async fn policy_reload(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
     ) -> Json<Result<PolicyChanges, PolicyReloadError>> {
         let center = &state.center;
         let mut state = state.center.state.lock().unwrap();
@@ -793,7 +764,7 @@ impl HttpServer {
     }
 
     async fn policy_show(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path(name): Path<Box<str>>,
     ) -> Json<Result<PolicyInfo, PolicyInfoError>> {
         let state = state.center.state.lock().unwrap();
@@ -863,7 +834,7 @@ impl HttpServer {
         Json(())
     }
 
-    async fn status(State(state): State<Arc<HttpServerState>>) -> Json<ServerStatusResult> {
+    async fn status(State(state): State<Arc<HttpServer>>) -> Json<ServerStatusResult> {
         let mut soft_halted_zones = vec![];
         let mut hard_halted_zones = vec![];
 
@@ -903,7 +874,7 @@ impl HttpServer {
     }
 
     async fn key_roll(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path(zone): Path<Name<Bytes>>,
         Json(key_roll): Json<KeyRoll>,
     ) -> Json<Result<(), String>> {
@@ -936,7 +907,7 @@ impl HttpServer {
     }
 
     async fn key_remove(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path(zone): Path<Name<Bytes>>,
         Json(key_remove): Json<KeyRemove>,
     ) -> Json<Result<(), String>> {
@@ -1042,7 +1013,7 @@ impl From<HsmServerAdd> for ConnectionSettings {
 
 impl HttpServer {
     async fn kmip_server_add(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Json(req): Json<HsmServerAdd>,
     ) -> Json<Result<HsmServerAddResult, HsmServerAddError>> {
         // TODO: Write the given certificates to disk.
@@ -1157,9 +1128,7 @@ impl HttpServer {
         Json(Ok(HsmServerAddResult { vendor_id }))
     }
 
-    async fn kmip_server_list(
-        State(state): State<Arc<HttpServerState>>,
-    ) -> Json<HsmServerListResult> {
+    async fn kmip_server_list(State(state): State<Arc<HttpServer>>) -> Json<HsmServerListResult> {
         let state = state.center.state.lock().unwrap();
         let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
         drop(state);
@@ -1185,7 +1154,7 @@ impl HttpServer {
     }
 
     async fn hsm_server_get(
-        State(state): State<Arc<HttpServerState>>,
+        State(state): State<Arc<HttpServer>>,
         Path(name): Path<Box<str>>,
     ) -> Json<Result<HsmServerGetResult, ()>> {
         let state = state.center.state.lock().unwrap();
