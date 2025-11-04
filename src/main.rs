@@ -2,9 +2,7 @@ use cascade::{
     center::{self, Center},
     config::{Config, SocketConfig},
     daemon::{daemonize, PreBindError, SocketProvider},
-    eprintln,
-    manager::{self, TargetCommand},
-    policy,
+    eprintln, manager, policy,
 };
 use clap::{crate_authors, crate_version};
 use std::{collections::HashMap, fs::create_dir_all};
@@ -201,17 +199,15 @@ fn main() -> ExitCode {
     // Enter the runtime.
     let result = runtime.block_on(async {
         // Spawn Cascade's units.
-        let mut center_tx = None;
-        let mut manager =
-            match manager::spawn(&center, update_rx, &mut center_tx, socket_provider).await {
-                Ok(manager) => manager,
-                Err(err) => {
-                    error!("Failed to spawn units: {err}");
-                    return ExitCode::FAILURE;
-                }
-            };
+        let mut manager = match manager::spawn(&center, update_rx, socket_provider).await {
+            Ok(manager) => manager,
+            Err(err) => {
+                error!("Failed to spawn units: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
 
-        let result = loop {
+        loop {
             tokio::select! {
                 // Watch for CTRL-C (SIGINT).
                 res = tokio::signal::ctrl_c() => {
@@ -226,17 +222,9 @@ fn main() -> ExitCode {
 
                 _ = manager::forward_app_cmds(&mut manager, &mut app_cmd_rx) => {}
             }
-        };
+        }
 
-        // Shut down Cascade.
-        center_tx
-            .as_ref()
-            .unwrap()
-            .send(TargetCommand::Terminate)
-            .unwrap();
-        center_tx.as_ref().unwrap().closed().await;
-
-        result
+        // All of Cascade's units will stop with the Tokio runtime.
     });
 
     // Persist the current state.
