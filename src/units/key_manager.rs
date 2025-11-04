@@ -2,7 +2,7 @@ use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError};
 use crate::cli::commands::hsm::Error;
-use crate::comms::{ApplicationCommand, Terminated};
+use crate::comms::ApplicationCommand;
 use crate::payload::Update;
 use crate::policy::{KeyParameters, Policy};
 use crate::targets::central_command::record_zone_event;
@@ -24,38 +24,14 @@ use std::io::{BufReader, BufWriter, ErrorKind, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::Arc;
-use tokio::select;
-use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio::time::{Instant, MissedTickBehavior};
+use tokio::sync::Mutex;
+use tokio::time::Instant;
 use tracing::{debug, error, warn};
-
-#[derive(Debug)]
-pub struct KeyManagerUnit {
-    pub center: Arc<Center>,
-}
-
-impl KeyManagerUnit {
-    pub async fn run(
-        self,
-        cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-        ready_tx: oneshot::Sender<bool>,
-    ) -> Result<(), Terminated> {
-        // TODO: metrics and status reporting
-
-        let km = KeyManager::new(self.center);
-
-        // Notify the manager that we are ready.
-        ready_tx.send(true).map_err(|_| Terminated)?;
-
-        km.run(cmd_rx).await?;
-
-        Ok(())
-    }
-}
 
 //------------ KeyManager ----------------------------------------------------
 
-struct KeyManager {
+/// The key manager.
+pub struct KeyManager {
     center: Arc<Center>,
     ks_info: Mutex<HashMap<String, KeySetInfo>>,
     dnst_binary_path: Box<Utf8Path>,
@@ -63,55 +39,45 @@ struct KeyManager {
 }
 
 impl KeyManager {
-    fn new(center: Arc<Center>) -> Self {
-        let state = center.state.lock().unwrap();
-        let dnst_binary_path = state.config.dnst_binary_path.clone();
-        let keys_dir = state.config.keys_dir.clone();
-        drop(state);
+    /// Launch the key manager.
+    pub fn launch(center: Arc<Center>) -> Arc<Self> {
+        // TODO: Get rid of this once 'config' isn't in 'center.state'.
+        let dnst_binary_path;
+        let keys_dir;
+        {
+            let state = center.state.lock().unwrap();
+            dnst_binary_path = state.config.dnst_binary_path.clone();
+            keys_dir = state.config.keys_dir.clone();
+        }
 
-        Self {
+        let this = Arc::new(Self {
             center,
-            ks_info: Mutex::new(HashMap::new()),
+            ks_info: Default::default(),
             dnst_binary_path,
             keys_dir,
-        }
-    }
+        });
 
-    async fn run(
-        self,
-        mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-    ) -> Result<(), crate::comms::Terminated> {
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        let arc_self = Arc::new(self);
-
-        loop {
-            select! {
-                _ = interval.tick() => {
-                    let arc_self = arc_self.clone();
-                    tokio::task::spawn(async move {
-                        arc_self.tick().await;
-                    });
-                }
-                cmd = cmd_rx.recv() => {
-                    debug!("[KM] Received command: {cmd:?}");
-                    if matches!(cmd, Some(ApplicationCommand::Terminate) | None) {
-                        return Err(Terminated);
-                    }
-
-                    let arc_self = arc_self.clone();
-                    tokio::task::spawn(async move {
-                        if let Err(err) = arc_self.run_cmd(cmd.unwrap()).await {
-                            error!("[KM] Error: {err}");
-                        }
+        // Perform periodic ticks in the background.
+        tokio::task::spawn({
+            let this = this.clone();
+            async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(5));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    interval.tick().await;
+                    tokio::spawn({
+                        let this = this.clone();
+                        async move { this.tick().await }
                     });
                 }
             }
-        }
+        });
+
+        this
     }
 
-    async fn run_cmd(&self, cmd: ApplicationCommand) -> Result<(), String> {
+    /// Respond to an external command.
+    pub async fn on_command(&self, cmd: ApplicationCommand) -> Result<(), String> {
         match cmd {
             ApplicationCommand::RegisterZone {
                 name,
