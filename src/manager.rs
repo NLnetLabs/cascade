@@ -55,6 +55,11 @@ impl std::fmt::Display for Error {
     }
 }
 
+pub struct Manager {
+    /// The zone loader.
+    pub zone_loader: Arc<ZoneLoader>,
+}
+
 /// Spawn all targets.
 pub async fn spawn(
     center: &Arc<Center>,
@@ -62,7 +67,7 @@ pub async fn spawn(
     center_tx_slot: &mut Option<mpsc::UnboundedSender<TargetCommand>>,
     unit_tx_slots: &mut foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
     socket_provider: SocketProvider,
-) -> Result<(), Error> {
+) -> Result<Manager, Error> {
     let socket_provider = Arc::new(Mutex::new(socket_provider));
 
     // Spawn the central command.
@@ -80,14 +85,7 @@ pub async fn spawn(
 
     // Spawn the zone loader.
     info!("Starting unit 'ZL'");
-    let unit = ZoneLoader {
-        center: center.clone(),
-    };
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    unit_ready_rxs.push(ready_rx);
-    unit_join_handles.insert("ZL", tokio::spawn(unit.run(cmd_rx, ready_tx)));
-    unit_tx_slots.insert("ZL".into(), cmd_tx);
+    let zone_loader = Arc::new(ZoneLoader::launch(center.clone()));
 
     // Spawn the unsigned zone review server.
     info!("Starting unit 'RS'");
@@ -193,13 +191,14 @@ pub async fn spawn(
 
     info!("All units report ready.");
 
-    Ok(())
+    Ok(Manager { zone_loader })
 }
 
 /// Forward application commands.
 //
 // TODO: Eliminate this function entirely.
 pub async fn forward_app_cmds(
+    manager: &mut Manager,
     rx: &mut mpsc::UnboundedReceiver<(String, ApplicationCommand)>,
     unit_txs: &foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
 ) {
@@ -207,6 +206,11 @@ pub async fn forward_app_cmds(
         if let Some(tx) = unit_txs.get(&*unit_name) {
             debug!("Forwarding application command to unit '{unit_name}'");
             tx.send(data).unwrap();
+        } else if unit_name == "ZL" {
+            tokio::spawn({
+                let unit = manager.zone_loader.clone();
+                async move { unit.on_command(data).await }
+            });
         } else {
             debug!("Unrecognized unit: {unit_name}");
         }

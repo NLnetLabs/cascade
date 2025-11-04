@@ -204,7 +204,7 @@ fn main() -> ExitCode {
         // Spawn Cascade's units.
         let mut center_tx = None;
         let mut unit_txs = Default::default();
-        if let Err(err) = manager::spawn(
+        let mut manager = match manager::spawn(
             &center,
             update_rx,
             &mut center_tx,
@@ -213,9 +213,12 @@ fn main() -> ExitCode {
         )
         .await
         {
-            error!("Failed to spawn units: {err}");
-            return ExitCode::FAILURE;
-        }
+            Ok(manager) => manager,
+            Err(err) => {
+                error!("Failed to spawn units: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
 
         let result = loop {
             tokio::select! {
@@ -230,7 +233,7 @@ fn main() -> ExitCode {
                     break ExitCode::SUCCESS;
                 }
 
-                _ = manager::forward_app_cmds(&mut app_cmd_rx, &unit_txs) => {}
+                _ = manager::forward_app_cmds(&mut manager, &mut app_cmd_rx, &unit_txs) => {}
             }
         };
 
