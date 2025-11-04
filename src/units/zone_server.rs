@@ -1,10 +1,9 @@
-use core::future::ready;
-
+use std::future::{ready, Future};
 use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use arc_swap::ArcSwap;
@@ -32,9 +31,7 @@ use domain::tsig::{Algorithm, Key};
 use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
 use domain::zonetree::{StoredName, ZoneTree};
-use futures::Future;
-use serde::Deserialize;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 
 use crate::api::{
@@ -52,128 +49,29 @@ use crate::targets::central_command::record_zone_event;
 use crate::zone::HistoricalEvent;
 use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
-pub enum Mode {
-    #[serde(alias = "prepublish")]
-    #[serde(alias = "prepub")]
-    Prepublish,
-
-    #[serde(alias = "publish")]
-    #[serde(alias = "pub")]
-    Publish,
-}
-
-#[allow(clippy::enum_variant_names)]
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
+/// The source of a zone server.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Source {
-    #[serde(alias = "unsigned")]
-    UnsignedZones,
+    /// Loaded, unsigned zones that need review.
+    Unsigned,
 
-    #[serde(alias = "signed")]
-    SignedZones,
+    /// Freshly signed zones that need review.
+    Signed,
 
-    #[serde(alias = "published")]
-    PublishedZones,
-}
-
-#[derive(Debug)]
-pub struct ZoneServerUnit {
-    pub center: Arc<Center>,
-
-    pub mode: Mode,
-
-    pub source: Source,
-}
-
-impl ZoneServerUnit {
-    pub async fn run(
-        self,
-        cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-        ready_tx: oneshot::Sender<bool>,
-        socket_provider: Arc<Mutex<SocketProvider>>,
-    ) -> Result<(), Terminated> {
-        let unit_name = match (self.mode, self.source) {
-            (Mode::Prepublish, Source::UnsignedZones) => "RS",
-            (Mode::Prepublish, Source::SignedZones) => "RS2",
-            (Mode::Publish, Source::PublishedZones) => "PS",
-            _ => unreachable!(),
-        };
-
-        // TODO: metrics and status reporting
-
-        // TODO: This will just choose all current zones to be served. For signed and published
-        // zones this doesn't matter so much as they only exist while being and once approved.
-        // But for unsigned zones the zone could be updated whilst being reviewed and we only
-        // serve the latest version of the zone, not the specific serial being reviewed!
-        let zones = match self.source {
-            Source::UnsignedZones => self.center.unsigned_zones.clone(),
-            Source::SignedZones => self.center.signed_zones.clone(),
-            Source::PublishedZones => self.center.published_zones.clone(),
-        };
-
-        let max_concurrency = std::thread::available_parallelism().unwrap().get() / 2;
-
-        // TODO: Pass xfr_out to XfrDataProvidingZonesWrapper for enforcement.
-        let zones = XfrDataProvidingZonesWrapper {
-            zones,
-            key_store: self.center.old_tsig_key_store.clone(),
-        };
-
-        // Propagate NOTIFY messages if this is the publication server.
-        let notifier = LoaderNotifier {
-            enabled: self.source == Source::PublishedZones,
-            update_tx: self.center.update_tx.clone(),
-        };
-
-        // let svc = ZoneServerService::new(zones.clone());
-        let svc = service_fn(zone_server_service, zones.clone());
-        let svc = XfrMiddlewareSvc::new(svc, zones.clone(), max_concurrency);
-        let svc = NotifyMiddlewareSvc::new(svc, notifier);
-        let svc = TsigMiddlewareSvc::new(svc, self.center.old_tsig_key_store.clone());
-        let svc = CookiesMiddlewareSvc::with_random_secret(svc);
-        let svc = EdnsMiddlewareSvc::new(svc);
-        let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
-        let svc = Arc::new(svc);
-
-        // TODO: Should this reload when the config changes?
-        let servers = {
-            let state = self.center.state.lock().unwrap();
-            let config = &state.config;
-            let servers = match self.source {
-                Source::UnsignedZones => &config.loader.review.servers,
-                Source::SignedZones => &config.signer.review.servers,
-                Source::PublishedZones => &config.server.servers,
-            };
-            servers.clone()
-        };
-
-        let _addrs = spawn_servers(socket_provider, unit_name, svc, servers)
-            .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
-            .map_err(|_| Terminated)?;
-
-        // Notify the manager that we are ready.
-        ready_tx.send(true).map_err(|_| Terminated)?;
-
-        let update_tx = self.center.update_tx.clone();
-        ZoneServer::new(self.center, self.source)
-            .run(unit_name, update_tx, cmd_rx)
-            .await?;
-
-        Ok(())
-    }
+    /// Approved and published signed zones.
+    Published,
 }
 
 fn spawn_servers<Svc>(
-    socket_provider: Arc<Mutex<SocketProvider>>,
     unit_name: &'static str,
+    socket_provider: &mut SocketProvider,
+    source: Source,
     svc: Svc,
     servers: Vec<SocketConfig>,
-) -> Result<Vec<String>, String>
+) -> Result<(), String>
 where
     Svc: Service<Vec<u8>, ()> + Clone,
 {
-    let mut addrs = Vec::new();
-    let mut socket_provider = socket_provider.lock().unwrap();
     for sock_cfg in servers {
         if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
             info!("[{unit_name}]: Obtaining UDP socket for address {addr}");
@@ -181,7 +79,6 @@ where
                 .take_udp(&addr)
                 .ok_or(format!("No socket available for UDP {addr}"))?;
             tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
-            addrs.push(addr.to_string());
         }
 
         if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
@@ -190,11 +87,10 @@ where
                 .take_tcp(&addr)
                 .ok_or(format!("No socket available for TCP {addr}"))?;
             tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
-            addrs.push(addr.to_string());
         }
     }
 
-    if unit_name == "PS" {
+    if matches!(source, Source::Published) {
         // Also listen on any remaining UDP and TCP sockets provided by
         // the O/S.
         while let Some(sock) = socket_provider.pop_udp() {
@@ -203,7 +99,6 @@ where
                 .map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
             info!("[{unit_name}]: Receieved additional UDP socket {addr}");
             tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
-            addrs.push(addr.to_string());
         }
         while let Some(sock) = socket_provider.pop_tcp() {
             let addr = sock
@@ -211,11 +106,10 @@ where
                 .map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
             info!("[{unit_name}]: Receieved additional TCP listener {addr}");
             tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
-            addrs.push(addr.to_string());
         }
     }
 
-    Ok(addrs)
+    Ok(())
 }
 
 async fn serve_on_udp<Svc>(svc: Svc, buf: VecBufSource, sock: tokio::net::UdpSocket)
@@ -243,9 +137,9 @@ where
 
 //------------ ZoneServer ----------------------------------------------------
 
-struct ZoneServer {
-    zone_review_api: Option<ZoneReviewApi>,
+pub struct ZoneServer {
     center: Arc<Center>,
+    zone_review_api: ZoneReviewApi,
     source: Source,
     #[allow(clippy::type_complexity)]
     pending_approvals: Arc<RwLock<foldhash::HashSet<(Name<Bytes>, Serial)>>>,
@@ -254,56 +148,100 @@ struct ZoneServer {
 }
 
 impl ZoneServer {
-    #[allow(clippy::too_many_arguments)]
-    fn new(center: Arc<Center>, source: Source) -> Self {
-        Self {
-            zone_review_api: Default::default(),
-            center,
+    /// Launch a zone server.
+    pub fn launch(
+        center: Arc<Center>,
+        source: Source,
+        socket_provider: &mut SocketProvider,
+    ) -> Result<Self, Terminated> {
+        let unit_name = match source {
+            Source::Unsigned => "RS",
+            Source::Signed => "RS2",
+            Source::Published => "PS",
+        };
+
+        // TODO: metrics and status reporting
+
+        // TODO: This will just choose all current zones to be served. For signed and published
+        // zones this doesn't matter so much as they only exist while being and once approved.
+        // But for unsigned zones the zone could be updated whilst being reviewed and we only
+        // serve the latest version of the zone, not the specific serial being reviewed!
+        let zones = match source {
+            Source::Unsigned => center.unsigned_zones.clone(),
+            Source::Signed => center.signed_zones.clone(),
+            Source::Published => center.published_zones.clone(),
+        };
+
+        let max_concurrency = std::thread::available_parallelism()
+            .unwrap()
+            .get()
+            .div_ceil(2);
+
+        // TODO: Pass xfr_out to XfrDataProvidingZonesWrapper for enforcement.
+        let zones = XfrDataProvidingZonesWrapper {
+            zones,
+            key_store: center.old_tsig_key_store.clone(),
+        };
+
+        // Propagate NOTIFY messages if this is the publication server.
+        let notifier = LoaderNotifier {
+            enabled: matches!(source, Source::Published),
+            update_tx: center.update_tx.clone(),
+        };
+
+        // let svc = ZoneServerService::new(zones.clone());
+        let svc = service_fn(zone_server_service, zones.clone());
+        let svc = XfrMiddlewareSvc::new(svc, zones.clone(), max_concurrency);
+        let svc = NotifyMiddlewareSvc::new(svc, notifier);
+        let svc = TsigMiddlewareSvc::new(svc, center.old_tsig_key_store.clone());
+        let svc = CookiesMiddlewareSvc::with_random_secret(svc);
+        let svc = EdnsMiddlewareSvc::new(svc);
+        let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
+        let svc = Arc::new(svc);
+
+        let servers = {
+            let state = center.state.lock().unwrap();
+            let config = &state.config;
+            let servers = match source {
+                Source::Unsigned => &config.loader.review.servers,
+                Source::Signed => &config.signer.review.servers,
+                Source::Published => &config.server.servers,
+            };
+            servers.clone()
+        };
+
+        spawn_servers(unit_name, socket_provider, source, svc, servers)
+            .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
+            .map_err(|_| Terminated)?;
+
+        let pending_approvals = <Arc<RwLock<_>>>::default();
+        let last_approvals = <Arc<RwLock<_>>>::default();
+
+        let zone_review_api = ZoneReviewApi {
+            center: center.clone(),
+            update_tx: center.update_tx.clone(),
+            pending_approvals: pending_approvals.clone(),
+            last_approvals: last_approvals.clone(),
             source,
-            pending_approvals: Default::default(),
-            last_approvals: Default::default(),
-        }
+        };
+
+        Ok(Self {
+            center,
+            zone_review_api,
+            source,
+            pending_approvals,
+            last_approvals,
+        })
     }
 
-    async fn run(
-        mut self,
-        unit_name: &'static str,
-        update_tx: mpsc::UnboundedSender<Update>,
-        mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-    ) -> Result<(), crate::comms::Terminated> {
-        // let status_reporter = self.status_reporter.clone();
+    /// Respond to an application command.
+    pub async fn on_command(&self, cmd: ApplicationCommand) -> Result<(), Terminated> {
+        let unit_name = match self.source {
+            Source::Unsigned => "RS",
+            Source::Signed => "RS2",
+            Source::Published => "PS",
+        };
 
-        // Setup approval API endpoint
-        self.zone_review_api = Some(ZoneReviewApi::new(
-            self.center.clone(),
-            update_tx.clone(),
-            self.pending_approvals.clone(),
-            self.last_approvals.clone(),
-            self.source,
-        ));
-
-        // status_reporter.listener_listening(&listen_addr.to_string());
-
-        loop {
-            tokio::select! {
-                cmd = cmd_rx.recv() => {
-                    let Some(cmd) = cmd else {
-                        // arc_self.status_reporter.terminated();
-                        return Err(Terminated);
-                    };
-
-                    self.handle_command(cmd, unit_name, update_tx.clone()).await?;
-                }
-            }
-        }
-    }
-
-    async fn handle_command(
-        &self,
-        cmd: ApplicationCommand,
-        unit_name: &'static str,
-        update_tx: mpsc::UnboundedSender<Update>,
-    ) -> Result<(), Terminated> {
         debug!("[{unit_name}] Received command: {cmd:?}",);
         match cmd {
             ApplicationCommand::Terminate => {
@@ -329,7 +267,7 @@ impl ZoneServer {
 
             ApplicationCommand::SeekApprovalForUnsignedZone { .. }
             | ApplicationCommand::SeekApprovalForSignedZone { .. } => {
-                self.on_seek_approval_for_zone_cmd(cmd, unit_name, update_tx)
+                self.on_seek_approval_for_zone_cmd(cmd, unit_name, self.center.update_tx.clone())
                     .await;
             }
 
@@ -459,9 +397,9 @@ impl ZoneServer {
             let zone_state = zone.state.lock().unwrap();
             let policy = zone_state.policy.as_ref().unwrap();
             match self.source {
-                Source::UnsignedZones => policy.loader.review.clone(),
-                Source::SignedZones => policy.signer.review.clone(),
-                Source::PublishedZones => unreachable!(),
+                Source::Unsigned => policy.loader.review.clone(),
+                Source::Signed => policy.signer.review.clone(),
+                Source::Published => unreachable!(),
             }
         };
 
@@ -469,22 +407,22 @@ impl ZoneServer {
             let state = self.center.state.lock().unwrap();
             let status = ZoneReviewStatus::Pending;
             match self.source {
-                Source::UnsignedZones => (
+                Source::Unsigned => (
                     state.config.loader.review.servers.first().cloned(),
                     HistoricalEvent::UnsignedZoneReview { status },
                 ),
-                Source::SignedZones => (
+                Source::Signed => (
                     state.config.signer.review.servers.first().cloned(),
                     HistoricalEvent::SignedZoneReview { status },
                 ),
-                Source::PublishedZones => unreachable!(),
+                Source::Published => unreachable!(),
             }
         };
 
         if !review.required {
             // Approve immediately.
             match self.source {
-                Source::UnsignedZones => {
+                Source::Unsigned => {
                     info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
                     if let Err(err) =
                         ZoneServer::promote_zone_to_signable(self.center.clone(), &zone_name)
@@ -499,7 +437,7 @@ impl ZoneServer {
                             .unwrap();
                     }
                 }
-                Source::SignedZones => {
+                Source::Signed => {
                     update_tx
                         .send(Update::SignedZoneApprovedEvent {
                             zone_name: zone_name.clone(),
@@ -507,7 +445,7 @@ impl ZoneServer {
                         })
                         .unwrap();
                 }
-                Source::PublishedZones => unreachable!(),
+                Source::Published => unreachable!(),
             }
 
             return None;
@@ -637,8 +575,6 @@ impl ZoneServer {
         // This can fail if the caller doesn't care about the result.
         let _ = tx.send(
             self.zone_review_api
-                .as_ref()
-                .expect("This should have been setup on startup.")
                 .process_request(unit_name, zone_name.clone(), zone_serial, approve)
                 .await,
         );
@@ -797,6 +733,18 @@ fn zone_server_service(
     Ok(CallResult::new(additional))
 }
 
+//------------ ZoneReviewApi -------------------------------------------------
+
+struct ZoneReviewApi {
+    center: Arc<Center>,
+    update_tx: mpsc::UnboundedSender<Update>,
+    #[allow(clippy::type_complexity)]
+    pending_approvals: Arc<RwLock<foldhash::HashSet<(Name<Bytes>, Serial)>>>,
+    #[allow(clippy::type_complexity)]
+    last_approvals: Arc<RwLock<foldhash::HashMap<(Name<Bytes>, Serial), Instant>>>,
+    source: Source,
+}
+
 // TODO: Should we expire old pending approvals, e.g. a hook script failed and
 // they never got approved or rejected?
 impl ZoneReviewApi {
@@ -821,7 +769,7 @@ impl ZoneReviewApi {
 
         if approve {
             let (zone_type, event) = match self.source {
-                Source::UnsignedZones => {
+                Source::Unsigned => {
                     info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
                     ZoneServer::promote_zone_to_signable(self.center.clone(), &zone_name)?;
 
@@ -833,14 +781,14 @@ impl ZoneReviewApi {
                         },
                     )
                 }
-                Source::SignedZones => (
+                Source::Signed => (
                     "signed",
                     Update::SignedZoneApprovedEvent {
                         zone_name: zone_name.clone(),
                         zone_serial,
                     },
                 ),
-                Source::PublishedZones => unreachable!(),
+                Source::Published => unreachable!(),
             };
             info!("Pending {zone_type} zone '{zone_name}' approved at serial {zone_serial}.");
             let approved_at = Instant::now();
@@ -853,57 +801,26 @@ impl ZoneReviewApi {
             self.update_tx.send(event).unwrap();
         } else {
             let (zone_type, event) = match self.source {
-                Source::UnsignedZones => (
+                Source::Unsigned => (
                     "unsigned",
                     Update::UnsignedZoneRejectedEvent {
                         zone_name: zone_name.clone(),
                         zone_serial,
                     },
                 ),
-                Source::SignedZones => (
+                Source::Signed => (
                     "signed",
                     Update::SignedZoneRejectedEvent {
                         zone_name: zone_name.clone(),
                         zone_serial,
                     },
                 ),
-                Source::PublishedZones => unreachable!(),
+                Source::Published => unreachable!(),
             };
             info!("Pending {zone_type} zone '{zone_name}' rejected at serial {zone_serial}.");
             self.update_tx.send(event).unwrap();
         }
 
         Ok(ZoneReviewOutput {})
-    }
-}
-
-//------------ ZoneReviewApi -------------------------------------------------
-
-struct ZoneReviewApi {
-    center: Arc<Center>,
-    update_tx: mpsc::UnboundedSender<Update>,
-    #[allow(clippy::type_complexity)]
-    pending_approvals: Arc<RwLock<foldhash::HashSet<(Name<Bytes>, Serial)>>>,
-    #[allow(clippy::type_complexity)]
-    last_approvals: Arc<RwLock<foldhash::HashMap<(Name<Bytes>, Serial), Instant>>>,
-    source: Source,
-}
-
-impl ZoneReviewApi {
-    #[allow(clippy::type_complexity)]
-    fn new(
-        center: Arc<Center>,
-        update_tx: mpsc::UnboundedSender<Update>,
-        pending_approvals: Arc<RwLock<foldhash::HashSet<(Name<Bytes>, Serial)>>>,
-        last_approvals: Arc<RwLock<foldhash::HashMap<(Name<Bytes>, Serial), Instant>>>,
-        source: Source,
-    ) -> Self {
-        Self {
-            center,
-            update_tx,
-            pending_approvals,
-            last_approvals,
-            source,
-        }
     }
 }
