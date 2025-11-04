@@ -26,13 +26,14 @@ use domain::zonetree::{
 use foldhash::HashMap;
 use futures::Future;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{self, Sender};
-use tokio::sync::{oneshot, Semaphore};
+use tokio::sync::mpsc::Sender;
+use tokio::sync::Semaphore;
 use tokio::time::Instant;
 use tracing::{debug, error, info};
 
 use crate::center::{halt_zone, Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
+use crate::common::tsig::TsigKeyStore;
 use crate::comms::{ApplicationCommand, Terminated};
 use crate::payload::Update;
 use crate::zone::ZoneLoadSource;
@@ -52,34 +53,61 @@ pub struct ZoneLoaderReport {
     pub record_count: usize,
 }
 
-#[derive(Debug)]
 pub struct ZoneLoader {
     /// The center.
     pub center: Arc<Center>,
+
+    /// The zone maintainer.
+    //
+    // TODO: Merge 'ZoneMaintainer' into 'ZoneLoader'.
+    pub zone_maintainer: Arc<ZoneMaintainer<TsigKeyStore, DefaultConnFactory>>,
+
+    /// A channel to propagate zone update events.
+    //
+    // TODO: Turn into a simple method on 'self'.
+    pub zone_updated_tx: tokio::sync::mpsc::Sender<(StoredName, Serial)>,
+
+    /// The status of zone loading.
+    //
+    // TODO: Move into 'ZoneState'.
+    pub receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
 }
 
 impl ZoneLoader {
-    pub async fn run(
-        self,
-        mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-        ready_tx: oneshot::Sender<bool>,
-    ) -> Result<(), Terminated> {
+    /// Launch the zone loader.
+    pub fn launch(center: Arc<Center>) -> Self {
         // TODO: metrics and status reporting
         let receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>> = Default::default();
 
+        // TODO: Replace this with a method on 'self'.
         let (zone_updated_tx, mut zone_updated_rx) = tokio::sync::mpsc::channel(10);
+        tokio::spawn({
+            let update_tx = center.update_tx.clone();
+            async move {
+                while let Some((zone_name, zone_serial)) = zone_updated_rx.recv().await {
+                    info!(
+                        "[ZL]: Received a new copy of zone '{zone_name}' at serial {zone_serial}",
+                    );
+
+                    let _ = update_tx.send(Update::UnsignedZoneUpdatedEvent {
+                        zone_name,
+                        zone_serial,
+                    });
+                }
+            }
+        });
 
         let maintainer_config =
-            Config::<_, DefaultConnFactory>::new(self.center.old_tsig_key_store.clone());
+            Config::<_, DefaultConnFactory>::new(center.old_tsig_key_store.clone());
         let zone_maintainer = Arc::new(
-            ZoneMaintainer::new_with_config(self.center.clone(), maintainer_config)
-                .with_zone_tree(self.center.unsigned_zones.clone()),
+            ZoneMaintainer::new_with_config(center.clone(), maintainer_config)
+                .with_zone_tree(center.unsigned_zones.clone()),
         );
 
         // Load primary zones.
         // Create secondary zones.
         let zones = {
-            let state = self.center.state.lock().unwrap();
+            let state = center.state.lock().unwrap();
             state
                 .zones
                 .iter()
@@ -101,7 +129,7 @@ impl ZoneLoader {
             let max_zones_loading_at_once = max_zones_loading_at_once.clone();
             let zone_updated_tx = zone_updated_tx.clone();
             let receipt_info = receipt_info.clone();
-            let center = self.center.clone();
+            let center = center.clone();
             tokio::spawn(async move {
                 info!("[ZL]: Waiting to add zone '{name}' with source '{source:?}'");
                 let _permit = max_zones_loading_at_once.acquire().await.unwrap();
@@ -115,7 +143,7 @@ impl ZoneLoader {
 
                     ZoneLoadSource::Zonefile { path } => {
                         match Self::register_primary_zone(
-                            center,
+                            center.clone(),
                             name.clone(),
                             &path,
                             &zone_updated_tx,
@@ -148,68 +176,39 @@ impl ZoneLoader {
             });
         }
 
-        let zone_maintainer_clone = zone_maintainer.clone();
-        tokio::spawn(async move { zone_maintainer_clone.run().await });
+        tokio::spawn({
+            let zone_maintainer = zone_maintainer.clone();
+            async move { zone_maintainer.run().await }
+        });
 
-        // Notify the manager that we are ready.
-        ready_tx.send(true).map_err(|_| Terminated)?;
-
-        loop {
-            tokio::select! {
-                zone_updated = zone_updated_rx.recv() => {
-                    self.on_zone_updated(zone_updated);
-                }
-
-                cmd = cmd_rx.recv() => {
-                    self.on_command(cmd, zone_maintainer.clone(), zone_updated_tx.clone(), receipt_info.clone()).await?;
-                }
-            }
+        Self {
+            center,
+            zone_maintainer,
+            zone_updated_tx,
+            receipt_info,
         }
     }
 
-    fn on_zone_updated(&self, zone_updated: Option<(StoredName, Serial)>) {
-        let (zone_name, zone_serial) = zone_updated.unwrap();
-
-        info!("[ZL]: Received a new copy of zone '{zone_name}' at serial {zone_serial}",);
-
-        self.center
-            .update_tx
-            .send(Update::UnsignedZoneUpdatedEvent {
-                zone_name,
-                zone_serial,
-            })
-            .unwrap();
-    }
-
-    async fn on_command<KS, CF>(
-        &self,
-        cmd: Option<ApplicationCommand>,
-        zone_maintainer: Arc<ZoneMaintainer<KS, CF>>,
-        zone_updated_tx: Sender<(StoredName, Serial)>,
-        receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
-    ) -> Result<(), Terminated>
-    where
-        KS: Deref + Send + Sync + 'static,
-        KS::Target: KeyStore,
-        <KS::Target as KeyStore>::Key: Clone + Debug + Display + Sync + Send + 'static,
-        CF: ConnectionFactory + Send + Sync + 'static,
-    {
+    /// React to an application command.
+    pub async fn on_command(&self, cmd: ApplicationCommand) -> Result<(), Terminated> {
         debug!("[ZL] Received command: {cmd:?}",);
 
         match cmd {
-            Some(ApplicationCommand::Terminate) | None => {
+            ApplicationCommand::Terminate => {
                 return Err(Terminated);
             }
 
-            Some(ApplicationCommand::Changed(Change::ZoneSourceChanged(name, source))) => {
+            ApplicationCommand::Changed(Change::ZoneSourceChanged(name, source)) => {
                 // Just remove and re-insert the zone.
                 let id = ZoneId {
                     name: name.clone(),
                     class: Class::IN,
                 };
-                zone_maintainer.remove_zone(id).await;
-                let zone_maintainer = zone_maintainer.clone();
+                self.zone_maintainer.remove_zone(id).await;
+                let zone_maintainer = self.zone_maintainer.clone();
                 let center = self.center.clone();
+                let zone_updated_tx = self.zone_updated_tx.clone();
+                let receipt_info = self.receipt_info.clone();
 
                 tokio::spawn(async move {
                     let zone = match source {
@@ -252,40 +251,46 @@ impl ZoneLoader {
                 });
             }
 
-            Some(ApplicationCommand::Changed(Change::ZoneRemoved(name))) => {
+            ApplicationCommand::Changed(Change::ZoneRemoved(name)) => {
                 // Remove the zone if it was tracked.
                 let id = ZoneId {
                     name: name.clone(),
                     class: Class::IN,
                 };
-                zone_maintainer.remove_zone(id).await;
+                self.zone_maintainer.remove_zone(id).await;
             }
 
-            Some(ApplicationCommand::RefreshZone {
+            ApplicationCommand::RefreshZone {
                 zone_name,
                 serial,
                 source,
-            }) => {
+            } => {
                 if let Some(source) = source {
-                    let _ = zone_maintainer
+                    let _ = self
+                        .zone_maintainer
                         .notify_zone_changed(Class::IN, &zone_name, serial, source)
                         .await;
                 } else {
                     // TODO: Should we check the serial number here?
                     let _ = serial;
 
-                    zone_maintainer
+                    self.zone_maintainer
                         .force_zone_refresh(&zone_name, Class::IN)
                         .await;
                 }
             }
 
-            Some(ApplicationCommand::GetZoneReport {
+            ApplicationCommand::GetZoneReport {
                 zone_name,
                 report_tx,
-            }) => {
-                if let Ok(report) = zone_maintainer.zone_status(&zone_name, Class::IN).await {
-                    let zone_loader_report = receipt_info.lock().unwrap().get(&zone_name).cloned();
+            } => {
+                if let Ok(report) = self
+                    .zone_maintainer
+                    .zone_status(&zone_name, Class::IN)
+                    .await
+                {
+                    let zone_loader_report =
+                        self.receipt_info.lock().unwrap().get(&zone_name).cloned();
                     report_tx.send((report, zone_loader_report)).unwrap();
                 } else {
                     let report = ZoneReport::new(
@@ -294,32 +299,33 @@ impl ZoneLoader {
                         vec![],
                         ZoneInfo::default(),
                     );
-                    let zone_loader_report = receipt_info.lock().unwrap().get(&zone_name).cloned();
+                    let zone_loader_report =
+                        self.receipt_info.lock().unwrap().get(&zone_name).cloned();
                     report_tx.send((report, zone_loader_report)).unwrap();
                 }
             }
 
-            Some(ApplicationCommand::ReloadZone { zone_name, source }) => match source {
+            ApplicationCommand::ReloadZone { zone_name, source } => match source {
                 ZoneLoadSource::None => return Ok(()),
                 ZoneLoadSource::Zonefile { path } => {
                     Self::remove_and_add(
                         self.center.clone(),
                         zone_name,
                         path,
-                        zone_maintainer,
-                        &zone_updated_tx,
-                        receipt_info,
+                        self.zone_maintainer.clone(),
+                        &self.zone_updated_tx,
+                        self.receipt_info.clone(),
                     )
                     .await
                 }
                 ZoneLoadSource::Server { .. } => {
-                    zone_maintainer
+                    self.zone_maintainer
                         .force_zone_refresh(&zone_name, Class::IN)
                         .await
                 }
             },
 
-            Some(_) => {
+            _ => {
                 // TODO
             }
         }
