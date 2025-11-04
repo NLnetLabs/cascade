@@ -35,6 +35,9 @@ pub struct Center {
     /// Global state.
     pub state: Mutex<State>,
 
+    /// The configuration.
+    pub config: Config,
+
     /// The logger.
     pub logger: &'static Logger,
 
@@ -233,15 +236,8 @@ pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reaso
 //----------- State ------------------------------------------------------------
 
 /// Global state for Cascade.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct State {
-    /// Configuration.
-    ///
-    /// The configuration file is loaded at startup and combined with other
-    /// sources (environment variables and command-line arguments).  The user
-    /// can change the file again and request Cascade to reload it live.
-    pub config: Config,
-
     /// Known zones.
     ///
     /// This field stores the live state of every zone.  Crucially, zones are
@@ -277,23 +273,9 @@ pub struct State {
 //--- Initialization
 
 impl State {
-    /// Build a new Cascade state.
-    ///
-    /// A new instance of Cascade is initialized with a blank state.  If a
-    /// previous state file exists, it can be imported afterwards.
-    pub fn new(config: Config) -> Self {
-        Self {
-            config,
-            zones: Default::default(),
-            policies: Default::default(),
-            tsig_store: Default::default(),
-            enqueued_save: None,
-        }
-    }
-
     /// Attempt to load the global state file.
-    pub fn init_from_file(&mut self) -> io::Result<()> {
-        let path = self.config.daemon.state_file.value();
+    pub fn init_from_file(&mut self, config: &Config) -> io::Result<()> {
+        let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
         spec.parse_into(self, |_| {});
         Ok(())
@@ -326,7 +308,7 @@ impl State {
                     return;
                 };
 
-                path = state.config.daemon.state_file.value().clone();
+                path = center.config.daemon.state_file.value().clone();
                 spec = crate::state::Spec::build(&state);
             }
 

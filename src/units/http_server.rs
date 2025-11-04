@@ -71,7 +71,6 @@ impl HttpServer {
             .route("/health", get(Self::health))
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
-            .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
@@ -106,17 +105,19 @@ impl HttpServer {
             .with_state(this.clone());
 
         // Setup listen sockets
-        let mut socks = vec![];
-        {
-            let state = this.center.state.lock().unwrap();
-            for addr in &state.config.remote_control.servers {
-                let sock = socket_provider.take_tcp(addr).ok_or_else(|| {
+        let socks = this
+            .center
+            .config
+            .remote_control
+            .servers
+            .iter()
+            .map(|addr| {
+                socket_provider.take_tcp(addr).ok_or_else(|| {
                     error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}");
                     Terminated
-                })?;
-                socks.push(sock);
-            }
-        }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Serve at the configured endpoints.
         tokio::spawn(async move {
@@ -137,32 +138,6 @@ impl HttpServer {
         });
 
         Ok(this)
-    }
-
-    /// Reload the configuration file.
-    async fn config_reload(
-        State(state): State<Arc<HttpServer>>,
-        Json(command): Json<ConfigReload>,
-    ) -> Json<ConfigReloadResult> {
-        let ConfigReload {} = command;
-
-        let path = {
-            let state = state.center.state.lock().unwrap();
-            state.config.daemon.config_file.value().clone()
-        }
-        .into_path_buf();
-
-        match crate::config::reload(&state.center) {
-            Ok(()) => Json(Ok(ConfigReloadOutput {})),
-
-            Err(crate::config::file::FileError::Load(error)) => {
-                Json(Err(ConfigReloadError::Load(path, error.to_string())))
-            }
-
-            Err(crate::config::file::FileError::Parse(error)) => {
-                Json(Err(ConfigReloadError::Parse(path, error.to_string())))
-            }
-        }
     }
 
     async fn zone_add(
@@ -237,7 +212,7 @@ impl HttpServer {
         let pipeline_mode;
         {
             let locked_state = state.center.state.lock().unwrap();
-            let keys_dir = &locked_state.config.keys_dir;
+            let keys_dir = &state.center.config.keys_dir;
             state_path = mk_dnst_keyset_state_file_path(keys_dir, &name);
             app_cmd_tx = state.center.app_cmd_tx.clone();
             let zone = locked_state
@@ -260,21 +235,24 @@ impl HttpServer {
                     xfr_status: Default::default(),
                 },
             };
-            unsigned_review_addr = locked_state
+            unsigned_review_addr = state
+                .center
                 .config
                 .loader
                 .review
                 .servers
                 .first()
                 .map(|v| v.addr());
-            signed_review_addr = locked_state
+            signed_review_addr = state
+                .center
                 .config
                 .signer
                 .review
                 .servers
                 .first()
                 .map(|v| v.addr());
-            publish_addr = locked_state
+            publish_addr = state
+                .center
                 .config
                 .server
                 .servers
@@ -730,8 +708,11 @@ impl HttpServer {
             .map(|p| (p.clone(), PolicyChange::Unchanged))
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
-        let res =
-            crate::policy::reload_all(&mut state.policies, &state.zones, &state.config, |change| {
+        let res = crate::policy::reload_all(
+            &mut state.policies,
+            &state.zones,
+            &center.config,
+            |change| {
                 changed = true;
 
                 // Update 'changes' based on what happened.
@@ -750,7 +731,8 @@ impl HttpServer {
 
                 // Propagate the changes globally.
                 let _ = center.update_tx.send(Update::Changed(change));
-            });
+            },
+        );
         if changed {
             state.mark_dirty(center);
         }
@@ -949,9 +931,9 @@ impl HttpServer {
             autoremove: bool,
         }
 
-        let state = state.center.state.lock().unwrap();
+        let keys_dir = &state.center.config.keys_dir;
 
-        let keys_dir = &state.config.keys_dir;
+        let state = state.center.state.lock().unwrap();
 
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -1139,10 +1121,9 @@ impl HttpServer {
         // TODO: Write the given certificates to disk.
         // TODO: Create a single common way to store secrets.
         let server_id = req.server_id.clone();
-        let state = state.center.state.lock().unwrap();
-        let kmip_server_state_file = state.config.kmip_server_state_dir.join(server_id.clone());
-        let kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
-        drop(state);
+        let config = &state.center.config;
+        let kmip_server_state_file = config.kmip_server_state_dir.join(server_id.clone());
+        let kmip_credentials_store_path = config.kmip_credentials_store_path.clone();
 
         // Test the connection before using the HSM.
         let conn_settings = ConnectionSettings::from(req.clone());
@@ -1249,13 +1230,11 @@ impl HttpServer {
     }
 
     async fn kmip_server_list(State(state): State<Arc<HttpServer>>) -> Json<HsmServerListResult> {
-        let state = state.center.state.lock().unwrap();
-        let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
-        drop(state);
+        let kmip_server_state_dir = &*state.center.config.kmip_server_state_dir;
 
         let mut servers = Vec::<String>::new();
 
-        if let Ok(entries) = std::fs::read_dir(kmip_server_state_dir.as_std_path()) {
+        if let Ok(entries) = std::fs::read_dir(kmip_server_state_dir) {
             for entry in entries {
                 let Ok(entry) = entry else { continue };
 
@@ -1277,11 +1256,9 @@ impl HttpServer {
         State(state): State<Arc<HttpServer>>,
         Path(name): Path<Box<str>>,
     ) -> Json<Result<HsmServerGetResult, ()>> {
-        let state = state.center.state.lock().unwrap();
-        let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
-        drop(state);
+        let kmip_server_state_dir = &*state.center.config.kmip_server_state_dir;
 
-        let p = kmip_server_state_dir.as_std_path().join(&*name);
+        let p = kmip_server_state_dir.join(&*name);
         if let Ok(f) = std::fs::File::open(p) {
             if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
                 return Json(Ok(HsmServerGetResult { server }));

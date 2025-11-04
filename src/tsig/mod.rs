@@ -53,8 +53,7 @@ impl TsigStore {
             // TODO: Make this time configurable.
             tokio::time::sleep(Duration::from_secs(5)).await;
 
-            let (path, spec);
-            {
+            let spec = {
                 // Load the global state.
                 let mut state = center.state.lock().unwrap();
                 let Some(_) = state
@@ -68,12 +67,12 @@ impl TsigStore {
                     return;
                 };
 
-                path = state.config.tsig_store_path.clone();
-                spec = file::Spec::build(&state.tsig_store);
-            }
+                file::Spec::build(&state.tsig_store)
+            };
 
             // Save the TSIG store.
-            match spec.save(&path) {
+            let path = &center.config.tsig_store_path;
+            match spec.save(path) {
                 Ok(()) => debug!("Saved the TSIG store (to '{path}')"),
                 Err(err) => {
                     error!("Could not save the TSIG store to '{path}': {err}");
@@ -88,8 +87,7 @@ impl TsigStore {
 
 /// Persist the store immediately.
 pub fn save_now(center: &Center) {
-    let (path, spec);
-    {
+    let spec = {
         // Load the global state.
         let mut state = center.state.lock().unwrap();
 
@@ -98,12 +96,12 @@ pub fn save_now(center: &Center) {
             save.abort();
         }
 
-        path = state.config.tsig_store_path.clone();
-        spec = file::Spec::build(&state.tsig_store);
-    }
+        file::Spec::build(&state.tsig_store)
+    };
 
     // Save the TSIG store.
-    match spec.save(&path) {
+    let path = &center.config.tsig_store_path;
+    match spec.save(path) {
         Ok(()) => debug!("Saved the TSIG store (to '{path}')"),
         Err(err) => {
             error!("Could not save the TSIG store to '{path}': {err}");
@@ -151,12 +149,8 @@ impl fmt::Debug for TsigKey {
 
 /// Reload the TSIG store.
 pub fn reload(center: &Arc<Center>) {
-    let path = {
-        let state = center.state.lock().unwrap();
-        state.config.tsig_store_path.clone()
-    };
-
-    let spec = match file::Spec::load(&path) {
+    let path = &center.config.tsig_store_path;
+    let spec = match file::Spec::load(path) {
         Ok(spec) => spec,
         Err(err) => {
             error!("Could not reload the TSIG store: {err}");

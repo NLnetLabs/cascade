@@ -7,7 +7,6 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
-use camino::Utf8Path;
 use domain::base::iana::Class;
 use domain::base::name::FlattenInto;
 use domain::base::{CanonicalOrd, Record, Rtype, Serial};
@@ -84,15 +83,11 @@ pub struct ZoneSigner {
 
     /// A live view of the next scheduled global resigning time.
     pub next_resign_time: watch::Sender<Option<tokio::time::Instant>>,
-
-    // TODO: Use 'config.keys_dir' once it's out of 'center.state'.
-    pub keys_dir: Box<Utf8Path>,
 }
 
 impl ZoneSigner {
     /// Launch the zone signer.
     pub fn launch(center: Arc<Center>) -> Arc<Self> {
-        let keys_dir = center.state.lock().unwrap().config.keys_dir.clone();
         let (next_resign_time_tx, next_resign_time_rx) = watch::channel(None);
 
         let max_concurrent_operations = 1;
@@ -108,7 +103,6 @@ impl ZoneSigner {
             signer_status: Arc::new(RwLock::new(ZoneSignerStatus::new())),
             kmip_servers: Default::default(),
             next_resign_time: next_resign_time_tx,
-            keys_dir,
         });
 
         let resign_time = this.next_resign_time();
@@ -399,7 +393,7 @@ impl ZoneSigner {
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
         let start = Instant::now();
 
-        let (last_signed_serial, policy, kmip_server_state_dir, kmip_credentials_store_path) = {
+        let (last_signed_serial, policy) = {
             // Use a block to make sure that the mutex is clearly dropped.
             let state = self.center.state.lock().unwrap();
             let zone = state.zones.get(zone_name).unwrap();
@@ -415,15 +409,11 @@ impl ZoneSigner {
             let last_signed_serial = zone_state
                 .find_last_event(HistoricalEventType::SigningSucceeded, None)
                 .and_then(|item| item.serial);
-            let kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
-            let kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
-            (
-                last_signed_serial,
-                zone_state.policy.clone().unwrap(),
-                kmip_server_state_dir,
-                kmip_credentials_store_path,
-            )
+            (last_signed_serial, zone_state.policy.clone().unwrap())
         };
+
+        let kmip_server_state_dir = &self.center.config.kmip_server_state_dir;
+        let kmip_credentials_store_path = &self.center.config.kmip_credentials_store_path;
 
         //
         // Lookup the zone to sign.
@@ -576,7 +566,8 @@ impl ZoneSigner {
         debug!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
         status.write().await.current_action = "Fetching apex RRs from the key manager".to_string();
         // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
-        let state_path = mk_dnst_keyset_state_file_path(&self.keys_dir, zone.apex_name());
+        let state_path =
+            mk_dnst_keyset_state_file_path(&self.center.config.keys_dir, zone.apex_name());
         let state = std::fs::read_to_string(&state_path)
             .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();

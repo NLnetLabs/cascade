@@ -17,8 +17,7 @@ pub mod v1;
 
 /// Persist the global state immediately.
 pub fn save_now(center: &Center) {
-    let (path, spec);
-    {
+    let spec = {
         // Load the global state.
         let mut state = center.state.lock().unwrap();
 
@@ -27,12 +26,12 @@ pub fn save_now(center: &Center) {
             save.abort();
         }
 
-        path = state.config.daemon.state_file.value().clone();
-        spec = Spec::build(&state);
-    }
+        Spec::build(&state)
+    };
 
     // Save the global state.
-    match spec.save(&path) {
+    let path = center.config.daemon.state_file.value();
+    match spec.save(path) {
         Ok(()) => debug!("Saved the global state (to '{path}')"),
         Err(err) => {
             error!("Could not save the global state to '{path}': {err}");

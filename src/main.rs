@@ -75,8 +75,8 @@ fn main() -> ExitCode {
     }
 
     // Load the global state file or build one from scratch.
-    let mut state = center::State::new(config);
-    if let Err(err) = state.init_from_file() {
+    let mut state = center::State::default();
+    if let Err(err) = state.init_from_file(&config) {
         if err.kind() != io::ErrorKind::NotFound {
             error!("Could not load the state file: {err}");
             return ExitCode::FAILURE;
@@ -94,11 +94,11 @@ fn main() -> ExitCode {
         // somewhere else to also create the directories as specified in a the
         // reloaded config.
         for dir in [
-            &*state.config.keys_dir,
-            state.config.kmip_credentials_store_path.parent().unwrap(),
-            &*state.config.kmip_server_state_dir,
-            &*state.config.policy_dir,
-            &*state.config.zone_state_dir,
+            &*config.keys_dir,
+            config.kmip_credentials_store_path.parent().unwrap(),
+            &*config.kmip_server_state_dir,
+            &*config.policy_dir,
+            &*config.zone_state_dir,
         ] {
             if let Err(e) = create_dir_all(dir) {
                 error!("Unable to create directory '{dir}': {e}",);
@@ -107,9 +107,7 @@ fn main() -> ExitCode {
         }
 
         // Load all policies.
-        if let Err(err) =
-            policy::reload_all(&mut state.policies, &state.zones, &state.config, |_| {})
-        {
+        if let Err(err) = policy::reload_all(&mut state.policies, &state.zones, &config, |_| {}) {
             error!("Cascade couldn't load all policies: {err}");
             return ExitCode::FAILURE;
         }
@@ -118,7 +116,7 @@ fn main() -> ExitCode {
     } else {
         info!("Successfully loaded the global state file");
 
-        let zone_state_dir = &state.config.zone_state_dir;
+        let zone_state_dir = &config.zone_state_dir;
         let policies = &mut state.policies;
         for zone in &state.zones {
             let name = &zone.0.name;
@@ -138,18 +136,18 @@ fn main() -> ExitCode {
         }
     }
 
-    if state.config.loader.review.servers.is_empty() {
+    if config.loader.review.servers.is_empty() {
         warn!("No review server configured for [loader.review], therefore no unsigned zone transfer available for review.");
     }
 
-    if state.config.signer.review.servers.is_empty() {
+    if config.signer.review.servers.is_empty() {
         warn!("No review server configured for [signer.review], therefore no signed zone transfer available for review.");
     }
 
     // Load the TSIG store file.
     //
     // TODO: Track which TSIG keys are in use by zones.
-    match state.tsig_store.init_from_file(&state.config) {
+    match state.tsig_store.init_from_file(&config) {
         Ok(()) => debug!("Loaded the TSIG store"),
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             debug!("No TSIG store found; will create one");
@@ -161,11 +159,11 @@ fn main() -> ExitCode {
     }
 
     // Bind to listen addresses before daemonizing.
-    let Ok(socket_provider) = bind_to_listen_sockets_as_needed(&state) else {
+    let Ok(socket_provider) = bind_to_listen_sockets_as_needed(&config) else {
         return ExitCode::FAILURE;
     };
 
-    if let Err(err) = daemonize(&state.config.daemon) {
+    if let Err(err) = daemonize(&config.daemon) {
         error!("Failed to daemonize: {err}");
         return ExitCode::FAILURE;
     }
@@ -175,6 +173,7 @@ fn main() -> ExitCode {
     let (update_tx, mut update_rx) = mpsc::unbounded_channel();
     let center = Arc::new(Center {
         state: Mutex::new(state),
+        config,
         logger,
         unsigned_zones: Default::default(),
         signable_zones: Default::default(),
@@ -255,15 +254,14 @@ fn main() -> ExitCode {
 ///
 /// Sockets provided to us by systemd will be skipped as they are already
 /// bound.
-fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvider, ()> {
+fn bind_to_listen_sockets_as_needed(config: &Config) -> Result<SocketProvider, ()> {
     let mut socket_provider = SocketProvider::new();
     socket_provider.init_from_env(Some(MAX_SYSTEMD_FD_SOCKETS));
 
     // Convert the TCP only listen addresses used by the HTTP server into
     // the same form used by all other units that listen, as the other units
     // use a type that also supports UDP which the HTTP server doesn't need.
-    let remote_control_servers: Vec<_> = state
-        .config
+    let remote_control_servers: Vec<_> = config
         .remote_control
         .servers
         .iter()
@@ -271,15 +269,14 @@ fn bind_to_listen_sockets_as_needed(state: &center::State) -> Result<SocketProvi
         .collect();
 
     // Make an iterator over all of the SocketConfig instances we know about.
-    let socket_configs = state
-        .config
+    let socket_configs = config
         .loader
         .review
         .servers
         .iter()
-        .chain(state.config.loader.notify_listeners.iter())
-        .chain(state.config.signer.review.servers.iter())
-        .chain(state.config.server.servers.iter())
+        .chain(config.loader.notify_listeners.iter())
+        .chain(config.signer.review.servers.iter())
+        .chain(config.server.servers.iter())
         .chain(remote_control_servers.iter());
 
     // Bind to each of the specified sockets if needed.
