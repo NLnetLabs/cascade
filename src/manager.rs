@@ -12,7 +12,7 @@ use crate::targets::central_command::CentralCommand;
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManagerUnit;
 use crate::units::zone_loader::ZoneLoader;
-use crate::units::zone_server::{self, ZoneServerUnit};
+use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
 use daemonbase::process::EnvSocketsError;
 use futures::future::join_all;
@@ -58,8 +58,17 @@ pub struct Manager {
     /// The zone loader.
     pub zone_loader: Arc<ZoneLoader>,
 
+    /// The review server for unsigned zones.
+    pub unsigned_review: Arc<ZoneServer>,
+
     /// The zone signer.
     pub zone_signer: Arc<ZoneSigner>,
+
+    /// The review server for signed zones.
+    pub signed_review: Arc<ZoneServer>,
+
+    /// The zone server.
+    pub zone_server: Arc<ZoneServer>,
 }
 
 /// Spawn all targets.
@@ -91,19 +100,11 @@ pub async fn spawn(
 
     // Spawn the unsigned zone review server.
     info!("Starting unit 'RS'");
-    let unit = ZoneServerUnit {
-        center: center.clone(),
-        mode: zone_server::Mode::Prepublish,
-        source: zone_server::Source::UnsignedZones,
-    };
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    unit_ready_rxs.push(ready_rx);
-    unit_join_handles.insert(
-        "RS",
-        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
-    );
-    unit_tx_slots.insert("RS".into(), cmd_tx);
+    let unsigned_review = Arc::new(ZoneServer::launch(
+        center.clone(),
+        zone_server::Source::Unsigned,
+        &mut socket_provider.lock().unwrap(),
+    )?);
 
     // Spawn the key manager.
     info!("Starting unit 'KM'");
@@ -122,19 +123,11 @@ pub async fn spawn(
 
     // Spawn the signed zone review server.
     info!("Starting unit 'RS2'");
-    let unit = ZoneServerUnit {
-        center: center.clone(),
-        mode: zone_server::Mode::Prepublish,
-        source: zone_server::Source::SignedZones,
-    };
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    unit_ready_rxs.push(ready_rx);
-    unit_join_handles.insert(
-        "RS2",
-        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
-    );
-    unit_tx_slots.insert("RS2".into(), cmd_tx);
+    let signed_review = Arc::new(ZoneServer::launch(
+        center.clone(),
+        zone_server::Source::Signed,
+        &mut socket_provider.lock().unwrap(),
+    )?);
 
     // Spawn the HTTP server.
     info!("Starting unit 'HS'");
@@ -165,23 +158,20 @@ pub async fn spawn(
     }
 
     info!("Starting unit 'PS'");
-    let unit = ZoneServerUnit {
-        center: center.clone(),
-        mode: zone_server::Mode::Publish,
-        source: zone_server::Source::PublishedZones,
-    };
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    let _join_handle = tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone()));
-    unit_tx_slots.insert("PS".into(), cmd_tx);
-
-    ready_rx.await?;
+    let zone_server = Arc::new(ZoneServer::launch(
+        center.clone(),
+        zone_server::Source::Published,
+        &mut socket_provider.lock().unwrap(),
+    )?);
 
     info!("All units report ready.");
 
     Ok(Manager {
         zone_loader,
+        unsigned_review,
         zone_signer,
+        signed_review,
+        zone_server,
     })
 }
 
@@ -202,9 +192,24 @@ pub async fn forward_app_cmds(
                 let unit = manager.zone_loader.clone();
                 async move { unit.on_command(data).await }
             });
+        } else if unit_name == "RS" {
+            tokio::spawn({
+                let unit = manager.unsigned_review.clone();
+                async move { unit.on_command(data).await }
+            });
         } else if unit_name == "ZS" {
             tokio::spawn({
                 let unit = manager.zone_signer.clone();
+                async move { unit.on_command(data).await }
+            });
+        } else if unit_name == "RS2" {
+            tokio::spawn({
+                let unit = manager.signed_review.clone();
+                async move { unit.on_command(data).await }
+            });
+        } else if unit_name == "PS" {
+            tokio::spawn({
+                let unit = manager.zone_server.clone();
                 async move { unit.on_command(data).await }
             });
         } else {
