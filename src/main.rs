@@ -1,6 +1,5 @@
 use cascade::{
     center::{self, Center},
-    comms::ApplicationCommand,
     config::{Config, SocketConfig},
     daemon::{daemonize, PreBindError, SocketProvider},
     eprintln,
@@ -200,25 +199,17 @@ fn main() -> ExitCode {
     };
 
     // Enter the runtime.
-    runtime.block_on(async {
+    let result = runtime.block_on(async {
         // Spawn Cascade's units.
         let mut center_tx = None;
-        let mut unit_txs = Default::default();
-        let mut manager = match manager::spawn(
-            &center,
-            update_rx,
-            &mut center_tx,
-            &mut unit_txs,
-            socket_provider,
-        )
-        .await
-        {
-            Ok(manager) => manager,
-            Err(err) => {
-                error!("Failed to spawn units: {err}");
-                return ExitCode::FAILURE;
-            }
-        };
+        let mut manager =
+            match manager::spawn(&center, update_rx, &mut center_tx, socket_provider).await {
+                Ok(manager) => manager,
+                Err(err) => {
+                    error!("Failed to spawn units: {err}");
+                    return ExitCode::FAILURE;
+                }
+            };
 
         let result = loop {
             tokio::select! {
@@ -233,7 +224,7 @@ fn main() -> ExitCode {
                     break ExitCode::SUCCESS;
                 }
 
-                _ = manager::forward_app_cmds(&mut manager, &mut app_cmd_rx, &unit_txs) => {}
+                _ = manager::forward_app_cmds(&mut manager, &mut app_cmd_rx) => {}
             }
         };
 
@@ -244,25 +235,23 @@ fn main() -> ExitCode {
             .send(TargetCommand::Terminate)
             .unwrap();
         center_tx.as_ref().unwrap().closed().await;
-        for (_name, tx) in unit_txs {
-            tx.send(ApplicationCommand::Terminate).unwrap();
-            tx.closed().await;
-        }
-
-        // Persist the current state.
-        cascade::state::save_now(&center);
-        cascade::tsig::save_now(&center);
-        let zones = {
-            let state = center.state.lock().unwrap();
-            state.zones.iter().map(|z| z.0.clone()).collect::<Vec<_>>()
-        };
-        for zone in zones {
-            // TODO: Maybe 'save_state_now()' should take '&Config'?
-            cascade::zone::save_state_now(&center, &zone);
-        }
 
         result
-    })
+    });
+
+    // Persist the current state.
+    cascade::state::save_now(&center);
+    cascade::tsig::save_now(&center);
+    let zones = {
+        let state = center.state.lock().unwrap();
+        state.zones.iter().map(|z| z.0.clone()).collect::<Vec<_>>()
+    };
+    for zone in zones {
+        // TODO: Maybe 'save_state_now()' should take '&Config'?
+        cascade::zone::save_state_now(&center, &zone);
+    }
+
+    result
 }
 
 /// Bind to all listen addresses that are referred to our by the Cascade
