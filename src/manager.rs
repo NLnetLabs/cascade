@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
@@ -15,7 +15,6 @@ use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
 use daemonbase::process::EnvSocketsError;
-use futures::future::join_all;
 use tokio::sync::mpsc::{self};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::RecvError;
@@ -55,6 +54,9 @@ impl std::fmt::Display for Error {
 }
 
 pub struct Manager {
+    /// The HTTP server.
+    pub http_server: Arc<HttpServer>,
+
     /// The zone loader.
     pub zone_loader: Arc<ZoneLoader>,
 
@@ -77,10 +79,8 @@ pub async fn spawn(
     update_rx: mpsc::UnboundedReceiver<Update>,
     center_tx_slot: &mut Option<mpsc::UnboundedSender<TargetCommand>>,
     unit_tx_slots: &mut foldhash::HashMap<String, mpsc::UnboundedSender<ApplicationCommand>>,
-    socket_provider: SocketProvider,
+    mut socket_provider: SocketProvider,
 ) -> Result<Manager, Error> {
-    let socket_provider = Arc::new(Mutex::new(socket_provider));
-
     // Spawn the central command.
     info!("Starting target 'CC'");
     let target = CentralCommand {
@@ -103,7 +103,7 @@ pub async fn spawn(
     let unsigned_review = Arc::new(ZoneServer::launch(
         center.clone(),
         zone_server::Source::Unsigned,
-        &mut socket_provider.lock().unwrap(),
+        &mut socket_provider,
     )?);
 
     // Spawn the key manager.
@@ -126,27 +126,12 @@ pub async fn spawn(
     let signed_review = Arc::new(ZoneServer::launch(
         center.clone(),
         zone_server::Source::Signed,
-        &mut socket_provider.lock().unwrap(),
+        &mut socket_provider,
     )?);
 
     // Spawn the HTTP server.
     info!("Starting unit 'HS'");
-    let unit = HttpServer {
-        center: center.clone(),
-    };
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    unit_ready_rxs.push(ready_rx);
-    unit_join_handles.insert(
-        "HS",
-        tokio::spawn(unit.run(cmd_rx, ready_tx, socket_provider.clone())),
-    );
-    unit_tx_slots.insert("HS".into(), cmd_tx);
-
-    // Wait for the units above to be ready, then we know that all systemd
-    // activation sockets that are needed by the units above have been taken
-    // and can reliably let the PS unit take any remaining sockets.
-    join_all(unit_ready_rxs).await;
+    let http_server = HttpServer::launch(center.clone(), &mut socket_provider)?;
 
     // None of the units above should have exited already.
     if let Some(failed_unit) = unit_join_handles
@@ -161,12 +146,13 @@ pub async fn spawn(
     let zone_server = Arc::new(ZoneServer::launch(
         center.clone(),
         zone_server::Source::Published,
-        &mut socket_provider.lock().unwrap(),
+        &mut socket_provider,
     )?);
 
     info!("All units report ready.");
 
     Ok(Manager {
+        http_server,
         zone_loader,
         unsigned_review,
         zone_signer,
