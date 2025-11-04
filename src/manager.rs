@@ -1,6 +1,6 @@
 //! Controlling the entire operation.
 
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::center::Center;
@@ -71,17 +71,11 @@ pub struct Manager {
 pub async fn spawn(
     center: &Arc<Center>,
     update_rx: mpsc::UnboundedReceiver<Update>,
-    center_tx_slot: &mut Option<mpsc::UnboundedSender<TargetCommand>>,
     mut socket_provider: SocketProvider,
 ) -> Result<Manager, Error> {
     // Spawn the central command.
     info!("Starting target 'CC'");
-    let target = CentralCommand {
-        center: center.clone(),
-    };
-    let (center_tx, center_rx) = mpsc::unbounded_channel();
-    tokio::spawn(target.run(center_rx, update_rx));
-    *center_tx_slot = Some(center_tx);
+    let CentralCommand {} = CentralCommand::launch(center.clone(), update_rx);
 
     // Spawn the zone loader.
     info!("Starting unit 'ZL'");
@@ -175,18 +169,6 @@ pub async fn forward_app_cmds(
             });
         } else {
             debug!("Unrecognized unit: {unit_name}");
-        }
-    }
-}
-
-pub enum TargetCommand {
-    Terminate,
-}
-
-impl Display for TargetCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TargetCommand::Terminate => f.write_str("Terminate"),
         }
     }
 }
