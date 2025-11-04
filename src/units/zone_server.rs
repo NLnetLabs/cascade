@@ -66,7 +66,7 @@ fn spawn_servers<Svc>(
     socket_provider: &mut SocketProvider,
     source: Source,
     svc: Svc,
-    servers: Vec<SocketConfig>,
+    servers: &[SocketConfig],
 ) -> Result<(), String>
 where
     Svc: Service<Vec<u8>, ()> + Clone,
@@ -75,7 +75,7 @@ where
         if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
             info!("[{unit_name}]: Obtaining UDP socket for address {addr}");
             let sock = socket_provider
-                .take_udp(&addr)
+                .take_udp(addr)
                 .ok_or(format!("No socket available for UDP {addr}"))?;
             tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
         }
@@ -83,7 +83,7 @@ where
         if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
             info!("[{unit_name}]: Obtaining TCP listener for address {addr}");
             let sock = socket_provider
-                .take_tcp(&addr)
+                .take_tcp(addr)
                 .ok_or(format!("No socket available for TCP {addr}"))?;
             tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
         }
@@ -193,15 +193,10 @@ impl ZoneServer {
         let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
         let svc = Arc::new(svc);
 
-        let servers = {
-            let state = center.state.lock().unwrap();
-            let config = &state.config;
-            let servers = match source {
-                Source::Unsigned => &config.loader.review.servers,
-                Source::Signed => &config.signer.review.servers,
-                Source::Published => &config.server.servers,
-            };
-            servers.clone()
+        let servers = match source {
+            Source::Unsigned => &center.config.loader.review.servers,
+            Source::Signed => &center.config.signer.review.servers,
+            Source::Published => &center.config.server.servers,
         };
 
         spawn_servers(unit_name, socket_provider, source, svc, servers)
@@ -369,15 +364,14 @@ impl ZoneServer {
         };
 
         let (review_server, pending_event) = {
-            let state = self.center.state.lock().unwrap();
             let status = ZoneReviewStatus::Pending;
             match self.source {
                 Source::Unsigned => (
-                    state.config.loader.review.servers.first().cloned(),
+                    self.center.config.loader.review.servers.first().cloned(),
                     HistoricalEvent::UnsignedZoneReview { status },
                 ),
                 Source::Signed => (
-                    state.config.signer.review.servers.first().cloned(),
+                    self.center.config.signer.review.servers.first().cloned(),
                     HistoricalEvent::SignedZoneReview { status },
                 ),
                 Source::Published => unreachable!(),

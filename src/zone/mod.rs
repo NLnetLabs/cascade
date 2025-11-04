@@ -384,11 +384,7 @@ impl Zone {
 
             // Determine the save path from the global state.
             let name = &zone.name;
-            let path = {
-                let state = center.state.lock().unwrap();
-                state.config.zone_state_dir.clone()
-            };
-            let path = path.join(format!("{name}.db"));
+            let path = center.config.zone_state_dir.join(format!("{name}.db"));
 
             // Load the actual zone contents.
             let spec = {
@@ -420,11 +416,7 @@ impl Zone {
 pub fn save_state_now(center: &Center, zone: &Zone) {
     // Determine the save path from the global state.
     let name = &zone.name;
-    let path = {
-        let state = center.state.lock().unwrap();
-        state.config.zone_state_dir.clone()
-    };
-    let path = path.join(format!("{name}.db"));
+    let path = center.config.zone_state_dir.join(format!("{name}.db"));
 
     // Load the actual zone contents.
     let spec = {

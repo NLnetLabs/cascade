@@ -33,27 +33,14 @@ use tracing::{debug, error, warn};
 pub struct KeyManager {
     center: Arc<Center>,
     ks_info: Mutex<HashMap<String, KeySetInfo>>,
-    dnst_binary_path: Box<Utf8Path>,
-    keys_dir: Box<Utf8Path>,
 }
 
 impl KeyManager {
     /// Launch the key manager.
     pub fn launch(center: Arc<Center>) -> Arc<Self> {
-        // TODO: Get rid of this once 'config' isn't in 'center.state'.
-        let dnst_binary_path;
-        let keys_dir;
-        {
-            let state = center.state.lock().unwrap();
-            dnst_binary_path = state.config.dnst_binary_path.clone();
-            keys_dir = state.config.keys_dir.clone();
-        }
-
         let this = Arc::new(Self {
             center,
             ks_info: Default::default(),
-            dnst_binary_path,
-            keys_dir,
         });
 
         // Perform periodic ticks in the background.
@@ -234,8 +221,6 @@ impl KeyManager {
         // server.
         let policy;
         let kmip_server_id;
-        let kmip_server_state_dir;
-        let kmip_credentials_store_path;
         {
             let state = self.center.state.lock().unwrap();
             policy = state
@@ -244,9 +229,10 @@ impl KeyManager {
                 .ok_or(ZoneAddError::NoSuchPolicy)?
                 .clone();
             kmip_server_id = policy.latest.key_manager.hsm_server_id.clone();
-            kmip_server_state_dir = state.config.kmip_server_state_dir.clone();
-            kmip_credentials_store_path = state.config.kmip_credentials_store_path.clone();
         };
+
+        let kmip_server_state_dir = &self.center.config.kmip_server_state_dir;
+        let kmip_credentials_store_path = &self.center.config.kmip_credentials_store_path;
 
         // Check if the zone already exist. If it does we should not be
         // here and panic. For the moment, assume there is a bug and
@@ -257,7 +243,7 @@ impl KeyManager {
             return Err(ZoneAddError::Other(format!("zone {name} already exists")));
         }
 
-        let state_path = mk_dnst_keyset_state_file_path(&self.keys_dir, &name);
+        let state_path = mk_dnst_keyset_state_file_path(&self.center.config.keys_dir, &name);
 
         let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
 
@@ -379,8 +365,8 @@ impl KeyManager {
         KeySetCommand::new(
             name,
             self.center.clone(),
-            self.keys_dir.clone(),
-            self.dnst_binary_path.clone(),
+            self.center.config.keys_dir.clone(),
+            self.center.config.dnst_binary_path.clone(),
             recording_mode,
         )
     }
@@ -393,7 +379,8 @@ impl KeyManager {
         };
         for zone in zone_tree.load().iter_zones() {
             let apex_name = zone.apex_name().to_string();
-            let state_path = mk_dnst_keyset_state_file_path(&self.keys_dir, zone.apex_name());
+            let state_path =
+                mk_dnst_keyset_state_file_path(&self.center.config.keys_dir, zone.apex_name());
             if !state_path.exists() {
                 continue;
             }

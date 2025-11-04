@@ -11,12 +11,6 @@ use std::{
 };
 
 use camino::Utf8Path;
-use tracing::info;
-
-use crate::{
-    center::{Center, Change},
-    manager::Update,
-};
 
 pub mod args;
 pub mod env;
@@ -125,38 +119,6 @@ impl Config {
 
         Ok(this)
     }
-}
-
-//----------- Actions ----------------------------------------------------------
-
-/// Reload the configuration file.
-pub fn reload(center: &Center) -> Result<(), file::FileError> {
-    // Determine the path to the configuration file.
-    let path = {
-        let state = center.state.lock().unwrap();
-        state.config.daemon.config_file.value().clone()
-    };
-
-    info!("Reloading the configuration file (from {path:?})");
-
-    // Load and parse the configuration file.
-    let spec = file::Spec::load(&path)?;
-
-    // Lock the global state.
-    let mut state = center.state.lock().unwrap();
-
-    // Merge the parsed configuration file.
-    spec.parse_into(&mut state.config);
-
-    center.logger.apply(&state.config.daemon.logging);
-
-    // Inform everybody the state has changed.
-    center
-        .update_tx
-        .send(Update::Changed(Change::ConfigChanged))
-        .unwrap();
-
-    Ok(())
 }
 
 //----------- RemoteControlConfig --------------------------------------------
