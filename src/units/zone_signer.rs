@@ -35,11 +35,10 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
-use tokio::select;
-use tokio::sync::{mpsc, OwnedSemaphorePermit};
-use tokio::sync::{oneshot, RwLock, Semaphore};
+use tokio::sync::{watch, OwnedSemaphorePermit};
+use tokio::sync::{RwLock, Semaphore};
 use tokio::task::spawn_blocking;
-use tokio::time::{sleep_until, Instant};
+use tokio::time::Instant;
 use tracing::{debug, error, info, trace, warn, Level};
 use url::Url;
 
@@ -74,56 +73,85 @@ use crate::zonemaintenance::types::{
 // - central command forwards PublishSignedZone messages. When such a message
 //   is received, recompute when the first zone eneds to be re-signed.
 
-/// A default poll interval in case no zones need to be resigned.
-///
-/// This simplifies code. Just a high value to avoid extra overhead.
-const IDLE_RESIGNER_POLL_INTERVAL: Duration = Duration::from_secs(24 * 3600);
+//------------ ZoneSigner ----------------------------------------------------
 
-#[derive(Debug)]
-pub struct ZoneSignerUnit {
+pub struct ZoneSigner {
     pub center: Arc<Center>,
-
-    pub treat_single_keys_as_csks: bool,
-
+    // TODO: Discuss whether this semaphore is necessary.
     pub max_concurrent_operations: usize,
-
+    pub concurrent_operation_permits: Semaphore,
     pub max_concurrent_rrsig_generation_tasks: usize,
-    // pub kmip_server_conn_settings: HashMap<String, KmipServerConnectionSettings>,
+    signer_status: Arc<RwLock<ZoneSignerStatus>>,
+    pub kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
+
+    /// A live view of the next scheduled global resigning time.
+    pub next_resign_time: watch::Sender<Option<tokio::time::Instant>>,
+
+    // TODO: Use 'config.keys_dir' once it's out of 'center.state'.
+    pub keys_dir: Box<Utf8Path>,
 }
 
-#[allow(dead_code)]
-impl ZoneSignerUnit {
-    fn default_max_concurrent_operations() -> usize {
-        1
-    }
+impl ZoneSigner {
+    /// Launch the zone signer.
+    pub fn launch(center: Arc<Center>) -> Arc<Self> {
+        let keys_dir = center.state.lock().unwrap().config.keys_dir.clone();
+        let (next_resign_time_tx, next_resign_time_rx) = watch::channel(None);
 
-    fn default_max_concurrent_rrsig_generation_tasks() -> usize {
-        std::thread::available_parallelism().unwrap().get() - 1
-    }
-}
+        let max_concurrent_operations = 1;
+        let this = Arc::new(Self {
+            center,
+            max_concurrent_operations,
+            concurrent_operation_permits: Semaphore::new(max_concurrent_operations),
+            max_concurrent_rrsig_generation_tasks: (std::thread::available_parallelism()
+                .unwrap()
+                .get()
+                - 1)
+            .clamp(1, 32),
+            signer_status: Arc::new(RwLock::new(ZoneSignerStatus::new())),
+            kmip_servers: Default::default(),
+            next_resign_time: next_resign_time_tx,
+            keys_dir,
+        });
 
-impl ZoneSignerUnit {
-    pub async fn run(
-        self,
-        cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-        ready_tx: oneshot::Sender<bool>,
-    ) -> Result<(), Terminated> {
-        // TODO: metrics and status reporting
+        let resign_time = this.next_resign_time();
+        this.next_resign_time.send(resign_time).unwrap();
 
-        // Notify the manager that we are ready.
-        ready_tx.send(true).map_err(|_| Terminated)?;
+        tokio::spawn({
+            // TODO: Should we take a weak reference?
+            let this = this.clone();
+            let mut next_resign_time = next_resign_time_rx;
+            let mut resign_time = resign_time;
+            async move {
+                async fn sleep_until(time: Option<tokio::time::Instant>) {
+                    if let Some(time) = time {
+                        tokio::time::sleep_until(time).await
+                    } else {
+                        std::future::pending().await
+                    }
+                }
 
-        ZoneSigner::new(
-            self.center,
-            self.max_concurrent_operations,
-            self.max_concurrent_rrsig_generation_tasks,
-            self.treat_single_keys_as_csks,
-            // kmip_servers,
-        )
-        .run(cmd_rx)
-        .await?;
+                // Sleep until the resign time and then resign, but also watch
+                // for changes to the resign time.
+                loop {
+                    tokio::select! {
+                        _ = next_resign_time.changed() => {
+                            // Update the resign time and keep going.
+                            resign_time = *next_resign_time.borrow_and_update();
+                        }
 
-        Ok(())
+                        _ = sleep_until(resign_time) => {
+                            // It's time to resign.
+                            this.resign_zones();
+
+                            // TODO: Should 'resign_zones()' do this?
+                            this.next_resign_time.send(this.next_resign_time()).unwrap();
+                        }
+                    }
+                }
+            }
+        });
+
+        this
     }
 
     fn load_private_key(key_path: &Path) -> Result<SecretKeyBytes, Terminated> {
@@ -167,71 +195,6 @@ impl ZoneSignerUnit {
         })?;
 
         Ok(public_key_info)
-    }
-}
-
-//------------ ZoneSigner ----------------------------------------------------
-
-struct ZoneSigner {
-    center: Arc<Center>,
-    max_concurrent_operations: usize,
-    concurrent_operation_permits: Semaphore,
-    max_concurrent_rrsig_generation_tasks: usize,
-    signer_status: Arc<RwLock<ZoneSignerStatus>>,
-    _treat_single_keys_as_csks: bool,
-    kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
-    keys_dir: Box<Utf8Path>,
-}
-
-impl ZoneSigner {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        center: Arc<Center>,
-        max_concurrent_operations: usize,
-        max_concurrent_rrsig_generation_tasks: usize,
-        treat_single_keys_as_csks: bool,
-        // kmip_servers: HashMap<String, SyncConnPool>,
-    ) -> Self {
-        let state = center.state.lock().unwrap();
-        let keys_dir = state.config.keys_dir.clone();
-        drop(state);
-
-        Self {
-            center,
-            max_concurrent_operations,
-            concurrent_operation_permits: Semaphore::new(max_concurrent_operations),
-            max_concurrent_rrsig_generation_tasks,
-            signer_status: Arc::new(RwLock::new(ZoneSignerStatus::new())),
-            _treat_single_keys_as_csks: treat_single_keys_as_csks,
-            kmip_servers: Default::default(),
-            keys_dir,
-        }
-    }
-
-    async fn run(
-        self,
-        mut cmd_rx: mpsc::UnboundedReceiver<ApplicationCommand>,
-    ) -> Result<(), crate::comms::Terminated> {
-        let arc_self = Arc::new(self);
-        let next_resign_time = arc_self.next_resign_time();
-        let mut next_resign_time =
-            next_resign_time.unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
-        loop {
-            select! {
-            _ = sleep_until(next_resign_time) => {
-                arc_self.clone().resign_zones();
-                next_resign_time = arc_self.next_resign_time().unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
-            }
-            opt_cmd = cmd_rx.recv() => {
-                let Some(cmd) = opt_cmd else { break };
-                if !arc_self.clone().handle_command(cmd, &mut next_resign_time).await {
-                break;
-                }
-            }
-            }
-        }
-
-        Ok(())
     }
 
     async fn mk_signing_report(
@@ -295,19 +258,12 @@ impl ZoneSigner {
     }
 
     /// Handle incoming requests.
-    ///
-    /// Return true if the caller should continue, false when a Terminate
-    /// command is received.
-    async fn handle_command(
-        self: Arc<Self>,
-        cmd: ApplicationCommand,
-        next_resign_time: &mut Instant,
-    ) -> bool {
+    pub async fn on_command(self: Arc<Self>, cmd: ApplicationCommand) -> Result<(), Terminated> {
         debug!("[ZS]: Received command: {cmd:?}");
         match cmd {
             ApplicationCommand::Terminate => {
                 // self.status_reporter.terminated();
-                return false;
+                return Err(Terminated);
             }
 
             ApplicationCommand::SignZone {
@@ -315,35 +271,33 @@ impl ZoneSigner {
                 zone_serial, // None means re-sign last signed & published serial
                 trigger,
             } => {
-                let arc_self = self.clone();
-                tokio::task::spawn(async move {
-                    if let Err(err) = arc_self
-                        .join_sign_zone_queue(&zone_name, zone_serial.is_none(), trigger)
-                        .await
-                    {
-                        if err.is_benign() {
-                            // Ignore this benign case. It was probably caused
-                            // by dnst keyset cron triggering resigning before
-                            // we even signed the first time, either because
-                            // the zone was large and slow to load and sign,
-                            // or because the unsigned zone was pending
-                            // review.
-                            debug!("[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}");
-                        } else {
-                            error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+                if let Err(err) = self
+                    .clone()
+                    .join_sign_zone_queue(&zone_name, zone_serial.is_none(), trigger)
+                    .await
+                {
+                    if err.is_benign() {
+                        // Ignore this benign case. It was probably caused
+                        // by dnst keyset cron triggering resigning before
+                        // we even signed the first time, either because
+                        // the zone was large and slow to load and sign,
+                        // or because the unsigned zone was pending
+                        // review.
+                        debug!("[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}");
+                    } else {
+                        error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
-                            self.center
-                                .update_tx
-                                .send(Update::ZoneSigningFailedEvent {
-                                    zone_name,
-                                    zone_serial,
-                                    trigger,
-                                    reason: err.to_string(),
-                                })
-                                .unwrap();
-                        }
+                        self.center
+                            .update_tx
+                            .send(Update::ZoneSigningFailedEvent {
+                                zone_name,
+                                zone_serial,
+                                trigger,
+                                reason: err.to_string(),
+                            })
+                            .unwrap();
                     }
-                });
+                }
             }
 
             ApplicationCommand::GetSigningReport {
@@ -374,13 +328,12 @@ impl ZoneSigner {
 
             ApplicationCommand::PublishSignedZone { .. } => {
                 trace!("[ZS]: a zone is published, recompute next time to re-sign");
-                *next_resign_time = self
-                    .next_resign_time()
-                    .unwrap_or(Instant::now() + IDLE_RESIGNER_POLL_INTERVAL);
+                let _ = self.next_resign_time.send(self.next_resign_time());
             }
             _ => { /* Not for us */ }
         }
-        true
+
+        Ok(())
     }
 
     /// Signs zone_name from the Center::signable_zones zone collection,
@@ -664,13 +617,13 @@ impl ZoneSigner {
                         let priv_key_path = priv_url.path();
                         debug!("Attempting to load private key '{priv_key_path}'.");
 
-                        let private_key = ZoneSignerUnit::load_private_key(Path::new(priv_key_path))
+                        let private_key = ZoneSigner::load_private_key(Path::new(priv_key_path))
                             .map_err(|_| SignerError::CannotReadPrivateKeyFile(priv_key_path.to_string()))?;
 
                         let pub_key_path = pub_url.path();
                         debug!("Attempting to load public key '{pub_key_path}'.");
 
-                        let public_key = ZoneSignerUnit::load_public_key(Path::new(pub_key_path))
+                        let public_key = ZoneSigner::load_public_key(Path::new(pub_key_path))
                             .map_err(|_| SignerError::CannotReadPublicKeyFile(pub_key_path.to_string()))?;
 
                         let key_pair = KeyPair::from_bytes(&private_key, public_key.data())

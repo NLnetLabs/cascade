@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::sync::{Arc, Mutex};
-use std::thread::available_parallelism;
 
 use crate::center::Center;
 use crate::comms::{ApplicationCommand, Terminated};
@@ -14,7 +13,7 @@ use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManagerUnit;
 use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServerUnit};
-use crate::units::zone_signer::ZoneSignerUnit;
+use crate::units::zone_signer::ZoneSigner;
 use daemonbase::process::EnvSocketsError;
 use futures::future::join_all;
 use tokio::sync::mpsc::{self};
@@ -58,6 +57,9 @@ impl std::fmt::Display for Error {
 pub struct Manager {
     /// The zone loader.
     pub zone_loader: Arc<ZoneLoader>,
+
+    /// The zone signer.
+    pub zone_signer: Arc<ZoneSigner>,
 }
 
 /// Spawn all targets.
@@ -114,23 +116,9 @@ pub async fn spawn(
     unit_join_handles.insert("KM", tokio::spawn(unit.run(cmd_rx, ready_tx)));
     unit_tx_slots.insert("KM".into(), cmd_tx);
 
-    let available_parallelism = available_parallelism().unwrap().get();
-    let max_concurrent_rrsig_generation_tasks = (available_parallelism - 1).clamp(1, 32);
-
     // Spawn the zone signer.
     info!("Starting unit 'ZS'");
-    let unit = ZoneSignerUnit {
-        center: center.clone(),
-        treat_single_keys_as_csks: true,
-        max_concurrent_operations: 1, // TODO: Increase this, maybe to 3.clamp(1, max_concurrent_rrsig_generation_tasks)?
-        max_concurrent_rrsig_generation_tasks,
-        // kmip_server_conn_settings,
-    };
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    unit_ready_rxs.push(ready_rx);
-    unit_join_handles.insert("ZS", tokio::spawn(unit.run(cmd_rx, ready_tx)));
-    unit_tx_slots.insert("ZS".into(), cmd_tx);
+    let zone_signer = ZoneSigner::launch(center.clone());
 
     // Spawn the signed zone review server.
     info!("Starting unit 'RS2'");
@@ -191,7 +179,10 @@ pub async fn spawn(
 
     info!("All units report ready.");
 
-    Ok(Manager { zone_loader })
+    Ok(Manager {
+        zone_loader,
+        zone_signer,
+    })
 }
 
 /// Forward application commands.
@@ -209,6 +200,11 @@ pub async fn forward_app_cmds(
         } else if unit_name == "ZL" {
             tokio::spawn({
                 let unit = manager.zone_loader.clone();
+                async move { unit.on_command(data).await }
+            });
+        } else if unit_name == "ZS" {
+            tokio::spawn({
+                let unit = manager.zone_signer.clone();
                 async move { unit.on_command(data).await }
             });
         } else {
