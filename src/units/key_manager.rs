@@ -2,10 +2,10 @@ use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError};
 use crate::cli::commands::hsm::Error;
-use crate::comms::ApplicationCommand;
+use crate::comms::{ApplicationCommand, Terminated};
+use crate::manager::record_zone_event;
 use crate::payload::Update;
 use crate::policy::{KeyParameters, Policy};
-use crate::targets::central_command::record_zone_event;
 use crate::units::http_server::KmipServerState;
 use crate::zone::{HistoricalEvent, SigningTrigger};
 use bytes::Bytes;
@@ -77,7 +77,7 @@ impl KeyManager {
     }
 
     /// Respond to an external command.
-    pub async fn on_command(&self, cmd: ApplicationCommand) -> Result<(), String> {
+    pub async fn on_command(&self, cmd: ApplicationCommand) -> Result<(), Terminated> {
         match cmd {
             ApplicationCommand::RegisterZone {
                 name,
@@ -91,11 +91,13 @@ impl KeyManager {
                         Ok(()) => "succeeded".to_string(),
                         Err(err) => format!("failed (reason: {err})"),
                     };
-                    return Err(format!("Registration of zone '{name}' {msg} but was unable to notify the caller: report sending failed"));
+                    error!("Registration of zone '{name}' {msg} but was unable to notify the caller: report sending failed");
+                    return Err(Terminated);
                 }
 
                 if let Err(err) = res {
-                    return Err(err.to_string());
+                    error!("Registration of zone '{name}' failed: {err}");
+                    return Err(Terminated);
                 }
 
                 Ok(())
@@ -145,7 +147,8 @@ impl KeyManager {
                         .send(Err(format_cmd_error(&err, output)))
                         .await
                         .unwrap();
-                    return Err(format!("key roll command failed: {err}"));
+                    error!("key roll command failed: {err}");
+                    return Err(Terminated);
                 }
 
                 http_tx.send(Ok(())).await.unwrap();
@@ -180,7 +183,8 @@ impl KeyManager {
                         .send(Err(format_cmd_error(&err, output)))
                         .await
                         .unwrap();
-                    return Err(format!("key removal command failed: {err}"));
+                    error!("key removal command failed: {err}");
+                    return Err(Terminated);
                 }
 
                 http_tx.send(Ok(())).await.unwrap();
@@ -199,7 +203,8 @@ impl KeyManager {
                     Err(KeySetCommandError { err, output, .. }) => {
                         // The dnst keyset status command failed.
                         http_tx.send(Err(format_cmd_error(&err, output))).unwrap();
-                        Err(format!("key status command failed: {err}"))
+                        error!("key status command failed: {err}");
+                        Err(Terminated)
                     }
 
                     Ok(output) => {

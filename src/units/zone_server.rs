@@ -44,8 +44,8 @@ use crate::comms::ApplicationCommand;
 use crate::comms::Terminated;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
+use crate::manager::record_zone_event;
 use crate::payload::Update;
-use crate::targets::central_command::record_zone_event;
 use crate::zone::HistoricalEvent;
 use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 
