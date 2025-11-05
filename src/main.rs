@@ -2,7 +2,9 @@ use cascade::{
     center::{self, Center},
     config::{Config, SocketConfig},
     daemon::{daemonize, PreBindError, SocketProvider},
-    eprintln, manager, policy,
+    eprintln,
+    manager::Manager,
+    policy,
 };
 use clap::{crate_authors, crate_version};
 use std::{collections::HashMap, fs::create_dir_all};
@@ -170,7 +172,7 @@ fn main() -> ExitCode {
 
     // Prepare Cascade.
     let (app_cmd_tx, mut app_cmd_rx) = mpsc::unbounded_channel();
-    let (update_tx, update_rx) = mpsc::unbounded_channel();
+    let (update_tx, mut update_rx) = mpsc::unbounded_channel();
     let center = Arc::new(Center {
         state: Mutex::new(state),
         logger,
@@ -199,7 +201,7 @@ fn main() -> ExitCode {
     // Enter the runtime.
     let result = runtime.block_on(async {
         // Spawn Cascade's units.
-        let mut manager = match manager::spawn(&center, update_rx, socket_provider).await {
+        let manager = match Manager::spawn(center.clone(), socket_provider).await {
             Ok(manager) => manager,
             Err(err) => {
                 error!("Failed to spawn units: {err}");
@@ -220,7 +222,13 @@ fn main() -> ExitCode {
                     break ExitCode::SUCCESS;
                 }
 
-                _ = manager::forward_app_cmds(&mut manager, &mut app_cmd_rx) => {}
+                Some((unit, cmd)) = app_cmd_rx.recv() => {
+                    manager.on_app_cmd(&unit, cmd);
+                }
+
+                Some(update) = update_rx.recv() => {
+                    manager.on_update(update);
+                }
             }
         }
 
