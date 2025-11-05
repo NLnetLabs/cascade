@@ -64,10 +64,7 @@ impl KeyManager {
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    tokio::spawn({
-                        let this = this.clone();
-                        async move { this.tick().await }
-                    });
+                    this.tick().await;
                 }
             }
         });
@@ -401,17 +398,11 @@ impl KeyManager {
                 continue;
             }
 
-            // We can't use HashMap::entry() here as we can't do 'continue'
-            // from inside a closure.
-            let info = match ks_info.get_mut(&apex_name) {
-                Some(info) => info,
-                None => {
+            let info = match ks_info.entry(apex_name.clone()) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
                     match KeySetInfo::try_from(&state_path) {
-                        Ok(new_info) => {
-                            let _ = ks_info.insert(apex_name.clone(), new_info.clone());
-                            // SAFETY: We just added it so it must exist.
-                            ks_info.get_mut(&apex_name).unwrap()
-                        }
+                        Ok(new_info) => entry.insert(new_info.clone()),
                         Err(err) => {
                             error!(
                                 "[KM]: Failed to load key set state for zone '{apex_name}': {err}"
