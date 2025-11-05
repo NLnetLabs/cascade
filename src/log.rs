@@ -6,7 +6,7 @@ use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 
 use tracing::field::{self, Field};
-use tracing::{error, warn, Level, Subscriber};
+use tracing::{error, Level, Subscriber};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::Layer as FmtLayer;
 use tracing_subscriber::layer::SubscriberExt;
