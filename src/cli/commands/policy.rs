@@ -131,8 +131,8 @@ fn print_policy(p: &PolicyInfo) {
         SignerSerialPolicyInfo::DateCounter => "date counter",
     };
 
-    let inc = p.signer.sig_inception_offset.as_secs();
-    let val = p.signer.sig_validity_offset.as_secs();
+    let inc = p.signer.sig_inception_offset;
+    let val = p.signer.sig_validity_offset;
 
     let denial = match &p.signer.denial {
         SignerDenialPolicyInfo::NSec => "NSEC",

@@ -41,9 +41,9 @@ Example
     required = false
 
     [key-manager]
-    ksk.validity = "31536000"
-    zsk.validity = "2592000"
-    csk.validity = "31536000"
+    ksk.validity = "365d"
+    zsk.validity = "30d"
+    csk.validity = "365d"
     ksk.auto-start = true
     zsk.auto-start = true
     csk.auto-start = true
@@ -64,13 +64,13 @@ Example
     auto-remove = true
 
     [key-manager.records]
-    ttl = 3600
-    dnskey.signature-inception-offset = 86400
-    cds.signature-inception-offset = 86400
-    dnskey.signature-lifetime = 1209600
-    cds.signature-lifetime = 1209600
-    dnskey.signature-remain-time = 604800
-    cds.signature-remain-time = 604800
+    ttl = "1h"
+    dnskey.signature-inception-offset = "1d"
+    cds.signature-inception-offset = "1d"
+    dnskey.signature-lifetime = "2w"
+    cds.signature-lifetime = "2w"
+    dnskey.signature-remain-time = "1w"
+    cds.signature-remain-time = "1w"
 
     [key-manager.generation]
     use-csk = false
@@ -78,9 +78,9 @@ Example
 
     [signer]
     serial-policy = "date-counter"
-    signature-inception-offset = 86400
-    signature-lifetime = 1209600
-    signature-remain-time = 604800
+    signature-inception-offset = "1d"
+    signature-lifetime = "2w"
+    signature-remain-time = "1w"
 
     [signer.denial]
     type = "nsec"
@@ -166,9 +166,9 @@ DNSSEC key management.
 
 The ``[key-manager]`` section.
 
-.. option:: ksk.validity = "31536000"
-.. option:: zsk.validity = "2592000"
-.. option:: csk.validity = "31536000"
+.. option:: ksk.validity = "365d"
+.. option:: zsk.validity = "30d"
+.. option:: csk.validity = "365d"
 
    How long keys are considered valid for.
 
@@ -180,7 +180,9 @@ The ``[key-manager]`` section.
    security of the zone.
 
    Independent validity times are set for KSKs, ZSKs, and CSKs.  An integer
-   value will be interpreted as seconds; ``forever`` means keys never expire.
+   value will be interpreted as seconds, ``"forever"`` means keys never expire,
+   and a time string such as ``"365d"`` will be interpreted as 365 days.
+   Supported suffixes include ``s``, ``m``, ``h``, ``d`` and ``w``.
 
 .. option:: ksk.auto-start = true
 .. option:: zsk.auto-start = true
@@ -191,7 +193,7 @@ The ``[key-manager]`` section.
 
    If this is enabled, Cascade will automatically start rolling over keys when
    they expire (as per ``validity``).  When using this setting, ``validity`` must
-   not be set to ``forever``.
+   not be set to ``"forever"``.
 
    The first step in a rollover will be to generate new keys to replace old
    ones. By disabling this setting, the user can manually control how new keys
@@ -264,12 +266,12 @@ The ``[key-manager.records]`` section.
 The key manager generates and signs several records (DNSKEY and CDS).  This
 section controls its behaviour towards them.
 
-.. option:: ttl = 3600
+.. option:: ttl = "1h"
 
    The TTL for the generated records.
 
-.. option:: dnskey.signature-inception-offset = 86400
-.. option:: cds.signature-inception-offset = 86400
+.. option:: dnskey.signature-inception-offset = "1d"
+.. option:: cds.signature-inception-offset = "1d"
 
    The offset for generated signature inceptions.
 
@@ -280,11 +282,13 @@ section controls its behaviour towards them.
    into the past.
 
    Independent offsets can be set for each type of record.  An integer value is
-   intepreted as seconds; inception times will be calculated as ``now - offset``
-   at the time of signing.
+   interpreted as seconds.  A string is interpreted as a time string consisting
+   of a number  followed by a unit (i.e. ``s``, ``m``, ``h``, ``d``, or
+   ``w``). Inception times will be calculated as ``now - offset`` at the time
+   of signing.
 
-.. option:: dnskey.signature-lifetime = 1209600
-.. option:: cds.signature-lifetime = 1209600
+.. option:: dnskey.signature-lifetime = "2w"
+.. option:: cds.signature-lifetime = "2w"
 
    The lifetime of generated signatures.
 
@@ -292,11 +296,13 @@ section controls its behaviour towards them.
    invalid.  To keep the zone valid, the signatures should be regenerated before
    they expire; see ``signature-remain-time`` to control regeneration time.
 
-   Independent lifetimes can be set for each type of record.  An integer value is
-   interpreted as seconds.
+   Independent lifetimes can be set for each type of record.  An integer
+   value is interpreted as seconds.  A string is interpreted as a time string
+   consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``, ``d``,
+   or ``w``).
 
-.. option:: dnskey.signature-remain-time = 604800
-.. option:: cds.signature-remain-time = 604800
+.. option:: dnskey.signature-remain-time = "1w"
+.. option:: cds.signature-remain-time = "1w"
 
    The amount of time remaining before expiry when signatures will be
    regenerated.
@@ -308,7 +314,9 @@ section controls its behaviour towards them.
    setting.
 
    Independent waiting times can be set for each type of record.  An integer
-   value is interpreted as seconds.
+   value is interpreted as seconds.  A string is interpreted as a time string
+   consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``, ``d``,
+   or ``w``).
 
 How keys are generated.
 +++++++++++++++++++++++
@@ -383,7 +391,7 @@ zone) are signed by the key manager, rather than the zone signer; see the
    - ``date-counter``: format the number as ``<YYYY><MM><DD><xx>`` in decimal.
      ``<xx>`` is a simple counter to allow up to 100 versions per day.
 
-.. option:: signature-inception-offset = 86400
+.. option:: signature-inception-offset = "1d"
 
    The offset for generated signature inceptions.
 
@@ -393,10 +401,12 @@ zone) are signed by the key manager, rather than the zone signer; see the
    future. To prevent such cases, this setting allows the inception time to be
    offset into the past.
 
-   An integer value is interpreted as seconds; inception times will be
-   calculated as ``now - offset`` at the time of signing.
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``). Inception times will be calculated as ``now - offset`` at
+   the time of signing.
 
-.. option:: signature-lifetime = 1209600
+.. option:: signature-lifetime = "2w"
 
    The lifetime of generated signatures.
 
@@ -404,9 +414,11 @@ zone) are signed by the key manager, rather than the zone signer; see the
    invalid.  To keep the zone valid, the signatures should be regenerated before
    they expire; see ``signature-remain-time`` to control regeneration time.
 
-   An integer value is interpreted as seconds.
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
 
-.. option:: signature-remain-time = 604800
+.. option:: signature-remain-time = "1w"
 
    The amount of time remaining before expiry when signatures will be
    regenerated.
@@ -417,7 +429,9 @@ zone) are signed by the key manager, rather than the zone signer; see the
    signatures will be regenerated; it must be less than the ``signature-lifetime``
    setting.
 
-   An integer value is interpreted as seconds.
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
 
 How denial-of-existence records are generated.
 ++++++++++++++++++++++++++++++++++++++++++++++
