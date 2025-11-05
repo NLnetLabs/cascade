@@ -259,11 +259,6 @@ impl ZoneSigner {
     pub async fn on_command(self: Arc<Self>, cmd: ApplicationCommand) -> Result<(), Terminated> {
         debug!("[ZS]: Received command: {cmd:?}");
         match cmd {
-            ApplicationCommand::Terminate => {
-                // self.status_reporter.terminated();
-                return Err(Terminated);
-            }
-
             ApplicationCommand::SignZone {
                 zone_name,
                 zone_serial, // None means re-sign last signed & published serial

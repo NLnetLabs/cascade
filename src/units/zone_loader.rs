@@ -167,10 +167,6 @@ impl ZoneLoader {
         debug!("[ZL] Received command: {cmd:?}",);
 
         match cmd {
-            ApplicationCommand::Terminate => {
-                return Err(Terminated);
-            }
-
             ApplicationCommand::Changed(Change::ZoneSourceChanged(name, source)) => {
                 // Just remove and re-insert the zone.
                 let id = ZoneId {
