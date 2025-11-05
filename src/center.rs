@@ -19,10 +19,9 @@ use crate::api::KeyImport;
 use crate::zone::PipelineMode;
 use crate::{
     api,
-    comms::ApplicationCommand,
     config::Config,
     log::Logger,
-    payload::Update,
+    manager::{ApplicationCommand, Update},
     policy::{Policy, PolicyVersion},
     tsig::TsigStore,
     zone::{Zone, ZoneByName, ZoneLoadSource},

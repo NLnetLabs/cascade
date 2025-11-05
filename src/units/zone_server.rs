@@ -40,12 +40,10 @@ use crate::api::{
 };
 use crate::center::{get_zone, Center};
 use crate::common::tsig::TsigKeyStore;
-use crate::comms::ApplicationCommand;
-use crate::comms::Terminated;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::record_zone_event;
-use crate::payload::Update;
+use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::zone::HistoricalEvent;
 use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 

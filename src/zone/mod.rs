@@ -25,7 +25,7 @@ use crate::{
     api::{self, ZoneReviewStatus},
     center::{Center, Change},
     config::Config,
-    payload::Update,
+    manager::Update,
     policy::{Policy, PolicyVersion},
     zonemaintenance::types::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
