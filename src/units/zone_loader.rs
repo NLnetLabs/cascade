@@ -34,8 +34,7 @@ use tracing::{debug, error, info};
 use crate::center::{halt_zone, Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::common::tsig::TsigKeyStore;
-use crate::comms::{ApplicationCommand, Terminated};
-use crate::payload::Update;
+use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::{
     Config, ConnectionFactory, DefaultConnFactory, TypedZone, ZoneMaintainer,

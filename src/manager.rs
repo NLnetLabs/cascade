@@ -1,21 +1,22 @@
 //! Controlling the entire operation.
 
+use std::net::IpAddr;
 use std::sync::Arc;
 
-use crate::api;
-use crate::center::{get_zone, halt_zone, Center, Change};
-use crate::comms::{ApplicationCommand, Terminated};
+use crate::api::{self, KeyImport};
+use crate::center::{get_zone, halt_zone, Center, Change, ZoneAddError};
 use crate::daemon::SocketProvider;
-use crate::payload::Update;
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
-use crate::units::zone_loader::ZoneLoader;
+use crate::units::zone_loader::{ZoneLoader, ZoneLoaderReport};
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
+use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneLoadSource};
+use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneReport};
 use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
 use domain::zonetree::StoredName;
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, info, warn};
 
 //----------- Manager ----------------------------------------------------------
@@ -404,6 +405,195 @@ pub fn record_zone_event(
         zone.mark_dirty(&mut zone_state, center);
     }
 }
+
+//----------- ApplicationCommand -----------------------------------------------
+
+#[derive(Debug)]
+pub enum ApplicationCommand {
+    /// A change has occurred.
+    Changed(Change),
+
+    Terminate,
+
+    /// Review a zone.
+    ReviewZone {
+        /// The name of the zone.
+        name: StoredName,
+
+        /// The serial number of the zone.
+        serial: Serial,
+
+        /// Whether to approve or reject the zone.
+        decision: api::ZoneReviewDecision,
+
+        /// A handle for returning a response.
+        tx: tokio::sync::oneshot::Sender<api::ZoneReviewResult>,
+    },
+
+    SeekApprovalForUnsignedZone {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+
+    /// Refresh a zone.
+    ///
+    /// The zone loader will initiate a refresh for the zone, and query the
+    /// zone's source to look for a newer version of the zone.  This command
+    /// can be used in response to a user request or a NOTIFY message.
+    RefreshZone {
+        /// The name of the zone to refresh.
+        zone_name: StoredName,
+
+        /// The source address of the NOTIFY message.
+        source: Option<IpAddr>,
+
+        /// The expected new SOA serial for the zone.
+        ///
+        /// If this is set, and the zone's SOA serial is greater than or equal
+        /// to this value, the refresh can be ignored.
+        serial: Option<Serial>,
+    },
+
+    /// Reload a zone.
+    ///
+    /// The zone loader will immediately remove and re-add the zone.
+    ReloadZone {
+        zone_name: StoredName,
+        source: ZoneLoadSource,
+    },
+
+    SignZone {
+        zone_name: StoredName,
+        zone_serial: Option<Serial>,
+        trigger: SigningTrigger,
+    },
+    SeekApprovalForSignedZone {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+    PublishSignedZone {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+    RegisterZone {
+        name: StoredName,
+        policy: String,
+        key_imports: Vec<KeyImport>,
+        report_tx: oneshot::Sender<Result<(), ZoneAddError>>,
+    },
+    GetZoneReport {
+        zone_name: StoredName,
+        report_tx: oneshot::Sender<(ZoneReport, Option<ZoneLoaderReport>)>,
+    },
+    GetSigningReport {
+        zone_name: StoredName,
+        report_tx: oneshot::Sender<SigningReport>,
+    },
+    GetQueueReport {
+        report_tx: oneshot::Sender<Vec<SigningQueueReport>>,
+    },
+
+    RollKey {
+        zone: StoredName,
+        key_roll: api::keyset::KeyRoll,
+        http_tx: mpsc::Sender<Result<(), String>>,
+    },
+    RemoveKey {
+        zone: StoredName,
+        key_remove: api::keyset::KeyRemove,
+        http_tx: mpsc::Sender<Result<(), String>>,
+    },
+
+    KeySetStatus {
+        zone: StoredName,
+        http_tx: oneshot::Sender<Result<String, String>>,
+    },
+}
+
+//------------ Update --------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum Update {
+    /// A change has occurred.
+    Changed(Change),
+
+    /// A request to refresh a zone.
+    ///
+    /// This is sent by the publication server when it receives an appropriate
+    /// NOTIFY message.
+    RefreshZone {
+        /// The name of the zone to refresh.
+        zone_name: StoredName,
+
+        /// The source address of the NOTIFY message.
+        source: Option<IpAddr>,
+
+        /// The expected new SOA serial for the zone.
+        ///
+        /// If this is set, and the zone's SOA serial is greater than or equal
+        /// to this value, the refresh can be ignored.
+        serial: Option<Serial>,
+    },
+
+    /// Review a zone.
+    ReviewZone {
+        /// The name of the zone.
+        name: StoredName,
+
+        /// The stage of review.
+        stage: api::ZoneReviewStage,
+
+        /// The serial number of the zone.
+        serial: Serial,
+
+        /// Whether to approve or reject the zone.
+        decision: api::ZoneReviewDecision,
+    },
+
+    UnsignedZoneUpdatedEvent {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+
+    UnsignedZoneApprovedEvent {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+
+    UnsignedZoneRejectedEvent {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+
+    ZoneSignedEvent {
+        zone_name: StoredName,
+        zone_serial: Serial,
+        trigger: SigningTrigger,
+    },
+
+    ZoneSigningFailedEvent {
+        zone_name: StoredName,
+        zone_serial: Option<Serial>,
+        trigger: SigningTrigger,
+        reason: String,
+    },
+
+    SignedZoneApprovedEvent {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+
+    SignedZoneRejectedEvent {
+        zone_name: StoredName,
+        zone_serial: Serial,
+    },
+
+    ResignZoneEvent {
+        zone_name: StoredName,
+        trigger: SigningTrigger,
+    },
+}
+
 //----------- Error ------------------------------------------------------------
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -432,3 +622,11 @@ impl std::fmt::Display for Error {
         }
     }
 }
+
+//----------- Terminated -------------------------------------------------------
+
+/// An error signalling that a unit has been terminated.
+///
+/// In response to this error, a unit’s run function should return.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Terminated;

@@ -15,7 +15,7 @@ use tracing::info;
 
 use crate::{
     center::{Center, Change},
-    payload::Update,
+    manager::Update,
 };
 
 pub mod args;
