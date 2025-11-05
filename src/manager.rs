@@ -413,8 +413,6 @@ pub enum ApplicationCommand {
     /// A change has occurred.
     Changed(Change),
 
-    Terminate,
-
     /// Review a zone.
     ReviewZone {
         /// The name of the zone.

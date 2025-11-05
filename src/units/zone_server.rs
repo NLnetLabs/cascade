@@ -242,11 +242,6 @@ impl ZoneServer {
 
         debug!("[{unit_name}] Received command: {cmd:?}",);
         match cmd {
-            ApplicationCommand::Terminate => {
-                // arc_self.status_reporter.terminated();
-                return Err(Terminated);
-            }
-
             ApplicationCommand::ReviewZone {
                 name,
                 serial,
