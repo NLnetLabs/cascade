@@ -26,7 +26,7 @@ use domain::zonetree::{
 use foldhash::HashMap;
 use futures::Future;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Semaphore;
 use tokio::time::Instant;
 use tracing::{debug, error, info};
@@ -61,11 +61,6 @@ pub struct ZoneLoader {
     // TODO: Merge 'ZoneMaintainer' into 'ZoneLoader'.
     pub zone_maintainer: Arc<ZoneMaintainer<TsigKeyStore, DefaultConnFactory>>,
 
-    /// A channel to propagate zone update events.
-    //
-    // TODO: Turn into a simple method on 'self'.
-    pub zone_updated_tx: tokio::sync::mpsc::Sender<(StoredName, Serial)>,
-
     /// The status of zone loading.
     //
     // TODO: Move into 'ZoneState'.
@@ -77,24 +72,6 @@ impl ZoneLoader {
     pub fn launch(center: Arc<Center>) -> Self {
         // TODO: metrics and status reporting
         let receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>> = Default::default();
-
-        // TODO: Replace this with a method on 'self'.
-        let (zone_updated_tx, mut zone_updated_rx) = tokio::sync::mpsc::channel(10);
-        tokio::spawn({
-            let update_tx = center.update_tx.clone();
-            async move {
-                while let Some((zone_name, zone_serial)) = zone_updated_rx.recv().await {
-                    info!(
-                        "[ZL]: Received a new copy of zone '{zone_name}' at serial {zone_serial}",
-                    );
-
-                    let _ = update_tx.send(Update::UnsignedZoneUpdatedEvent {
-                        zone_name,
-                        zone_serial,
-                    });
-                }
-            }
-        });
 
         let maintainer_config =
             Config::<_, DefaultConnFactory>::new(center.old_tsig_key_store.clone());
@@ -126,7 +103,6 @@ impl ZoneLoader {
         for (name, source) in zones {
             let zone_maintainer_clone = zone_maintainer.clone();
             let max_zones_loading_at_once = max_zones_loading_at_once.clone();
-            let zone_updated_tx = zone_updated_tx.clone();
             let receipt_info = receipt_info.clone();
             let center = center.clone();
             tokio::spawn(async move {
@@ -145,7 +121,6 @@ impl ZoneLoader {
                             center.clone(),
                             name.clone(),
                             &path,
-                            &zone_updated_tx,
                             receipt_info.clone(),
                         )
                         .await
@@ -165,7 +140,7 @@ impl ZoneLoader {
                     }
 
                     ZoneLoadSource::Server { addr, tsig_key: _ } => {
-                        Self::register_secondary_zone(name.clone(), addr, zone_updated_tx.clone())
+                        Self::register_secondary_zone(name.clone(), addr, center.update_tx.clone())
                     }
                 };
 
@@ -183,7 +158,6 @@ impl ZoneLoader {
         Self {
             center,
             zone_maintainer,
-            zone_updated_tx,
             receipt_info,
         }
     }
@@ -206,7 +180,6 @@ impl ZoneLoader {
                 self.zone_maintainer.remove_zone(id).await;
                 let zone_maintainer = self.zone_maintainer.clone();
                 let center = self.center.clone();
-                let zone_updated_tx = self.zone_updated_tx.clone();
                 let receipt_info = self.receipt_info.clone();
 
                 tokio::spawn(async move {
@@ -221,7 +194,6 @@ impl ZoneLoader {
                                 center,
                                 name.clone(),
                                 &path,
-                                &zone_updated_tx,
                                 receipt_info.clone(),
                             )
                             .await
@@ -241,7 +213,11 @@ impl ZoneLoader {
                         }
 
                         ZoneLoadSource::Server { addr, tsig_key: _ } => {
-                            Self::register_secondary_zone(name.clone(), addr, zone_updated_tx)
+                            Self::register_secondary_zone(
+                                name.clone(),
+                                addr,
+                                center.update_tx.clone(),
+                            )
                         }
                     };
 
@@ -312,7 +288,6 @@ impl ZoneLoader {
                         zone_name,
                         path,
                         self.zone_maintainer.clone(),
-                        &self.zone_updated_tx,
                         self.receipt_info.clone(),
                     )
                     .await
@@ -337,7 +312,6 @@ impl ZoneLoader {
         name: StoredName,
         path: Box<Utf8Path>,
         zone_maintainer: Arc<ZoneMaintainer<KS, CF>>,
-        zone_updated_tx: &Sender<(StoredName, Serial)>,
         receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
     ) where
         KS: Deref + Send + Sync + 'static,
@@ -353,8 +327,7 @@ impl ZoneLoader {
         zone_maintainer.remove_zone(id).await;
 
         let Ok((zone, _)) =
-            Self::register_primary_zone(center, name.clone(), &path, zone_updated_tx, receipt_info)
-                .await
+            Self::register_primary_zone(center, name.clone(), &path, receipt_info).await
         else {
             return;
         };
@@ -367,7 +340,6 @@ impl ZoneLoader {
         center: Arc<Center>,
         zone_name: StoredName,
         zone_path: &Utf8Path,
-        zone_updated_tx: &Sender<(Name<Bytes>, Serial)>,
         receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>>,
     ) -> Result<(TypedZone, ZoneLoaderReport), Terminated> {
         let (zone, _byte_count) = {
@@ -391,11 +363,11 @@ impl ZoneLoader {
         };
 
         let zone_cfg = ZoneConfig::new();
-        zone_updated_tx
-            .send((zone.apex_name().clone(), serial))
-            .await
-            .unwrap();
-        let zone = Zone::new(NotifyOnWriteZone::new(zone, zone_updated_tx.clone()));
+        let _ = center.update_tx.send(Update::UnsignedZoneUpdatedEvent {
+            zone_name: zone.apex_name().clone(),
+            zone_serial: serial,
+        });
+        let zone = Zone::new(NotifyOnWriteZone::new(zone, center.update_tx.clone()));
         let report = receipt_info
             .lock()
             .unwrap()
@@ -408,11 +380,11 @@ impl ZoneLoader {
     fn register_secondary_zone(
         zone_name: Name<Bytes>,
         source: SocketAddr,
-        zone_updated_tx: Sender<(Name<Bytes>, Serial)>,
+        update_tx: UnboundedSender<Update>,
     ) -> TypedZone {
         let zone_cfg = Self::determine_secondary_zone_cfg(&zone_name, source);
         let zone = Zone::new(LightWeightZone::new(zone_name, true));
-        let zone = Zone::new(NotifyOnWriteZone::new(zone, zone_updated_tx));
+        let zone = Zone::new(NotifyOnWriteZone::new(zone, update_tx));
         TypedZone::new(zone, zone_cfg)
     }
 
@@ -568,11 +540,11 @@ fn load_file_into_zone(
 #[derive(Debug)]
 pub struct NotifyOnWriteZone {
     store: Arc<dyn ZoneStore>,
-    sender: Sender<(StoredName, Serial)>,
+    sender: UnboundedSender<Update>,
 }
 
 impl NotifyOnWriteZone {
-    pub fn new(zone: Zone, sender: Sender<(StoredName, Serial)>) -> Self {
+    pub fn new(zone: Zone, sender: UnboundedSender<Update>) -> Self {
         Self {
             store: zone.into_inner(),
             sender,
@@ -616,7 +588,7 @@ impl ZoneStore for NotifyOnWriteZone {
 struct NotifyOnCommitZone {
     writable_zone: Box<dyn WritableZone>,
     store: Arc<dyn ZoneStore>,
-    sender: Sender<(StoredName, Serial)>,
+    sender: UnboundedSender<Update>,
 }
 
 impl WritableZone for NotifyOnCommitZone {
@@ -651,7 +623,10 @@ impl WritableZone for NotifyOnCommitZone {
                     if let Some(ZoneRecordData::Soa(soa)) = soa_data {
                         let zone_serial = soa.serial();
                         debug!("Notifying that zone '{zone_name}' has been committed at serial {zone_serial}");
-                        sender.send((zone_name.clone(), zone_serial)).await.unwrap();
+                        let _ = sender.send(Update::UnsignedZoneUpdatedEvent {
+                            zone_name: zone_name.clone(),
+                            zone_serial,
+                        });
                     } else {
                         error!("Failed to query SOA of zone {zone_name} after commit: invalid SOA found");
                     }
