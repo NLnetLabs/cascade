@@ -431,6 +431,7 @@ pub struct ReviewPolicyInfo {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct SignerPolicyInfo {
     pub serial_policy: SignerSerialPolicyInfo,
+    // TODO: These fields should have a type that explains that they represent durations.
     pub sig_inception_offset: u32,
     pub sig_validity_offset: u32,
     pub denial: SignerDenialPolicyInfo,

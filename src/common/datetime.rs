@@ -7,7 +7,7 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-/// A wrapper around [`Duration`] with fancier (de)serialization
+/// A wrapper around [`u32`] representing a [`Duration`]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TimeSpan(u32);
 
