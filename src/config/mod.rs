@@ -11,7 +11,7 @@ use std::{
 };
 
 use camino::Utf8Path;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::{
     center::{Center, Change},
@@ -148,9 +148,7 @@ pub fn reload(center: &Center) -> Result<(), file::FileError> {
     // Merge the parsed configuration file.
     spec.parse_into(&mut state.config);
 
-    if let Err(e) = center.logger.apply(&state.config.daemon.logging) {
-        error!("could not update logger config: {e}");
-    }
+    center.logger.apply(&state.config.daemon.logging);
 
     // Inform everybody the state has changed.
     center

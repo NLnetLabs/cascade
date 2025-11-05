@@ -6,7 +6,7 @@ use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 
 use tracing::field::{self, Field};
-use tracing::{Level, Subscriber};
+use tracing::{error, warn, Level, Subscriber};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::Layer as FmtLayer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -38,7 +38,11 @@ impl Logger {
     ///
     /// Panics if a global [`tracing`] logger has been set already.
     pub fn launch(config: &LoggingConfig) -> Result<&'static Logger, String> {
-        let filter = make_env_filter(config)?;
+        // Create a stub filter with the log level but not the tracing targets.
+        // We're adding the tracing targets at the end of this function so we
+        // can log when syntax errors occur.
+        let mut filter = EnvFilter::default();
+        filter = filter.add_directive(LevelFilter::from(*config.level.value()).into());
 
         // A reload layer is tracing's way of making it possible to change
         // values at runtime. It gives us a handle we can use to update the
@@ -128,15 +132,22 @@ impl Logger {
             }
         };
 
-        Ok(Box::leak(Box::new(Self {
+        let this = Self {
             filter: filter_handle,
-        })))
+        };
+
+        // This is a fallible operation that might log errors, so we only do
+        // it after we have installed a basic filter that doesn't depend on the
+        // config.
+        this.apply(config);
+
+        Ok(Box::leak(Box::new(this)))
     }
 
-    pub fn apply(&self, config: &LoggingConfig) -> Result<(), String> {
+    pub fn apply(&self, config: &LoggingConfig) {
         self.filter
-            .reload(make_env_filter(config)?)
-            .map_err(|_| "could not reload filter".into())
+            .reload(make_env_filter(config))
+            .expect("The Handle should not be poisoned or dropped.");
     }
 }
 
@@ -144,23 +155,26 @@ impl Logger {
 ///
 /// Every time we load the config, we have to create a new [`EnvFilter`] based
 /// on the new config settings.
-fn make_env_filter(config: &LoggingConfig) -> Result<EnvFilter, String> {
-    // Create an EnvFilter which won't read any env vars and only print ERROR
-    // by default, which we then immediately override by adding another filter
-    // on top.
+fn make_env_filter(config: &LoggingConfig) -> EnvFilter {
     let mut filter = EnvFilter::default();
+
     filter = filter.add_directive(LevelFilter::from(*config.level.value()).into());
 
     // Add all of our trace targets to the filter.
     for target in config.trace_targets.value().iter() {
-        filter = filter.add_directive(
-            target
-                .parse()
-                .map_err(|_| format!("invalid trace target: \'{}\'", target))?,
-        );
+        match target.parse() {
+            Ok(target) => {
+                filter = filter.add_directive(target);
+            }
+            Err(e) => {
+                // If we fail to parse, we simply log that and move on.
+                error!("Invalid trace target \'{target}\': {e}");
+                continue;
+            }
+        }
     }
 
-    Ok(filter)
+    filter
 }
 
 /// Get the name of the current executable and the process id
