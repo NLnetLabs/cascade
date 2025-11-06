@@ -71,6 +71,7 @@ impl HttpServer {
             .route("/health", get(Self::health))
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
+            .route("/debug/change-logging", post(Self::change_logging))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
@@ -138,6 +139,87 @@ impl HttpServer {
         });
 
         Ok(this)
+    }
+
+    /// If this endpoint responds, the daemon is considered healthy.
+    async fn health() -> Json<()> {
+        Json(())
+    }
+
+    async fn status(State(state): State<Arc<HttpServer>>) -> Json<ServerStatusResult> {
+        let mut soft_halted_zones = vec![];
+        let mut hard_halted_zones = vec![];
+
+        // Determine which pipelines are halted.
+        for zone in state.center.state.lock().unwrap().zones.iter() {
+            if let Ok(zone_state) = zone.0.state.lock() {
+                match &zone_state.pipeline_mode {
+                    PipelineMode::Running => { /* Nothing to do */ }
+                    PipelineMode::SoftHalt(err) => {
+                        soft_halted_zones.push((zone.0.name.clone(), err.clone()))
+                    }
+                    PipelineMode::HardHalt(err) => {
+                        hard_halted_zones.push((zone.0.name.clone(), err.clone()))
+                    }
+                }
+            }
+        }
+
+        // Fetch the signing queue.
+        let (tx, rx) = oneshot::channel();
+        state
+            .center
+            .app_cmd_tx
+            .send((
+                "ZS".to_owned(),
+                ApplicationCommand::GetQueueReport { report_tx: tx },
+            ))
+            .ok();
+
+        let signing_queue = (rx.await).unwrap_or_default();
+
+        Json(ServerStatusResult {
+            soft_halted_zones,
+            hard_halted_zones,
+            signing_queue,
+        })
+    }
+
+    /// Change how Cascade logs information.
+    async fn change_logging(
+        State(state): State<Arc<HttpServer>>,
+        Json(command): Json<ChangeLogging>,
+    ) -> Json<ChangeLoggingResult> {
+        let center = &state.center;
+        {
+            // Lock the global state.
+            let mut state = center.state.lock().unwrap();
+
+            // Apply the provided changes to the runtime logging config.
+            if let Some(level) = command.level {
+                let level = match level {
+                    LogLevel::Trace => crate::config::LogLevel::Trace,
+                    LogLevel::Debug => crate::config::LogLevel::Debug,
+                    LogLevel::Info => crate::config::LogLevel::Info,
+                    LogLevel::Warning => crate::config::LogLevel::Warning,
+                    LogLevel::Error => crate::config::LogLevel::Error,
+                    LogLevel::Critical => crate::config::LogLevel::Critical,
+                };
+                state.rt_config.log_level = Some(level);
+            }
+            if let Some(trace_targets) = command.trace_targets {
+                let trace_targets = trace_targets
+                    .into_iter()
+                    .map(|TraceTarget(s)| s.into_boxed_str())
+                    .collect();
+                state.rt_config.log_trace_targets = Some(trace_targets);
+            }
+
+            // Update the logger.
+            center.logger.apply(&state.rt_config);
+        }
+
+        Json(())
     }
 
     async fn zone_add(
@@ -810,50 +892,6 @@ impl HttpServer {
             signer,
             server,
         }))
-    }
-
-    /// If this endpoint responds, the deamon is considered healthy.
-    async fn health() -> Json<()> {
-        Json(())
-    }
-
-    async fn status(State(state): State<Arc<HttpServer>>) -> Json<ServerStatusResult> {
-        let mut soft_halted_zones = vec![];
-        let mut hard_halted_zones = vec![];
-
-        // Determine which pipelines are halted.
-        for zone in state.center.state.lock().unwrap().zones.iter() {
-            if let Ok(zone_state) = zone.0.state.lock() {
-                match &zone_state.pipeline_mode {
-                    PipelineMode::Running => { /* Nothing to do */ }
-                    PipelineMode::SoftHalt(err) => {
-                        soft_halted_zones.push((zone.0.name.clone(), err.clone()))
-                    }
-                    PipelineMode::HardHalt(err) => {
-                        hard_halted_zones.push((zone.0.name.clone(), err.clone()))
-                    }
-                }
-            }
-        }
-
-        // Fetch the signing queue.
-        let (tx, rx) = oneshot::channel();
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "ZS".to_owned(),
-                ApplicationCommand::GetQueueReport { report_tx: tx },
-            ))
-            .ok();
-
-        let signing_queue = (rx.await).unwrap_or_default();
-
-        Json(ServerStatusResult {
-            soft_halted_zones,
-            hard_halted_zones,
-            signing_queue,
-        })
     }
 
     async fn key_roll(

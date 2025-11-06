@@ -1,6 +1,6 @@
 //! The commands of _cascade_.
 
-pub mod config;
+pub mod debug;
 pub mod hsm;
 pub mod keyset;
 pub mod policy;
@@ -16,9 +16,9 @@ use super::client::CascadeApiClient;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum Command {
-    /// Manage Cascade's configuration.
-    #[command(name = "config")]
-    Config(self::config::Config),
+    /// Utilities for debugging Cascade.
+    #[command(name = "debug")]
+    Debug(self::debug::Debug),
 
     /// Check if Cascade is healthy.
     #[command(name = "health")]
@@ -65,7 +65,7 @@ pub enum Command {
 impl Command {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self {
-            Self::Config(cmd) => cmd.execute(client).await,
+            Self::Debug(cmd) => cmd.execute(client).await,
             Self::Health => {
                 client
                     .get("health")
