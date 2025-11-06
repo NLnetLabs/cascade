@@ -68,6 +68,47 @@ impl std::fmt::Display for ZoneReviewError {
     }
 }
 
+//----------- ChangeLogging ----------------------------------------------------
+
+/// Change how Cascade logs information.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ChangeLogging {
+    /// The new log level to use, if any.
+    pub level: Option<LogLevel>,
+
+    /// The new trace targets to use, if any.
+    pub trace_targets: Option<Vec<TraceTarget>>,
+}
+
+/// A logging level.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum LogLevel {
+    /// A function or variable was interacted with, for debugging.
+    Trace,
+
+    /// Something occurred that may be relevant to debugging.
+    Debug,
+
+    /// Things are proceeding as expected.
+    Info,
+
+    /// Something does not appear to be correct.
+    Warning,
+
+    /// Something is wrong (but Cascade can recover).
+    Error,
+
+    /// Something is wrong and Cascade can't function at all.
+    Critical,
+}
+
+/// A trace target.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TraceTarget(pub String);
+
+/// The result of a [`ChangeLogging`] command.
+pub type ChangeLoggingResult = ();
+
 //------------------------------------------------------------------------------
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
