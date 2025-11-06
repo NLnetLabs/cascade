@@ -22,7 +22,7 @@ const MAX_SYSTEMD_FD_SOCKETS: usize = 32;
 fn main() -> ExitCode {
     // Make a temporary subscriber to catch logging events happening before we
     // set up the proper logger.
-    let guard = tracing::subscriber::set_default(FmtSubscriber::new());
+    let log_guard = tracing::subscriber::set_default(FmtSubscriber::new());
 
     // Set up the command-line interface.
     let cmd = clap::Command::new("cascade")
@@ -55,13 +55,13 @@ fn main() -> ExitCode {
     }
 
     // Drop the temporary logger just before we start making the proper logger
-    drop(guard);
+    drop(log_guard);
 
     // Initialize the actual logger
     let logger = match cascade::log::Logger::launch(&config.daemon.logging) {
         Ok(logger) => logger,
         Err(e) => {
-            eprintln!("ERROR: Failed to initialize logging: {e}");
+            eprintln!("ERROR: Failed to initialize logging: {e:?}");
             return ExitCode::FAILURE;
         }
     };
