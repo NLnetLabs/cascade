@@ -1,388 +1,493 @@
 //! Logging from Cascade.
+//!
+//! Cascade using [`tracing`] to collect and produce log messages.  Unlike the
+//! more traditional [`log`] crate, [`tracing`] can record _spans_ (ranges of
+//! time over which actions occur) and follow asynchronous code coherently.
+//!
+//! [`log`]: https://docs.rs/log
+//!
+//! Cascade supports logging to standard output, standard error, to a file, or
+//! (on UNIX systems) to syslog.  It uses [`tracing_subscriber::fmt`] to achieve
+//! this for the most part, and manually implements syslog output.  It supports
+//! colorized output and (limited) dynamic reconfiguration.
 
-use std::ffi::OsString;
-use std::fmt;
-use std::os::unix::net::UnixDatagram;
-use std::path::Path;
+use camino::Utf8Path;
+use tracing::Subscriber;
+use tracing_subscriber::{layer::SubscriberExt, reload, util::SubscriberInitExt, Registry};
 
-use tracing::field::{self, Field};
-use tracing::{error, Level, Subscriber};
-use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::fmt::Layer as FmtLayer;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::reload::Handle;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{reload, EnvFilter, Layer, Registry};
-
-use crate::config::{LogLevel, LogTarget, LoggingConfig};
+use crate::config::{LogLevel, LogTarget, LoggingConfig, RuntimeConfig};
 
 //----------- Logger -----------------------------------------------------------
 
-/// The state of the Cascade logger.
+/// Cascade's logger.
+///
+/// This is implemented with [`tracing_subscriber`].  The constructed logger is
+/// set as the global default.  The subscriber is structured thusly:
+///
+/// - A [`Filter`] that decides whether something should be logged.  It is
+///   wrapped in [`reload::Layer`] so it can be reloaded dynamically.
+///
+/// - For standard output/error and file targets: a [`fmt::Layer`] that
+///   prettifies log messages appropriately (including conditional colorization)
+///   and writes text to the appropriate I/O sink.
+///
+/// - For syslog: a [`Syslog`] layer formats log lines as per RFC 3164 and
+///   writes them to a UNIX socket.
+///
+/// - A [`tracing_subscriber::Registry`] wraps the whole thing together and
+///   handles [`tracing`]-specific bookkeeping (e.g. tracking spans).
+#[derive(Debug)]
 pub struct Logger {
-    filter: Handle<EnvFilter, Registry>,
-}
-
-impl std::fmt::Debug for Logger {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Logger")
-            .field("filter", &self.filter)
-            .finish()
-    }
+    /// A handle for dynamically changing what is logged.
+    handle: reload::Handle<Filter, Registry>,
 }
 
 impl Logger {
     /// Launch the Cascade logger.
     ///
+    /// The logger will be configured as per the provided [`LoggingConfig`]
+    /// (which does not include dynamic runtime changes, since this should be
+    /// called during initialization).
+    ///
     /// ## Panics
     ///
     /// Panics if a global [`tracing`] logger has been set already.
-    pub fn launch(config: &LoggingConfig) -> Result<&'static Logger, String> {
-        // Create a stub filter with the log level but not the tracing targets.
-        // We're adding the tracing targets at the end of this function so we
-        // can log when syntax errors occur.
-        let mut filter = EnvFilter::default();
-        filter = filter.add_directive(LevelFilter::from(*config.level.value()).into());
+    pub fn launch(config: &LoggingConfig) -> Result<Self, LaunchError> {
+        // Construct the filter that decides how data will be logged.
+        let (filter, handle) = reload::Layer::new(Filter::new(config));
 
-        // A reload layer is tracing's way of making it possible to change
-        // values at runtime. It gives us a handle we can use to update the
-        // EnvFilter when the config changes.
-        let (filter, filter_handle) = reload::Layer::new(filter);
+        // Construct the writer layer.
+        //
+        // Different targets produce different writer types here, so code can't
+        // be shared after this split.
+        match config.target.value() {
+            LogTarget::File(path) => tracing_subscriber::registry()
+                .with(filter)
+                .with(new_file_writer(path)?)
+                .init(),
 
-        let target = PrimaryLogger::new(config.target.value()).map_err(|e| e.to_string())?;
+            LogTarget::Stdout => tracing_subscriber::registry()
+                .with(filter)
+                .with(new_stdout_writer())
+                .init(),
 
-        match target {
+            LogTarget::Stderr => tracing_subscriber::registry()
+                .with(filter)
+                .with(new_stderr_writer())
+                .init(),
+
             #[cfg(unix)]
-            PrimaryLogger::Syslog => {
-                use std::net::{Ipv4Addr, SocketAddr};
+            LogTarget::Syslog => tracing_subscriber::registry()
+                .with(filter)
+                .with(new_syslog_writer()?)
+                .init(),
+        }
 
-                // We try the following protocols and addresses to reach syslog:
-                //  - unix sockets:
-                //      - /dev/log
-                //      - /var/run/syslog
-                //      - /var/run/log
-                //  - tcp: localhost:601
-                //  - udp: localhost:514
-
-                let paths = ["/dev/log", "/var/run/syslog", "/var/run/log"];
-
-                let transport = if let Some(unix) = paths.iter().find_map(|p| connect_unix(p).ok())
-                {
-                    Transport::Unix(unix)
-                } else if let Ok(tcp) = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, 601)) {
-                    Transport::Tcp(tcp)
-                } else if let Ok(udp) = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)) {
-                    Transport::Udp {
-                        local: udp,
-                        server: SocketAddr::from((Ipv4Addr::LOCALHOST, 514)),
-                    }
-                } else {
-                    panic!("Can't connect to syslog");
-                };
-
-                let (app_name, proc_id) = get_process_info();
-
-                // We have our own layer for sending messages to syslog. It is
-                // possible in the future to use this in addition to printing to
-                // stdout or a file if we wanted to (especially to a file might
-                // be useful).
-                let layer = Syslog {
-                    facility: 1, // User level
-                    hostname: hostname::get().unwrap(),
-                    app_name,
-                    proc_id,
-                    transport,
-                };
-
-                tracing_subscriber::registry()
-                    .with(filter)
-                    .with(layer)
-                    .init()
-            }
-            PrimaryLogger::File { file } => {
-                // We never emit colors to files, otherwise we use the normal
-                // tracing-subscriber.
-                let layer = FmtLayer::new().with_ansi(false).with_writer(file);
-                tracing_subscriber::registry()
-                    .with(filter)
-                    .with(layer)
-                    .init()
-            }
-            PrimaryLogger::Stdout => {
-                // We try to determine whether to use colors in a bit more fancy
-                // way than tracing does automatically (it only does `NO_COLOR`).
-                let layer = FmtLayer::new()
-                    .with_ansi(supports_color::on(supports_color::Stream::Stdout).is_some())
-                    .with_writer(std::io::stdout);
-                tracing_subscriber::registry()
-                    .with(filter)
-                    .with(layer)
-                    .init()
-            }
-            PrimaryLogger::Stderr => {
-                // We try to determine whether to use colors in a bit more fancy
-                // way than tracing does automatically (it only does `NO_COLOR`).
-                let layer = FmtLayer::new()
-                    .with_ansi(supports_color::on(supports_color::Stream::Stderr).is_some())
-                    .with_writer(std::io::stderr);
-                tracing_subscriber::registry()
-                    .with(filter)
-                    .with(layer)
-                    .init()
-            }
-        };
-
-        let this = Self {
-            filter: filter_handle,
-        };
-
-        // This is a fallible operation that might log errors, so we only do
-        // it after we have installed a basic filter that doesn't depend on the
-        // config.
-        this.apply(config);
-
-        Ok(Box::leak(Box::new(this)))
+        Ok(Self { handle })
     }
 
-    pub fn apply(&self, config: &LoggingConfig) {
-        self.filter
-            .reload(make_env_filter(config))
-            .expect("The Handle should not be poisoned or dropped.");
+    /// Apply a runtime change to the logging configuration.
+    pub fn apply(&self, rt_config: &RuntimeConfig) {
+        self.handle
+            .modify(|filter| filter.update(rt_config))
+            .unwrap_or_else(|err| panic!("the logger panicked: {err}"));
     }
 }
 
-/// Make a new [`EnvFilter`] based on the config
-///
-/// Every time we load the config, we have to create a new [`EnvFilter`] based
-/// on the new config settings.
-fn make_env_filter(config: &LoggingConfig) -> EnvFilter {
-    let mut filter = EnvFilter::default();
+//----------- Filter -----------------------------------------------------------
 
-    filter = filter.add_directive(LevelFilter::from(*config.level.value()).into());
+/// A [`tracing_subscriber`] layer that decides which logs to output.
+#[derive(Debug)]
+struct Filter {
+    /// The currently set log level.
+    level: tracing::Level,
 
-    // Add all of our trace targets to the filter.
-    for target in config.trace_targets.value().iter() {
-        match target.parse() {
-            Ok(target) => {
-                filter = filter.add_directive(target);
-            }
-            Err(e) => {
-                // If we fail to parse, we simply log that and move on.
-                error!("Invalid trace target \'{target}\': {e}");
-                continue;
+    /// Targets for which to enable trace logging.
+    trace_targets: foldhash::HashSet<Box<str>>,
+}
+
+impl Filter {
+    /// Construct a new [`Filter`].
+    pub fn new(config: &LoggingConfig) -> Self {
+        Self {
+            level: (*config.level.value()).into(),
+            trace_targets: config.trace_targets.value().clone(),
+        }
+    }
+
+    /// Update this [`Filter`] based on runtime configuration.
+    pub fn update(&mut self, rt_config: &RuntimeConfig) {
+        if let Some(level) = rt_config.log_level {
+            self.level = level.into();
+        }
+        if let Some(trace_targets) = &rt_config.log_trace_targets {
+            self.trace_targets = trace_targets.clone();
+        }
+    }
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Filter {
+    fn enabled(
+        &self,
+        metadata: &tracing::Metadata<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) -> bool {
+        self.level >= *metadata.level()
+            || *metadata.level() < tracing::Level::TRACE
+            || self.trace_targets.contains(metadata.target())
+    }
+}
+
+//----------- Writer initialization --------------------------------------------
+
+/// Construct a writer layer for targeting a file.
+fn new_file_writer<S>(path: &Utf8Path) -> Result<impl tracing_subscriber::Layer<S>, LaunchError>
+where
+    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open(path)
+        .map_err(|error| LaunchError::Open {
+            path: path.into(),
+            error,
+        })?;
+
+    let layer = tracing_subscriber::fmt::Layer::new()
+        .with_ansi(false)
+        .with_writer(file);
+
+    Ok(layer)
+}
+
+/// Construct a writer layer for targeting standard output.
+fn new_stdout_writer<S>() -> impl tracing_subscriber::Layer<S>
+where
+    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    // Override 'tracing_subscriber's simple colorization detector with
+    // 'supports_color', which is far more thorough.
+    tracing_subscriber::fmt::Layer::new()
+        .with_ansi(supports_color::on(supports_color::Stream::Stdout).is_some())
+        .with_writer(std::io::stdout)
+}
+
+/// Construct a writer layer for targeting a file.
+fn new_stderr_writer<S>() -> impl tracing_subscriber::Layer<S>
+where
+    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    // Override 'tracing_subscriber's simple colorization detector with
+    // 'supports_color', which is far more thorough.
+    tracing_subscriber::fmt::Layer::new()
+        .with_ansi(supports_color::on(supports_color::Stream::Stdout).is_some())
+        .with_writer(std::io::stdout)
+}
+
+/// Construct a new writer layer for targeting UNIX syslog.
+#[cfg(unix)]
+fn new_syslog_writer<S: Subscriber>() -> Result<impl tracing_subscriber::Layer<S>, LaunchError> {
+    self::unix::Syslog::init().map_err(LaunchError::Syslog)
+}
+
+//----------- unix -------------------------------------------------------------
+
+#[cfg(unix)]
+mod unix {
+    use std::{
+        ffi::OsStr,
+        fmt,
+        io::{self, Write},
+        net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket},
+        os::unix::{ffi::OsStrExt, net::UnixDatagram},
+        path::Path,
+        time::Duration,
+    };
+
+    use tracing::{field::Field, Subscriber};
+
+    use crate::eprintln;
+
+    //------- Syslog -----------------------------------------------------------
+
+    /// A [`tracing_subscriber`] writer layer for syslog.
+    ///
+    /// This will format syslog messages as per [RFC 3164].
+    //
+    /// [RFC 3164]: https://www.rfc-editor.org/rfc/rfc3164
+    #[derive(Debug)]
+    pub struct Syslog {
+        /// What type of program is logging the message.
+        pub facility: u8,
+
+        /// The hostname of the system.
+        pub hostname: Box<OsStr>,
+
+        /// The name of the application.
+        pub app_name: Box<OsStr>,
+
+        /// The process ID.
+        pub pid: u32,
+
+        /// How to communicate with the syslog daemon.
+        pub transport: Transport,
+    }
+
+    impl Syslog {
+        /// Initialize a [`Syslog`] writer.
+        pub fn init() -> Result<Self, InitError> {
+            // 1 = LOG_USER; "generic user-level messages"
+            //
+            // TODO: Use 'LOG_DAEMON' since Cascade is a daemon?
+            let facility = 1;
+
+            // Determine the system hostname.
+            let hostname = hostname::get()
+                .map_err(InitError::HostName)?
+                .into_boxed_os_str();
+
+            // Determine a "name" for the current application.
+            //
+            // Use the file name of the current executable, in case the user
+            // has named it something relevant to themselves.  If the path we
+            // find doesn't have a file name (for some weird reason), just use
+            // the whole path.
+            let app_name = std::env::current_exe().map_err(InitError::AppName)?;
+            let app_name = app_name
+                .file_name()
+                .map(|name| name.into())
+                .unwrap_or_else(|| app_name.into_os_string().into_boxed_os_str());
+
+            let pid = std::process::id();
+
+            // Connect to some transport.
+            let transport = Transport::connect().map_err(InitError::Connect)?;
+
+            Ok(Self {
+                facility,
+                hostname,
+                app_name,
+                pid,
+                transport,
+            })
+        }
+    }
+
+    impl<S: Subscriber> tracing_subscriber::Layer<S> for Syslog {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            // Map tracing levels to syslog levels.
+            let severity = match *event.metadata().level() {
+                tracing::Level::ERROR => 3,
+                tracing::Level::WARN => 4,
+                tracing::Level::INFO => 6,
+                tracing::Level::DEBUG | tracing::Level::TRACE => 7,
+            };
+
+            // RFC 3164 says that the priority value is calculated by first
+            // multiplying the Facility number by 8 and then adding the
+            // numerical value of the severity.
+            let prival = self.facility * 8 + severity;
+
+            // The timestamp must be in "Mmm dd hh:mm:ss" format in local
+            // time. Important is also that the day part must be padded to 2
+            // characters with a space.
+            let timestamp = jiff::Zoned::now().strftime("%b %e %T");
+
+            // TODO: Use a thread-local buffer?
+            let mut buf = Vec::new();
+
+            // This is the format defined by RFC 3164.
+            write!(buf, "<{prival}>{timestamp} ").expect("'Vec::write()' never fails");
+            buf.extend_from_slice(self.hostname.as_bytes());
+            buf.push(b' ');
+            buf.extend_from_slice(self.app_name.as_bytes());
+            write!(buf, "[{}]: ", self.pid).expect("'Vec::write()' never fails");
+
+            // Extract the primary message within the event.
+            //
+            // TODO: The interface 'tracing' gives us is quite frustrating, it
+            // would be nice to help them with alternatives.
+            let mut visitor = Visitor(&mut buf);
+            event.record(&mut visitor);
+            buf.push(b'\n');
+
+            match self.transport.send(&buf) {
+                Ok(()) => {}
+                Err(error) => {
+                    // TODO: Report into a proper fallback logger.
+                    eprintln!("Logging failed: {error:?}");
+                }
             }
         }
     }
 
-    filter
+    struct Visitor<'a>(&'a mut Vec<u8>);
+
+    impl tracing::field::Visit for Visitor<'_> {
+        fn record_str(&mut self, field: &Field, value: &str) {
+            if field.name() != "message" {
+                return;
+            }
+
+            self.0.extend_from_slice(value.as_bytes());
+        }
+
+        fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+            if field.name() != "message" {
+                return;
+            }
+
+            write!(self.0, "{value:?}").expect("'Vec::write()' never fails");
+        }
+    }
+
+    //------- Transport --------------------------------------------------------
+
+    /// How to communicate with a syslog daemon.
+    #[derive(Debug)]
+    pub enum Transport {
+        Unix(UnixDatagram),
+        Tcp(TcpStream),
+        Udp(UdpSocket),
+    }
+
+    /// A method by which to communicate with a syslog daemon.
+    #[derive(Clone, Debug)]
+    pub enum Port<P: AsRef<Path>> {
+        Unix(P),
+        Udp(SocketAddr),
+        Tcp(SocketAddr),
+    }
+
+    impl Transport {
+        /// Connect to the syslog daemon.
+        pub fn connect() -> Result<Self, ConnectError> {
+            // Standard ports where we expect to find the daemon.
+            let ports = [
+                Port::Unix("/dev/log"),
+                Port::Unix("/var/run/syslog"),
+                Port::Unix("/var/run/log"),
+                Port::Tcp((Ipv6Addr::LOCALHOST, 601).into()),
+                Port::Tcp((Ipv4Addr::LOCALHOST, 601).into()),
+                Port::Udp((Ipv6Addr::LOCALHOST, 514).into()),
+                Port::Udp((Ipv4Addr::LOCALHOST, 514).into()),
+            ];
+
+            // Keep track of how every attempt fails.
+            let mut attempts = Vec::new();
+            for port in ports {
+                match Self::connect_to(&port) {
+                    Ok(this) => return Ok(this),
+                    Err(error) => attempts.push((port, error)),
+                }
+            }
+
+            // We couldn't find a single way to connect to the syslog daemon.
+            // Report the error we encountered with each of our attempts.
+            Err(ConnectError {
+                attempts: attempts.into_boxed_slice(),
+            })
+        }
+
+        /// Connect to a syslog daemon via a particular port.
+        pub fn connect_to<P: AsRef<Path>>(port: &Port<P>) -> io::Result<Self> {
+            match port {
+                Port::Unix(path) => {
+                    let socket = UnixDatagram::unbound()?;
+                    socket.connect(path)?;
+                    Ok(Self::Unix(socket))
+                }
+                Port::Tcp(addr) => {
+                    let socket = TcpStream::connect_timeout(addr, Duration::from_secs(1))?;
+                    socket.set_nodelay(true)?;
+                    Ok(Self::Tcp(socket))
+                }
+                Port::Udp(SocketAddr::V4(addr)) => {
+                    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+                    socket.connect(addr)?;
+                    Ok(Self::Udp(socket))
+                }
+                Port::Udp(SocketAddr::V6(addr)) => {
+                    let socket = UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0))?;
+                    socket.connect(addr)?;
+                    Ok(Self::Udp(socket))
+                }
+            }
+        }
+
+        /// Send a packet to the syslog daemon.
+        fn send(&self, buf: &[u8]) -> io::Result<()> {
+            match self {
+                Transport::Unix(s) => {
+                    s.send(buf)?;
+                }
+                Transport::Tcp(s) => {
+                    // NOTE: We used 'TcpStream::set_nodelay()'.
+                    let mut s = s;
+                    s.write_all(buf)?;
+                }
+                Transport::Udp(s) => {
+                    s.send(buf)?;
+                }
+            }
+            Ok(())
+        }
+    }
+
+    //======== Errors ==========================================================
+
+    /// An error in [`Syslog::init()`].
+    #[derive(Debug)]
+    pub enum InitError {
+        AppName(io::Error),
+        HostName(io::Error),
+        Connect(ConnectError),
+    }
+
+    /// An error in connecting to a syslog daemon.
+    #[derive(Debug)]
+    pub struct ConnectError<P: AsRef<Path> = &'static str> {
+        /// Attempts to connect to different ports.
+        pub attempts: Box<[(Port<P>, io::Error)]>,
+    }
 }
 
-/// Get the name of the current executable and the process id
-fn get_process_info() -> (OsString, u32) {
-    let name = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.file_name().map(|os_name| os_name.to_owned()))
-        .unwrap_or_default();
+//----------- LaunchError ------------------------------------------------------
 
-    (name, std::process::id())
-}
+/// An error in [`Logger::launch()`].
+#[derive(Debug)]
+pub enum LaunchError {
+    /// The target file could not be opened.
+    Open {
+        /// The path to the file.
+        path: Box<Utf8Path>,
 
-/// Connect to a unix socket
-fn connect_unix(path: impl AsRef<Path>) -> std::io::Result<UnixDatagram> {
-    let sock = UnixDatagram::unbound()?;
-    sock.connect(path.as_ref())?;
-    Ok(sock)
-}
-
-/// A primary logger.
-enum PrimaryLogger {
-    /// A file logger.
-    //
-    // TODO: Attach a per-thread buffer here.
-    File {
-        /// The actual file.
-        file: std::fs::File,
+        /// The underlying I/O error.
+        error: std::io::Error,
     },
 
-    /// A syslog logger.
+    /// The syslog writer could not be initialized.
     #[cfg(unix)]
-    Syslog,
-
-    /// A logger to stdout.
-    Stdout,
-
-    /// A logger to stderr.
-    Stderr,
+    Syslog(unix::InitError),
 }
 
-impl PrimaryLogger {
-    /// Initialize a new [`PrimaryLogger`].
-    pub fn new(config: &LogTarget) -> Result<Self, std::io::Error> {
-        match config {
-            LogTarget::File(path) => {
-                let file = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&**path)?;
+//------------------------------------------------------------------------------
 
-                Ok(Self::File { file })
-            }
-            LogTarget::Syslog => Ok(Self::Syslog),
-            LogTarget::Stdout => Ok(Self::Stdout),
-            LogTarget::Stderr => Ok(Self::Stderr),
-        }
-    }
-}
-
-impl From<LogLevel> for LevelFilter {
+impl From<LogLevel> for tracing::Level {
     fn from(value: LogLevel) -> Self {
         match value {
-            LogLevel::Trace => LevelFilter::TRACE,
-            LogLevel::Debug => LevelFilter::DEBUG,
-            LogLevel::Info => LevelFilter::INFO,
-            LogLevel::Warning => LevelFilter::WARN,
-            LogLevel::Error => LevelFilter::ERROR,
-            LogLevel::Critical => LevelFilter::ERROR, // TODO
-        }
-    }
-}
-
-/// Implements the BSD syslog protocol as a [`tracing`] layer
-///
-/// The syslog format is defined by [RFC 3164].
-//
-/// [RFC 3164]: https://www.rfc-editor.org/rfc/rfc3164
-struct Syslog {
-    facility: u8,
-    hostname: OsString,
-    app_name: OsString,
-    proc_id: u32,
-    transport: Transport,
-}
-
-/// Transports for the syslog logger
-#[derive(Debug)]
-enum Transport {
-    Unix(std::os::unix::net::UnixDatagram),
-    Udp {
-        local: std::net::UdpSocket,
-        server: std::net::SocketAddr,
-    },
-    Tcp(std::net::TcpStream),
-}
-
-impl Transport {
-    fn send(&self, buf: &[u8]) -> std::io::Result<()> {
-        use std::io::Write;
-        match self {
-            Transport::Unix(unix_stream) => {
-                unix_stream.send(buf)?;
-            }
-            Transport::Udp { local, server } => {
-                local.send_to(buf, server)?;
-            }
-            Transport::Tcp(tcp_stream) => {
-                let mut s: &std::net::TcpStream = tcp_stream;
-                s.write_all(buf)?;
-                s.flush()?;
-            }
-        }
-        Ok(())
-    }
-}
-
-// We implement a Layer instead of a subscriber for Syslog simply because
-// it is simpler, since we only care about `on_event`.
-impl<S> Layer<S> for Syslog
-where
-    S: Subscriber,
-{
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
-        use std::io::Write;
-
-        let meta = event.metadata();
-
-        // Map tracing levels to syslog levels
-        let severity = match *meta.level() {
-            Level::ERROR => 3,
-            Level::WARN => 4,
-            Level::INFO => 6,
-            Level::DEBUG | Level::TRACE => 7,
-        };
-
-        // RFC 3164 says that the priority value is calculated by first
-        // multiplying the Facility number by 8 and then adding the numerical
-        // value of the severity.
-        let prival = self.facility << 3 | severity;
-
-        // The timestamp must be in "Mmm dd hh:mm:ss" format in local time.
-        // Important is also that the day part must be padded to 2 characters
-        // with a space.
-        let timestamp = jiff::Zoned::now().strftime("%b %e %T");
-
-        let hostname = self.hostname.to_string_lossy();
-
-        let app_name = self.app_name.to_string_lossy();
-
-        let proc_id = &self.proc_id;
-
-        let mut buf = Vec::new();
-
-        // This is the format defined by RFC 3164.
-        // Writing to buf won't fail because it's just a Vec.
-        let _ = write!(
-            buf,
-            "<{prival}>{timestamp} {hostname} {app_name}[{proc_id}]: "
-        );
-
-        // We use a custom visitor to extract the message from tracing, which
-        // (because it's fully structured) they hide in the structured data.
-        let mut visitor = Visitor {
-            writer: &mut buf,
-            result: Ok(()),
-        };
-
-        event.record(&mut visitor);
-
-        let _ = buf.write(b"\n");
-
-        self.transport
-            .send(&buf)
-            .expect("Our logger broke, we might as well crash");
-    }
-}
-
-struct Visitor<'a> {
-    writer: &'a mut Vec<u8>,
-    result: std::io::Result<()>,
-}
-
-impl field::Visit for Visitor<'_> {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        if self.result.is_err() {
-            return;
-        }
-
-        if field.name() == "message" {
-            self.record_debug(field, &format_args!("{}", value))
-        } else {
-            self.record_debug(field, &value)
-        }
-    }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        use std::io::Write;
-
-        if self.result.is_err() {
-            return;
-        }
-
-        if field.name() == "message" {
-            self.result = write!(self.writer, "{value:?}");
+            LogLevel::Trace => tracing::Level::TRACE,
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Warning => tracing::Level::WARN,
+            LogLevel::Error => tracing::Level::ERROR,
+            LogLevel::Critical => tracing::Level::ERROR,
         }
     }
 }

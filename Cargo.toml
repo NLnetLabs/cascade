@@ -70,7 +70,7 @@ anstream = "0.6.21"
 # functionality. They are part of Tokio, a widely used and well maintained
 # ecosystem of crates.
 tracing            = { version = "0.1.40" }
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.20" }
 
 # support-color checks various environment variables and terminal settings for
 # whether ANSI escape codes should be emitted. It is also used by `anstream`

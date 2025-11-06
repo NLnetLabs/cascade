@@ -19,6 +19,10 @@ pub mod file;
 //----------- Config -----------------------------------------------------------
 
 /// Configuration for Cascade.
+///
+/// These details are set when Cascade starts up, and remain immutable while it
+/// is running.  See [`RuntimeConfig`] for configuration that can change while
+/// Cascade is running.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     /// The directory storing policy files.
@@ -292,6 +296,18 @@ pub struct KeyManagerConfig {}
 pub struct ServerConfig {
     /// Where to serve zones.
     pub servers: Vec<SocketConfig>,
+}
+
+//----------- RuntimeConfig ----------------------------------------------------
+
+/// Configuration that can change at runtime.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RuntimeConfig {
+    /// The log level.
+    pub log_level: Option<LogLevel>,
+
+    /// Targets to log trace messages for.
+    pub log_trace_targets: Option<foldhash::HashSet<Box<str>>>,
 }
 
 //----------- SocketConfig -----------------------------------------------------

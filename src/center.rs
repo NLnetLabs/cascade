@@ -16,6 +16,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
+use crate::config::RuntimeConfig;
 use crate::zone::PipelineMode;
 use crate::{
     api,
@@ -39,7 +40,7 @@ pub struct Center {
     pub config: Config,
 
     /// The logger.
-    pub logger: &'static Logger,
+    pub logger: Logger,
 
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
@@ -238,6 +239,12 @@ pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reaso
 /// Global state for Cascade.
 #[derive(Debug, Default)]
 pub struct State {
+    /// Configuration that can change at runtime.
+    ///
+    /// Cascade supports dynamically changing a subset of its configuration at
+    /// runtime.
+    pub rt_config: RuntimeConfig,
+
     /// Known zones.
     ///
     /// This field stores the live state of every zone.  Crucially, zones are
