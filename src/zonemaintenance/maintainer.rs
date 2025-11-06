@@ -33,7 +33,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn, Level};
 
 use domain::base::iana::{Class, Opcode, OptRcode};
 use domain::base::net::IpAddr;
@@ -57,7 +57,6 @@ use domain::zonetree::{
     AnswerContent, InMemoryZoneDiff, ReadableZone, SharedRrset, StoredName, WritableZone,
     WritableZoneNode, Zone, ZoneStore, ZoneTree,
 };
-use log::log_enabled;
 
 use crate::center::{get_zone, Center};
 
@@ -1649,7 +1648,7 @@ where
                         }
                     }
 
-                    if log_enabled!(log::Level::Info) {
+                    if tracing::event_enabled!(Level::INFO) {
                         if let Some(report) =
                             progress_reporter.create_report(1, num_updates_applied, false)
                         {
@@ -1663,7 +1662,7 @@ where
                     return Err(ZoneMaintainerError::IncompleteResponse);
                 }
 
-                if log_enabled!(log::Level::Info) {
+                if tracing::event_enabled!(Level::INFO) {
                     if let Some(report) =
                         progress_reporter.create_report(1, num_updates_applied, true)
                     {
@@ -1748,7 +1747,7 @@ where
                             }
                         }
 
-                        if log_enabled!(log::Level::Info) {
+                        if tracing::event_enabled!(Level::INFO) {
                             if let Some(report) = progress_reporter.create_report(
                                 num_responses_received,
                                 num_updates_applied,
@@ -1762,7 +1761,7 @@ where
                     trace!("Processing XFR events complete");
                 }
 
-                if log_enabled!(log::Level::Info) {
+                if tracing::event_enabled!(Level::INFO) {
                     if let Some(report) = progress_reporter.create_report(
                         num_responses_received,
                         num_updates_applied,

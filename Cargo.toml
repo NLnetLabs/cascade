@@ -39,7 +39,6 @@ octseq             = { version = "0.5.2", default-features = false }
 tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
 serde              = { version = "1.0", features = ["derive", "rc"] }
 toml               = "0.8"
-tracing            = { version = "0.1.40" }
 # Added for CLI to access HTTP API
 # `default-features = false` was copied from previous import from the Rotonda base
 reqwest            = { version = "0.12", default-features = false, features = ["http2", "json"] }
@@ -67,10 +66,20 @@ tempfile = "3.21.0"
 # Anstream can strip ansi codes for TERM=dumb and other similar situations
 anstream = "0.6.21"
 
-# 'log' is a very popular logging crate, and is the primary means for Cascade
-# to indicate what it's doing at any time.
-[dependencies.log]
-version = "0.4"
+# tracing and tracing-subscriber provide structured and async-compatible logging
+# functionality. They are part of Tokio, a widely used and well maintained
+# ecosystem of crates.
+tracing            = { version = "0.1.40" }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+
+# support-color checks various environment variables and terminal settings for
+# whether ANSI escape codes should be emitted. It is also used by `anstream`
+# (and therefore `clap`).
+supports-color = "3.0.2"
+
+# `hostname` is a very popular crate to get the hostname of the current process.
+# It is maintained  by Dirkjan Ochtman.
+hostname = "0.4.1"
 
 # Cascade contains many performance-sensitive hashmaps and is not expected to
 # be accessible to attackers.  'std's default hasher, which is slow but secure

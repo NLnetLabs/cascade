@@ -15,7 +15,6 @@ use domain::base::iana::Class;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::zonetree::StoredName;
-use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -28,6 +27,7 @@ use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::{Instant, MissedTickBehavior};
+use tracing::{debug, error, warn};
 
 #[derive(Debug)]
 pub struct KeyManagerUnit {

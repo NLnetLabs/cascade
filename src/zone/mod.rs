@@ -19,6 +19,7 @@ use domain::{
 };
 use domain::{rdata::dnssec::Timestamp, tsig};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, trace};
 
 use crate::{
     api::{self, ZoneReviewStatus},
@@ -395,7 +396,7 @@ impl Zone {
                 let Some(_) = state.enqueued_save.take_if(|s| s.id() == tokio::task::id()) else {
                     // 'enqueued_save' does not match what we set, so somebody
                     // else set it to 'None' first.  Don't do anything.
-                    log::trace!("Ignoring enqueued save due to race");
+                    trace!("Ignoring enqueued save due to race");
                     return;
                 };
                 state::Spec::build(&state)
@@ -403,9 +404,9 @@ impl Zone {
 
             // Save the zone state.
             match spec.save(&path) {
-                Ok(()) => log::debug!("Saved state of zone '{name}' (to '{path}')"),
+                Ok(()) => debug!("Saved state of zone '{name}' (to '{path}')"),
                 Err(err) => {
-                    log::error!("Could not save state of zone '{name}' to '{path}': {err}");
+                    error!("Could not save state of zone '{name}' to '{path}': {err}");
                 }
             }
         });
@@ -439,9 +440,9 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
 
     // Save the global state.
     match spec.save(&path) {
-        Ok(()) => log::debug!("Saved the state of zone '{name}' (to '{path}')"),
+        Ok(()) => debug!("Saved the state of zone '{name}' (to '{path}')"),
         Err(err) => {
-            log::error!("Could not save the state of zone '{name}' to '{path}': {err}");
+            error!("Could not save the state of zone '{name}' to '{path}': {err}");
         }
     }
 }
@@ -510,7 +511,7 @@ pub fn change_policy(
 
     zone.0.mark_dirty(&mut zone_state, center);
 
-    log::info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
+    info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
     Ok(())
 }
 
@@ -556,7 +557,7 @@ pub fn change_source(
 
     zone.mark_dirty(&mut state, center);
 
-    log::info!("Set source of zone '{name}' from '{old_source:?}' to '{new_source:?}'");
+    info!("Set source of zone '{name}' from '{old_source:?}' to '{new_source:?}'");
     Ok(())
 }
 
