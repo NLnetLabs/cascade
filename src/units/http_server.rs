@@ -940,7 +940,7 @@ impl HttpServer {
         Json(Ok(()))
     }
 
-    async fn status_keys(State(state): State<Arc<HttpServerState>>) -> Json<KeyStatusResult> {
+    async fn status_keys(State(state): State<Arc<HttpServer>>) -> Json<KeyStatusResult> {
         #[derive(Deserialize)]
         struct KeySetConfig {
             ksk_validity: Option<Duration>,
