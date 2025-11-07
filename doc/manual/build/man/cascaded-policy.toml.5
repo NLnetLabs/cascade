@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Oct 24, 2025" "0.1.0-alpha3" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "Nov 07, 2025" "0.1.0-alpha4" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -75,9 +75,9 @@ version = \(dqv1\(dq
 required = false
 
 [key\-manager]
-ksk.validity = \(dq31536000\(dq
-zsk.validity = \(dq2592000\(dq
-csk.validity = \(dq31536000\(dq
+ksk.validity = \(dq365d\(dq
+zsk.validity = \(dq30d\(dq
+csk.validity = \(dq365d\(dq
 ksk.auto\-start = true
 zsk.auto\-start = true
 csk.auto\-start = true
@@ -98,13 +98,13 @@ ds\-algorithm = \(dqSHA256\(dq
 auto\-remove = true
 
 [key\-manager.records]
-ttl = 3600
-dnskey.signature\-inception\-offset = 86400
-cds.signature\-inception\-offset = 86400
-dnskey.signature\-lifetime = 1209600
-cds.signature\-lifetime = 1209600
-dnskey.signature\-remain\-time = 604800
-cds.signature\-remain\-time = 604800
+ttl = \(dq1h\(dq
+dnskey.signature\-inception\-offset = \(dq1d\(dq
+cds.signature\-inception\-offset = \(dq1d\(dq
+dnskey.signature\-lifetime = \(dq2w\(dq
+cds.signature\-lifetime = \(dq2w\(dq
+dnskey.signature\-remain\-time = \(dq1w\(dq
+cds.signature\-remain\-time = \(dq1w\(dq
 
 [key\-manager.generation]
 use\-csk = false
@@ -112,9 +112,9 @@ algorithm = \(dqECDSAP256SHA256\(dq
 
 [signer]
 serial\-policy = \(dqdate\-counter\(dq
-signature\-inception\-offset = 86400
-signature\-lifetime = 1209600
-signature\-remain\-time = 604800
+signature\-inception\-offset = \(dq1d\(dq
+signature\-lifetime = \(dq2w\(dq
+signature\-remain\-time = \(dq1w\(dq
 
 [signer.denial]
 type = \(dqnsec\(dq
@@ -197,15 +197,15 @@ will determine whether the zone is approved or not.
 The \fB[key\-manager]\fP section.
 .INDENT 0.0
 .TP
-.B ksk.validity = \(dq31536000\(dq
+.B ksk.validity = \(dq365d\(dq
 .UNINDENT
 .INDENT 0.0
 .TP
-.B zsk.validity = \(dq2592000\(dq
+.B zsk.validity = \(dq30d\(dq
 .UNINDENT
 .INDENT 0.0
 .TP
-.B csk.validity = \(dq31536000\(dq
+.B csk.validity = \(dq365d\(dq
 How long keys are considered valid for.
 .sp
 If a key has been used for longer than this time, it is considered expired,
@@ -216,7 +216,9 @@ and it will not break DNSSEC validation, but it is usually important to the
 security of the zone.
 .sp
 Independent validity times are set for KSKs, ZSKs, and CSKs.  An integer
-value will be interpreted as seconds; \fBforever\fP means keys never expire.
+value will be interpreted as seconds, \fB\(dqforever\(dq\fP means keys never expire,
+and a time string such as \fB\(dq365d\(dq\fP will be interpreted as 365 days.
+Supported suffixes include \fBs\fP, \fBm\fP, \fBh\fP, \fBd\fP and \fBw\fP\&.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -237,7 +239,7 @@ Whether to automatically start key rollovers.
 .sp
 If this is enabled, Cascade will automatically start rolling over keys when
 they expire (as per \fBvalidity\fP).  When using this setting, \fBvalidity\fP must
-not be set to \fBforever\fP\&.
+not be set to \fB\(dqforever\(dq\fP\&.
 .sp
 The first step in a rollover will be to generate new keys to replace old
 ones. By disabling this setting, the user can manually control how new keys
@@ -344,16 +346,16 @@ The key manager generates and signs several records (DNSKEY and CDS).  This
 section controls its behaviour towards them.
 .INDENT 0.0
 .TP
-.B ttl = 3600
+.B ttl = \(dq1h\(dq
 The TTL for the generated records.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B dnskey.signature\-inception\-offset = 86400
+.B dnskey.signature\-inception\-offset = \(dq1d\(dq
 .UNINDENT
 .INDENT 0.0
 .TP
-.B cds.signature\-inception\-offset = 86400
+.B cds.signature\-inception\-offset = \(dq1d\(dq
 The offset for generated signature inceptions.
 .sp
 Record signatures have a fixed inception time, from when they are considered
@@ -363,32 +365,36 @@ To prevent such cases, this setting allows the inception time to be offset
 into the past.
 .sp
 Independent offsets can be set for each type of record.  An integer value is
-intepreted as seconds; inception times will be calculated as \fBnow \- offset\fP
-at the time of signing.
+interpreted as seconds.  A string is interpreted as a time string consisting
+of a number  followed by a unit (i.e. \fBs\fP, \fBm\fP, \fBh\fP, \fBd\fP, or
+\fBw\fP). Inception times will be calculated as \fBnow \- offset\fP at the time
+of signing.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B dnskey.signature\-lifetime = 1209600
+.B dnskey.signature\-lifetime = \(dq2w\(dq
 .UNINDENT
 .INDENT 0.0
 .TP
-.B cds.signature\-lifetime = 1209600
+.B cds.signature\-lifetime = \(dq2w\(dq
 The lifetime of generated signatures.
 .sp
 Record signatures have a fixed lifetime, after which they are considered
 invalid.  To keep the zone valid, the signatures should be regenerated before
 they expire; see \fBsignature\-remain\-time\fP to control regeneration time.
 .sp
-Independent lifetimes can be set for each type of record.  An integer value is
-interpreted as seconds.
+Independent lifetimes can be set for each type of record.  An integer
+value is interpreted as seconds.  A string is interpreted as a time string
+consisting of a number followed by a unit (i.e. \fBs\fP, \fBm\fP, \fBh\fP, \fBd\fP,
+or \fBw\fP).
 .UNINDENT
 .INDENT 0.0
 .TP
-.B dnskey.signature\-remain\-time = 604800
+.B dnskey.signature\-remain\-time = \(dq1w\(dq
 .UNINDENT
 .INDENT 0.0
 .TP
-.B cds.signature\-remain\-time = 604800
+.B cds.signature\-remain\-time = \(dq1w\(dq
 The amount of time remaining before expiry when signatures will be
 regenerated.
 .sp
@@ -399,7 +405,9 @@ signatures will be regenerated; it must be less than the \fBsignature\-lifetime\
 setting.
 .sp
 Independent waiting times can be set for each type of record.  An integer
-value is interpreted as seconds.
+value is interpreted as seconds.  A string is interpreted as a time string
+consisting of a number followed by a unit (i.e. \fBs\fP, \fBm\fP, \fBh\fP, \fBd\fP,
+or \fBw\fP).
 .UNINDENT
 .SS How keys are generated.
 .sp
@@ -492,7 +500,7 @@ Supported options:
 .UNINDENT
 .INDENT 0.0
 .TP
-.B signature\-inception\-offset = 86400
+.B signature\-inception\-offset = \(dq1d\(dq
 The offset for generated signature inceptions.
 .sp
 Record signatures have a fixed inception time, from when they are considered
@@ -501,23 +509,27 @@ invalid, because their inception point appears to be some time in the
 future. To prevent such cases, this setting allows the inception time to be
 offset into the past.
 .sp
-An integer value is interpreted as seconds; inception times will be
-calculated as \fBnow \- offset\fP at the time of signing.
+An integer value is interpreted as seconds. A string is interpreted as a time
+string consisting of a number followed by a unit (i.e. \fBs\fP, \fBm\fP, \fBh\fP,
+\fBd\fP, or \fBw\fP). Inception times will be calculated as \fBnow \- offset\fP at
+the time of signing.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B signature\-lifetime = 1209600
+.B signature\-lifetime = \(dq2w\(dq
 The lifetime of generated signatures.
 .sp
 Record signatures have a fixed lifetime, after which they are considered
 invalid.  To keep the zone valid, the signatures should be regenerated before
 they expire; see \fBsignature\-remain\-time\fP to control regeneration time.
 .sp
-An integer value is interpreted as seconds.
+An integer value is interpreted as seconds. A string is interpreted as a time
+string consisting of a number followed by a unit (i.e. \fBs\fP, \fBm\fP, \fBh\fP,
+\fBd\fP, or \fBw\fP).
 .UNINDENT
 .INDENT 0.0
 .TP
-.B signature\-remain\-time = 604800
+.B signature\-remain\-time = \(dq1w\(dq
 The amount of time remaining before expiry when signatures will be
 regenerated.
 .sp
@@ -527,7 +539,9 @@ have to be regenerated before they expire.  That hard limit is set by
 signatures will be regenerated; it must be less than the \fBsignature\-lifetime\fP
 setting.
 .sp
-An integer value is interpreted as seconds.
+An integer value is interpreted as seconds. A string is interpreted as a time
+string consisting of a number followed by a unit (i.e. \fBs\fP, \fBm\fP, \fBh\fP,
+\fBd\fP, or \fBw\fP).
 .UNINDENT
 .SS How denial\-of\-existence records are generated.
 .sp

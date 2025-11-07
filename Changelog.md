@@ -14,6 +14,42 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## 0.1.0-alpha4 'Mont-Royal'
+
+Released 2025-11-07.
+
+### New
+
+- The stdout/stderr of review scripts is now logged ([#281] by @tertsdiepraam)
+- Cascade now logs its version number on startup ([#286] by @tertsdiepraam)
+- Cascade outputs more colorful logs ([#287] by @tertsdiepraam)
+
+### Bug fixes
+
+- Zone parsing errors now cause a soft-halt instead of a hard-halt ([#280] by @tertsdiepraam)
+- Signing statistics now present accurate values related to NSEC(3) ([#271] by @bal-e)
+
+### Other changes
+
+- Use `tracing-subscriber` for logging ([#287] by @tertsdiepraam)
+
+### Documentation improvements
+
+- Document Cascade's dependency on OpenSSL ([#277] by @AlexanderBand)
+
+### Acknowledgements
+
+Our continued thanks to @jpmens, @bortzmeyer, and @gryphius for trying out
+Cascade.
+
+[#271]: https://github.com/NLnetLabs/cascade/pull/271
+[#277]: https://github.com/NLnetLabs/cascade/pull/277
+[#280]: https://github.com/NLnetLabs/cascade/pull/280
+[#281]: https://github.com/NLnetLabs/cascade/pull/281
+[#286]: https://github.com/NLnetLabs/cascade/pull/286
+[#287]: https://github.com/NLnetLabs/cascade/pull/287
+
+
 ## 0.1.0-alpha3 'Rue des Cascades'
 
 Released 2025-10-24.

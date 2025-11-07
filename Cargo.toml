@@ -2,7 +2,7 @@
 name = "cascade"
 default-run = "cascaded"
 description = "friendly DNSSEC signing solution: sensible defaults, controllability, observability and flexibility"
-version = "0.1.0-alpha3"
+version = "0.1.0-alpha4"
 homepage = "https://nlnetlabs.nl/projects/cascade"
 documentation = "https://cascade.docs.nlnetlabs.nl"
 edition = "2021"
