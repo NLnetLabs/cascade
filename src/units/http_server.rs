@@ -35,6 +35,7 @@ use crate::daemon::SocketProvider;
 use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
@@ -69,6 +70,7 @@ impl HttpServer {
             .route("/", get(|| async { "Hello, World!" }))
             .route("/health", get(Self::health))
             .route("/status", get(Self::status))
+            .route("/status/keys", get(Self::status_keys))
             .route("/config/reload", post(Self::config_reload))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
@@ -936,6 +938,125 @@ impl HttpServer {
         }
 
         Json(Ok(()))
+    }
+
+    async fn status_keys(State(state): State<Arc<HttpServerState>>) -> Json<KeyStatusResult> {
+        #[derive(Deserialize)]
+        struct KeySetConfig {
+            ksk_validity: Option<Duration>,
+            zsk_validity: Option<Duration>,
+            csk_validity: Option<Duration>,
+            autoremove: bool,
+        }
+
+        let state = state.center.state.lock().unwrap();
+
+        let keys_dir = &state.config.keys_dir;
+
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("System time is expected to be after UNIX_EPOCH");
+
+        let mut zones = Vec::new();
+        let mut expirations = Vec::new();
+
+        for zone in state.zones.iter() {
+            let mut zone_keys = Vec::new();
+
+            let cfg_path = mk_dnst_keyset_cfg_file_path(keys_dir, &zone.0.name);
+            let cfg_str = match std::fs::read_to_string(&cfg_path) {
+                Ok(cfg_str) => cfg_str,
+                Err(e) => {
+                    warn!("Could not read `{cfg_path}`: {e}");
+                    continue;
+                }
+            };
+            let ksc = match serde_json::from_str::<KeySetConfig>(&cfg_str) {
+                Ok(ksc) => ksc,
+                Err(e) => {
+                    warn!("Could not parse `{cfg_path}`: {e}");
+                    continue;
+                }
+            };
+
+            let state_path = mk_dnst_keyset_state_file_path(keys_dir, &zone.0.name);
+            let state_str = match std::fs::read_to_string(&state_path) {
+                Ok(state_str) => state_str,
+                Err(e) => {
+                    error!("Could not read `{state_path}`: {e}");
+                    continue;
+                }
+            };
+            let keyset_state = match serde_json::from_str::<KeySetState>(&state_str) {
+                Ok(keyset_state) => keyset_state,
+                Err(e) => {
+                    warn!("Could not parse `{state_path}`: {e}");
+                    continue;
+                }
+            };
+
+            let keyset_keys = keyset_state.keyset.keys();
+            for (pubref, key) in keyset_keys {
+                let (keystate, validity) = match key.keytype() {
+                    KeyType::Ksk(keystate) => (keystate, Some(ksc.ksk_validity)),
+                    KeyType::Zsk(keystate) => (keystate, Some(ksc.zsk_validity)),
+                    KeyType::Csk(ksk_keystate, _) => (ksk_keystate, Some(ksc.csk_validity)),
+                    KeyType::Include(keystate) => (keystate, None),
+                };
+                let msg = if keystate.stale() {
+                    if ksc.autoremove {
+                        "stale (will be removed automatically)".into()
+                    } else {
+                        "state (must be removed manually)".into()
+                    }
+                } else if let Some(opt_validity) = validity {
+                    if let Some(validity) = opt_validity {
+                        match key.timestamps().published() {
+                            None => "not yet published".into(),
+                            Some(timestamp) if timestamp.elapsed() > validity => {
+                                expirations.push(KeyExpiration {
+                                    zone: zone.0.name.to_string(),
+                                    key: pubref.clone(),
+                                    time_left: None,
+                                });
+                                "expired".into()
+                            }
+                            Some(timestamp) => {
+                                let timestamp_duration: Duration = timestamp.clone().into();
+                                expirations.push(KeyExpiration {
+                                    zone: zone.0.name.to_string(),
+                                    key: pubref.clone(),
+                                    time_left: Some(now - timestamp_duration),
+                                });
+                                format!("expires at {}", timestamp + validity)
+                            }
+                        }
+                    } else {
+                        "does not expire".into()
+                    }
+                } else {
+                    "does not expire (imported key)".into()
+                };
+
+                zone_keys.push(KeyMsg {
+                    name: pubref.clone(),
+                    msg,
+                })
+            }
+
+            zones.push(KeysPerZone {
+                zone: zone.0.name.to_string(),
+                keys: zone_keys,
+            });
+        }
+
+        // Sort by time until expiration
+        expirations.sort_by_key(|e| e.time_left);
+
+        // Sort the zones alphabetically for a predictable order
+        zones.sort_by(|a, b| a.zone.cmp(&b.zone));
+
+        Json(KeyStatusResult { expirations, zones })
     }
 }
 

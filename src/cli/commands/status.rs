@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 
-use crate::api::ServerStatusResult;
+use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult};
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::common::ansi;
 use crate::zonemaintenance::types::SigningStageReport;
@@ -28,7 +28,43 @@ pub enum StatusCommand {
 impl Status {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
-            Some(_) => todo!(),
+            Some(StatusCommand::Keys) => {
+                let response: KeyStatusResult = client
+                    .get("/status/keys")
+                    .send()
+                    .and_then(|r| r.json())
+                    .await
+                    .map_err(format_http_error)?;
+
+                println!("First to expire (max 5):");
+                if response.expirations.is_empty() {
+                    println!("   No keys will expire");
+                }
+
+                for e in response.expirations.iter().take(5) {
+                    println!(" - {}", e.zone);
+                    println!("   {}", e.key);
+                    match e.time_left {
+                        Some(dur) => println!(
+                            "   Time left: {:#}",
+                            jiff::SignedDuration::try_from(dur)
+                                .unwrap()
+                                .round(jiff::Unit::Second)
+                                .unwrap()
+                        ),
+                        None => println!("   {}EXPIRED{}", ansi::RED, ansi::RESET),
+                    };
+                }
+
+                println!();
+                println!("Keys per zone:");
+                for KeysPerZone { zone, keys } in &response.zones {
+                    println!(" - {zone}");
+                    for KeyMsg { name, msg } in keys {
+                        println!("   - {name}: {msg}");
+                    }
+                }
+            }
             None => {
                 let response: ServerStatusResult = client
                     .get("/status")
