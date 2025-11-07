@@ -14,9 +14,9 @@ results available to downstream, Internet facing *secondary* nameservers.
    authoritative nameserver must support.
 
 One possible authoritative server that could be used up and downstream of
-Cascade is our authoritative nameserver `NSD <https://nlnetlabs.nl/nsd>`__, but
-any authoritative nameserver can be used instead, assuming that it supports
-transferring zones via XFR zone transfers to and from Cascade.
+Cascade is `NSD <https://nlnetlabs.nl/nsd>`_, but any solution can be used
+provided that it supports transferring zones via XFR zone transfers to and
+from Cascade.
 
 Intended Audience
 -----------------
