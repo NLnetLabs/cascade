@@ -1,10 +1,10 @@
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{Center, ZoneAddError};
+use crate::center::{Center, Change, ZoneAddError};
 use crate::cli::commands::hsm::Error;
 use crate::manager::record_zone_event;
 use crate::manager::{ApplicationCommand, Terminated, Update};
-use crate::policy::{KeyParameters, Policy};
+use crate::policy::{KeyParameters, PolicyVersion};
 use crate::units::http_server::KmipServerState;
 use crate::zone::{HistoricalEvent, SigningTrigger};
 use bytes::Bytes;
@@ -206,6 +206,38 @@ impl KeyManager {
                     }
                 }
             }
+            ApplicationCommand::Changed(Change::ZonePolicyChanged { name, old, new }) => {
+                if let Some(old) = old {
+                    if old.key_manager == new.key_manager {
+                        // Nothing changed.
+                        return Ok(());
+                    }
+                }
+                // Keep it simple, just send all config items to keyset even
+                // if they didn't change.
+                let config_commands = policy_to_commands(&new);
+                for c in config_commands {
+                    let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
+                    cmd.arg("set");
+
+                    for a in c {
+                        cmd.arg(a);
+                    }
+
+                    let res = cmd.output().await;
+
+                    // Use match to make sure the pattern s exhaustive.
+                    #[allow(clippy::single_match)]
+                    match res {
+                        Err(KeySetCommandError { err, output, .. }) => {
+                            error!("{}", format_cmd_error(&err, output));
+                            return Err(Terminated);
+                        }
+                        Ok(_) => (),
+                    }
+                }
+                Ok(())
+            }
 
             _ => Ok(()), // not for us
         }
@@ -328,7 +360,7 @@ impl KeyManager {
 
         // Pass `set` and `import` commands to `dnst keyset`.
         let config_commands = imports_to_commands(key_imports).into_iter().chain(
-            policy_to_commands(&policy).into_iter().map(|v| {
+            policy_to_commands(&policy.latest).into_iter().map(|v| {
                 let mut final_cmd = vec!["set".into()];
                 final_cmd.extend(v);
                 final_cmd
@@ -612,8 +644,8 @@ macro_rules! strs {
     };
 }
 
-fn policy_to_commands(policy: &Policy) -> Vec<Vec<String>> {
-    let km = &policy.latest.key_manager;
+fn policy_to_commands(policy: &PolicyVersion) -> Vec<Vec<String>> {
+    let km = &policy.key_manager;
 
     let mut algorithm_cmd = vec!["algorithm".to_string()];
     match km.algorithm {
