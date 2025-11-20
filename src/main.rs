@@ -187,6 +187,7 @@ fn main() -> ExitCode {
 
     // Set up an async runtime.
     let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .thread_name("cascade-worker")
         .enable_all()
         .build()
     {

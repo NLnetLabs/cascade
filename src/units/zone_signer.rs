@@ -837,6 +837,7 @@ impl ZoneSigner {
         // Insert all unsigned records into the updater.
         let unsigned_updater_task = spawn_blocking({
             let runtime = tokio::runtime::Builder::new_current_thread()
+                .thread_name("cascade-worker")
                 .build()
                 .unwrap();
 
@@ -875,6 +876,7 @@ impl ZoneSigner {
         // zone.  It also computes the minimum expiration time for us.
         let inserter_task = spawn_blocking({
             let runtime = tokio::runtime::Builder::new_current_thread()
+                .thread_name("cascade-worker")
                 .build()
                 .unwrap();
 
