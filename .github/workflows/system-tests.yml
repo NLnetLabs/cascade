@@ -8,6 +8,40 @@ on:
 env:
   # CARGO_TERM_VERBOSE: true
   CARGO_TERM_VERBOSE: false
+
+## Examples
+#   job-name:
+#     name: Run tests with resolvers/namerservers
+#     runs-on: ${{ matrix.os }}
+#     needs: build
+#     strategy:
+#       matrix:
+#         os: [ubuntu-latest]
+#         rust: [stable]
+#     steps:
+#     - name: Checkout repository
+#       uses: actions/checkout@v4
+#     # TODO: this seems broken in act. Verify
+#     # - name: Install Rust
+#     #   uses: hecrj/setup-rust-action@v2
+#     #   with:
+#     #     rust-version: ${{ matrix.rust }}
+#
+#     - name: Prepare the system test environment
+#       uses: ./.github/actions/prepare-systest-env
+#       with:
+#         artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+#     # - name: Only download/build the binaries without setting up the test environment
+#     #   uses: ./.github/actions/download-or-build
+#     #   with:
+#     #     artifact-name: ${{ inputs.artifact-name }}
+#     - run: target/debug/cascade --version
+#     ### RUN YOUR TESTS HERE
+#     # # Optional, the container gets cleaned up anyway (at least in act)
+#     # - name: Stop the setup
+#     #   run: scripts/manage-test-environment.sh stop
+
+
 jobs:
   build:
     # First build the project for once for all systems to deduplicate work
@@ -18,16 +52,12 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rust: [stable]
+        # the  hecrj/setup-rust-action@v2 action seems broken in act, therefore
+        # only using stable rust, which is installed in the runner image
         # rust: [1.84.0, stable, beta, nightly]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-    # FIXME: broken in act?
-    # - name: Install Rust
-    #   uses: hecrj/setup-rust-action@v2
-    #   with:
-    #     rust-version: ${{ matrix.rust }}
-
     - run: cargo build ${{ matrix.args }}
     - name: Tar built binaries to preserve permissions
       run: tar -cf target.tar target
@@ -49,52 +79,24 @@ jobs:
         # The value can range from 0 to 9.
         # For large files that are not easily compressed, a value of 0 is recommended for significantly faster uploads.
         # Optional. Default is '6'
-        compression-level: 0
+        compression-level: 1
 
   test:
     name: Run tests with resolvers/namerservers
     runs-on: ${{ matrix.os }}
-    # needs: build
+    needs: build
 
-    # # is missing node
-    # container:
-    #   image: ubuntu:latest
-    #   options: --cap-add=NET_ADMIN
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [stable]
+        rust: [stable] # see build job
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-    - name: Setup and start the test environment with NSD, Unbound, and BIND9
-      run: scripts/manage-test-environment.sh setup-and-start
-    - name: Test the setup
-      run: scripts/manage-test-environment.sh test
-    # FIXME: broken in act?
-    # - name: Install Rust
-    #   uses: hecrj/setup-rust-action@v2
-    #   with:
-    #     rust-version: ${{ matrix.rust }}
-    - uses: actions/download-artifact@v5
-      id: download_binaries
-      # Don't mark this run as failed if downloading the cached version fails,
-      # we are building from source below if that happens. Inspired by:
-      # https://github.com/actions/runner/issues/2679#issuecomment-1645222952
-      continue-on-error: true
+    - name: Prepare the system test environment
+      uses: ./.github/actions/prepare-systest-env
       with:
-        name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
-    - name: Extract downloaded binaries
-      # due to 'continue-on-error: true' above the conclusion/status will
-      # always be success, but we can check for success using the outcome key
-      if: ${{ steps.download_binaries.outcome == 'success' }}
-      run: tar -xf target.tar
-    - name: Build from source if downloading artifacts failed
-      # due to 'continue-on-error: true' above the conclusion/status will
-      # always be success, but we can check for failure using the outcome key
-      if: ${{ steps.download_binaries.outcome == 'failure' }}
-      run: cargo build ${{ matrix.args }}
-
+        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
     - run: target/debug/cascade --version
     # # Optional, the container gets cleaned up anyway (at least in act)
     # - name: Stop the setup

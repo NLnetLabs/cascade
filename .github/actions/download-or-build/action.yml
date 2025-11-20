@@ -1,0 +1,27 @@
+name: 'Download the artifact or build from source if failed'
+description: 'Fetch or, if failed, build the binaries'
+inputs:
+  artifact-name:
+    description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
+    required: true
+runs:
+  using: "composite"
+  steps:
+  - uses: actions/download-artifact@v5
+    id: download_binaries
+    # Don't mark this run as failed if downloading the cached version fails,
+    # we are building from source below if that happens. Inspired by:
+    # https://github.com/actions/runner/issues/2679#issuecomment-1645222952
+    continue-on-error: true
+    with:
+      name: ${{ inputs.artifact-name }}
+  - name: Extract downloaded binaries
+    # due to 'continue-on-error: true' above the conclusion/status will
+    # always be success, but we can check for success using the outcome key
+    if: ${{ steps.download_binaries.outcome == 'success' }}
+    run: tar -xf target.tar
+  - name: Build from source if downloading artifacts failed
+    # due to 'continue-on-error: true' above the conclusion/status will
+    # always be success, but we can check for failure using the outcome key
+    if: ${{ steps.download_binaries.outcome == 'failure' }}
+    run: cargo build ${{ matrix.args }}
