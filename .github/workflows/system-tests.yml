@@ -63,7 +63,7 @@
 #     # - name: Only download/build the binaries without setting up the test environment
 #     #   uses: ./.github/actions/download-or-build
 #     #   with:
-#     #     artifact-name: ${{ inputs.artifact-name }}
+#     #     artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
 #     - run: target/debug/cascade --version
 #     ### RUN YOUR TESTS HERE
 #     # # Optional, the container gets cleaned up anyway (at least in act)
