@@ -187,7 +187,7 @@ fn main() -> ExitCode {
 
     // Set up the rayon threadpool
     rayon::ThreadPoolBuilder::new()
-        .thread_name(|_| "cascade-worker".into())
+        .thread_name(|_| "cascade-signer".into())
         .build_global()
         .expect("This should only be set once");
 
