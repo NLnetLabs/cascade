@@ -129,7 +129,8 @@ Start the Cascade daemon:
 Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
 locally running :program:`kmip2pkcs11` daemon. The ``username`` is the slot
 identifier we found our card in earlier, and the ``password`` is the user PIN
-configured for the card.
+configured for the card. (``username`` can also be the full token label which
+in our above example is the complete string ``NL-smartcard (UserPIN)``.)
 
 .. code-block:: bash
 
