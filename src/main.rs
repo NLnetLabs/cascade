@@ -185,8 +185,15 @@ fn main() -> ExitCode {
         update_tx,
     });
 
+    // Set up the rayon threadpool
+    rayon::ThreadPoolBuilder::new()
+        .thread_name(|_| "cascade-signer".into())
+        .build_global()
+        .expect("This should only be set once");
+
     // Set up an async runtime.
     let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .thread_name("cascade-worker")
         .enable_all()
         .build()
     {
