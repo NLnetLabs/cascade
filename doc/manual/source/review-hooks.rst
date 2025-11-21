@@ -30,7 +30,7 @@ The review script then needs to use the address provided in the environment
 variables to fetch the zone via AXFR :term:`zone transfer <Zone transfer>`
 and perform the required checks.
 
-..note::
+.. note::
     When Cascade is run as a daemon with the provided systemd service
     unit, its file system access is limited. It only has write access to the
     ``/var/lib/cascade`` directory and a private ``/tmp`` directory. If a review
