@@ -39,10 +39,6 @@ Commands
 
     .. glossary::
 
-        :doc:`cascade-config <cascade-config>`\ (1)
-
-          Manage Cascade's configuration.
-
         :doc:`cascade-health <cascade-health>`\ (1)
 
           Check the health of Cascade. 
@@ -63,14 +59,15 @@ Commands
 
           Manage HSMs.
 
+        :doc:`cascade-debug <cascade-debug>`\ (1)
+
+          Debug / troubleshoot Cascade.
+
         :doc:`cascade-template <cascade-template>`\ (1)
 
           Print example config or policy files.
 
 .. only:: man or text
-
-    **cascade-config**\ (1)
-        Manage Cascade's configuration.
 
     **cascade-health**\ (1)
         Check the health of Cascade.
@@ -86,6 +83,9 @@ Commands
 
     **cascade-hsm**\ (1)
         Manage HSMs.
+
+    **cascade-debug**\ (1)
+        Debug / troubleshoot Cascade.
 
     **cascade-template**\ (1)
         Print example config or policy files.
