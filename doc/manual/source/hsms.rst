@@ -65,22 +65,25 @@ to stress or performance test the interface. The tested HSMs are:
 .. table:: Supported HSMs
    :widths: auto
 
-   ================  ============  =========  =================
-   HSM               Type          Interface  Integration guide
-   ================  ============  =========  =================
-   Fortanix DSM      Cloud         KMIP       
-   Thales Cloud HSM  Cloud         PKCS#11    :doc:`view <thales>`
-   Nitrokey NetHSM   Docker image  PKCS#11    
-   YubiHSM 2         USB key       PKCS#11    
-   SoftHSM v2.6.1    Software      PKCS#11    :doc:`view <softhsm>`
-   SmartCard-HSM     Smart Card    PKCS#11    :doc:`view <smartcard-hsm>`
-   ================  ============  =========  =================
+   =====================  ============  =========  =================
+   HSM                    Type          Interface  Integration guide
+   =====================  ============  =========  =================
+   Fortanix DSM           Cloud         KMIP       
+   Thales Cloud HSM       Cloud         PKCS#11    :doc:`view <thales>`
+   Nitrokey NetHSM [1]_   Docker image  PKCS#11    
+   YubiHSM 2              USB key       PKCS#11    
+   SoftHSM v2.6.1         Software      PKCS#11    :doc:`view <softhsm>`
+   SmartCard-HSM          Smart Card    PKCS#11    :doc:`view <smartcard-hsm>`
+   =====================  ============  =========  =================
+
+.. [1] Works with v1.7.2 of their PKCS#11 module. v2.0.0 and above are NOT
+   currently supported due to a `known bug in kmip2pkcs11 <https://github.com/NLnetLabs/kmip2pkcs11/issues/14>`_.
 
 .. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
    though KMIP 1.2 requires servers to offer support for old versions of the
-   TLS protocol with known security vulnerabilities. For this reason, Cascade
-   cannot be used with PyKMIP as this implementation only supports older,
-   vulnerable TLS versions.
+   TLS protocol with known security vulnerabilities. For this reason, PyKMIP
+   is **NOT** supported by Cascade as it only supports older vulnerable TLS
+   versions.
 
 Setting up kmip2pkcs11
 ~~~~~~~~~~~~~~~~~~~~~~
