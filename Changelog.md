@@ -14,6 +14,54 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## 0.1.0-alpha5 'Colline de la Croix'
+
+Released 2025-11-21.
+
+### Breaking changes
+
+- `cascade config reload` has been removed.  Configuration can only be reloaded
+  by restarting Cascade.  The command was never fully supported, since changes
+  to many configuration settings would be ignored.  ([#330] by @bal-e)
+
+### New
+
+- `cascade debug change-logging` can be used to change how Cascade logs
+  information at runtime, which is a useful debugging aid.  This functionality
+  was previously provided by `cascade config reload`.  ([#330] by @bal-e)
+
+- `cascade status keys` now prints information about DNSSEC keys and rollovers,
+  across all known zones.  It will prioritize keys with the soonest rollover
+  actions. ([#288] by @tertsdiepraam)
+
+### Bug fixes
+
+- Changes to the `[key-manager]` section in zone policy will now propagate those
+  changes into existing zones for that policy.  ([#355] by @Philip-NLnetLabs)
+
+- The threads spawned by Cascade are now named `cascade-worker` instead of
+  generic names like `tokio-worker`.  ([#356] by @tertsdiepraam)
+
+### Documentation improvements
+
+- Note incompatibility with NitroKey v2.0.0 PKCS#11 module ([#357] by @ximon18)
+
+- Note file access limitations for review scripts ([#358] by @tertsdiepraam)
+
+### Acknowledgements
+
+Our continued thanks to @jpmens, @bortzmeyer, and @gryphius for trying out
+Cascade.
+
+[#330]: https://github.com/NLnetLabs/cascade/pull/330
+[#330]: https://github.com/NLnetLabs/cascade/pull/330
+[#288]: https://github.com/NLnetLabs/cascade/pull/288
+[#355]: https://github.com/NLnetLabs/cascade/pull/355
+[#356]: https://github.com/NLnetLabs/cascade/pull/356
+[#357]: https://github.com/NLnetLabs/cascade/pull/357
+[#358]: https://github.com/NLnetLabs/cascade/pull/358
+
+
 ## 0.1.0-alpha4 'Mont-Royal'
 
 Released 2025-11-07.
