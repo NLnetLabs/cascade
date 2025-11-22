@@ -70,7 +70,7 @@ to stress or performance test the interface. The tested HSMs are:
    =====================  ============  =========  =================
    Fortanix DSM           Cloud         KMIP       
    Thales Cloud HSM       Cloud         PKCS#11    :doc:`view <thales>`
-   Nitrokey NetHSM [1]_   Docker image  PKCS#11    
+   Nitrokey NetHSM [1]_   Docker image  PKCS#11    :doc:`view <nethsm>`
    YubiHSM 2              USB key       PKCS#11    
    SoftHSM v2.6.1         Software      PKCS#11    :doc:`view <softhsm>`
    SmartCard-HSM          Smart Card    PKCS#11    :doc:`view <smartcard-hsm>`
