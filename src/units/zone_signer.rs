@@ -1086,7 +1086,7 @@ impl ZoneSigner {
                 self.center.signed_zones.rcu(|zones| {
                     let mut new_zones = Arc::unwrap_or_clone(zones.clone());
                     new_zones.insert_zone(new_zone.clone()).unwrap();
-                    Arc::new(new_zones)
+                    new_zones
                 });
 
                 new_zone
