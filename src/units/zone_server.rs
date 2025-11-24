@@ -279,29 +279,29 @@ impl ZoneServer {
         // TODO: Bump the zone serial?
         let signed_zones = self.center.signed_zones.load();
         if let Some(zone) = signed_zones.get_zone(&zone_name, Class::IN) {
-            let published_zones = self.center.published_zones.load();
-
             // Create a deep copy of the set of
             // published zones. We will add the
             // new zone to that copied set and
             // then replace the original set with
             // the new set.
             info!("[{unit_name}]: Adding '{zone_name}' to the set of published zones.");
-            let mut new_published_zones = Arc::unwrap_or_clone(published_zones.clone());
-            let _ = new_published_zones.remove_zone(zone.apex_name(), zone.class());
-            new_published_zones.insert_zone(zone.clone()).unwrap();
-            self.center
-                .published_zones
-                .store(Arc::new(new_published_zones));
+            self.center.published_zones.rcu(|zones| {
+                let mut new_published_zones = Arc::unwrap_or_clone(zones.clone());
+                let _ = new_published_zones.remove_zone(zone.apex_name(), zone.class());
+                new_published_zones.insert_zone(zone.clone()).unwrap();
+                new_published_zones
+            });
 
             // Create a deep copy of the set of
             // signed zones. We will remove the
             // zone from the copied set and then
             // replace the original set with the
             // new set.
-            let mut new_signed_zones = Arc::unwrap_or_clone(signed_zones.clone());
-            new_signed_zones.remove_zone(&zone_name, Class::IN).unwrap();
-            self.center.signed_zones.store(Arc::new(new_signed_zones));
+            self.center.signed_zones.rcu(|zones| {
+                let mut new_signed_zones = Arc::unwrap_or_clone(zones.clone());
+                new_signed_zones.remove_zone(&zone_name, Class::IN).unwrap();
+                new_signed_zones
+            });
         }
 
         // Send NOTIFY if configured to do so.
@@ -683,11 +683,12 @@ impl ZoneServer {
         // Create a deep copy of the set of signable zones. We will add
         // the new zone to that copied set and then replace the original
         // set with the new set.
-        let signable_zones = center.signable_zones.load();
-        let mut new_signable_zones = Arc::unwrap_or_clone(signable_zones.clone());
-        let _ = new_signable_zones.remove_zone(zone_name, Class::IN);
-        new_signable_zones.insert_zone(zone.clone()).unwrap();
-        center.signable_zones.store(Arc::new(new_signable_zones));
+        center.signable_zones.rcu(|zones| {
+            let mut new_signable_zones = Arc::unwrap_or_clone(zones.clone());
+            let _ = new_signable_zones.remove_zone(zone_name, Class::IN);
+            new_signable_zones.insert_zone(zone.clone()).unwrap();
+            new_signable_zones
+        });
 
         Ok(())
     }

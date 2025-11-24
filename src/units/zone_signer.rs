@@ -1078,13 +1078,16 @@ impl ZoneSigner {
             .get_zone(zone_name, Class::IN)
             .cloned()
             .unwrap_or_else(move || {
-                let mut new_zones = Arc::unwrap_or_clone(signed_zones.clone());
                 // Use a LightWeightZone as it is able to fix RRSIG TTLs to
                 // be the same when walked as the record they sign, rather
                 // than being forced into a common RRSET with a common TTL.
                 let new_zone = Zone::new(LightWeightZone::new(zone_name.clone(), false));
-                new_zones.insert_zone(new_zone.clone()).unwrap();
-                self.center.signed_zones.store(Arc::new(new_zones));
+
+                self.center.signed_zones.rcu(|zones| {
+                    let mut new_zones = Arc::unwrap_or_clone(zones.clone());
+                    new_zones.insert_zone(new_zone.clone()).unwrap();
+                    Arc::new(new_zones)
+                });
 
                 new_zone
             })
