@@ -345,7 +345,7 @@ example.test.   IN SOA ns1.example.test. mail.example.test. (
 ns1         A   127.0.0.1
 
 www         A   169.254.1.1
-mail        MX  example.test.
+mail        MX  10 example.test.
 text        TXT "Hello World!"
 EOF
 
