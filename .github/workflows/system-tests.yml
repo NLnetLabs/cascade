@@ -1,48 +1,14 @@
-# README:
+# This workflow is primarily for use with https://github.com/nektos/act and has
+# been tested using the full image (catthehacker/ubuntu:full-latest).
+#
+# Further documentation is in TESTING.md.
 #
 # TL;DR:
 #   - Docker: `act --network default -W .github/workflows/system-tests.yml --job your-test`
 #   - Podman: `act --network podman -W .github/workflows/system-tests.yml --job your-test`
-#   Optionally start a standalone artifact server to deduplicate compilation between tests (see below).
+#   Optionally start a standalone artifact server to deduplicate compilation between tests (see TESTING.md).
 #
-# This action is primarily for use with https://github.com/nektos/act and has
-# been tested using the full image (catthehacker/ubuntu:full-latest).
-#
-# **Building from source (once or always)**
-#
-# The build job builds the project and uploads the target directory as an
-# artifact for use by the other jobs to deduplicate the compilation step. If
-# fetching the pre-built fails, it will just build them from source. So this
-# workflow is still usable without an artifact server.
-#
-# **Network requirement (why --network default)**
-#
-# In the test environment, Unbound needs to bind to localhost:53, which is not
-# possible with the default network (act uses host networking by default).
-# localhost:53 is already in use by your system's stub resolver (probably
-# systemd-resolved). Therefore, you need to specify a different network to use:
-# `act --network default` on Docker, or `act --network podman` on Podman.
-#
-# **Standalone artifact server for use with --network**
-#
-# In a non-host network, act cannot access its own artifact server (that would
-# be started using the `--artifact-server-path` option). Therefore Jannik has
-# hacked together a standalone artifact server binary that uses the existing
-# act artifact server code (https://github.com/mozzieongit/act).
-# You can run that server in a separate container on the same network (see the
-# README of https://github.com/mozzieongit/act) and then have act use that
-# artifact server.
-#
-# **Running single jobs/tests**
-#
-# You can run single jobs with act using the `--job` option. However, if the
-# job sets the `needs` option, that job will always be run before. If you want
-# to test/debug your test without always re-building the source, you could
-# comment out the `needs` option, build once using `act ... --job build` and
-# then use `act ... --job your-test` to only run your test. If there is no
-# artifact server available, the code will still always be built from source.
-#
-# **Example test job**
+# ## Example test job
 #
 # ```yml
 #   job-name:
