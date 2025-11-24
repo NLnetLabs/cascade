@@ -24,4 +24,6 @@ runs:
     # due to 'continue-on-error: true' above the conclusion/status will
     # always be success, but we can check for failure using the outcome key
     if: ${{ steps.download_binaries.outcome == 'failure' }}
-    run: cargo build ${{ matrix.args }}
+    run: cargo build
+  - name: Build dnst from keyset branch
+    run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst --locked --bin=dnst
