@@ -60,7 +60,9 @@ there is no artifact server available, the code will still always be built from
 source.
 
 
-### No init or systemd
+### Limitations
+
+#### No init or systemd
 
 Act runs the workflow in a container without init or systemd. Therefore, when
 running other daemons, you either need to make use of their appropriate
@@ -68,6 +70,21 @@ daemonization features, or handle background jobs yourself.
 
 Maybe running act with `--container-options --init` would work to add a dumb
 init process, but isn't verified, yet.
+
+#### All nameservers on the same address
+
+Currently, it is not possible to add additional listener addresses on the
+loopback (or any) network device in the `act` container. Therefore, all
+nameservers are listening on 127.0.0.1 on different ports:
+
+- Unbound: 127.0.0.1:53
+- Primary NSD: 127.0.0.1:1055
+- Secondary NSD: 127.0.0.1:1054
+- Bind (authoritative for `.test`): 127.0.0.1:1053
+
+It might be possible to change this in future versions of this setup with the
+`--container-options --cap-add=NET_ADMIN` option for act, but this needs to be
+tried out.
 
 ### Example test job
 

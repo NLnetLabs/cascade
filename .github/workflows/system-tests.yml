@@ -37,6 +37,9 @@
 #     #   run: scripts/manage-test-environment.sh stop
 # ```
 
+# GitHub Actions environment variables are documented at
+# https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+
 name: System/Integration tests
 on:
   # Triggering on PRs and arbitrary branch pushes is not enabled because most

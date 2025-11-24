@@ -1,3 +1,5 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'Prepare the system/integration test environment'
 description: 'Setup the environment, and fetch or build the binaries'
 inputs:
