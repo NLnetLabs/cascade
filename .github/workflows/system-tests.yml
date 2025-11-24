@@ -147,6 +147,7 @@ jobs:
       run: |
         dig @127.0.0.1 -p 4543 example.test AXFR
     - name: Tell NSD that the zone is now available
+      # Only necessary if NOTIFY is not setup for cascade
       run: |
         ./scripts/manage-test-environment.sh control nsd-secondary transfer example.test
     - name: The new zone should now be available via the resolver
