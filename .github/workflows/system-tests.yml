@@ -131,27 +131,8 @@ jobs:
       with:
         artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
     - run: target/debug/cascade --version
-    - name: Start cascade with a working-directory-local config
-      run: |
-        # Variant 1: Just using absolute paths
-        mkdir -p cascade-dir/policies
-        cascade_dir="$PWD/cascade-dir"
-        # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
-        ./target/debug/cascade template config | \
-          ./scripts/sed-config-dirs.sh "${cascade_dir}" | tee "${cascade_dir}/config.toml" >&2
-        ./target/debug/cascade template policy > "${cascade_dir}/policies/default.toml"
-        ./target/debug/cascaded --config "${cascade_dir}/config.toml" --state "${cascade_dir}/state.db" --daemonize &>"${cascade_dir}/cascade-startup.log"
-        ls -lhaR "${cascade_dir}"
-        # Variant 2: Using cd to change directories and using relative paths (beware of Cascade --daemonize changing the current working directory to '/')
-        # mkdir -p cascade-dir/policies
-        # cd cascade-dir
-        # # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
-        # ../target/debug/cascade template config | \
-        #   ../scripts/sed-config-dirs.sh > config.toml
-        # cat config.toml >&2
-        # ../target/debug/cascade template policy > policies/default.toml
-        # ../target/debug/cascaded --config config.toml --state "$GITHUB_WORKSPACE/cascade-dir/state.db" --daemonize &>cascade-startup.log
-        # ls -lhaR .
+    - name: Setup and start cascaded
+      uses: ./.github/actions/setup-and-start-cascade
     - name: Add a zone
       run: |
         target/debug/cascade zone add --policy default --source 127.0.0.1:1055 example.test
