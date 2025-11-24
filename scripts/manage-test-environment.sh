@@ -23,7 +23,7 @@ _nsd_port=1054
 ###
 
 usage() {
-  cat <<EOF
+  cat <<EOF >&2
 Usage: ${_scriptname} [OPTIONS] <action>
 
 Setup, start, and stop the nameservers and resolvers needed to test Cascade with full automation.
@@ -51,13 +51,18 @@ Options:
 EOF
 }
 
+# echo to stderr
+log-error() {
+  echo "$@" >&2
+}
+
 ###
 # Helper functions for checking parsed arguments
 ###
 
 check-empty() {
   if [[ -z "$2" ]]; then
-    echo "Missing $1 '$3' $4"
+    log-error "Missing $1 '$3' ${4-}"
     usage
     exit 1
   fi
@@ -87,23 +92,24 @@ while [[ -n "$1" ]]; do
       shift 1
       break
       ;;
-    *) echo "Unknown option: $1" && usage && exit 1
+    *) log-error "Unknown option: $1" && usage && exit 1
   esac
 done
 
-if [[ "$#" -gt 1 ]]; then
-	echo "Too many arguments"
+if [[ "${1-}" != "control" && "$#" -gt 1 ]]; then
+	log-error "Too many arguments"
 	usage
 	exit 1
 fi
 
-check-empty-arg "$1" "action"
+# with set -u (nounset), using "$1" if it's not set errors, therefore, use "${1-}"
+check-empty-arg "${1-}" "action"
 _action="$1"
 
 if [[ "${_ignore_no_ubuntu}" != "true" ]] && ! grep -q "ID=ubuntu" /etc/os-release; then
-  echo "You are not on Ubuntu."
-  echo "This script requires a ubuntu system (but might work on other debian derivatives)."
-  echo "You can ignore this check by passing the --ignore-no-ubuntu option."
+  log-error "You are not on Ubuntu."
+  log-error "This script requires a ubuntu system (but might work on other debian derivatives)."
+  log-error "You can ignore this check by passing the --ignore-no-ubuntu option."
 fi
 
 ###############
@@ -337,16 +343,19 @@ function stop-services() {
 function test-services() {
   (
     set +e # don't exit on error
-    echo ">> BIND9 status:"
+    log-error ">> BIND9 status:"
     rndc -c "${_nameserver_base_dir}/bind/rndc.conf" status
-    echo
-    echo ">> NSD status:"
+    log-error
+    log-error ">> NSD (secondary) status:"
     nsd-control -c "${_nameserver_base_dir}/nsd.conf" status
-    echo
-    echo ">> Unbound status:"
+    log-error
+    log-error ">> NSD (primary) status:"
+    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" status
+    log-error
+    log-error ">> Unbound status:"
     sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" status
-    echo
-    echo ">> dig test SOA:"
+    log-error
+    log-error ">> dig test SOA:"
     dig test SOA
   )
 }
@@ -387,7 +396,7 @@ case "${_action}" in
     list-ports
     ;;
   *)
-    echo "Unknown action: ${_action}" && usage && exit 1
+    log-error "Unknown action: ${_action}" && usage && exit 1
 esac
 
 # vim: set ts=2 et sw=2:
