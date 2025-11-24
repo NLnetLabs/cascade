@@ -49,6 +49,10 @@ env:
   CARGO_TERM_VERBOSE: ${{ github.actor != 'nektos/act' }}
   # CARGO_TERM_VERBOSE: true
 
+defaults:
+  run:
+    # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+    shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
   build:
