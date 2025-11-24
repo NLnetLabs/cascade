@@ -118,7 +118,7 @@ jobs:
   add-zone-query:
     name: Add a zone, query the zone
     runs-on: ${{ matrix.os }}
-    # needs: build
+    needs: build
     strategy:
       matrix:
         os: [ubuntu-latest]
