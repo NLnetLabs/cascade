@@ -114,6 +114,7 @@ Examples of things we're interested in:
    softhsm
    thales
    smartcard-hsm
+   nethsm
 .. fortanix
    nitrokey
    yubihsm
