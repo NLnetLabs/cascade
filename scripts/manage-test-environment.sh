@@ -17,6 +17,7 @@ _nameserver_base_dir=$PWD/nameservers
 _cascade_port=4543
 _bind_port=1053
 _nsd_port=1054
+_nsd_primary_port=1055
 
 ###
 # Help message
@@ -44,10 +45,14 @@ Arguments:
     - list-ports:       List the ports configured for the different services
     - generate-configuration:       Only generate the directories and configuration files
     - test:             Check the service's statuses (xxx-control status and dig test SOA)
+    - control:          Run a controll command (see usage below)
 
 Options:
       --ignore-no-ubuntu    Disable the ckeck if this script is run on an Ubuntu system
   -h, --help                Print this help text
+
+Usage: ${_scriptname} [OPTIONS] control <bind|unbound|nsd-primary|nsd-secondary> <args...>
+  The args are the usual arguments for nsd-control, unbound-control, or rndc respectively.
 EOF
 }
 
@@ -146,7 +151,7 @@ fi
 function generate-configuration() {
   local base_dir=${_nameserver_base_dir}
 
-  mkdir -p "${base_dir}"/{bind,nsd/zones}
+  mkdir -p "${base_dir}"/{bind,nsd/zones,nsd-primary/zones}
 
 tee "${base_dir}/bind.conf" <<EOF
 options {
@@ -291,6 +296,60 @@ zone:
   include-pattern: secondary
 EOF
 
+tee "${base_dir}/nsd-primary.conf" <<EOF
+server:
+  ip-address: 127.0.0.1@${_nsd_primary_port}
+  verbosity: 5
+  username: "" # disable privilege "drop" to user "nsd"
+  debug-mode: no
+  pidfile: "${base_dir}/nsd-primary.pid"
+  logfile: "${base_dir}/nsd-primary.log"
+  # NSD 4.3.9 option
+  database: ""
+
+  zonesdir: "${base_dir}/nsd-primary/zones"
+  zonelistfile: "${base_dir}/nsd-primary/zone.list"
+  xfrdfile: "${base_dir}/nsd-primary/ixfr.state"
+  refuse-any: yes
+
+# Syntax error in NSD 4.3.9 as installed from Ubuntu 22.04 package
+#verify:
+
+remote-control:
+  control-enable: yes
+  control-interface: "${base_dir}/nsd-primary/nsd.sock"
+
+pattern:
+  name: primary
+  zonefile: "%s.primary-zone"
+  allow-notify: 127.0.0.1 NOKEY
+  provide-xfr: 127.0.0.1 NOKEY
+
+zone:
+  name: example.test
+  include-pattern: primary
+EOF
+
+tee "${base_dir}/nsd-primary/zones/example.test.primary-zone" <<'EOF'
+$TTL 5 ; use a very short TTL for sped up keyset rolls
+example.test.   IN SOA ns1.example.test. mail.example.test. (
+                      1          ; serial
+                      5          ; refresh (5 seconds)
+                      5          ; retry (5 seconds)
+                      60         ; expire (60 seconds)
+                      5          ; minimum (5 seconds)
+                    )
+@           NS  example.test.
+@           NS  ns1.example.test.
+@           A   127.0.0.1
+ns1         A   127.0.0.1
+
+www         A   169.254.1.1
+mail        MX  example.test.
+text        TXT "Hello World!"
+EOF
+
+
 }
 
 function setup-services() {
@@ -307,7 +366,7 @@ function restore-resolv.conf() {
     [[ -L "${_nameserver_base_dir}/resolv.conf.bak" ]]
   sudo rm /etc/resolv.conf
   sudo cp -a "${_nameserver_base_dir}/resolv.conf.bak" /etc/resolv.conf
-  sudo rm "${_nameserver_base_dir}/resolv.conf.bak" 
+  sudo rm "${_nameserver_base_dir}/resolv.conf.bak"
 }
 
 function backup-and-replace-resolv.conf() {
@@ -328,8 +387,9 @@ function start-services() {
     cd "${_nameserver_base_dir}/bind"
     named -c "${_nameserver_base_dir}/bind.conf" -d 1 -L "${_nameserver_base_dir}/bind.log"
   )
-  nsd -c "${_nameserver_base_dir}/nsd.conf" 
-  sudo unbound -c "${_nameserver_base_dir}/unbound.conf" 
+  nsd -c "${_nameserver_base_dir}/nsd.conf"
+  nsd -c "${_nameserver_base_dir}/nsd-primary.conf"
+  sudo unbound -c "${_nameserver_base_dir}/unbound.conf"
   backup-and-replace-resolv.conf
 }
 
@@ -337,6 +397,7 @@ function stop-services() {
   restore-resolv.conf
   rndc -c "${_nameserver_base_dir}/bind/rndc.conf" stop
   nsd-control -c "${_nameserver_base_dir}/nsd.conf" stop
+  nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" stop
   sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" stop
 }
 
@@ -360,9 +421,45 @@ function test-services() {
   )
 }
 
+function bind-control-cmd() {
+  rndc -c "${_nameserver_base_dir}/bind/rndc.conf" "$@"
+}
+
+function nsd-secondary-control-cmd() {
+  nsd-control -c "${_nameserver_base_dir}/nsd.conf" stop
+}
+
+function nsd-primary-control-cmd() {
+  nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" stop
+}
+
+function unbound-control-cmd() {
+  sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" "$@"
+}
+
+function run-control-cmd() {
+  if [[ -z "$*" ]]; then
+    log-error "Missing control arguments"
+    usage
+    exit 1
+  elif ! [[ "$1" =~ ^bind|unbound|nsd-primary|nsd-secondary$ ]]; then
+    log-error "Wrong control command"
+    usage
+    exit 1
+  fi
+
+  local variant=$1
+  shift
+
+  # Call the appropriate control-cmd function from above with the rest of the
+  # arguments
+  "${variant}-control-cmd" "$@"
+}
+
 function list-ports() {
   cat <<EOF
 NSD_PORT=${_nsd_port}
+NSD_PRIMARY_PORT=${_nsd_primary_port}
 BIND_PORT=${_bind_port}
 CASCADE_PORT=${_cascade_port}
 EOF
@@ -394,6 +491,10 @@ case "${_action}" in
     ;;
   list-ports)
     list-ports
+    ;;
+  control)
+    shift
+    run-control-cmd "$@"
     ;;
   *)
     log-error "Unknown action: ${_action}" && usage && exit 1
