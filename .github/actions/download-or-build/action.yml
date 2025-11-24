@@ -28,4 +28,8 @@ runs:
     if: ${{ steps.download_binaries.outcome == 'failure' }}
     run: cargo build
   - name: Build dnst from keyset branch
-    run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst --locked --bin=dnst
+    if: ${{ steps.download_binaries.outcome == 'failure' }}
+    run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root "$GITHUB_WORKSPACE/target/dnst" --locked --bin=dnst
+  - name: Add dnst to PATH
+    # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#example-of-adding-a-system-path
+    run: echo "$GITHUB_WORKSPACE/target/dnst/bin" >> "$GITHUB_PATH"
