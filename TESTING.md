@@ -113,6 +113,8 @@ tried out.
     #   uses: ./.github/actions/download-or-build
     #   with:
     #     artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+    - name: Setup and start the cascade daemon
+      uses: ./.github/actions/setup-and-start-cascade
     - run: target/debug/cascade --version
     ### RUN YOUR TESTS HERE
     # # Optional, the container gets cleaned up anyway (at least in act)
