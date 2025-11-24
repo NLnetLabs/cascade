@@ -70,7 +70,10 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-    - run: cargo build ${{ matrix.args }}
+    - name: Build Cascade
+      run: cargo build
+    - name: Build dnst from keyset branch
+      run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst --locked --bin=dnst
     - name: Tar built binaries to preserve permissions
       run: tar -cf target.tar target
     - name: Upload built binaries
