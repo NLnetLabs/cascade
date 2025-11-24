@@ -15,12 +15,18 @@ pub struct Args {
         short = 's',
         long = "server",
         value_name = "IP:PORT",
-        default_value = "127.0.0.1:4539"
+        default_value = "127.0.0.1:4539",
+        global = true
     )]
     pub server: SocketAddr,
 
     /// The minimum severity of messages to log
-    #[arg(long = "log-level", value_name = "LEVEL", default_value = "warning")]
+    #[arg(
+        long = "log-level",
+        value_name = "LEVEL",
+        default_value = "warning",
+        global = true
+    )]
     pub log_level: LogLevel,
 
     #[command(subcommand)]
