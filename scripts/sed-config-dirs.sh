@@ -61,4 +61,6 @@ sed -e "s_^policy-dir.*_policy-dir = \"${_base_dir}/policies\"_" \
   -e "s_^kmip-credentials-store-path.*_kmip-credentials-store-path = \"${_base_dir}/kmip/credentials.db\"_" \
   -e "s_^kmip-server-state-dir.*_kmip-server-state-dir = \"${_base_dir}/kmip\"_" \
   -e "s_^keys-dir.*_keys-dir = \"${_base_dir}/keys\"_" \
-  -e "s_^dnst-binary-path.*_dnst-binary-path = \"${GITHUB_WORKSPACE}/target/dnst/bin/dnst\"_"
+  -e "s_^dnst-binary-path.*_dnst-binary-path = \"${GITHUB_WORKSPACE}/target/dnst/bin/dnst\"_" \
+  -e 's_^log-level.*_log-level = "debug"_' \
+  -e "s_^log-target.*_log-target = { type = \"file\", path = \"${_base_dir}/cascade.log\" }_"
