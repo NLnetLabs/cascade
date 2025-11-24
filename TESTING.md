@@ -16,7 +16,12 @@ image (`catthehacker/ubuntu:full-latest`).
 
 ### TL;DR
 
-Run the tests with:
+Run all tests with:
+
+- Docker: `act --network default -W .github/workflows/system-tests.yml`
+- Podman: `act --network podman -W .github/workflows/system-tests.yml`
+
+Run a single test with:
 
 - Docker: `act --network default -W .github/workflows/system-tests.yml --job your-test`
 - Podman: `act --network podman -W .github/workflows/system-tests.yml --job your-test`
