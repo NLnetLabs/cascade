@@ -59,6 +59,16 @@ source, you could comment out the `needs: build` option, build once using `act .
 there is no artifact server available, the code will still always be built from
 source.
 
+
+### No init or systemd
+
+Act runs the workflow in a container without init or systemd. Therefore, when
+running other daemons, you either need to make use of their appropriate
+daemonization features, or handle background jobs yourself.
+
+Maybe running act with `--container-options --init` would work to add a dumb
+init process, but isn't verified, yet.
+
 ### Example test job
 
 ```yml
