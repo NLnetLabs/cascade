@@ -169,15 +169,6 @@ jobs:
     - name: The new zone should now be available via the resolver
       run: |
         dig text.example.test TXT | grep "Hello World"
-    - name: Get logs on error
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
       if: failure()
-      run: |
-        for i in nameservers/*.log; do
-          echo ">>> Logfile ${i#nameservers/}:" >&2
-          cat "$i" >&2
-        done
-        echo ">>> Logfile cascade-startup.log:" >&2
-        cat "cascade-dir/cascade-startup.log" >&2
-        echo ">>> Logfile cascade.log:" >&2
-        cat "cascade-dir/cascade.log" >&2
-        ss -tulnp >&2
