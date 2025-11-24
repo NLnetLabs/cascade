@@ -360,17 +360,13 @@ function setup-services() {
 }
 
 function restore-resolv.conf() {
-  # Checking that the backup exists to not break name resolution by only
-  # removing resolv.conf and failing on replacing it
-  [[ -e "${_nameserver_base_dir}/resolv.conf.bak" ]] || \
-    [[ -L "${_nameserver_base_dir}/resolv.conf.bak" ]]
-  sudo cp -a "${_nameserver_base_dir}/resolv.conf.bak" /etc/resolv.conf
+  sudo cp "${_nameserver_base_dir}/resolv.conf.bak" /etc/resolv.conf
   sudo rm "${_nameserver_base_dir}/resolv.conf.bak"
 }
 
 function backup-and-replace-resolv.conf() {
   # cp -a to preserve links
-  sudo cp -a /etc/resolv.conf "${_nameserver_base_dir}/resolv.conf.bak"
+  sudo cp /etc/resolv.conf "${_nameserver_base_dir}/resolv.conf.bak"
   sudo tee /etc/resolv.conf <<EOF
 nameserver 127.0.0.1
 options edns0 trust-ad
