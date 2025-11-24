@@ -94,7 +94,7 @@ jobs:
         # Optional. Default is '6'
         compression-level: 1
 
-  test:
+  test-version:
     name: Run tests with resolvers/namerservers
     runs-on: ${{ matrix.os }}
     needs: build
@@ -114,3 +114,70 @@ jobs:
     # # Optional, the container gets cleaned up anyway (at least in act)
     # - name: Stop the setup
     #   run: scripts/manage-test-environment.sh stop
+
+  add-zone-query:
+    name: Add a zone, query the zone
+    runs-on: ${{ matrix.os }}
+    # needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable] # see build job
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Prepare the system test environment
+      uses: ./.github/actions/prepare-systest-env
+      with:
+        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+    - run: target/debug/cascade --version
+    - name: Start cascade with a working-directory-local config
+      run: |
+        # Variant 1: Just using absolute paths
+        mkdir -p cascade-dir/policies
+        cascade_dir="$PWD/cascade-dir"
+        # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
+        ./target/debug/cascade template config | \
+          ./scripts/sed-config-dirs.sh "${cascade_dir}" | tee "${cascade_dir}/config.toml" >&2
+        ./target/debug/cascade template policy > "${cascade_dir}/policies/default.toml"
+        ./target/debug/cascaded --config "${cascade_dir}/config.toml" --state "${cascade_dir}/state.db" --daemonize &>"${cascade_dir}/cascade-startup.log"
+        ls -lhaR "${cascade_dir}"
+        # Variant 2: Using cd to change directories and using relative paths (beware of Cascade --daemonize changing the current working directory to '/')
+        # mkdir -p cascade-dir/policies
+        # cd cascade-dir
+        # # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
+        # ../target/debug/cascade template config | \
+        #   ../scripts/sed-config-dirs.sh > config.toml
+        # cat config.toml >&2
+        # ../target/debug/cascade template policy > policies/default.toml
+        # ../target/debug/cascaded --config config.toml --state "$GITHUB_WORKSPACE/cascade-dir/state.db" --daemonize &>cascade-startup.log
+        # ls -lhaR .
+    - name: Add a zone
+      run: |
+        target/debug/cascade zone add --policy default --source 127.0.0.1:1055 example.test
+    - name: Check zone status
+      run: |
+        until target/debug/cascade zone status example.test | grep -q "Published zone available"; do
+          sleep 1
+        done
+    - name: Query zone
+      run: |
+        dig @127.0.0.1 -p 4543 example.test AXFR
+    - name: Tell NSD that the zone is now available
+      run: |
+        ./scripts/manage-test-environment.sh control nsd-secondary transfer example.test
+    - name: The new zone should now be available via the resolver
+      run: |
+        dig text.example.test TXT | grep "Hello World"
+    - name: Get logs on error
+      if: failure()
+      run: |
+        for i in nameservers/*.log; do
+          echo ">>> Logfile ${i#nameservers/}:" >&2
+          cat "$i" >&2
+        done
+        echo ">>> Logfile cascade-startup.log:" >&2
+        cat "cascade-dir/cascade-startup.log" >&2
+        echo ">>> Logfile cascade.log:" >&2
+        cat "cascade-dir/cascade.log" >&2
+        ss -tulnp >&2
