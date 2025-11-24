@@ -132,9 +132,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Filter {
         metadata: &tracing::Metadata<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) -> bool {
-        self.level >= *metadata.level()
-            || *metadata.level() < tracing::Level::TRACE
-            || self.trace_targets.contains(metadata.target())
+        self.level >= *metadata.level() || self.trace_targets.contains(metadata.target())
     }
 }
 
