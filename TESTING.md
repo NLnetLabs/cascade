@@ -101,7 +101,7 @@ tried out.
 
 ```yml
   job-name:
-    name: Run tests with resolvers/namerservers
+    name: Run tests with resolvers/nameservers
     runs-on: ${{ matrix.os }}
     needs: build
     strategy:
