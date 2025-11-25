@@ -52,6 +52,24 @@ artifact server code (https://github.com/mozzieongit/act). You can run that
 server in a separate container on the same network (see the README of
 https://github.com/mozzieongit/act) and have act use that artifact server.
 
+Using an artifact server is optional. Using an artifact server enables the
+testing workflow to only build Cascade and dnst once (see "Building from
+source..." below), upload the generated binaries as artifacts, and download
+them for use in each test job.
+
+If you are not using an artifact server, you will get error messages like
+below, which you can ignore. The test jobs will continue as normal and build
+Cascade and dnst from source at the start of each test job. You might want to
+disable a job's dependency on the `build` job while running your tests to
+remove the then unnecessary build step.
+
+```
+[System/Integration tests/Build the project for use by the later tests]   ❗  ::error::Failed to CreateArtifact: Unable to make request: EHOSTUNREACH%0AIf you are using self-hosted runners, please make sure your runner has access to all GitHub endpoints: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners#communication-between-self-hosted-runners-and-github
+[System/Integration tests/Build the project for use by the later tests] Failed but continue next step
+[System/Integration tests/Build the project for use by the later tests]   ❌  Failure - Main Upload built binaries [4.19147036s]
+```
+
+
 ### Building from source (once or always)
 
 The `build` job builds the project and uploads the target directory as an
