@@ -32,10 +32,16 @@ between tests (see below, "Standalone artifact server...").
 ### Network requirement (why --network default)
 
 In the test environment, Unbound needs to bind to localhost:53, which is not
-possible with act's default network (act uses host networking by default). This
-is because localhost:53 is already in use by your system's stub resolver
-(probably systemd-resolved). Therefore, you need to specify a different network
-to use: `act --network default` on Docker, or `act --network podman` on Podman.
+possible with act's default network. This is because localhost:53 is already in
+use by your system's stub resolver (probably systemd-resolved). Instead of
+act's default network selection (which instructs Docker/Podman to use the
+[host's](https://docs.docker.com/engine/network/drivers/host/) network), you
+need to specify a different container network to use. Docker and Podman each
+provide default networks (not to be confused with act's default network
+selection, which is Docker/Podman's `host` network). Docker's default
+network is called `default`, while Podman's default network is called `podman`.
+Therefore, you need to use `act --network default` on Docker, and `act
+--network podman` on Podman.
 
 ### Standalone artifact server for use with --network (optional)
 
