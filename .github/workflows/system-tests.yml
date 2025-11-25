@@ -60,10 +60,27 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
+  check-for-artifact-server:
+    name: Check whether uploading artifacts is possible
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.upload-check.outcome }}
+    steps:
+    - name: Try to upload an empty artifact
+      continue-on-error: true
+      id: upload-check
+      # To allow running the workflow without an artifact server an error here
+      # should not fail the workflow.
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ format('upload-check_{0}_ubuntu-latest', github.sha) }}
+        path: /dev/null
+        compression-level: 0
   build:
     # First build the project for once for all systems to deduplicate work
     # in the later tests
     name: Build the project for use by the later tests
+    needs: check-for-artifact-server
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -74,14 +91,19 @@ jobs:
         # rust: [1.84.0, stable, beta, nightly]
     steps:
     - name: Checkout repository
+      if: needs.check-for-artifact-server.outputs.status == 'success'
       uses: actions/checkout@v4
     - name: Build Cascade
+      if: needs.check-for-artifact-server.outputs.status == 'success'
       run: cargo build
     - name: Build dnst from keyset branch
+      if: needs.check-for-artifact-server.outputs.status == 'success'
       run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst --locked --bin=dnst
     - name: Tar built binaries to preserve permissions
+      if: needs.check-for-artifact-server.outputs.status == 'success'
       run: tar -cf target.tar target
     - name: Upload built binaries
+      if: needs.check-for-artifact-server.outputs.status == 'success'
       # To allow running the workflow without an artifact server an error here
       # should not fail the workflow.
       continue-on-error: true
