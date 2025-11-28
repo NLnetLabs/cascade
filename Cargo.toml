@@ -11,8 +11,8 @@ repository = "https://github.com/NLnetLabs/cascade"
 license = "BSD-3-Clause"
 
 version = "0.1.0-alpha5"
-rust-version = "1.84"
-edition = "2021"
+rust-version = "1.85"
+edition = "2024"
 
 
 [package]
