@@ -8,8 +8,6 @@ use domain::base::{Name, Serial};
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
-use crate::zonemaintenance::types::ZoneRefreshStatus;
-
 const DEFAULT_AXFR_PORT: u16 = 53;
 
 //----------- ZoneReview -------------------------------------------------------
@@ -204,6 +202,23 @@ pub enum ZoneSource {
         /// The XFR status of the zone.
         xfr_status: ZoneRefreshStatus,
     },
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+pub enum ZoneRefreshStatus {
+    /// Refreshing according to the SOA REFRESH interval.
+    #[default]
+    RefreshPending,
+
+    RefreshInProgress(usize),
+
+    /// Periodically retrying according to the SOA RETRY interval.
+    RetryPending,
+
+    RetryInProgress,
+
+    /// Refresh triggered by NOTIFY currently in progress.
+    NotifyInProgress,
 }
 
 impl Display for ZoneSource {
