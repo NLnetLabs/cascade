@@ -15,7 +15,7 @@ use std::{
 };
 
 use clap::Subcommand;
-use futures::TryFutureExt;
+use futures_util::TryFutureExt;
 use jiff::{Span, SpanRelativeTo};
 
 use crate::{
@@ -23,7 +23,7 @@ use crate::{
         HsmServerAdd, HsmServerAddError, HsmServerAddResult, HsmServerGetResult,
         HsmServerListResult, KmipServerState, PolicyInfo, PolicyInfoError, PolicyListResult,
     },
-    cli::client::{format_http_error, CascadeApiClient},
+    client::{format_http_error, CascadeApiClient},
     println,
 };
 

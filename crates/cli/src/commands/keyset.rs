@@ -1,14 +1,13 @@
-use bytes::Bytes;
-use domain::base::Name;
-use futures::TryFutureExt;
+use futures_util::TryFutureExt;
 
 use crate::api::keyset as api;
-use crate::cli::client::{format_http_error, CascadeApiClient};
+use crate::api::ZoneName;
+use crate::client::{format_http_error, CascadeApiClient};
 use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct KeySet {
-    zone: Name<Bytes>,
+    zone: ZoneName,
 
     #[command(subcommand)]
     command: KeySetCommand,
@@ -127,7 +126,7 @@ impl KeySet {
 
 async fn roll_command(
     client: &CascadeApiClient,
-    zone: Name<Bytes>,
+    zone: ZoneName,
     cmd: KeyRollCommand,
     variant: api::KeyRollVariant,
 ) -> Result<(), String> {
@@ -152,7 +151,7 @@ async fn roll_command(
 
 async fn remove_key_command(
     client: &CascadeApiClient,
-    zone: Name<Bytes>,
+    zone: ZoneName,
     key: String,
     force: bool,
     continue_flag: bool,
