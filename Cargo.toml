@@ -5,11 +5,11 @@ description = "friendly DNSSEC signing solution: sensible defaults, controllabil
 version = "0.1.0-alpha5"
 homepage = "https://nlnetlabs.nl/projects/cascade"
 documentation = "https://cascade.docs.nlnetlabs.nl"
-edition = "2021"
+edition = "2024"
 license = "BSD-3-Clause"
 exclude = [".github", ".gitignore"]
 readme = "README.md"
-rust-version = "1.84"
+rust-version = "1.85"
 
 [[bin]]
 name = "cascaded"
