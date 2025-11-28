@@ -671,7 +671,7 @@ pub mod keyset {
         Algorithm,
     }
 
-    #[derive(Deserialize, Serialize, Clone, Debug, clap::Subcommand)]
+    #[derive(Deserialize, Serialize, Clone, Debug)]
     pub enum KeyRollCommand {
         /// Start a key roll.
         StartRoll,
