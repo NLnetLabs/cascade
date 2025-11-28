@@ -15,7 +15,7 @@ use std::vec::Vec;
 use bytes::Bytes;
 use futures_util::FutureExt;
 use serde::de::{Unexpected, Visitor};
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, Deserializer, Serialize, Serializer};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep_until, Instant, Sleep};
 use tracing::{enabled, trace, Level};
@@ -28,6 +28,7 @@ use domain::rdata::Soa;
 use domain::tsig::{Algorithm, Key, KeyName};
 use domain::zonetree::{InMemoryZoneDiff, StoredName, Zone};
 
+use crate::api;
 use crate::tsig::TsigKey;
 
 //------------ Constants -----------------------------------------------------
@@ -330,7 +331,7 @@ pub type ZoneDiffs = BTreeMap<ZoneDiffKey, Arc<InMemoryZoneDiff>>;
 
 //------------ ZoneStatus ----------------------------------------------------
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub enum ZoneRefreshStatus {
     /// Refreshing according to the SOA REFRESH interval.
     #[default]
@@ -359,6 +360,20 @@ impl Display for ZoneRefreshStatus {
             ZoneRefreshStatus::RetryPending => f.write_str("retrying"),
             ZoneRefreshStatus::RetryInProgress => f.write_str("retry in progress"),
             ZoneRefreshStatus::NotifyInProgress => f.write_str("notify in progress"),
+        }
+    }
+}
+
+//--- Conversion
+
+impl From<ZoneRefreshStatus> for api::ZoneRefreshStatus {
+    fn from(value: ZoneRefreshStatus) -> Self {
+        match value {
+            ZoneRefreshStatus::RefreshPending => Self::RefreshPending,
+            ZoneRefreshStatus::RefreshInProgress(p) => Self::RefreshInProgress(p),
+            ZoneRefreshStatus::RetryPending => Self::RetryPending,
+            ZoneRefreshStatus::RetryInProgress => Self::RetryInProgress,
+            ZoneRefreshStatus::NotifyInProgress => Self::NotifyInProgress,
         }
     }
 }
@@ -542,7 +557,7 @@ impl Default for ZoneRefreshMetrics {
 
 //------------ ZoneRefreshState ----------------------------------------------
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug)]
 pub struct ZoneRefreshState {
     /// SOA REFRESH
     refresh: Ttl,
@@ -927,7 +942,7 @@ pub(super) struct ZoneChangedMsg {
 
 //------------ ZoneReport ----------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct ZoneReport {
     pub(super) zone_id: ZoneId,
     pub(super) details: ZoneReportDetails,
@@ -1023,7 +1038,7 @@ impl Display for ZoneReport {
 
 //------------ ZoneReportDetails ---------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub enum ZoneReportDetails {
     Primary,
 

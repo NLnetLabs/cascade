@@ -478,7 +478,7 @@ impl HttpServer {
                     let api::ZoneSource::Server { xfr_status, .. } = &mut source else {
                         unreachable!("A secondary must have been configured from a server source");
                     };
-                    *xfr_status = s.status();
+                    *xfr_status = s.status().into();
                     let metrics = s.metrics();
                     let now = Instant::now();
                     let now_t = SystemTime::now();
