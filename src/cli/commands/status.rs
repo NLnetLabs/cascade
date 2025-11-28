@@ -1,10 +1,9 @@
 use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 
-use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult};
+use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult, SigningStageReport};
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::common::ansi;
-use crate::zonemaintenance::types::SigningStageReport;
 use crate::{eprintln, println};
 
 #[derive(Clone, Debug, clap::Args)]

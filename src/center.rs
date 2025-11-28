@@ -404,6 +404,17 @@ impl fmt::Display for ZoneAddError {
     }
 }
 
+impl From<ZoneAddError> for api::ZoneAddError {
+    fn from(value: ZoneAddError) -> Self {
+        match value {
+            ZoneAddError::AlreadyExists => Self::AlreadyExists,
+            ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
+            ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
+            ZoneAddError::Other(reason) => Self::Other(reason),
+        }
+    }
+}
+
 //----------- ZoneRemoveError --------------------------------------------------
 
 /// An error removing a zone.
@@ -420,5 +431,13 @@ impl fmt::Display for ZoneRemoveError {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
         })
+    }
+}
+
+impl From<ZoneRemoveError> for api::ZoneRemoveError {
+    fn from(value: ZoneRemoveError) -> Self {
+        match value {
+            ZoneRemoveError::NotFound => Self::NotFound,
+        }
     }
 }

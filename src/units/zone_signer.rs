@@ -41,6 +41,10 @@ use tokio::time::Instant;
 use tracing::{debug, error, info, trace, warn, Level};
 use url::Url;
 
+use crate::api::{
+    SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
+    SigningRequestedReport, SigningStageReport,
+};
 use crate::center::{get_zone, Center};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::manager::{ApplicationCommand, Terminated, Update};
@@ -52,8 +56,6 @@ use crate::units::key_manager::{
 use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
-    SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
-    SigningRequestedReport, SigningStageReport,
 };
 
 // Re-signing zones before signatures expire works as follows:
