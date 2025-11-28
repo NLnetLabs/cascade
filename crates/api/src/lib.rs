@@ -2,13 +2,17 @@ use std::fmt::{self, Display};
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, SystemTime};
 
-use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
-use domain::base::{Name, Serial};
-use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
+pub use domain::base::Serial;
+
 const DEFAULT_AXFR_PORT: u16 = 53;
+
+//----------- ZoneName ---------------------------------------------------------
+
+/// The name of a zone.
+pub type ZoneName = domain::base::Name<bytes::Bytes>;
 
 //----------- ZoneReview -------------------------------------------------------
 
@@ -130,7 +134,7 @@ pub struct KmipKeyImport {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAdd {
-    pub name: Name<Bytes>,
+    pub name: ZoneName,
     pub source: ZoneSource,
     pub policy: String,
     pub key_imports: Vec<KeyImport>,
@@ -138,7 +142,7 @@ pub struct ZoneAdd {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAddResult {
-    pub name: Name<Bytes>,
+    pub name: ZoneName,
     pub status: String,
 }
 
@@ -163,7 +167,7 @@ impl fmt::Display for ZoneAddError {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneRemoveResult {
-    pub name: Name<Bytes>,
+    pub name: ZoneName,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -255,7 +259,7 @@ impl From<&str> for ZoneSource {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZonesListResult {
-    pub zones: Vec<StoredName>,
+    pub zones: Vec<ZoneName>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -287,7 +291,7 @@ pub enum ZoneStatusError {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneStatus {
-    pub name: Name<Bytes>,
+    pub name: ZoneName,
     pub source: ZoneSource,
     pub policy: String,
     pub stage: ZoneStage,
@@ -339,7 +343,7 @@ pub struct SigningReport {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SigningQueueReport {
-    pub zone_name: StoredName,
+    pub zone_name: ZoneName,
     pub signing_report: SigningReport,
 }
 
@@ -512,7 +516,7 @@ pub enum ZoneHistoryError {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneReloadResult {
-    pub name: Name<Bytes>,
+    pub name: ZoneName,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -528,7 +532,7 @@ impl fmt::Display for ZoneReloadError {
             Self::ZoneDoesNotExist => "no zone with this name exist",
             Self::ZoneWithoutSource => "the specified zone has no source configured",
             Self::ZoneHalted(reason) => {
-                return write!(f, "the zone has been halted (reason: {reason})")
+                return write!(f, "the zone has been halted (reason: {reason})");
             }
         })
     }
@@ -536,8 +540,8 @@ impl fmt::Display for ZoneReloadError {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
-    pub soft_halted_zones: Vec<(StoredName, String)>,
-    pub hard_halted_zones: Vec<(StoredName, String)>,
+    pub soft_halted_zones: Vec<(ZoneName, String)>,
+    pub hard_halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
 }
 
@@ -591,7 +595,7 @@ pub struct PolicyListResult {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PolicyInfo {
     pub name: Box<str>,
-    pub zones: Vec<Name<Bytes>>,
+    pub zones: Vec<ZoneName>,
     pub loader: LoaderPolicyInfo,
     pub key_manager: KeyManagerPolicyInfo,
     pub signer: SignerPolicyInfo,

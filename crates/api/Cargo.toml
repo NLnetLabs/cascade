@@ -1,0 +1,47 @@
+[package]
+name = "cascade-api"
+description = "API definitions for communicating with Cascade."
+
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+readme = "README.md"
+
+
+# --- Dependencies -------------------------------------------------------------
+
+[dependencies]
+
+# The API needs to communicate paths used by Cascade.  Paths need to be
+# represented in a platform-independent way, ruling out 'std::path::Path'.
+# 'camino' offers UTF-8-only paths that match this requirement.
+[dependencies.camino]
+workspace = true
+features = ["serde1"]
+
+# The API needs to communicate DNS information, e.g. domain names.  'domain'
+# is a general-purpose library offering the right types, that we use across
+# Cascade.
+[dependencies.domain]
+workspace = true
+# TODO: Enable and use 'new::base'?
+features = ["bytes", "serde"]
+
+# The API uses 'serde' for transforming high-level types to and from the
+# underlying wire format.
+[dependencies.serde]
+workspace = true
+features = ["derive"]
+
+# TODO: This is only used with 'domain::base::Name', replace it with simple
+# 'Vec<u8>' or 'Box<[u8]>'.
+[dependencies.bytes]
+version = "1.0"
+features = ["serde"]
