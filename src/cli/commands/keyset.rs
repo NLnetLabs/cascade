@@ -2,7 +2,7 @@ use bytes::Bytes;
 use domain::base::Name;
 use futures::TryFutureExt;
 
-use crate::api::keyset::*;
+use crate::api::keyset as api;
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::println;
 
@@ -56,20 +56,63 @@ enum KeySetCommand {
     },
 }
 
+#[derive(Clone, Debug, clap::Subcommand)]
+pub enum KeyRollCommand {
+    /// Start a key roll.
+    StartRoll,
+    /// Report that the first propagation step has completed.
+    Propagation1Complete {
+        /// The TTL that is required to be reported by the Report actions.
+        ttl: u32,
+    },
+    /// Cached information from before Propagation1Complete should have
+    /// expired by now.
+    CacheExpired1,
+    /// Report that the second propagation step has completed.
+    Propagation2Complete {
+        /// The TTL that is required to be reported by the Report actions.
+        ttl: u32,
+    },
+    /// Cached information from before Propagation2Complete should have
+    /// expired by now.
+    CacheExpired2,
+    /// Report that the final changes have propagated and the the roll is done.
+    RollDone,
+}
+
+impl From<KeyRollCommand> for api::KeyRollCommand {
+    fn from(value: KeyRollCommand) -> Self {
+        match value {
+            KeyRollCommand::StartRoll => Self::StartRoll,
+            KeyRollCommand::Propagation1Complete { ttl } => Self::Propagation1Complete { ttl },
+            KeyRollCommand::CacheExpired1 => Self::CacheExpired1,
+            KeyRollCommand::Propagation2Complete { ttl } => Self::Propagation2Complete { ttl },
+            KeyRollCommand::CacheExpired2 => Self::CacheExpired2,
+            KeyRollCommand::RollDone => Self::RollDone,
+        }
+    }
+}
+
 impl KeySet {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             KeySetCommand::Ksk { subcommand } => {
-                roll_command(&client, self.zone, subcommand, KeyRollVariant::Ksk).await
+                roll_command(&client, self.zone, subcommand, api::KeyRollVariant::Ksk).await
             }
             KeySetCommand::Zsk { subcommand } => {
-                roll_command(&client, self.zone, subcommand, KeyRollVariant::Zsk).await
+                roll_command(&client, self.zone, subcommand, api::KeyRollVariant::Zsk).await
             }
             KeySetCommand::Csk { subcommand } => {
-                roll_command(&client, self.zone, subcommand, KeyRollVariant::Csk).await
+                roll_command(&client, self.zone, subcommand, api::KeyRollVariant::Csk).await
             }
             KeySetCommand::Algorithm { subcommand } => {
-                roll_command(&client, self.zone, subcommand, KeyRollVariant::Algorithm).await
+                roll_command(
+                    &client,
+                    self.zone,
+                    subcommand,
+                    api::KeyRollVariant::Algorithm,
+                )
+                .await
             }
 
             KeySetCommand::RemoveKey {
@@ -86,11 +129,14 @@ async fn roll_command(
     client: &CascadeApiClient,
     zone: Name<Bytes>,
     cmd: KeyRollCommand,
-    variant: KeyRollVariant,
+    variant: api::KeyRollVariant,
 ) -> Result<(), String> {
     let res: Result<(), String> = client
         .post(&format!("key/{zone}/roll"))
-        .json(&KeyRoll { variant, cmd })
+        .json(&api::KeyRoll {
+            variant,
+            cmd: cmd.into(),
+        })
         .send()
         .and_then(|r| r.json())
         .await
@@ -113,7 +159,7 @@ async fn remove_key_command(
 ) -> Result<(), String> {
     let res: Result<(), String> = client
         .post(&format!("key/{zone}/remove"))
-        .json(&KeyRemove {
+        .json(&api::KeyRemove {
             key: key.clone(),
             force,
             continue_flag,
