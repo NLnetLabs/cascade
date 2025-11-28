@@ -206,8 +206,6 @@ mod unix {
 
     use tracing::{field::Field, Subscriber};
 
-    use crate::eprintln;
-
     //------- Syslog -----------------------------------------------------------
 
     /// A [`tracing_subscriber`] writer layer for syslog.
@@ -319,7 +317,10 @@ mod unix {
                 Ok(()) => {}
                 Err(error) => {
                     // TODO: Report into a proper fallback logger.
-                    eprintln!("Logging failed: {error:?}");
+                    #[allow(clippy::disallowed_macros, reason = "we're not printing in color")]
+                    {
+                        eprintln!("Logging failed: {error:?}");
+                    }
                 }
             }
         }

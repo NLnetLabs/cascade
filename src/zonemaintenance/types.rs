@@ -10,13 +10,12 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::string::ToString;
 use std::sync::Arc;
-use std::time::SystemTime;
 use std::vec::Vec;
 
 use bytes::Bytes;
 use futures_util::FutureExt;
 use serde::de::{Unexpected, Visitor};
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, Deserializer, Serialize, Serializer};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep_until, Instant, Sleep};
 use tracing::{enabled, trace, Level};
@@ -29,6 +28,7 @@ use domain::rdata::Soa;
 use domain::tsig::{Algorithm, Key, KeyName};
 use domain::zonetree::{InMemoryZoneDiff, StoredName, Zone};
 
+use crate::api;
 use crate::tsig::TsigKey;
 
 //------------ Constants -----------------------------------------------------
@@ -331,7 +331,7 @@ pub type ZoneDiffs = BTreeMap<ZoneDiffKey, Arc<InMemoryZoneDiff>>;
 
 //------------ ZoneStatus ----------------------------------------------------
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub enum ZoneRefreshStatus {
     /// Refreshing according to the SOA REFRESH interval.
     #[default]
@@ -360,6 +360,20 @@ impl Display for ZoneRefreshStatus {
             ZoneRefreshStatus::RetryPending => f.write_str("retrying"),
             ZoneRefreshStatus::RetryInProgress => f.write_str("retry in progress"),
             ZoneRefreshStatus::NotifyInProgress => f.write_str("notify in progress"),
+        }
+    }
+}
+
+//--- Conversion
+
+impl From<ZoneRefreshStatus> for api::ZoneRefreshStatus {
+    fn from(value: ZoneRefreshStatus) -> Self {
+        match value {
+            ZoneRefreshStatus::RefreshPending => Self::RefreshPending,
+            ZoneRefreshStatus::RefreshInProgress(p) => Self::RefreshInProgress(p),
+            ZoneRefreshStatus::RetryPending => Self::RetryPending,
+            ZoneRefreshStatus::RetryInProgress => Self::RetryInProgress,
+            ZoneRefreshStatus::NotifyInProgress => Self::NotifyInProgress,
         }
     }
 }
@@ -543,7 +557,7 @@ impl Default for ZoneRefreshMetrics {
 
 //------------ ZoneRefreshState ----------------------------------------------
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug)]
 pub struct ZoneRefreshState {
     /// SOA REFRESH
     refresh: Ttl,
@@ -928,7 +942,7 @@ pub(super) struct ZoneChangedMsg {
 
 //------------ ZoneReport ----------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct ZoneReport {
     pub(super) zone_id: ZoneId,
     pub(super) details: ZoneReportDetails,
@@ -1024,7 +1038,7 @@ impl Display for ZoneReport {
 
 //------------ ZoneReportDetails ---------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub enum ZoneReportDetails {
     Primary,
 
@@ -1147,120 +1161,4 @@ pub(super) enum Event {
     ZoneAdded(ZoneId),
 
     ZoneRemoved(ZoneId),
-}
-
-//------------ SigningReport ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SigningReport {
-    pub current_action: String,
-    pub stage_report: SigningStageReport,
-}
-
-//------------ SigningQueueReport -------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SigningQueueReport {
-    pub zone_name: StoredName,
-    pub signing_report: SigningReport,
-}
-
-//------------ SigningStageReport -------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum SigningStageReport {
-    Requested(SigningRequestedReport),
-    InProgress(SigningInProgressReport),
-    Finished(SigningFinishedReport),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SigningRequestedReport {
-    pub requested_at: SystemTime,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SigningInProgressReport {
-    pub requested_at: SystemTime,
-    pub zone_serial: Serial,
-    pub started_at: SystemTime,
-    pub unsigned_rr_count: Option<usize>,
-    #[serde(
-        serialize_with = "serialize_opt_duration_as_secs",
-        deserialize_with = "deserialize_option_duration_from_secs"
-    )]
-    pub walk_time: Option<Duration>,
-    #[serde(
-        serialize_with = "serialize_opt_duration_as_secs",
-        deserialize_with = "deserialize_option_duration_from_secs"
-    )]
-    pub sort_time: Option<Duration>,
-    pub denial_rr_count: Option<usize>,
-    #[serde(
-        serialize_with = "serialize_opt_duration_as_secs",
-        deserialize_with = "deserialize_option_duration_from_secs"
-    )]
-    pub denial_time: Option<Duration>,
-    pub rrsig_count: Option<usize>,
-    pub rrsig_reused_count: Option<usize>,
-    #[serde(
-        serialize_with = "serialize_opt_duration_as_secs",
-        deserialize_with = "deserialize_option_duration_from_secs"
-    )]
-    pub rrsig_time: Option<Duration>,
-    #[serde(
-        serialize_with = "serialize_opt_duration_as_secs",
-        deserialize_with = "deserialize_option_duration_from_secs"
-    )]
-    pub insertion_time: Option<Duration>,
-    #[serde(
-        serialize_with = "serialize_opt_duration_as_secs",
-        deserialize_with = "deserialize_option_duration_from_secs"
-    )]
-    pub total_time: Option<Duration>,
-    pub threads_used: Option<usize>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SigningFinishedReport {
-    pub requested_at: SystemTime,
-    pub zone_serial: Serial,
-    pub started_at: SystemTime,
-    pub unsigned_rr_count: usize,
-    #[serde(
-        serialize_with = "serialize_duration_as_secs",
-        deserialize_with = "deserialize_duration_from_secs"
-    )]
-    pub walk_time: Duration,
-    #[serde(
-        serialize_with = "serialize_duration_as_secs",
-        deserialize_with = "deserialize_duration_from_secs"
-    )]
-    pub sort_time: Duration,
-    pub denial_rr_count: usize,
-    #[serde(
-        serialize_with = "serialize_duration_as_secs",
-        deserialize_with = "deserialize_duration_from_secs"
-    )]
-    pub denial_time: Duration,
-    pub rrsig_count: usize,
-    pub rrsig_reused_count: usize,
-    #[serde(
-        serialize_with = "serialize_duration_as_secs",
-        deserialize_with = "deserialize_duration_from_secs"
-    )]
-    pub rrsig_time: Duration,
-    #[serde(
-        serialize_with = "serialize_duration_as_secs",
-        deserialize_with = "deserialize_duration_from_secs"
-    )]
-    pub insertion_time: Duration,
-    #[serde(
-        serialize_with = "serialize_duration_as_secs",
-        deserialize_with = "deserialize_duration_from_secs"
-    )]
-    pub total_time: Duration,
-    pub threads_used: usize,
-    pub finished_at: SystemTime,
-    pub succeeded: bool,
 }

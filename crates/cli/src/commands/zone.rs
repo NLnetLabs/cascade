@@ -1,19 +1,13 @@
 use std::ops::ControlFlow;
 use std::time::{Duration, SystemTime};
 
-use bytes::Bytes;
 use camino::Utf8PathBuf;
-use chrono::{DateTime, Utc};
-use domain::base::{Name, Serial};
-use futures::TryFutureExt;
-use humantime::FormattedDuration;
+use futures_util::TryFutureExt;
 
+use crate::ansi;
 use crate::api::*;
-use crate::cli::client::{format_http_error, CascadeApiClient};
-use crate::common::ansi;
+use crate::client::{format_http_error, CascadeApiClient};
 use crate::println;
-use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
-use crate::zonemaintenance::types::SigningStageReport;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Zone {
@@ -27,7 +21,7 @@ pub enum ZoneCommand {
     /// Register a new zone
     #[command(name = "add")]
     Add {
-        name: Name<Bytes>,
+        name: ZoneName,
 
         /// The zone source can be an IP address (with or without port,
         /// defaults to port 53) or a file path.
@@ -63,7 +57,7 @@ pub enum ZoneCommand {
 
     /// Remove a zone
     #[command(name = "remove")]
-    Remove { name: Name<Bytes> },
+    Remove { name: ZoneName },
 
     /// List registered zones
     #[command(name = "list")]
@@ -71,7 +65,7 @@ pub enum ZoneCommand {
 
     /// Reload a zone
     #[command(name = "reload")]
-    Reload { zone: Name<Bytes> },
+    Reload { zone: ZoneName },
 
     /// Approve a zone being reviewed.
     #[command(name = "approve")]
@@ -81,7 +75,7 @@ pub enum ZoneCommand {
         review_stage: ZoneReviewStage,
 
         /// The name of the zone.
-        name: Name<Bytes>,
+        name: ZoneName,
 
         /// The serial number of the zone.
         serial: u32,
@@ -95,7 +89,7 @@ pub enum ZoneCommand {
         review_stage: ZoneReviewStage,
 
         /// The name of the zone.
-        name: Name<Bytes>,
+        name: ZoneName,
 
         /// The serial number of the zone.
         serial: u32,
@@ -109,14 +103,14 @@ pub enum ZoneCommand {
         detailed: bool,
 
         /// The zone to report the status of.
-        zone: Name<Bytes>,
+        zone: ZoneName,
     },
 
     /// Get the history of a single zone
     #[command(name = "history")]
     History {
         /// The zone toe report the history of.
-        zone: Name<Bytes>,
+        zone: ZoneName,
     },
 }
 
@@ -300,13 +294,13 @@ impl Zone {
                     Ok(ZoneReviewOutput {}) => {
                         println!("Approved {stage} zone '{name}' with serial number {serial}");
                         Ok(())
-                    },
+                    }
                     Err(ZoneReviewError::NoSuchZone) => {
                         Err(format!("Zone '{name}' could not be found"))
-                    },
-                    Err(ZoneReviewError::NotUnderReview) => {
-                        Err(format!("The {stage} zone '{name}' with serial number {serial} is not being reviewed right now"))
                     }
+                    Err(ZoneReviewError::NotUnderReview) => Err(format!(
+                        "The {stage} zone '{name}' with serial number {serial} is not being reviewed right now"
+                    )),
                 }
             }
             ZoneCommand::Reject {
@@ -338,13 +332,13 @@ impl Zone {
                     Ok(ZoneReviewOutput {}) => {
                         println!("Rejected {stage} zone '{name}' with serial number {serial}");
                         Ok(())
-                    },
+                    }
                     Err(ZoneReviewError::NoSuchZone) => {
                         Err(format!("Zone '{name}' could not be found"))
-                    },
-                    Err(ZoneReviewError::NotUnderReview) => {
-                        Err(format!("The {stage} zone '{name}' with serial number {serial} is not being reviewed right now"))
                     }
+                    Err(ZoneReviewError::NotUnderReview) => Err(format!(
+                        "The {stage} zone '{name}' with serial number {serial} is not being reviewed right now"
+                    )),
                 }
             }
             ZoneCommand::Status { zone, detailed } => {
@@ -507,7 +501,11 @@ impl Zone {
         match zone.pipeline_mode {
             PipelineMode::Running => { /* Nothing to do */ }
             PipelineMode::SoftHalt(err) => {
-                println!("{}\u{78} An error occurred that prevents further processing of this zone version:{}", ansi::RED, ansi::RESET);
+                println!(
+                    "{}\u{78} An error occurred that prevents further processing of this zone version:{}",
+                    ansi::RED,
+                    ansi::RESET
+                );
                 println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
             }
             PipelineMode::HardHalt(err) => {
@@ -859,8 +857,12 @@ impl Progress {
                     };
                     println!("\u{0021} Zone will be held until manually approved");
                     if let Some(zone_serial) = zone_serial {
-                        println!("  Approve with: cascade zone approve --{zone_type} {zone_name} {zone_serial}");
-                        println!("  Reject with:  cascade zone reject --{zone_type} {zone_name} {zone_serial}");
+                        println!(
+                            "  Approve with: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
+                        );
+                        println!(
+                            "  Reject with:  cascade zone reject --{zone_type} {zone_name} {zone_serial}"
+                        );
                     }
                 } else {
                     println!("  Zone was held until manually approved");
@@ -1013,12 +1015,18 @@ fn to_rfc3339_ago(v: Option<SystemTime>) -> String {
 }
 
 fn to_rfc3339(v: SystemTime) -> String {
-    DateTime::<Utc>::from(v).to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+    jiff::Timestamp::try_from(v)
+        .unwrap()
+        .round(jiff::Unit::Second)
+        .unwrap()
+        .to_string()
 }
 
-fn format_duration(duration: Duration) -> FormattedDuration {
-    // See: https://github.com/chronotope/humantime/issues/35
-    humantime::format_duration(Duration::from_secs(duration.as_secs()))
+fn format_duration(duration: Duration) -> jiff::Span {
+    jiff::Span::try_from(duration)
+        .unwrap()
+        .round(jiff::Unit::Second)
+        .unwrap()
 }
 
 fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {
