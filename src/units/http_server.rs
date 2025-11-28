@@ -40,7 +40,6 @@ use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
-use crate::units::zone_loader::ZoneLoaderReport;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
@@ -479,7 +478,7 @@ impl HttpServer {
                     let api::ZoneSource::Server { xfr_status, .. } = &mut source else {
                         unreachable!("A secondary must have been configured from a server source");
                     };
-                    *xfr_status = s.status();
+                    *xfr_status = s.status().into();
                     let metrics = s.metrics();
                     let now = Instant::now();
                     let now_t = SystemTime::now();
@@ -607,7 +606,7 @@ impl HttpServer {
             signing_report,
             published_serial,
             publish_addr,
-            pipeline_mode,
+            pipeline_mode: pipeline_mode.into(),
         })
     }
 
@@ -621,7 +620,11 @@ impl HttpServer {
         };
         let zone_state = zone.state.lock().unwrap();
         Json(Ok(ZoneHistory {
-            history: zone_state.history.clone(),
+            history: zone_state
+                .history
+                .iter()
+                .map(|i| i.clone().into())
+                .collect(),
         }))
     }
 
@@ -1119,6 +1122,38 @@ impl From<HsmServerAdd> for KmipServerState {
     }
 }
 
+impl From<KmipServerState> for api::KmipServerState {
+    fn from(value: KmipServerState) -> Self {
+        let KmipServerState {
+            server_id,
+            ip_host_or_fqdn,
+            port,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            key_label_prefix,
+            key_label_max_bytes,
+            has_credentials,
+        } = value;
+
+        Self {
+            server_id,
+            ip_host_or_fqdn,
+            port,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            key_label_prefix,
+            key_label_max_bytes,
+            has_credentials,
+        }
+    }
+}
+
 impl From<HsmServerAdd> for ConnectionSettings {
     fn from(
         HsmServerAdd {
@@ -1299,7 +1334,9 @@ impl HttpServer {
         let p = kmip_server_state_dir.join(&*name);
         if let Ok(f) = std::fs::File::open(p) {
             if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
-                return Json(Ok(HsmServerGetResult { server }));
+                return Json(Ok(HsmServerGetResult {
+                    server: server.into(),
+                }));
             }
         }
 

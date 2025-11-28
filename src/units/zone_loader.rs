@@ -25,12 +25,12 @@ use domain::zonetree::{
 };
 use foldhash::HashMap;
 use futures::Future;
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Semaphore;
 use tokio::time::Instant;
 use tracing::{debug, error, info};
 
+use crate::api::ZoneLoaderReport;
 use crate::center::{halt_zone, Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::common::tsig::TsigKeyStore;
@@ -43,14 +43,6 @@ use crate::zonemaintenance::types::{
     NotifyConfig, TransportStrategy, XfrConfig, XfrStrategy, ZoneConfig, ZoneId, ZoneInfo,
     ZoneReport, ZoneReportDetails,
 };
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ZoneLoaderReport {
-    pub started_at: SystemTime,
-    pub finished_at: Option<SystemTime>,
-    pub byte_count: usize,
-    pub record_count: usize,
-}
 
 pub struct ZoneLoader {
     /// The center.

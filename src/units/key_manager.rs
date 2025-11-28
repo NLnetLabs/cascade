@@ -1,7 +1,6 @@
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, Change, ZoneAddError};
-use crate::cli::commands::hsm::Error;
 use crate::manager::record_zone_event;
 use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::policy::{KeyParameters, PolicyVersion};
@@ -813,7 +812,7 @@ impl KmipClientCredentialsFile {
     /// Optionally:
     ///   - Create the file if missing.
     ///   - Keep the file open for writing back changes. See ['Self::save()`].
-    pub fn new(path: &Path, mode: KmipServerCredentialsFileMode) -> Result<Self, Error> {
+    pub fn new(path: &Path, mode: KmipServerCredentialsFileMode) -> Result<Self, String> {
         let read;
         let write;
         let create;
@@ -842,22 +841,20 @@ impl KmipClientCredentialsFile {
             .create(create)
             .truncate(false)
             .open(path)
-            .map_err::<Error, _>(|e| {
+            .map_err(|e| {
                 format!(
                     "unable to open KMIP credentials file {} in {mode} mode: {e}",
                     path.display()
                 )
-                .into()
             })?;
 
         // Determine the length of the file as JSON parsing fails if the file
         // is completely empty.
-        let len = file.metadata().map(|m| m.len()).map_err::<Error, _>(|e| {
+        let len = file.metadata().map(|m| m.len()).map_err(|e| {
             format!(
                 "unable to query metadata of KMIP credentials file {}: {e}",
                 path.display()
             )
-            .into()
         })?;
 
         // Buffer reading as apparently JSON based file reading is extremely
@@ -866,12 +863,11 @@ impl KmipClientCredentialsFile {
 
         // Load or create the credential set.
         let credentials: KmipClientCredentialsSet = if len > 0 {
-            serde_json::from_reader(&mut reader).map_err::<Error, _>(|e| {
+            serde_json::from_reader(&mut reader).map_err(|e| {
                 format!(
                     "error loading KMIP credentials file {:?}: {e}\n",
                     path.display()
                 )
-                .into()
             })?
         } else {
             KmipClientCredentialsSet::default()
@@ -889,7 +885,7 @@ impl KmipClientCredentialsFile {
     }
 
     /// Write the credential set back to the file it was loaded from.
-    pub fn save(&mut self) -> Result<(), Error> {
+    pub fn save(&mut self) -> std::io::Result<()> {
         // Ensure that writing happens at the start of the file.
         self.file.seek(SeekFrom::Start(0))?;
 
@@ -900,15 +896,12 @@ impl KmipClientCredentialsFile {
         // definitely no longer using the file when we next act on it.
         {
             let mut writer = BufWriter::new(&self.file);
-            serde_json::to_writer_pretty(&mut writer, &self.credentials).map_err::<Error, _>(
-                |e| {
-                    format!(
-                        "error writing KMIP credentials file {}: {e}",
-                        self.path.display()
-                    )
-                    .into()
-                },
-            )?;
+            serde_json::to_writer_pretty(&mut writer, &self.credentials).map_err(|e| {
+                std::io::Error::other(format!(
+                    "error writing KMIP credentials file {}: {e}",
+                    self.path.display()
+                ))
+            })?;
 
             // Ensure that the BufWriter is flushed as advised by the
             // BufWriter docs.
