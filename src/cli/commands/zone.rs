@@ -12,7 +12,6 @@ use crate::api::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
 use crate::common::ansi;
 use crate::println;
-use crate::zonemaintenance::types::SigningStageReport;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Zone {
