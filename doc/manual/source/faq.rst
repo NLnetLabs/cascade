@@ -51,7 +51,7 @@ software cryptography to generate signing keys and to cryptographically sign
 DNS RRset data, storing the generated keys in on-disk files.
 
 Why is the default policy KSK/ZSK and not CSK?
-----------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Key rolls should be automatic and frequent.
 Frequent key rolls help to ensure that key rolls are normal operational
@@ -69,7 +69,7 @@ That avoids the key roll complexity but leads to a lack opf operational
 practice when a situation arises that a key roll is needed.
 
 Why are the default key lifetimes the way they are?
----------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A ZSK roll requires re-signing the entire zone.
 For bigger zones, this should not be done too often to keep the overhead of the key roll low.
