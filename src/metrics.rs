@@ -21,12 +21,12 @@
 //! type can be created as constants.
 
 use arc_swap::ArcSwap;
-use chrono::Utc;
 use clap::{crate_name, crate_version};
 use std::fmt::Write;
 use std::fmt::{self, Debug};
 use std::sync::{Arc, Mutex, Weak};
 
+use std::time::Instant;
 #[cfg(test)]
 use std::{cmp::Ordering, collections::BTreeMap};
 
@@ -95,7 +95,7 @@ impl Collection {
     /// Produces an output of all the sources in the collection in the given
     /// format and returns it as a string.
     pub fn assemble(&self, format: OutputFormat) -> String {
-        let start_time = Utc::now();
+        let start_time = Instant::now();
         let sources = self.sources.load();
         let mut target = Target::new(format);
         for item in sources.iter() {
@@ -103,7 +103,7 @@ impl Collection {
                 source.append(&item.name, &mut target)
             }
         }
-        let assemble_ms = (Utc::now() - start_time).num_milliseconds();
+        let assemble_ms = start_time.elapsed().as_millis();
         target.append_simple(&Self::ASSEMBLE_TIME_MS_METRIC, None, assemble_ms);
         target.into_string()
     }
