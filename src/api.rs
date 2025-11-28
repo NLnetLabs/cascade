@@ -8,12 +8,6 @@ use domain::base::{Name, Serial};
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
-use crate::center;
-use crate::units::http_server::KmipServerState;
-use crate::units::zone_loader::ZoneLoaderReport;
-use crate::zone::{HistoryItem, PipelineMode};
-use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneRefreshStatus};
-
 const DEFAULT_AXFR_PORT: u16 = 53;
 
 //----------- ZoneReview -------------------------------------------------------
@@ -167,17 +161,6 @@ impl fmt::Display for ZoneAddError {
     }
 }
 
-impl From<center::ZoneAddError> for ZoneAddError {
-    fn from(value: center::ZoneAddError) -> Self {
-        match value {
-            center::ZoneAddError::AlreadyExists => Self::AlreadyExists,
-            center::ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
-            center::ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
-            center::ZoneAddError::Other(reason) => Self::Other(reason),
-        }
-    }
-}
-
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneRemoveResult {
     pub name: Name<Bytes>,
@@ -193,14 +176,6 @@ impl fmt::Display for ZoneRemoveError {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
         })
-    }
-}
-
-impl From<center::ZoneRemoveError> for ZoneRemoveError {
-    fn from(value: center::ZoneRemoveError) -> Self {
-        match value {
-            center::ZoneRemoveError::NotFound => Self::NotFound,
-        }
     }
 }
 
@@ -227,6 +202,23 @@ pub enum ZoneSource {
         /// The XFR status of the zone.
         xfr_status: ZoneRefreshStatus,
     },
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+pub enum ZoneRefreshStatus {
+    /// Refreshing according to the SOA REFRESH interval.
+    #[default]
+    RefreshPending,
+
+    RefreshInProgress(usize),
+
+    /// Periodically retrying according to the SOA RETRY interval.
+    RetryPending,
+
+    RetryInProgress,
+
+    /// Refresh triggered by NOTIFY currently in progress.
+    NotifyInProgress,
 }
 
 impl Display for ZoneSource {
@@ -314,6 +306,14 @@ pub struct ZoneStatus {
     pub pipeline_mode: PipelineMode,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ZoneLoaderReport {
+    pub started_at: SystemTime,
+    pub finished_at: Option<SystemTime>,
+    pub byte_count: usize,
+    pub record_count: usize,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct TimestampedZoneReviewStatus {
     pub status: ZoneReviewStatus,
@@ -325,6 +325,74 @@ pub enum ZoneReviewStatus {
     Pending,
     Approved,
     Rejected,
+}
+
+//----------- SigningReport ------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningReport {
+    pub current_action: String,
+    pub stage_report: SigningStageReport,
+}
+
+//------------ SigningQueueReport -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningQueueReport {
+    pub zone_name: StoredName,
+    pub signing_report: SigningReport,
+}
+
+//------------ SigningStageReport -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SigningStageReport {
+    Requested(SigningRequestedReport),
+    InProgress(SigningInProgressReport),
+    Finished(SigningFinishedReport),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningRequestedReport {
+    pub requested_at: SystemTime,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningInProgressReport {
+    pub requested_at: SystemTime,
+    pub zone_serial: Serial,
+    pub started_at: SystemTime,
+    pub unsigned_rr_count: Option<usize>,
+    pub walk_time: Option<Duration>,
+    pub sort_time: Option<Duration>,
+    pub denial_rr_count: Option<usize>,
+    pub denial_time: Option<Duration>,
+    pub rrsig_count: Option<usize>,
+    pub rrsig_reused_count: Option<usize>,
+    pub rrsig_time: Option<Duration>,
+    pub insertion_time: Option<Duration>,
+    pub total_time: Option<Duration>,
+    pub threads_used: Option<usize>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningFinishedReport {
+    pub requested_at: SystemTime,
+    pub zone_serial: Serial,
+    pub started_at: SystemTime,
+    pub unsigned_rr_count: usize,
+    pub walk_time: Duration,
+    pub sort_time: Duration,
+    pub denial_rr_count: usize,
+    pub denial_time: Duration,
+    pub rrsig_count: usize,
+    pub rrsig_reused_count: usize,
+    pub rrsig_time: Duration,
+    pub insertion_time: Duration,
+    pub total_time: Duration,
+    pub threads_used: usize,
+    pub finished_at: SystemTime,
+    pub succeeded: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -356,6 +424,85 @@ impl Display for KeyType {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneHistory {
     pub history: Vec<HistoryItem>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PipelineMode {
+    /// Newly received zone data will flow through the pipeline.
+    #[default]
+    Running,
+
+    /// The current zone data could not be fully processed through the
+    /// pipeline. When new zone data is received it will flow through the
+    /// pipeline as normal.
+    SoftHalt(String),
+
+    /// The current zone data could not be fully processed through the
+    /// pipeline. The pipeline for this zone will remain halted until manually
+    /// restarted.
+    HardHalt(String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoryItem {
+    pub when: SystemTime,
+    pub serial: Option<Serial>,
+    pub event: HistoricalEvent,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum HistoricalEventType {
+    Added,
+    Removed,
+    PolicyChanged,
+    SourceChanged,
+    NewVersionReceived,
+    SigningSucceeded,
+    SigningFailed,
+    UnsignedZoneReview,
+    SignedZoneReview,
+    KeySetCommand,
+    KeySetError,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum HistoricalEvent {
+    Added,
+    Removed,
+    PolicyChanged,
+    SourceChanged,
+    NewVersionReceived,
+    SigningSucceeded {
+        trigger: SigningTrigger,
+    },
+    SigningFailed {
+        trigger: SigningTrigger,
+        reason: String,
+    },
+    UnsignedZoneReview {
+        status: ZoneReviewStatus,
+    },
+    SignedZoneReview {
+        status: ZoneReviewStatus,
+    },
+    KeySetCommand {
+        cmd: String,
+        warning: Option<String>,
+        elapsed: Duration,
+    },
+    KeySetError {
+        cmd: String,
+        err: String,
+        elapsed: Duration,
+    },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum SigningTrigger {
+    ExternallyModifiedKeySetState,
+    SignatureExpiration,
+    ZoneChangesApproved,
+    KeySetModifiedAfterCron,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -641,6 +788,21 @@ pub struct HsmServerGetResult {
     pub server: KmipServerState,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KmipServerState {
+    pub server_id: String,
+    pub ip_host_or_fqdn: String,
+    pub port: u16,
+    pub insecure: bool,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub max_response_bytes: u32,
+    pub key_label_prefix: Option<String>,
+    pub key_label_max_bytes: u8,
+    pub has_credentials: bool,
+}
+
 //------------ KeySet API Types ----------------------------------------------
 
 pub mod keyset {
@@ -671,7 +833,7 @@ pub mod keyset {
         Algorithm,
     }
 
-    #[derive(Deserialize, Serialize, Clone, Debug, clap::Subcommand)]
+    #[derive(Deserialize, Serialize, Clone, Debug)]
     pub enum KeyRollCommand {
         /// Start a key roll.
         StartRoll,
