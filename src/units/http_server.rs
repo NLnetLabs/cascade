@@ -1119,6 +1119,38 @@ impl From<HsmServerAdd> for KmipServerState {
     }
 }
 
+impl From<KmipServerState> for api::KmipServerState {
+    fn from(value: KmipServerState) -> Self {
+        let KmipServerState {
+            server_id,
+            ip_host_or_fqdn,
+            port,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            key_label_prefix,
+            key_label_max_bytes,
+            has_credentials,
+        } = value;
+
+        Self {
+            server_id,
+            ip_host_or_fqdn,
+            port,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            key_label_prefix,
+            key_label_max_bytes,
+            has_credentials,
+        }
+    }
+}
+
 impl From<HsmServerAdd> for ConnectionSettings {
     fn from(
         HsmServerAdd {
@@ -1299,7 +1331,9 @@ impl HttpServer {
         let p = kmip_server_state_dir.join(&*name);
         if let Ok(f) = std::fs::File::open(p) {
             if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
-                return Json(Ok(HsmServerGetResult { server }));
+                return Json(Ok(HsmServerGetResult {
+                    server: server.into(),
+                }));
             }
         }
 

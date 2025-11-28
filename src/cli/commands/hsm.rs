@@ -21,11 +21,10 @@ use jiff::{Span, SpanRelativeTo};
 use crate::{
     api::{
         HsmServerAdd, HsmServerAddError, HsmServerAddResult, HsmServerGetResult,
-        HsmServerListResult, PolicyInfo, PolicyInfoError, PolicyListResult,
+        HsmServerListResult, KmipServerState, PolicyInfo, PolicyInfoError, PolicyListResult,
     },
     cli::client::{format_http_error, CascadeApiClient},
     println,
-    units::http_server::KmipServerState,
 };
 
 /// The default TCP port on which to connect to a KMIP server as defined by
