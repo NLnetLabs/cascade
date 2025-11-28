@@ -100,7 +100,7 @@ as simple as running:
 .. code-block:: bash
 
   cargo install --locked --git https://github.com/nlnetlabs/cascade
-  cargo install --locked --branch keyset --git https://github.com/nlnetlabs/dnst
+  cargo install --locked --branch keyset --bin dnst --git https://github.com/nlnetlabs/dnst
 
 The command will build Cascade and install it in the same directory that
 Cargo itself lives in, likely ``$HOME/.cargo/bin``. Ensure this directory is
@@ -150,7 +150,7 @@ Cascade release:
 .. code-block:: text
 
     cargo install --locked --force --git https://github.com/nlnetlabs/cascade
-    cargo install --locked --force --branch keyset --git https://github.com/nlnetlabs/dnst
+    cargo install --locked --force --branch keyset --bin dnst --git https://github.com/nlnetlabs/dnst
 ..  cargo install --locked --force cascade dnst
 
 If you are using the KMIP to PKCS#11 relay, update it with:
