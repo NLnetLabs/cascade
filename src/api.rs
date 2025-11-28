@@ -8,7 +8,7 @@ use domain::base::{Name, Serial};
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
-use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneRefreshStatus};
+use crate::zonemaintenance::types::ZoneRefreshStatus;
 
 const DEFAULT_AXFR_PORT: u16 = 53;
 
@@ -310,6 +310,74 @@ pub enum ZoneReviewStatus {
     Pending,
     Approved,
     Rejected,
+}
+
+//----------- SigningReport ------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningReport {
+    pub current_action: String,
+    pub stage_report: SigningStageReport,
+}
+
+//------------ SigningQueueReport -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningQueueReport {
+    pub zone_name: StoredName,
+    pub signing_report: SigningReport,
+}
+
+//------------ SigningStageReport -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SigningStageReport {
+    Requested(SigningRequestedReport),
+    InProgress(SigningInProgressReport),
+    Finished(SigningFinishedReport),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningRequestedReport {
+    pub requested_at: SystemTime,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningInProgressReport {
+    pub requested_at: SystemTime,
+    pub zone_serial: Serial,
+    pub started_at: SystemTime,
+    pub unsigned_rr_count: Option<usize>,
+    pub walk_time: Option<Duration>,
+    pub sort_time: Option<Duration>,
+    pub denial_rr_count: Option<usize>,
+    pub denial_time: Option<Duration>,
+    pub rrsig_count: Option<usize>,
+    pub rrsig_reused_count: Option<usize>,
+    pub rrsig_time: Option<Duration>,
+    pub insertion_time: Option<Duration>,
+    pub total_time: Option<Duration>,
+    pub threads_used: Option<usize>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SigningFinishedReport {
+    pub requested_at: SystemTime,
+    pub zone_serial: Serial,
+    pub started_at: SystemTime,
+    pub unsigned_rr_count: usize,
+    pub walk_time: Duration,
+    pub sort_time: Duration,
+    pub denial_rr_count: usize,
+    pub denial_time: Duration,
+    pub rrsig_count: usize,
+    pub rrsig_reused_count: usize,
+    pub rrsig_time: Duration,
+    pub insertion_time: Duration,
+    pub total_time: Duration,
+    pub threads_used: usize,
+    pub finished_at: SystemTime,
+    pub succeeded: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
