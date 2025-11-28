@@ -606,7 +606,7 @@ impl HttpServer {
             signing_report,
             published_serial,
             publish_addr,
-            pipeline_mode,
+            pipeline_mode: pipeline_mode.into(),
         })
     }
 
@@ -620,7 +620,11 @@ impl HttpServer {
         };
         let zone_state = zone.state.lock().unwrap();
         Json(Ok(ZoneHistory {
-            history: zone_state.history.clone(),
+            history: zone_state
+                .history
+                .iter()
+                .map(|i| i.clone().into())
+                .collect(),
         }))
     }
 

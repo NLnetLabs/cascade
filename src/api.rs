@@ -8,7 +8,6 @@ use domain::base::{Name, Serial};
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
-use crate::zone::{HistoryItem, PipelineMode};
 use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneRefreshStatus};
 
 const DEFAULT_AXFR_PORT: u16 = 53;
@@ -342,6 +341,85 @@ impl Display for KeyType {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneHistory {
     pub history: Vec<HistoryItem>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PipelineMode {
+    /// Newly received zone data will flow through the pipeline.
+    #[default]
+    Running,
+
+    /// The current zone data could not be fully processed through the
+    /// pipeline. When new zone data is received it will flow through the
+    /// pipeline as normal.
+    SoftHalt(String),
+
+    /// The current zone data could not be fully processed through the
+    /// pipeline. The pipeline for this zone will remain halted until manually
+    /// restarted.
+    HardHalt(String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoryItem {
+    pub when: SystemTime,
+    pub serial: Option<Serial>,
+    pub event: HistoricalEvent,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum HistoricalEventType {
+    Added,
+    Removed,
+    PolicyChanged,
+    SourceChanged,
+    NewVersionReceived,
+    SigningSucceeded,
+    SigningFailed,
+    UnsignedZoneReview,
+    SignedZoneReview,
+    KeySetCommand,
+    KeySetError,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum HistoricalEvent {
+    Added,
+    Removed,
+    PolicyChanged,
+    SourceChanged,
+    NewVersionReceived,
+    SigningSucceeded {
+        trigger: SigningTrigger,
+    },
+    SigningFailed {
+        trigger: SigningTrigger,
+        reason: String,
+    },
+    UnsignedZoneReview {
+        status: ZoneReviewStatus,
+    },
+    SignedZoneReview {
+        status: ZoneReviewStatus,
+    },
+    KeySetCommand {
+        cmd: String,
+        warning: Option<String>,
+        elapsed: Duration,
+    },
+    KeySetError {
+        cmd: String,
+        err: String,
+        elapsed: Duration,
+    },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum SigningTrigger {
+    ExternallyModifiedKeySetState,
+    SignatureExpiration,
+    ZoneChangesApproved,
+    KeySetModifiedAfterCron,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
