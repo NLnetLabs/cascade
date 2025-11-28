@@ -3,10 +3,8 @@ use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
 use camino::Utf8PathBuf;
-use chrono::{DateTime, Utc};
 use domain::base::{Name, Serial};
 use futures::TryFutureExt;
-use humantime::FormattedDuration;
 
 use crate::api::*;
 use crate::cli::client::{format_http_error, CascadeApiClient};
@@ -1001,22 +999,44 @@ fn serial_to_string(serial: Option<Serial>) -> String {
 fn to_rfc3339_ago(v: Option<SystemTime>) -> String {
     match v {
         Some(v) => {
-            let now = SystemTime::now();
-            let diff = now.duration_since(v).unwrap();
-            let rfc3339 = to_rfc3339(v);
-            format!("{rfc3339} ({} ago)", format_duration(diff))
+            let now = jiff::Zoned::now().round(jiff::Unit::Second).unwrap();
+            let v = jiff::Timestamp::try_from(v).unwrap();
+            let span = v
+                .until(now.clone())
+                .unwrap()
+                .round(
+                    jiff::SpanRound::new()
+                        .relative(&now)
+                        .largest(jiff::Unit::Year)
+                        .smallest(jiff::Unit::Second),
+                )
+                .unwrap();
+            format!("{} ({span:#} ago)", now.datetime())
         }
         None => "Not yet finished".to_string(),
     }
 }
 
 fn to_rfc3339(v: SystemTime) -> String {
-    DateTime::<Utc>::from(v).to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+    jiff::Timestamp::try_from(v)
+        .unwrap()
+        .round(jiff::Unit::Second)
+        .unwrap()
+        .to_string()
 }
 
-fn format_duration(duration: Duration) -> FormattedDuration {
-    // See: https://github.com/chronotope/humantime/issues/35
-    humantime::format_duration(Duration::from_secs(duration.as_secs()))
+fn format_duration(duration: Duration) -> String {
+    format!(
+        "{:#}",
+        jiff::Span::try_from(duration)
+            .unwrap()
+            .round(
+                jiff::SpanRound::new()
+                    .smallest(jiff::Unit::Second)
+                    .largest(jiff::Unit::Hour)
+            )
+            .unwrap()
+    )
 }
 
 fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {
