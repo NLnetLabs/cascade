@@ -40,7 +40,6 @@ use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
-use crate::units::zone_loader::ZoneLoaderReport;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;

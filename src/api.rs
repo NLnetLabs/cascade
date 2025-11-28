@@ -8,7 +8,6 @@ use domain::base::{Name, Serial};
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
-use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zone::{HistoryItem, PipelineMode};
 use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneRefreshStatus};
 
@@ -291,6 +290,14 @@ pub struct ZoneStatus {
     pub published_serial: Option<Serial>,
     pub publish_addr: SocketAddr,
     pub pipeline_mode: PipelineMode,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ZoneLoaderReport {
+    pub started_at: SystemTime,
+    pub finished_at: Option<SystemTime>,
+    pub byte_count: usize,
+    pub record_count: usize,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
