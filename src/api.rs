@@ -8,8 +8,6 @@ use domain::base::{Name, Serial};
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 
-use crate::center;
-use crate::units::http_server::KmipServerState;
 use crate::units::zone_loader::ZoneLoaderReport;
 use crate::zone::{HistoryItem, PipelineMode};
 use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneRefreshStatus};
@@ -167,17 +165,6 @@ impl fmt::Display for ZoneAddError {
     }
 }
 
-impl From<center::ZoneAddError> for ZoneAddError {
-    fn from(value: center::ZoneAddError) -> Self {
-        match value {
-            center::ZoneAddError::AlreadyExists => Self::AlreadyExists,
-            center::ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
-            center::ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
-            center::ZoneAddError::Other(reason) => Self::Other(reason),
-        }
-    }
-}
-
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneRemoveResult {
     pub name: Name<Bytes>,
@@ -193,14 +180,6 @@ impl fmt::Display for ZoneRemoveError {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
         })
-    }
-}
-
-impl From<center::ZoneRemoveError> for ZoneRemoveError {
-    fn from(value: center::ZoneRemoveError) -> Self {
-        match value {
-            center::ZoneRemoveError::NotFound => Self::NotFound,
-        }
     }
 }
 
@@ -639,6 +618,21 @@ pub struct HsmServerListResult {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct HsmServerGetResult {
     pub server: KmipServerState,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct KmipServerState {
+    pub server_id: String,
+    pub ip_host_or_fqdn: String,
+    pub port: u16,
+    pub insecure: bool,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub max_response_bytes: u32,
+    pub key_label_prefix: Option<String>,
+    pub key_label_max_bytes: u8,
+    pub has_credentials: bool,
 }
 
 //------------ KeySet API Types ----------------------------------------------
