@@ -96,21 +96,27 @@ Options for :subcmd:`zone add`
    Import a key pair as a KSK.
 
    The file path needs to be the public key file of the KSK. The private key
-   file name is derived from the public key file.
+   file name is derived from the public key file. Key files are not
+   actually copied from the specified paths and must remain accessible
+   to the server.
 
 .. option:: --import-zsk-file <IMPORT_ZSK_FILE>
 
    Import a key pair as a ZSK.
 
    The file path needs to be the public key file of the ZSK. The private key
-   file name is derived from the public key file.
+   file name is derived from the public key file. Key files are not
+   actually copied from the specified paths and must remain accessible
+   to the server.
 
 .. option:: --import-csk-file <IMPORT_CSK_FILE>
 
    Import a key pair as a CSK.
 
    The file path needs to be the public key file of the CSK. The private key
-   file name is derived from the public key file.
+   file name is derived from the public key file. Key files are not
+   actually copied from the specified paths and must remain accessible
+   to the server.
 
 .. option:: --import-ksk-kmip <server> <public_id> <private_id> <algorithm> <flags>
 
