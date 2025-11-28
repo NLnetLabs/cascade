@@ -50,6 +50,35 @@ not all operators use an HSM. Cascade is able to use OpenSSL and/or ring
 software cryptography to generate signing keys and to cryptographically sign
 DNS RRset data, storing the generated keys in on-disk files.
 
+Why is the default policy KSK/ZSK and not CSK?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Key rolls should be automatic and frequent.
+Frequent key rolls help to ensure that key rolls are normal operational
+practice and not an exception.
+Key rolls should be automated as much as possible to avoid mistakes.
+Unfortuantely, the standard for updating DS records (CDS, RFC 8078) is not
+widely implemented so in many cases a KSK roll has to have a manual component.
+
+These factors favor the KSK/ZSK split because it makes frequent ZSK rolls
+possible and KSK rolls can limited to something reasonable.
+
+Finally KSK and ZSK key rolls are less complex than CSK rolls.
+Some people use a CSK and never roll the key.
+That avoids the key roll complexity but leads to a lack opf operational
+practice when a situation arises that a key roll is needed.
+
+Why are the default key lifetimes the way they are?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A ZSK roll requires re-signing the entire zone.
+For bigger zones, this should not be done too often to keep the overhead of the key roll low.
+Once a month seems an nice compromise.
+
+A KSK roll requires updating the DS RRset in the parent zone.
+For this reason a KSK once a year is a good compromise.
+
+
 .. seealso::
 
    :doc:`hsms`
