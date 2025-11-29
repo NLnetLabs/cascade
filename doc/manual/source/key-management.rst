@@ -55,7 +55,7 @@ Maintaining State
 The key manager maintains a state file for each zone. The state file lists
 the keys in the key set, the current key roll state, and has the DNSKEY, CDS,
 and CDNSKEY RRsets, key generation (which algorithm to use, whether to use a
-CSK and a KSK and a ZSK), parameters for key rolls (whether key rolls are
+CSK or a KSK and a ZSK), parameters for key rolls (whether key rolls are
 automatic or not), the lifetimes of keys and signatures, etc.
 
 In addition to the configuration and state files, the key manager maintains
@@ -96,7 +96,7 @@ roll can also roll from KSK plus ZSK to a new CSK or from a CSK to new a KSK
 and ZSK pair. Note that a roll from KSK plus ZSK to a new KSK plus ZSK pair
 is also supported.
 
-Finally, an algorithm roll is similar to a CSK roll, but designed in a
+Finally, an algorithm roll is similar to a CSK roll, but it is designed in a
 specific way to handle the case where the new key or keys have an algorithm
 that is different from one used by the current signing keys.
 
