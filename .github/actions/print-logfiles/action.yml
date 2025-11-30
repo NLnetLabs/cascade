@@ -1,0 +1,26 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Print logfiles'
+description: 'Print the nameserver logfiles'
+inputs:
+  nameserver-dir:
+    description: 'The base directory of the nameserver log files'
+    required: false
+    default: ${{ format('{0}/nameservers', github.workspace) }}
+  cascade-dir:
+    description: 'The cascade base directory containing the log files'
+    required: false
+    default: ${{ format('{0}/cascade-dir', github.workspace) }}
+runs:
+  using: "composite"
+  steps:
+  - name: Print all the nameserver log files
+    run: |
+      for i in ${{ inputs.nameserver-dir }}/*.log; do
+        echo ">>> Logfile $i:" >&2
+        cat "$i" >&2 || true
+      done
+      echo ">>> Logfile cascade-startup.log:" >&2
+      cat "${{ inputs.cascade-dir }}/cascade-startup.log" >&2 || true
+      echo ">>> Logfile cascade.log:" >&2
+      cat "${{ inputs.cascade-dir }}//cascade.log" >&2 || true
