@@ -45,7 +45,7 @@ Arguments:
     - list-ports:       List the ports configured for the different services
     - generate-configuration:       Only generate the directories and configuration files
     - test:             Check the service's statuses (xxx-control status and dig test SOA)
-    - control:          Run a controll command (see usage below)
+    - control:          Run a control command (see usage below)
 
 Options:
       --ignore-no-ubuntu    Disable the ckeck if this script is run on an Ubuntu system
