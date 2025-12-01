@@ -212,7 +212,7 @@ test.   IN SOA ns1.test. mail.test. (
                      60          ; refresh (60 seconds)
                      60          ; retry (60 seconds)
                    3600          ; expire (1 hour)
-                     60          ; minimum (60 seconds)
+                      5          ; minimum (5 seconds)
                     )
 @           NS  test.
 @           NS  ns1.test.
@@ -337,7 +337,7 @@ example.test.   IN SOA ns1.example.test. mail.example.test. (
                      60          ; refresh (60 seconds)
                      60          ; retry (60 seconds)
                    3600          ; expire (1 hour)
-                     60          ; minimum (60 seconds)
+                      5          ; minimum (5 seconds)
                     )
 @           NS  example.test.
 @           NS  ns1.example.test.
