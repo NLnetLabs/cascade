@@ -42,6 +42,9 @@ Released 2025-11-21.
 - The threads spawned by Cascade are now named `cascade-worker` instead of
   generic names like `tokio-worker`.  ([#356] by @tertsdiepraam)
 
+- A zone configured for unsigned review no longer fails to sign. (#[398] by
+  @ximon18)
+
 ### Documentation improvements
 
 - Note incompatibility with NitroKey v2.0.0 PKCS#11 module ([#357] by @ximon18)
@@ -60,7 +63,7 @@ Cascade.
 [#356]: https://github.com/NLnetLabs/cascade/pull/356
 [#357]: https://github.com/NLnetLabs/cascade/pull/357
 [#358]: https://github.com/NLnetLabs/cascade/pull/358
-
+[#398]: https://github.com/NLnetLabs/cascade/pull/398
 
 ## 0.1.0-alpha4 'Mont-Royal'
 
