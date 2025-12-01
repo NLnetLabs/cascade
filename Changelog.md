@@ -20,7 +20,7 @@ Released yyyy-mm-dd.
 
 ### Bug fixes
 
-- A zone configured for unsigned review no longer fails to sign. (#[398] by
+- A zone configured for unsigned review no longer fails to sign. ([#398] by
   @ximon18)
 
 [#398]: https://github.com/NLnetLabs/cascade/pull/398
