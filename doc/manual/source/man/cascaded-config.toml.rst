@@ -203,6 +203,11 @@ The ``[daemon]`` section.
    enable the ``pid-file`` and ``identity`` settings (although they remain
    optional).
 
+   If this option is set to ``true`` the server changes it
+   working directory to the current directory and as such influences
+   where files are looked for. Use absolute path names in configuration
+   to avoid ambiguities.
+
 .. TODO: Link to a dedicated systemd / daemonization guide for Cascade.
 
 .. option:: pid-file = "/var/run/cascade.pid"
