@@ -8,11 +8,11 @@ inputs:
   nameserver-dir:
     description: 'The base directory of the nameserver log files'
     required: false
-    default: ${{ format('{0}/nameservers', github.workspace) }}
+    default: ${{ github.workspace }}/nameservers
   cascade-dir:
     description: 'The cascade base directory containing the log files'
     required: false
-    default: ${{ format('{0}/cascade-dir', github.workspace) }}
+    default: ${{ github.workspace }}/cascade-dir
 runs:
   using: "composite"
   steps:
