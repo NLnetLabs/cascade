@@ -105,7 +105,7 @@ jobs:
     - name: Determine MSRV
       id: determine-msrv
       run: |
-        msrv=`cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="Cascade")|.rust_version'`
+        msrv=`cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="cascade")|.rust_version'`
         echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
 
   # TODO: Add feature flag checks, when we add feature flags.
@@ -222,22 +222,3 @@ jobs:
       run: cargo test --doc
 
   # TODO: Build a cache.
-
-name: ci
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - '**.rs'
-      - 'Cargo.{toml,lock}'
-      - '.github/workflows/ci.yml'
-      - 'etc/*.toml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - '**.rs'
-      - 'Cargo.{toml,lock}'
-      - '.github/workflows/ci.yml'
-      - 'etc/*.toml'
