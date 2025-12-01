@@ -34,15 +34,6 @@ if [[ "${1-}" =~ ^-h|--help$ ]]; then
   exit
 fi
 
-# From `cascade template config | grep -E '^[^#].*/'`
-# policy-dir = "/etc/cascade/policies"
-# zone-state-dir = "/var/lib/cascade/zone-state"
-# tsig-store-path = "/var/lib/cascade/tsig-keys.db"
-# kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
-# keys-dir = "/var/lib/cascade/keys"
-# kmip-server-state-dir = "/var/lib/cascade/kmip"
-# dnst-binary-path = "/usr/libexec/cascade/cascade-dnst"
-
 # The base dir must be an absolute path
 if [[ -n "${1-}" ]]; then
   # A very naive check, but sufficient for our use case
