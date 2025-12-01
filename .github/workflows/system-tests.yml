@@ -1,0 +1,186 @@
+# This workflow is primarily for use with https://github.com/nektos/act and has
+# been tested using the full image (catthehacker/ubuntu:full-latest).
+#
+# Further documentation is in TESTING.md.
+#
+# TL;DR:
+#   - Docker: `act --network default -W .github/workflows/system-tests.yml --job your-test`
+#   - Podman: `act --network podman -W .github/workflows/system-tests.yml --job your-test`
+#   Optionally start a standalone artifact server to deduplicate compilation between tests (see TESTING.md).
+#
+# ## Example test job
+#
+# ```yml
+#   job-name:
+#     name: Run tests with resolvers/nameservers
+#     runs-on: ${{ matrix.os }}
+#     needs: build
+#     strategy:
+#       matrix:
+#         os: [ubuntu-latest]
+#         rust: [stable] # see build job
+#     steps:
+#     - name: Checkout repository
+#       uses: actions/checkout@v4
+#     - name: Prepare the system test environment
+#       uses: ./.github/actions/prepare-systest-env
+#       with:
+#         artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+#     # - name: Only download/build the binaries without setting up the test environment
+#     #   uses: ./.github/actions/download-or-build
+#     #   with:
+#     #     artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+#     - name: Setup and start the cascade daemon
+#       uses: ./.github/actions/setup-and-start-cascade
+#     - run: target/debug/cascade --version
+#     ### RUN YOUR TESTS HERE
+#     # # Optional, the container gets cleaned up anyway (at least in act)
+#     # - name: Stop the setup
+#     #   run: scripts/manage-test-environment.sh stop
+# ```
+
+# GitHub Actions environment variables are documented at
+# https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+
+name: System/Integration tests
+on:
+  # Triggering on PRs and arbitrary branch pushes is not enabled because most
+  # of the time this expensive test suite should not be run. Using this
+  # trigger allows explicitly running this test suite on a selected branch.
+  workflow_dispatch:
+
+env:
+  # Set this assignment to your choosing to set the cargo build verbosity
+  CARGO_TERM_VERBOSE: ${{ github.actor != 'nektos/act' }}
+  # CARGO_TERM_VERBOSE: true
+
+defaults:
+  run:
+    # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+
+jobs:
+  check-for-artifact-server:
+    name: Check whether uploading artifacts is possible
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.upload-check.outcome }}
+    steps:
+    - name: Try to upload an empty artifact
+      continue-on-error: true
+      id: upload-check
+      # To allow running the workflow without an artifact server an error here
+      # should not fail the workflow.
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ format('upload-check_{0}_ubuntu-latest', github.sha) }}
+        path: /dev/null
+        compression-level: 0
+  build:
+    # First build the project for once for all systems to deduplicate work
+    # in the later tests
+    name: Build the project for use by the later tests
+    needs: check-for-artifact-server
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+        # the  hecrj/setup-rust-action@v2 action seems broken in act, therefore
+        # only using stable rust, which is installed in the runner image
+        # rust: [1.84.0, stable, beta, nightly]
+    steps:
+    - name: Checkout repository
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      uses: actions/checkout@v4
+    - name: Build Cascade
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      run: cargo build
+    - name: Build dnst from keyset branch
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst --locked --bin=dnst
+    - name: Tar built binaries to preserve permissions
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      run: tar -cf target.tar target
+    - name: Upload built binaries
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      # To allow running the workflow without an artifact server an error here
+      # should not fail the workflow.
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+        # A file, directory or wildcard pattern that describes what to upload. Required.
+        path: target.tar
+        # The level of compression for Zlib to be applied to the artifact archive.
+        # The value can range from 0 to 9.
+        # For large files that are not easily compressed, a value of 0 is recommended for significantly faster uploads.
+        # Optional. Default is '6'
+        compression-level: 1
+
+  test-version:
+    name: Example test with prepare environment and cascade --version
+    runs-on: ${{ matrix.os }}
+    needs: build
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable] # see build job
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Prepare the system test environment
+      uses: ./.github/actions/prepare-systest-env
+      with:
+        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+    - run: target/debug/cascade --version
+    # # Optional, the container gets cleaned up anyway (at least in act)
+    # - name: Stop the setup
+    #   run: scripts/manage-test-environment.sh stop
+
+  add-zone-query:
+    name: Add a zone, query the zone
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable] # see build job
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Prepare the system test environment
+      uses: ./.github/actions/prepare-systest-env
+      with:
+        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+    - run: target/debug/cascade --version
+    - name: Setup and start the cascade daemon
+      uses: ./.github/actions/setup-and-start-cascade
+    - name: Add a zone
+      run: |
+        target/debug/cascade zone add --policy default --source 127.0.0.1:1055 example.test
+    - name: Check zone status
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until target/debug/cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+    - name: Query zone
+      run: |
+        dig @127.0.0.1 -p 4543 example.test AXFR
+    - name: Tell NSD that the zone is now available
+      # Only necessary if NOTIFY is not setup for cascade
+      run: |
+        ./scripts/manage-test-environment.sh control nsd-secondary transfer example.test
+    - name: The new zone should now be available via the resolver
+      run: |
+        dig text.example.test TXT | grep "Hello World"
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()
