@@ -2,6 +2,8 @@
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'Print logfiles'
 description: 'Print the nameserver logfiles'
+defaults:
+  shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
   nameserver-dir:
     description: 'The base directory of the nameserver log files'

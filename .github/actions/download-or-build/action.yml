@@ -2,6 +2,8 @@
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'Download the artifact or build from source if failed'
 description: 'Fetch or, if failed, build the binaries'
+defaults:
+  shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
   artifact-name:
     description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
