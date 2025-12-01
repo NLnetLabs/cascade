@@ -12,6 +12,10 @@ inputs:
     description: 'Disable the test step that checks if all nameservers are accessible'
     required: false
     default: false
+  build-profile:
+    description: 'Choose the build profile for cascade (release/debug)'
+    required: false
+    default: debug
 runs:
   using: "composite"
   steps:
@@ -23,3 +27,4 @@ runs:
   - uses: ./.github/actions/download-or-build
     with:
       artifact-name: ${{ inputs.artifact-name }}
+      build-profile: ${{ inputs.build-profile }}
