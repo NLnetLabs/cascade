@@ -360,6 +360,8 @@ function setup-services() {
 }
 
 function restore-resolv.conf() {
+  # We cannot replace the file /etc/resolv.conf itself, only the content,
+  # because it is a bind-mount by Docker.
   sudo cp "${_nameserver_base_dir}/resolv.conf.bak" /etc/resolv.conf
   sudo rm "${_nameserver_base_dir}/resolv.conf.bak"
 }
