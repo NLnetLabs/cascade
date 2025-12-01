@@ -119,7 +119,7 @@ jobs:
         compression-level: 1
 
   test-version:
-    name: Run tests with resolvers/nameservers
+    name: Example test with prepare environment and cascade --version
     runs-on: ${{ matrix.os }}
     needs: build
 
