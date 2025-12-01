@@ -3,16 +3,16 @@
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use crate::api::{self, KeyImport};
+use crate::api::{self, KeyImport, SigningQueueReport, SigningReport, ZoneLoaderReport};
 use crate::center::{get_zone, halt_zone, Center, Change, ZoneAddError};
 use crate::daemon::SocketProvider;
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
-use crate::units::zone_loader::{ZoneLoader, ZoneLoaderReport};
+use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
 use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneLoadSource};
-use crate::zonemaintenance::types::{SigningQueueReport, SigningReport, ZoneReport};
+use crate::zonemaintenance::types::ZoneReport;
 use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
 use domain::zonetree::StoredName;

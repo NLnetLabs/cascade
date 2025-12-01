@@ -19,10 +19,6 @@ impl CascadeApiClient {
         }
     }
 
-    pub fn base_uri(&self) -> &str {
-        self.base_uri.as_str()
-    }
-
     pub fn request(&self, method: Method, s: &str) -> RequestBuilder {
         let path = self.base_uri.join(s).unwrap();
 

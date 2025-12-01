@@ -1,4 +1,7 @@
-#![allow(unused)]
+//! ANSI escape code definitions.
+
+#![allow(dead_code, reason = "we might not use every color")]
+
 pub const BLACK: &str = "\x1b[0;30m";
 pub const RED: &str = "\x1b[0;31m";
 pub const GREEN: &str = "\x1b[0;32m";

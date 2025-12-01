@@ -198,11 +198,36 @@ pub enum PipelineMode {
     HardHalt(String),
 }
 
+impl From<PipelineMode> for api::PipelineMode {
+    fn from(value: PipelineMode) -> Self {
+        match value {
+            PipelineMode::Running => Self::Running,
+            PipelineMode::SoftHalt(r) => Self::SoftHalt(r),
+            PipelineMode::HardHalt(r) => Self::HardHalt(r),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistoryItem {
     pub when: SystemTime,
     pub serial: Option<Serial>,
     pub event: HistoricalEvent,
+}
+
+impl From<HistoryItem> for api::HistoryItem {
+    fn from(value: HistoryItem) -> Self {
+        let HistoryItem {
+            when,
+            serial,
+            event,
+        } = value;
+        Self {
+            when,
+            serial,
+            event: event.into(),
+        }
+    }
 }
 
 impl HistoryItem {
@@ -298,12 +323,56 @@ impl HistoricalEvent {
     }
 }
 
+impl From<HistoricalEvent> for api::HistoricalEvent {
+    fn from(value: HistoricalEvent) -> Self {
+        match value {
+            HistoricalEvent::Added => Self::Added,
+            HistoricalEvent::Removed => Self::Removed,
+            HistoricalEvent::PolicyChanged => Self::PolicyChanged,
+            HistoricalEvent::SourceChanged => Self::SourceChanged,
+            HistoricalEvent::NewVersionReceived => Self::NewVersionReceived,
+            HistoricalEvent::SigningSucceeded { trigger } => Self::SigningSucceeded {
+                trigger: trigger.into(),
+            },
+            HistoricalEvent::SigningFailed { trigger, reason } => Self::SigningFailed {
+                trigger: trigger.into(),
+                reason,
+            },
+            HistoricalEvent::UnsignedZoneReview { status } => Self::UnsignedZoneReview { status },
+            HistoricalEvent::SignedZoneReview { status } => Self::SignedZoneReview { status },
+            HistoricalEvent::KeySetCommand {
+                cmd,
+                warning,
+                elapsed,
+            } => Self::KeySetCommand {
+                cmd,
+                warning,
+                elapsed,
+            },
+            HistoricalEvent::KeySetError { cmd, err, elapsed } => {
+                Self::KeySetError { cmd, err, elapsed }
+            }
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum SigningTrigger {
     ExternallyModifiedKeySetState,
     SignatureExpiration,
     ZoneChangesApproved,
     KeySetModifiedAfterCron,
+}
+
+impl From<SigningTrigger> for api::SigningTrigger {
+    fn from(value: SigningTrigger) -> Self {
+        match value {
+            SigningTrigger::ExternallyModifiedKeySetState => Self::ExternallyModifiedKeySetState,
+            SigningTrigger::SignatureExpiration => Self::SignatureExpiration,
+            SigningTrigger::ZoneChangesApproved => Self::ZoneChangesApproved,
+            SigningTrigger::KeySetModifiedAfterCron => Self::KeySetModifiedAfterCron,
+        }
+    }
 }
 
 /// How to load the contents of a zone.

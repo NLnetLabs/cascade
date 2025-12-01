@@ -1,10 +1,8 @@
-use chrono::{DateTime, Utc};
-use futures::TryFutureExt;
+use futures_util::TryFutureExt;
 
-use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult};
-use crate::cli::client::{format_http_error, CascadeApiClient};
-use crate::common::ansi;
-use crate::zonemaintenance::types::SigningStageReport;
+use crate::ansi;
+use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult, SigningStageReport};
+use crate::client::{format_http_error, CascadeApiClient};
 use crate::{eprintln, println};
 
 #[derive(Clone, Debug, clap::Args)]
@@ -117,8 +115,10 @@ impl Status {
                                 (ansi::GREEN, "\u{2714}", r.finished_at)
                             }
                         };
-                        let when = DateTime::<Utc>::from(when)
-                            .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+                        let when = jiff::Timestamp::try_from(when)
+                            .unwrap()
+                            .round(jiff::Unit::Second)
+                            .unwrap();
                         println!(
                             "  {i:>2}: {colour}{state}{} {when:<25} {zone_name:<16} {action}",
                             ansi::RESET
