@@ -162,7 +162,13 @@ jobs:
         target/debug/cascade zone add --policy default --source 127.0.0.1:1055 example.test
     - name: Check zone status
       run: |
+        timeout=10 # seconds
+        start=$(date +%s)
         until target/debug/cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
           sleep 1
         done
     - name: Query zone
