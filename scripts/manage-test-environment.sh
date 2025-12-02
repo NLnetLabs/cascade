@@ -244,7 +244,7 @@ stub-zone:
 stub-zone:
   name: "example.test"
   stub-host: example.test
-  stub-addr: 127.0.0.1@${_cascade_port}
+  stub-addr: 127.0.0.1@${_nsd_port}
 
 python:
 dynlib:
