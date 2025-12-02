@@ -51,7 +51,7 @@ Options
 .. option:: -d, --daemonize
 
           Whether Cascade should fork on startup. This option changes the
-          working directory to the current directory and as such influences
+          working directory to the root directory and as such influences
           where files are looked for. Use absolute path names in configuration
           to avoid ambiguities.
 
