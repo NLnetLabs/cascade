@@ -96,12 +96,18 @@ jobs:
     - name: Checkout repository
       if: needs.check-for-artifact-server.outputs.status == 'success'
       uses: actions/checkout@v4
-    - name: Build Cascade
+    - name: Build Cascade (debug)
       if: needs.check-for-artifact-server.outputs.status == 'success'
       run: cargo build
-    - name: Build dnst from keyset branch
+    - name: Build Cascade (release)
       if: needs.check-for-artifact-server.outputs.status == 'success'
-      run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst --locked --bin=dnst
+      run: cargo build --release
+    - name: Build dnst from keyset branch (debug)
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      run: cargo install --debug --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst/debug --locked --bin=dnst
+    - name: Build dnst from keyset branch (release)
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst/release --locked --bin=dnst
     - name: Tar built binaries to preserve permissions
       if: needs.check-for-artifact-server.outputs.status == 'success'
       run: tar -cf target.tar target
@@ -121,8 +127,28 @@ jobs:
         # Optional. Default is '6'
         compression-level: 1
 
+  test-release-version:
+    name: Example test with prepare environment and cascade --version (release)
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable] # see build job
+    env:
+      build-profile: release
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Prepare the system test environment
+      uses: ./.github/actions/prepare-systest-env
+      with:
+        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+    - run: target/release/cascade --version
+    - run: cascade --version
+
   test-version:
-    name: Example test with prepare environment and cascade --version
+    name: Example test with prepare environment and cascade --version (debug)
     runs-on: ${{ matrix.os }}
     needs: build
 
