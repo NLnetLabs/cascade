@@ -8,16 +8,9 @@ inputs:
   artifact-name:
     description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
     required: true
-  build-profile:
-    description: 'Choose the build profile for cascade (release/debug)'
-    required: false
-    default: debug
 runs:
   using: "composite"
   steps:
-  - name: Verify inputs
-    run: |
-      [[ "${{ inputs.build-profile }}" =~ ^debug|release$ ]]
   - uses: actions/download-artifact@v5
     id: download_binaries
     # Don't mark this run as failed if downloading the cached version fails,
@@ -36,7 +29,7 @@ runs:
     # always be success, but we can check for failure using the outcome key
     if: ${{ steps.download_binaries.outcome == 'failure' }}
     run: |
-      case "${{ inputs.build-profile }}" in
+      case "${{ env.build-profile }}" in
         debug)
           cargo build
           ;;
@@ -48,7 +41,7 @@ runs:
   - name: Build dnst from keyset branch
     if: ${{ steps.download_binaries.outcome == 'failure' }}
     run: |
-      case "${{ inputs.build-profile }}" in
+      case "${{ env.build-profile }}" in
         debug)
           cargo install --debug --git https://github.com/nlnetlabs/dnst --branch keyset --root "$GITHUB_WORKSPACE/target/dnst" --locked --bin=dnst
           ;;
@@ -57,6 +50,30 @@ runs:
           ;;
         *) exit 1
       esac
+  - name: Add cascade to PATH
+    run: |
+      case "${{ env.build-profile }}" in
+        debug)
+          [[ -x "$GITHUB_WORKSPACE/target/debug/cascaded" ]] # Sanity check
+          echo "$GITHUB_WORKSPACE/target/debug" >> "$GITHUB_PATH"
+          ;;
+        release)
+          [[ -x "$GITHUB_WORKSPACE/target/release/cascaded" ]] # Sanity check
+          echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
+          ;;
+        *) exit 1
+      esac
   - name: Add dnst to PATH
     # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#example-of-adding-a-system-path
-    run: echo "$GITHUB_WORKSPACE/target/dnst/bin" >> "$GITHUB_PATH"
+    run: |
+      case "${{ env.build-profile }}" in
+        debug)
+          [[ -x "$GITHUB_WORKSPACE/target/dnst/debug/bin/dnst" ]] # Sanity check
+          echo "$GITHUB_WORKSPACE/target/dnst/debug/bin" >> "$GITHUB_PATH"
+          ;;
+        release)
+          [[ -x "$GITHUB_WORKSPACE/target/dnst/release/bin/dnst" ]] # Sanity check
+          echo "$GITHUB_WORKSPACE/target/dnst/release/bin" >> "$GITHUB_PATH"
+          ;;
+        *) exit 1
+      esac

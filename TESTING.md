@@ -130,6 +130,12 @@ of text printed you can:
   using `unbuffer` from the `expect` package; left as an excercise for the
   user)
 
+### Miscellaneous notes
+
+- By default, tests are run using a debug build for both Cascade and dnst.
+  - This can be changed per test using the `build-profile` environment variable.
+- `cascade`, `cascaded`, and `dnst` are added to the `$PATH`.
+
 ### Example test job
 
 ```yml
@@ -141,6 +147,8 @@ of text printed you can:
       matrix:
         os: [ubuntu-latest]
         rust: [stable] # see build job
+    # env:
+    #   build-profile: release # uncomment this to run this test with a release build
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -154,7 +162,7 @@ of text printed you can:
     #     artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade
-    - run: target/debug/cascade --version
+    - run: cascade --version
     ### RUN YOUR TESTS HERE
     # # Optional, the container gets cleaned up anyway (at least in act)
     # - name: Stop the setup
