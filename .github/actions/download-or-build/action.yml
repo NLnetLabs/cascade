@@ -68,11 +68,16 @@ runs:
     run: |
       case "${{ env.build-profile }}" in
         debug)
-          [[ -x "$GITHUB_WORKSPACE/target/dnst/debug/bin/dnst" ]] # Sanity check
+          # Sanity check
+          if ! [[ -x "$GITHUB_WORKSPACE/target/dnst/debug/bin/dnst" ]]; then
+            echo "::error:: dnst binary ($GITHUB_WORKSPACE/target/dnst/debug/bin/dnst) is not executable"
+          fi
           echo "$GITHUB_WORKSPACE/target/dnst/debug/bin" >> "$GITHUB_PATH"
           ;;
         release)
-          [[ -x "$GITHUB_WORKSPACE/target/dnst/release/bin/dnst" ]] # Sanity check
+          if ! [[ -x "$GITHUB_WORKSPACE/target/dnst/release/bin/dnst" ]]; then
+            echo "::error:: dnst binary ($GITHUB_WORKSPACE/target/dnst/release/bin/dnst) is not executable"
+          fi
           echo "$GITHUB_WORKSPACE/target/dnst/release/bin" >> "$GITHUB_PATH"
           ;;
         *) exit 1

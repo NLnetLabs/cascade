@@ -196,7 +196,8 @@ jobs:
         start=$(date +%s)
         until cascade zone status example.test | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
-            echo "timeout: zone status did not report published zone available" >&2
+            cascade zone status example.test
+            echo "::error:: timeout: zone status did not report published zone available"
             exit 1
           fi
           sleep 1

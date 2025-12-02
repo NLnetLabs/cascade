@@ -26,3 +26,4 @@ runs:
       cat "${{ inputs.cascade-dir }}/cascade-startup.log" >&2 || true
       echo ">>> Logfile cascade.log:" >&2
       cat "${{ inputs.cascade-dir }}//cascade.log" >&2 || true
+      # ss -tulnp >&2 || true
