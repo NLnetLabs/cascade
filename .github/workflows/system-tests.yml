@@ -19,6 +19,8 @@
 #       matrix:
 #         os: [ubuntu-latest]
 #         rust: [stable] # see build job
+#     # env:
+#     #   build-profile: release # uncomment this to run this test with a release build
 #     steps:
 #     - name: Checkout repository
 #       uses: actions/checkout@v4
@@ -32,7 +34,7 @@
 #     #     artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
 #     - name: Setup and start the cascade daemon
 #       uses: ./.github/actions/setup-and-start-cascade
-#     - run: target/debug/cascade --version
+#     - run: cascade --version
 #     ### RUN YOUR TESTS HERE
 #     # # Optional, the container gets cleaned up anyway (at least in act)
 #     # - name: Stop the setup
@@ -53,6 +55,7 @@ env:
   # Set this assignment to your choosing to set the cargo build verbosity
   CARGO_TERM_VERBOSE: ${{ github.actor != 'nektos/act' }}
   # CARGO_TERM_VERBOSE: true
+  build-profile: debug
 
 defaults:
   run:
@@ -78,7 +81,7 @@ jobs:
         compression-level: 0
   build:
     # First build the project for once for all systems to deduplicate work
-    # in the later tests
+    # in the later tests. This builds both the release and debug build.
     name: Build the project for use by the later tests
     needs: check-for-artifact-server
     runs-on: ${{ matrix.os }}
@@ -93,12 +96,18 @@ jobs:
     - name: Checkout repository
       if: needs.check-for-artifact-server.outputs.status == 'success'
       uses: actions/checkout@v4
-    - name: Build Cascade
+    - name: Build Cascade (debug)
       if: needs.check-for-artifact-server.outputs.status == 'success'
       run: cargo build
-    - name: Build dnst from keyset branch
+    - name: Build Cascade (release)
       if: needs.check-for-artifact-server.outputs.status == 'success'
-      run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst --locked --bin=dnst
+      run: cargo build --release
+    - name: Build dnst from keyset branch (debug)
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      run: cargo install --debug --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst/debug --locked --bin=dnst
+    - name: Build dnst from keyset branch (release)
+      if: needs.check-for-artifact-server.outputs.status == 'success'
+      run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst/release --locked --bin=dnst
     - name: Tar built binaries to preserve permissions
       if: needs.check-for-artifact-server.outputs.status == 'success'
       run: tar -cf target.tar target
@@ -118,8 +127,28 @@ jobs:
         # Optional. Default is '6'
         compression-level: 1
 
+  test-release-version:
+    name: Example test with prepare environment and cascade --version (release)
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable] # see build job
+    env:
+      build-profile: release
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Prepare the system test environment
+      uses: ./.github/actions/prepare-systest-env
+      with:
+        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+    - run: target/release/cascade --version
+    - run: cascade --version
+
   test-version:
-    name: Example test with prepare environment and cascade --version
+    name: Example test with prepare environment and cascade --version (debug)
     runs-on: ${{ matrix.os }}
     needs: build
 
@@ -134,10 +163,7 @@ jobs:
       uses: ./.github/actions/prepare-systest-env
       with:
         artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
-    - run: target/debug/cascade --version
-    # # Optional, the container gets cleaned up anyway (at least in act)
-    # - name: Stop the setup
-    #   run: scripts/manage-test-environment.sh stop
+    - run: cascade --version
 
   add-zone-query:
     name: Add a zone, query the published zone
@@ -154,17 +180,21 @@ jobs:
       uses: ./.github/actions/prepare-systest-env
       with:
         artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
-    - run: target/debug/cascade --version
+    # - name: Only download/build the binaries without setting up the test environment
+    #   uses: ./.github/actions/download-or-build
+    #   with:
+    #     artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+    - run: cascade --version
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade
     - name: Add a zone
       run: |
-        target/debug/cascade zone add --policy default --source 127.0.0.1:1055 example.test
+        cascade zone add --policy default --source 127.0.0.1:1055 example.test
     - name: Check zone status
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until target/debug/cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status example.test | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
             echo "timeout: zone status did not report published zone available" >&2
             exit 1
