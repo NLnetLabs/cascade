@@ -1,567 +1,491 @@
-//! Logging.
+//! Logging from Cascade.
 //!
-//! This module provides facilities to set up logging based on a configuration
-//! via [`LogConfig`].
+//! Cascade using [`tracing`] to collect and produce log messages.  Unlike the
+//! more traditional [`log`] crate, [`tracing`] can record _spans_ (ranges of
+//! time over which actions occur) and follow asynchronous code coherently.
 //!
-//! The module also provides two error types [`Failed`] and [`ExitError`] that
-//! indicate that error information has been logged and a consumer can just
-//! return quietly.
+//! [`log`]: https://docs.rs/log
+//!
+//! Cascade supports logging to standard output, standard error, to a file, or
+//! (on UNIX systems) to syslog.  It uses [`tracing_subscriber::fmt`] to achieve
+//! this for the most part, and manually implements syslog output.  It supports
+//! colorized output and (limited) dynamic reconfiguration.
 
-use clap::{Arg, ArgAction, ArgMatches, Command};
-use log::{error, LevelFilter, Log};
-use serde::Deserialize;
-use std::convert::TryFrom;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
-use std::{fmt, io};
+use camino::Utf8Path;
+use tracing::Subscriber;
+use tracing_subscriber::{layer::SubscriberExt, reload, util::SubscriberInitExt, Registry};
 
-//------------ LogConfig -----------------------------------------------------
+use crate::config::{LogLevel, LogTarget, LoggingConfig, RuntimeConfig};
 
-/// Logging configuration.
-pub struct LogConfig {
-    /// Where to log to?
-    pub log_target: LogTarget,
+//----------- Logger -----------------------------------------------------------
 
-    /// If logging to a file, use this file.
-    ///
-    /// This isn’t part of `log_target` for deserialization reasons.
-    pub log_file: PathBuf,
-
-    /// The syslog facility when logging to syslog.
-    ///
-    /// This isn’t part of `log_target` for deserialization reasons.
-    #[cfg(unix)]
-    pub log_facility: LogFacility,
-
-    /// The minimum log level to actually log.
-    pub log_level: LogFilter,
-}
-
-impl LogConfig {
-    pub fn new() -> Self {
-        Self {
-            log_target: LogTarget::Stderr,
-            log_file: PathBuf::default(),
-            log_facility: LogFacility::default(),
-            log_level: LogFilter(LevelFilter::Info),
-        }
-    }
-
-    /// Configures a clap app with the options for logging.
-    pub fn config_args(app: Command) -> Command {
-        app.next_help_heading("Options related to logging")
-            .arg(
-                Arg::new("quiet")
-                    .short('q')
-                    .long("quiet")
-                    .action(ArgAction::Count)
-                    .conflicts_with("verbose")
-                    .help(" Log less information, twice for no information"),
-            )
-            .arg(
-                Arg::new("verbose")
-                    .short('v')
-                    .long("verbose")
-                    .action(ArgAction::Count)
-                    .help(" Log more information, twice or thrice for even more"),
-            )
-            .arg(
-                Arg::new("logfile")
-                    .long("logfile")
-                    .value_name("PATH")
-                    .help(" Log to this file"),
-            )
-            .arg(
-                Arg::new("syslog")
-                    .long("syslog")
-                    .action(ArgAction::SetTrue)
-                    .help(" Log to syslog"),
-            )
-            .arg(
-                Arg::new("syslog-facility")
-                    .long("syslog-facility")
-                    .default_value("daemon")
-                    .value_name("FACILITY")
-                    .help(" Facility to use for syslog logging"),
-            )
-    }
-
-    /// Update the logging configuration from command line arguments.
-    ///
-    /// This should be called after the configuration file has been loaded.
-    pub fn update_with_arg_matches(
-        &mut self,
-        matches: &ArgMatches,
-        cur_dir: &Path,
-    ) -> Result<(), Terminate> {
-        // log_level
-        for _ in 0..matches.get_count("verbose") {
-            self.log_level.increase()
-        }
-        for _ in 0..matches.get_count("quiet") {
-            self.log_level.decrease()
-        }
-
-        self.apply_log_matches(matches, cur_dir)?;
-
-        Ok(())
-    }
-
-    /// Applies the logging-specific command line arguments to the config.
-    ///
-    /// This is the Unix version that also considers syslog as a valid
-    /// target.
-    #[cfg(unix)]
-    fn apply_log_matches(&mut self, matches: &ArgMatches, cur_dir: &Path) -> Result<(), Terminate> {
-        if matches.get_flag("syslog") {
-            self.log_target = LogTarget::Syslog;
-            if let Some(value) = Self::from_str_value_of(matches, "syslog-facility")? {
-                self.log_facility = value
-            }
-        } else if let Some(file) = matches.get_one::<String>("logfile") {
-            if file == "-" {
-                self.log_target = LogTarget::Stderr
-            } else {
-                self.log_target = LogTarget::File;
-                self.log_file = cur_dir.join(file);
-            }
-        }
-        Ok(())
-    }
-
-    /// Applies the logging-specific command line arguments to the config.
-    ///
-    /// This is the non-Unix version that does not use syslog.
-    #[cfg(not(unix))]
-    #[allow(clippy::unnecessary_wraps)]
-    fn apply_log_matches(&mut self, matches: &ArgMatches, cur_dir: &Path) -> Result<(), Terminate> {
-        if let Some(file) = matches.value_of("logfile") {
-            if file == "-" {
-                self.log_target = LogTarget::Stderr
-            } else {
-                self.log_target = LogTarget::File;
-                self.log_file = cur_dir.join(file).into();
-            }
-        }
-        Ok(())
-    }
-
-    /// Try to convert a string encoded value.
-    ///
-    /// This helper function just changes error handling. Instead of returning
-    /// the actual conversion error, it logs it as an invalid value for entry
-    /// `key` and returns the standard error.
-    #[allow(dead_code)] // unused on Windows
-    fn from_str_value_of<T>(matches: &ArgMatches, key: &str) -> Result<Option<T>, Terminate>
-    where
-        T: FromStr,
-        T::Err: fmt::Display,
-    {
-        match matches.get_one::<String>(key) {
-            Some(value) => match T::from_str(value) {
-                Ok(value) => Ok(Some(value)),
-                Err(err) => {
-                    error!("Invalid value for {key}: {err}.");
-                    Err(Terminate::error())
-                }
-            },
-            None => Ok(None),
-        }
-    }
-
-    /// Initialize logging.
-    ///
-    /// All diagnostic output of Rotonda is done via logging, never to stderr
-    /// directly. Thus, it is important to initalize logging before doing
-    /// anything else that may result in such output. This function does
-    /// exactly that. It sets a maximum log level of `warn`, leading only
-    /// printing important information, and directs all logging to stderr.
-    pub fn init_logging() -> Result<(), Terminate> {
-        log::set_max_level(log::LevelFilter::Warn);
-        if let Err(err) = log_reroute::init() {
-            eprintln!("Failed to initialize logger: {err}.");
-            Err(ExitError)?;
-        };
-        let dispatch = fern::Dispatch::new()
-            .level(log::LevelFilter::Error)
-            .chain(io::stderr())
-            .into_log()
-            .1;
-        log_reroute::reroute_boxed(dispatch);
-        Ok(())
-    }
-
-    /// Switches logging to the configured target.
-    ///
-    /// Once the configuration has been successfully loaded, logging should be
-    /// switched to whatever the user asked for via this method.
-    #[allow(unused_variables)] // for cfg(not(unix))
-    pub fn switch_logging(&self, daemon: bool) -> Result<(), Terminate> {
-        let logger = match self.log_target {
-            #[cfg(unix)]
-            LogTarget::Default => {
-                if daemon {
-                    self.syslog_logger()?
-                } else {
-                    self.stderr_logger(false)
-                }
-            }
-            #[cfg(not(unix))]
-            LogTarget::Default => self.stderr_logger(daemon),
-            #[cfg(unix)]
-            LogTarget::Syslog => self.syslog_logger()?,
-            LogTarget::Stderr => self.stderr_logger(daemon),
-            LogTarget::File => self.file_logger()?,
-        };
-        log_reroute::reroute_boxed(logger);
-        log::set_max_level(self.log_level.0);
-        Ok(())
-    }
-
-    /// Creates a syslog logger and configures correctly.
-    #[cfg(unix)]
-    fn syslog_logger(&self) -> Result<Box<dyn Log>, Terminate> {
-        let mut formatter = syslog::Formatter3164 {
-            facility: self.log_facility.0,
-            ..Default::default()
-        };
-        if formatter.hostname.is_none() {
-            formatter.hostname = Some("rotonda".into());
-        }
-        let formatter = formatter;
-        let logger = syslog::unix(formatter.clone())
-            .or_else(|_| {
-                error!("Syslog not available via UNIX socket, falling back to tcp://127.0.0.1:601");
-                syslog::tcp(formatter.clone(), ("127.0.0.1", 601))
-            })
-            .or_else(|_| {
-                error!("Syslog not available via TCP socket, falling back to udp://127.0.0.1:514");
-                error!("Warning: Logs may be lost if no syslog daemon is listening at udp://127.0.0.1:514 !");
-                syslog::udp(formatter, ("127.0.0.1", 0), ("127.0.0.1", 514))
-            });
-        match logger {
-            Ok(logger) => Ok(Box::new(syslog::BasicLogger::new(logger))),
-            Err(err) => {
-                error!("Cannot connect to syslog: {err}");
-                Err(Terminate::error())
-            }
-        }
-    }
-
-    /// Creates a stderr logger.
-    ///
-    /// If we are in daemon mode, we add a timestamp to the output.
-    fn stderr_logger(&self, daemon: bool) -> Box<dyn Log> {
-        self.fern_logger(daemon).chain(io::stderr()).into_log().1
-    }
-
-    /// Creates a file logger using the file provided by `path`.
-    fn file_logger(&self) -> Result<Box<dyn Log>, Terminate> {
-        let file = match fern::log_file(&self.log_file) {
-            Ok(file) => file,
-            Err(err) => {
-                error!(
-                    "Failed to open log file '{}': {}",
-                    self.log_file.display(),
-                    err
-                );
-                return Err(Terminate::error());
-            }
-        };
-        Ok(self.fern_logger(true).chain(file).into_log().1)
-    }
-
-    /// Creates and returns a fern logger.
-    fn fern_logger(&self, timestamp_and_level: bool) -> fern::Dispatch {
-        // // TODO: These env var controls are not changeable by the operator at
-        // // runtime which may make them less useful. They also require you to
-        // // already be logging at trace level which means that you also see
-        // // lots of other trace logging but if you enable one of these env vars
-        // // you clearly actually want to see the logging that you are enabling,
-        // // not a bunch of other logging as well. So I think this needs some
-        // // more thought.
-        // let mqtt_log_level = match std::env::var("ROTONDA_MQTT_LOG") {
-        //     Ok(_) => self.log_level.0.min(LevelFilter::Trace),
-        //     Err(_) => self.log_level.0.min(LevelFilter::Warn),
-        // };
-        // let rotonda_store_log_level = match std::env::var("ROTONDA_STORE_LOG") {
-        //     Ok(_) => self.log_level.0.min(LevelFilter::Trace),
-        //     Err(_) => self.log_level.0.min(LevelFilter::Warn),
-        // };
-
-        let debug_enabled = self.log_level.0 >= LevelFilter::Debug;
-
-        let mut res = fern::Dispatch::new();
-
-        // Don't log module paths (e.g. rotonda::xxx::yyy) for our own code
-        // modules as we the StatusLoggers take care of making it clear which
-        // unit or target instance is logging which is more useful for readers
-        // of the logs. Do log module paths for messages logged (unexpectedly
-        // if warnings or errors) from other modules, i.e. crate dependencies,
-        // as we won't know anything about where those messages come from and
-        // if they were logged without a corresponding error that we could
-        // catch with Err then we won't have any additional context from our
-        // own code about where they came from. When the main log level is set
-        // to at debug or trace, then always log module paths in order to have
-        // the greatest level of information possible available.
-        if timestamp_and_level {
-            res = res.format(move |out, message, record| {
-                let module_path = record.module_path().unwrap_or("");
-                let show_module = debug_enabled || !module_path.starts_with("rotonda");
-                out.finish(format_args!(
-                    "[{}] {:5} {}{}{}",
-                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                    record.level(),
-                    if show_module { module_path } else { "" },
-                    if show_module { ": " } else { "" },
-                    message
-                ))
-            });
-        } else {
-            res = res.format(move |out, message, record| {
-                let module_path = record.module_path().unwrap_or("");
-                let show_module = debug_enabled || !module_path.starts_with("rotonda");
-                out.finish(format_args!(
-                    "{}{}{}",
-                    if show_module { module_path } else { "" },
-                    if show_module { ": " } else { "" },
-                    message
-                ))
-            });
-        }
-
-        // Note: The tracing::span directives below are needed to prevent
-        // dependent crates that use Tokio Tracing from accidentally violating
-        // the log levels we define here. When "there are no attributes
-        // associated with a span, then it creates a log record with the
-        // target 'tracing::span' rather than the target specified by the
-        // span's metadata" [1]. This is a problem because the Fern
-        // `level_for()` filtering mechanism filters by target, not by module
-        // [2]. To prevent this we explicitly add catch all directives for the
-        // 'tracing::span' target.
-        //
-        // References: [1]:
-        //   https://github.com/daboross/fern/issues/85#issuecomment-944305183
-        //   [2]: https://github.com/daboross/fern/issues/109
-        //
-        // The trigger for adding this was using rumqttd for functional
-        // testing as then the rumqttd log line shown below is immune to the
-        // `level_for("rumqttd")` directive we use and only
-        // `level_for("tracing::span")` has an effect on it. E.g. when log
-        // level is set to warn the following log line should not be seen, but
-        // it is unless we filter out 'tracing::span':
-        //
-        // [2022-12-08 13:00:06] INFO  rumqttd::router::routing: disconnect;
-
-        // Disable or limit logging from some modules which add too much noise
-        // for too little benefit for our use case.
-        res = res
-            .level(self.log_level.0)
-            .level_for("rustls", LevelFilter::Error)
-            // .level_for("rumqttd", LevelFilter::Warn)
-            .level_for("tracing::span", LevelFilter::Off);
-        // .level_for("cranelift_codegen", LevelFilter::Warn)
-        // .level_for("cranelift_jit", LevelFilter::Warn);
-
-        // // Boost the log level of modules for which the operator has requested
-        // // more diagnostics for.
-        // res = res
-        //     .level_for("rotonda_store", rotonda_store_log_level)
-        //     .level_for("rumqttc", mqtt_log_level)
-
-        if debug_enabled {
-            // Don't enable too much logging for some modules even if the main
-            // log level is set to debug or trace.
-            res = res
-                .level_for("tokio_reactor", LevelFilter::Info)
-                .level_for("mio", LevelFilter::Info);
-
-            // Conversely, when the main log level is at least debug, disable
-            // limitations on logging normally in place for some modules.
-            res = res
-                // .level_for("rumqttd", self.log_level.0)
-                .level_for("tracing::span", self.log_level.0);
-        }
-
-        res
-    }
-}
-
-impl Default for LogConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-//------------ LogTarget -----------------------------------------------------
-
-/// The target to log to.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-pub enum LogTarget {
-    /// Use the system default.
-    #[default]
-    #[serde(rename = "default")]
-    Default,
-
-    /// Syslog.
-    #[cfg(unix)]
-    #[serde(rename = "syslog")]
-    Syslog,
-
-    /// Stderr.
-    #[serde(rename = "stderr")]
-    Stderr,
-
-    /// A file.
-    #[serde(rename = "file")]
-    File,
-}
-
-//------------ LogFacility ---------------------------------------------------
-
-#[cfg(unix)]
-#[derive(Deserialize)]
-#[serde(try_from = "String")]
-pub struct LogFacility(syslog::Facility);
-
-#[cfg(unix)]
-impl Default for LogFacility {
-    fn default() -> Self {
-        LogFacility(syslog::Facility::LOG_DAEMON)
-    }
-}
-
-#[cfg(unix)]
-impl TryFrom<String> for LogFacility {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        syslog::Facility::from_str(&value)
-            .map(LogFacility)
-            .map_err(|_| format!("unknown syslog facility {}", &value))
-    }
-}
-
-#[cfg(unix)]
-impl FromStr for LogFacility {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        syslog::Facility::from_str(s)
-            .map(LogFacility)
-            .map_err(|_| "unknown facility")
-    }
-}
-
-//------------ LogFilter -----------------------------------------------------
-
-#[derive(Debug, Deserialize, PartialEq)]
-#[serde(try_from = "String")]
-pub struct LogFilter(log::LevelFilter);
-
-impl LogFilter {
-    pub fn increase(&mut self) {
-        use log::LevelFilter::*;
-
-        self.0 = match self.0 {
-            Off => Error,
-            Error => Warn,
-            Warn => Info,
-            Info => Debug,
-            Debug => Trace,
-            Trace => Trace,
-        }
-    }
-
-    pub fn decrease(&mut self) {
-        use log::LevelFilter::*;
-
-        self.0 = match self.0 {
-            Off => Off,
-            Error => Off,
-            Warn => Error,
-            Info => Warn,
-            Debug => Info,
-            Trace => Debug,
-        }
-    }
-}
-
-impl Default for LogFilter {
-    fn default() -> Self {
-        LogFilter(log::LevelFilter::Info)
-    }
-}
-
-impl TryFrom<String> for LogFilter {
-    type Error = log::ParseLevelError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        log::LevelFilter::from_str(&value).map(LogFilter)
-    }
-}
-
-//------------ Terminate -----------------------------------------------------
-
-#[derive(Clone, Copy, Debug)]
-pub enum TerminateReason {
-    Failed(i32),
-    Normal,
-}
-
-/// Something happened that means the application should terminate.
+/// Cascade's logger.
 ///
-/// This is a marker type that can be used in results to indicate that if an
-/// error happend, it has been logged and doesn’t need further treatment.
+/// This is implemented with [`tracing_subscriber`].  The constructed logger is
+/// set as the global default.  The subscriber is structured thusly:
 ///
-/// It can also be used to trigger abort for other reasons, e.g. orderly exit
-/// on demand.
-#[derive(Clone, Copy, Debug)]
-pub struct Terminate(TerminateReason);
-
-impl Terminate {
-    pub fn normal() -> Self {
-        Self(TerminateReason::Normal)
-    }
-
-    pub fn error() -> Self {
-        Self(TerminateReason::Failed(1))
-    }
-
-    pub fn other(exit_code: i32) -> Self {
-        assert_ne!(exit_code, 0);
-        Self(TerminateReason::Failed(exit_code))
-    }
-
-    pub fn reason(&self) -> TerminateReason {
-        self.0
-    }
-
-    pub fn exit_code(&self) -> i32 {
-        match self.reason() {
-            TerminateReason::Failed(n) => n,
-            TerminateReason::Normal => 0,
-        }
-    }
-}
-
-//------------ ExitError -----------------------------------------------------
-
-/// An error happened that should cause the process to exit.
+/// - A [`Filter`] that decides whether something should be logged.  It is
+///   wrapped in [`reload::Layer`] so it can be reloaded dynamically.
+///
+/// - For standard output/error and file targets: a [`fmt::Layer`] that
+///   prettifies log messages appropriately (including conditional colorization)
+///   and writes text to the appropriate I/O sink.
+///
+/// - For syslog: a [`Syslog`] layer formats log lines as per RFC 3164 and
+///   writes them to a UNIX socket.
+///
+/// - A [`tracing_subscriber::Registry`] wraps the whole thing together and
+///   handles [`tracing`]-specific bookkeeping (e.g. tracking spans).
 #[derive(Debug)]
-pub struct ExitError;
+pub struct Logger {
+    /// A handle for dynamically changing what is logged.
+    handle: reload::Handle<Filter, Registry>,
+}
 
-impl From<Terminate> for ExitError {
-    fn from(terminate: Terminate) -> ExitError {
-        match terminate.reason() {
-            TerminateReason::Failed(_) => ExitError,
-            TerminateReason::Normal => unreachable!(),
+impl Logger {
+    /// Launch the Cascade logger.
+    ///
+    /// The logger will be configured as per the provided [`LoggingConfig`]
+    /// (which does not include dynamic runtime changes, since this should be
+    /// called during initialization).
+    ///
+    /// ## Panics
+    ///
+    /// Panics if a global [`tracing`] logger has been set already.
+    pub fn launch(config: &LoggingConfig) -> Result<Self, LaunchError> {
+        // Construct the filter that decides how data will be logged.
+        let (filter, handle) = reload::Layer::new(Filter::new(config));
+
+        // Construct the writer layer.
+        //
+        // Different targets produce different writer types here, so code can't
+        // be shared after this split.
+        match config.target.value() {
+            LogTarget::File(path) => tracing_subscriber::registry()
+                .with(filter)
+                .with(new_file_writer(path)?)
+                .init(),
+
+            LogTarget::Stdout => tracing_subscriber::registry()
+                .with(filter)
+                .with(new_stdout_writer())
+                .init(),
+
+            LogTarget::Stderr => tracing_subscriber::registry()
+                .with(filter)
+                .with(new_stderr_writer())
+                .init(),
+
+            #[cfg(unix)]
+            LogTarget::Syslog => tracing_subscriber::registry()
+                .with(filter)
+                .with(new_syslog_writer()?)
+                .init(),
+        }
+
+        Ok(Self { handle })
+    }
+
+    /// Apply a runtime change to the logging configuration.
+    pub fn apply(&self, rt_config: &RuntimeConfig) {
+        self.handle
+            .modify(|filter| filter.update(rt_config))
+            .unwrap_or_else(|err| panic!("the logger panicked: {err}"));
+    }
+}
+
+//----------- Filter -----------------------------------------------------------
+
+/// A [`tracing_subscriber`] layer that decides which logs to output.
+#[derive(Debug)]
+struct Filter {
+    /// The currently set log level.
+    level: tracing::Level,
+
+    /// Targets for which to enable trace logging.
+    trace_targets: foldhash::HashSet<Box<str>>,
+}
+
+impl Filter {
+    /// Construct a new [`Filter`].
+    pub fn new(config: &LoggingConfig) -> Self {
+        Self {
+            level: (*config.level.value()).into(),
+            trace_targets: config.trace_targets.value().clone(),
+        }
+    }
+
+    /// Update this [`Filter`] based on runtime configuration.
+    pub fn update(&mut self, rt_config: &RuntimeConfig) {
+        if let Some(level) = rt_config.log_level {
+            self.level = level.into();
+        }
+        if let Some(trace_targets) = &rt_config.log_trace_targets {
+            self.trace_targets = trace_targets.clone();
         }
     }
 }
 
-impl From<ExitError> for Terminate {
-    fn from(_: ExitError) -> Self {
-        Terminate::error()
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Filter {
+    fn enabled(
+        &self,
+        metadata: &tracing::Metadata<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) -> bool {
+        self.level >= *metadata.level() || self.trace_targets.contains(metadata.target())
+    }
+}
+
+//----------- Writer initialization --------------------------------------------
+
+/// Construct a writer layer for targeting a file.
+fn new_file_writer<S>(path: &Utf8Path) -> Result<impl tracing_subscriber::Layer<S>, LaunchError>
+where
+    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open(path)
+        .map_err(|error| LaunchError::Open {
+            path: path.into(),
+            error,
+        })?;
+
+    let layer = tracing_subscriber::fmt::Layer::new()
+        .with_ansi(false)
+        .with_writer(file);
+
+    Ok(layer)
+}
+
+/// Construct a writer layer for targeting standard output.
+fn new_stdout_writer<S>() -> impl tracing_subscriber::Layer<S>
+where
+    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    // Override 'tracing_subscriber's simple colorization detector with
+    // 'supports_color', which is far more thorough.
+    tracing_subscriber::fmt::Layer::new()
+        .with_ansi(supports_color::on(supports_color::Stream::Stdout).is_some())
+        .with_writer(std::io::stdout)
+}
+
+/// Construct a writer layer for targeting a file.
+fn new_stderr_writer<S>() -> impl tracing_subscriber::Layer<S>
+where
+    S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    // Override 'tracing_subscriber's simple colorization detector with
+    // 'supports_color', which is far more thorough.
+    tracing_subscriber::fmt::Layer::new()
+        .with_ansi(supports_color::on(supports_color::Stream::Stdout).is_some())
+        .with_writer(std::io::stdout)
+}
+
+/// Construct a new writer layer for targeting UNIX syslog.
+#[cfg(unix)]
+fn new_syslog_writer<S: Subscriber>() -> Result<impl tracing_subscriber::Layer<S>, LaunchError> {
+    self::unix::Syslog::init().map_err(LaunchError::Syslog)
+}
+
+//----------- unix -------------------------------------------------------------
+
+#[cfg(unix)]
+mod unix {
+    use std::{
+        ffi::OsStr,
+        fmt,
+        io::{self, Write},
+        net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket},
+        os::unix::{ffi::OsStrExt, net::UnixDatagram},
+        path::Path,
+        time::Duration,
+    };
+
+    use tracing::{field::Field, Subscriber};
+
+    use crate::eprintln;
+
+    //------- Syslog -----------------------------------------------------------
+
+    /// A [`tracing_subscriber`] writer layer for syslog.
+    ///
+    /// This will format syslog messages as per [RFC 3164].
+    //
+    /// [RFC 3164]: https://www.rfc-editor.org/rfc/rfc3164
+    #[derive(Debug)]
+    pub struct Syslog {
+        /// What type of program is logging the message.
+        pub facility: u8,
+
+        /// The hostname of the system.
+        pub hostname: Box<OsStr>,
+
+        /// The name of the application.
+        pub app_name: Box<OsStr>,
+
+        /// The process ID.
+        pub pid: u32,
+
+        /// How to communicate with the syslog daemon.
+        pub transport: Transport,
+    }
+
+    impl Syslog {
+        /// Initialize a [`Syslog`] writer.
+        pub fn init() -> Result<Self, InitError> {
+            // 1 = LOG_USER; "generic user-level messages"
+            //
+            // TODO: Use 'LOG_DAEMON' since Cascade is a daemon?
+            let facility = 1;
+
+            // Determine the system hostname.
+            let hostname = hostname::get()
+                .map_err(InitError::HostName)?
+                .into_boxed_os_str();
+
+            // Determine a "name" for the current application.
+            //
+            // Use the file name of the current executable, in case the user
+            // has named it something relevant to themselves.  If the path we
+            // find doesn't have a file name (for some weird reason), just use
+            // the whole path.
+            let app_name = std::env::current_exe().map_err(InitError::AppName)?;
+            let app_name = app_name
+                .file_name()
+                .map(|name| name.into())
+                .unwrap_or_else(|| app_name.into_os_string().into_boxed_os_str());
+
+            let pid = std::process::id();
+
+            // Connect to some transport.
+            let transport = Transport::connect().map_err(InitError::Connect)?;
+
+            Ok(Self {
+                facility,
+                hostname,
+                app_name,
+                pid,
+                transport,
+            })
+        }
+    }
+
+    impl<S: Subscriber> tracing_subscriber::Layer<S> for Syslog {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            // Map tracing levels to syslog levels.
+            let severity = match *event.metadata().level() {
+                tracing::Level::ERROR => 3,
+                tracing::Level::WARN => 4,
+                tracing::Level::INFO => 6,
+                tracing::Level::DEBUG | tracing::Level::TRACE => 7,
+            };
+
+            // RFC 3164 says that the priority value is calculated by first
+            // multiplying the Facility number by 8 and then adding the
+            // numerical value of the severity.
+            let prival = self.facility * 8 + severity;
+
+            // The timestamp must be in "Mmm dd hh:mm:ss" format in local
+            // time. Important is also that the day part must be padded to 2
+            // characters with a space.
+            let timestamp = jiff::Zoned::now().strftime("%b %e %T");
+
+            // TODO: Use a thread-local buffer?
+            let mut buf = Vec::new();
+
+            // This is the format defined by RFC 3164.
+            write!(buf, "<{prival}>{timestamp} ").expect("'Vec::write()' never fails");
+            buf.extend_from_slice(self.hostname.as_bytes());
+            buf.push(b' ');
+            buf.extend_from_slice(self.app_name.as_bytes());
+            write!(buf, "[{}]: ", self.pid).expect("'Vec::write()' never fails");
+
+            // Extract the primary message within the event.
+            //
+            // TODO: The interface 'tracing' gives us is quite frustrating, it
+            // would be nice to help them with alternatives.
+            let mut visitor = Visitor(&mut buf);
+            event.record(&mut visitor);
+            buf.push(b'\n');
+
+            match self.transport.send(&buf) {
+                Ok(()) => {}
+                Err(error) => {
+                    // TODO: Report into a proper fallback logger.
+                    eprintln!("Logging failed: {error:?}");
+                }
+            }
+        }
+    }
+
+    struct Visitor<'a>(&'a mut Vec<u8>);
+
+    impl tracing::field::Visit for Visitor<'_> {
+        fn record_str(&mut self, field: &Field, value: &str) {
+            if field.name() != "message" {
+                return;
+            }
+
+            self.0.extend_from_slice(value.as_bytes());
+        }
+
+        fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+            if field.name() != "message" {
+                return;
+            }
+
+            write!(self.0, "{value:?}").expect("'Vec::write()' never fails");
+        }
+    }
+
+    //------- Transport --------------------------------------------------------
+
+    /// How to communicate with a syslog daemon.
+    #[derive(Debug)]
+    pub enum Transport {
+        Unix(UnixDatagram),
+        Tcp(TcpStream),
+        Udp(UdpSocket),
+    }
+
+    /// A method by which to communicate with a syslog daemon.
+    #[derive(Clone, Debug)]
+    pub enum Port<P: AsRef<Path>> {
+        Unix(P),
+        Udp(SocketAddr),
+        Tcp(SocketAddr),
+    }
+
+    impl Transport {
+        /// Connect to the syslog daemon.
+        pub fn connect() -> Result<Self, ConnectError> {
+            // Standard ports where we expect to find the daemon.
+            let ports = [
+                Port::Unix("/dev/log"),
+                Port::Unix("/var/run/syslog"),
+                Port::Unix("/var/run/log"),
+                Port::Tcp((Ipv6Addr::LOCALHOST, 601).into()),
+                Port::Tcp((Ipv4Addr::LOCALHOST, 601).into()),
+                Port::Udp((Ipv6Addr::LOCALHOST, 514).into()),
+                Port::Udp((Ipv4Addr::LOCALHOST, 514).into()),
+            ];
+
+            // Keep track of how every attempt fails.
+            let mut attempts = Vec::new();
+            for port in ports {
+                match Self::connect_to(&port) {
+                    Ok(this) => return Ok(this),
+                    Err(error) => attempts.push((port, error)),
+                }
+            }
+
+            // We couldn't find a single way to connect to the syslog daemon.
+            // Report the error we encountered with each of our attempts.
+            Err(ConnectError {
+                attempts: attempts.into_boxed_slice(),
+            })
+        }
+
+        /// Connect to a syslog daemon via a particular port.
+        pub fn connect_to<P: AsRef<Path>>(port: &Port<P>) -> io::Result<Self> {
+            match port {
+                Port::Unix(path) => {
+                    let socket = UnixDatagram::unbound()?;
+                    socket.connect(path)?;
+                    Ok(Self::Unix(socket))
+                }
+                Port::Tcp(addr) => {
+                    let socket = TcpStream::connect_timeout(addr, Duration::from_secs(1))?;
+                    socket.set_nodelay(true)?;
+                    Ok(Self::Tcp(socket))
+                }
+                Port::Udp(SocketAddr::V4(addr)) => {
+                    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+                    socket.connect(addr)?;
+                    Ok(Self::Udp(socket))
+                }
+                Port::Udp(SocketAddr::V6(addr)) => {
+                    let socket = UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0))?;
+                    socket.connect(addr)?;
+                    Ok(Self::Udp(socket))
+                }
+            }
+        }
+
+        /// Send a packet to the syslog daemon.
+        fn send(&self, buf: &[u8]) -> io::Result<()> {
+            match self {
+                Transport::Unix(s) => {
+                    s.send(buf)?;
+                }
+                Transport::Tcp(s) => {
+                    // NOTE: We used 'TcpStream::set_nodelay()'.
+                    let mut s = s;
+                    s.write_all(buf)?;
+                }
+                Transport::Udp(s) => {
+                    s.send(buf)?;
+                }
+            }
+            Ok(())
+        }
+    }
+
+    //======== Errors ==========================================================
+
+    /// An error in [`Syslog::init()`].
+    #[derive(Debug)]
+    pub enum InitError {
+        AppName(io::Error),
+        HostName(io::Error),
+        Connect(ConnectError),
+    }
+
+    /// An error in connecting to a syslog daemon.
+    #[derive(Debug)]
+    pub struct ConnectError<P: AsRef<Path> = &'static str> {
+        /// Attempts to connect to different ports.
+        pub attempts: Box<[(Port<P>, io::Error)]>,
+    }
+}
+
+//----------- LaunchError ------------------------------------------------------
+
+/// An error in [`Logger::launch()`].
+#[derive(Debug)]
+pub enum LaunchError {
+    /// The target file could not be opened.
+    Open {
+        /// The path to the file.
+        path: Box<Utf8Path>,
+
+        /// The underlying I/O error.
+        error: std::io::Error,
+    },
+
+    /// The syslog writer could not be initialized.
+    #[cfg(unix)]
+    Syslog(unix::InitError),
+}
+
+//------------------------------------------------------------------------------
+
+impl From<LogLevel> for tracing::Level {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Trace => tracing::Level::TRACE,
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Warning => tracing::Level::WARN,
+            LogLevel::Error => tracing::Level::ERROR,
+            LogLevel::Critical => tracing::Level::ERROR,
+        }
     }
 }

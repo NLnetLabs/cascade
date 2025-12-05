@@ -1,17 +1,26 @@
 [package]
-name = "nameshed"
-version = "0.1.0"
+name = "cascade"
+default-run = "cascaded"
+description = "friendly DNSSEC signing solution: sensible defaults, controllability, observability and flexibility"
+version = "0.1.0-alpha5"
+homepage = "https://nlnetlabs.nl/projects/cascade"
+documentation = "https://cascade.docs.nlnetlabs.nl"
 edition = "2021"
+license = "BSD-3-Clause"
+exclude = [".github", ".gitignore"]
+readme = "README.md"
+rust-version = "1.84"
+
+[[bin]]
+name = "cascaded"
+path = "src/main.rs"
 
 [dependencies]
-arc-swap       = "1.7.0"
-bytes	       = "1.0"
-chrono         = "0.4.11"
-clap           = { version = "4.4", features = [ "cargo", "wrap_help" ] }
-dirs           = "4.0"
-domain         = { git = "https://github.com/NLnetLabs/domain", branch = "aryas-nameshed-patches", features = [
-    "std",
-    "kmip",
+arc-swap           = "1.7.0"
+bytes              = "1.0"
+clap               = { version = "4.5", features = [ "cargo", "wrap_help", "derive" ] }
+daemonbase         = "0.1.4"
+domain             = { git = "https://github.com/NLnetLabs/domain", branch = "patches-for-nameshed-prototype", features = [
     "openssl",
     "tokio-stream",
     "tsig",
@@ -23,47 +32,55 @@ domain         = { git = "https://github.com/NLnetLabs/domain", branch = "aryas-
     "unstable-sign",
     "unstable-zonetree",
 ] }
-fern           = "0.6.0"
-futures        = "0.3.17"
-futures-util   = "0.3"
-log            = "0.4"
-log-reroute    = "0.1.5"
-octseq         = { version = "0.5.2", default-features = false }
-parking_lot    = "0.11.2"
-tokio          = { version = "1.40", features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
-serde          = { version = "1.0", features = ["derive", "rc"] }
-toml           = "0.8"
-tokio-rustls   = { version = "0.23.4", optional = true }
-tokio-stream   = { version = "0.1.1" }
-rustls-pemfile = { version = "1.0", optional = true }
-tracing        = { version = "0.1.40" }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+futures            = "0.3.17"
+futures-util       = "0.3"
+octseq             = { version = "0.5.2", default-features = false }
+tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
+serde              = { version = "1.0", features = ["derive", "rc"] }
+toml               = "0.8"
+# Added for CLI to access HTTP API
+# `default-features = false` was copied from previous import from the Rotonda base
+reqwest            = { version = "0.12", default-features = false, features = ["http2", "json"] }
+axum               = { version = "0.8.4", default-features = false, features = ["http2", "query", "original-uri", "json", "tokio"] }
 
 # From Rotonda
-allocator-api2     = "0.2"
-assert-json-diff   = "2.0"
 async-trait        = "0.1"
-atomic_enum        = "0.2.0"
 crossbeam-utils    = "0.8"
-env_logger         = "0.10"
-flate2             = "*"
-hashbrown          = "0.14"
-# hyper              = { version = "0.14", features = ["server", "stream"] }
-layout-rs          = { version = "0.1" }
-non-empty-vec      = { version = "0.2", features = ["serde"]}
-percent-encoding   = "2.3"
-prometheus-parse   = "0.2"
-# reqwest            = { version = "0.11", default-features = false }
 serde_json         = "1.0"
 serde_with         = "3"
-smallvec           = { version = "1.11", features = ["const_generics", "const_new", "union"] }
-tokio-metrics      = { version = "0.3", default-features = false }
 url                = { version = "2.4", features = ["serde"] }
-uuid               = { version = "1.4", features = ["v4", "fast-rng"] }
-indoc              = "2.0.5"
 rayon = "1.10.0"
 
-# Nameshed contains many performance-sensitive hashmaps and is not expected to
+# Jiff is used by zone_signer for the DateCounter serial policy.
+jiff = "0.2.15"
+
+# 'ring' is used by 'domain' for various cryptographic operations.  There have
+# been issues regarding its maintenance and a different solution will be needed
+# eventually.
+ring = "0.17.0"
+
+# 'tempfile' is used to generate temporary files as part of atomic file writes.
+tempfile = "3.21.0"
+
+# Anstream can strip ansi codes for TERM=dumb and other similar situations
+anstream = "0.6.21"
+
+# tracing and tracing-subscriber provide structured and async-compatible logging
+# functionality. They are part of Tokio, a widely used and well maintained
+# ecosystem of crates.
+tracing            = { version = "0.1.40" }
+tracing-subscriber = { version = "0.3.20" }
+
+# support-color checks various environment variables and terminal settings for
+# whether ANSI escape codes should be emitted. It is also used by `anstream`
+# (and therefore `clap`).
+supports-color = "3.0.2"
+
+# `hostname` is a very popular crate to get the hostname of the current process.
+# It is maintained  by Dirkjan Ochtman.
+hostname = "0.4.1"
+
+# Cascade contains many performance-sensitive hashmaps and is not expected to
 # be accessible to attackers.  'std's default hasher, which is slow but secure
 # against HashDoS attacks, is not appropriate.  A performant, cryptographically
 # insecure hash function is needed.
@@ -79,7 +96,7 @@ rayon = "1.10.0"
 [dependencies.foldhash]
 version = "0.1.5"
 
-# Nameshed sometimes requires filesystem paths to be encoded within UTF-8 texts.
+# Cascade sometimes requires filesystem paths to be encoded within UTF-8 texts.
 # To conveniently resolve the conversion between the OS filesystem encoding and
 # UTF-8, 'camino' is used, which restricts filesystem paths to UTF-8.
 #
@@ -88,10 +105,96 @@ version = "0.1.5"
 version = "1.1.0"
 features = ["serde1"]
 
+[dev-dependencies]
+assert-json-diff = "2.0"
+
 [target.'cfg(unix)'.dependencies]
-nix         = "0.22.0"
-syslog      = "6.1"
+syslog = "7.0"
 
 [features]
 default = []
-tls = ["tokio-rustls", "rustls-pemfile"]
+
+[profile.release]
+panic = "abort"
+
+[package.metadata.deb]
+assets = [
+["target/release/cascade", "usr/bin/", "755"],
+["target/release/cascaded", "usr/bin/","755"],
+["README.md","usr/share/doc/cascade/","644"],
+["doc/manual/build/man/cascade.1", "usr/share/man/man1/cascade.1", "644"],
+["doc/manual/build/man/cascade-config.1", "usr/share/man/man1/cascade-config.1", "644"],
+["doc/manual/build/man/cascade-health.1", "usr/share/man/man1/cascade-health.1", "644"],
+["doc/manual/build/man/cascade-hsm.1", "usr/share/man/man1/cascade-hsm.1", "644"],
+["doc/manual/build/man/cascade-keyset.1", "usr/share/man/man1/cascade-keyset.1", "644"],
+["doc/manual/build/man/cascade-policy.1", "usr/share/man/man1/cascade-policy.1", "644"],
+["doc/manual/build/man/cascade-status.1", "usr/share/man/man1/cascade-status.1", "644"],
+["doc/manual/build/man/cascade-template.1", "usr/share/man/man1/cascade-template.1", "644"],
+["doc/manual/build/man/cascade-zone.1", "usr/share/man/man1/cascade-zone.1", "644"],
+["doc/manual/build/man/cascaded.1", "usr/share/man/man1/cascaded.1", "644"],
+["doc/manual/build/man/cascaded-config.toml.5", "usr/share/man/man5/cascaded-config.toml.5", "644"],
+["doc/manual/build/man/cascaded-policy.toml.5", "usr/share/man/man5/cascaded-policy.toml.5", "644"],
+["etc/config.system.toml", "etc/cascade/config.toml", "644"],
+["pkg/common/service.preset","usr/lib/systemd/service-preset/50-cascaded.preset", "644"],
+]
+name = "cascade"
+maintainer = "NLnet Labs <cascade@nlnetlabs.nl>"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+Cascade is a friendly DNSSEC signing solution, offering sensible defaults,
+controllability, observability and flexibility.
+"""
+depends = "$auto, adduser, cascade-dnst"
+recommends = "kmip2pkcs11"
+section = "net"
+priority = "optional"
+maintainer-scripts = "pkg/debian"
+changelog = "target/debian/changelog" # this will be generated by the pkg workflow
+copyright = "Copyright (c) 2025, NLnet Labs. All rights reserved."
+conf-files = ["/etc/cascade/config.toml"]
+systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = true } # usr-merge is needed for Bookworm/Noble and later
+
+[package.metadata.deb.variants.debian-buster]
+systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb.variants.debian-bullseye]
+systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb.variants.ubuntu-focal]
+systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.deb.variants.ubuntu-jammy]
+systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
+
+[package.metadata.generate-rpm]
+# Use a shorter summary as rpmlint complains with E: summary-too-long.
+# Use an initial capital letter to satisfy rpmlinlt which complains with W: summary-not-capitalized
+summary = "Friendly DNSSEC signing solution"
+assets = [
+{ source = "target/release/cascade", dest = "/usr/bin/cascade", mode = "755" },
+{ source = "target/release/cascaded", dest = "/usr/bin/cascaded", mode = "755" },
+{ source = "target/rpm/cascaded.service", dest = "/usr/lib/systemd/system/cascaded.service", mode = "644" },
+{ source = "target/rpm/cascaded.socket", dest = "/usr/lib/systemd/system/cascaded.socket", mode = "644" },
+{ source = "doc/manual/build/man/cascade.1", dest = "/usr/share/man/man1/cascade.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-config.1", dest = "/usr/share/man/man1/cascade-config.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-health.1", dest = "/usr/share/man/man1/cascade-health.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-hsm.1", dest = "/usr/share/man/man1/cascade-hsm.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-keyset.1", dest = "/usr/share/man/man1/cascade-keyset.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-policy.1", dest = "/usr/share/man/man1/cascade-policy.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-status.1", dest = "/usr/share/man/man1/cascade-status.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-template.1", dest = "/usr/share/man/man1/cascade-template.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascade-zone.1", dest = "/usr/share/man/man1/cascade-zone.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascaded.1", dest = "/usr/share/man/man1/cascaded.1", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascaded-config.toml.5", dest = "/usr/share/man/man5/cascaded-config.toml.5", mode = "644", doc = true},
+{ source = "doc/manual/build/man/cascaded-policy.toml.5", dest = "/usr/share/man/man5/cascaded-policy.toml.5", mode = "644", doc = true},
+{ source = "etc/config.system.toml", dest = "/etc/cascade/config.toml", mode = "644", config = true },
+{ source = "pkg/common/service.preset", dest = "/usr/lib/systemd/system-preset/50-cascaded.preset", mode = "644" },
+]
+
+# ensure that the useradd tools are present by installing their respective packages
+[package.metadata.generate-rpm.requires]
+shadow-utils = "*"
+cascade-dnst = "*"
+
+[package.metadata.generate-rpm.recommends]
+kmip2pkcs11 = "*"

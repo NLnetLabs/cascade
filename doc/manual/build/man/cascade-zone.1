@@ -1,0 +1,231 @@
+.\" Man page generated from reStructuredText.
+.
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.TH "CASCADE-ZONE" "1" "Nov 21, 2025" "0.1.0-alpha5" "Cascade"
+.SH NAME
+cascade-zone \- Manage zones
+.SH SYNOPSIS
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%remove\fP \fB<NAME>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%list\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reload\fP \fB<NAME>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%history\fP \fB<NAME>\fP
+.SH DESCRIPTION
+.sp
+Manage Cascade\(aqs zones.
+.SH OPTIONS
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
+.UNINDENT
+.SH COMMANDS
+.INDENT 0.0
+.TP
+.B add
+Register a new zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B remove
+Remove a zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B list
+List registered zones.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B reload
+Reload a zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B approve
+Approve a zone being reviewed.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B reject
+Reject a zone being reviewed.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B status
+Get the status of a single zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B history
+Get the history of a single zone.
+.UNINDENT
+.SH OPTIONS FOR ZONE ADD
+.INDENT 0.0
+.TP
+.B \-\-source <SOURCE>
+The zone source can be an IP address (with or without port, defaults to port
+53) or a file path.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-policy <POLICY>
+Policy to use for this zone.
+.sp
+Note: At present to use a HSM with a zone the HSM must exist and be
+configured in the policy used by the zone when the zone is added. It is not
+possible to change it later in this alpha version of Cascade.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-import\-public\-key <IMPORT_PUBLIC_KEY>
+Import a public key to be included in the DNSKEY RRset.
+.sp
+This needs to be a file path accessible by the Cascade daemon.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-import\-ksk\-file <IMPORT_KSK_FILE>
+Import a key pair as a KSK.
+.sp
+The file path needs to be the public key file of the KSK. The private key
+file name is derived from the public key file.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-import\-zsk\-file <IMPORT_ZSK_FILE>
+Import a key pair as a ZSK.
+.sp
+The file path needs to be the public key file of the ZSK. The private key
+file name is derived from the public key file.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-import\-csk\-file <IMPORT_CSK_FILE>
+Import a key pair as a CSK.
+.sp
+The file path needs to be the public key file of the CSK. The private key
+file name is derived from the public key file.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-import\-ksk\-kmip <server> <public_id> <private_id> <algorithm> <flags>
+Import a KSK from an HSM.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-import\-zsk\-kmip <server> <public_id> <private_id> <algorithm> <flags>
+Import a ZSK from an HSM.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-import\-csk\-kmip <server> <public_id> <private_id> <algorithm> <flags>
+Import a CSK from an HSM.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
+.UNINDENT
+.SH OPTIONS FOR ZONE APPROVE
+.INDENT 0.0
+.TP
+.B <\-\-unsigned|\-\-signed>
+Whether the zone to approve is at the unsigned or signed review stage.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to approve.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <SERIAL>
+The serial number of the zone to approve.
+.UNINDENT
+.SH OPTIONS FOR ZONE REJECT
+.INDENT 0.0
+.TP
+.B <\-\-unsigned|\-\-signed>
+Whether the zone to reject is at the unsigned or signed review stage.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to reject.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <SERIAL>
+The serial number of the zone to reject.
+.UNINDENT
+.SH OPTIONS FOR ZONE STATUS
+.INDENT 0.0
+.TP
+.B \-\-detailed
+Print detailed information about the zone, including a zone\(aqs DNSSEC key
+identifiers in use, as well as the new DNSKEY records during key rolls.
+.UNINDENT
+.SH SEE ALSO
+.INDENT 0.0
+.TP
+.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
+Cascade online documentation
+.TP
+\fBcascade\fP(1)
+\fI\%Cascade CLI\fP
+.TP
+\fBcascaded\fP(1)
+\fI\%Cascade Daemon\fP
+.TP
+\fBcascaded\-config.toml\fP(5)
+\fI\%Configuration File Format\fP
+.TP
+\fBcascaded\-policy.toml\fP(5)
+\fI\%Policy File Format\fP
+.UNINDENT
+.SH AUTHOR
+NLnet Labs <cascade@nlnetlabs.nl>
+.SH COPYRIGHT
+2025–2025, NLnet Labs
+.\" Generated by docutils manpage writer.
+.

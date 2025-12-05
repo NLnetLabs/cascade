@@ -4,13 +4,16 @@ use std::fmt;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
-use super::{Config, LogLevel, LogTarget, SettingSource};
+use super::{Config, LogLevel, LogTarget};
 
 //----------- EnvSpec ----------------------------------------------------------
 
 /// Configuration-related environment variables.
 #[derive(Clone, Debug)]
 pub struct EnvSpec {
+    /// The state file to load.
+    pub state: Option<Box<Utf8Path>>,
+
     /// The configuration file to load.
     pub config: Option<Box<Utf8Path>>,
 
@@ -19,6 +22,9 @@ pub struct EnvSpec {
 
     /// The target of log messages.
     pub log_target: Option<LogTargetSpec>,
+
+    /// A set of targets to trace.
+    pub log_trace_targets: Option<foldhash::HashSet<Box<str>>>,
 }
 
 impl EnvSpec {
@@ -30,10 +36,13 @@ impl EnvSpec {
                 .transpose()
         }
 
-        let config_path =
-            var("NAMESHED_CONFIG_PATH")?.map(|path| Utf8PathBuf::from(path).into_boxed_path());
+        let state =
+            var("CASCADE_STATE_PATH")?.map(|path| Utf8PathBuf::from(path).into_boxed_path());
 
-        let log_level = var("NAMESHED_LOG_LEVEL")?
+        let config =
+            var("CASCADE_CONFIG_PATH")?.map(|path| Utf8PathBuf::from(path).into_boxed_path());
+
+        let log_level = var("CASCADE_LOG_LEVEL")?
             .map(|value| match &*value {
                 "trace" => Ok(LogLevel::Trace),
                 "debug" => Ok(LogLevel::Debug),
@@ -47,24 +56,28 @@ impl EnvSpec {
             })
             .transpose()?;
 
-        let log = var("NAMESHED_LOG")?.map(LogTargetSpec::parse).transpose()?;
+        let log_target = var("CASCADE_LOG")?.map(LogTargetSpec::parse).transpose()?;
+
+        let log_trace_targets = var("CASCADE_LOG_TRACE_TARGETS")?
+            .map(|value| value.split(",").map(|s| s.into()).collect());
 
         Ok(Self {
-            config: config_path,
+            state,
+            config,
             log_level,
-            log_target: log,
+            log_target,
+            log_trace_targets,
         })
     }
 
     /// Merge this into a [`Config`].
     pub fn merge(self, config: &mut Config) {
         let daemon = &mut config.daemon;
-        let source = SettingSource::Env;
-        daemon.log_level.merge_value(self.log_level, source);
-        daemon
-            .log_target
-            .merge_value(self.log_target.map(|t| t.build()), source);
-        daemon.config_file.merge_value(self.config, source);
+        daemon.state_file.env = self.state;
+        daemon.logging.level.env = self.log_level;
+        daemon.logging.target.env = self.log_target.map(|t| t.build());
+        daemon.logging.trace_targets.env = self.log_trace_targets;
+        daemon.config_file.env = self.config;
     }
 }
 
@@ -80,6 +93,12 @@ pub enum LogTargetSpec {
 
     /// Write logs to the UNIX syslog.
     Syslog,
+
+    /// Write logs to stdout.
+    Stdout,
+
+    /// Write logs to stderr.
+    Stderr,
 }
 
 //--- Parsing
@@ -87,7 +106,11 @@ pub enum LogTargetSpec {
 impl LogTargetSpec {
     /// Parse this value from an owned string.
     pub fn parse(s: String) -> Result<Self, EnvError> {
-        if let Some(s) = s.strip_prefix("file:") {
+        if s == "stdout" {
+            Ok(Self::Stdout)
+        } else if s == "stderr" {
+            Ok(Self::Stderr)
+        } else if let Some(s) = s.strip_prefix("file:") {
             let path = <&Utf8Path>::from(s);
             Ok(Self::File(path.into()))
         } else if s == "syslog" {
@@ -106,6 +129,8 @@ impl LogTargetSpec {
         match self {
             Self::File(path) => LogTarget::File(path),
             Self::Syslog => LogTarget::Syslog,
+            Self::Stdout => LogTarget::Stdout,
+            Self::Stderr => LogTarget::Stderr,
         }
     }
 }
@@ -143,13 +168,13 @@ impl fmt::Display for EnvError {
             EnvError::InvalidLogLevel { value } => {
                 write!(
                     f,
-                    "'$NAMESHED_LOG_LEVEL' ({value:?}) is not a valid log level"
+                    "'$CASCADE_LOG_LEVEL' ({value:?}) is not a valid log level"
                 )
             }
             EnvError::InvalidLogTarget { value } => {
                 write!(
                     f,
-                    "'$NAMESHED_LOG' ({value:?}) is not a valid logging target"
+                    "'$CASCADE_LOG' ({value:?}) is not a valid logging target [possible values: 'stdout', 'stderr', 'file:<PATH>', 'syslog']"
                 )
             }
         }

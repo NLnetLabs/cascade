@@ -1,1 +1,5 @@
 /target
+/local
+.vscode/
+.DS_Store
+Session.vim

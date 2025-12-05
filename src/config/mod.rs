@@ -1,10 +1,14 @@
-//! Configuring Nameshed.
+//! Configuring Cascade.
 //!
-//! As per convention, Nameshed is configured from three sources (from least to
+//! As per convention, Cascade is configured from three sources (from least to
 //! most specific): configuration files, environment variables, and command-line
 //! arguments.  This module defines and collects together these sources.
 
-use std::{fmt, net::SocketAddr};
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    net::SocketAddr,
+};
 
 use camino::Utf8Path;
 
@@ -14,9 +18,31 @@ pub mod file;
 
 //----------- Config -----------------------------------------------------------
 
-/// Configuration for Nameshed.
+/// Configuration for Cascade.
+///
+/// These details are set when Cascade starts up, and remain immutable while it
+/// is running.  See [`RuntimeConfig`] for configuration that can change while
+/// Cascade is running.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
+    /// The directory storing policy files.
+    pub policy_dir: Box<Utf8Path>,
+
+    /// The directory storing zone state files.
+    pub zone_state_dir: Box<Utf8Path>,
+
+    /// The file storing TSIG keys.
+    pub tsig_store_path: Box<Utf8Path>,
+
+    /// Path to the dnst binary that Cascade should use.
+    pub dnst_binary_path: Box<Utf8Path>,
+
+    /// Path to the directory where the keys should be stored.
+    pub keys_dir: Box<Utf8Path>,
+
+    /// Remote control configuration.
+    pub remote_control: RemoteControlConfig,
+
     /// Daemon-related configuration.
     pub daemon: DaemonConfig,
 
@@ -31,9 +57,37 @@ pub struct Config {
 
     /// The configuration of the zone server.
     pub server: ServerConfig,
+
+    /// The file storing KMIP server credentials.
+    pub kmip_credentials_store_path: Box<Utf8Path>,
+
+    /// The directory storing KMIP server state.
+    pub kmip_server_state_dir: Box<Utf8Path>,
 }
 
-//--- Processing
+//--- Defaults
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            policy_dir: "/etc/cascade/policies".into(),
+            zone_state_dir: "/var/lib/cascade/zone-state".into(),
+            tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
+            keys_dir: "/var/lib/cascade/keys".into(),
+            dnst_binary_path: "/usr/libexec/cascade/cascade-dnst".into(),
+            kmip_credentials_store_path: "/var/lib/cascade/kmip/credentials.db".into(),
+            kmip_server_state_dir: "/var/lib/cascade/kmip".into(),
+            remote_control: Default::default(),
+            daemon: Default::default(),
+            loader: Default::default(),
+            signer: Default::default(),
+            key_manager: Default::default(),
+            server: Default::default(),
+        }
+    }
+}
+
+//--- Initialization
 
 impl Config {
     /// Set up a [`clap::Command`] with config-related arguments.
@@ -41,67 +95,71 @@ impl Config {
         args::ArgsSpec::setup(cmd)
     }
 
-    /// Process all configuration sources.
-    pub fn process(cli_matches: &clap::ArgMatches) -> Result<Self, ConfigError> {
+    /// Initialize Cascade's configuration.
+    pub fn init(cli_matches: &clap::ArgMatches) -> Result<Self, ConfigError> {
         // Process environment variables and command-line arguments.
-        let mut env = env::EnvSpec::process()?;
-        let mut args = args::ArgsSpec::process(cli_matches);
+        let env = env::EnvSpec::process()?;
+        let args = args::ArgsSpec::process(cli_matches);
 
-        // Determine the location of the configuration file.
-        let config_file = args
-            .config
-            .take()
-            .map(|path| Setting {
-                source: SettingSource::Args,
-                value: path,
-            })
-            .or(env.config.take().map(|path| Setting {
-                source: SettingSource::Env,
-                value: path,
-            }))
-            .unwrap_or(Setting {
-                source: SettingSource::Default,
-                value: "/etc/nameshed/config.toml".into(),
-            });
-
-        // Load and parse the configuration file.
-        let file = match file::FileSpec::load(&config_file.value) {
-            Ok(file) => file,
-            Err(error) => {
-                return Err(ConfigError::File {
-                    path: config_file.value,
-                    error,
-                })
-            }
-        };
-
-        // Build the configuration.
-        let mut this = file.build(config_file);
-
-        // Include data from environment variables and command-line arguments.
+        // Combine their data with the default state.
+        let mut this = Self::default();
         args.merge(&mut this);
         env.merge(&mut this);
 
-        // Return the prepared configuration.
+        // Based on the combined data, find the config file.
+        let path = this.daemon.config_file.value();
+
+        // Load the config file and integrate its data.
+        let spec = match file::Spec::load(path) {
+            Ok(spec) => spec,
+            Err(error) => {
+                return Err(ConfigError::File {
+                    path: path.clone(),
+                    error,
+                });
+            }
+        };
+        spec.parse_into(&mut this);
+
         Ok(this)
+    }
+}
+
+//----------- RemoteControlConfig --------------------------------------------
+
+/// Remote control configuration for Cascade.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteControlConfig {
+    /// Where to serve our HTTP API from, e.g. for the Cascade client.
+    ///
+    /// To support systems where it is not possible to bind simultaneously to
+    /// both IPv4 and IPv6 more than one address can be provided if needed.
+    pub servers: Vec<SocketAddr>,
+}
+
+impl Default for RemoteControlConfig {
+    fn default() -> Self {
+        Self {
+            servers: vec![SocketAddr::from(([127, 0, 0, 1], 4539))],
+        }
     }
 }
 
 //----------- DaemonConfig -----------------------------------------------------
 
-/// Daemon-related configuration for Nameshed.
+/// Daemon-related configuration for Cascade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DaemonConfig {
-    /// The minimum severity of messages to log.
-    pub log_level: Setting<LogLevel>,
+    /// The location of the state file.
+    pub state_file: Setting<Box<Utf8Path>>,
 
-    /// Where to log messages to.
-    pub log_target: Setting<LogTarget>,
+    /// Logging configuration.
+    pub logging: LoggingConfig,
 
     /// The location of the configuration file.
     pub config_file: Setting<Box<Utf8Path>>,
 
-    /// Whether Nameshed should fork on startup.
+    /// Whether Cascade should fork on startup.
     pub daemonize: Setting<bool>,
 
     /// The path to a PID file to maintain.
@@ -114,16 +172,64 @@ pub struct DaemonConfig {
     pub identity: Option<(UserId, GroupId)>,
 }
 
+impl Default for DaemonConfig {
+    fn default() -> Self {
+        Self {
+            state_file: Setting::new("/var/lib/cascade/state.db".into()),
+            logging: LoggingConfig::default(),
+            config_file: Setting::new("/etc/cascade/config.toml".into()),
+            daemonize: Setting::new(false),
+            pid_file: None,
+            chroot: None,
+            identity: None,
+        }
+    }
+}
+
+//----------- LoggingConfig ----------------------------------------------------
+
+/// Logging configuration for Cascade.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoggingConfig {
+    /// The minimum severity of messages to log.
+    pub level: Setting<LogLevel>,
+
+    /// Where to log messages to.
+    pub target: Setting<LogTarget>,
+
+    /// Targets to log trace messages for.
+    pub trace_targets: Setting<foldhash::HashSet<Box<str>>>,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: Setting::new(LogLevel::Info),
+            target: Setting::new(LogTarget::Stdout),
+            trace_targets: Setting::new(Default::default()),
+        }
+    }
+}
+
 //----------- UserId -----------------------------------------------------------
 
 /// A numeric or named user ID.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UserId {
     /// A numeric ID.
-    Numeric(nix::unistd::Uid),
+    Numeric(u32),
 
     /// A user name.
     Named(Box<str>),
+}
+
+impl std::fmt::Display for UserId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UserId::Numeric(id) => write!(f, "UID {id}"),
+            UserId::Named(name) => write!(f, "user {name}"),
+        }
+    }
 }
 
 //----------- GroupId ----------------------------------------------------------
@@ -132,19 +238,28 @@ pub enum UserId {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GroupId {
     /// A numeric ID.
-    Numeric(nix::unistd::Gid),
+    Numeric(u32),
 
     /// A group name.
     Named(Box<str>),
 }
 
+impl std::fmt::Display for GroupId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GroupId::Numeric(id) => write!(f, "GID {id}"),
+            GroupId::Named(name) => write!(f, "group {name}"),
+        }
+    }
+}
+
 //----------- LoaderConfig -----------------------------------------------------
 
 /// Configuration for the zone loader.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LoaderConfig {
     /// Where to listen for zone update notifications.
-    pub notif_listeners: Vec<SocketConfig>,
+    pub notify_listeners: Vec<SocketConfig>,
 
     /// Configuration for reviewing loaded zones.
     pub review: ReviewConfig,
@@ -153,7 +268,7 @@ pub struct LoaderConfig {
 //----------- SignerConfig -----------------------------------------------------
 
 /// Configuration for the zone signer.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SignerConfig {
     /// Configuration for reviewing signed zones.
     pub review: ReviewConfig,
@@ -162,7 +277,7 @@ pub struct SignerConfig {
 //----------- ReviewConfig -----------------------------------------------------
 
 /// Configuration for reviewing zones.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ReviewConfig {
     /// Where to serve zones for review.
     pub servers: Vec<SocketConfig>,
@@ -171,16 +286,28 @@ pub struct ReviewConfig {
 //----------- KeyManagerConfig -------------------------------------------------
 
 /// Configuration for the key manager.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeyManagerConfig {}
 
 //----------- ServerConfig -----------------------------------------------------
 
 /// Configuration for the zone server.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ServerConfig {
     /// Where to serve zones.
     pub servers: Vec<SocketConfig>,
+}
+
+//----------- RuntimeConfig ----------------------------------------------------
+
+/// Configuration that can change at runtime.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RuntimeConfig {
+    /// The log level.
+    pub log_level: Option<LogLevel>,
+
+    /// Targets to log trace messages for.
+    pub log_trace_targets: Option<foldhash::HashSet<Box<str>>>,
 }
 
 //----------- SocketConfig -----------------------------------------------------
@@ -209,6 +336,16 @@ pub enum SocketConfig {
     // TODO: TLS
 }
 
+impl SocketConfig {
+    pub fn addr(&self) -> SocketAddr {
+        match self {
+            SocketConfig::UDP { addr } => *addr,
+            SocketConfig::TCP { addr } => *addr,
+            SocketConfig::TCPUDP { addr } => *addr,
+        }
+    }
+}
+
 //----------- LogLevel ---------------------------------------------------------
 
 /// A severity level for logging.
@@ -226,10 +363,10 @@ pub enum LogLevel {
     /// Something does not appear to be correct.
     Warning,
 
-    /// Something is wrong (but Nameshed can recover).
+    /// Something is wrong (but Cascade can recover).
     Error,
 
-    /// Something is wrong and Nameshed can't function at all.
+    /// Something is wrong and Cascade can't function at all.
     Critical,
 }
 
@@ -265,43 +402,90 @@ pub enum LogTarget {
 
     /// Write logs to the UNIX syslog.
     Syslog,
+
+    /// Write logs to stdout.
+    Stdout,
+
+    /// Write logs to stderr.
+    Stderr,
 }
 
 //----------- Setting ----------------------------------------------------------
 
 /// A configured setting.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Setting<T> {
-    /// The source of the value.
-    pub source: SettingSource,
+    /// The default for the value.
+    pub default: T,
 
-    /// The underlying value.
-    pub value: T,
+    /// The setting in the configuration file, if any.
+    pub file: Option<T>,
+
+    /// The setting from environment variables, if any.
+    pub env: Option<T>,
+
+    /// The setting from command-line arguments, if any.
+    pub args: Option<T>,
 }
 
 impl<T> Setting<T> {
-    /// Merge two [`Setting`]s, keeping the highest-priority value.
-    pub fn merge(&mut self, other: Self) {
-        if self.source < other.source {
-            self.value = other.value;
+    /// Construct a new [`Setting`].
+    pub const fn new(default: T) -> Self {
+        Self {
+            default,
+            file: None,
+            env: None,
+            args: None,
         }
     }
 
-    /// Merge a [`Setting`] with a value from a fixed source.
-    pub fn merge_value(&mut self, value: Option<T>, source: SettingSource) {
-        if let Some(value) = value {
-            self.merge(Setting { source, value });
+    /// The current value.
+    pub const fn value(&self) -> &T {
+        // This is a 'const' implementation of:
+        //
+        // self.args.as_ref()
+        //     .or(self.env.as_ref())
+        //     .or(self.file.as_ref())
+        //     .unwrap_or(&self.default)
+
+        match self {
+            Self {
+                args: Some(value), ..
+            }
+            | Self {
+                env: Some(value), ..
+            }
+            | Self {
+                file: Some(value), ..
+            }
+            | Self { default: value, .. } => value,
+        }
+    }
+
+    /// The source of the current value.
+    pub const fn setting(&self) -> SettingSource {
+        match self {
+            Self { args: Some(_), .. } => SettingSource::Args,
+            Self { env: Some(_), .. } => SettingSource::Env,
+            Self { file: Some(_), .. } => SettingSource::File,
+            Self { default: _, .. } => SettingSource::Default,
         }
     }
 }
 
 impl<T: PartialEq> PartialEq for Setting<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
+        self.value() == other.value()
     }
 }
 
 impl<T: Eq> Eq for Setting<T> {}
+
+impl<T: Hash> Hash for Setting<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value().hash(state)
+    }
+}
 
 //----------- SettingSource ----------------------------------------------------
 
@@ -327,7 +511,7 @@ pub enum SettingSource {
 
 //----------- ConfigError ------------------------------------------------------
 
-/// An error in configuring Nameshed.
+/// An error in configuring Cascade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConfigError {
     /// An error occurred regarding environment variables.

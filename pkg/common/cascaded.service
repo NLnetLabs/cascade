@@ -1,0 +1,33 @@
+[Unit]
+Description=Cascade DNSSEC Signer
+Documentation=man:cascade(1)
+After=network.target
+Requires=cascaded.socket
+
+[Service]
+ExecStart=/usr/bin/cascaded --state=/var/lib/cascade/state.db --config=/etc/cascade/config.toml
+Type=exec
+Restart=on-failure
+User=cascade
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+StateDirectory=cascade
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

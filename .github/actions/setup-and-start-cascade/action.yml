@@ -1,0 +1,31 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Setup and start cascade'
+description: 'Setup and start the cascade daemon'
+inputs:
+  cascade-dir:
+    description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
+    required: true
+runs:
+  using: "composite"
+  steps:
+  - name: Start cascade with a working-directory-local config
+    run: |
+      # Variant 1: Just using absolute paths
+      mkdir -p cascade-dir/policies
+      cascade_dir="$PWD/cascade-dir"
+      # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
+      ./target/debug/cascade template config | \
+        ./scripts/sed-config-dirs.sh "${cascade_dir}" | tee "${cascade_dir}/config.toml" >&2
+      ./target/debug/cascade template policy > "${cascade_dir}/policies/default.toml"
+      ./target/debug/cascaded --config "${cascade_dir}/config.toml" --state "${cascade_dir}/state.db" --daemonize &>"${cascade_dir}/cascade-startup.log"
+
+      # Variant 2: Using cd to change directories and using relative paths (beware of Cascade --daemonize changing the current working directory to '/')
+      # mkdir -p cascade-dir/policies
+      # cd cascade-dir
+      # # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
+      # ../target/debug/cascade template config | \
+      #   ../scripts/sed-config-dirs.sh > config.toml
+      # cat config.toml >&2
+      # ../target/debug/cascade template policy > policies/default.toml
+      # ../target/debug/cascaded --config config.toml --state "$GITHUB_WORKSPACE/cascade-dir/state.db" --daemonize &>cascade-startup.log

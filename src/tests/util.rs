@@ -1,32 +1,3 @@
-#[cfg(test)]
-pub(crate) mod internal {
-    use std::sync::Arc;
-
-    use env_logger::Env;
-
-    use crate::metrics::{self, OutputFormat, Target};
-
-    pub const _MOCK_ROUTER_ID: &str = "mock-router";
-
-    /// Tries to enable logging. Intended for use in tests.
-    ///
-    /// Accepts a log level name as a string, e.g. "trace".
-    #[allow(dead_code)]
-    pub(crate) fn enable_logging(log_level: &str) {
-        let _ = env_logger::Builder::from_env(Env::default().default_filter_or(log_level))
-            .is_test(true)
-            .try_init();
-    }
-
-    pub(crate) fn get_testable_metrics_snapshot(
-        metrics: &Arc<impl metrics::Source + ?Sized>,
-    ) -> Target {
-        let mut target = Target::new(OutputFormat::Test);
-        metrics.append("testunit", &mut target);
-        target
-    }
-}
-
 pub fn assert_json_eq(actual_json: serde_json::Value, expected_json: serde_json::Value) {
     use assert_json_diff::{assert_json_matches_no_panic, CompareMode};
 

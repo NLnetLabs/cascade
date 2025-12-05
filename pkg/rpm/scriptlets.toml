@@ -1,0 +1,51 @@
+post_install_script = '''
+#!/bin/bash -e
+#RPM_SYSTEMD_MACROS#
+
+if [ $EUID -ne 0 ]; then
+    echo >&2 "ERROR: Cascade postinst script must be run as root"
+    exit 1
+fi
+
+if [ $1 -eq 1 ] ; then
+    # Initial installation
+    USER_ID=cascade
+
+    if ! id ${USER_ID} > /dev/null 2>&1; then
+        # According to the CentOS 7 useradd man page:
+        # --user-group causes a group by the same name as the user to be created
+        useradd --system --user-group ${USER_ID} --home-dir /var/lib/${USER_ID} --create-home
+    fi
+
+    mkdir -p /etc/cascade/policies
+
+    # Run commands equivalent to what the RPM systemd macros would do
+    systemd_post cascaded.service
+    systemd_triggers
+fi
+'''
+
+pre_uninstall_script = '''
+#!/bin/bash -e
+#RPM_SYSTEMD_MACROS#
+
+if [ $1 -eq 0 ] ; then
+    # Package removal, not upgrade
+    # Run commands equivalent to what the RPM systemd macros would do
+    systemd_preun cascaded.service
+    systemd_triggers
+fi
+'''
+
+post_uninstall_script = '''
+#!/bin/bash -e
+#RPM_SYSTEMD_MACROS#
+
+if [ $1 -ge 1 ] ; then
+    # Run commands equivalent to what the RPM systemd macros would do
+    systemd_postun_with_restart cascaded.service
+    systemd_triggers
+
+    # TODO: Remove the user account and home dir?
+fi
+'''

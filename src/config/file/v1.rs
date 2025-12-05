@@ -7,16 +7,47 @@ use serde::Deserialize;
 
 use crate::config::{
     Config, DaemonConfig, GroupId, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
-    ReviewConfig, ServerConfig, Setting, SettingSource, SignerConfig, SocketConfig, UserId,
+    RemoteControlConfig, ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
 };
 
 //----------- Spec -------------------------------------------------------------
 
 /// A configuration file.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct Spec {
-    /// Configuring the Nameshed daemon.
+    /// The directory storing policy files.
+    #[serde(default = "Spec::policy_dir_default")]
+    pub policy_dir: Box<Utf8Path>,
+
+    /// The directory storing per-zone state files.
+    #[serde(default = "Spec::zone_state_dir_default")]
+    pub zone_state_dir: Box<Utf8Path>,
+
+    /// The file storing TSIG keys.
+    #[serde(default = "Spec::tsig_store_path_default")]
+    pub tsig_store_path: Box<Utf8Path>,
+
+    /// Path to the directory where the keys should be stored.
+    #[serde(default = "Spec::keys_dir_default")]
+    pub keys_dir: Box<Utf8Path>,
+
+    /// Path to the dnst binary that Cascade should use.
+    #[serde(default = "Spec::dnst_binary_path_default")]
+    pub dnst_binary_path: Box<Utf8Path>,
+
+    /// The file storing KMIP server credentials.
+    #[serde(default = "Spec::kmip_credentials_store_path_default")]
+    pub kmip_credentials_store_path: Box<Utf8Path>,
+
+    /// The directory storing KMIP server state.
+    #[serde(default = "Spec::kmip_server_state_dir_default")]
+    pub kmip_server_state_dir: Box<Utf8Path>,
+
+    /// Remote control configuration.
+    pub remote_control: RemoteControlSpec,
+
+    /// Configuring the Cascade daemon.
     pub daemon: DaemonSpec,
 
     /// Configuring how zones are loaded.
@@ -35,21 +66,126 @@ pub struct Spec {
 //--- Conversion
 
 impl Spec {
-    /// Build the internal configuration.
-    pub fn build(self, config_file: Setting<Box<Utf8Path>>) -> Config {
-        Config {
-            daemon: self.daemon.build(config_file),
-            loader: self.loader.build(),
-            signer: self.signer.build(),
-            key_manager: self.key_manager.build(),
-            server: self.server.build(),
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut Config) {
+        config.policy_dir = self.policy_dir;
+        config.zone_state_dir = self.zone_state_dir;
+        config.tsig_store_path = self.tsig_store_path;
+        config.keys_dir = self.keys_dir;
+        config.dnst_binary_path = self.dnst_binary_path;
+        config.kmip_credentials_store_path = self.kmip_credentials_store_path;
+        config.kmip_server_state_dir = self.kmip_server_state_dir;
+        self.remote_control.parse_into(&mut config.remote_control);
+        self.daemon.parse_into(&mut config.daemon);
+        self.loader.parse_into(&mut config.loader);
+        self.signer.parse_into(&mut config.signer);
+        self.key_manager.parse_into(&mut config.key_manager);
+        self.server.parse_into(&mut config.server);
+    }
+}
+
+//--- Defaults
+
+impl Default for Spec {
+    fn default() -> Self {
+        Self {
+            policy_dir: Self::policy_dir_default(),
+            zone_state_dir: Self::zone_state_dir_default(),
+            tsig_store_path: Self::tsig_store_path_default(),
+            keys_dir: Self::keys_dir_default(),
+            dnst_binary_path: Self::dnst_binary_path_default(),
+            kmip_credentials_store_path: Self::kmip_credentials_store_path_default(),
+            kmip_server_state_dir: Self::kmip_server_state_dir_default(),
+            remote_control: Default::default(),
+            daemon: Default::default(),
+            loader: Default::default(),
+            signer: Default::default(),
+            key_manager: Default::default(),
+            server: Default::default(),
         }
+    }
+}
+
+impl Spec {
+    /// The default value for `policy_dir`.
+    fn policy_dir_default() -> Box<Utf8Path> {
+        "/etc/cascade/policies".into()
+    }
+
+    /// The default value for `zone_state_dir`.
+    fn zone_state_dir_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/zone-state".into()
+    }
+
+    /// The default value for `tsig_store_path`.
+    fn tsig_store_path_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/tsig-keys.db".into()
+    }
+
+    /// The default value for `dnst_binary_path`.
+    fn dnst_binary_path_default() -> Box<Utf8Path> {
+        "/usr/libexec/cascade/cascade-dnst".into()
+    }
+
+    /// The default value for `dnst_keyset_dir`.
+    fn keys_dir_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/keys".into()
+    }
+
+    /// The default value for `kmip_credentials_store_path`.
+    fn kmip_credentials_store_path_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/kmip/credentials.db".into()
+    }
+
+    /// The default value for `kmip_server_state_dir`.
+    fn kmip_server_state_dir_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/kmip".into()
+    }
+}
+
+//----------- RemoteControlSpec ----------------------------------------------
+
+/// Remote control configuration for Cascade.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct RemoteControlSpec {
+    /// Where to serve our HTTP API from, e.g. for the Cascade client.
+    ///
+    /// To support systems where it is not possible to bind simultaneously to
+    /// both IPv4 and IPv6 more than one address can be provided if needed.
+    #[serde(default = "RemoteControlSpec::servers_default")]
+    pub servers: Vec<SocketAddr>,
+}
+
+//--- Conversion
+
+impl RemoteControlSpec {
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut RemoteControlConfig) {
+        config.servers = self.servers.clone();
+    }
+}
+
+//--- Defaults
+
+impl Default for RemoteControlSpec {
+    fn default() -> Self {
+        Self {
+            servers: Self::servers_default(),
+        }
+    }
+}
+
+impl RemoteControlSpec {
+    /// The default value for `servers`.
+    fn servers_default() -> Vec<SocketAddr> {
+        vec![SocketAddr::from(([127, 0, 0, 1], 4539))]
     }
 }
 
 //----------- DaemonSpec -------------------------------------------------------
 
-/// Configuring the Nameshed daemon.
+/// Configuring the Cascade daemon.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct DaemonSpec {
@@ -59,14 +195,11 @@ pub struct DaemonSpec {
     /// The target to log messages to.
     pub log_target: Option<LogTargetSpec>,
 
-    /// Whether Nameshed should fork on startup.
+    /// Whether Cascade should fork on startup.
     pub daemonize: Option<bool>,
 
     /// The path to a PID file to maintain.
     pub pid_file: Option<Box<Utf8Path>>,
-
-    /// The directory to chroot into after startup.
-    pub chroot: Option<Box<Utf8Path>>,
 
     /// The identity to assume after startup.
     pub identity: Option<IdentitySpec>,
@@ -75,44 +208,13 @@ pub struct DaemonSpec {
 //--- Conversion
 
 impl DaemonSpec {
-    /// Build the internal configuration.
-    pub fn build(self, config_file: Setting<Box<Utf8Path>>) -> DaemonConfig {
-        DaemonConfig {
-            log_level: self
-                .log_level
-                .map(|log_level| Setting {
-                    source: SettingSource::File,
-                    value: log_level.build(),
-                })
-                .unwrap_or(Setting {
-                    source: SettingSource::Default,
-                    value: LogLevel::Info,
-                }),
-            log_target: self
-                .log_target
-                .map(|log_target| Setting {
-                    source: SettingSource::File,
-                    value: log_target.build(),
-                })
-                .unwrap_or(Setting {
-                    source: SettingSource::Default,
-                    value: LogTarget::File("/var/log/nameshed.log".into()),
-                }),
-            config_file,
-            daemonize: self
-                .daemonize
-                .map(|daemonize| Setting {
-                    source: SettingSource::File,
-                    value: daemonize,
-                })
-                .unwrap_or(Setting {
-                    source: SettingSource::Default,
-                    value: false,
-                }),
-            pid_file: self.pid_file,
-            chroot: self.chroot,
-            identity: self.identity.map(|i| i.build()),
-        }
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut DaemonConfig) {
+        config.logging.level.file = self.log_level.map(|v| v.parse());
+        config.logging.target.file = self.log_target.map(|v| v.parse());
+        config.daemonize.file = self.daemonize;
+        config.pid_file = self.pid_file;
+        config.identity = self.identity.map(|v| v.parse());
     }
 }
 
@@ -134,18 +236,18 @@ pub enum LogLevelSpec {
     /// Something does not appear to be correct.
     Warning,
 
-    /// Something went wrong (but Nameshed can recover).
+    /// Something went wrong (but Cascade can recover).
     Error,
 
-    /// Something went wrong and Nameshed can't function at all.
+    /// Something went wrong and Cascade can't function at all.
     Critical,
 }
 
 //--- Conversion
 
 impl LogLevelSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> LogLevel {
+    /// Parse from this specification.
+    pub fn parse(self) -> LogLevel {
         match self {
             Self::Trace => LogLevel::Trace,
             Self::Debug => LogLevel::Debug,
@@ -173,16 +275,24 @@ pub enum LogTargetSpec {
 
     /// Write logs to the UNIX syslog.
     Syslog,
+
+    /// Write logs to stdout.
+    Stdout,
+
+    /// Write logs to stderr.
+    Stderr,
 }
 
 //--- Conversion
 
 impl LogTargetSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> LogTarget {
+    /// Parse from this specification.
+    pub fn parse(self) -> LogTarget {
         match self {
             Self::File { path } => LogTarget::File(path),
             Self::Syslog => LogTarget::Syslog,
+            Self::Stdout => LogTarget::Stdout,
+            Self::Stderr => LogTarget::Stderr,
         }
     }
 }
@@ -228,9 +338,9 @@ impl<'de> Deserialize<'de> for IdentitySpec {
 //--- Conversion
 
 impl IdentitySpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> (UserId, GroupId) {
-        (self.user.build(), self.group.build())
+    /// Parse from this specification.
+    pub fn parse(self) -> (UserId, GroupId) {
+        (self.user.parse(), self.group.parse())
     }
 }
 
@@ -240,7 +350,7 @@ impl IdentitySpec {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UserIdSpec {
     /// A numeric ID.
-    Numeric(nix::unistd::Uid),
+    Numeric(u32),
 
     /// A user name.
     Named(Box<str>),
@@ -252,8 +362,8 @@ impl FromStr for UserIdSpec {
     type Err = ParseIdentityError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.parse::<nix::libc::uid_t>() {
-            Ok(id) => Ok(Self::Numeric(nix::unistd::Uid::from_raw(id))),
+        match s.parse::<u32>() {
+            Ok(id) => Ok(Self::Numeric(id)),
 
             Err(error) if *error.kind() == IntErrorKind::PosOverflow => {
                 Err(ParseIdentityError::NumericOverflow { value: s.into() })
@@ -267,8 +377,8 @@ impl FromStr for UserIdSpec {
 //--- Conversion
 
 impl UserIdSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> UserId {
+    /// Parse from this specification.
+    pub fn parse(self) -> UserId {
         match self {
             Self::Numeric(id) => UserId::Numeric(id),
             Self::Named(id) => UserId::Named(id),
@@ -282,7 +392,7 @@ impl UserIdSpec {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GroupIdSpec {
     /// A numeric ID.
-    Numeric(nix::unistd::Gid),
+    Numeric(u32),
 
     /// A group name.
     Named(Box<str>),
@@ -294,8 +404,8 @@ impl FromStr for GroupIdSpec {
     type Err = ParseIdentityError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.parse::<nix::libc::gid_t>() {
-            Ok(id) => Ok(Self::Numeric(nix::unistd::Gid::from_raw(id))),
+        match s.parse::<u32>() {
+            Ok(id) => Ok(Self::Numeric(id)),
 
             Err(error) if *error.kind() == IntErrorKind::PosOverflow => {
                 Err(ParseIdentityError::NumericOverflow { value: s.into() })
@@ -309,8 +419,8 @@ impl FromStr for GroupIdSpec {
 //--- Conversion
 
 impl GroupIdSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> GroupId {
+    /// Parse from this specification.
+    pub fn parse(self) -> GroupId {
         match self {
             Self::Numeric(id) => GroupId::Numeric(id),
             Self::Named(id) => GroupId::Named(id),
@@ -325,7 +435,7 @@ impl GroupIdSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct LoaderSpec {
     /// Where to listen for zone update notifications.
-    pub notif_listeners: Vec<SocketSpec>,
+    pub notify_listeners: Vec<SocketSpec>,
 
     /// Configuring whether and how loaded zones are reviewed.
     pub review: ReviewSpec,
@@ -334,16 +444,13 @@ pub struct LoaderSpec {
 //--- Conversion
 
 impl LoaderSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> LoaderConfig {
-        LoaderConfig {
-            notif_listeners: self
-                .notif_listeners
-                .into_iter()
-                .map(|nl| nl.build())
-                .collect(),
-            review: self.review.build(),
-        }
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut LoaderConfig) {
+        config.notify_listeners.clear();
+        config
+            .notify_listeners
+            .extend(self.notify_listeners.into_iter().map(|v| v.parse()));
+        self.review.parse_into(&mut config.review);
     }
 }
 
@@ -360,11 +467,9 @@ pub struct SignerSpec {
 //--- Conversion
 
 impl SignerSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> SignerConfig {
-        SignerConfig {
-            review: self.review.build(),
-        }
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut SignerConfig) {
+        self.review.parse_into(&mut config.review);
     }
 }
 
@@ -381,11 +486,12 @@ pub struct ReviewSpec {
 //--- Conversion
 
 impl ReviewSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> ReviewConfig {
-        ReviewConfig {
-            servers: self.servers.into_iter().map(|s| s.build()).collect(),
-        }
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut ReviewConfig) {
+        config.servers.clear();
+        config
+            .servers
+            .extend(self.servers.into_iter().map(|v| v.parse()));
     }
 }
 
@@ -399,9 +505,9 @@ pub struct KeyManagerSpec {}
 //--- Conversion
 
 impl KeyManagerSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> KeyManagerConfig {
-        KeyManagerConfig {}
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut KeyManagerConfig) {
+        let &mut KeyManagerConfig {} = config;
     }
 }
 
@@ -418,11 +524,12 @@ pub struct ServerSpec {
 //--- Conversion
 
 impl ServerSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> ServerConfig {
-        ServerConfig {
-            servers: self.servers.into_iter().map(|s| s.build()).collect(),
-        }
+    /// Parse from this specification.
+    pub fn parse_into(self, config: &mut ServerConfig) {
+        config.servers.clear();
+        config
+            .servers
+            .extend(self.servers.into_iter().map(|v| v.parse()));
     }
 }
 
@@ -526,18 +633,18 @@ impl<'de> Deserialize<'de> for SimpleSocketSpec {
 //--- Conversion
 
 impl SocketSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> SocketConfig {
+    /// Parse from this specification.
+    pub fn parse(self) -> SocketConfig {
         match self {
-            SocketSpec::Simple(spec) => spec.build(),
-            SocketSpec::Complex(spec) => spec.build(),
+            SocketSpec::Simple(spec) => spec.parse(),
+            SocketSpec::Complex(spec) => spec.parse(),
         }
     }
 }
 
 impl SimpleSocketSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> SocketConfig {
+    /// Parse from this specification.
+    pub fn parse(self) -> SocketConfig {
         match self {
             Self::UDP { addr } => SocketConfig::UDP { addr },
             Self::TCP { addr } => SocketConfig::TCP { addr },
@@ -547,8 +654,8 @@ impl SimpleSocketSpec {
 }
 
 impl ComplexSocketSpec {
-    /// Build the internal configuration.
-    pub fn build(self) -> SocketConfig {
+    /// Parse from this specification.
+    pub fn parse(self) -> SocketConfig {
         match self {
             Self::UDP { addr } => SocketConfig::UDP { addr },
             Self::TCP { addr } => SocketConfig::TCP { addr },

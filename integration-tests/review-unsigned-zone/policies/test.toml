@@ -1,0 +1,7 @@
+version = "v1"
+
+# Define only the settings that we change compared to the defaults. Let all
+# other settings have their default values.
+[loader.review]
+required = true
+cmd-hook = "<INTEGRATION_TEST_DIR>/hooks/approve.sh"
