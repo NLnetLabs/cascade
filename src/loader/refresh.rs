@@ -9,6 +9,7 @@ use std::{
 };
 
 use tokio::sync::watch;
+use tracing::debug;
 
 use crate::zone::{self, Zone, ZoneByPtr};
 
@@ -46,7 +47,7 @@ impl RefreshMonitor {
     /// be updated, so that the zone is refreshed at the new scheduled time (if
     /// any).
     pub fn update(&self, zone: &Arc<Zone>, old: Option<Instant>, new: Option<Instant>) {
-        log::debug!(
+        debug!(
             "Updating the scheduling of '{:?}' from {old:?} to {new:?}",
             zone.name
         );
@@ -145,7 +146,7 @@ impl RefreshMonitor {
             for zone in now {
                 let zone = zone.zone.0;
 
-                let Ok(mut state) = zone.data.lock() else {
+                let Ok(mut state) = zone.state.lock() else {
                     continue;
                 };
 

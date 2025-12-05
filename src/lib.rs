@@ -6,6 +6,7 @@ pub mod cli;
 pub mod common;
 pub mod config;
 pub mod daemon;
+pub mod loader;
 pub mod log;
 pub mod manager;
 pub mod metrics;
@@ -16,10 +17,6 @@ pub mod units;
 pub mod util;
 pub mod zone;
 pub mod zonemaintenance;
-
-pub mod loader;
-pub mod tsig;
-pub mod zone;
 
 #[cfg(test)]
 pub mod tests;

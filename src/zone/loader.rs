@@ -7,11 +7,12 @@ use std::{
 };
 
 use camino::Utf8Path;
-use domain::{new::base::wire::BuildBytes, tsig};
+use domain::tsig;
+use tracing::{debug, error};
 
 use crate::{
     loader::{self, Loader, RefreshMonitor},
-    payload::Update,
+    manager::Update,
 };
 
 use super::{
@@ -83,7 +84,7 @@ impl LoaderState {
         reload: bool,
         loader: &Arc<Loader>,
     ) {
-        log::debug!("Enqueueing a refresh for {:?}", zone.name);
+        debug!("Enqueueing a refresh for {:?}", zone.name);
 
         let refresh = match reload {
             false => EnqueuedRefresh::Refresh,
@@ -136,13 +137,13 @@ impl LoaderState {
         latest: Option<Arc<Uncompressed>>,
         loader: Arc<Loader>,
     ) {
-        log::debug!("Refreshing {:?}", zone.name);
+        debug!("Refreshing {:?}", zone.name);
 
         // Perform the source-specific reload into the zone contents.
         let (result, lock) = loader::refresh(&zone, &source, latest).await;
 
         // Try to re-use a recent lock from the reload.
-        let mut lock = lock.unwrap_or_else(|| zone.data.lock().unwrap());
+        let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
         let state = &mut *lock;
 
         // Update the zone refresh timers.
@@ -162,13 +163,13 @@ impl LoaderState {
         // Process the result of the reload.
         match result {
             Ok(None) => {
-                log::debug!("{:?} is up-to-date", zone.name);
+                debug!("{:?} is up-to-date", zone.name);
 
                 // Nothing to do.
             }
 
             Ok(Some(serial)) => {
-                log::debug!("Loaded serial {serial:?} for {:?}", zone.name);
+                debug!("Loaded serial {serial:?} for {:?}", zone.name);
 
                 // Update the old-base contents.
                 let latest = state.contents.as_ref().unwrap().latest.clone();
@@ -178,23 +179,19 @@ impl LoaderState {
                 );
 
                 // Inform the central command.
-                let mut bytes = vec![0u8; zone.name.len()];
-                zone.name.build_bytes(&mut bytes).unwrap();
-                let bytes = bytes::Bytes::from(bytes);
-                let mut parser = octseq::Parser::from_ref(&bytes);
-                let zone_name = domain::base::Name::parse(&mut parser).unwrap();
+                let zone_name = zone.name.clone();
                 let zone_serial = domain::base::Serial(serial.into());
                 loader
                     .update_tx
-                    .blocking_send(Update::UnsignedZoneUpdatedEvent {
+                    .send(Update::UnsignedZoneUpdatedEvent {
                         zone_name,
                         zone_serial,
                     })
                     .unwrap();
             }
 
-            Err(error) => {
-                log::error!("Could not refresh {:?}: {error}", zone.name);
+            Err(err) => {
+                error!("Could not refresh {:?}: {err}", zone.name);
             }
         }
 
@@ -216,7 +213,7 @@ impl LoaderState {
 
     /// Reload this zone.
     async fn reload(zone: Arc<Zone>, start: Instant, source: Source, loader: Arc<Loader>) {
-        log::debug!("Reloading {:?}", zone.name);
+        debug!("Reloading {:?}", zone.name);
 
         let update;
         let update_tx;
@@ -226,7 +223,7 @@ impl LoaderState {
             let (result, lock) = loader::reload(&zone, &source).await;
 
             // Try to re-use a recent lock from the reload.
-            let mut lock = lock.unwrap_or_else(|| zone.data.lock().unwrap());
+            let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
             let state = &mut *lock;
 
             // Update the zone refresh timers.
@@ -250,14 +247,14 @@ impl LoaderState {
             // Process the result of the reload.
             update = match result {
                 Ok(None) => {
-                    log::debug!("{:?} is up-to-date and consistent", zone.name);
+                    debug!("{:?} is up-to-date and consistent", zone.name);
 
                     // Nothing to do.
                     None
                 }
 
                 Ok(Some(serial)) => {
-                    log::debug!("Loaded serial {serial:?} for {:?}", zone.name);
+                    debug!("Loaded serial {serial:?} for {:?}", zone.name);
 
                     // Update the old-base contents.
                     let latest = state.contents.as_ref().unwrap().latest.clone();
@@ -267,11 +264,7 @@ impl LoaderState {
                     });
 
                     // Inform the central command.
-                    let mut bytes = vec![0u8; zone.name.len()];
-                    zone.name.build_bytes(&mut bytes).unwrap();
-                    let bytes = bytes::Bytes::from(bytes);
-                    let mut parser = octseq::Parser::from_ref(&bytes);
-                    let zone_name = domain::base::Name::parse(&mut parser).unwrap();
+                    let zone_name = zone.name.clone();
                     let zone_serial = domain::base::Serial(serial.into());
                     Some(Update::UnsignedZoneUpdatedEvent {
                         zone_name,
@@ -279,8 +272,8 @@ impl LoaderState {
                     })
                 }
 
-                Err(error) => {
-                    log::error!("Could not reload {:?}: {error}", zone.name);
+                Err(err) => {
+                    error!("Could not reload {:?}: {err}", zone.name);
                     None
                 }
             };
@@ -305,7 +298,7 @@ impl LoaderState {
         }
 
         if let Some(update) = update {
-            update_tx.send(update).await.unwrap();
+            update_tx.send(update).unwrap();
         }
     }
 }

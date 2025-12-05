@@ -1,13 +1,6 @@
 //! Controlling the entire operation.
 
-use arc_swap::ArcSwap;
-use camino::Utf8PathBuf;
-use domain::new::base::name::RevNameBuf;
-use domain::utils::dst::UnsizedCopy;
-use log::{debug, info};
-use std::collections::HashMap;
-use std::fmt::Display;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use crate::api::{self, KeyImport, SigningQueueReport, SigningReport, ZoneLoaderReport};
@@ -16,13 +9,9 @@ use crate::daemon::SocketProvider;
 use crate::loader::Loader;
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
-use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::loader::{DnsServerAddr, Source};
-use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneLoadSource};
-use crate::zone::{LoaderState, Zones};
-use crate::zonemaintenance::types::ZoneReport;
+use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneLoadSource, ZoneReport};
 use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
 use domain::zonetree::StoredName;
@@ -69,7 +58,7 @@ impl Manager {
     ) -> Result<Self, Error> {
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");
-        let zone_loader = Arc::new(ZoneLoader::launch(center.clone()));
+        let zone_loader = Arc::new(Loader::launch(center.clone()));
 
         // Spawn the unsigned zone review server.
         info!("Starting unit 'RS'");

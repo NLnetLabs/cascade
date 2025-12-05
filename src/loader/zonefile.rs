@@ -5,12 +5,13 @@ use std::{cmp::Ordering, fmt, fs::File, io::BufReader, sync::Arc};
 use camino::Utf8Path;
 use domain::{
     new::{
-        base::{RClass, RType, Record},
+        base::{name::RevNameBuf, wire::ParseBytes, RClass, RType, Record},
         rdata::RecordData,
         zonefile::simple::{Entry, ZonefileError, ZonefileScanner},
     },
     utils::dst::UnsizedCopy,
 };
+use tracing::trace;
 
 use crate::zone::{
     contents::{RegularRecord, SoaRecord, Uncompressed},
@@ -29,7 +30,9 @@ pub fn refresh(
     path: &Utf8Path,
     latest: Option<Arc<Uncompressed>>,
 ) -> Result<Option<super::Refresh>, RefreshError> {
-    log::trace!("Scanning zonefile {path:?} for {:?}", zone.name);
+    trace!("Scanning zonefile {path:?} for {:?}", zone.name);
+
+    let zone_name: RevNameBuf = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
 
     // Open the zonefile.
     let file =
@@ -45,12 +48,12 @@ pub fn refresh(
             ttl,
             rdata: RecordData::Soa(rdata),
         })) => {
-            if rname != &*zone.name {
+            if rname != &*zone_name {
                 return Err(Error::MismatchedOrigin.into());
             }
 
             SoaRecord(Record {
-                rname: zone.name.unsized_copy_into(),
+                rname: zone_name.unsized_copy_into(),
                 rtype,
                 rclass,
                 ttl,
@@ -81,7 +84,7 @@ pub fn refresh(
         }
     }
 
-    log::trace!(
+    trace!(
         "Local copy of {:?} is outdated, reading full zonefile",
         zone.name
     );
@@ -117,6 +120,8 @@ pub fn refresh(
 
 /// Load a zone from a zonefile.
 pub fn load(zone: &Arc<Zone>, path: &Utf8Path) -> Result<Uncompressed, Error> {
+    let zone_name: RevNameBuf = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
+
     // Open the zonefile.
     let file = BufReader::new(File::open(path).map_err(Error::Open)?);
     let mut scanner = ZonefileScanner::new(file, Some(&zone.name));
@@ -130,12 +135,12 @@ pub fn load(zone: &Arc<Zone>, path: &Utf8Path) -> Result<Uncompressed, Error> {
             ttl,
             rdata: RecordData::Soa(rdata),
         })) => {
-            if rname != &*zone.name {
+            if rname != &zone_name {
                 return Err(Error::MismatchedOrigin);
             }
 
             SoaRecord(Record {
-                rname: zone.name.unsized_copy_into(),
+                rname: zone_name.unsized_copy_into(),
                 rtype,
                 rclass,
                 ttl,

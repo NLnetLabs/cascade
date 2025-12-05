@@ -4,9 +4,6 @@
 //! zones known to Nameshed.  Every zone has a configured source (e.g. zonefile,
 //! DNS server, etc.) that will be monitored for changes.
 
-#![warn(dead_code)]
-#![warn(unused_variables)]
-
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -16,9 +13,11 @@ use std::{
 
 use domain::new::base::Serial;
 use tokio::sync::mpsc;
+use tracing::trace;
 
 use crate::{
-    payload::Update,
+    center::Center,
+    manager::{ApplicationCommand, Terminated, Update},
     zone::{self, contents, Zone, ZoneContents, ZoneState},
 };
 
@@ -36,12 +35,14 @@ pub struct Loader {
     pub refresh_monitor: RefreshMonitor,
 
     /// A sender for updates from the loader.
-    pub update_tx: mpsc::Sender<Update>,
+    pub update_tx: mpsc::UnboundedSender<Update>,
 }
 
 impl Loader {
     /// Construct a new [`Loader`].
-    pub fn new(update_tx: mpsc::Sender<Update>) -> Self {
+    pub fn launch(center: Arc<Center>) -> Self {
+        let update_tx = center.update_tx.clone();
+
         Self {
             refresh_monitor: RefreshMonitor::new(),
             update_tx,
@@ -51,6 +52,10 @@ impl Loader {
     /// Drive this [`Loader`].
     pub async fn run(self: &Arc<Self>) {
         self.refresh_monitor.run(self).await;
+    }
+
+    pub fn on_command(self: &Arc<Self>, _cmd: ApplicationCommand) -> Result<(), Terminated> {
+        todo!()
     }
 }
 
@@ -74,13 +79,13 @@ pub async fn refresh<'z>(
     let refresh = match source {
         // Refreshing a zone without a source is a no-op.
         zone::loader::Source::None => {
-            log::trace!("Cannot refresh {:?} because no source is set", zone.name);
+            trace!("Cannot refresh {:?} because no source is set", zone.name);
 
             return (Ok(None), None);
         }
 
         zone::loader::Source::Zonefile { path } => {
-            log::trace!("Refreshing {:?} from zonefile {path:?}", zone.name);
+            trace!("Refreshing {:?} from zonefile {path:?}", zone.name);
 
             let zone = zone.clone();
             let path = path.clone();
@@ -90,7 +95,7 @@ pub async fn refresh<'z>(
         }
 
         zone::loader::Source::Server { addr, tsig_key } => {
-            log::trace!("Refreshing {:?} from server {addr:?}", zone.name);
+            trace!("Refreshing {:?} from server {addr:?}", zone.name);
 
             server::refresh(zone, addr, tsig_key.clone(), latest).await
         }
@@ -126,7 +131,7 @@ pub async fn refresh<'z>(
 
         let action = 'lock: {
             // Lock the zone state.
-            let mut lock = zone.data.lock().unwrap();
+            let mut lock = zone.state.lock().unwrap();
 
             // If no previous version of the zone exists (or if the zone
             // contents have been cleared since the start of the refresh),
@@ -232,13 +237,13 @@ pub async fn reload<'z>(
     let reload = match source {
         // Reloading a zone without a source is a no-op.
         zone::loader::Source::None => {
-            log::trace!("Cannot reload {:?} because no source is set", zone.name);
+            trace!("Cannot reload {:?} because no source is set", zone.name);
 
             return (Ok(None), None);
         }
 
         zone::loader::Source::Zonefile { path } => {
-            log::trace!("Reloading {:?} from zonefile {path:?}", zone.name);
+            trace!("Reloading {:?} from zonefile {path:?}", zone.name);
 
             let zone = zone.clone();
             let path = path.clone();
@@ -249,7 +254,7 @@ pub async fn reload<'z>(
         }
 
         zone::loader::Source::Server { addr, tsig_key } => {
-            log::trace!("Reloading {:?} from server {addr:?}", zone.name);
+            trace!("Reloading {:?} from server {addr:?}", zone.name);
 
             server::axfr(zone, addr, tsig_key.clone())
                 .await
@@ -283,7 +288,7 @@ pub async fn reload<'z>(
 
         let action = 'lock: {
             // Lock the zone state.
-            let mut lock = zone.data.lock().unwrap();
+            let mut lock = zone.state.lock().unwrap();
 
             // If no previous version of the zone exists (or if the zone
             // contents have been cleared since the start of the refresh),

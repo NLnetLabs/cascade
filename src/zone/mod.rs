@@ -30,7 +30,17 @@ use crate::{
     zonemaintenance::types::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
+pub mod contents;
+pub mod loader;
 pub mod state;
+
+pub use contents::ZoneContents;
+pub use loader::LoaderState;
+
+//----------- ZoneReport -------------------------------------------------------
+
+/// A stub for now
+pub struct ZoneReport();
 
 //----------- Zone -------------------------------------------------------------
 
@@ -95,11 +105,15 @@ pub struct ZoneState {
     /// the moment.
     // TODO: make the pipeline stop accepting new data when hard halted.
     pub pipeline_mode: PipelineMode,
+
+    /// Loading new versions of the zone.
+    pub loader: LoaderState,
+
+    /// The contents of the zone.
+    pub contents: Option<ZoneContents>,
     // TODO:
     // - A log?
     // - Initialization?
-    // - Contents
-    // - Loader state
     // - Key manager state
     // - Signer state
     // - Server state

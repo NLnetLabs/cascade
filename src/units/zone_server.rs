@@ -46,7 +46,6 @@ use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, ZoneVersionReviewState,
 };
-use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 
 /// The source of a zone server.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -324,11 +323,7 @@ impl ZoneServer {
                         }
                     });
 
-                let maintainer_config =
-                    Config::<_, DefaultConnFactory>::new(self.center.old_tsig_key_store.clone());
-                let maintainer_config = Arc::new(ArcSwap::from_pointee(maintainer_config));
-                ZoneMaintainer::send_notify_to_addrs(zone_name.clone(), addrs, maintainer_config)
-                    .await;
+                todo!("actually send the notify")
             }
         }
     }

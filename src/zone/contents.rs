@@ -361,7 +361,11 @@ pub struct SoaRecord(pub Record<Box<RevName>, Soa<Box<Name>>>);
 impl PartialEq for SoaRecord {
     fn eq(&self, other: &Self) -> bool {
         (&self.rname, self.rtype, self.ttl) == (&other.rname, other.rtype, other.ttl)
-            && self.rdata.cmp_canonical(&other.rdata).is_eq()
+            && self
+                .rdata
+                .map_names_by_ref(|n| n.as_ref())
+                .cmp_canonical(&other.rdata.map_names_by_ref(|n| n.as_ref()))
+                .is_eq()
     }
 }
 
@@ -377,7 +381,11 @@ impl Ord for SoaRecord {
     fn cmp(&self, other: &Self) -> Ordering {
         (&self.rname, self.rtype, self.ttl)
             .cmp(&(&other.rname, other.rtype, other.ttl))
-            .then_with(|| self.rdata.cmp_canonical(&other.rdata))
+            .then_with(|| {
+                self.rdata
+                    .map_names_by_ref(|n| n.as_ref())
+                    .cmp_canonical(&other.rdata.map_names_by_ref(|n| n.as_ref()))
+            })
     }
 }
 

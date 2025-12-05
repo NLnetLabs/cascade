@@ -18,8 +18,8 @@ use domain::{
     new::{
         base::{
             build::MessageBuilder,
-            name::NameCompressor,
-            wire::{AsBytes, ParseBytesZC, ParseError},
+            name::{Name, NameCompressor, RevNameBuf},
+            wire::{AsBytes, ParseBytes, ParseBytesZC, ParseError},
             CanonicalRecordData, HeaderFlags, Message, MessageItem, QClass, QType, Question,
             RClass, RType, Record, Serial,
         },
@@ -31,6 +31,7 @@ use domain::{
     zonetree::types::ZoneUpdate,
 };
 use tokio::net::TcpStream;
+use tracing::trace;
 
 use crate::zone::{
     contents::{self, RegularRecord, SoaRecord},
@@ -52,7 +53,7 @@ pub async fn refresh(
     latest: Option<Arc<contents::Uncompressed>>,
 ) -> Result<Option<super::Refresh>, RefreshError> {
     let Some(latest) = latest else {
-        log::trace!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
+        trace!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
 
         // Fetch the whole zone.
         let remote = axfr(zone, addr, tsig_key).await?;
@@ -63,7 +64,7 @@ pub async fn refresh(
         }));
     };
 
-    log::trace!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
+    trace!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
 
     // Fetch the zone relative to the latest local copy.
     match ixfr(zone, addr, tsig_key, &latest.soa).await? {
@@ -124,6 +125,8 @@ pub async fn ixfr(
     tsig_key: Option<tsig::Key>,
     local_soa: &SoaRecord,
 ) -> Result<Ixfr, IxfrError> {
+    let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
+
     // Prepare the IXFR query message.
     let mut buffer = [0u8; 1024];
     let mut compressor = NameCompressor::default();
@@ -135,7 +138,7 @@ pub async fn ixfr(
     );
     builder
         .push_question(&Question {
-            qname: &zone.name,
+            qname: zone_name,
             // TODO: 'QType::IXFR'.
             qtype: QType { code: 251.into() },
             qclass: QClass::IN,
@@ -531,6 +534,8 @@ pub async fn axfr(
     addr: &DnsServerAddr,
     tsig_key: Option<tsig::Key>,
 ) -> Result<contents::Uncompressed, AxfrError> {
+    let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
+
     // Prepare the AXFR query message.
     let mut buffer = [0u8; 512];
     let mut compressor = NameCompressor::default();
@@ -542,7 +547,7 @@ pub async fn axfr(
     );
     builder
         .push_question(&Question {
-            qname: &zone.name,
+            qname: zone_name,
             // TODO: 'QType::AXFR'.
             qtype: QType { code: 252.into() },
             qclass: QClass::IN,
@@ -647,6 +652,8 @@ pub async fn query_soa(
     addr: &DnsServerAddr,
     tsig_key: Option<tsig::Key>,
 ) -> Result<SoaRecord, QuerySoaError> {
+    let zone_name: RevNameBuf = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
+
     // Prepare the SOA query message.
     let mut buffer = [0u8; 512];
     let mut compressor = NameCompressor::default();
@@ -658,7 +665,7 @@ pub async fn query_soa(
     );
     builder
         .push_question(&Question {
-            qname: &zone.name,
+            qname: &zone_name,
             qtype: QType::SOA,
             qclass: QClass::IN,
         })
@@ -739,7 +746,7 @@ pub async fn query_soa(
     else {
         return Err(QuerySoaError::MismatchedResponse);
     };
-    if *qname != *zone.name {
+    if &qname != &zone_name {
         return Err(QuerySoaError::MismatchedResponse);
     }
     let Some(MessageItem::Answer(Record {
@@ -752,7 +759,7 @@ pub async fn query_soa(
     else {
         return Err(QuerySoaError::MismatchedResponse);
     };
-    if *rname != *zone.name {
+    if &rname != &zone_name {
         return Err(QuerySoaError::MismatchedResponse);
     }
     let None = parser.next() else {
@@ -760,7 +767,7 @@ pub async fn query_soa(
     };
 
     Ok(SoaRecord(Record {
-        rname: zone.name.unsized_copy_into(),
+        rname: zone_name.unsized_copy_into(),
         rtype,
         rclass,
         ttl,
