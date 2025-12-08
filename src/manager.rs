@@ -1,17 +1,16 @@
 //! Controlling the entire operation.
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use crate::api::{self, KeyImport, SigningQueueReport, SigningReport, ZoneLoaderReport};
 use crate::center::{get_zone, halt_zone, Center, Change, ZoneAddError};
 use crate::daemon::SocketProvider;
-use crate::loader::Loader;
+use crate::loader::{AbortOnDrop, Loader};
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneLoadSource, ZoneReport};
+use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneReport};
 use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
 use domain::zonetree::StoredName;
@@ -33,6 +32,12 @@ pub struct Manager {
 
     /// The zone loader.
     pub zone_loader: Arc<Loader>,
+
+    /// A handle to the zone loader task
+    ///
+    /// Might seem unused but it's important to drop at the right moment, i.e.
+    /// when the manager is dropped.
+    _loader_handle: AbortOnDrop,
 
     /// The review server for unsigned zones.
     pub unsigned_review: Arc<ZoneServer>,
@@ -59,6 +64,8 @@ impl Manager {
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");
         let zone_loader = Arc::new(Loader::launch(center.clone()));
+
+        let loader_runner = zone_loader.run();
 
         // Spawn the unsigned zone review server.
         info!("Starting unit 'RS'");
@@ -101,6 +108,7 @@ impl Manager {
             center,
             http_server,
             zone_loader,
+            _loader_handle: loader_runner,
             unsigned_review,
             key_manager,
             zone_signer,
@@ -172,18 +180,10 @@ impl Manager {
                 return;
             }
 
-            Update::RefreshZone {
-                zone_name,
-                source,
-                serial,
-            } => (
+            Update::RefreshZone { zone_name } => (
                 "Instructing zone loader to refresh the zone",
                 "ZL",
-                ApplicationCommand::RefreshZone {
-                    zone_name,
-                    source,
-                    serial,
-                },
+                ApplicationCommand::RefreshZone { zone_name },
             ),
 
             Update::ReviewZone {
@@ -440,24 +440,10 @@ pub enum ApplicationCommand {
     RefreshZone {
         /// The name of the zone to refresh.
         zone_name: StoredName,
-
-        /// The source address of the NOTIFY message.
-        source: Option<IpAddr>,
-
-        /// The expected new SOA serial for the zone.
-        ///
-        /// If this is set, and the zone's SOA serial is greater than or equal
-        /// to this value, the refresh can be ignored.
-        serial: Option<Serial>,
     },
 
     /// Reload a zone.
-    ///
-    /// The zone loader will immediately remove and re-add the zone.
-    ReloadZone {
-        zone_name: StoredName,
-        source: ZoneLoadSource,
-    },
+    ReloadZone { zone_name: StoredName },
 
     SignZone {
         zone_name: StoredName,
@@ -521,15 +507,6 @@ pub enum Update {
     RefreshZone {
         /// The name of the zone to refresh.
         zone_name: StoredName,
-
-        /// The source address of the NOTIFY message.
-        source: Option<IpAddr>,
-
-        /// The expected new SOA serial for the zone.
-        ///
-        /// If this is set, and the zone's SOA serial is greater than or equal
-        /// to this value, the refresh can be ignored.
-        serial: Option<Serial>,
     },
 
     /// Review a zone.

@@ -12,13 +12,13 @@ use std::{
 };
 
 use domain::new::base::Serial;
-use tokio::sync::mpsc;
-use tracing::trace;
+use tokio::task::AbortHandle;
+use tracing::{debug, trace, warn};
 
 use crate::{
-    center::Center,
-    manager::{ApplicationCommand, Terminated, Update},
-    zone::{self, contents, Zone, ZoneContents, ZoneState},
+    center::{Center, Change},
+    manager::{ApplicationCommand, Terminated},
+    zone::{self, contents, loader::Source, LoaderState, Zone, ZoneContents, ZoneState},
 };
 
 mod refresh;
@@ -26,6 +26,16 @@ mod server;
 mod zonefile;
 
 pub use refresh::RefreshMonitor;
+
+//----------- AbortOnDrop ------------------------------------------------------
+
+pub struct AbortOnDrop(AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 //----------- Loader -----------------------------------------------------------
 
@@ -35,27 +45,82 @@ pub struct Loader {
     pub refresh_monitor: RefreshMonitor,
 
     /// A sender for updates from the loader.
-    pub update_tx: mpsc::UnboundedSender<Update>,
+    pub center: Arc<Center>,
 }
 
 impl Loader {
     /// Construct a new [`Loader`].
     pub fn launch(center: Arc<Center>) -> Self {
-        let update_tx = center.update_tx.clone();
-
         Self {
             refresh_monitor: RefreshMonitor::new(),
-            update_tx,
+            center,
         }
     }
 
     /// Drive this [`Loader`].
-    pub async fn run(self: &Arc<Self>) {
-        self.refresh_monitor.run(self).await;
+    pub fn run(self: &Arc<Self>) -> AbortOnDrop {
+        let this = self.clone();
+        AbortOnDrop(
+            tokio::spawn(async move { this.refresh_monitor.run(&this).await }).abort_handle(),
+        )
     }
 
-    pub fn on_command(self: &Arc<Self>, _cmd: ApplicationCommand) -> Result<(), Terminated> {
-        todo!()
+    pub async fn on_command(self: &Arc<Self>, cmd: ApplicationCommand) -> Result<(), Terminated> {
+        debug!("Received cmd: {cmd:?}");
+        match cmd {
+            ApplicationCommand::Changed(change) => {
+                match change {
+                    Change::ZoneSourceChanged(name, zone_load_source) => {
+                        let zone = {
+                            let center = self.center.state.lock().unwrap();
+                            let zone = center.zones.get(&name).unwrap();
+                            zone.0.clone()
+                        };
+                        let mut state = zone.state.lock().unwrap();
+                        let source = match zone_load_source {
+                            zone::ZoneLoadSource::None => Source::None,
+                            zone::ZoneLoadSource::Zonefile { path } => Source::Zonefile { path },
+                            zone::ZoneLoadSource::Server { addr, tsig_key } => {
+                                let addr = zone::loader::DnsServerAddr {
+                                    ip: addr.ip(),
+                                    tcp_port: addr.port(),
+                                    udp_port: None,
+                                };
+                                Source::Server {
+                                    addr,
+                                    tsig_key: tsig_key.map(Arc::unwrap_or_clone),
+                                }
+                            }
+                        };
+                        LoaderState::set_source(&mut state, &zone, source, self);
+                        Ok(())
+                    }
+                    Change::ZoneRemoved(name) => todo!(),
+                    _ => Ok(()), // ignore other changes
+                }
+            }
+            ApplicationCommand::RefreshZone { zone_name } => {
+                let zone = {
+                    let center = self.center.state.lock().unwrap();
+                    let zone = center.zones.get(&zone_name).unwrap();
+                    zone.0.clone()
+                };
+                let mut state = zone.state.lock().unwrap();
+                LoaderState::enqueue_refresh(&mut state, &zone, false, self);
+                Ok(())
+            }
+            ApplicationCommand::ReloadZone { zone_name } => {
+                let zone = {
+                    let center = self.center.state.lock().unwrap();
+                    let zone = center.zones.get(&zone_name).unwrap();
+                    zone.0.clone()
+                };
+                let mut state = zone.state.lock().unwrap();
+                LoaderState::enqueue_refresh(&mut state, &zone, true, self);
+                Ok(())
+            }
+            _ => panic!("Got an unexpected command!"),
+        }
     }
 }
 
@@ -79,19 +144,15 @@ pub async fn refresh<'z>(
     let refresh = match source {
         // Refreshing a zone without a source is a no-op.
         zone::loader::Source::None => {
-            trace!("Cannot refresh {:?} because no source is set", zone.name);
+            warn!("Cannot refresh {:?} because no source is set", zone.name);
 
             return (Ok(None), None);
         }
 
-        zone::loader::Source::Zonefile { path } => {
-            trace!("Refreshing {:?} from zonefile {path:?}", zone.name);
+        zone::loader::Source::Zonefile { .. } => {
+            warn!("Cannot refresh {:?} because the source is a zonefile, use the zone reload command instead", zone.name);
 
-            let zone = zone.clone();
-            let path = path.clone();
-            tokio::task::spawn_blocking(move || zonefile::refresh(&zone, &path, latest))
-                .await
-                .unwrap()
+            return (Ok(None), None);
         }
 
         zone::loader::Source::Server { addr, tsig_key } => {
@@ -237,7 +298,7 @@ pub async fn reload<'z>(
     let reload = match source {
         // Reloading a zone without a source is a no-op.
         zone::loader::Source::None => {
-            trace!("Cannot reload {:?} because no source is set", zone.name);
+            warn!("Cannot reload {:?} because no source is set", zone.name);
 
             return (Ok(None), None);
         }
@@ -472,12 +533,6 @@ impl From<server::IxfrError> for RefreshError {
 impl From<server::AxfrError> for RefreshError {
     fn from(v: server::AxfrError) -> Self {
         Self::Axfr(v)
-    }
-}
-
-impl From<zonefile::Error> for RefreshError {
-    fn from(v: zonefile::Error) -> Self {
-        Self::Zonefile(v)
     }
 }
 

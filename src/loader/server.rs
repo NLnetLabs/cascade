@@ -746,7 +746,7 @@ pub async fn query_soa(
     else {
         return Err(QuerySoaError::MismatchedResponse);
     };
-    if &qname != &zone_name {
+    if qname != zone_name {
         return Err(QuerySoaError::MismatchedResponse);
     }
     let Some(MessageItem::Answer(Record {
@@ -759,7 +759,7 @@ pub async fn query_soa(
     else {
         return Err(QuerySoaError::MismatchedResponse);
     };
-    if &rname != &zone_name {
+    if rname != zone_name {
         return Err(QuerySoaError::MismatchedResponse);
     }
     let None = parser.next() else {

@@ -653,7 +653,6 @@ impl HttpServer {
             return Err(ZoneReloadError::ZoneHalted(reason));
         }
 
-        let source = zone_state.source.clone();
         match zone_state.source.clone() {
             crate::zone::ZoneLoadSource::None => Err(ZoneReloadError::ZoneWithoutSource),
             _ => {
@@ -664,7 +663,6 @@ impl HttpServer {
                         "ZL".into(),
                         ApplicationCommand::ReloadZone {
                             zone_name: name.clone(),
-                            source,
                         },
                     ))
                     .unwrap();
