@@ -23,7 +23,7 @@ use crate::{
         HsmServerAdd, HsmServerAddError, HsmServerAddResult, HsmServerGetResult,
         HsmServerListResult, KmipServerState, PolicyInfo, PolicyInfoError, PolicyListResult,
     },
-    client::{format_http_error, CascadeApiClient},
+    client::{CascadeApiClient, format_http_error},
     println,
 };
 

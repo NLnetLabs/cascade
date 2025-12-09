@@ -1,5 +1,5 @@
 pub fn assert_json_eq(actual_json: serde_json::Value, expected_json: serde_json::Value) {
-    use assert_json_diff::{assert_json_matches_no_panic, CompareMode};
+    use assert_json_diff::{CompareMode, assert_json_matches_no_panic};
 
     let config = assert_json_diff::Config::new(CompareMode::Strict);
     if let Err(err) = assert_json_matches_no_panic(&actual_json, &expected_json, config) {
