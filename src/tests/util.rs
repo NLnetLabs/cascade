@@ -3,15 +3,11 @@ pub fn assert_json_eq(actual_json: serde_json::Value, expected_json: serde_json:
 
     let config = assert_json_diff::Config::new(CompareMode::Strict);
     if let Err(err) = assert_json_matches_no_panic(&actual_json, &expected_json, config) {
-        eprintln!(
-            "Actual JSON: {}",
-            serde_json::to_string_pretty(&actual_json).unwrap()
+        panic!(
+            "JSON doesn't match expectations: {err}\nActual JSON: {}\nExpected JSON: {}",
+            serde_json::to_string_pretty(&actual_json).unwrap(),
+            serde_json::to_string_pretty(&expected_json).unwrap(),
         );
-        eprintln!(
-            "Expected JSON: {}",
-            serde_json::to_string_pretty(&expected_json).unwrap()
-        );
-        panic!("JSON doesn't match expectations: {err}");
     }
 }
 

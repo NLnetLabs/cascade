@@ -1068,8 +1068,7 @@ impl Display for ZoneReportDetails {
                 writeln!(f, "        created at: {at}")?;
                 writeln!(f, "        state: {}", state.status)?;
 
-                if state.metrics.last_refreshed_at.is_some() {
-                    let last_refreshed_at = state.metrics.last_refreshed_at.unwrap();
+                if let Some(last_refreshed_at) = state.metrics.last_refreshed_at {
                     let serial = state.metrics.last_refresh_succeeded_serial.unwrap();
                     let at = match now.checked_duration_since(last_refreshed_at) {
                         Some(duration) => {
