@@ -47,7 +47,6 @@ pub mod net {
         }
     }
 
-    #[async_trait::async_trait]
     impl<T, U, Fut> TcpListenerFactory<MockTcpListener<U, Fut>> for MockTcpListenerFactory<T, U, Fut>
     where
         T: Fn(String) -> std::io::Result<MockTcpListener<U, Fut>> + std::marker::Sync,
@@ -80,7 +79,6 @@ pub mod net {
         }
     }
 
-    #[async_trait::async_trait]
     impl<Fut, T> TcpListener<MockTcpStreamWrapper> for MockTcpListener<T, Fut>
     where
         T: Fn() -> Fut + Sync + Send,

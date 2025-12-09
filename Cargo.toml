@@ -101,7 +101,6 @@ toml               = "0.8"
 axum               = { version = "0.8.4", default-features = false, features = ["http2", "query", "original-uri", "json", "tokio"] }
 
 # From Rotonda
-async-trait        = "0.1"
 crossbeam-utils    = "0.8"
 serde_json         = "1.0"
 serde_with         = "3"
