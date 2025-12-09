@@ -247,7 +247,7 @@ impl TryFrom<String> for RawMetricKey {
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let parts = value.split('|').collect::<Vec<_>>();
         match parts.len() {
-            3|4 => {
+            3 | 4 => {
                 let name = parts[0].to_string();
                 let unit = MetricUnit::try_from(parts[1])?;
                 let suffix = parts[2];
@@ -258,16 +258,22 @@ impl TryFrom<String> for RawMetricKey {
                 match parts.len() {
                     3 => Ok(RawMetricKey::named(name, unit, suffix)),
                     4 => {
-                        let labels = parts[3].split(',').filter_map(|v| {
-                            v.split_once('=').map(|(lhs, rhs)| (lhs.to_string(), rhs.to_string()))
-                        }).collect::<Vec<_>>();
+                        let labels = parts[3]
+                            .split(',')
+                            .filter_map(|v| {
+                                v.split_once('=')
+                                    .map(|(lhs, rhs)| (lhs.to_string(), rhs.to_string()))
+                            })
+                            .collect::<Vec<_>>();
                         Ok(RawMetricKey::labelled(name, unit, suffix, labels))
                     }
                     _ => unreachable!(),
                 }
             }
 
-            _ => Err(format!("Metric key '{value}' should be in the form name|unit|suffix or name|unit|suffix|label"))
+            _ => Err(format!(
+                "Metric key '{value}' should be in the form name|unit|suffix or name|unit|suffix|label"
+            )),
         }
     }
 }

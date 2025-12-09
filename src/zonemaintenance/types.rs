@@ -15,10 +15,10 @@ use std::vec::Vec;
 use bytes::Bytes;
 use futures_util::FutureExt;
 use serde::de::{Unexpected, Visitor};
-use serde::{de, Deserializer, Serialize, Serializer};
-use tokio::sync::{oneshot, Mutex};
-use tokio::time::{sleep_until, Instant, Sleep};
-use tracing::{enabled, trace, Level};
+use serde::{Deserializer, Serialize, Serializer, de};
+use tokio::sync::{Mutex, oneshot};
+use tokio::time::{Instant, Sleep, sleep_until};
+use tracing::{Level, enabled, trace};
 
 use core::time::Duration;
 use domain::base::iana::Class;

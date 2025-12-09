@@ -1,8 +1,8 @@
 use futures_util::TryFutureExt;
 
-use crate::api::keyset as api;
 use crate::api::ZoneName;
-use crate::client::{format_http_error, CascadeApiClient};
+use crate::api::keyset as api;
+use crate::client::{CascadeApiClient, format_http_error};
 use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]

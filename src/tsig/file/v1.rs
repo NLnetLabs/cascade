@@ -47,7 +47,9 @@ impl Spec {
         for (name, key) in store.map.drain() {
             // If any zones are using this key, keep it.
             if !key.zones.is_empty() {
-                error!("The TSIG key '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy");
+                error!(
+                    "The TSIG key '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
+                );
                 let prev = new_keys.insert(name, key);
                 assert!(
                     prev.is_none(),

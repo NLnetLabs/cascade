@@ -1,7 +1,7 @@
 use cascaded::{
     center::{self, Center},
     config::{Config, SocketConfig},
-    daemon::{daemonize, PreBindError, SocketProvider},
+    daemon::{PreBindError, SocketProvider, daemonize},
     manager::Manager,
     policy,
 };

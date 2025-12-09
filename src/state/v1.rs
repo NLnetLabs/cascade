@@ -64,7 +64,9 @@ impl Spec {
         }
         for (name, policy) in state.policies.drain() {
             if !policy.zones.is_empty() {
-                error!("The policy '{name}' has been removed from the global state, but some zones are still using it; Cascade will preserve its internal copy");
+                error!(
+                    "The policy '{name}' has been removed from the global state, but some zones are still using it; Cascade will preserve its internal copy"
+                );
                 new_policies.insert(name, policy);
             } else {
                 info!("Removing policy '{name}'");

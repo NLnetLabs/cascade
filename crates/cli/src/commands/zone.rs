@@ -6,7 +6,7 @@ use futures_util::TryFutureExt;
 
 use crate::ansi;
 use crate::api::*;
-use crate::client::{format_http_error, CascadeApiClient};
+use crate::client::{CascadeApiClient, format_http_error};
 use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]

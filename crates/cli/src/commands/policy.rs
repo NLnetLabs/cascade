@@ -7,7 +7,7 @@ use crate::{
         PolicyListResult, PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo,
         SignerSerialPolicyInfo,
     },
-    client::{format_http_error, CascadeApiClient},
+    client::{CascadeApiClient, format_http_error},
     println,
 };
 

@@ -13,7 +13,7 @@
 
 use camino::Utf8Path;
 use tracing::Subscriber;
-use tracing_subscriber::{layer::SubscriberExt, reload, util::SubscriberInitExt, Registry};
+use tracing_subscriber::{Registry, layer::SubscriberExt, reload, util::SubscriberInitExt};
 
 use crate::config::{LogLevel, LogTarget, LoggingConfig, RuntimeConfig};
 
@@ -204,7 +204,7 @@ mod unix {
         time::Duration,
     };
 
-    use tracing::{field::Field, Subscriber};
+    use tracing::{Subscriber, field::Field};
 
     //------- Syslog -----------------------------------------------------------
 

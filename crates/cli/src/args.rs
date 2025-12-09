@@ -1,8 +1,8 @@
 use std::fmt;
 use std::net::SocketAddr;
 
-use clap::builder::PossibleValue;
 use clap::Parser;
+use clap::builder::PossibleValue;
 use tracing::level_filters::LevelFilter;
 
 use super::client::CascadeApiClient;

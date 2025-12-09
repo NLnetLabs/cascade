@@ -25,13 +25,13 @@ use domain::zonetree::{
 };
 use foldhash::HashMap;
 use futures::Future;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Semaphore;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::Instant;
 use tracing::{debug, error, info};
 
 use crate::api::ZoneLoaderReport;
-use crate::center::{halt_zone, Center, Change};
+use crate::center::{Center, Change, halt_zone};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::common::tsig::TsigKeyStore;
 use crate::manager::{ApplicationCommand, Terminated, Update};
@@ -610,13 +610,17 @@ impl WritableZone for NotifyOnCommitZone {
                     let soa_data = answer.content().first().map(|(_ttl, data)| data);
                     if let Some(ZoneRecordData::Soa(soa)) = soa_data {
                         let zone_serial = soa.serial();
-                        debug!("Notifying that zone '{zone_name}' has been committed at serial {zone_serial}");
+                        debug!(
+                            "Notifying that zone '{zone_name}' has been committed at serial {zone_serial}"
+                        );
                         let _ = sender.send(Update::UnsignedZoneUpdatedEvent {
                             zone_name: zone_name.clone(),
                             zone_serial,
                         });
                     } else {
-                        error!("Failed to query SOA of zone {zone_name} after commit: invalid SOA found");
+                        error!(
+                            "Failed to query SOA of zone {zone_name} after commit: invalid SOA found"
+                        );
                     }
                 }
                 Ok(answer) => error!(

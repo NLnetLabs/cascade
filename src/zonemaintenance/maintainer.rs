@@ -13,8 +13,8 @@ use core::time::Duration;
 
 use std::borrow::ToOwned;
 use std::boxed::Box;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::fmt::Display;
 use std::future::Future;
 use std::io;
@@ -25,15 +25,15 @@ use std::vec::Vec;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
-use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
+use futures_util::stream::FuturesUnordered;
 use octseq::Octets;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::Instant;
-use tracing::{debug, error, info, trace, warn, Level};
+use tracing::{Level, debug, error, info, trace, warn};
 
 use domain::base::iana::{Class, Opcode, OptRcode};
 use domain::base::net::IpAddr;
@@ -58,13 +58,13 @@ use domain::zonetree::{
     WritableZoneNode, Zone, ZoneStore, ZoneTree,
 };
 
-use crate::center::{get_zone, Center};
+use crate::center::{Center, get_zone};
 
 use super::types::{
-    CompatibilityMode, Event, NotifySrcDstConfig, NotifyStrategy, TransportStrategy, XfrConfig,
-    XfrStrategy, ZoneChangedMsg, ZoneConfig, ZoneId, ZoneInfo, ZoneNameServers, ZoneRefreshCause,
-    ZoneRefreshInstant, ZoneRefreshState, ZoneRefreshStatus, ZoneRefreshTimer, ZoneReport,
-    ZoneReportDetails, IANA_DNS_PORT_NUMBER, MIN_DURATION_BETWEEN_ZONE_REFRESHES,
+    CompatibilityMode, Event, IANA_DNS_PORT_NUMBER, MIN_DURATION_BETWEEN_ZONE_REFRESHES,
+    NotifySrcDstConfig, NotifyStrategy, TransportStrategy, XfrConfig, XfrStrategy, ZoneChangedMsg,
+    ZoneConfig, ZoneId, ZoneInfo, ZoneNameServers, ZoneRefreshCause, ZoneRefreshInstant,
+    ZoneRefreshState, ZoneRefreshStatus, ZoneRefreshTimer, ZoneReport, ZoneReportDetails,
 };
 
 //------------ ConnectionFactory ---------------------------------------------
@@ -568,7 +568,10 @@ where
                         Ok(()) => {
                             if is_pending_zone {
                                 // Trigger migration of the zone from the pending set to the active set.
-                                trace!("Removing zone '{}' from the pending set as it was successfully refreshed", zone_id.name);
+                                trace!(
+                                    "Removing zone '{}' from the pending set as it was successfully refreshed",
+                                    zone_id.name
+                                );
                                 event_tx.send(Event::ZoneAdded(zone_id)).await.unwrap();
                             }
                         }
@@ -1228,11 +1231,11 @@ where
                     if age < MIN_DURATION_BETWEEN_ZONE_REFRESHES {
                         // Don't refresh, we refreshed very recently
                         debug!(
-                        "Skipping refresh of zone '{}' as it was refreshed less than {}s ago ({}s)",
-                        zone.apex_name(),
-                        MIN_DURATION_BETWEEN_ZONE_REFRESHES.as_secs(),
-                        age.as_secs()
-                    );
+                            "Skipping refresh of zone '{}' as it was refreshed less than {}s ago ({}s)",
+                            zone.apex_name(),
+                            MIN_DURATION_BETWEEN_ZONE_REFRESHES.as_secs(),
+                            age.as_secs()
+                        );
                         return Ok((None, 0));
                     }
                 }
@@ -2053,12 +2056,14 @@ impl XfrProgressReporter {
             let records_per_second = ((num_updates_applied as f64) / seconds_so_far).floor() as i64;
             let records_per_second = records_per_second.clamp(0, num_updates_applied as i64);
 
-            let report = format!("XFR progress report for zone '{}': Received {} records in {} responses in {} seconds ({} records/second)",
+            let report = format!(
+                "XFR progress report for zone '{}': Received {} records in {} responses in {} seconds ({} records/second)",
                 self.zone_apex,
                 num_updates_applied,
                 num_responses_received,
                 seconds_so_far,
-                records_per_second);
+                records_per_second
+            );
 
             self.last_reported_at = Some(now);
 
@@ -2268,7 +2273,8 @@ where
         };
         let Some(xfr_config) = zone_info.config().provide_xfr_to.src(client_ip) else {
             warn!(
-                "{qtype} for zone '{}' from {client_ip} refused: client is not permitted to transfer this zone", zone.apex_name(),
+                "{qtype} for zone '{}' from {client_ip} refused: client is not permitted to transfer this zone",
+                zone.apex_name(),
             );
             return Err(XfrDataProviderError::Refused);
         };
@@ -2434,22 +2440,19 @@ where
                     let expected_tsig_key_name =
                         xfr_config.tsig_key.as_ref().map(|key| key.inner.name());
                     let tsig_key_mismatch = match (expected_tsig_key_name, key_name.as_ref()) {
-                        (None, Some(actual)) => {
-                            Some(format!(
-                                "Request was signed with TSIG key '{actual}' but should be unsigned."))
-                        }
-                        (Some(expected), None) => {
-                            Some(
-                                format!("Request should be signed with TSIG key '{expected}' but was unsigned"))
-                        }
-                        (Some(expected), Some(actual)) if *actual != expected => {
-                            Some(format!(
-                                "Request should be signed with TSIG key '{expected}' but was instead signed with TSIG key '{actual}'"))
-                        }
+                        (None, Some(actual)) => Some(format!(
+                            "Request was signed with TSIG key '{actual}' but should be unsigned."
+                        )),
+                        (Some(expected), None) => Some(format!(
+                            "Request should be signed with TSIG key '{expected}' but was unsigned"
+                        )),
+                        (Some(expected), Some(actual)) if *actual != expected => Some(format!(
+                            "Request should be signed with TSIG key '{expected}' but was instead signed with TSIG key '{actual}'"
+                        )),
                         (Some(expected), Some(_)) => {
                             trace!("Request is signed with expected TSIG key '{expected}'");
                             None
-                        },
+                        }
                         (None, None) => {
                             trace!("Request is unsigned as expected");
                             None

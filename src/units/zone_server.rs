@@ -1,4 +1,4 @@
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 use std::marker::Sync;
 use std::net::IpAddr;
 use std::pin::Pin;
@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
-use domain::base::iana::{Class, Rcode};
 use domain::base::Name;
+use domain::base::iana::{Class, Rcode};
 use domain::base::{Serial, ToName};
+use domain::net::server::ConnectionConfig;
 use domain::net::server::buf::VecBufSource;
 use domain::net::server::dgram::{self, DgramServer};
 use domain::net::server::message::Request;
@@ -24,11 +25,10 @@ use domain::net::server::service::{CallResult, Service, ServiceResult};
 use domain::net::server::stream::{self, StreamServer};
 use domain::net::server::util::mk_builder_for_target;
 use domain::net::server::util::service_fn;
-use domain::net::server::ConnectionConfig;
 use domain::tsig::KeyStore;
 use domain::tsig::{Algorithm, Key};
-use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
+use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::{StoredName, ZoneTree};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -37,7 +37,7 @@ use crate::api::{
     ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage,
     ZoneReviewStatus,
 };
-use crate::center::{get_zone, Center};
+use crate::center::{Center, get_zone};
 use crate::common::tsig::TsigKeyStore;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
@@ -386,7 +386,9 @@ impl ZoneServer {
                     if let Err(err) =
                         ZoneServer::promote_zone_to_signable(self.center.clone(), &zone_name)
                     {
-                        error!("[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}");
+                        error!(
+                            "[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}"
+                        );
                     } else {
                         update_tx
                             .send(Update::UnsignedZoneApprovedEvent {
@@ -410,7 +412,9 @@ impl ZoneServer {
             return None;
         };
 
-        info!("[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}.");
+        info!(
+            "[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}."
+        );
 
         // Mark this version of the zone as pending approval.
         //
@@ -447,13 +451,23 @@ impl ZoneServer {
 
         if review.cmd_hook.is_none() || review_server.is_none() {
             match (review_server, review.cmd_hook) {
-                (None, None) => warn!("[{unit_name}] Review required, but neither a review server nor a review hook is set; use the CLI to approve or reject the zone"),
-                (None, Some(_)) => warn!("[{unit_name}] Review required, but no review server configured; use the CLI to approve or reject the zone"),
-                (Some(_), None) => info!("[{unit_name}] No review hook set; waiting for manual review"),
+                (None, None) => warn!(
+                    "[{unit_name}] Review required, but neither a review server nor a review hook is set; use the CLI to approve or reject the zone"
+                ),
+                (None, Some(_)) => warn!(
+                    "[{unit_name}] Review required, but no review server configured; use the CLI to approve or reject the zone"
+                ),
+                (Some(_), None) => {
+                    info!("[{unit_name}] No review hook set; waiting for manual review")
+                }
                 (Some(_), Some(_)) => unreachable!(),
             }
-            info!("[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}");
-            info!("[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}");
+            info!(
+                "[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
+            );
+            info!(
+                "[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}"
+            );
             return None;
         }
 
@@ -479,7 +493,9 @@ impl ZoneServer {
             .spawn()
         {
             Ok(mut child) => {
-                info!("[{unit_name}]: Executed hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}");
+                info!(
+                    "[{unit_name}]: Executed hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}"
+                );
 
                 // Wait for the child to complete.
                 let update_tx = self.center.update_tx.clone();
@@ -521,7 +537,9 @@ impl ZoneServer {
                 });
             }
             Err(err) => {
-                error!("[{unit_name}]: Failed to execute hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}: {err}");
+                error!(
+                    "[{unit_name}]: Failed to execute hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}: {err}"
+                );
 
                 {
                     let mut zone_state = zone.state.lock().unwrap();
@@ -570,7 +588,9 @@ impl ZoneServer {
     ) {
         // Look up the zone.
         let Some(zone) = get_zone(&self.center, &zone_name) else {
-            debug!("[{unit_name}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist");
+            debug!(
+                "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist"
+            );
             let _ = tx.send(Err(ZoneReviewError::NoSuchZone));
             return;
         };
@@ -591,7 +611,9 @@ impl ZoneServer {
                         // this.  Since it doesn't exist, the zone is not under
                         // review.
 
-                        debug!("[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review");
+                        debug!(
+                            "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
+                        );
                         let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
                         return;
                     };
@@ -623,7 +645,9 @@ impl ZoneServer {
                                 });
                         }
                         Err(err) => {
-                            error!("Ignoring approval for '{zone_name}': zone could not be promoted to signable: {err}");
+                            error!(
+                                "Ignoring approval for '{zone_name}': zone could not be promoted to signable: {err}"
+                            );
                         }
                     }
                 } else {
@@ -641,7 +665,9 @@ impl ZoneServer {
                         // this.  Since it doesn't exist, the zone is not under
                         // review.
 
-                        debug!("[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review");
+                        debug!(
+                            "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
+                        );
                         let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
                         return;
                     };

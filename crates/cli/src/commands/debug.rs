@@ -2,7 +2,7 @@ use futures_util::TryFutureExt;
 
 use crate::{
     api::{self, ChangeLogging, ChangeLoggingResult, TraceTarget},
-    client::{format_http_error, CascadeApiClient},
+    client::{CascadeApiClient, format_http_error},
     println,
 };
 

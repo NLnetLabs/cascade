@@ -14,7 +14,7 @@ use std::{
 use bytes::Bytes;
 use camino::Utf8Path;
 use domain::{
-    base::{iana::Class, Name, Serial},
+    base::{Name, Serial, iana::Class},
     zonetree::{self, ZoneBuilder},
 };
 use domain::{rdata::dnssec::Timestamp, tsig};

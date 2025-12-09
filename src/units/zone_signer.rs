@@ -1,4 +1,4 @@
-use std::cmp::{min, Ordering};
+use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -15,15 +15,15 @@ use domain::crypto::kmip::{self, ClientCertificate, ConnectionSettings};
 use domain::crypto::sign::{KeyPair, SecretKeyBytes, SignRaw};
 use domain::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
 use domain::dnssec::common::parse_from_bind;
+use domain::dnssec::sign::SigningConfig;
 use domain::dnssec::sign::denial::config::DenialConfig;
 use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode};
 use domain::dnssec::sign::error::SigningError;
-use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
 use domain::dnssec::sign::keys::SigningKey;
+use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
 use domain::dnssec::sign::records::{RecordsIter, Sorter};
-use domain::dnssec::sign::signatures::rrsigs::{sign_sorted_zone_records, GenerateRrsigConfig};
+use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_zone_records};
 use domain::dnssec::sign::traits::SignableZoneInPlace;
-use domain::dnssec::sign::SigningConfig;
 use domain::rdata::dnssec::Timestamp;
 use domain::rdata::{Dnskey, Nsec3param, Rrsig, Soa, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
@@ -34,24 +34,24 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{watch, OwnedSemaphorePermit};
+use tokio::sync::{OwnedSemaphorePermit, watch};
 use tokio::sync::{RwLock, Semaphore};
 use tokio::task::spawn_blocking;
 use tokio::time::Instant;
-use tracing::{debug, error, info, trace, warn, Level};
+use tracing::{Level, debug, error, info, trace, warn};
 use url::Url;
 
 use crate::api::{
     SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
     SigningRequestedReport, SigningStageReport,
 };
-use crate::center::{get_zone, Center};
+use crate::center::{Center, get_zone};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
-    mk_dnst_keyset_state_file_path, KmipClientCredentialsFile, KmipServerCredentialsFileMode,
+    KmipClientCredentialsFile, KmipServerCredentialsFileMode, mk_dnst_keyset_state_file_path,
 };
 use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
 use crate::zonemaintenance::types::{
@@ -272,7 +272,9 @@ impl ZoneSigner {
                         // the zone was large and slow to load and sign,
                         // or because the unsigned zone was pending
                         // review.
-                        debug!("[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}");
+                        debug!(
+                            "[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}"
+                        );
                     } else {
                         error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
@@ -351,7 +353,8 @@ impl ZoneSigner {
         let num_ops_in_progress =
             self.max_concurrent_operations - self.concurrent_operation_permits.available_permits();
         info!(
-            "[ZS]: Waiting to start signing operation for zone '{zone_name}': {num_ops_in_progress} signing operations are in progress and {} operations are queued ahead of us.", q_size - 1
+            "[ZS]: Waiting to start signing operation for zone '{zone_name}': {num_ops_in_progress} signing operations are in progress and {} operations are queued ahead of us.",
+            q_size - 1
         );
 
         let arc_self = self.clone();
@@ -510,8 +513,11 @@ impl ZoneSigner {
             new_soa,
         );
 
-        info!("[ZS]: Serials for zone '{zone_name}': last signed={last_signed_serial:?}, current={}, serial policy={}, new={serial}",
-            soa.serial(), policy.signer.serial_policy);
+        info!(
+            "[ZS]: Serials for zone '{zone_name}': last signed={last_signed_serial:?}, current={}, serial policy={}, new={serial}",
+            soa.serial(),
+            policy.signer.serial_policy
+        );
 
         //
         // Record the start of signing for this zone.
@@ -604,16 +610,22 @@ impl ZoneSigner {
                         debug!("Attempting to load private key '{priv_key_path}'.");
 
                         let private_key = ZoneSigner::load_private_key(Path::new(priv_key_path))
-                            .map_err(|_| SignerError::CannotReadPrivateKeyFile(priv_key_path.to_string()))?;
+                            .map_err(|_| {
+                                SignerError::CannotReadPrivateKeyFile(priv_key_path.to_string())
+                            })?;
 
                         let pub_key_path = pub_url.path();
                         debug!("Attempting to load public key '{pub_key_path}'.");
 
                         let public_key = ZoneSigner::load_public_key(Path::new(pub_key_path))
-                            .map_err(|_| SignerError::CannotReadPublicKeyFile(pub_key_path.to_string()))?;
+                            .map_err(|_| {
+                                SignerError::CannotReadPublicKeyFile(pub_key_path.to_string())
+                            })?;
 
                         let key_pair = KeyPair::from_bytes(&private_key, public_key.data())
-                            .map_err(|err| SignerError::InvalidKeyPairComponents(err.to_string()))?;
+                            .map_err(|err| {
+                                SignerError::InvalidKeyPairComponents(err.to_string())
+                            })?;
                         let signing_key =
                             SigningKey::new(zone_name.clone(), public_key.data().flags(), key_pair);
 
@@ -621,102 +633,123 @@ impl ZoneSigner {
                     }
 
                     ("kmip", "kmip") => {
-                        let priv_key_url = KeyUrl::try_from(priv_url).map_err(SignerError::InvalidPublicKeyUrl)?;
-                        let pub_key_url = KeyUrl::try_from(pub_url).map_err(SignerError::InvalidPrivateKeyUrl)?;
+                        let priv_key_url =
+                            KeyUrl::try_from(priv_url).map_err(SignerError::InvalidPublicKeyUrl)?;
+                        let pub_key_url =
+                            KeyUrl::try_from(pub_url).map_err(SignerError::InvalidPrivateKeyUrl)?;
 
                         // TODO: Replace the connection pool if the persisted KMIP server settings
                         // were updated more recently than the pool was created.
 
                         let mut kmip_servers = self.kmip_servers.lock().unwrap();
                         let kmip_conn_pool = match kmip_servers
-                            .entry(priv_key_url.server_id().to_string()) {
-                                std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
-                                std::collections::hash_map::Entry::Vacant(e) => {
-                                    // Try and load the KMIP server settings.
-                                    let p = kmip_server_state_dir.join(priv_key_url.server_id());
-                                    info!("Reading KMIP server state from '{p}'");
-                                    let f = std::fs::File::open(p).unwrap();
-                                    let kmip_server: KmipServerState = serde_json::from_reader(f).unwrap();
-                                    let KmipServerState {
-                                        server_id,
-                                        ip_host_or_fqdn: host,
-                                        port,
-                                        insecure,
-                                        connect_timeout,
-                                        read_timeout,
-                                        write_timeout,
-                                        max_response_bytes,
-                                        has_credentials,
-                                        ..
-                                    } = kmip_server;
+                            .entry(priv_key_url.server_id().to_string())
+                        {
+                            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+                            std::collections::hash_map::Entry::Vacant(e) => {
+                                // Try and load the KMIP server settings.
+                                let p = kmip_server_state_dir.join(priv_key_url.server_id());
+                                info!("Reading KMIP server state from '{p}'");
+                                let f = std::fs::File::open(p).unwrap();
+                                let kmip_server: KmipServerState =
+                                    serde_json::from_reader(f).unwrap();
+                                let KmipServerState {
+                                    server_id,
+                                    ip_host_or_fqdn: host,
+                                    port,
+                                    insecure,
+                                    connect_timeout,
+                                    read_timeout,
+                                    write_timeout,
+                                    max_response_bytes,
+                                    has_credentials,
+                                    ..
+                                } = kmip_server;
 
-                                    let mut username = None;
-                                    let mut password = None;
-                                    if has_credentials {
-                                        let creds_file = KmipClientCredentialsFile::new(
-                                            kmip_credentials_store_path.as_std_path(),
-                                            KmipServerCredentialsFileMode::ReadOnly)
-                                        .unwrap();
+                                let mut username = None;
+                                let mut password = None;
+                                if has_credentials {
+                                    let creds_file = KmipClientCredentialsFile::new(
+                                        kmip_credentials_store_path.as_std_path(),
+                                        KmipServerCredentialsFileMode::ReadOnly,
+                                    )
+                                    .unwrap();
 
-                                        let creds = creds_file.get(&server_id)
-                                            .ok_or(SignerError::KmipServerCredentialsNeeded(server_id.clone()))?;
+                                    let creds = creds_file.get(&server_id).ok_or(
+                                        SignerError::KmipServerCredentialsNeeded(server_id.clone()),
+                                    )?;
 
-                                        username = Some(creds.username.clone());
-                                        password = creds.password.clone();
-                                    }
-
-                                    let conn_settings = ConnectionSettings {
-                                        host,
-                                        port,
-                                        username,
-                                        password,
-                                        insecure,
-                                        client_cert: None, // TODO
-                                        server_cert: None, // TODO
-                                        ca_cert: None, // TODO
-                                        connect_timeout: Some(connect_timeout),
-                                        read_timeout: Some(read_timeout),
-                                        write_timeout: Some(write_timeout),
-                                        max_response_bytes: Some(max_response_bytes),
-                                    };
-
-                                    let cloned_status = status.clone();
-                                    let cloned_server_id = server_id.clone();
-                                    tokio::task::spawn(async move {
-                                        cloned_status.write().await.current_action = format!("Connecting to KMIP server '{cloned_server_id}");
-                                    });
-                                    let pool = ConnectionManager::create_connection_pool(
-                                        server_id.clone(),
-                                        Arc::new(conn_settings.clone()),
-                                        10,
-                                        Some(Duration::from_secs(60)),
-                                        Some(Duration::from_secs(60)),
-                                    ).map_err(|err| SignerError::CannotCreateKmipConnectionPool(server_id, err))?;
-
-                                    e.insert(pool)
+                                    username = Some(creds.username.clone());
+                                    password = creds.password.clone();
                                 }
-                            };
+
+                                let conn_settings = ConnectionSettings {
+                                    host,
+                                    port,
+                                    username,
+                                    password,
+                                    insecure,
+                                    client_cert: None, // TODO
+                                    server_cert: None, // TODO
+                                    ca_cert: None,     // TODO
+                                    connect_timeout: Some(connect_timeout),
+                                    read_timeout: Some(read_timeout),
+                                    write_timeout: Some(write_timeout),
+                                    max_response_bytes: Some(max_response_bytes),
+                                };
+
+                                let cloned_status = status.clone();
+                                let cloned_server_id = server_id.clone();
+                                tokio::task::spawn(async move {
+                                    cloned_status.write().await.current_action =
+                                        format!("Connecting to KMIP server '{cloned_server_id}");
+                                });
+                                let pool = ConnectionManager::create_connection_pool(
+                                    server_id.clone(),
+                                    Arc::new(conn_settings.clone()),
+                                    10,
+                                    Some(Duration::from_secs(60)),
+                                    Some(Duration::from_secs(60)),
+                                )
+                                .map_err(|err| {
+                                    SignerError::CannotCreateKmipConnectionPool(server_id, err)
+                                })?;
+
+                                e.insert(pool)
+                            }
+                        };
 
                         let _flags = priv_key_url.flags();
 
                         let cloned_status = status.clone();
                         let cloned_server_id = priv_key_url.server_id().to_string();
                         tokio::task::spawn(async move {
-                            cloned_status.write().await.current_action = format!("Fetching keys from KMIP server '{cloned_server_id}'");
+                            cloned_status.write().await.current_action =
+                                format!("Fetching keys from KMIP server '{cloned_server_id}'");
                         });
 
-                        let key_pair = KeyPair::Kmip(kmip::sign::KeyPair::from_urls(
-                            priv_key_url,
-                            pub_key_url,
-                            kmip_conn_pool.clone(),
-                        ).map_err(|err| SignerError::InvalidKeyPairComponents(err.to_string()))?);
+                        let key_pair = KeyPair::Kmip(
+                            kmip::sign::KeyPair::from_urls(
+                                priv_key_url,
+                                pub_key_url,
+                                kmip_conn_pool.clone(),
+                            )
+                            .map_err(|err| {
+                                SignerError::InvalidKeyPairComponents(err.to_string())
+                            })?,
+                        );
 
-                        let signing_key = SigningKey::new(zone_name.clone(), key_pair.flags(), key_pair);
+                        let signing_key =
+                            SigningKey::new(zone_name.clone(), key_pair.flags(), key_pair);
 
                         signing_keys.push(signing_key);
                     }
 
-                    (other1, other2) => return Err(SignerError::InvalidKeyPairComponents(format!("Using different key URI schemes ({other1} vs {other2}) for a public/private key pair is not supported."))),
+                    (other1, other2) => {
+                        return Err(SignerError::InvalidKeyPairComponents(format!(
+                            "Using different key URI schemes ({other1} vs {other2}) for a public/private key pair is not supported."
+                        )));
+                    }
                 }
 
                 debug!("Loaded key pair for zone {zone_name} from key pair");
@@ -806,7 +839,9 @@ impl ZoneSigner {
         // threads to sign with and how big each chunk to be signed should be.
         let rr_count = RecordsIter::new(&unsigned_records).count();
         let (parallelism, chunk_size) = self.determine_signing_concurrency(rr_count);
-        info!("SIGNER: Using {parallelism} threads to sign {rr_count} owners in chunks of {chunk_size}.",);
+        info!(
+            "SIGNER: Using {parallelism} threads to sign {rr_count} owners in chunks of {chunk_size}.",
+        );
 
         {
             let mut v = status.write().await;
@@ -1059,11 +1094,7 @@ impl ZoneSigner {
         // extra threads kan opstarten als er geconstateerd wordt dat er veel
         // nieuwe sigs gemaakt moeten worden."
         let parallelism = if rr_count < 1024 {
-            if rr_count >= 2 {
-                2
-            } else {
-                1
-            }
+            if rr_count >= 2 { 2 } else { 1 }
         } else {
             self.max_concurrent_rrsig_generation_tasks
         };
@@ -1927,7 +1958,9 @@ fn load_client_cert(opt: &KmipServerConnectionSettings) -> Option<ClientCertific
             panic!("Client certificate authentication requires both a certificate and a key");
         }
         (_, Some(_), Some(_)) | (Some(_), _, Some(_)) => {
-            panic!("Use either but not both of: client certificate and key PEM file paths, or a PCKS#12 certficate file path");
+            panic!(
+                "Use either but not both of: client certificate and key PEM file paths, or a PCKS#12 certficate file path"
+            );
         }
         (Some(cert_path), Some(key_path), None) => Some(ClientCertificate::SeparatePem {
             cert_bytes: load_binary_file(cert_path),
