@@ -20,6 +20,8 @@
 #         os: [ubuntu-latest]
 #         rust: [stable] # see build job
 #     steps:
+#     # WARNING: You MUST checkout the repository otherwise subsequent 'uses'
+#     # steps will fail to find the action.
 #     - name: Checkout repository
 #       uses: actions/checkout@v4
 #     - name: Prepare the system test environment
