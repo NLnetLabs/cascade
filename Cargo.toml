@@ -122,6 +122,22 @@ tempfile = "3.21.0"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+# The 'lazy_static' library, which is pulled in by a subtle transitive
+# dependency, is specified with a low minimal version.  The oldest allowed
+# versions cause compilation errors with recent Rust compilers.  We manually
+# increase the minimum version by registering it as a dependency, even though we
+# don't use it ourselves.
+# 
+# tracing-subscriber 0.3.20, feature "registry"
+# depends on: sharded-slab ^0.1.4
+# depends on: lazy_static ^1
+#
+# Ideally, this would be fixed in a new version of 'sharded-slab'.  But
+# as of 2025-12-09, sharded-slab appears to be unmaintained. See
+# <https://github.com/tokio-rs/tracing/issues/3436> for its use in
+# 'tracing-subscriber'.
+lazy_static = { version = "1.5" }
+
 # support-color checks various environment variables and terminal settings for
 # whether ANSI escape codes should be emitted. It is also used by `anstream`
 # (and therefore `clap`).
