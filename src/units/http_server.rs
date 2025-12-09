@@ -1,4 +1,5 @@
 use std::future::IntoFuture;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -26,7 +27,6 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
-use tokio::time::Instant;
 use tracing::{error, info, warn};
 
 use crate::api;
@@ -46,6 +46,7 @@ use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
 use crate::units::zone_signer::KeySetState;
+use crate::zone::loader::LoaderMetrics;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::PipelineMode;
@@ -279,15 +280,10 @@ impl HttpServer {
         state: Arc<HttpServer>,
         name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
-        let mut zone_started_at = None;
-        let mut zone_loaded_at: Option<SystemTime> = None;
-        let mut zone_loaded_in = None;
-        let mut zone_loaded_bytes = 0;
-        let mut zone_loaded_record_count = 0;
         let state_path;
         let app_cmd_tx;
         let policy;
-        let mut source;
+        let source;
         let unsigned_review_addr;
         let signed_review_addr;
         let publish_addr;
@@ -439,65 +435,6 @@ impl HttpServer {
             }
         };
 
-        // TODO: bring this functionality back
-        // // Query XFR status
-        // let (tx, rx) = oneshot::channel();
-        // app_cmd_tx
-        //     .send((
-        //         "ZL".to_owned(),
-        //         ApplicationCommand::GetZoneReport {
-        //             zone_name: name.clone(),
-        //             report_tx: tx,
-        //         },
-        //     ))
-        //     .ok();
-        // if let Ok((zone_maintainer_report, zone_loader_report)) = rx.await {
-        //     match zone_maintainer_report.details() {
-        //         ZoneReportDetails::Primary => {
-        //             if let Some(report) = zone_loader_report {
-        //                 zone_started_at = Some(report.started_at);
-        //                 if let Some(finished_at) = report.finished_at {
-        //                     if let Ok(duration) = finished_at.duration_since(report.started_at) {
-        //                         zone_loaded_in = Some(duration);
-        //                         zone_loaded_at = Some(finished_at);
-        //                         zone_loaded_bytes = report.byte_count;
-        //                         zone_loaded_record_count = report.record_count;
-        //                     } else {
-        //                         zone_loaded_in = Some(
-        //                             SystemTime::now().duration_since(report.started_at).unwrap(),
-        //                         );
-        //                         zone_loaded_at = None;
-        //                         zone_loaded_bytes = report.byte_count;
-        //                         zone_loaded_record_count = report.record_count;
-        //                     }
-        //                 } else {
-        //                     zone_loaded_in = None;
-        //                     zone_loaded_at = None;
-        //                     zone_loaded_bytes = report.byte_count;
-        //                     zone_loaded_record_count = report.record_count;
-        //                 }
-        //             }
-        //         }
-        //         ZoneReportDetails::PendingSecondary(s) | ZoneReportDetails::Secondary(s) => {
-        //             let api::ZoneSource::Server { xfr_status, .. } = &mut source else {
-        //                 unreachable!("A secondary must have been configured from a server source");
-        //             };
-        //             *xfr_status = s.status().into();
-        //             let metrics = s.metrics();
-        //             let now = Instant::now();
-        //             let now_t = SystemTime::now();
-        //             if let (Some(checked_at), Some(refreshed_at)) = (
-        //                 metrics.last_soa_serial_check_succeeded_at,
-        //                 metrics.last_refreshed_at,
-        //             ) {
-        //                 zone_loaded_in = Some(refreshed_at.duration_since(checked_at));
-        //                 zone_loaded_at = now_t.checked_sub(now.duration_since(refreshed_at));
-        //                 zone_loaded_bytes = metrics.last_refresh_succeeded_bytes.unwrap();
-        //             }
-        //         }
-        //     }
-        // }
-
         // Query zone keys
         let mut keys = vec![];
         match std::fs::read_to_string(&state_path) {
@@ -541,27 +478,36 @@ impl HttpServer {
             }
         }
 
-        let receipt_report = match (zone_loaded_at, zone_loaded_in, zone_started_at) {
-            (Some(finished_at), Some(zone_loaded_in), started_at) => {
-                let started_at = match started_at {
-                    Some(started_at) => started_at,
-                    None => finished_at.checked_sub(zone_loaded_in).unwrap(),
-                };
-                Some(ZoneLoaderReport {
-                    started_at,
-                    finished_at: Some(finished_at),
-                    byte_count: zone_loaded_bytes,
-                    record_count: zone_loaded_record_count,
-                })
-            }
-            (finished_at, None, Some(started_at)) => Some(ZoneLoaderReport {
+        let metrics = {
+            let s = state.center.state.lock().unwrap();
+            let zone = s.zones.get(&name);
+
+            zone.and_then(|z| {
+                z.0.state
+                    .lock()
+                    .unwrap()
+                    .loader
+                    .metrics
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .cloned()
+            })
+        };
+        let receipt_report = match metrics {
+            Some(LoaderMetrics {
                 started_at,
                 finished_at,
-                byte_count: zone_loaded_bytes,
-                record_count: zone_loaded_record_count,
+                byte_count,
+                record_count,
+            }) => Some(ZoneLoaderReport {
+                started_at,
+                finished_at,
+                byte_count: byte_count.load(Relaxed),
+                record_count: record_count.load(Relaxed),
             }),
-            other => {
-                warn!("Unable to provide receipt report for zone '{name}': {other:?}");
+            None => {
+                warn!("Unable to provide receipt report for zone '{name}'");
                 None
             }
         };

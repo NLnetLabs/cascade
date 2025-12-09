@@ -2,8 +2,8 @@
 
 use std::{
     net::IpAddr,
-    sync::Arc,
-    time::{Duration, Instant},
+    sync::{atomic::AtomicUsize, Arc, Mutex},
+    time::{Duration, Instant, SystemTime},
 };
 
 use camino::Utf8Path;
@@ -33,6 +33,17 @@ pub struct LoaderState {
 
     /// Ongoing and enqueued refreshes of the zone.
     pub refreshes: Option<Refreshes>,
+
+    /// Metrics of the current or last load of this zone
+    pub metrics: Mutex<Option<LoaderMetrics>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LoaderMetrics {
+    pub started_at: SystemTime,
+    pub finished_at: Option<SystemTime>,
+    pub byte_count: Arc<AtomicUsize>,
+    pub record_count: Arc<AtomicUsize>,
 }
 
 impl LoaderState {
@@ -136,12 +147,33 @@ impl LoaderState {
     ) {
         debug!("Refreshing {:?}", zone.name);
 
+        let metrics = LoaderMetrics {
+            started_at: SystemTime::now(),
+            finished_at: None,
+            byte_count: Arc::new(AtomicUsize::new(0)),
+            record_count: Arc::new(AtomicUsize::new(0)),
+        };
+
+        {
+            let state = zone.state.lock().unwrap();
+            let mut metrics_guard = state.loader.metrics.lock().unwrap();
+            *metrics_guard = Some(metrics.clone());
+        }
+
         // Perform the source-specific reload into the zone contents.
-        let (result, lock) = loader::refresh(&zone, &source, latest).await;
+        let (result, lock) = loader::refresh(&metrics, &zone, &source, latest).await;
 
         // Try to re-use a recent lock from the reload.
         let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
         let state = &mut *lock;
+
+        {
+            let mut metrics_guard = state.loader.metrics.lock().unwrap();
+            metrics_guard
+                .as_mut()
+                .expect("we just added the metrics")
+                .finished_at = Some(SystemTime::now());
+        }
 
         // Update the zone refresh timers.
         let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
@@ -225,12 +257,32 @@ impl LoaderState {
     async fn reload(zone: Arc<Zone>, start: Instant, source: Source, loader: Arc<Loader>) {
         debug!("Reloading {:?}", zone.name);
 
+        let metrics = LoaderMetrics {
+            started_at: SystemTime::now(),
+            finished_at: None,
+            byte_count: Arc::new(AtomicUsize::new(0)),
+            record_count: Arc::new(AtomicUsize::new(0)),
+        };
+        {
+            let state = zone.state.lock().unwrap();
+            let mut metrics_guard = state.loader.metrics.lock().unwrap();
+            *metrics_guard = Some(metrics.clone());
+        }
+
         // Perform the source-specific reload into the zone contents.
-        let (result, lock) = loader::reload(&zone, &source).await;
+        let (result, lock) = loader::reload(&metrics, &zone, &source).await;
 
         // Try to re-use a recent lock from the reload.
         let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
         let state = &mut *lock;
+
+        {
+            let mut metrics_guard = state.loader.metrics.lock().unwrap();
+            metrics_guard
+                .as_mut()
+                .expect("we just added the metrics")
+                .finished_at = Some(SystemTime::now());
+        }
 
         // Update the zone refresh timers.
         let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);

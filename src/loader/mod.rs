@@ -1,5 +1,4 @@
-//! Loading zones.
-//!
+//! Loading zones.//!
 //! The zone loader is responsible for maintaining up-to-date copies of the DNS
 //! zones known to Nameshed.  Every zone has a configured source (e.g. zonefile,
 //! DNS server, etc.) that will be monitored for changes.
@@ -18,7 +17,11 @@ use tracing::{debug, trace, warn};
 use crate::{
     center::{Center, Change},
     manager::{ApplicationCommand, Terminated},
-    zone::{self, contents, loader::Source, LoaderState, Zone, ZoneContents, ZoneState},
+    zone::{
+        self, contents,
+        loader::{LoaderMetrics, Source},
+        LoaderState, Zone, ZoneContents, ZoneState,
+    },
 };
 
 mod refresh;
@@ -133,6 +136,7 @@ impl Loader {
 /// Where possible, an incremental zone transfer will be used to communicate
 /// more efficiently.
 pub async fn refresh<'z>(
+    metrics: &LoaderMetrics,
     zone: &'z Arc<Zone>,
     source: &zone::loader::Source,
     latest: Option<Arc<contents::Uncompressed>>,
@@ -158,7 +162,7 @@ pub async fn refresh<'z>(
         zone::loader::Source::Server { addr, tsig_key } => {
             trace!("Refreshing {:?} from server {addr:?}", zone.name);
 
-            server::refresh(zone, addr, tsig_key.clone(), latest).await
+            server::refresh(metrics, zone, addr, tsig_key.clone(), latest).await
         }
     };
 
@@ -288,6 +292,7 @@ struct Refresh {
 /// compared to the local copy of the same zone version.  If an inconsistency is
 /// detected, an error is returned, and the zone storage is unchanged.
 pub async fn reload<'z>(
+    metrics: &LoaderMetrics,
     zone: &'z Arc<Zone>,
     source: &zone::loader::Source,
 ) -> (
@@ -308,7 +313,8 @@ pub async fn reload<'z>(
 
             let zone = zone.clone();
             let path = path.clone();
-            tokio::task::spawn_blocking(move || zonefile::load(&zone, &path))
+            let metrics = metrics.clone();
+            tokio::task::spawn_blocking(move || zonefile::load(&metrics, &zone, &path))
                 .await
                 .unwrap()
                 .map_err(ReloadError::Zonefile)
@@ -317,7 +323,7 @@ pub async fn reload<'z>(
         zone::loader::Source::Server { addr, tsig_key } => {
             trace!("Reloading {:?} from server {addr:?}", zone.name);
 
-            server::axfr(zone, addr, tsig_key.clone())
+            server::axfr(metrics, zone, addr, tsig_key.clone())
                 .await
                 .map_err(ReloadError::Axfr)
         }

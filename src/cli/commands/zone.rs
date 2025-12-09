@@ -688,7 +688,7 @@ impl Progress {
         let Some(report) = &zone.receipt_report else {
             // This shouldn't happen.
             println!(
-                "{}\u{78} The receipt report for this zone is unavailable.{}",
+                "{}\u{78} This zone has not been loaded yet.{}",
                 ansi::RED,
                 ansi::RESET
             );

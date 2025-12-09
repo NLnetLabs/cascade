@@ -1,6 +1,13 @@
 //! Loading zones from DNS servers.
 
-use std::{cmp::Ordering, fmt, iter::Peekable, mem, net::SocketAddr, sync::Arc};
+use std::{
+    cmp::Ordering,
+    fmt,
+    iter::Peekable,
+    mem,
+    net::SocketAddr,
+    sync::{atomic::Ordering::Relaxed, Arc},
+};
 
 use bytes::Bytes;
 use domain::{
@@ -35,7 +42,7 @@ use tracing::trace;
 
 use crate::zone::{
     contents::{self, RegularRecord, SoaRecord},
-    loader::DnsServerAddr,
+    loader::{DnsServerAddr, LoaderMetrics},
     Zone,
 };
 
@@ -47,6 +54,7 @@ use super::RefreshError;
 ///
 /// See [`super::refresh()`].
 pub async fn refresh(
+    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     addr: &DnsServerAddr,
     tsig_key: Option<tsig::Key>,
@@ -56,7 +64,7 @@ pub async fn refresh(
         trace!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
 
         // Fetch the whole zone.
-        let remote = axfr(zone, addr, tsig_key).await?;
+        let remote = axfr(metrics, zone, addr, tsig_key).await?;
 
         return Ok(Some(super::Refresh {
             uncompressed: Arc::new(remote),
@@ -67,7 +75,7 @@ pub async fn refresh(
     trace!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
 
     // Fetch the zone relative to the latest local copy.
-    match ixfr(zone, addr, tsig_key, &latest.soa).await? {
+    match ixfr(metrics, zone, addr, tsig_key, &latest.soa).await? {
         Ixfr::UpToDate => {
             // The local copy is up-to-date.
             Ok(None)
@@ -120,6 +128,7 @@ pub async fn refresh(
 /// of the zone.  If the local version is identical to the server's version,
 /// [`None`] is returned.
 pub async fn ixfr(
+    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     addr: &DnsServerAddr,
     tsig_key: Option<tsig::Key>,
@@ -174,7 +183,9 @@ pub async fn ixfr(
             match local_soa.rdata.serial.partial_cmp(&remote_soa.rdata.serial) {
                 Some(Ordering::Less) => {
                     // Perform a full AXFR.
-                    return Ok(Ixfr::Uncompressed(axfr(zone, addr, tsig_key).await?));
+                    return Ok(Ixfr::Uncompressed(
+                        axfr(metrics, zone, addr, tsig_key).await?,
+                    ));
                 }
 
                 // The local copy is up-to-date.
@@ -187,6 +198,9 @@ pub async fn ixfr(
 
         // Process the transfer data.
         let mut interpreter = XfrResponseInterpreter::new();
+        metrics
+            .byte_count
+            .fetch_add(response.as_slice().len(), Relaxed);
         let mut updates = interpreter.interpret_response(response)?.peekable();
 
         match updates.peek() {
@@ -194,7 +208,7 @@ pub async fn ixfr(
                 // This is an AXFR.
                 let _ = updates.next().unwrap();
                 let mut all = Vec::new();
-                let Some(soa) = process_axfr(&mut all, updates)? else {
+                let Some(soa) = process_axfr(metrics, &mut all, updates)? else {
                     // Fail: UDP-based IXFR returned a partial AXFR.
                     return Err(IxfrError::IncompleteResponse);
                 };
@@ -213,6 +227,7 @@ pub async fn ixfr(
                 let mut all_this = Vec::new();
                 let mut all_next = Vec::new();
                 process_ixfr(
+                    metrics,
                     &mut versions,
                     &mut this_soa,
                     &mut next_soa,
@@ -220,7 +235,6 @@ pub async fn ixfr(
                     &mut all_next,
                     updates,
                 )?;
-
                 if interpreter.is_finished() {
                     return Ok(Ixfr::Compressed(versions));
                 } else {
@@ -245,6 +259,8 @@ pub async fn ixfr(
                 let ZoneRecordData::Soa(soa) = record.data() else {
                     unreachable!("'ZoneUpdate::Finished' must hold a SOA");
                 };
+
+                metrics.record_count.fetch_add(1, Relaxed);
 
                 let serial = Serial::from(soa.serial().into_int());
                 match local_soa.rdata.serial.partial_cmp(&serial) {
@@ -308,7 +324,9 @@ pub async fn ixfr(
         match local_soa.rdata.serial.partial_cmp(&remote_soa.rdata.serial) {
             Some(Ordering::Less) => {
                 // Perform a full AXFR.
-                return Ok(Ixfr::Uncompressed(axfr(zone, addr, tsig_key).await?));
+                return Ok(Ixfr::Uncompressed(
+                    axfr(metrics, zone, addr, tsig_key).await?,
+                ));
             }
 
             // The local copy is up-to-date.
@@ -319,6 +337,7 @@ pub async fn ixfr(
         }
     }
 
+    let mut bytes = initial.as_slice().len();
     let mut updates = interpreter.interpret_response(initial)?.peekable();
 
     match updates.peek().unwrap() {
@@ -329,7 +348,7 @@ pub async fn ixfr(
 
             // Process the response messages.
             let soa = loop {
-                if let Some(soa) = process_axfr(&mut all, updates)? {
+                if let Some(soa) = process_axfr(&metrics, &mut all, updates)? {
                     break soa;
                 } else {
                     // Retrieve the next message.
@@ -337,6 +356,7 @@ pub async fn ixfr(
                         .get_response()
                         .await?
                         .ok_or(IxfrError::IncompleteResponse)?;
+                    bytes += message.as_slice().len();
                     updates = interpreter.interpret_response(message)?.peekable();
                 }
             };
@@ -344,6 +364,7 @@ pub async fn ixfr(
             assert!(interpreter.is_finished());
             let all = all.into_boxed_slice();
             let uncompressed = contents::Uncompressed { soa, all };
+            metrics.byte_count.fetch_add(bytes, Relaxed);
             Ok(Ixfr::Uncompressed(uncompressed))
         }
 
@@ -358,6 +379,7 @@ pub async fn ixfr(
             // Process the response messages.
             loop {
                 process_ixfr(
+                    metrics,
                     &mut versions,
                     &mut this_soa,
                     &mut next_soa,
@@ -374,10 +396,12 @@ pub async fn ixfr(
                         .get_response()
                         .await?
                         .ok_or(IxfrError::IncompleteResponse)?;
+                    bytes += message.as_slice().len();
                     updates = interpreter.interpret_response(message)?.peekable();
                 }
             }
 
+            metrics.byte_count.fetch_add(bytes, Relaxed);
             assert!(interpreter.is_finished());
             Ok(Ixfr::Compressed(versions))
         }
@@ -435,6 +459,7 @@ pub enum Ixfr {
 
 /// Process an IXFR message.
 fn process_ixfr(
+    metrics: &LoaderMetrics,
     versions: &mut Vec<contents::Compressed>,
     this_soa: &mut Option<SoaRecord>,
     next_soa: &mut Option<SoaRecord>,
@@ -443,6 +468,7 @@ fn process_ixfr(
     updates: Peekable<XfrZoneUpdateIterator<'_, '_>>,
 ) -> Result<(), IxfrError> {
     for update in updates {
+        metrics.record_count.fetch_add(1, Relaxed);
         match update? {
             ZoneUpdate::BeginBatchDelete(record) => {
                 // If there was a previous zone version, write it out.
@@ -530,6 +556,7 @@ fn process_ixfr(
 
 /// Perform an authoritative zone transfer.
 pub async fn axfr(
+    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     addr: &DnsServerAddr,
     tsig_key: Option<tsig::Key>,
@@ -590,6 +617,8 @@ pub async fn axfr(
         .get_response()
         .await?
         .ok_or(AxfrError::IncompleteResponse)?;
+
+    let mut bytes = initial.as_slice().len();
     let mut updates = interpreter.interpret_response(initial)?.peekable();
 
     assert!(updates.next().unwrap()? == ZoneUpdate::DeleteAllRecords);
@@ -597,7 +626,7 @@ pub async fn axfr(
 
     // Process the response messages.
     let soa = loop {
-        if let Some(soa) = process_axfr(&mut all, updates)? {
+        if let Some(soa) = process_axfr(metrics, &mut all, updates)? {
             break soa;
         } else {
             // Retrieve the next message.
@@ -605,22 +634,28 @@ pub async fn axfr(
                 .get_response()
                 .await?
                 .ok_or(AxfrError::IncompleteResponse)?;
+            bytes += message.as_slice().len();
             updates = interpreter.interpret_response(message)?.peekable();
         }
     };
 
     assert!(interpreter.is_finished());
     let all = all.into_boxed_slice();
+
+    metrics.byte_count.fetch_add(bytes, Relaxed);
+
     Ok(contents::Uncompressed { soa, all })
 }
 
 /// Process an AXFR message.
 fn process_axfr(
+    metrics: &LoaderMetrics,
     all: &mut Vec<RegularRecord>,
     updates: Peekable<XfrZoneUpdateIterator<'_, '_>>,
 ) -> Result<Option<SoaRecord>, AxfrError> {
     // Process the updates.
     for update in updates {
+        metrics.record_count.fetch_add(1, Relaxed);
         match update? {
             ZoneUpdate::AddRecord(record) => {
                 all.push(record.into());

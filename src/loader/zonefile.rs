@@ -1,6 +1,10 @@
 //! Loading zones from zonefiles.
 
-use std::{fmt, fs::File, sync::Arc};
+use std::{
+    fmt,
+    fs::File,
+    sync::{atomic::Ordering::Relaxed, Arc},
+};
 
 use bytes::BufMut;
 use camino::Utf8Path;
@@ -16,6 +20,7 @@ use domain::{
 
 use crate::zone::{
     contents::{RegularRecord, SoaRecord, Uncompressed},
+    loader::LoaderMetrics,
     Zone,
 };
 
@@ -29,8 +34,12 @@ enum Parsed {
 /// Load a zone from a zonefile.
 ///
 /// This will always read the entire zone, regardless of the serial in the SOA.
-pub fn load(zone: &Arc<Zone>, path: &Utf8Path) -> Result<Uncompressed, Error> {
-    let mut reader = make_reader(zone, path)?;
+pub fn load(
+    metrics: &LoaderMetrics,
+    zone: &Arc<Zone>,
+    path: &Utf8Path,
+) -> Result<Uncompressed, Error> {
+    let mut reader = make_reader(metrics, zone, path)?;
 
     // The collection of all the records that we will parse
     let mut all = Vec::<RegularRecord>::new();
@@ -43,6 +52,7 @@ pub fn load(zone: &Arc<Zone>, path: &Utf8Path) -> Result<Uncompressed, Error> {
 
     // Parse all the records, extracting the SOA. We always read the whole zone.
     while let Some(record) = parse_record(&mut buf, zone, &mut reader)? {
+        metrics.record_count.fetch_add(1, Relaxed);
         match record {
             Parsed::Soa(soa_record) => {
                 if soa.is_some() {
@@ -67,11 +77,17 @@ pub fn load(zone: &Arc<Zone>, path: &Utf8Path) -> Result<Uncompressed, Error> {
 
 //----------- Helper functions -------------------------------------------------
 
-fn make_reader(zone: &Arc<Zone>, path: &Utf8Path) -> Result<inplace::Zonefile, Error> {
+fn make_reader(
+    metrics: &LoaderMetrics,
+    zone: &Arc<Zone>,
+    path: &Utf8Path,
+) -> Result<inplace::Zonefile, Error> {
     // Open the zonefile.
     let mut file = File::open(path).map_err(Error::Open)?;
 
     let file_len = file.metadata().map_err(Error::Open)?.len();
+
+    metrics.byte_count.fetch_add(file_len as usize, Relaxed);
 
     let mut zone_file = inplace::Zonefile::with_capacity(file_len as usize).writer();
 
@@ -110,7 +126,7 @@ fn parse_record(
     if let RecordData::Soa(new_soa) = record.rdata.get() {
         // We have to compare with an old base name here so we use the record_name
         // instead of record.name.
-        if record_name.name_eq(&zone.name) {
+        if !record_name.name_eq(&zone.name) {
             return Err(Error::MismatchedOrigin);
         }
 
