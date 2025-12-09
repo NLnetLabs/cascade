@@ -305,6 +305,7 @@ dependencies = [
  "futures-util",
  "hostname",
  "jiff",
+ "lazy_static",
  "octseq",
  "rayon",
  "ring",
