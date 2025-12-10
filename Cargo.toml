@@ -21,15 +21,17 @@ bytes              = "1.0"
 clap               = { version = "4.5", features = [ "cargo", "wrap_help", "derive" ] }
 daemonbase         = "0.1.4"
 domain             = { git = "https://github.com/NLnetLabs/domain", branch = "patches-for-nameshed-prototype", features = [
+    "kmip",
     "openssl",
     "tokio-stream",
     "tsig",
+    "zonefile",
     "unstable-client-transport",
     "unstable-crypto-sign",
+    "unstable-new",
     "unstable-server-transport",
     "unstable-sign",
     "unstable-zonetree",
-    "kmip",
 ] }
 futures            = "0.3.17"
 futures-util       = "0.3"

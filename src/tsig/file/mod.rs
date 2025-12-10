@@ -1,8 +1,8 @@
 //! The TSIG keys file.
 
 use std::{
-    fs::File,
-    io::{self, BufReader},
+    fs::{self, File},
+    io::{self, BufReader, BufWriter},
 };
 
 use camino::Utf8Path;
@@ -50,7 +50,14 @@ impl Spec {
 
     /// Build and save this specification to a file.
     pub fn save(&self, path: &Utf8Path) -> io::Result<()> {
-        let text = serde_json::to_string(self)?;
-        crate::util::write_file(path, text.as_bytes())
+        let file = BufWriter::new(
+            fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)?,
+        );
+        serde_json::to_writer(file, self)?;
+        Ok(())
     }
 }

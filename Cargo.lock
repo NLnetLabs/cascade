@@ -1199,7 +1199,7 @@ dependencies = [
 [[package]]
 name = "kmip-protocol"
 version = "0.5.0"
-source = "git+https://github.com/NLnetLabs/kmip-protocol?branch=next#ad08d63ffd9bbb96ec29d1272d08244e86ed74e6"
+source = "git+https://github.com/NLnetLabs/kmip-protocol?branch=next#f632fb135d75ce6fe6de8428d68c78739f345b15"
 dependencies = [
  "cfg-if",
  "enum-display-derive",
@@ -2629,9 +2629,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.2"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e8983c3ab33d6fb807cfcdad2491c4ea8cbc8ed839181c7dfd9c67c83e261b2"
+checksum = "b2878ef029c47c6e8cf779119f20fcf52bde7ad42a731b2a304bc221df17571e"
 dependencies = [
  "rustls-pki-types",
 ]

@@ -13,10 +13,7 @@ use std::{
 
 use bytes::Bytes;
 use camino::Utf8Path;
-use domain::{
-    base::{iana::Class, Name, Serial},
-    zonetree::{self, ZoneBuilder},
-};
+use domain::base::{Name, Serial};
 use domain::{rdata::dnssec::Timestamp, tsig};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace};
@@ -30,7 +27,18 @@ use crate::{
     zonemaintenance::types::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
+pub mod contents;
+pub mod loader;
 pub mod state;
+
+pub use contents::ZoneContents;
+pub use loader::LoaderState;
+
+//----------- ZoneReport -------------------------------------------------------
+
+/// A stub for now
+#[derive(Debug)]
+pub struct ZoneReport();
 
 //----------- Zone -------------------------------------------------------------
 
@@ -46,15 +54,14 @@ pub struct Zone {
     /// consistent with each other, and that changes to the zone happen in a
     /// single (sequentially consistent) order.
     pub state: Mutex<ZoneState>,
+    // /// The loaded contents of the zone.
+    // pub loaded: zonetree::Zone,
 
-    /// The loaded contents of the zone.
-    pub loaded: zonetree::Zone,
+    // /// The signed contents of the zone.
+    // pub signed: zonetree::Zone,
 
-    /// The signed contents of the zone.
-    pub signed: zonetree::Zone,
-
-    /// The published contents of the zone.
-    pub published: zonetree::Zone,
+    // /// The published contents of the zone.
+    // pub published: zonetree::Zone,
 }
 
 /// The state of a zone.
@@ -95,11 +102,15 @@ pub struct ZoneState {
     /// the moment.
     // TODO: make the pipeline stop accepting new data when hard halted.
     pub pipeline_mode: PipelineMode,
+
+    /// Loading new versions of the zone.
+    pub loader: LoaderState,
+
+    /// The contents of the zone.
+    pub contents: Option<ZoneContents>,
     // TODO:
     // - A log?
     // - Initialization?
-    // - Contents
-    // - Loader state
     // - Key manager state
     // - Signer state
     // - Server state
@@ -407,9 +418,9 @@ impl Zone {
         Self {
             name: name.clone(),
             state: Default::default(),
-            loaded: ZoneBuilder::new(name.clone(), Class::IN).build(),
-            signed: ZoneBuilder::new(name.clone(), Class::IN).build(),
-            published: ZoneBuilder::new(name.clone(), Class::IN).build(),
+            // loaded: ZoneBuilder::new(name.clone(), Class::IN).build(),
+            // signed: ZoneBuilder::new(name.clone(), Class::IN).build(),
+            // published: ZoneBuilder::new(name.clone(), Class::IN).build(),
         }
     }
 }

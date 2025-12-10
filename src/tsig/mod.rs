@@ -117,7 +117,7 @@ pub struct TsigKey {
     pub inner: Arc<tsig::Key>,
 
     /// The secret key material.
-    material: Box<[u8]>,
+    pub material: Box<[u8]>,
 
     /// The set of zones depending on this key.
     pub zones: foldhash::HashSet<ZoneByPtr>,
