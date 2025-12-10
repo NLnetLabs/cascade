@@ -63,7 +63,7 @@ impl Manager {
     ) -> Result<Self, Error> {
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");
-        let zone_loader = Arc::new(Loader::launch(center.clone()));
+        let zone_loader = Loader::launch(center.clone());
 
         let loader_runner = zone_loader.run();
 

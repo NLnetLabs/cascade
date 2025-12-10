@@ -53,11 +53,26 @@ pub struct Loader {
 
 impl Loader {
     /// Construct a new [`Loader`].
-    pub fn launch(center: Arc<Center>) -> Self {
-        Self {
+    pub fn launch(center: Arc<Center>) -> Arc<Self> {
+        let this = Arc::new(Self {
             refresh_monitor: RefreshMonitor::new(),
             center,
+        });
+
+        #[allow(clippy::mutable_key_type)]
+        let initial_zones = {
+            let state = this.center.state.lock().unwrap();
+            state.zones.clone()
+        };
+
+        for zone in initial_zones {
+            let zone_state = zone.0.state.lock().unwrap();
+            let source = zone_state.source.clone();
+            drop(zone_state);
+            this.set_source(&zone.0, source);
         }
+
+        this
     }
 
     /// Drive this [`Loader`].
@@ -79,23 +94,7 @@ impl Loader {
                             let zone = center.zones.get(&name).unwrap();
                             zone.0.clone()
                         };
-                        let mut state = zone.state.lock().unwrap();
-                        let source = match zone_load_source {
-                            zone::ZoneLoadSource::None => Source::None,
-                            zone::ZoneLoadSource::Zonefile { path } => Source::Zonefile { path },
-                            zone::ZoneLoadSource::Server { addr, tsig_key } => {
-                                let addr = zone::loader::DnsServerAddr {
-                                    ip: addr.ip(),
-                                    tcp_port: addr.port(),
-                                    udp_port: None,
-                                };
-                                Source::Server {
-                                    addr,
-                                    tsig_key: tsig_key.map(Arc::unwrap_or_clone),
-                                }
-                            }
-                        };
-                        LoaderState::set_source(&mut state, &zone, source, self);
+                        self.set_source(&zone, zone_load_source);
                         Ok(())
                     }
                     Change::ZoneRemoved(name) => todo!(),
@@ -124,6 +123,26 @@ impl Loader {
             }
             _ => panic!("Got an unexpected command!"),
         }
+    }
+
+    fn set_source(self: &Arc<Self>, zone: &Arc<Zone>, source: zone::ZoneLoadSource) {
+        let source = match source {
+            zone::ZoneLoadSource::None => Source::None,
+            zone::ZoneLoadSource::Zonefile { path } => Source::Zonefile { path },
+            zone::ZoneLoadSource::Server { addr, tsig_key } => {
+                let addr = zone::loader::DnsServerAddr {
+                    ip: addr.ip(),
+                    tcp_port: addr.port(),
+                    udp_port: None,
+                };
+                Source::Server {
+                    addr,
+                    tsig_key: tsig_key.map(Arc::unwrap_or_clone),
+                }
+            }
+        };
+        let mut state = zone.state.lock().unwrap();
+        LoaderState::set_source(&mut state, zone, source, self);
     }
 }
 

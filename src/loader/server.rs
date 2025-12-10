@@ -348,7 +348,7 @@ pub async fn ixfr(
 
             // Process the response messages.
             let soa = loop {
-                if let Some(soa) = process_axfr(&metrics, &mut all, updates)? {
+                if let Some(soa) = process_axfr(metrics, &mut all, updates)? {
                     break soa;
                 } else {
                     // Retrieve the next message.
