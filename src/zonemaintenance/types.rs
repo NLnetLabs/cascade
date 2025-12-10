@@ -8,8 +8,6 @@ use tokio::time::Instant;
 
 use core::time::Duration;
 
-//------------ ZoneRefreshMetrics --------------------------------------------
-
 pub fn instant_to_duration_secs(instant: Instant) -> u64 {
     match Instant::now().checked_duration_since(instant) {
         Some(d) => d.as_secs(),

@@ -88,6 +88,8 @@ impl Loader {
         match cmd {
             ApplicationCommand::Changed(change) => {
                 match change {
+                    // This event is also fired at zone add so we don't need
+                    // a specific case for that.
                     Change::ZoneSourceChanged(name, zone_load_source) => {
                         let zone = {
                             let center = self.center.state.lock().unwrap();
@@ -97,7 +99,21 @@ impl Loader {
                         self.set_source(&zone, zone_load_source);
                         Ok(())
                     }
-                    Change::ZoneRemoved(name) => todo!(),
+                    Change::ZoneRemoved(name) => {
+                        // We have to get the reference to the zone from our refresh monitor
+                        // because it doesn't exist in center.zones anymore!
+                        if let Some(zone) = self
+                            .refresh_monitor
+                            .scheduled
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .find(|z| z.zone.0.name == name)
+                        {
+                            self.set_source(&zone.zone.0, zone::ZoneLoadSource::None);
+                        }
+                        Ok(())
+                    }
                     _ => Ok(()), // ignore other changes
                 }
             }

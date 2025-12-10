@@ -47,7 +47,7 @@ pub struct LoaderMetrics {
 }
 
 impl LoaderState {
-    /// Set the source of this zone.
+    /// Set (or unset) the source of this zone.
     pub fn set_source(
         state: &mut ZoneState,
         zone: &Arc<Zone>,
@@ -62,8 +62,17 @@ impl LoaderState {
         //
         // TODO: Should we _schedule_ refreshes now either?
 
+        let is_none = matches!(&source, Source::None);
         state.loader.source = source;
-        Self::enqueue_refresh(state, zone, true, loader);
+
+        if is_none {
+            state
+                .loader
+                .refresh_timer
+                .disable(zone, &loader.refresh_monitor);
+        } else {
+            Self::enqueue_refresh(state, zone, true, loader);
+        }
     }
 
     /// Enqueue a refresh of this zone.

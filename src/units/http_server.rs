@@ -494,23 +494,19 @@ impl HttpServer {
                     .cloned()
             })
         };
-        let receipt_report = match metrics {
-            Some(LoaderMetrics {
-                started_at,
-                finished_at,
-                byte_count,
-                record_count,
-            }) => Some(ZoneLoaderReport {
+        let receipt_report = metrics.map(
+            |LoaderMetrics {
+                 started_at,
+                 finished_at,
+                 byte_count,
+                 record_count,
+             }| ZoneLoaderReport {
                 started_at,
                 finished_at,
                 byte_count: byte_count.load(Relaxed),
                 record_count: record_count.load(Relaxed),
-            }),
-            None => {
-                warn!("Unable to provide receipt report for zone '{name}'");
-                None
-            }
-        };
+            },
+        );
 
         // Query zone serials
         let mut unsigned_serial = None;
