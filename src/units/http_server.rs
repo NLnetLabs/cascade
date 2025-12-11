@@ -33,6 +33,7 @@ use crate::center;
 use crate::center::get_zone;
 use crate::center::Center;
 use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
@@ -55,6 +56,13 @@ pub const HTTP_UNIT_NAME: &str = "HS";
 
 pub struct HttpServer {
     pub center: Arc<Center>,
+    pub metrics: Arc<MetricsCollection>,
+    pub http_metrics: HttpMetrics,
+}
+
+#[derive(Default)]
+pub struct HttpMetrics {
+    // http_api_last_connection: Counter,
 }
 
 impl HttpServer {
@@ -62,8 +70,24 @@ impl HttpServer {
     pub fn launch(
         center: Arc<Center>,
         http_sockets: Vec<TcpListener>,
+        /* mut */ metrics: MetricsCollection,
     ) -> Result<Arc<Self>, Terminated> {
-        let this = Arc::new(Self { center });
+        // TODO: register metrics here
+
+        let http_metrics = HttpMetrics::default();
+
+        // // - last time a CLI connection was made
+        // metrics.register(
+        //     "http_api_last_connection",
+        //     "The last unix epoch time an API HTTP connection was made (excl. /metrics and /)",
+        //     http_metrics.http_api_last_connection.clone()
+        // );
+
+        let this = Arc::new(Self {
+            center,
+            metrics: Arc::new(metrics),
+            http_metrics,
+        });
 
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))

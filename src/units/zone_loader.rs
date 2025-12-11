@@ -25,6 +25,7 @@ use domain::zonetree::{
 };
 use foldhash::HashMap;
 use futures::Future;
+use prometheus_client::metrics::gauge::Gauge;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Semaphore;
 use tokio::time::Instant;
@@ -35,6 +36,7 @@ use crate::center::{halt_zone, Center, Change};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::common::tsig::TsigKeyStore;
 use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::metrics::MetricsCollection;
 use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::{
     Config, ConnectionFactory, DefaultConnFactory, TypedZone, ZoneMaintainer,
@@ -61,7 +63,7 @@ pub struct ZoneLoader {
 
 impl ZoneLoader {
     /// Launch the zone loader.
-    pub fn launch(center: Arc<Center>) -> Self {
+    pub fn launch(center: Arc<Center>, metrics: &mut MetricsCollection) -> Self {
         // TODO: metrics and status reporting
         let receipt_info: Arc<Mutex<HashMap<StoredName, ZoneLoaderReport>>> = Default::default();
 
@@ -70,6 +72,14 @@ impl ZoneLoader {
         let zone_maintainer = Arc::new(
             ZoneMaintainer::new_with_config(center.clone(), maintainer_config)
                 .with_zone_tree(center.unsigned_zones.clone()),
+        );
+
+        // TODO: this is an example for now. Reconsider
+        let metric_zones_loaded: Gauge = Gauge::default();
+        metrics.cascade.register(
+            "zones_loaded_on_boot",
+            "The number of zones successfully loaded at startup",
+            metric_zones_loaded.clone(),
         );
 
         // Load primary zones.
@@ -97,6 +107,7 @@ impl ZoneLoader {
             let max_zones_loading_at_once = max_zones_loading_at_once.clone();
             let receipt_info = receipt_info.clone();
             let center = center.clone();
+            let metric_zones_loaded = metric_zones_loaded.clone(); // See TODO above
             tokio::spawn(async move {
                 info!("[ZL]: Waiting to add zone '{name}' with source '{source:?}'");
                 let _permit = max_zones_loading_at_once.acquire().await.unwrap();
@@ -139,6 +150,8 @@ impl ZoneLoader {
                 if let Err(err) = zone_maintainer_clone.insert_zone(zone).await {
                     error!("[ZL]: Failed to insert zone '{name}': {err}")
                 }
+
+                metric_zones_loaded.inc();
             });
         }
 

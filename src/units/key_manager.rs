@@ -3,6 +3,7 @@ use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, Change, ZoneAddError};
 use crate::manager::record_zone_event;
 use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::metrics::MetricsCollection;
 use crate::policy::{KeyParameters, PolicyVersion};
 use crate::units::http_server::KmipServerState;
 use crate::zone::{HistoricalEvent, SigningTrigger};
@@ -36,7 +37,7 @@ pub struct KeyManager {
 
 impl KeyManager {
     /// Launch the key manager.
-    pub fn launch(center: Arc<Center>) -> Arc<Self> {
+    pub fn launch(center: Arc<Center>, _metrics: &mut MetricsCollection) -> Arc<Self> {
         let this = Arc::new(Self {
             center,
             ks_info: Default::default(),
