@@ -255,7 +255,7 @@ jobs:
           done
       - name: Query zone
         run: |
-          dig @127.0.0.1 -p 4543 example.test AXFR
+          dig text.example.test TXT | grep "Hello World"
       - name: Print log files on any failure in this job
         uses: ./.github/actions/print-logfiles
         if: failure()

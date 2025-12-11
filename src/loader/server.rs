@@ -42,7 +42,7 @@ use tracing::trace;
 
 use crate::zone::{
     contents::{self, RegularRecord, SoaRecord},
-    loader::{DnsServerAddr, LoaderMetrics},
+    loader::LoaderMetrics,
     Zone,
 };
 
@@ -56,7 +56,7 @@ use super::RefreshError;
 pub async fn refresh(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
-    addr: &DnsServerAddr,
+    addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
     latest: Option<Arc<contents::Uncompressed>>,
 ) -> Result<Option<super::Refresh>, RefreshError> {
@@ -130,7 +130,7 @@ pub async fn refresh(
 pub async fn ixfr(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
-    addr: &DnsServerAddr,
+    addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
     local_soa: &SoaRecord,
 ) -> Result<Ixfr, IxfrError> {
@@ -159,132 +159,128 @@ pub async fn ixfr(
         domain::base::Message::from_octets(message).expect("'Message' is at least 12 bytes long");
 
     // If UDP is supported, try it before TCP.
-    if let Some(udp_port) = addr.udp_port {
-        // Prepare a UDP client.
-        let udp_addr: SocketAddr = (addr.ip, udp_port).into();
-        let udp_conn = client::protocol::UdpConnect::new(udp_addr);
-        let client = client::dgram::Connection::new(udp_conn);
+    // Prepare a UDP client.
+    let udp_conn = client::protocol::UdpConnect::new(*addr);
+    let client = client::dgram::Connection::new(udp_conn);
 
-        // Attempt the IXFR, possibly with TSIG.
-        let response = if let Some(tsig_key) = &tsig_key {
-            let client = client::tsig::Connection::new(tsig_key.clone(), client);
-            let request = RequestMessage::new(message.clone()).unwrap();
-            client.send_request(request).get_response().await?
-        } else {
-            let request = RequestMessage::new(message.clone()).unwrap();
-            client.send_request(request).get_response().await?
-        };
+    // Attempt the IXFR, possibly with TSIG.
+    let response = if let Some(tsig_key) = &tsig_key {
+        let client = client::tsig::Connection::new(tsig_key.clone(), client);
+        let request = RequestMessage::new(message.clone()).unwrap();
+        client.send_request(request).get_response().await?
+    } else {
+        let request = RequestMessage::new(message.clone()).unwrap();
+        client.send_request(request).get_response().await?
+    };
 
-        // If the server does not support IXFR, fall back to an AXFR.
-        if response.header().rcode() == Rcode::NOTIMP {
-            // Query the server for its SOA record only.
-            let remote_soa = query_soa(zone, addr, tsig_key.clone()).await?;
+    // If the server does not support IXFR, fall back to an AXFR.
+    if response.header().rcode() == Rcode::NOTIMP {
+        // Query the server for its SOA record only.
+        let remote_soa = query_soa(zone, addr, tsig_key.clone()).await?;
 
-            match local_soa.rdata.serial.partial_cmp(&remote_soa.rdata.serial) {
-                Some(Ordering::Less) => {
-                    // Perform a full AXFR.
-                    return Ok(Ixfr::Uncompressed(
-                        axfr(metrics, zone, addr, tsig_key).await?,
-                    ));
-                }
+        match local_soa.rdata.serial.partial_cmp(&remote_soa.rdata.serial) {
+            Some(Ordering::Less) => {
+                // Perform a full AXFR.
+                return Ok(Ixfr::Uncompressed(
+                    axfr(metrics, zone, addr, tsig_key).await?,
+                ));
+            }
+
+            // The local copy is up-to-date.
+            Some(Ordering::Equal) => return Ok(Ixfr::UpToDate),
+
+            // The remote copy is outdated.
+            _ => return Ok(Ixfr::OutdatedRemote(remote_soa.rdata.serial)),
+        }
+    }
+
+    // Process the transfer data.
+    let mut interpreter = XfrResponseInterpreter::new();
+    metrics
+        .byte_count
+        .fetch_add(response.as_slice().len(), Relaxed);
+    let mut updates = interpreter.interpret_response(response)?.peekable();
+
+    match updates.peek() {
+        Some(Ok(ZoneUpdate::DeleteAllRecords)) => {
+            // This is an AXFR.
+            let _ = updates.next().unwrap();
+            let mut all = Vec::new();
+            let Some(soa) = process_axfr(metrics, &mut all, updates)? else {
+                // Fail: UDP-based IXFR returned a partial AXFR.
+                return Err(IxfrError::IncompleteResponse);
+            };
+
+            assert!(interpreter.is_finished());
+            let all = all.into_boxed_slice();
+            let uncompressed = contents::Uncompressed { soa, all };
+            return Ok(Ixfr::Uncompressed(uncompressed));
+        }
+
+        Some(Ok(ZoneUpdate::BeginBatchDelete(_))) => {
+            // This is an IXFR.
+            let mut versions = Vec::new();
+            let mut this_soa = None;
+            let mut next_soa = None;
+            let mut all_this = Vec::new();
+            let mut all_next = Vec::new();
+            process_ixfr(
+                metrics,
+                &mut versions,
+                &mut this_soa,
+                &mut next_soa,
+                &mut all_this,
+                &mut all_next,
+                updates,
+            )?;
+            if interpreter.is_finished() {
+                return Ok(Ixfr::Compressed(versions));
+            } else {
+                // Fail: UDP-based IXFR returned a partial IXFR
+                return Err(IxfrError::IncompleteResponse);
+            }
+        }
+
+        // NOTE: 'domain' currently reports 'None' for a single-SOA IXFR,
+        // apparently assuming it means the local copy is up-to-date.  But
+        // this misses two other possibilities:
+        // - The remote copy is older than the local copy.
+        // - The IXFR was too big for UDP.
+        None => {
+            // Assume the remote copy is identical to to the local copy.
+            return Ok(Ixfr::UpToDate);
+        }
+
+        // NOTE: The XFR response interpreter will not return this right
+        // now; it needs to be modified to report single-SOA IXFRs here.
+        Some(Ok(ZoneUpdate::Finished(record))) => {
+            let ZoneRecordData::Soa(soa) = record.data() else {
+                unreachable!("'ZoneUpdate::Finished' must hold a SOA");
+            };
+
+            metrics.record_count.fetch_add(1, Relaxed);
+
+            let serial = Serial::from(soa.serial().into_int());
+            match local_soa.rdata.serial.partial_cmp(&serial) {
+                // The transfer may have been too big for UDP; fall back to
+                // a TCP-based IXFR.
+                Some(Ordering::Less) => {}
 
                 // The local copy is up-to-date.
                 Some(Ordering::Equal) => return Ok(Ixfr::UpToDate),
 
                 // The remote copy is outdated.
-                _ => return Ok(Ixfr::OutdatedRemote(remote_soa.rdata.serial)),
+                _ => return Ok(Ixfr::OutdatedRemote(serial)),
             }
         }
 
-        // Process the transfer data.
-        let mut interpreter = XfrResponseInterpreter::new();
-        metrics
-            .byte_count
-            .fetch_add(response.as_slice().len(), Relaxed);
-        let mut updates = interpreter.interpret_response(response)?.peekable();
-
-        match updates.peek() {
-            Some(Ok(ZoneUpdate::DeleteAllRecords)) => {
-                // This is an AXFR.
-                let _ = updates.next().unwrap();
-                let mut all = Vec::new();
-                let Some(soa) = process_axfr(metrics, &mut all, updates)? else {
-                    // Fail: UDP-based IXFR returned a partial AXFR.
-                    return Err(IxfrError::IncompleteResponse);
-                };
-
-                assert!(interpreter.is_finished());
-                let all = all.into_boxed_slice();
-                let uncompressed = contents::Uncompressed { soa, all };
-                return Ok(Ixfr::Uncompressed(uncompressed));
-            }
-
-            Some(Ok(ZoneUpdate::BeginBatchDelete(_))) => {
-                // This is an IXFR.
-                let mut versions = Vec::new();
-                let mut this_soa = None;
-                let mut next_soa = None;
-                let mut all_this = Vec::new();
-                let mut all_next = Vec::new();
-                process_ixfr(
-                    metrics,
-                    &mut versions,
-                    &mut this_soa,
-                    &mut next_soa,
-                    &mut all_this,
-                    &mut all_next,
-                    updates,
-                )?;
-                if interpreter.is_finished() {
-                    return Ok(Ixfr::Compressed(versions));
-                } else {
-                    // Fail: UDP-based IXFR returned a partial IXFR
-                    return Err(IxfrError::IncompleteResponse);
-                }
-            }
-
-            // NOTE: 'domain' currently reports 'None' for a single-SOA IXFR,
-            // apparently assuming it means the local copy is up-to-date.  But
-            // this misses two other possibilities:
-            // - The remote copy is older than the local copy.
-            // - The IXFR was too big for UDP.
-            None => {
-                // Assume the remote copy is identical to to the local copy.
-                return Ok(Ixfr::UpToDate);
-            }
-
-            // NOTE: The XFR response interpreter will not return this right
-            // now; it needs to be modified to report single-SOA IXFRs here.
-            Some(Ok(ZoneUpdate::Finished(record))) => {
-                let ZoneRecordData::Soa(soa) = record.data() else {
-                    unreachable!("'ZoneUpdate::Finished' must hold a SOA");
-                };
-
-                metrics.record_count.fetch_add(1, Relaxed);
-
-                let serial = Serial::from(soa.serial().into_int());
-                match local_soa.rdata.serial.partial_cmp(&serial) {
-                    // The transfer may have been too big for UDP; fall back to
-                    // a TCP-based IXFR.
-                    Some(Ordering::Less) => {}
-
-                    // The local copy is up-to-date.
-                    Some(Ordering::Equal) => return Ok(Ixfr::UpToDate),
-
-                    // The remote copy is outdated.
-                    _ => return Ok(Ixfr::OutdatedRemote(serial)),
-                }
-            }
-
-            _ => unreachable!(),
-        }
+        _ => unreachable!(),
     }
 
     // UDP didn't pan out; attempt a TCP-based IXFR.
 
     // Prepare a TCP client.
-    let tcp_addr: SocketAddr = (addr.ip, addr.tcp_port).into();
-    let tcp_conn = TcpStream::connect(tcp_addr)
+    let tcp_conn = TcpStream::connect(*addr)
         .await
         .map_err(IxfrError::Connection)?;
     // TODO: Avoid the unnecessary heap allocation + trait object.
@@ -558,7 +554,7 @@ fn process_ixfr(
 pub async fn axfr(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
-    addr: &DnsServerAddr,
+    addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
 ) -> Result<contents::Uncompressed, AxfrError> {
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
@@ -585,8 +581,7 @@ pub async fn axfr(
         domain::base::Message::from_octets(message).expect("'Message' is at least 12 bytes long");
 
     // Prepare a TCP client.
-    let tcp_addr: SocketAddr = (addr.ip, addr.tcp_port).into();
-    let tcp_conn = TcpStream::connect(tcp_addr)
+    let tcp_conn = TcpStream::connect(*addr)
         .await
         .map_err(AxfrError::Connection)?;
     // TODO: Avoid the unnecessary heap allocation + trait object.
@@ -684,7 +679,7 @@ fn process_axfr(
 /// Query a DNS server for the SOA record of a zone.
 pub async fn query_soa(
     zone: &Arc<Zone>,
-    addr: &DnsServerAddr,
+    addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
 ) -> Result<SoaRecord, QuerySoaError> {
     let zone_name: RevNameBuf = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
@@ -709,61 +704,30 @@ pub async fn query_soa(
     let message =
         domain::base::Message::from_octets(message).expect("'Message' is at least 12 bytes long");
 
-    let tcp_addr: SocketAddr = (addr.ip, addr.tcp_port).into();
+    let response = if let Some(tsig_key) = tsig_key {
+        let udp_conn = client::protocol::UdpConnect::new(*addr);
+        let tcp_conn = client::protocol::TcpConnect::new(*addr);
+        let (client, transport) = client::dgram_stream::Connection::new(udp_conn, tcp_conn);
+        tokio::task::spawn(transport.run());
 
-    // Send the query.
-    let response = if let Some(udp_port) = addr.udp_port {
-        // Prepare a UDP client.
-        // TODO: Try preparing a UDP+TCP client instead?
-        let udp_addr: SocketAddr = (addr.ip, udp_port).into();
-        let udp_conn = client::protocol::UdpConnect::new(udp_addr);
-        let client = client::dgram::Connection::new(udp_conn);
+        let client = client::tsig::Connection::new(tsig_key, client);
 
-        if let Some(tsig_key) = tsig_key {
-            let client = client::tsig::Connection::new(tsig_key, client);
-
-            // Send the query.
-            let request = RequestMessage::new(message.clone()).unwrap();
-            SendRequest::send_request(&client, request)
-                .get_response()
-                .await?
-        } else {
-            // Send the query.
-            let request = RequestMessage::new(message.clone()).unwrap();
-            client.send_request(request).get_response().await?
-        }
+        // Send the query.
+        let request = RequestMessage::new(message.clone()).unwrap();
+        SendRequest::send_request(&client, request)
+            .get_response()
+            .await?
     } else {
+        // Send the query.
+        let udp_conn = client::protocol::UdpConnect::new(*addr);
         // Prepare a TCP client.
-        let tcp_conn = TcpStream::connect(tcp_addr)
-            .await
-            .map_err(QuerySoaError::Connection)?;
+        let tcp_conn = client::protocol::TcpConnect::new(*addr);
+        let (client, transport) = client::dgram_stream::Connection::new(udp_conn, tcp_conn);
+        tokio::task::spawn(transport.run());
 
-        if let Some(tsig_key) = tsig_key {
-            let (client, transport) = client::stream::Connection::<
-                client::tsig::RequestMessage<RequestMessage<Bytes>, tsig::Key>,
-                RequestMessageMulti<Bytes>,
-            >::new(tcp_conn);
-            tokio::task::spawn(transport.run());
-            let client = client::tsig::Connection::new(tsig_key, client);
-
-            // Send the query.
-            let request = RequestMessage::new(message.clone()).unwrap();
-            SendRequest::send_request(&client, request)
-                .get_response()
-                .await?
-        } else {
-            let (client, transport) = client::stream::Connection::<
-                RequestMessage<Bytes>,
-                RequestMessageMulti<Bytes>,
-            >::new(tcp_conn);
-            tokio::task::spawn(transport.run());
-
-            // Send the query.
-            let request = RequestMessage::new(message.clone()).unwrap();
-            SendRequest::send_request(&client, request)
-                .get_response()
-                .await?
-        }
+        // Send the query.
+        let request = RequestMessage::new(message.clone()).unwrap();
+        client.send_request(request).get_response().await?
     };
 
     // Parse the response message.

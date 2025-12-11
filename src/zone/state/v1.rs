@@ -10,13 +10,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::policy::file::v1::OutboundSpec;
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
+use crate::zone::loader::Source;
 use crate::zone::HistoryItem;
 use crate::{
     policy::{
         KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
         SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
     },
-    zone::{ZoneLoadSource, ZoneState},
+    zone::ZoneState,
 };
 
 //----------- Spec -------------------------------------------------------------
@@ -54,7 +55,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
-            source: ZoneLoadSourceSpec::build(&zone.source),
+            source: ZoneLoadSourceSpec::build(&zone.loader.source),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
             history: zone.history.clone(),
@@ -483,12 +484,12 @@ pub enum ZoneLoadSourceSpec {
 
 impl ZoneLoadSourceSpec {
     /// Parse from this specification.
-    pub fn parse(self) -> ZoneLoadSource {
+    pub fn parse(self) -> Source {
         match self {
-            Self::None => ZoneLoadSource::None,
-            Self::Zonefile { path } => ZoneLoadSource::Zonefile { path },
+            Self::None => Source::None,
+            Self::Zonefile { path } => Source::Zonefile { path },
             // TODO: Look up the TSIG key in the key store.
-            Self::Server { addr, tsig_key: _ } => ZoneLoadSource::Server {
+            Self::Server { addr, tsig_key: _ } => Source::Server {
                 addr,
                 tsig_key: None,
             },
@@ -496,11 +497,11 @@ impl ZoneLoadSourceSpec {
     }
 
     /// Build into this specification.
-    pub fn build(source: &ZoneLoadSource) -> Self {
+    pub fn build(source: &Source) -> Self {
         match source.clone() {
-            ZoneLoadSource::None => Self::None,
-            ZoneLoadSource::Zonefile { path } => Self::Zonefile { path },
-            ZoneLoadSource::Server { addr, tsig_key } => Self::Server {
+            Source::None => Self::None,
+            Source::Zonefile { path } => Self::Zonefile { path },
+            Source::Server { addr, tsig_key } => Self::Server {
                 addr,
                 tsig_key: tsig_key.map(|key| {
                     let bytes = key.name().as_slice();

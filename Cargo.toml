@@ -20,7 +20,7 @@ arc-swap           = "1.7.0"
 bytes              = "1.0"
 clap               = { version = "4.5", features = [ "cargo", "wrap_help", "derive" ] }
 daemonbase         = "0.1.4"
-domain             = { git = "https://github.com/NLnetLabs/domain", branch = "patches-for-nameshed-prototype", features = [
+domain             = { version = "0.11.1", path = "../domain", features = [
     "kmip",
     "openssl",
     "tokio-stream",

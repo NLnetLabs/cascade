@@ -1,8 +1,8 @@
 //! Zone-specific loader state.
 
 use std::{
-    net::IpAddr,
-    sync::{atomic::AtomicUsize, Arc, Mutex},
+    net::{IpAddr, SocketAddr},
+    sync::{atomic::AtomicUsize, Arc},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -11,7 +11,7 @@ use domain::{base::iana::Class, tsig, zonetree::ZoneBuilder};
 use tracing::{debug, error};
 
 use crate::{
-    loader::{self, Loader, RefreshMonitor},
+    loader::{self, AbortOnDrop, Loader, RefreshMonitor},
     manager::Update,
 };
 
@@ -35,7 +35,9 @@ pub struct LoaderState {
     pub refreshes: Option<Refreshes>,
 
     /// Metrics of the current or last load of this zone
-    pub metrics: Mutex<Option<LoaderMetrics>>,
+    ///
+    /// This is `None` if we have never attempted to load this zone yet.
+    pub metrics: Option<LoaderMetrics>,
 }
 
 #[derive(Clone, Debug)]
@@ -136,10 +138,12 @@ impl LoaderState {
                     .as_ref()
                     .map(|contents| contents.latest.clone());
                 let handle = tokio::task::spawn(Self::refresh(zone, start, source, latest, loader));
+                let handle = AbortOnDrop::from(handle);
                 OngoingRefresh::Refresh { start, handle }
             }
             EnqueuedRefresh::Reload => {
                 let handle = tokio::task::spawn(Self::reload(zone, start, source, loader));
+                let handle = AbortOnDrop::from(handle);
                 OngoingRefresh::Reload { start, handle }
             }
         };
@@ -164,38 +168,45 @@ impl LoaderState {
         };
 
         {
-            let state = zone.state.lock().unwrap();
-            let mut metrics_guard = state.loader.metrics.lock().unwrap();
-            *metrics_guard = Some(metrics.clone());
+            let mut state = zone.state.lock().unwrap();
+            state.loader.metrics = Some(metrics.clone());
         }
 
         // Perform the source-specific reload into the zone contents.
         let (result, lock) = loader::refresh(&metrics, &zone, &source, latest).await;
 
-        // Try to re-use a recent lock from the reload.
-        let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
-        let state = &mut *lock;
-
+        let latest;
         {
-            let mut metrics_guard = state.loader.metrics.lock().unwrap();
-            metrics_guard
+            // Try to re-use a recent lock from the reload.
+            let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
+            let state = &mut *lock;
+
+            state
+                .loader
+                .metrics
                 .as_mut()
                 .expect("we just added the metrics")
                 .finished_at = Some(SystemTime::now());
-        }
 
-        // Update the zone refresh timers.
-        let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
-        if result.is_ok() {
-            state
-                .loader
-                .refresh_timer
-                .schedule_refresh(&zone, start, soa, &loader.refresh_monitor);
-        } else {
-            state
-                .loader
-                .refresh_timer
-                .schedule_retry(&zone, start, soa, &loader.refresh_monitor);
+            // Update the zone refresh timers.
+            let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
+            if result.is_ok() {
+                state.loader.refresh_timer.schedule_refresh(
+                    &zone,
+                    start,
+                    soa,
+                    &loader.refresh_monitor,
+                );
+            } else {
+                state.loader.refresh_timer.schedule_retry(
+                    &zone,
+                    start,
+                    soa,
+                    &loader.refresh_monitor,
+                );
+            }
+
+            latest = state.contents.as_ref().unwrap().latest.clone();
         }
 
         // Process the result of the reload.
@@ -210,41 +221,40 @@ impl LoaderState {
                 debug!("Loaded serial {serial:?} for {:?}", zone.name);
 
                 // Update the old-base contents.
-                let latest = state.contents.as_ref().unwrap().latest.clone();
 
                 let zone_copy = zone.clone();
                 let loader_copy = loader.clone();
 
-                // Go update the zone in another thread
-                tokio::spawn(async move {
-                    let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
-                    latest.write_into_zonetree(&zonetree).await;
+                let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
+                latest.write_into_zonetree(&zonetree).await;
 
-                    loader_copy.center.unsigned_zones.rcu(|tree| {
-                        let mut tree = Arc::unwrap_or_clone(tree.clone());
-                        let _ = tree.remove_zone(&zone_copy.name, Class::IN);
-                        tree.insert_zone(zonetree.clone()).unwrap();
-                        tree
-                    });
-
-                    // Inform the central command.
-                    let zone_name = zone_copy.name.clone();
-                    let zone_serial = domain::base::Serial(serial.into());
-                    loader_copy
-                        .center
-                        .update_tx
-                        .send(Update::UnsignedZoneUpdatedEvent {
-                            zone_name,
-                            zone_serial,
-                        })
-                        .unwrap();
+                loader_copy.center.unsigned_zones.rcu(|tree| {
+                    let mut tree = Arc::unwrap_or_clone(tree.clone());
+                    let _ = tree.remove_zone(&zone_copy.name, Class::IN);
+                    tree.insert_zone(zonetree.clone()).unwrap();
+                    tree
                 });
+
+                // Inform the central command.
+                let zone_name = zone_copy.name.clone();
+                let zone_serial = domain::base::Serial(serial.into());
+                loader_copy
+                    .center
+                    .update_tx
+                    .send(Update::UnsignedZoneUpdatedEvent {
+                        zone_name,
+                        zone_serial,
+                    })
+                    .unwrap();
             }
 
             Err(err) => {
                 error!("Could not refresh {:?}: {err}", zone.name);
             }
         }
+
+        let mut lock = zone.state.lock().unwrap();
+        let state = &mut *lock;
 
         // Update the state of ongoing refreshes.
         let id = tokio::task::id();
@@ -273,38 +283,45 @@ impl LoaderState {
             record_count: Arc::new(AtomicUsize::new(0)),
         };
         {
-            let state = zone.state.lock().unwrap();
-            let mut metrics_guard = state.loader.metrics.lock().unwrap();
-            *metrics_guard = Some(metrics.clone());
+            let mut state = zone.state.lock().unwrap();
+            state.loader.metrics = Some(metrics.clone());
         }
 
         // Perform the source-specific reload into the zone contents.
         let (result, lock) = loader::reload(&metrics, &zone, &source).await;
 
-        // Try to re-use a recent lock from the reload.
-        let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
-        let state = &mut *lock;
-
+        let latest;
         {
-            let mut metrics_guard = state.loader.metrics.lock().unwrap();
-            metrics_guard
+            // Try to re-use a recent lock from the reload.
+            let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
+            let state = &mut *lock;
+
+            state
+                .loader
+                .metrics
                 .as_mut()
                 .expect("we just added the metrics")
                 .finished_at = Some(SystemTime::now());
-        }
 
-        // Update the zone refresh timers.
-        let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
-        if result.is_ok() {
-            state
-                .loader
-                .refresh_timer
-                .schedule_refresh(&zone, start, soa, &loader.refresh_monitor);
-        } else {
-            state
-                .loader
-                .refresh_timer
-                .schedule_retry(&zone, start, soa, &loader.refresh_monitor);
+            // Update the zone refresh timers.
+            let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
+            if result.is_ok() {
+                state.loader.refresh_timer.schedule_refresh(
+                    &zone,
+                    start,
+                    soa,
+                    &loader.refresh_monitor,
+                );
+            } else {
+                state.loader.refresh_timer.schedule_retry(
+                    &zone,
+                    start,
+                    soa,
+                    &loader.refresh_monitor,
+                );
+            }
+
+            latest = state.contents.as_ref().unwrap().latest.clone();
         }
 
         // Process the result of the reload.
@@ -315,42 +332,39 @@ impl LoaderState {
             Ok(Some(serial)) => {
                 debug!("Loaded serial {serial:?} for {:?}", zone.name);
 
-                // Update the old-base contents.
-                let latest = state.contents.as_ref().unwrap().latest.clone();
-
                 let zone_copy = zone.clone();
                 let loader_copy = loader.clone();
 
-                // Go update the zone in another thread
-                tokio::spawn(async move {
-                    let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
-                    latest.write_into_zonetree(&zonetree).await;
+                let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
+                latest.write_into_zonetree(&zonetree).await;
 
-                    loader_copy.center.unsigned_zones.rcu(|tree| {
-                        let mut tree = Arc::unwrap_or_clone(tree.clone());
-                        let _ = tree.remove_zone(&zone_copy.name, Class::IN);
-                        tree.insert_zone(zonetree.clone()).unwrap();
-                        tree
-                    });
-
-                    // Inform the central command.
-                    let zone_name = zone_copy.name.clone();
-                    let zone_serial = domain::base::Serial(serial.into());
-                    loader_copy
-                        .center
-                        .update_tx
-                        .send(Update::UnsignedZoneUpdatedEvent {
-                            zone_name,
-                            zone_serial,
-                        })
-                        .unwrap();
+                loader_copy.center.unsigned_zones.rcu(|tree| {
+                    let mut tree = Arc::unwrap_or_clone(tree.clone());
+                    let _ = tree.remove_zone(&zone_copy.name, Class::IN);
+                    tree.insert_zone(zonetree.clone()).unwrap();
+                    tree
                 });
+
+                // Inform the central command.
+                let zone_name = zone_copy.name.clone();
+                let zone_serial = domain::base::Serial(serial.into());
+                loader_copy
+                    .center
+                    .update_tx
+                    .send(Update::UnsignedZoneUpdatedEvent {
+                        zone_name,
+                        zone_serial,
+                    })
+                    .unwrap();
             }
 
             Err(err) => {
                 error!("Could not reload {:?}: {err}", zone.name);
             }
         };
+
+        let mut lock = zone.state.lock().unwrap();
+        let state = &mut *lock;
 
         // Update the state of ongoing refreshes.
         let id = tokio::task::id();
@@ -374,18 +388,12 @@ impl LoaderState {
 //----------- Source -----------------------------------------------------------
 
 /// The source of a zone.
-//
-// TODO: Support multiple sources for a zone?
 #[derive(Clone, Debug, Default)]
-#[allow(clippy::large_enum_variant)]
 pub enum Source {
     /// The lack of a source.
     ///
     /// The zone will not be loaded from any external source.  This is the
     /// default state for new zones.
-    //
-    // TODO: When DNS UPDATE messages are supported, the zone contents can be
-    //   changed, making this a valid way to host a zone.
     #[default]
     None,
 
@@ -409,10 +417,10 @@ pub enum Source {
     /// incremental and authoritative zone transfers (IXFRs and AXFRs).
     Server {
         /// The address of the server.
-        addr: DnsServerAddr,
+        addr: SocketAddr,
 
         /// The TSIG key for communicating with the server, if any.
-        tsig_key: Option<tsig::Key>,
+        tsig_key: Option<Arc<tsig::Key>>,
     },
 }
 
@@ -575,7 +583,7 @@ pub enum OngoingRefresh {
         start: Instant,
 
         /// A handle to the refresh.
-        handle: tokio::task::JoinHandle<()>,
+        handle: AbortOnDrop,
     },
 
     /// An ongoing reload.
@@ -584,7 +592,7 @@ pub enum OngoingRefresh {
         start: Instant,
 
         /// A handle to the reload.
-        handle: tokio::task::JoinHandle<()>,
+        handle: AbortOnDrop,
     },
 }
 

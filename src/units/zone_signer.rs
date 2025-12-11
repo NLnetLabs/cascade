@@ -53,10 +53,10 @@ use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
     mk_dnst_keyset_state_file_path, KmipClientCredentialsFile, KmipServerCredentialsFileMode,
 };
-use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
-use crate::zonemaintenance::types::{
+use crate::util::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
+use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned

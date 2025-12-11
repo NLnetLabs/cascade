@@ -46,11 +46,11 @@ use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
 use crate::units::zone_signer::KeySetState;
+use crate::zone::loader;
 use crate::zone::loader::LoaderMetrics;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::PipelineMode;
-use crate::zone::ZoneLoadSource;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -306,10 +306,10 @@ impl HttpServer {
                 .as_ref()
                 .map_or("<none>".into(), |p| p.name.to_string());
             // TODO: Needs some info from the zone loader?
-            source = match zone_state.source.clone() {
-                ZoneLoadSource::None => api::ZoneSource::None,
-                ZoneLoadSource::Zonefile { path } => api::ZoneSource::Zonefile { path },
-                ZoneLoadSource::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
+            source = match zone_state.loader.source.clone() {
+                loader::Source::None => api::ZoneSource::None,
+                loader::Source::Zonefile { path } => api::ZoneSource::Zonefile { path },
+                loader::Source::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
                     addr,
                     tsig_key: None,
                     xfr_status: Default::default(),
@@ -479,20 +479,8 @@ impl HttpServer {
         }
 
         let metrics = {
-            let s = state.center.state.lock().unwrap();
-            let zone = s.zones.get(&name);
-
-            zone.and_then(|z| {
-                z.0.state
-                    .lock()
-                    .unwrap()
-                    .loader
-                    .metrics
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .cloned()
-            })
+            let zone = get_zone(&state.center, &name);
+            zone.and_then(|z| z.state.lock().unwrap().loader.metrics.as_ref().cloned())
         };
         let receipt_report = metrics.map(
             |LoaderMetrics {
@@ -511,19 +499,19 @@ impl HttpServer {
         // Query zone serials
         let mut unsigned_serial = None;
         if let Some(zone) = unsigned_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+            if let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await {
                 unsigned_serial = Some(soa.serial());
             }
         }
         let mut signed_serial = None;
         if let Some(zone) = signed_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+            if let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await {
                 signed_serial = Some(soa.serial());
             }
         }
         let mut published_serial = None;
         if let Some(zone) = published_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
+            if let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await {
                 published_serial = Some(soa.serial());
             }
         }
@@ -595,8 +583,8 @@ impl HttpServer {
             return Err(ZoneReloadError::ZoneHalted(reason));
         }
 
-        match zone_state.source.clone() {
-            crate::zone::ZoneLoadSource::None => Err(ZoneReloadError::ZoneWithoutSource),
+        match zone_state.loader.source.clone() {
+            loader::Source::None => Err(ZoneReloadError::ZoneWithoutSource),
             _ => {
                 api_state
                     .center
@@ -1288,9 +1276,8 @@ impl HttpServer {
     }
 }
 
-#[allow(clippy::borrowed_box)]
 pub async fn read_soa(
-    read: &Box<dyn ReadableZone>,
+    read: &dyn ReadableZone,
     qname: Name<Bytes>,
 ) -> Result<Option<(Soa<Name<Bytes>>, Ttl)>, OutOfZone> {
     use domain::rdata::ZoneRecordData;

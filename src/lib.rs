@@ -16,7 +16,6 @@ pub mod tsig;
 pub mod units;
 pub mod util;
 pub mod zone;
-pub mod zonemaintenance;
 
 #[cfg(test)]
 pub mod tests;

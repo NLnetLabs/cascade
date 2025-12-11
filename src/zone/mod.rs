@@ -6,15 +6,13 @@ use std::{
     fmt,
     hash::{Hash, Hasher},
     io, mem,
-    net::SocketAddr,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
-use camino::Utf8Path;
 use domain::base::{Name, Serial};
-use domain::{rdata::dnssec::Timestamp, tsig};
+use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace};
 
@@ -24,7 +22,7 @@ use crate::{
     config::Config,
     manager::Update,
     policy::{Policy, PolicyVersion},
-    zonemaintenance::types::{deserialize_duration_from_secs, serialize_duration_as_secs},
+    util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
 pub mod contents;
@@ -33,12 +31,6 @@ pub mod state;
 
 pub use contents::ZoneContents;
 pub use loader::LoaderState;
-
-//----------- ZoneReport -------------------------------------------------------
-
-/// A stub for now
-#[derive(Debug)]
-pub struct ZoneReport();
 
 //----------- Zone -------------------------------------------------------------
 
@@ -54,14 +46,6 @@ pub struct Zone {
     /// consistent with each other, and that changes to the zone happen in a
     /// single (sequentially consistent) order.
     pub state: Mutex<ZoneState>,
-    // /// The loaded contents of the zone.
-    // pub loaded: zonetree::Zone,
-
-    // /// The signed contents of the zone.
-    // pub signed: zonetree::Zone,
-
-    // /// The published contents of the zone.
-    // pub published: zonetree::Zone,
 }
 
 /// The state of a zone.
@@ -76,9 +60,6 @@ pub struct ZoneState {
     /// duration of time.  If the field is `None`, and the state is changed, a
     /// new save operation should be enqueued.
     pub enqueued_save: Option<tokio::task::JoinHandle<()>>,
-
-    /// Where to load the contents of the zone from.
-    pub source: ZoneLoadSource,
 
     /// The minimum expiration time in the signed zone we are serving from
     /// the publication server.
@@ -386,29 +367,6 @@ impl From<SigningTrigger> for api::SigningTrigger {
     }
 }
 
-/// How to load the contents of a zone.
-#[derive(Clone, Debug, Default)]
-pub enum ZoneLoadSource {
-    /// Don't load the zone at all.
-    #[default]
-    None,
-
-    /// Load the zone from a zonefile on disk.
-    Zonefile {
-        /// The path to the zonefile.
-        path: Box<Utf8Path>,
-    },
-
-    /// Load the zone from a DNS server via XFR.
-    Server {
-        /// The TCP/UDP address of the server.
-        addr: SocketAddr,
-
-        /// A TSIG key to communicate with the server, if any.
-        tsig_key: Option<Arc<tsig::Key>>,
-    },
-}
-
 impl Zone {
     /// Construct a new [`Zone`].
     ///
@@ -607,23 +565,23 @@ pub fn change_source(
     // Set the source in the zone.
     let mut state = zone.state.lock().unwrap();
     let new_source = match source {
-        api::ZoneSource::None => ZoneLoadSource::None,
+        api::ZoneSource::None => loader::Source::None,
 
-        api::ZoneSource::Zonefile { path } => ZoneLoadSource::Zonefile { path },
+        api::ZoneSource::Zonefile { path } => loader::Source::Zonefile { path },
 
         // TODO: Look up the TSIG key.
-        api::ZoneSource::Server { addr, .. } => ZoneLoadSource::Server {
+        api::ZoneSource::Server { addr, .. } => loader::Source::Server {
             addr,
             tsig_key: None,
         },
     };
-    let old_source = mem::replace(&mut state.source, new_source.clone());
+    let old_source = mem::replace(&mut state.loader.source, new_source.clone());
 
     center
         .update_tx
         .send(Update::Changed(Change::ZoneSourceChanged(
             name.clone(),
-            state.source.clone(),
+            state.loader.source.clone(),
         )))
         .unwrap();
 

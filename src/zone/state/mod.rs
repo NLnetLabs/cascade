@@ -89,7 +89,7 @@ impl Spec {
                 history,
             }) => {
                 state.policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
-                state.source = source.parse();
+                state.loader.source = source.parse();
                 state.min_expiration = min_expiration;
                 state.next_min_expiration = next_min_expiration;
                 state.history = history;
