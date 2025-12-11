@@ -76,6 +76,7 @@ impl Spec {
 
     /// Build and save this specification to a file.
     pub fn save(&self, path: &Utf8Path) -> io::Result<()> {
+        // TODO: METRICS: set metric "state_last_saved = timestamp"?
         if path.parent().is_none() {
             return Err(io::ErrorKind::IsADirectory.into());
         }
