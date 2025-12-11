@@ -14,6 +14,22 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Bug fixes
+
+- A zone configured for unsigned review no longer fails to sign. ([#398] by
+  @ximon18)
+
+### Documentation improvements
+
+- Document that --daemonize changes CWD to / ([#387] by @jpmens)
+
+[#387]: https://github.com/NLnetLabs/cascade/pull/387
+[#398]: https://github.com/NLnetLabs/cascade/pull/398
+
 ## 0.1.0-alpha5 'Colline de la Croix'
 
 Released 2025-11-21.
@@ -60,7 +76,6 @@ Cascade.
 [#356]: https://github.com/NLnetLabs/cascade/pull/356
 [#357]: https://github.com/NLnetLabs/cascade/pull/357
 [#358]: https://github.com/NLnetLabs/cascade/pull/358
-
 
 ## 0.1.0-alpha4 'Mont-Royal'
 

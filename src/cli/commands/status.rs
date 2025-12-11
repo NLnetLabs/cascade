@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use futures::TryFutureExt;
 
 use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult, SigningStageReport};
@@ -116,8 +115,10 @@ impl Status {
                                 (ansi::GREEN, "\u{2714}", r.finished_at)
                             }
                         };
-                        let when = DateTime::<Utc>::from(when)
-                            .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+                        let when = jiff::Timestamp::try_from(when)
+                            .unwrap()
+                            .round(jiff::Unit::Second)
+                            .unwrap();
                         println!(
                             "  {i:>2}: {colour}{state}{} {when:<25} {zone_name:<16} {action}",
                             ansi::RESET

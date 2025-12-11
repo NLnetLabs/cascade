@@ -1,0 +1,49 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Add a zone, approve the unsigned zone, query the published zone'
+description: 'Add a zone, approve the unsigned zone, query the published zone'
+inputs:
+  artifact-name:
+    description: 'The name of the artifact to fetch and unpack'
+    required: true
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  shell: bash --noprofile --norc -eo pipefail -x {0}
+runs:
+  using: "composite"
+  steps:
+    - name: Prepare the system test environment
+      uses: ./.github/actions/prepare-systest-env
+      with:
+        artifact-name: ${{ inputs.artifact-name }}
+    - run: cascade --version
+    - name: Setup and start the cascade daemon
+      uses: ./.github/actions/setup-and-start-cascade
+    - name: Add a zone
+      run: |
+        cascade zone add --policy default --source 127.0.0.1:1055 example.test
+    - name: Check zone status
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status example.test
+            echo "::error:: timeout: zone status did not report published zone available"
+            exit 1
+          fi
+          sleep 1
+        done
+    - name: Query zone
+      run: |
+        dig @127.0.0.1 -p 4543 example.test AXFR
+    - name: Tell NSD that the zone is now available
+      # Only necessary if NOTIFY is not setup for cascade
+      run: |
+        ./scripts/manage-test-environment.sh control nsd-secondary transfer example.test
+    - name: The new zone should now be available via the resolver
+      run: |
+        dig text.example.test TXT | grep "Hello World"
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

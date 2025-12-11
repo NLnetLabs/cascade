@@ -612,13 +612,20 @@ impl ZoneServer {
                     info!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been approved."
                     );
-                    let _ = self
-                        .center
-                        .update_tx
-                        .send(Update::UnsignedZoneApprovedEvent {
-                            zone_name,
-                            zone_serial,
-                        });
+                    match Self::promote_zone_to_signable(self.center.clone(), &zone_name) {
+                        Ok(()) => {
+                            let _ = self
+                                .center
+                                .update_tx
+                                .send(Update::UnsignedZoneApprovedEvent {
+                                    zone_name,
+                                    zone_serial,
+                                });
+                        }
+                        Err(err) => {
+                            error!("Ignoring approval for '{zone_name}': zone could not be promoted to signable: {err}");
+                        }
+                    }
                 } else {
                     error!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
@@ -683,6 +690,7 @@ impl ZoneServer {
         // Create a deep copy of the set of signable zones. We will add
         // the new zone to that copied set and then replace the original
         // set with the new set.
+        debug!("Promoting '{zone_name}' to signable");
         center.signable_zones.rcu(|zones| {
             let mut new_signable_zones = Arc::unwrap_or_clone(zones.clone());
             let _ = new_signable_zones.remove_zone(zone_name, Class::IN);
