@@ -14,8 +14,8 @@ runs:
   steps:
   - name: Start cascade with a working-directory-local config
     run: |
-      CASCADE_DIR=${{ inputs.cascade-dir }}
-      BUILD_PROFILE=${{ env.build-profile }}
+      CASCADE_DIR="${{ inputs.cascade-dir }}"
+      BUILD_PROFILE="${{ env.build-profile }}"
 
       mkdir -p "${CASCADE_DIR}/policies"
       # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
