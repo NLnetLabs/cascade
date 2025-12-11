@@ -77,7 +77,7 @@ impl ZoneLoader {
         // TODO: this is an example for now. Reconsider
         let metric_zones_loaded: Gauge = Gauge::default();
         metrics.cascade.register(
-            "zones_loaded_on_boot",
+            "zones_loaded_on_startup",
             "The number of zones successfully loaded at startup",
             metric_zones_loaded.clone(),
         );

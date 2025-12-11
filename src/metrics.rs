@@ -50,7 +50,7 @@ pub struct MetricsCollection {
     pub cascade: Registry,
 
     /// The metrics assemble time only relevant for metrics that get collected
-    /// on scraping. If we remove all metrics that get build (from state) on
+    /// on scraping. If we remove all metrics that get built (from state) on
     /// each scrape, then this timer will be useless and should be removed.
     _assemble_time_metric: Gauge<u64, AtomicU64>,
 
