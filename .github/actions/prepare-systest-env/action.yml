@@ -3,7 +3,8 @@
 name: 'Prepare the system/integration test environment'
 description: 'Setup the environment, and fetch or build the binaries'
 defaults:
-  shell: bash --noprofile --norc -eo pipefail -x {0}
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
   artifact-name:
     description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'

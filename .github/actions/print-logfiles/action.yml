@@ -3,7 +3,8 @@
 name: 'Print logfiles'
 description: 'Print the nameserver logfiles'
 defaults:
-  shell: bash --noprofile --norc -eo pipefail -x {0}
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
   nameserver-dir:
     description: 'The base directory of the nameserver log files'

@@ -3,7 +3,8 @@
 name: 'Setup and start cascade'
 description: 'Setup and start the cascade daemon'
 defaults:
-  shell: bash --noprofile --norc -eo pipefail -x {0}
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
   cascade-dir:
     description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
