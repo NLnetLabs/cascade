@@ -15,7 +15,7 @@ runs:
     - name: Prepare the system test environment
       uses: ./.github/actions/prepare-systest-env
       with:
-        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+        artifact-name: ${{ inputs.artifact-name }}
     - run: target/debug/cascade --version
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade
