@@ -18,6 +18,7 @@ use domain::dep::kmip::client::pool::ConnectionManager;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -31,7 +32,6 @@ use crate::api::*;
 use crate::center;
 use crate::center::get_zone;
 use crate::center::Center;
-use crate::daemon::SocketProvider;
 use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
@@ -48,7 +48,7 @@ use crate::zone::ZoneLoadSource;
 use crate::zonemaintenance::maintainer::read_soa;
 use crate::zonemaintenance::types::ZoneReportDetails;
 
-const HTTP_UNIT_NAME: &str = "HS";
+pub const HTTP_UNIT_NAME: &str = "HS";
 
 // NOTE: To send data back from a unit, send them an app command with
 // a transmitter they can use to send the reply
@@ -61,7 +61,7 @@ impl HttpServer {
     /// Launch the HTTP server.
     pub fn launch(
         center: Arc<Center>,
-        socket_provider: &mut SocketProvider,
+        http_sockets: Vec<TcpListener>,
     ) -> Result<Arc<Self>, Terminated> {
         let this = Arc::new(Self { center });
 
@@ -104,25 +104,10 @@ impl HttpServer {
             .route("/key/{zone}/remove", post(Self::key_remove))
             .with_state(this.clone());
 
-        // Setup listen sockets
-        let socks = this
-            .center
-            .config
-            .remote_control
-            .servers
-            .iter()
-            .map(|addr| {
-                socket_provider.take_tcp(addr).ok_or_else(|| {
-                    error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}");
-                    Terminated
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
         // Serve at the configured endpoints.
         tokio::spawn(async move {
             let mut set = JoinSet::new();
-            for sock in socks {
+            for sock in http_sockets {
                 set.spawn(axum::serve(sock, app.clone()).into_future());
             }
 
