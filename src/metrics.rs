@@ -85,7 +85,7 @@ impl MetricsCollection {
             .register("build", "Cascade build information", _cascade_version);
 
         col.cascade.register_with_unit(
-            "metrics_assemple_duration",
+            "metrics_assemble_duration",
             "The time taken in milliseconds to assemble the last metric snapshot",
             Unit::Other("milliseconds".into()),
             col._assemble_time_metric.clone(),
