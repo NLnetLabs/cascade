@@ -77,6 +77,9 @@ pub fn load(
 
 //----------- Helper functions -------------------------------------------------
 
+/// Make a zonefile reader for the file at the given path
+///
+/// It will add the zize ofthe file to the byte count of the metrics.
 fn make_reader(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
@@ -100,7 +103,7 @@ fn make_reader(
     Ok(reader)
 }
 
-/// Parse a record from a zonefile
+/// Parse a single record from a zonefile
 fn parse_record(
     buf: &mut Vec<u8>,
     zone: &Arc<Zone>,

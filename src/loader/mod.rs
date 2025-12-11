@@ -1,7 +1,7 @@
 //! Loading zones.
 //!
 //! The zone loader is responsible for maintaining up-to-date copies of the DNS
-//! zones known to Nameshed.  Every zone has a configured source (e.g. zonefile,
+//! zones known to Cascade.  Every zone has a configured source (e.g. zonefile,
 //! DNS server, etc.) that will be monitored for changes.
 
 use std::{
@@ -12,7 +12,7 @@ use std::{
 };
 
 use domain::new::base::Serial;
-use tokio::task::AbortHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 use tracing::{debug, trace, warn};
 
 use crate::{
@@ -33,11 +33,30 @@ pub use refresh::RefreshMonitor;
 
 //----------- AbortOnDrop ------------------------------------------------------
 
+#[derive(Debug)]
 pub struct AbortOnDrop(AbortHandle);
+
+impl<T> From<JoinHandle<T>> for AbortOnDrop {
+    fn from(value: JoinHandle<T>) -> Self {
+        Self(value.abort_handle())
+    }
+}
+
+impl From<AbortHandle> for AbortOnDrop {
+    fn from(value: AbortHandle) -> Self {
+        Self(value)
+    }
+}
 
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.0.abort();
+    }
+}
+
+impl AbortOnDrop {
+    pub fn id(&self) -> tokio::task::Id {
+        self.0.id()
     }
 }
 
@@ -68,7 +87,7 @@ impl Loader {
 
         for zone in initial_zones {
             let zone_state = zone.0.state.lock().unwrap();
-            let source = zone_state.source.clone();
+            let source = zone_state.loader.source.clone();
             drop(zone_state);
             this.set_source(&zone.0, source);
         }
@@ -79,9 +98,9 @@ impl Loader {
     /// Drive this [`Loader`].
     pub fn run(self: &Arc<Self>) -> AbortOnDrop {
         let this = self.clone();
-        AbortOnDrop(
-            tokio::spawn(async move { this.refresh_monitor.run(&this).await }).abort_handle(),
-        )
+        AbortOnDrop::from(tokio::spawn(async move {
+            this.refresh_monitor.run(&this).await
+        }))
     }
 
     pub async fn on_command(self: &Arc<Self>, cmd: ApplicationCommand) -> Result<(), Terminated> {
@@ -111,7 +130,7 @@ impl Loader {
                             .iter()
                             .find(|z| z.zone.0.name == name)
                         {
-                            self.set_source(&zone.zone.0, zone::ZoneLoadSource::None);
+                            self.set_source(&zone.zone.0, Source::None);
                         }
                         Ok(())
                     }
@@ -142,22 +161,7 @@ impl Loader {
         }
     }
 
-    fn set_source(self: &Arc<Self>, zone: &Arc<Zone>, source: zone::ZoneLoadSource) {
-        let source = match source {
-            zone::ZoneLoadSource::None => Source::None,
-            zone::ZoneLoadSource::Zonefile { path } => Source::Zonefile { path },
-            zone::ZoneLoadSource::Server { addr, tsig_key } => {
-                let addr = zone::loader::DnsServerAddr {
-                    ip: addr.ip(),
-                    tcp_port: addr.port(),
-                    udp_port: None,
-                };
-                Source::Server {
-                    addr,
-                    tsig_key: tsig_key.map(Arc::unwrap_or_clone),
-                }
-            }
-        };
+    fn set_source(self: &Arc<Self>, zone: &Arc<Zone>, source: Source) {
         let mut state = zone.state.lock().unwrap();
         LoaderState::set_source(&mut state, zone, source, self);
     }
@@ -198,7 +202,8 @@ pub async fn refresh<'z>(
         zone::loader::Source::Server { addr, tsig_key } => {
             trace!("Refreshing {:?} from server {addr:?}", zone.name);
 
-            server::refresh(metrics, zone, addr, tsig_key.clone(), latest).await
+            let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
+            server::refresh(metrics, zone, addr, tsig_key, latest).await
         }
     };
 
@@ -359,7 +364,8 @@ pub async fn reload<'z>(
         zone::loader::Source::Server { addr, tsig_key } => {
             trace!("Reloading {:?} from server {addr:?}", zone.name);
 
-            server::axfr(metrics, zone, addr, tsig_key.clone())
+            let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
+            server::axfr(metrics, zone, addr, tsig_key)
                 .await
                 .map_err(ReloadError::Axfr)
         }

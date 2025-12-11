@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::api::{self, KeyImport, SigningQueueReport, SigningReport, ZoneLoaderReport};
+use crate::api::{self, KeyImport, SigningQueueReport, SigningReport};
 use crate::center::{get_zone, halt_zone, Center, Change, ZoneAddError};
 use crate::daemon::SocketProvider;
 use crate::loader::{AbortOnDrop, Loader};
@@ -10,7 +10,7 @@ use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneReport};
+use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
 use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
 use domain::zonetree::StoredName;
@@ -463,10 +463,6 @@ pub enum ApplicationCommand {
         policy: String,
         key_imports: Vec<KeyImport>,
         report_tx: oneshot::Sender<Result<(), ZoneAddError>>,
-    },
-    GetZoneReport {
-        zone_name: StoredName,
-        report_tx: oneshot::Sender<(ZoneReport, Option<ZoneLoaderReport>)>,
     },
     GetSigningReport {
         zone_name: StoredName,
