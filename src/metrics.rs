@@ -111,11 +111,6 @@ impl MetricsCollection {
         let zones_waiting: i64;
         let zones_published: i64;
 
-        // let mut signing_operations_active: i64 = 0;
-        // let mut signing_operations_completed: i64 = 0;
-        // let mut signing_operations_last_started: i64 = 0;
-        // let mut signing_operations_last_completed: i64 = 0;
-
         // Using Family::clear() to delete all metrics and label sets
         metrics.zones_halted.clear();
         {
@@ -161,37 +156,6 @@ impl MetricsCollection {
                             .inc();
                     }
                 }
-
-                // metrics
-                //     .signing_operations_active
-                //     .get_or_create(&ZoneLabels {
-                //         zone: StoredName(zone.name.clone()),
-                //     })
-                //     .set(5);
-                // metrics
-                //     .signing_operations_active
-                //     .get_or_create(&ZoneLabels {
-                //         zone: StoredName(Name::from_str("banana.com").unwrap()),
-                //     })
-                //     .set(2);
-                // metrics
-                //     .signing_operations_completed
-                //     .get_or_create(&ZoneLabels {
-                //         zone: StoredName(Name::from_str("example.com").unwrap()),
-                //     })
-                //     .inc();
-                // metrics
-                //     .signing_operations_last_started
-                //     .get_or_create(&ZoneLabels {
-                //         zone: StoredName(Name::from_str("example.com").unwrap()),
-                //     })
-                //     .set(123456);
-                // metrics
-                //     .signing_operations_last_completed
-                //     .get_or_create(&ZoneLabels {
-                //         zone: StoredName(Name::from_str("example.com").unwrap()),
-                //     })
-                //     .set(123444);
             }
         }
 
@@ -292,13 +256,6 @@ impl Default for MetricsCollection {
     }
 }
 
-//------------ ZoneLabels ----------------------------------------------------
-
-// #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
-// struct ZoneLabels {
-//     zone: StoredName,
-// }
-
 //------------ StoredName ----------------------------------------------------
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -329,41 +286,10 @@ enum HaltMode {
     HardHalt,
 }
 
-//------------ ZoneStateGauge ------------------------------------------------
-
-// NOTE: while it is possible to represent zone state using an Enum encoded as a Gauge, it is not
-// very human readable and requires knowledge about the Gauge's enum encoding. So this might not
-// even be worth it.
-
-// #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
-// enum ZoneStateGauge {
-//     SoftHalt,
-//     HardHalt,
-//     Loaded,
-//     Signed,
-//     Published,
-// }
-// TODO represent this enum as an integer to encode as a Gauge
-
-// impl TypedMetric for ZoneStateGauge {
-//     const TYPE: MetricType = MetricType::Gauge;
-// }
-
-// impl EncodeMetric for ZoneStateGauge {
-//     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
-//         encoder.encode_gauge(&self.get()) // turn enum into integer here
-//     }
-//     fn metric_type(&self) -> MetricType {
-//         Self::TYPE
-//     }
-// }
-
 //------------ StateMetrics --------------------------------------------------
 
 #[derive(Debug, Default)]
 struct StateMetrics {
-    // TODO: add a "latest" zone version metric vs all zone versions metric so
-    // that summing is possible?
     /// The number of known zones
     zones_configured: Gauge,
     zones_loaded: Gauge,
@@ -374,7 +300,6 @@ struct StateMetrics {
     zones_waiting: Gauge,
     zones_published: Gauge,
     zones_halted: Family<ZoneHaltMode, Gauge>,
-    // zone_status: Family<Zone, Gauge>,
 }
 
 impl StateMetrics {
@@ -419,26 +344,5 @@ impl StateMetrics {
             "Number of halted zones",
             self.zones_halted.clone(),
         );
-
-        // reg.register(
-        //     "signing_operations_active",
-        //     "",
-        //     self.signing_operations_active.clone(),
-        // );
-        // reg.register(
-        //     "signing_operations_completed",
-        //     "",
-        //     self.signing_operations_completed.clone(),
-        // );
-        // reg.register(
-        //     "signing_operations_last_started",
-        //     "",
-        //     self.signing_operations_last_started.clone(),
-        // );
-        // reg.register(
-        //     "signing_operations_last_completed",
-        //     "",
-        //     self.signing_operations_last_completed.clone(),
-        // );
     }
 }
