@@ -79,6 +79,10 @@ supports-color = "3.0.2"
 # It is maintained  by Dirkjan Ochtman.
 hostname = "0.4.1"
 
+# `prometheus-client` is used for metrics and is maintained by the Prometheus
+# organization.
+prometheus-client = "0.24.0"
+
 # Cascade contains many performance-sensitive hashmaps and is not expected to
 # be accessible to attackers.  'std's default hasher, which is slow but secure
 # against HashDoS attacks, is not appropriate.  A performant, cryptographically

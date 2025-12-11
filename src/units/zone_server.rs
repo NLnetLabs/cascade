@@ -43,6 +43,7 @@ use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::record_zone_event;
 use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::metrics::MetricsCollection;
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, ZoneVersionReviewState,
 };
@@ -147,6 +148,7 @@ impl ZoneServer {
         center: Arc<Center>,
         source: Source,
         socket_provider: &mut SocketProvider,
+        _metrics: &mut MetricsCollection,
     ) -> Result<Self, Terminated> {
         let unit_name = match source {
             Source::Unsigned => "RS",
