@@ -5,6 +5,8 @@ use std::time::SystemTime;
 
 use axum::extract::Path;
 use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::routing::post;
 use axum::Json;
@@ -92,6 +94,7 @@ impl HttpServer {
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
             .route("/health", get(Self::health))
+            .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
             .route("/debug/change-logging", post(Self::change_logging))
@@ -152,6 +155,26 @@ impl HttpServer {
     /// If this endpoint responds, the daemon is considered healthy.
     async fn health() -> Json<()> {
         Json(())
+    }
+
+    /// TODO
+    async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
+        // match String::try_from(state.metrics.as_ref()) {
+        match state.metrics.assemble(state.center.clone()) {
+            Ok(b) => Ok((
+                StatusCode::OK,
+                [(
+                    reqwest::header::CONTENT_TYPE,
+                    "application/openmetrics-text; version=1.0.0; charset=utf-8",
+                )],
+                b,
+            )),
+            Err(_) => Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to encode metrics as text",
+            )),
+        }
+        // Response::builder() .status(StatusCode::OK) .header( CONTENT_TYPE, "application/openmetrics-text; version=1.0.0; charset=utf-8",) .body(Body::from(buffer)) .unwrap()
     }
 
     async fn status(State(state): State<Arc<HttpServer>>) -> Json<ServerStatusResult> {
