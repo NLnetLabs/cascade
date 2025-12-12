@@ -23,7 +23,7 @@ Synopsis
 :program:`cascade zone` ``[OPTIONS]`` :subcmd:`history` ``<NAME>``
 
 Description
-/----------
+-----------
 
 Manage Cascade's zones.
 
