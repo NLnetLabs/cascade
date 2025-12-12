@@ -8,7 +8,8 @@ inputs:
     required: true
 defaults:
   # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
-  shell: bash --noprofile --norc -eo pipefail -x {0}
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
 runs:
   using: "composite"
   steps:
