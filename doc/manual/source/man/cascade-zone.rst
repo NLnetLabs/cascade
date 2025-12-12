@@ -136,7 +136,7 @@ Options for :subcmd:`zone add`
 
 .. option:: <NAME>
 
-   The name of the zone to approve.
+   The name of the zone to add.
 
 Options for :subcmd:`zone remove`
 ---------------------------------
