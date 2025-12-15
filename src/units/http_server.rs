@@ -456,7 +456,9 @@ impl HttpServer {
                 }
             }
             Err(err) => {
-                error!("Unable to read `dnst keyset` state file '{state_path}' while querying status of zone {name} for the API: {err}");
+                error!(
+                    "Unable to read `dnst keyset` state file '{state_path}' while querying status of zone {name} for the API: {err}"
+                );
             }
         }
 
@@ -1086,38 +1088,6 @@ impl From<KmipServerState> for api::KmipServerState {
     }
 }
 
-impl From<HsmServerAdd> for ConnectionSettings {
-    fn from(
-        HsmServerAdd {
-            ip_host_or_fqdn,
-            port,
-            username,
-            password,
-            insecure,
-            connect_timeout,
-            read_timeout,
-            write_timeout,
-            max_response_bytes,
-            ..
-        }: HsmServerAdd,
-    ) -> Self {
-        ConnectionSettings {
-            host: ip_host_or_fqdn,
-            port,
-            username,
-            password,
-            insecure,
-            client_cert: None, // TODO
-            server_cert: None, // TODO
-            ca_cert: None,     // TODO
-            connect_timeout: Some(connect_timeout),
-            read_timeout: Some(read_timeout),
-            write_timeout: Some(write_timeout),
-            max_response_bytes: Some(max_response_bytes),
-        }
-    }
-}
-
 impl HttpServer {
     async fn kmip_server_add(
         State(state): State<Arc<HttpServer>>,
@@ -1131,7 +1101,35 @@ impl HttpServer {
         let kmip_credentials_store_path = config.kmip_credentials_store_path.clone();
 
         // Test the connection before using the HSM.
-        let conn_settings = ConnectionSettings::from(req.clone());
+        let conn_settings = {
+            let HsmServerAdd {
+                ip_host_or_fqdn,
+                port,
+                username,
+                password,
+                insecure,
+                connect_timeout,
+                read_timeout,
+                write_timeout,
+                max_response_bytes,
+                ..
+            } = req.clone();
+
+            ConnectionSettings {
+                host: ip_host_or_fqdn,
+                port,
+                username,
+                password,
+                insecure,
+                client_cert: None, // TODO
+                server_cert: None, // TODO
+                ca_cert: None,     // TODO
+                connect_timeout: Some(connect_timeout),
+                read_timeout: Some(read_timeout),
+                write_timeout: Some(write_timeout),
+                max_response_bytes: Some(max_response_bytes),
+            }
+        };
 
         let pool = match ConnectionManager::create_connection_pool(
             server_id.clone(),
@@ -1147,7 +1145,7 @@ impl HttpServer {
                     host: conn_settings.host,
                     port: conn_settings.port,
                     err: format!("Error creating connection pool: {err}"),
-                }))
+                }));
             }
         };
 
@@ -1197,7 +1195,7 @@ impl HttpServer {
                         HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
                             err: err.to_string(),
                         },
-                    ))
+                    ));
                 }
             };
             let _ = creds_file.insert(server_id, creds);
@@ -1221,7 +1219,7 @@ impl HttpServer {
                         path: kmip_server_state_file.into_string(),
                         err: err.to_string(),
                     },
-                ))
+                ));
             }
         };
         if let Err(err) = serde_json::to_writer_pretty(&f, &kmip_state) {

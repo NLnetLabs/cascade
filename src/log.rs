@@ -13,7 +13,7 @@
 
 use camino::Utf8Path;
 use tracing::Subscriber;
-use tracing_subscriber::{layer::SubscriberExt, reload, util::SubscriberInitExt, Registry};
+use tracing_subscriber::{Registry, layer::SubscriberExt, reload, util::SubscriberInitExt};
 
 use crate::config::{LogLevel, LogTarget, LoggingConfig, RuntimeConfig};
 
@@ -204,9 +204,7 @@ mod unix {
         time::Duration,
     };
 
-    use tracing::{field::Field, Subscriber};
-
-    use crate::eprintln;
+    use tracing::{Subscriber, field::Field};
 
     //------- Syslog -----------------------------------------------------------
 
@@ -319,7 +317,10 @@ mod unix {
                 Ok(()) => {}
                 Err(error) => {
                     // TODO: Report into a proper fallback logger.
-                    eprintln!("Logging failed: {error:?}");
+                    #[allow(clippy::disallowed_macros, reason = "we're not printing in color")]
+                    {
+                        eprintln!("Logging failed: {error:?}");
+                    }
                 }
             }
         }

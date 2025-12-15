@@ -2,8 +2,8 @@
 
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::{
-    builder::{EnumValueParser, PathBufValueParser, PossibleValue, TypedValueParser, ValueParser},
     Arg, ArgMatches, Command, ValueEnum, ValueHint,
+    builder::{EnumValueParser, PathBufValueParser, PossibleValue, TypedValueParser, ValueParser},
 };
 
 use super::{Config, LogLevel, LogTarget};

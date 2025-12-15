@@ -1,91 +1,224 @@
-name: ci
+# ======================================================
+# Continuous Integration: making sure the codebase works
+# ======================================================
+#
+# This workflow tests modifications to Cascade, ensuring that Cascade can be
+# used by others successfully.  It verifies certain aspects of the codebase,
+# such as the formatting and feature flag combinations, and runs the full test
+# suite.  It runs on Ubuntu only.
+
+name: CI
+
+# When the worflow runs
+# ---------------------
 on:
+  # Execute when a pull request is (re-) opened or its head changes (e.g. new
+  # commits are added or the commit history is rewritten) ... but only if
+  # build-related files change.
+  pull_request:
+    paths:
+      - '**.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'etc/*.toml'
+      - '.github/workflows/ci.yml'
+
+  # If a pull request is merged, at least one commit is added to the target
+  # branch.  If the target is another pull request, it will be caught by the
+  # above event.  We miss PRs that merge to a non-PR branch, except for the
+  # 'main' branch.
+
+  # Execute when a commit is pushed to 'main' (including merged PRs) or to a
+  # release tag ... but only if build-related files change.
   push:
     branches:
-      - main
+      - 'main'
+      - 'releases/**'
     paths:
       - '**.rs'
-      - 'Cargo.{toml,lock}'
-      - '.github/workflows/ci.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - 'etc/*.toml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - '**.rs'
-      - 'Cargo.{toml,lock}'
       - '.github/workflows/ci.yml'
-      - 'etc/*.toml'
 
+  # Rebuild 'main' every week.  This will account for changes to dependencies
+  # and to Rust, either of which can trigger new failures.  Rust releases are
+  # every 6 weeks, on a Thursday; this event runs every Friday.
+  schedule:
+    - cron: '0 10 * * FRI'
+
+defaults:
+  run:
+    shell: bash
+
+# Jobs
+# ----------------------------------------------------------------------------
 jobs:
-  build:
-    name: build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [1.84.0, stable, beta, nightly]
 
-        # Test with no features, default features ("") and all features.
-        # Ordered fewest features to most features.
-        args: ["--no-default-features", "", "--all-features"]
+  # Check Formatting
+  # ----------------
+  #
+  # NOTE: This job is run even if no '.rs' files have changed.  Inserting such
+  # a check would require using a separate workflow file or using third-party
+  # actions.  Most commits do change '.rs' files, and 'cargo-fmt' is pretty
+  # fast, so optimizing this is not necessary.
+  check-fmt:
+    name: Check formatting
+    runs-on: ubuntu-latest
     steps:
+
+    # Load the repository.
     - name: Checkout repository
       uses: actions/checkout@v4
-    - name: Install Rust
-      uses: hecrj/setup-rust-action@v2
+
+    # Set up the Rust toolchain.
+    #
+    # Disable the cache since it's not relevant for formatting.
+    - name: Set up Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        rust-version: ${{ matrix.rust }}
-    - run: cargo build --verbose ${{ matrix.args }}
+        toolchain: stable
+        components: rustfmt
+        cache: false
 
-  test:    
-    name: test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [1.84.0, stable, beta, nightly]
+    # Do the actual formatting check.
+    - name: Check formatting
+      run: cargo fmt --all -- --check
 
-        # Test with no features, default features ("") and all features.
-        # Ordered fewest features to most features.
-        args: ["--no-default-features", "", "--all-features"]
+  # Determine MSRV
+  # --------------
+  #
+  # The MSRV needs to be determined as we will test Cascade against the Rust
+  # compiler at that version.
+  determine-msrv:
+    name: Determine MSRV
+    runs-on: ubuntu-latest
+    outputs:
+      msrv: ${{ steps.determine-msrv.outputs.msrv }}
     steps:
+
+    # Load the repository.
     - name: Checkout repository
       uses: actions/checkout@v4
-    - name: Install Rust
-      uses: hecrj/setup-rust-action@v2
-      with:
-        rust-version: ${{ matrix.rust }}
-    - run: cargo test --verbose ${{ matrix.args }}
 
+    # Determine the MSRV.
+    - name: Determine MSRV
+      id: determine-msrv
+      run: |
+        msrv=`cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="cascade")|.rust_version'`
+        echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
+
+  # TODO: Add feature flag checks, when we add feature flags.
+
+  # Check Minimal Versions
+  # ----------------------
+  #
+  # Ensure that Cascade compiles with the oldest compatible versions of all
+  # packages, even those Cascade depends upon indirectly.
+  check-minimal-versions:
+    name: Check minimal versions
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-D warnings"
+    steps:
+
+    # Load the repository.
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Set up the Rust toolchain.
+    - name: Set up Rust nightly
+      id: setup-rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: nightly, stable
+        cache: false
+
+    # TODO: Cache minimal-version dependencies?
+
+    # Lock all dependencies to their minimal versions.
+    - name: Lock dependencies to minimal versions
+      run: cargo +nightly update -Z minimal-versions
+
+    # Check that Cascade compiles.
+    #
+    # NOTE: This does not benefit from the 'target' folder cached by a 'cargo
+    # check --all-features --all-targets' execution.  It may be worthwhile to
+    # cache this 'target' folder separately (TODO).
+    - name: Check
+      run: cargo check --all-targets --all-features --locked
+
+  # Clippy
+  # ------
+  #
+  # We run Clippy separately, and only on nightly Rust because it offers a
+  # superset of the lints.
+  #
+  # 'cargo clippy' and 'cargo build' can share some state for fast execution,
+  # but it's faster to execute them in parallel than to establish an ordering
+  # between them.
   clippy:
-    name: clippy
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable]
+    name: Clippy
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-D warnings"
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    - name: Install Rust
-      uses: hecrj/setup-rust-action@v2
-      with:
-        rust-version: ${{ matrix.rust }}
-    - run: cargo clippy --all -- -D warnings
 
-  fmt:
-    name: fmt
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable]
-    steps:
+    # Load the repository.
     - name: Checkout repository
       uses: actions/checkout@v4
-    - name: Install Rust
-      uses: hecrj/setup-rust-action@v2
+
+    # Set up the Rust toolchain.
+    - name: Set up Rust nightly
+      id: setup-rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        rust-version: ${{ matrix.rust }}
-    - run: cargo fmt --check
+        toolchain: nightly
+        components: clippy
+        cache: false
+
+    # TODO: Restore a cache of dependencies and 'target'.
+
+    # Do the actually Clippy run.
+    - name: Check Clippy
+      run: cargo +nightly clippy --all-targets --all-features
+
+  # Test
+  # ----
+  #
+  # Ensure that Cascade compiles and its test suite passes, on the span of
+  # supported operating systems and Rust versions.
+  test:
+    name: Test
+    needs: determine-msrv
+    strategy:
+      matrix:
+        rust: ["${{ needs.determine-msrv.outputs.msrv }}", stable, nightly]
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-D warnings"
+    steps:
+
+    # Load the repository.
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Set up the Rust toolchain.
+    - name: Set up Rust ${{ matrix.rust }}
+      id: setup-rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust }}
+        cache: false
+
+    # TODO: Restore a cache of dependencies and 'target'.
+
+    # Build and run the test suite.
+    - name: Test
+      run: cargo test --all-targets
+
+    # Test docs.
+    - name: Test docs
+      run: cargo test --doc
+
+  # TODO: Build a cache.

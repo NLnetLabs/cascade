@@ -1,8 +1,8 @@
 //! Cascade
 
-pub mod api;
+pub use cascade_api as api;
+
 pub mod center;
-pub mod cli;
 pub mod common;
 pub mod config;
 pub mod daemon;
@@ -19,21 +19,3 @@ pub mod zone;
 
 #[cfg(test)]
 pub mod tests;
-
-#[macro_export]
-macro_rules! println {
-    ($($t:tt)*) => {{
-        #[allow(clippy::disallowed_macros)]
-        let x = anstream::println!($($t)*);
-        x
-    }};
-}
-
-#[macro_export]
-macro_rules! eprintln {
-    ($($t:tt)*) => {{
-        #[allow(clippy::disallowed_macros)]
-        let x = anstream::eprintln!($($t)*);
-        x
-    }};
-}

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::api::{self, KeyImport, SigningQueueReport, SigningReport};
-use crate::center::{get_zone, halt_zone, Center, Change, ZoneAddError};
+use crate::center::{Center, Change, ZoneAddError, get_zone, halt_zone};
 use crate::daemon::SocketProvider;
 use crate::loader::{AbortOnDrop, Loader};
 use crate::units::http_server::HttpServer;
@@ -221,11 +221,15 @@ impl Manager {
                         match zone_state.pipeline_mode.clone() {
                             PipelineMode::Running => {}
                             PipelineMode::SoftHalt(message) => {
-                                info!("[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running");
+                                info!(
+                                    "[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running"
+                                );
                                 zone_state.resume();
                             }
                             PipelineMode::HardHalt(_) => {
-                                warn!("[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted");
+                                warn!(
+                                    "[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted"
+                                );
                                 return;
                             }
                         }

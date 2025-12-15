@@ -1,8 +1,7 @@
-use cascade::{
+use cascaded::{
     center::{self, Center},
     config::{Config, SocketConfig},
-    daemon::{daemonize, PreBindError, SocketProvider},
-    eprintln,
+    daemon::{PreBindError, SocketProvider, daemonize},
     manager::Manager,
     policy,
 };
@@ -44,7 +43,7 @@ fn main() -> ExitCode {
     let config = match Config::init(&matches) {
         Ok(config) => config,
         Err(error) => {
-            eprintln!("Cascade couldn't be configured: {error}");
+            error!("Cascade couldn't be configured: {error}");
             return ExitCode::FAILURE;
         }
     };
@@ -58,10 +57,10 @@ fn main() -> ExitCode {
     drop(log_guard);
 
     // Initialize the actual logger
-    let logger = match cascade::log::Logger::launch(&config.daemon.logging) {
+    let logger = match cascaded::log::Logger::launch(&config.daemon.logging) {
         Ok(logger) => logger,
         Err(e) => {
-            eprintln!("ERROR: Failed to initialize logging: {e:?}");
+            error!("Failed to initialize logging: {e:?}");
             return ExitCode::FAILURE;
         }
     };
@@ -121,7 +120,7 @@ fn main() -> ExitCode {
         for zone in &state.zones {
             let name = &zone.0.name;
             let path = zone_state_dir.join(format!("{name}.db"));
-            let spec = match cascade::zone::state::Spec::load(&path) {
+            let spec = match cascaded::zone::state::Spec::load(&path) {
                 Ok(spec) => {
                     debug!("Loaded state of zone '{name}' (from {path})");
                     spec
@@ -137,11 +136,15 @@ fn main() -> ExitCode {
     }
 
     if config.loader.review.servers.is_empty() {
-        warn!("No review server configured for [loader.review], therefore no unsigned zone transfer available for review.");
+        warn!(
+            "No review server configured for [loader.review], therefore no unsigned zone transfer available for review."
+        );
     }
 
     if config.signer.review.servers.is_empty() {
-        warn!("No review server configured for [signer.review], therefore no signed zone transfer available for review.");
+        warn!(
+            "No review server configured for [signer.review], therefore no signed zone transfer available for review."
+        );
     }
 
     // Load the TSIG store file.
@@ -199,7 +202,7 @@ fn main() -> ExitCode {
     {
         Ok(runtime) => runtime,
         Err(error) => {
-            eprintln!("Couldn't start Tokio: {error}");
+            error!("Couldn't start Tokio: {error}");
             return ExitCode::FAILURE;
         }
     };
@@ -242,15 +245,15 @@ fn main() -> ExitCode {
     });
 
     // Persist the current state.
-    cascade::state::save_now(&center);
-    cascade::tsig::save_now(&center);
+    cascaded::state::save_now(&center);
+    cascaded::tsig::save_now(&center);
     let zones = {
         let state = center.state.lock().unwrap();
         state.zones.iter().map(|z| z.0.clone()).collect::<Vec<_>>()
     };
     for zone in zones {
         // TODO: Maybe 'save_state_now()' should take '&Config'?
-        cascade::zone::save_state_now(&center, &zone);
+        cascaded::zone::save_state_now(&center, &zone);
     }
 
     result

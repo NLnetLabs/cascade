@@ -18,6 +18,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "aho-corasick"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -96,17 +105,6 @@ checksum = "47e4f2b81832e72834d7518d8487a0396a28cc408186a2e8854c0f98011faf12"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "async-trait"
-version = "0.1.89"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
 ]
 
 [[package]]
@@ -225,6 +223,9 @@ name = "bytes"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "camino"
@@ -240,12 +241,38 @@ name = "cascade"
 version = "0.1.0-alpha5"
 dependencies = [
  "anstream",
+ "camino",
+ "cascade-api",
+ "clap",
+ "futures-util",
+ "jiff",
+ "reqwest",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "cascade-api"
+version = "0.1.0-alpha5"
+dependencies = [
+ "bytes",
+ "camino",
+ "domain",
+ "serde",
+]
+
+[[package]]
+name = "cascaded"
+version = "0.1.0-alpha5"
+dependencies = [
  "arc-swap",
  "assert-json-diff",
- "async-trait",
  "axum",
  "bytes",
  "camino",
+ "cascade-api",
  "clap",
  "crossbeam-utils",
  "daemonbase",
@@ -255,9 +282,9 @@ dependencies = [
  "futures-util",
  "hostname",
  "jiff",
+ "lazy_static",
  "octseq",
  "rayon",
- "reqwest",
  "ring",
  "serde",
  "serde_json",
@@ -466,6 +493,7 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.11.1"
+source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#8239c9e58a3220588c4fc95b5824a0018c7147f5"
 dependencies = [
  "arc-swap",
  "bcder",
@@ -500,6 +528,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.11.1"
+source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#8239c9e58a3220588c4fc95b5824a0018c7147f5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -530,14 +559,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "enum-flags"
-version = "0.1.8"
+name = "enum-ordinalize"
+version = "4.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3682d2328e61f5529088a02cd20bb0a9aeaeeeb2f26597436dd7d75d1340f8f5"
+checksum = "4a1091a7bb1f8f2c4b28f1fe2cef4980ca2d410a3d727d67ecc3178c9b0800f0"
+dependencies = [
+ "enum-ordinalize-derive",
+]
+
+[[package]]
+name = "enum-ordinalize-derive"
+version = "4.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ca9601fb2d62598ee17836250842873a413586e5d7ed88b356e38ddbb0ec631"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -1147,11 +1185,12 @@ dependencies = [
 [[package]]
 name = "kmip-protocol"
 version = "0.5.0"
-source = "git+https://github.com/NLnetLabs/kmip-protocol?branch=next#f632fb135d75ce6fe6de8428d68c78739f345b15"
+source = "git+https://github.com/NLnetLabs/kmip-protocol?branch=next#24fe60710ba60605e851557ba58227b56967b234"
 dependencies = [
+ "bitflags",
  "cfg-if",
  "enum-display-derive",
- "enum-flags",
+ "enum-ordinalize",
  "hex",
  "kmip-ttlv",
  "log",
@@ -1220,6 +1259,15 @@ name = "log"
 version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+
+[[package]]
+name = "matchers"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
+dependencies = [
+ "regex-automata",
+]
 
 [[package]]
 name = "matchit"
@@ -1594,6 +1642,23 @@ dependencies = [
  "quote",
  "syn 2.0.106",
 ]
+
+[[package]]
+name = "regex-automata"
+version = "0.4.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5276caf25ac86c8d810222b3dbb938e512c55c6831a10f3e6ed1c93b84041f1c"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-syntax"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "reqwest"
@@ -2343,10 +2408,14 @@ version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2054a14f5307d601f88daf0553e1cbf472acc4f2c51afab632431cdcd72124d5"
 dependencies = [
+ "matchers",
  "nu-ansi-term",
+ "once_cell",
+ "regex-automata",
  "sharded-slab",
  "smallvec",
  "thread_local",
+ "tracing",
  "tracing-core",
  "tracing-log",
 ]
@@ -2544,9 +2613,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.4"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2878ef029c47c6e8cf779119f20fcf52bde7ad42a731b2a304bc221df17571e"
+checksum = "7e8983c3ab33d6fb807cfcdad2491c4ea8cbc8ed839181c7dfd9c67c83e261b2"
 dependencies = [
  "rustls-pki-types",
 ]

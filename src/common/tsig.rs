@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use domain::base::name::FromStrError;
 use domain::base::ToName;
+use domain::base::name::FromStrError;
 use domain::tsig::{Algorithm, AlgorithmError, Key, KeyName, KeyStore, NewKeyError};
 use domain::utils::base64::{self, DecodeError};
 use tracing::info;
