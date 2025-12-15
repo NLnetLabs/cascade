@@ -579,10 +579,7 @@ pub fn change_source(
 
     center
         .update_tx
-        .send(Update::Changed(Change::ZoneSourceChanged(
-            name.clone(),
-            state.loader.source.clone(),
-        )))
+        .send(Update::Changed(Change::ZoneSourceChanged(name.clone())))
         .unwrap();
 
     zone.mark_dirty(&mut state, center);

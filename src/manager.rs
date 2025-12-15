@@ -165,7 +165,7 @@ impl Manager {
                     Change::ZonePolicyChanged { name, .. } => {
                         record_zone_event(&self.center, name, HistoricalEvent::PolicyChanged, None);
                     }
-                    Change::ZoneSourceChanged(name, _) => {
+                    Change::ZoneSourceChanged(name) => {
                         record_zone_event(&self.center, name, HistoricalEvent::SourceChanged, None);
                     }
                     Change::ZoneRemoved(name) => {

@@ -49,34 +49,6 @@ pub struct LoaderMetrics {
 }
 
 impl LoaderState {
-    /// Set (or unset) the source of this zone.
-    pub fn set_source(
-        state: &mut ZoneState,
-        zone: &Arc<Zone>,
-        source: Source,
-        loader: &Arc<Loader>,
-    ) {
-        // TODO: Log
-        //
-        // TODO: Should we enqueue a reload now, or do we leave that to the
-        //   caller?  Issuing reloads during the initialization of a zone might
-        //   not be the best idea.
-        //
-        // TODO: Should we _schedule_ refreshes now either?
-
-        let is_none = matches!(&source, Source::None);
-        state.loader.source = source;
-
-        if is_none {
-            state
-                .loader
-                .refresh_timer
-                .disable(zone, &loader.refresh_monitor);
-        } else {
-            Self::enqueue_refresh(state, zone, true, loader);
-        }
-    }
-
     /// Enqueue a refresh of this zone.
     ///
     /// If the zone is not being refreshed already, a new refresh will be
@@ -104,6 +76,14 @@ impl LoaderState {
         loader: &Arc<Loader>,
     ) {
         debug!("Enqueueing a refresh for {:?}", zone.name);
+
+        if let Source::None = state.loader.source {
+            state
+                .loader
+                .refresh_timer
+                .disable(zone, &loader.refresh_monitor);
+            return;
+        }
 
         let refresh = match reload {
             false => EnqueuedRefresh::Refresh,

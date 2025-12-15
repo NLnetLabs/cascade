@@ -25,7 +25,7 @@ use crate::{
     manager::{ApplicationCommand, Update},
     policy::{Policy, PolicyVersion},
     tsig::TsigStore,
-    zone::{loader::Source, Zone, ZoneByName},
+    zone::{Zone, ZoneByName},
 };
 
 //----------- Center -----------------------------------------------------------
@@ -370,7 +370,7 @@ pub enum Change {
     },
 
     /// The source of a zone has changed.
-    ZoneSourceChanged(Name<Bytes>, Source),
+    ZoneSourceChanged(Name<Bytes>),
 
     /// A zone has been removed.
     ZoneRemoved(Name<Bytes>),

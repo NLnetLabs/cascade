@@ -86,10 +86,7 @@ impl Loader {
         };
 
         for zone in initial_zones {
-            let zone_state = zone.0.state.lock().unwrap();
-            let source = zone_state.loader.source.clone();
-            drop(zone_state);
-            this.set_source(&zone.0, source);
+            this.enqueue_refresh(&zone.0);
         }
 
         this
@@ -110,13 +107,10 @@ impl Loader {
                 match change {
                     // This event is also fired at zone add so we don't need
                     // a specific case for that.
-                    Change::ZoneSourceChanged(name, zone_load_source) => {
-                        let zone = {
-                            let center = self.center.state.lock().unwrap();
-                            let zone = center.zones.get(&name).unwrap();
-                            zone.0.clone()
-                        };
-                        self.set_source(&zone, zone_load_source);
+                    Change::ZoneSourceChanged(name) => {
+                        let zone =
+                            crate::center::get_zone(&self.center, &name).expect("zone exists");
+                        self.enqueue_refresh(&zone);
                         Ok(())
                     }
                     Change::ZoneRemoved(name) => {
@@ -138,22 +132,14 @@ impl Loader {
                 }
             }
             ApplicationCommand::RefreshZone { zone_name } => {
-                let zone = {
-                    let center = self.center.state.lock().unwrap();
-                    let zone = center.zones.get(&zone_name).unwrap();
-                    zone.0.clone()
-                };
-                let mut state = zone.state.lock().unwrap();
+                let zone = crate::center::get_zone(&self.center, &zone_name).expect("zone exists");
+                let mut state = zone.state.lock().expect("lock is not poisoned");
                 LoaderState::enqueue_refresh(&mut state, &zone, false, self);
                 Ok(())
             }
             ApplicationCommand::ReloadZone { zone_name } => {
-                let zone = {
-                    let center = self.center.state.lock().unwrap();
-                    let zone = center.zones.get(&zone_name).unwrap();
-                    zone.0.clone()
-                };
-                let mut state = zone.state.lock().unwrap();
+                let zone = crate::center::get_zone(&self.center, &zone_name).expect("zone exists");
+                let mut state = zone.state.lock().expect("lock is not poisoned");
                 LoaderState::enqueue_refresh(&mut state, &zone, true, self);
                 Ok(())
             }
@@ -161,9 +147,15 @@ impl Loader {
         }
     }
 
+    fn enqueue_refresh(self: &Arc<Self>, zone: &Arc<Zone>) {
+        let mut state = zone.state.lock().unwrap();
+        LoaderState::enqueue_refresh(&mut state, zone, true, self);
+    }
+
     fn set_source(self: &Arc<Self>, zone: &Arc<Zone>, source: Source) {
         let mut state = zone.state.lock().unwrap();
-        LoaderState::set_source(&mut state, zone, source, self);
+        state.loader.source = source;
+        LoaderState::enqueue_refresh(&mut state, zone, true, self);
     }
 }
 
