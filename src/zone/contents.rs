@@ -12,9 +12,9 @@ use std::{
 use domain::{
     new::{
         base::{
+            CanonicalRecordData, Record,
             name::{Name, NameBuf, RevName, RevNameBuf},
             wire::{BuildBytes, ParseBytes},
-            CanonicalRecordData, Record,
         },
         rdata::{BoxedRecordData, Soa},
     },

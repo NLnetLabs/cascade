@@ -2,7 +2,7 @@
 
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{Arc, atomic::AtomicUsize},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -16,8 +16,8 @@ use crate::{
 };
 
 use super::{
-    contents::{SoaRecord, Uncompressed},
     Zone, ZoneState,
+    contents::{SoaRecord, Uncompressed},
 };
 
 //----------- LoaderState ------------------------------------------------------

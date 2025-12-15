@@ -19,9 +19,8 @@ use crate::{
     center::{Center, Change},
     manager::{ApplicationCommand, Terminated},
     zone::{
-        self, contents,
+        self, LoaderState, Zone, ZoneContents, ZoneState, contents,
         loader::{LoaderMetrics, Source},
-        LoaderState, Zone, ZoneContents, ZoneState,
     },
 };
 
@@ -186,7 +185,10 @@ pub async fn refresh<'z>(
         }
 
         zone::loader::Source::Zonefile { .. } => {
-            warn!("Cannot refresh {:?} because the source is a zonefile, use the zone reload command instead", zone.name);
+            warn!(
+                "Cannot refresh {:?} because the source is a zonefile, use the zone reload command instead",
+                zone.name
+            );
 
             return (Ok(None), None);
         }
@@ -538,7 +540,10 @@ impl fmt::Display for RefreshError {
                 local_serial,
                 remote_serial,
             } => {
-                write!(f, "the source of the zone is reporting an outdated SOA ({remote_serial}, while the latest local copy is {local_serial})")
+                write!(
+                    f,
+                    "the source of the zone is reporting an outdated SOA ({remote_serial}, while the latest local copy is {local_serial})"
+                )
             }
             RefreshError::Ixfr(error) => {
                 write!(f, "the IXFR failed: {error}")
@@ -630,7 +635,10 @@ impl fmt::Display for ReloadError {
                 local_serial,
                 remote_serial,
             } => {
-                write!(f, "the source of the zone is reporting an outdated SOA ({remote_serial}, while the latest local copy is {local_serial})")
+                write!(
+                    f,
+                    "the source of the zone is reporting an outdated SOA ({remote_serial}, while the latest local copy is {local_serial})"
+                )
             }
             ReloadError::Inconsistent => write!(f, "the local and remote copies are inconsistent"),
             ReloadError::Axfr(error) => write!(f, "the AXFR failed: {error}"),

@@ -8,8 +8,8 @@ use std::{
 
 use camino::Utf8Path;
 use serde::{
-    de::{self, Visitor},
     Deserializer, Serializer,
+    de::{self, Visitor},
 };
 use tokio::time::Instant;
 

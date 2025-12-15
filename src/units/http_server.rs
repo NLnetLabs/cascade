@@ -1,27 +1,27 @@
 use std::future::IntoFuture;
-use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 use std::time::SystemTime;
 
+use axum::Json;
+use axum::Router;
 use axum::extract::Path;
 use axum::extract::State;
 use axum::routing::get;
 use axum::routing::post;
-use axum::Json;
-use axum::Router;
 use bytes::Bytes;
-use domain::base::iana::Class;
 use domain::base::Name;
 use domain::base::Rtype;
 use domain::base::Serial;
 use domain::base::Ttl;
+use domain::base::iana::Class;
 use domain::crypto::kmip::ConnectionSettings;
 use domain::dep::kmip::client::pool::ConnectionManager;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::rdata::Soa;
-use domain::zonetree::error::OutOfZone;
 use domain::zonetree::ReadableZone;
+use domain::zonetree::error::OutOfZone;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -30,27 +30,27 @@ use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
 use crate::api;
-use crate::api::keyset::*;
 use crate::api::KeyInfo;
+use crate::api::keyset::*;
 use crate::api::*;
 use crate::center;
-use crate::center::get_zone;
 use crate::center::Center;
+use crate::center::get_zone;
 use crate::daemon::SocketProvider;
 use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
-use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
-use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
+use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
+use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
-use crate::zone::loader;
-use crate::zone::loader::LoaderMetrics;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::PipelineMode;
+use crate::zone::loader;
+use crate::zone::loader::LoaderMetrics;
 
 const HTTP_UNIT_NAME: &str = "HS";
 
@@ -414,16 +414,16 @@ impl HttpServer {
                             // CLI should not need to know or care what internal
                             // dnst config files are being used).
                             let mut parts = line.split(' ');
-                            if parts.any(|part| part == "-c") {
-                                if let Some(dnst_config_path) = parts.next() {
-                                    let sanitized_line = line.replace(
-                                        &format!("dnst keyset -c {dnst_config_path}"),
-                                        &format!("cascade keyset {name}"),
-                                    );
-                                    sanitized_output.push_str(&sanitized_line);
-                                    sanitized_output.push('\n');
-                                    continue;
-                                }
+                            if parts.any(|part| part == "-c")
+                                && let Some(dnst_config_path) = parts.next()
+                            {
+                                let sanitized_line = line.replace(
+                                    &format!("dnst keyset -c {dnst_config_path}"),
+                                    &format!("cascade keyset {name}"),
+                                );
+                                sanitized_output.push_str(&sanitized_line);
+                                sanitized_output.push('\n');
+                                continue;
                             }
                         }
 
@@ -500,22 +500,22 @@ impl HttpServer {
 
         // Query zone serials
         let mut unsigned_serial = None;
-        if let Some(zone) = unsigned_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await {
-                unsigned_serial = Some(soa.serial());
-            }
+        if let Some(zone) = unsigned_zone
+            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
+        {
+            unsigned_serial = Some(soa.serial());
         }
         let mut signed_serial = None;
-        if let Some(zone) = signed_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await {
-                signed_serial = Some(soa.serial());
-            }
+        if let Some(zone) = signed_zone
+            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
+        {
+            signed_serial = Some(soa.serial());
         }
         let mut published_serial = None;
-        if let Some(zone) = published_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await {
-                published_serial = Some(soa.serial());
-            }
+        if let Some(zone) = published_zone
+            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
+        {
+            published_serial = Some(soa.serial());
         }
 
         // If the timing were unlucky we may have a published serial but not
@@ -1241,10 +1241,10 @@ impl HttpServer {
             for entry in entries {
                 let Ok(entry) = entry else { continue };
 
-                if let Ok(f) = std::fs::File::open(entry.path()) {
-                    if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
-                        servers.push(server.server_id);
-                    }
+                if let Ok(f) = std::fs::File::open(entry.path())
+                    && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
+                {
+                    servers.push(server.server_id);
                 }
             }
         }
@@ -1262,12 +1262,12 @@ impl HttpServer {
         let kmip_server_state_dir = &*state.center.config.kmip_server_state_dir;
 
         let p = kmip_server_state_dir.join(&*name);
-        if let Ok(f) = std::fs::File::open(p) {
-            if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
-                return Json(Ok(HsmServerGetResult {
-                    server: server.into(),
-                }));
-            }
+        if let Ok(f) = std::fs::File::open(p)
+            && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
+        {
+            return Json(Ok(HsmServerGetResult {
+                server: server.into(),
+            }));
         }
 
         Json(Err(()))
@@ -1286,10 +1286,10 @@ pub async fn read_soa(
         false => read.query(qname, Rtype::SOA),
     }?;
 
-    if let AnswerContent::Data(rrset) = answer.content() {
-        if let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data() {
-            return Ok(Some((soa.clone(), rrset.ttl())));
-        }
+    if let AnswerContent::Data(rrset) = answer.content()
+        && let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data()
+    {
+        return Ok(Some((soa.clone(), rrset.ttl())));
     }
 
     Ok(None)

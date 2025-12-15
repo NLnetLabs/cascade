@@ -3,15 +3,15 @@
 use std::{
     fmt,
     fs::File,
-    sync::{atomic::Ordering::Relaxed, Arc},
+    sync::{Arc, atomic::Ordering::Relaxed},
 };
 
 use bytes::BufMut;
 use camino::Utf8Path;
 use domain::{
-    base::{iana::Class, ToName},
+    base::{ToName, iana::Class},
     new::{
-        base::{name::RevNameBuf, wire::ParseBytes, Record},
+        base::{Record, name::RevNameBuf, wire::ParseBytes},
         rdata::{BoxedRecordData, RecordData},
     },
     utils::dst::UnsizedCopy,
@@ -19,9 +19,9 @@ use domain::{
 };
 
 use crate::zone::{
+    Zone,
     contents::{RegularRecord, SoaRecord, Uncompressed},
     loader::LoaderMetrics,
-    Zone,
 };
 
 enum Parsed {

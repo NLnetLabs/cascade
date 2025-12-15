@@ -6,7 +6,7 @@ use std::{
     iter::Peekable,
     mem,
     net::SocketAddr,
-    sync::{atomic::Ordering::Relaxed, Arc},
+    sync::{Arc, atomic::Ordering::Relaxed},
 };
 
 use bytes::Bytes;
@@ -24,11 +24,11 @@ use domain::{
     },
     new::{
         base::{
+            CanonicalRecordData, HeaderFlags, Message, MessageItem, QClass, QType, Question,
+            RClass, RType, Record, Serial,
             build::MessageBuilder,
             name::{Name, NameCompressor, RevNameBuf},
             wire::{AsBytes, ParseBytes, ParseBytesZC, ParseError},
-            CanonicalRecordData, HeaderFlags, Message, MessageItem, QClass, QType, Question,
-            RClass, RType, Record, Serial,
         },
         rdata::RecordData,
     },
@@ -41,9 +41,9 @@ use tokio::net::TcpStream;
 use tracing::trace;
 
 use crate::zone::{
+    Zone,
     contents::{self, RegularRecord, SoaRecord},
     loader::LoaderMetrics,
-    Zone,
 };
 
 use super::RefreshError;
