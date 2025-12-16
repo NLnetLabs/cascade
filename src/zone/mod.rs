@@ -27,9 +27,12 @@ use crate::{
 };
 
 pub mod contents;
-pub mod state;
-
 pub use contents::ZoneContents;
+
+mod instance;
+pub use instance::Instances;
+
+pub mod state;
 
 //----------- Zone -------------------------------------------------------------
 
@@ -68,6 +71,9 @@ pub struct ZoneState {
     /// value should be move to min_expiration after the signed zone is
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
+
+    /// Instances of the zone.
+    pub instances: Instances,
 
     /// Unsigned versions of the zone.
     pub unsigned: foldhash::HashMap<Serial, UnsignedZoneVersionState>,
