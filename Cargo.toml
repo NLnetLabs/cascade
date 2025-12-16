@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = [".", "crates/api", "crates/cli"]
+members = [".", "crates/api", "crates/cli", "crates/zonedata"]
 default-members = [".", "crates/cli"]
 
 [workspace.package]
@@ -155,6 +155,7 @@ supports-color = "3.0.2"
 hostname = "0.4.1"
 
 cascade-api = { path = "crates/api" }
+cascade-zonedata = { path = "crates/zonedata" }
 
 [dependencies.clap]
 workspace = true
