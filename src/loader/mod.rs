@@ -8,18 +8,20 @@ use std::{
     cmp::Ordering,
     collections::VecDeque,
     fmt,
+    net::SocketAddr,
     sync::{Arc, MutexGuard},
 };
 
-use domain::new::base::Serial;
-use tokio::task::{AbortHandle, JoinHandle};
-use tracing::{debug, trace, warn};
+use camino::Utf8Path;
+use domain::{new::base::Serial, tsig};
+use tracing::{debug, trace};
 
 use crate::{
     center::{Center, Change},
     manager::{ApplicationCommand, Terminated},
+    util::AbortOnDrop,
     zone::{
-        self, LoaderState, Zone, ZoneContents, ZoneState, contents,
+        LoaderState, Zone, ZoneContents, ZoneState, contents,
         loader::{LoaderMetrics, Source},
     },
 };
@@ -29,35 +31,6 @@ mod server;
 mod zonefile;
 
 pub use refresh::RefreshMonitor;
-
-//----------- AbortOnDrop ------------------------------------------------------
-
-#[derive(Debug)]
-pub struct AbortOnDrop(AbortHandle);
-
-impl<T> From<JoinHandle<T>> for AbortOnDrop {
-    fn from(value: JoinHandle<T>) -> Self {
-        Self(value.abort_handle())
-    }
-}
-
-impl From<AbortHandle> for AbortOnDrop {
-    fn from(value: AbortHandle) -> Self {
-        Self(value)
-    }
-}
-
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-
-impl AbortOnDrop {
-    pub fn id(&self) -> tokio::task::Id {
-        self.0.id()
-    }
-}
 
 //----------- Loader -----------------------------------------------------------
 
@@ -78,14 +51,12 @@ impl Loader {
             center,
         });
 
-        #[allow(clippy::mutable_key_type)]
-        let initial_zones = {
+        {
             let state = this.center.state.lock().unwrap();
-            state.zones.clone()
-        };
 
-        for zone in initial_zones {
-            this.enqueue_refresh(&zone.0);
+            for zone in &state.zones {
+                this.enqueue_refresh(&zone.0);
+            }
         }
 
         this
@@ -125,7 +96,7 @@ impl Loader {
                             .iter()
                             .find(|z| z.zone.0.name == name)
                         {
-                            self.set_source(&zone.zone.0, Source::None);
+                            self.disable(&zone.zone.0);
                         }
                         Ok(())
                     }
@@ -150,12 +121,12 @@ impl Loader {
 
     fn enqueue_refresh(self: &Arc<Self>, zone: &Arc<Zone>) {
         let mut state = zone.state.lock().unwrap();
-        LoaderState::enqueue_refresh(&mut state, zone, true, self);
+        LoaderState::enqueue_refresh(&mut state, zone, false, self);
     }
 
-    fn set_source(self: &Arc<Self>, zone: &Arc<Zone>, source: Source) {
+    fn disable(self: &Arc<Self>, zone: &Arc<Zone>) {
         let mut state = zone.state.lock().unwrap();
-        state.loader.source = source;
+        state.loader.source = Source::None;
         LoaderState::enqueue_refresh(&mut state, zone, true, self);
     }
 }
@@ -168,42 +139,22 @@ impl Loader {
 /// local copy of this version is not already available, it will be loaded.
 /// Where possible, an incremental zone transfer will be used to communicate
 /// more efficiently.
-pub async fn refresh<'z>(
+pub async fn refresh_server<'z>(
     metrics: &LoaderMetrics,
     zone: &'z Arc<Zone>,
-    source: &zone::loader::Source,
+    addr: &std::net::SocketAddr,
+    tsig_key: &Option<Arc<domain::tsig::Key>>,
     latest: Option<Arc<contents::Uncompressed>>,
 ) -> (
     Result<Option<Serial>, RefreshError>,
     Option<MutexGuard<'z, ZoneState>>,
 ) {
-    // Perform the source-specific refresh operation.
-    let refresh = match source {
-        // Refreshing a zone without a source is a no-op.
-        zone::loader::Source::None => {
-            warn!("Cannot refresh {:?} because no source is set", zone.name);
+    trace!("Refreshing {:?} from server {addr:?}", zone.name);
 
-            return (Ok(None), None);
-        }
+    let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
 
-        zone::loader::Source::Zonefile { .. } => {
-            warn!(
-                "Cannot refresh {:?} because the source is a zonefile, use the zone reload command instead",
-                zone.name
-            );
+    let refresh = server::refresh(metrics, zone, addr, tsig_key, latest).await;
 
-            return (Ok(None), None);
-        }
-
-        zone::loader::Source::Server { addr, tsig_key } => {
-            trace!("Refreshing {:?} from server {addr:?}", zone.name);
-
-            let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-            server::refresh(metrics, zone, addr, tsig_key, latest).await
-        }
-    };
-
-    // Process the result.
     let Refresh {
         uncompressed,
         mut compressed,
@@ -220,86 +171,93 @@ pub async fn refresh<'z>(
 
     // Integrate the results with the zone state.
     let remote_serial = uncompressed.soa.rdata.serial;
-    loop {
-        // TODO: A limitation in Rust's coroutine witness tracking means that
-        // the more idiomatic representation of the following block forces the
-        // future to '!Send'.  This is used as a workaround.
 
-        /// An action to do after examining the zone state.
-        enum Action {
-            /// Compress a local copy relative to the remote copy.
-            Compress(Arc<contents::Uncompressed>),
-        }
+    let local;
+    {
+        // Lock the zone state.
+        let mut lock = zone.state.lock().unwrap();
 
-        let action = 'lock: {
-            // Lock the zone state.
-            let mut lock = zone.state.lock().unwrap();
+        // If no previous version of the zone exists (or if the zone
+        // contents have been cleared since the start of the refresh),
+        // insert the remote copy directly.
+        let Some(contents) = &mut lock.contents else {
+            lock.contents = Some(ZoneContents {
+                latest: uncompressed,
+                previous: VecDeque::new(),
+            });
 
-            // If no previous version of the zone exists (or if the zone
-            // contents have been cleared since the start of the refresh),
-            // insert the remote copy directly.
-            let Some(contents) = &mut lock.contents else {
-                lock.contents = Some(ZoneContents {
-                    latest: uncompressed,
-                    previous: VecDeque::new(),
-                });
-
-                return (Ok(Some(remote_serial)), Some(lock));
-            };
-
-            // Compare the _current_ latest version of the zone against the
-            // remote.
-            let local_serial = contents.latest.soa.rdata.serial;
-            match local_serial.partial_cmp(&remote_serial) {
-                Some(Ordering::Less) => {}
-
-                Some(Ordering::Equal) => {
-                    // The local copy was updated externally, and is now
-                    // up-to-date with respect to the remote copy.  Stop.
-                    return (Ok(None), Some(lock));
-                }
-
-                Some(Ordering::Greater) | None => {
-                    // The local copy was updated externally, and is now more
-                    // recent than the remote copy.  While it is possible the remote
-                    // copy has also been updated, we will assume it's unchanged,
-                    // and report that the remote has become outdated.
-                    return (
-                        Err(RefreshError::OutdatedRemote {
-                            local_serial,
-                            remote_serial,
-                        }),
-                        Some(lock),
-                    );
-                }
-            }
-
-            // If 'compressed' is up-to-date, use it.
-            if let Some((compressed, _)) = compressed
-                .take()
-                .filter(|(_, l)| l.soa.rdata.serial == local_serial)
-            {
-                contents.latest = uncompressed;
-                contents.previous.push_back(compressed);
-                return (Ok(Some(remote_serial)), Some(lock));
-            }
-
-            // 'compressed' needs to be updated.
-            let local = contents.latest.clone();
-            break 'lock Action::Compress(local);
+            return (Ok(Some(remote_serial)), Some(lock));
         };
 
-        match action {
-            Action::Compress(local) => {
-                let remote = uncompressed.clone();
-                compressed = tokio::task::spawn_blocking(move || {
-                    Some((Arc::new(local.compress(&remote)), local))
-                })
-                .await
-                .unwrap();
+        // Compare the _current_ latest version of the zone against the
+        // remote.
+        let local_serial = contents.latest.soa.rdata.serial;
+        match local_serial.partial_cmp(&remote_serial) {
+            Some(Ordering::Less) => {}
+
+            Some(Ordering::Equal) => {
+                // The local copy was updated externally, and is now
+                // up-to-date with respect to the remote copy.  Stop.
+                return (Ok(None), Some(lock));
+            }
+
+            Some(Ordering::Greater) | None => {
+                // The local copy was updated externally, and is now more
+                // recent than the remote copy.  While it is possible the remote
+                // copy has also been updated, we will assume it's unchanged,
+                // and report that the remote has become outdated.
+                return (
+                    Err(RefreshError::OutdatedRemote {
+                        local_serial,
+                        remote_serial,
+                    }),
+                    Some(lock),
+                );
             }
         }
+
+        // If 'compressed' is up-to-date, use it.
+        // otherwise update it needs to be updated.
+        if let Some((compressed, l)) = compressed.take() {
+            // Check the serial for the compressed value, if it doesn't match, we
+            // should not write it, because something else has changed the contents
+            // in the meantime, invalidating the compressed zone.
+            if l.soa.rdata.serial != local_serial {
+                return (Err(RefreshError::LocalSerialChanged), Some(lock));
+            }
+            contents.latest = uncompressed;
+            contents.previous.push_back(compressed);
+            return (Ok(Some(remote_serial)), Some(lock));
+        }
+
+        local = contents.latest.clone();
+    };
+
+    let remote = uncompressed.clone();
+    let compressed_serial = local.soa.rdata.serial;
+    let compressed = tokio::task::spawn_blocking(move || Arc::new(local.compress(&remote)))
+        .await
+        .unwrap();
+
+    let mut lock = zone.state.lock().unwrap();
+    let Some(contents) = &mut lock.contents else {
+        lock.contents = Some(ZoneContents {
+            latest: uncompressed,
+            previous: VecDeque::new(),
+        });
+
+        return (Ok(Some(remote_serial)), Some(lock));
+    };
+    let new_local_serial = contents.latest.soa.rdata.serial;
+    // Check the serial for the compressed value, if it doesn't match, we
+    // should not write it, because something else has changed the contents
+    // in the meantime, invalidating the compressed zone.
+    if compressed_serial != new_local_serial {
+        return (Err(RefreshError::LocalSerialChanged), Some(lock));
     }
+    contents.latest = uncompressed;
+    contents.previous.push_back(compressed);
+    (Ok(Some(remote_serial)), Some(lock))
 }
 
 /// The internal result of a zone refresh.
@@ -328,166 +286,62 @@ struct Refresh {
 /// zone, it is registered in the zone storage; otherwise, the loaded data is
 /// compared to the local copy of the same zone version.  If an inconsistency is
 /// detected, an error is returned, and the zone storage is unchanged.
-pub async fn reload<'z>(
+pub async fn reload_server<'z>(
     metrics: &LoaderMetrics,
     zone: &'z Arc<Zone>,
-    source: &zone::loader::Source,
+    addr: &SocketAddr,
+    tsig_key: &Option<Arc<tsig::Key>>,
 ) -> (
-    Result<Option<Serial>, ReloadError>,
+    Result<Option<Serial>, RefreshError>,
     Option<MutexGuard<'z, ZoneState>>,
 ) {
-    // Perform the source-specific reload operation.
-    let reload = match source {
-        // Reloading a zone without a source is a no-op.
-        zone::loader::Source::None => {
-            warn!("Cannot reload {:?} because no source is set", zone.name);
+    let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
+    let result = server::axfr(metrics, zone, addr, tsig_key)
+        .await
+        .map_err(RefreshError::Axfr);
 
-            return (Ok(None), None);
-        }
-
-        zone::loader::Source::Zonefile { path } => {
-            trace!("Reloading {:?} from zonefile {path:?}", zone.name);
-
-            let zone = zone.clone();
-            let path = path.clone();
-            let metrics = metrics.clone();
-            tokio::task::spawn_blocking(move || zonefile::load(&metrics, &zone, &path))
-                .await
-                .unwrap()
-                .map_err(ReloadError::Zonefile)
-        }
-
-        zone::loader::Source::Server { addr, tsig_key } => {
-            trace!("Reloading {:?} from server {addr:?}", zone.name);
-
-            let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-            server::axfr(metrics, zone, addr, tsig_key)
-                .await
-                .map_err(ReloadError::Axfr)
-        }
-    };
-
-    // Process the result.
-    let remote = match reload {
-        Ok(remote) => Arc::new(remote),
+    let uncompressed = match result {
+        Ok(uncompressed) => Arc::new(uncompressed),
         Err(error) => return (Err(error), None),
     };
 
-    // Integrate the results with the zone state.
-    let remote_serial = remote.soa.rdata.serial;
-    let mut compressed: Option<(Arc<contents::Compressed>, Arc<contents::Uncompressed>)> = None;
-    let mut local_match = None;
-    loop {
-        // TODO: A limitation in Rust's coroutine witness tracking means that
-        // the more idiomatic representation of the following block forces the
-        // future to '!Send'.  This is used as a workaround.
+    let serial = uncompressed.soa.rdata.serial;
 
-        /// An action to do after examining the zone state.
-        enum Action {
-            /// Compare a local copy to the remote copy.
-            Compare(Arc<contents::Uncompressed>),
+    // Lock the zone state.
+    let mut lock = zone.state.lock().unwrap();
+    lock.contents = Some(ZoneContents {
+        latest: uncompressed,
+        previous: VecDeque::new(),
+    });
 
-            /// Compress a local copy relative to the remote copy.
-            Compress(Arc<contents::Uncompressed>),
-        }
+    (Ok(Some(serial)), Some(lock))
+}
 
-        let action = 'lock: {
-            // Lock the zone state.
-            let mut lock = zone.state.lock().unwrap();
+pub async fn load_zonefile<'z>(
+    metrics: &LoaderMetrics,
+    zone: &'z Arc<Zone>,
+    path: &Utf8Path,
+) -> (
+    Result<Option<Serial>, RefreshError>,
+    Option<MutexGuard<'z, ZoneState>>,
+) {
+    let result = zonefile::load(metrics, zone, path).map_err(RefreshError::Zonefile);
 
-            // If no previous version of the zone exists (or if the zone
-            // contents have been cleared since the start of the refresh),
-            // insert the remote copy directly.
-            let Some(contents) = &mut lock.contents else {
-                lock.contents = Some(ZoneContents {
-                    latest: remote,
-                    previous: VecDeque::new(),
-                });
+    let uncompressed = match result {
+        Ok(uncompressed) => Arc::new(uncompressed),
+        Err(error) => return (Err(error), None),
+    };
 
-                return (Ok(Some(remote_serial)), Some(lock));
-            };
+    let serial = uncompressed.soa.rdata.serial;
 
-            // Compare the _current_ latest version of the zone against the remote.
-            let local_serial = contents.latest.soa.rdata.serial;
-            match local_serial.partial_cmp(&remote_serial) {
-                Some(Ordering::Less) => {}
+    // Lock the zone state.
+    let mut lock = zone.state.lock().unwrap();
+    lock.contents = Some(ZoneContents {
+        latest: uncompressed,
+        previous: VecDeque::new(),
+    });
 
-                Some(Ordering::Equal) => {
-                    // The local copy was updated externally, and is now up-to-date
-                    // with respect to the remote copy.  Compare the contents of the
-                    // two.
-
-                    // If the two have already been compared, end now.
-                    if local_match
-                        .take()
-                        .is_some_and(|l| Arc::ptr_eq(&l, &contents.latest))
-                    {
-                        return (Ok(None), Some(lock));
-                    }
-
-                    // Compare 'latest' and 'remote'.
-                    let latest = contents.latest.clone();
-                    break 'lock Action::Compare(latest);
-                }
-
-                Some(Ordering::Greater) | None => {
-                    // The local copy was updated externally, and is now more
-                    // recent than the remote copy.  While it is possible the remote
-                    // copy has also been updated, we will assume it's unchanged,
-                    // and report that the remote has become outdated.
-                    return (
-                        Err(ReloadError::OutdatedRemote {
-                            local_serial,
-                            remote_serial,
-                        }),
-                        Some(lock),
-                    );
-                }
-            }
-
-            // If 'compressed' is up-to-date w.r.t. the current local copy, use it.
-            if let Some((compressed, _)) = compressed
-                .take()
-                .filter(|(_, l)| l.soa.rdata.serial == local_serial)
-            {
-                contents.latest = remote;
-                contents.previous.push_back(compressed);
-                return (Ok(Some(remote_serial)), Some(lock));
-            }
-
-            let local = contents.latest.clone();
-            break 'lock Action::Compress(local);
-        };
-
-        match action {
-            Action::Compare(latest) => {
-                let latest_copy = latest.clone();
-                let remote_copy = remote.clone();
-                let matches =
-                    tokio::task::spawn_blocking(move || remote_copy.eq_unsigned(&latest_copy))
-                        .await
-                        .unwrap();
-
-                if matches {
-                    local_match = Some(latest);
-                    continue;
-                } else {
-                    return (Err(ReloadError::Inconsistent), None);
-                }
-            }
-
-            Action::Compress(local) => {
-                // 'compressed' needs to be updated relative to the current local copy.
-                let remote = remote.clone();
-                compressed = tokio::task::spawn_blocking(move || {
-                    Some((Arc::new(local.compress(&remote)), local))
-                })
-                .await
-                .unwrap();
-                continue;
-            }
-        }
-    }
+    (Ok(Some(serial)), Some(lock))
 }
 
 //============ Errors ==========================================================
@@ -520,12 +374,16 @@ pub enum RefreshError {
 
     /// An IXFR's diff was not consistent with the local copy.
     ForwardIxfr(contents::ForwardError),
+
+    /// While we were processing a refresh another refresh or reload happened, changing the serial
+    LocalSerialChanged,
 }
 
 impl std::error::Error for RefreshError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::OutdatedRemote { .. } => None,
+            Self::LocalSerialChanged => None,
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
             Self::Zonefile(error) => Some(error),
@@ -545,6 +403,12 @@ impl fmt::Display for RefreshError {
                 write!(
                     f,
                     "the source of the zone is reporting an outdated SOA ({remote_serial}, while the latest local copy is {local_serial})"
+                )
+            }
+            RefreshError::LocalSerialChanged => {
+                write!(
+                    f,
+                    "Local serial changed while processing a refreshed zone. This will be fixed by a retry."
                 )
             }
             RefreshError::Ixfr(error) => {
@@ -592,73 +456,5 @@ impl From<contents::MergeError> for RefreshError {
 impl From<contents::ForwardError> for RefreshError {
     fn from(v: contents::ForwardError) -> Self {
         Self::ForwardIxfr(v)
-    }
-}
-
-//----------- ReloadError ------------------------------------------------------
-
-/// An error when reloading a zone.
-#[derive(Debug)]
-pub enum ReloadError {
-    /// The source of the zone appears to be outdated.
-    OutdatedRemote {
-        /// The SOA serial of the local copy.
-        local_serial: Serial,
-
-        /// The SOA serial of the remote copy.
-        remote_serial: Serial,
-    },
-
-    /// The local and remote copies have different contents.
-    Inconsistent,
-
-    /// An AXFR from the server failed.
-    Axfr(server::AxfrError),
-
-    /// The zonefile could not be loaded.
-    Zonefile(zonefile::Error),
-}
-
-impl std::error::Error for ReloadError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ReloadError::OutdatedRemote { .. } => None,
-            ReloadError::Inconsistent => None,
-            ReloadError::Axfr(error) => Some(error),
-            ReloadError::Zonefile(error) => Some(error),
-        }
-    }
-}
-
-impl fmt::Display for ReloadError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ReloadError::OutdatedRemote {
-                local_serial,
-                remote_serial,
-            } => {
-                write!(
-                    f,
-                    "the source of the zone is reporting an outdated SOA ({remote_serial}, while the latest local copy is {local_serial})"
-                )
-            }
-            ReloadError::Inconsistent => write!(f, "the local and remote copies are inconsistent"),
-            ReloadError::Axfr(error) => write!(f, "the AXFR failed: {error}"),
-            ReloadError::Zonefile(error) => write!(f, "the zonefile could not be loaded: {error}"),
-        }
-    }
-}
-
-//--- Conversion
-
-impl From<server::AxfrError> for ReloadError {
-    fn from(value: server::AxfrError) -> Self {
-        Self::Axfr(value)
-    }
-}
-
-impl From<zonefile::Error> for ReloadError {
-    fn from(v: zonefile::Error) -> Self {
-        Self::Zonefile(v)
     }
 }

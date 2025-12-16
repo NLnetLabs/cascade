@@ -79,7 +79,7 @@ pub fn load(
 
 /// Make a zonefile reader for the file at the given path
 ///
-/// It will add the zize ofthe file to the byte count of the metrics.
+/// It will add the size of the file to the byte count of the metrics.
 fn make_reader(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,

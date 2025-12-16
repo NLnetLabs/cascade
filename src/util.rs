@@ -11,7 +11,43 @@ use serde::{
     Deserializer, Serializer,
     de::{self, Visitor},
 };
-use tokio::time::Instant;
+use tokio::{
+    task::{AbortHandle, JoinHandle},
+    time::Instant,
+};
+
+//----------- AbortOnDrop ------------------------------------------------------
+
+/// A handle to a tokio task that will abort the task when dropped
+///
+/// This is useful to prevent tokio from keeping tasks around after the main
+/// thread. This type implements `From` for [`JoinHandle`] and [`AbortHandle`].
+#[derive(Debug)]
+pub struct AbortOnDrop(AbortHandle);
+
+impl<T> From<JoinHandle<T>> for AbortOnDrop {
+    fn from(value: JoinHandle<T>) -> Self {
+        Self(value.abort_handle())
+    }
+}
+
+impl From<AbortHandle> for AbortOnDrop {
+    fn from(value: AbortHandle) -> Self {
+        Self(value)
+    }
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+impl AbortOnDrop {
+    pub fn id(&self) -> tokio::task::Id {
+        self.0.id()
+    }
+}
 
 /// Atomically write a file.
 ///

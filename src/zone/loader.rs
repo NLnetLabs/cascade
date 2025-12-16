@@ -1,18 +1,19 @@
 //! Zone-specific loader state.
-
 use std::{
-    net::{IpAddr, SocketAddr},
+    fmt::Display,
+    net::SocketAddr,
     sync::{Arc, atomic::AtomicUsize},
     time::{Duration, Instant, SystemTime},
 };
 
 use camino::Utf8Path;
-use domain::{base::iana::Class, tsig, zonetree::ZoneBuilder};
-use tracing::{debug, error};
+use domain::{base::iana::Class, new::base::Serial, tsig, zonetree::ZoneBuilder};
+use tracing::{debug, error, info};
 
 use crate::{
-    loader::{self, AbortOnDrop, Loader, RefreshMonitor},
+    loader::{self, Loader, RefreshError, RefreshMonitor},
     manager::Update,
+    util::AbortOnDrop,
 };
 
 use super::{
@@ -36,7 +37,7 @@ pub struct LoaderState {
 
     /// Metrics of the current or last load of this zone
     ///
-    /// This is `None` if we have never attempted to load this zone yet.
+    /// This is `None` if we have never attempted to load this zone.
     pub metrics: Option<LoaderMetrics>,
 }
 
@@ -111,56 +112,56 @@ impl LoaderState {
     ) {
         let start = Instant::now();
         let source = state.loader.source.clone();
-        let ongoing = match refresh {
-            EnqueuedRefresh::Refresh => {
-                let latest = state
-                    .contents
-                    .as_ref()
-                    .map(|contents| contents.latest.clone());
-                let handle = tokio::task::spawn(Self::refresh(zone, start, source, latest, loader));
-                let handle = AbortOnDrop::from(handle);
-                OngoingRefresh::Refresh { start, handle }
-            }
-            EnqueuedRefresh::Reload => {
-                let handle = tokio::task::spawn(Self::reload(zone, start, source, loader));
-                let handle = AbortOnDrop::from(handle);
-                OngoingRefresh::Reload { start, handle }
-            }
-        };
+        let latest = state
+            .contents
+            .as_ref()
+            .map(|contents| contents.latest.clone());
+
+        let handle = tokio::task::spawn(Self::refresh(
+            zone,
+            start,
+            source,
+            refresh == EnqueuedRefresh::Reload,
+            latest,
+            loader,
+        ));
+
+        let handle = AbortOnDrop::from(handle);
+        let ongoing = OngoingRefresh { start, handle };
         state.loader.refreshes = Some(Refreshes::new(ongoing));
     }
 
-    /// Refresh this zone.
+    /// Refresh this zone from a source.
     async fn refresh(
         zone: Arc<Zone>,
         start: Instant,
         source: Source,
+        force: bool,
         latest: Option<Arc<Uncompressed>>,
         loader: Arc<Loader>,
     ) {
-        debug!("Refreshing {:?}", zone.name);
+        info!("Refreshing {:?}", zone.name);
 
-        let metrics = LoaderMetrics {
-            started_at: SystemTime::now(),
-            finished_at: None,
-            byte_count: Arc::new(AtomicUsize::new(0)),
-            record_count: Arc::new(AtomicUsize::new(0)),
-        };
+        let metrics = Self::initialize_metrics(&zone);
 
-        {
-            let mut state = zone.state.lock().unwrap();
-            state.loader.metrics = Some(metrics.clone());
-        }
+        let source_is_server = matches!(&source, Source::Server { .. });
 
         // Perform the source-specific reload into the zone contents.
-        let (result, lock) = loader::refresh(&metrics, &zone, &source, latest).await;
+        let (result, lock) = match source {
+            Source::None => (Ok(None), None),
+            Source::Zonefile { path } => loader::load_zonefile(&metrics, &zone, &path).await,
+            Source::Server { addr, tsig_key } if force => {
+                loader::reload_server(&metrics, &zone, &addr, &tsig_key).await
+            }
+            Source::Server { addr, tsig_key } => {
+                loader::refresh_server(&metrics, &zone, &addr, &tsig_key, latest).await
+            }
+        };
 
-        let latest;
-        {
+        let latest = {
             // Try to re-use a recent lock from the reload.
             let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
             let state = &mut *lock;
-
             state
                 .loader
                 .metrics
@@ -168,71 +169,36 @@ impl LoaderState {
                 .expect("we just added the metrics")
                 .finished_at = Some(SystemTime::now());
 
-            // Update the zone refresh timers.
-            let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
-            if result.is_ok() {
-                state.loader.refresh_timer.schedule_refresh(
-                    &zone,
-                    start,
-                    soa,
-                    &loader.refresh_monitor,
-                );
-            } else {
-                state.loader.refresh_timer.schedule_retry(
-                    &zone,
-                    start,
-                    soa,
-                    &loader.refresh_monitor,
-                );
+            // Zonefiles are not refreshed automatically so we don't schedule a
+            // refresh or a retry. The user should just reload again when the
+            // zonefile has updated or been fixed if it was in a broken state.
+            if source_is_server {
+                Self::schedule_next(&result, state, &zone, &loader, start);
             }
 
-            latest = state.contents.as_ref().unwrap().latest.clone();
-        }
+            state.contents.as_ref().unwrap().latest.clone()
+        };
 
-        // Process the result of the reload.
-        match result {
-            Ok(None) => {
-                debug!("{:?} is up-to-date", zone.name);
+        Self::process_new_zone_version(result, &zone, &loader, latest).await;
 
-                // Nothing to do.
-            }
+        Self::start_next_refresh(&zone, loader);
+    }
 
-            Ok(Some(serial)) => {
-                debug!("Loaded serial {serial:?} for {:?}", zone.name);
+    fn initialize_metrics(zone: &Arc<Zone>) -> LoaderMetrics {
+        let metrics = LoaderMetrics {
+            started_at: SystemTime::now(),
+            finished_at: None,
+            byte_count: Arc::new(AtomicUsize::new(0)),
+            record_count: Arc::new(AtomicUsize::new(0)),
+        };
 
-                // Update the old-base contents.
+        let mut state = zone.state.lock().unwrap();
+        state.loader.metrics = Some(metrics.clone());
 
-                let zone_copy = zone.clone();
-                let loader_copy = loader.clone();
+        metrics
+    }
 
-                let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
-                latest.write_into_zonetree(&zonetree).await;
-
-                loader_copy.center.unsigned_zones.rcu(|tree| {
-                    let mut tree = Arc::unwrap_or_clone(tree.clone());
-                    let _ = tree.remove_zone(&zone_copy.name, Class::IN);
-                    tree.insert_zone(zonetree.clone()).unwrap();
-                    tree
-                });
-
-                // Inform the central command.
-                let zone_name = zone_copy.name.clone();
-                let zone_serial = domain::base::Serial(serial.into());
-                loader_copy
-                    .center
-                    .update_tx
-                    .send(Update::UnsignedZoneUpdatedEvent {
-                        zone_name,
-                        zone_serial,
-                    })
-                    .unwrap();
-            }
-
-            Err(err) => {
-                error!("Could not refresh {:?}: {err}", zone.name);
-            }
-        }
-
+    fn start_next_refresh(zone: &Arc<Zone>, loader: Arc<Loader>) {
         let mut lock = zone.state.lock().unwrap();
         let state = &mut *lock;
 
@@ -240,10 +206,12 @@ impl LoaderState {
         let id = tokio::task::id();
         let enqueued = match state.loader.refreshes.take() {
             Some(Refreshes {
-                ongoing: OngoingRefresh::Refresh { start: _, handle },
+                ongoing: OngoingRefresh { start: _, handle },
                 enqueued,
             }) if handle.id() == id => enqueued,
-            refreshes => panic!("ongoing refresh ({id:?}) is unregistered (state: {refreshes:?})"),
+            refreshes => {
+                panic!("ongoing reload ({id:?}) is unregistered (state: {refreshes:?})")
+            }
         };
 
         // Start the next enqueued refresh.
@@ -252,58 +220,34 @@ impl LoaderState {
         }
     }
 
-    /// Reload this zone.
-    async fn reload(zone: Arc<Zone>, start: Instant, source: Source, loader: Arc<Loader>) {
-        debug!("Reloading {:?}", zone.name);
-
-        let metrics = LoaderMetrics {
-            started_at: SystemTime::now(),
-            finished_at: None,
-            byte_count: Arc::new(AtomicUsize::new(0)),
-            record_count: Arc::new(AtomicUsize::new(0)),
-        };
-        {
-            let mut state = zone.state.lock().unwrap();
-            state.loader.metrics = Some(metrics.clone());
-        }
-
-        // Perform the source-specific reload into the zone contents.
-        let (result, lock) = loader::reload(&metrics, &zone, &source).await;
-
-        let latest;
-        {
-            // Try to re-use a recent lock from the reload.
-            let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
-            let state = &mut *lock;
-
+    fn schedule_next<E: Display>(
+        result: &Result<Option<Serial>, E>,
+        state: &mut ZoneState,
+        zone: &Arc<Zone>,
+        loader: &Arc<Loader>,
+        start: Instant,
+    ) {
+        // Update the zone refresh timers.
+        let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
+        if result.is_ok() {
             state
                 .loader
-                .metrics
-                .as_mut()
-                .expect("we just added the metrics")
-                .finished_at = Some(SystemTime::now());
-
-            // Update the zone refresh timers.
-            let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
-            if result.is_ok() {
-                state.loader.refresh_timer.schedule_refresh(
-                    &zone,
-                    start,
-                    soa,
-                    &loader.refresh_monitor,
-                );
-            } else {
-                state.loader.refresh_timer.schedule_retry(
-                    &zone,
-                    start,
-                    soa,
-                    &loader.refresh_monitor,
-                );
-            }
-
-            latest = state.contents.as_ref().unwrap().latest.clone();
+                .refresh_timer
+                .schedule_refresh(zone, start, soa, &loader.refresh_monitor);
+        } else {
+            state
+                .loader
+                .refresh_timer
+                .schedule_retry(zone, start, soa, &loader.refresh_monitor);
         }
+    }
 
+    async fn process_new_zone_version(
+        result: Result<Option<Serial>, RefreshError>,
+        zone: &Arc<Zone>,
+        loader: &Arc<Loader>,
+        latest: Arc<Uncompressed>,
+    ) {
         // Process the result of the reload.
         match result {
             Ok(None) => {
@@ -342,26 +286,6 @@ impl LoaderState {
                 error!("Could not reload {:?}: {err}", zone.name);
             }
         };
-
-        let mut lock = zone.state.lock().unwrap();
-        let state = &mut *lock;
-
-        // Update the state of ongoing refreshes.
-        let id = tokio::task::id();
-        let enqueued = match state.loader.refreshes.take() {
-            Some(Refreshes {
-                ongoing: OngoingRefresh::Reload { start: _, handle },
-                enqueued,
-            }) if handle.id() == id => enqueued,
-            refreshes => {
-                panic!("ongoing reload ({id:?}) is unregistered (state: {refreshes:?})")
-            }
-        };
-
-        // Start the next enqueued refresh.
-        if let Some(refresh) = enqueued {
-            Self::start(state, zone.clone(), refresh, loader);
-        }
     }
 }
 
@@ -556,24 +480,12 @@ impl Refreshes {
 
 /// An ongoing refresh or reload of a zone.
 #[derive(Debug)]
-pub enum OngoingRefresh {
-    /// An ongoing refresh.
-    Refresh {
-        /// When the refresh started.
-        start: Instant,
+pub struct OngoingRefresh {
+    /// When the refresh started.
+    start: Instant,
 
-        /// A handle to the refresh.
-        handle: AbortOnDrop,
-    },
-
-    /// An ongoing reload.
-    Reload {
-        /// When the reload started.
-        start: Instant,
-
-        /// A handle to the reload.
-        handle: AbortOnDrop,
-    },
+    /// A handle to the refresh.
+    handle: AbortOnDrop,
 }
 
 //----------- EnqueuedRefresh --------------------------------------------------
@@ -586,19 +498,4 @@ pub enum EnqueuedRefresh {
 
     /// An enqueued reload.
     Reload,
-}
-
-//----------- DnsServerAddr ----------------------------------------------------
-
-/// How to connect to a DNS server.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct DnsServerAddr {
-    /// The Internet address.
-    pub ip: IpAddr,
-
-    /// The TCP port number.
-    pub tcp_port: u16,
-
-    /// The UDP port number, if it's supported.
-    pub udp_port: Option<u16>,
 }
