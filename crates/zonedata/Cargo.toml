@@ -1,0 +1,26 @@
+[package]
+name = "cascade-zonedata"
+description = "Zone storage for Cascade."
+
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+readme = "README.md"
+
+
+# --- Dependencies -------------------------------------------------------------
+
+[dependencies]
+
+# The zone storage needs a way to represent DNS records.  'domain' is a
+# general-purpose library offering those types, that we use across Cascade.
+[dependencies.domain]
+workspace = true
+features = ["unstable-new"]
