@@ -14,6 +14,8 @@ use std::{collections::VecDeque, fmt, sync::Arc};
 
 use cascade_zonedata::{AuthData, DiffData};
 
+use crate::zone::review::ApprovedReviewState;
+
 //----------- Instances --------------------------------------------------------
 
 /// The (signed and unsigned) instances of a zone.
@@ -51,10 +53,16 @@ pub struct CurrentInstance {
 }
 
 /// The current unsigned instance of a zone.
-pub struct CurrentUnsignedInstance {}
+pub struct CurrentUnsignedInstance {
+    /// The review state of the zone.
+    pub review: ApprovedReviewState,
+}
 
 /// The current signed instance of a zone.
-pub struct CurrentSignedInstance {}
+pub struct CurrentSignedInstance {
+    /// The review state of the zone.
+    pub review: ApprovedReviewState,
+}
 
 //----------- Old --------------------------------------------------------------
 
@@ -85,6 +93,9 @@ enum OldInstance {
 
 /// An old unsigned instance of a zone.
 pub struct OldUnsignedInstance {
+    /// The review state of the zone.
+    pub review: ApprovedReviewState,
+
     /// The data of the instance.
     ///
     /// It is expressed as a diff from the contents of this instance to the
@@ -94,6 +105,9 @@ pub struct OldUnsignedInstance {
 
 /// An old signed instance of a zone.
 pub struct OldSignedInstance {
+    /// The review state of the zone.
+    pub review: ApprovedReviewState,
+
     /// The data of the instance.
     ///
     /// It is expressed as a diff from the contents of this instance to the

@@ -32,6 +32,7 @@ pub use contents::ZoneContents;
 mod instance;
 pub use instance::Instances;
 
+pub mod review;
 pub mod state;
 
 //----------- Zone -------------------------------------------------------------
