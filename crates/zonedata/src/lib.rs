@@ -15,3 +15,9 @@
 //!
 //! The zone store is highly memory-efficient and offers parallelized access to
 //! stored zones.  It is particularly tailored to parallelized signing.
+
+mod abs;
+pub use abs::{AbsSignedData, AbsUnsignedData};
+
+mod rel;
+pub use rel::{RelSignedData, RelUnsignedData};
