@@ -34,6 +34,7 @@ pub use loader::LoaderState;
 mod instance;
 pub use instance::Instances;
 
+pub mod review;
 pub mod state;
 
 //----------- Zone -------------------------------------------------------------
