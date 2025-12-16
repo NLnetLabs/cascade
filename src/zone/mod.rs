@@ -376,9 +376,6 @@ impl Zone {
         Self {
             name: name.clone(),
             state: Default::default(),
-            // loaded: ZoneBuilder::new(name.clone(), Class::IN).build(),
-            // signed: ZoneBuilder::new(name.clone(), Class::IN).build(),
-            // published: ZoneBuilder::new(name.clone(), Class::IN).build(),
         }
     }
 }
