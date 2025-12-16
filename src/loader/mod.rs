@@ -115,6 +115,8 @@ impl Loader {
                     Change::ZoneRemoved(name) => {
                         // We have to get the reference to the zone from our refresh monitor
                         // because it doesn't exist in center.zones anymore!
+                        // Ideally, the ZoneRemoved command would pass the zone as Arc<Zone>
+                        // instead of just giving the same. That would make this more performant.
                         if let Some(zone) = self
                             .refresh_monitor
                             .scheduled
