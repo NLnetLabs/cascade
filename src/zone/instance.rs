@@ -12,7 +12,7 @@
 
 use std::{collections::VecDeque, fmt, sync::Arc};
 
-use cascade_zonedata::{AbsSignedData, AbsUnsignedData, RelSignedData, RelUnsignedData};
+use cascade_zonedata::{AbsData, RelSignedData, RelUnsignedData};
 
 use crate::zone::review::ApprovedReviewState;
 
@@ -21,10 +21,17 @@ use crate::zone::review::ApprovedReviewState;
 /// The (signed and unsigned) instances of a zone.
 #[derive(Default)]
 pub struct Instances {
-    /// The current instance of the zone, if any.
-    pub current: Option<Arc<CurrentInstance>>,
+    /// The current instance, if any.
+    pub current: Option<CurrentInstance>,
 
-    /// Old instances of the zone, if any.
+    /// The data of the current instance.
+    ///
+    /// This field is available even if an instance is not (although it is then
+    /// empty).  It is an expensive data structure and gets reused even if the
+    /// current instance is deleted (if the data for a zone is cleared).
+    pub current_data: Arc<AbsData>,
+
+    /// Old instances, if any.
     pub old: OldInstances,
 }
 
@@ -41,26 +48,20 @@ pub struct CurrentInstance {
     /// The unsigned instance.
     pub unsigned: CurrentUnsignedInstance,
 
-    /// The signed instance.
-    pub signed: CurrentSignedInstance,
+    /// The signed instance, if any.
+    pub signed: Option<CurrentSignedInstance>,
 }
 
-/// The current unsigned instance of a zone.
+/// The current unsigned instance of a zone, if any.
 pub struct CurrentUnsignedInstance {
     /// The review state of the zone.
     pub review: ApprovedReviewState,
-
-    /// The data of the instance.
-    pub data: AbsUnsignedData,
 }
 
-/// The current signed instance of a zone.
+/// The current signed instance of a zone, if any.
 pub struct CurrentSignedInstance {
     /// The review state of the zone.
     pub review: ApprovedReviewState,
-
-    /// The data of the instance.
-    pub data: AbsSignedData,
 }
 
 //----------- Old --------------------------------------------------------------
@@ -98,7 +99,7 @@ pub struct OldUnsignedInstance {
     /// The data of the instance.
     ///
     /// It is expressed as a diff from the contents of this instance to the
-    /// contents of the closest suceeding unsigned instance.
+    /// contents of the closest succeeding unsigned instance.
     pub data: RelUnsignedData,
 }
 

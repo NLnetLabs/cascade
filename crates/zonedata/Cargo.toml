@@ -41,3 +41,10 @@ features = ["unstable-new"]
 [dependencies.bytes]
 optional = true
 version = "1.0"
+
+# The zone storage is expected to be used asynchronously, and uses asynchronous
+# synchronization mechanisms to avoid blocking threads.  Tokio is used across
+# Cascade already, so its built-in synchronization primitives are used.
+[dependencies.tokio]
+workspace = true
+features = ["sync"]
