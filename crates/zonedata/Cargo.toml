@@ -15,6 +15,17 @@ edition.workspace = true
 readme = "README.md"
 
 
+# --- Features -----------------------------------------------------------------
+
+[features]
+
+default = ["bytes"]
+
+# Support conversions to and from 'bytes' based 'old-base' record types.
+# TODO: Remove once Cascade uses new-base record types everywhere.
+bytes = ["dep:bytes", "domain/bytes"]
+
+
 # --- Dependencies -------------------------------------------------------------
 
 [dependencies]
@@ -24,3 +35,9 @@ readme = "README.md"
 [dependencies.domain]
 workspace = true
 features = ["unstable-new"]
+
+# 'domain's 'old-base' often relies on 'bytes' for storage. We need to use it
+# to support conversions, because 'domain' doesn't re-export its dependency.
+[dependencies.bytes]
+optional = true
+version = "1.0"
