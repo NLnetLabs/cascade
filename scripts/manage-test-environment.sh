@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Log every action taken or command run
-# set -x
+set -x
 # Exit the script if any command errors
 set -e
 # Return an error for a pipeline if any command of the pipeline fails and not
@@ -354,7 +354,7 @@ EOF
 
 function setup-services() {
   sudo apt update
-  sudo apt install bind9 nsd unbound
+  sudo apt install -y bind9 nsd unbound
 
   generate-configuration
 }
@@ -381,7 +381,7 @@ function start-services() {
     # logfile in the working directory. -L only changes the logging from syslog
     # to a logfile.
     cd "${_nameserver_base_dir}/bind"
-    named -c "${_nameserver_base_dir}/bind.conf" -d 1 -L "${_nameserver_base_dir}/bind.log"
+    #named -c "${_nameserver_base_dir}/bind.conf" -d 1 -L "${_nameserver_base_dir}/bind.log"
   )
   nsd -c "${_nameserver_base_dir}/nsd.conf"
   nsd -c "${_nameserver_base_dir}/nsd-primary.conf"
@@ -412,8 +412,8 @@ function test-services() {
     log-error ">> Unbound status:"
     sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" status
     log-error
-    log-error ">> dig test SOA:"
-    dig test SOA
+    #log-error ">> dig test SOA:"
+    #dig test SOA
   )
 }
 
