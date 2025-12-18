@@ -20,7 +20,7 @@ use domain::{
 
 use crate::zone::{
     Zone,
-    contents::{RegularRecord, SoaRecord, Uncompressed},
+    contents::{RegularRecord, SoaRecord, ZoneContents},
     loader::LoaderMetrics,
 };
 
@@ -38,7 +38,7 @@ pub fn load(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     path: &Utf8Path,
-) -> Result<Uncompressed, Error> {
+) -> Result<ZoneContents, Error> {
     let mut reader = make_reader(metrics, zone, path)?;
 
     // The collection of all the records that we will parse
@@ -72,7 +72,7 @@ pub fn load(
     all.sort_unstable();
     let all = all.into_boxed_slice();
 
-    Ok(Uncompressed { soa, all })
+    Ok(ZoneContents { soa, all })
 }
 
 //----------- Helper functions -------------------------------------------------

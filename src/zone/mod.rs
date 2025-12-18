@@ -88,7 +88,7 @@ pub struct ZoneState {
     pub loader: LoaderState,
 
     /// The contents of the zone.
-    pub contents: Option<ZoneContents>,
+    pub contents: Option<Arc<ZoneContents>>,
     // TODO:
     // - A log?
     // - Initialization?

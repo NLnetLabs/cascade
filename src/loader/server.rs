@@ -42,7 +42,7 @@ use tracing::trace;
 
 use crate::zone::{
     Zone,
-    contents::{self, RegularRecord, SoaRecord},
+    contents::{self, RegularRecord, SoaRecord, ZoneContents},
     loader::LoaderMetrics,
 };
 
@@ -58,18 +58,15 @@ pub async fn refresh(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    latest: Option<Arc<contents::Uncompressed>>,
-) -> Result<Option<super::Refresh>, RefreshError> {
+    latest: Option<Arc<ZoneContents>>,
+) -> Result<Option<ZoneContents>, RefreshError> {
     let Some(latest) = latest else {
         trace!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
 
         // Fetch the whole zone.
         let remote = axfr(metrics, zone, addr, tsig_key).await?;
 
-        return Ok(Some(super::Refresh {
-            uncompressed: Arc::new(remote),
-            compressed: None,
-        }));
+        return Ok(Some(remote));
     };
 
     trace!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
@@ -100,21 +97,10 @@ pub async fn refresh(
             // Forward the local copy through the compressed diffs.
             let remote = latest.forward(&compressed)?;
 
-            Ok(Some(super::Refresh {
-                uncompressed: Arc::new(remote),
-                compressed: Some((Arc::new(compressed), latest)),
-            }))
+            Ok(Some(remote))
         }
 
-        Ixfr::Uncompressed(remote) => {
-            // Compress the local copy using the remote copy.
-            let compressed = latest.compress(&remote);
-
-            Ok(Some(super::Refresh {
-                uncompressed: Arc::new(remote),
-                compressed: Some((Arc::new(compressed), latest)),
-            }))
-        }
+        Ixfr::Uncompressed(remote) => Ok(Some(remote)),
     }
 }
 
@@ -213,8 +199,8 @@ pub async fn ixfr(
 
             assert!(interpreter.is_finished());
             let all = all.into_boxed_slice();
-            let uncompressed = contents::Uncompressed { soa, all };
-            return Ok(Ixfr::Uncompressed(uncompressed));
+            let contents = ZoneContents { soa, all };
+            return Ok(Ixfr::Uncompressed(contents));
         }
 
         Some(Ok(ZoneUpdate::BeginBatchDelete(_))) => {
@@ -359,9 +345,9 @@ pub async fn ixfr(
 
             assert!(interpreter.is_finished());
             let all = all.into_boxed_slice();
-            let uncompressed = contents::Uncompressed { soa, all };
+            let contents = ZoneContents { soa, all };
             metrics.byte_count.fetch_add(bytes, Relaxed);
-            Ok(Ixfr::Uncompressed(uncompressed))
+            Ok(Ixfr::Uncompressed(contents))
         }
 
         Ok(ZoneUpdate::BeginBatchDelete(_)) => {
@@ -450,7 +436,7 @@ pub enum Ixfr {
     /// The local copy was outdated with respect to the remote copy.  The remote
     /// copy has been transferred in its entirety, in an uncompressed state.  A
     /// compressed representation of the local copy can be built from this.
-    Uncompressed(contents::Uncompressed),
+    Uncompressed(ZoneContents),
 }
 
 /// Process an IXFR message.
@@ -556,7 +542,7 @@ pub async fn axfr(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-) -> Result<contents::Uncompressed, AxfrError> {
+) -> Result<ZoneContents, AxfrError> {
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
 
     // Prepare the AXFR query message.
@@ -639,7 +625,7 @@ pub async fn axfr(
 
     metrics.byte_count.fetch_add(bytes, Relaxed);
 
-    Ok(contents::Uncompressed { soa, all })
+    Ok(ZoneContents { soa, all })
 }
 
 /// Process an AXFR message.

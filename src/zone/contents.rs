@@ -2,11 +2,9 @@
 
 use std::{
     cmp::Ordering,
-    collections::VecDeque,
     fmt,
     iter::Peekable,
     ops::{Deref, DerefMut},
-    sync::Arc,
 };
 
 use domain::{
@@ -26,29 +24,8 @@ use domain::{
 
 /// The contents of a zone.
 ///
-/// This stores the resource records making up the zone, across different
-/// versions, while distinguishing unsigned and signed contents.
-///
-/// Internally, only the latest version of the zone is stored in full.  All
-/// previous versions are stored as diffs, to improve memory efficiency.
-#[derive(Debug)]
+/// This stores the resource records making up the zone and the SOA record separately.
 pub struct ZoneContents {
-    /// The latest version of the zone.
-    pub latest: Arc<Uncompressed>,
-
-    /// The previous versions of the zone.
-    ///
-    /// This is a sliding window of the history of the zone.  Each element is a
-    /// particular version of the zone, represented as the diff between itself
-    /// and the next version.
-    pub previous: VecDeque<Arc<Compressed>>,
-}
-
-//----------- Uncompressed -----------------------------------------------------
-
-/// An uncompressed representation of the contents of a version of a zone.
-#[derive(Clone)]
-pub struct Uncompressed {
     /// The SOA record of the zone.
     pub soa: SoaRecord,
 
@@ -56,14 +33,11 @@ pub struct Uncompressed {
     ///
     /// The records are in ascending order of owner name and record type.
     pub all: Box<[RegularRecord]>,
-    //
-    // TODO: Separate storage for DNSSEC-related records.
-    // TODO: Separate storage for glue records.
 }
 
-impl Uncompressed {
+impl ZoneContents {
     /// Compress this zone relative to the next version.
-    pub fn compress(&self, next: &Uncompressed) -> Compressed {
+    pub fn compress(&self, next: &Self) -> Compressed {
         let soa = self.soa.clone();
         let next_soa = next.soa.clone();
 
@@ -202,7 +176,7 @@ impl Uncompressed {
     }
 }
 
-impl fmt::Debug for Uncompressed {
+impl fmt::Debug for ZoneContents {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Uncompressed")
             .field("serial", &self.soa.rdata.serial)

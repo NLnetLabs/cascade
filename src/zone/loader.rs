@@ -14,12 +14,10 @@ use crate::{
     loader::{self, Loader, RefreshError, RefreshMonitor},
     manager::Update,
     util::AbortOnDrop,
+    zone::ZoneContents,
 };
 
-use super::{
-    Zone, ZoneState,
-    contents::{SoaRecord, Uncompressed},
-};
+use super::{Zone, ZoneState, contents::SoaRecord};
 
 //----------- LoaderState ------------------------------------------------------
 
@@ -112,10 +110,7 @@ impl LoaderState {
     ) {
         let start = Instant::now();
         let source = state.loader.source.clone();
-        let latest = state
-            .contents
-            .as_ref()
-            .map(|contents| contents.latest.clone());
+        let latest = state.contents.as_ref().map(|contents| contents.clone());
 
         let handle = tokio::task::spawn(Self::refresh(
             zone,
@@ -127,7 +122,7 @@ impl LoaderState {
         ));
 
         let handle = AbortOnDrop::from(handle);
-        let ongoing = OngoingRefresh { start, handle };
+        let ongoing = OngoingRefresh { handle };
         state.loader.refreshes = Some(Refreshes::new(ongoing));
     }
 
@@ -137,7 +132,7 @@ impl LoaderState {
         start: Instant,
         source: Source,
         force: bool,
-        latest: Option<Arc<Uncompressed>>,
+        latest: Option<Arc<ZoneContents>>,
         loader: Arc<Loader>,
     ) {
         info!("Refreshing {:?}", zone.name);
@@ -176,7 +171,7 @@ impl LoaderState {
                 Self::schedule_next(&result, state, &zone, &loader, start);
             }
 
-            state.contents.as_ref().unwrap().latest.clone()
+            state.contents.as_ref().unwrap().clone()
         };
 
         Self::process_new_zone_version(result, &zone, &loader, latest).await;
@@ -206,7 +201,7 @@ impl LoaderState {
         let id = tokio::task::id();
         let enqueued = match state.loader.refreshes.take() {
             Some(Refreshes {
-                ongoing: OngoingRefresh { start: _, handle },
+                ongoing: OngoingRefresh { handle },
                 enqueued,
             }) if handle.id() == id => enqueued,
             refreshes => {
@@ -228,7 +223,7 @@ impl LoaderState {
         start: Instant,
     ) {
         // Update the zone refresh timers.
-        let soa = state.contents.as_ref().map(|contents| &contents.latest.soa);
+        let soa = state.contents.as_ref().map(|contents| &contents.soa);
         if result.is_ok() {
             state
                 .loader
@@ -246,7 +241,7 @@ impl LoaderState {
         result: Result<Option<Serial>, RefreshError>,
         zone: &Arc<Zone>,
         loader: &Arc<Loader>,
-        latest: Arc<Uncompressed>,
+        latest: Arc<ZoneContents>,
     ) {
         // Process the result of the reload.
         match result {
@@ -481,9 +476,6 @@ impl Refreshes {
 /// An ongoing refresh or reload of a zone.
 #[derive(Debug)]
 pub struct OngoingRefresh {
-    /// When the refresh started.
-    start: Instant,
-
     /// A handle to the refresh.
     handle: AbortOnDrop,
 }

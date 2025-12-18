@@ -6,7 +6,6 @@
 
 use std::{
     cmp::Ordering,
-    collections::VecDeque,
     fmt,
     net::SocketAddr,
     sync::{Arc, MutexGuard},
@@ -144,7 +143,7 @@ pub async fn refresh_server<'z>(
     zone: &'z Arc<Zone>,
     addr: &std::net::SocketAddr,
     tsig_key: &Option<Arc<domain::tsig::Key>>,
-    latest: Option<Arc<contents::Uncompressed>>,
+    latest: Option<Arc<ZoneContents>>,
 ) -> (
     Result<Option<Serial>, RefreshError>,
     Option<MutexGuard<'z, ZoneState>>,
@@ -153,128 +152,63 @@ pub async fn refresh_server<'z>(
 
     let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
 
-    let refresh = server::refresh(metrics, zone, addr, tsig_key, latest).await;
+    let result = server::refresh(metrics, zone, addr, tsig_key, latest).await;
 
-    let Refresh {
-        uncompressed,
-        mut compressed,
-    } = match refresh {
+    let new_contents = match result {
         // The local copy is up-to-date.
         Ok(None) => return (Ok(None), None),
 
         // The local copy is outdated.
-        Ok(Some(refresh)) => refresh,
+        Ok(Some(new_contents)) => Arc::new(new_contents),
 
         // An error occurred.
         Err(error) => return (Err(error), None),
     };
 
     // Integrate the results with the zone state.
-    let remote_serial = uncompressed.soa.rdata.serial;
+    let remote_serial = new_contents.soa.rdata.serial;
 
-    let local;
-    {
-        // Lock the zone state.
-        let mut lock = zone.state.lock().unwrap();
-
-        // If no previous version of the zone exists (or if the zone
-        // contents have been cleared since the start of the refresh),
-        // insert the remote copy directly.
-        let Some(contents) = &mut lock.contents else {
-            lock.contents = Some(ZoneContents {
-                latest: uncompressed,
-                previous: VecDeque::new(),
-            });
-
-            return (Ok(Some(remote_serial)), Some(lock));
-        };
-
-        // Compare the _current_ latest version of the zone against the
-        // remote.
-        let local_serial = contents.latest.soa.rdata.serial;
-        match local_serial.partial_cmp(&remote_serial) {
-            Some(Ordering::Less) => {}
-
-            Some(Ordering::Equal) => {
-                // The local copy was updated externally, and is now
-                // up-to-date with respect to the remote copy.  Stop.
-                return (Ok(None), Some(lock));
-            }
-
-            Some(Ordering::Greater) | None => {
-                // The local copy was updated externally, and is now more
-                // recent than the remote copy.  While it is possible the remote
-                // copy has also been updated, we will assume it's unchanged,
-                // and report that the remote has become outdated.
-                return (
-                    Err(RefreshError::OutdatedRemote {
-                        local_serial,
-                        remote_serial,
-                    }),
-                    Some(lock),
-                );
-            }
-        }
-
-        // If 'compressed' is up-to-date, use it.
-        // otherwise update it needs to be updated.
-        if let Some((compressed, l)) = compressed.take() {
-            // Check the serial for the compressed value, if it doesn't match, we
-            // should not write it, because something else has changed the contents
-            // in the meantime, invalidating the compressed zone.
-            if l.soa.rdata.serial != local_serial {
-                return (Err(RefreshError::LocalSerialChanged), Some(lock));
-            }
-            contents.latest = uncompressed;
-            contents.previous.push_back(compressed);
-            return (Ok(Some(remote_serial)), Some(lock));
-        }
-
-        local = contents.latest.clone();
-    };
-
-    let remote = uncompressed.clone();
-    let compressed_serial = local.soa.rdata.serial;
-    let compressed = tokio::task::spawn_blocking(move || Arc::new(local.compress(&remote)))
-        .await
-        .unwrap();
-
+    // Lock the zone state.
     let mut lock = zone.state.lock().unwrap();
+
+    // If no previous version of the zone exists (or if the zone
+    // contents have been cleared since the start of the refresh),
+    // insert the remote copy directly.
     let Some(contents) = &mut lock.contents else {
-        lock.contents = Some(ZoneContents {
-            latest: uncompressed,
-            previous: VecDeque::new(),
-        });
+        lock.contents = Some(new_contents);
 
         return (Ok(Some(remote_serial)), Some(lock));
     };
-    let new_local_serial = contents.latest.soa.rdata.serial;
-    // Check the serial for the compressed value, if it doesn't match, we
-    // should not write it, because something else has changed the contents
-    // in the meantime, invalidating the compressed zone.
-    if compressed_serial != new_local_serial {
-        return (Err(RefreshError::LocalSerialChanged), Some(lock));
+
+    // Compare the _current_ latest version of the zone against the
+    // remote.
+    let local_serial = contents.soa.rdata.serial;
+    match local_serial.partial_cmp(&remote_serial) {
+        Some(Ordering::Less) => {}
+
+        Some(Ordering::Equal) => {
+            // The local copy was updated externally, and is now
+            // up-to-date with respect to the remote copy.  Stop.
+            return (Ok(None), Some(lock));
+        }
+
+        Some(Ordering::Greater) | None => {
+            // The local copy was updated externally, and is now more
+            // recent than the remote copy.  While it is possible the remote
+            // copy has also been updated, we will assume it's unchanged,
+            // and report that the remote has become outdated.
+            return (
+                Err(RefreshError::OutdatedRemote {
+                    local_serial,
+                    remote_serial,
+                }),
+                Some(lock),
+            );
+        }
     }
-    contents.latest = uncompressed;
-    contents.previous.push_back(compressed);
+
+    *contents = new_contents;
     (Ok(Some(remote_serial)), Some(lock))
-}
-
-/// The internal result of a zone refresh.
-struct Refresh {
-    /// The uncompressed remote copy.
-    ///
-    /// If the remote provided an uncompressed copy, this holds it verbatim.
-    /// If the remote provided a compressed copy, it is uncompressed relative
-    /// to the latest local copy and stored here.
-    uncompressed: Arc<contents::Uncompressed>,
-
-    /// A compressed version of the local copy.
-    ///
-    /// This is a compressed version of the local copy -- the latest version
-    /// known when the refresh began.  This will forward the local copy to the
-    /// remote copy.  It holds the corresponding uncompressed local copy.
-    compressed: Option<(Arc<contents::Compressed>, Arc<contents::Uncompressed>)>,
 }
 
 //----------- reload() ---------------------------------------------------------
@@ -300,19 +234,16 @@ pub async fn reload_server<'z>(
         .await
         .map_err(RefreshError::Axfr);
 
-    let uncompressed = match result {
-        Ok(uncompressed) => Arc::new(uncompressed),
+    let contents = match result {
+        Ok(contents) => Arc::new(contents),
         Err(error) => return (Err(error), None),
     };
 
-    let serial = uncompressed.soa.rdata.serial;
+    let serial = contents.soa.rdata.serial;
 
     // Lock the zone state.
     let mut lock = zone.state.lock().unwrap();
-    lock.contents = Some(ZoneContents {
-        latest: uncompressed,
-        previous: VecDeque::new(),
-    });
+    lock.contents = Some(contents);
 
     (Ok(Some(serial)), Some(lock))
 }
@@ -327,19 +258,16 @@ pub async fn load_zonefile<'z>(
 ) {
     let result = zonefile::load(metrics, zone, path).map_err(RefreshError::Zonefile);
 
-    let uncompressed = match result {
-        Ok(uncompressed) => Arc::new(uncompressed),
+    let contents = match result {
+        Ok(contents) => Arc::new(contents),
         Err(error) => return (Err(error), None),
     };
 
-    let serial = uncompressed.soa.rdata.serial;
+    let serial = contents.soa.rdata.serial;
 
     // Lock the zone state.
     let mut lock = zone.state.lock().unwrap();
-    lock.contents = Some(ZoneContents {
-        latest: uncompressed,
-        previous: VecDeque::new(),
-    });
+    lock.contents = Some(contents);
 
     (Ok(Some(serial)), Some(lock))
 }
