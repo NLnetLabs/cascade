@@ -9,6 +9,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
+use domain::base::iana::Class;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
@@ -194,6 +195,29 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 
     let mut state = center.state.lock().unwrap();
     let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?;
+
+    // Remove the zone from all the places it might be stored.
+    // The zone might not have made it to these places, but that's not an issue
+    // so we just ignore any errors.
+
+    center.unsigned_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
+    center.signed_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
+    center.published_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
     let mut zone_state = zone.0.state.lock().unwrap();
 
     // Update the policy's referenced zones.
