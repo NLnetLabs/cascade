@@ -1,5 +1,6 @@
 use std::cmp::{min, Ordering};
 use std::collections::{HashMap, VecDeque};
+use std::env::{var, VarError};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -540,7 +541,7 @@ impl ZoneSigner {
             let zone_state = zone.state.lock().unwrap();
             zone_state.policy.clone()
         };
-        let signing_config = self.signing_config(&policy.unwrap());
+        let signing_config = self.signing_config(&policy.unwrap())?;
         let rrsig_cfg =
             GenerateRrsigConfig::new(signing_config.inception, signing_config.expiration);
 
@@ -1095,7 +1096,10 @@ impl ZoneSigner {
             })
     }
 
-    fn signing_config(&self, policy: &PolicyVersion) -> SigningConfig<Bytes, MultiThreadedSorter> {
+    fn signing_config(
+        &self,
+        policy: &PolicyVersion,
+    ) -> Result<SigningConfig<Bytes, MultiThreadedSorter>, SignerError> {
         let denial = match &policy.signer.denial {
             SignerDenialPolicy::NSec => DenialConfig::Nsec(Default::default()),
             SignerDenialPolicy::NSec3 { opt_out } => {
@@ -1104,10 +1108,20 @@ impl ZoneSigner {
             }
         };
 
-        let now = Timestamp::now().into_int();
+        let now = match var("CASCADE_FAKETIME") {
+            Ok(val) => val
+                .parse::<u32>()
+                .map_err(|e| SignerError::InternalError(format!("cannot parse {e} as u32")))?,
+            Err(VarError::NotPresent) => Timestamp::now().into_int(),
+            Err(e) => return Err(SignerError::InternalError(e.to_string())),
+        };
         let inception = now.wrapping_sub(policy.signer.sig_inception_offset);
         let expiration = now.wrapping_add(policy.signer.sig_validity_time);
-        SigningConfig::new(denial, inception.into(), expiration.into())
+        Ok(SigningConfig::new(
+            denial,
+            inception.into(),
+            expiration.into(),
+        ))
     }
 
     fn next_resign_time(&self) -> Option<Instant> {
