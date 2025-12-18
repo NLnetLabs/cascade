@@ -802,10 +802,10 @@ impl Progress {
 
         Self::print_signing_progress(zone);
 
-        if *self == Progress::Signed {
-            if let Some(addr) = zone.signed_review_addr {
-                println!("  Signed zone available on {addr}");
-            }
+        if *self == Progress::Signed
+            && let Some(addr) = zone.signed_review_addr
+        {
+            println!("  Signed zone available on {addr}");
         }
     }
 

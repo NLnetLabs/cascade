@@ -1,15 +1,18 @@
 use std::future::{Future, ready};
 use std::marker::Sync;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
-use domain::base::Name;
-use domain::base::iana::{Class, Rcode};
-use domain::base::{Serial, ToName};
+use domain::base::iana::{Class, Opcode, Rcode};
+use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
+use domain::net::client::dgram::Connection;
+use domain::net::client::protocol::UdpConnect;
+use domain::net::client::request::{RequestMessage, SendRequest};
 use domain::net::server::ConnectionConfig;
 use domain::net::server::buf::VecBufSource;
 use domain::net::server::dgram::{self, DgramServer};
@@ -31,7 +34,7 @@ use domain::zonetree::Answer;
 use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::{StoredName, ZoneTree};
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{
     ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage,
@@ -46,7 +49,6 @@ use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, ZoneVersionReviewState,
 };
-use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 
 /// The source of a zone server.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -324,10 +326,7 @@ impl ZoneServer {
                         }
                     });
 
-                let maintainer_config =
-                    Config::<_, DefaultConnFactory>::new(self.center.old_tsig_key_store.clone());
-                let maintainer_config = Arc::new(ArcSwap::from_pointee(maintainer_config));
-                ZoneMaintainer::send_notify_to_addrs(zone_name.clone(), addrs, maintainer_config)
+                send_notify_to_addrs(zone_name.clone(), addrs, &self.center.old_tsig_key_store)
                     .await;
             }
         }
@@ -804,16 +803,16 @@ impl Notifiable for LoaderNotifier {
         &self,
         class: Class,
         apex_name: &Name<Bytes>,
-        serial: Option<Serial>,
-        source: IpAddr,
+        _serial: Option<Serial>,
+        _source: IpAddr,
     ) -> Pin<Box<dyn Future<Output = Result<(), NotifyError>> + Sync + Send + '_>> {
         // Don't do anything if the notifier is disabled.
         if self.enabled && class == Class::IN {
             // Propagate a request for the zone refresh.
+            // This request ignores the serial and source because we will just
+            // do a SOA query to our configured upstreams.
             let _ = self.update_tx.send(Update::RefreshZone {
                 zone_name: apex_name.clone(),
-                source: Some(source),
-                serial,
             });
         }
 
@@ -843,4 +842,73 @@ fn zone_server_service(
     let builder = mk_builder_for_target();
     let additional = answer.to_message(request.message(), builder);
     Ok(CallResult::new(additional))
+}
+
+pub async fn send_notify_to_addrs(
+    apex_name: StoredName,
+    notify_set: impl Iterator<Item = &SocketAddr>,
+    _key_store: &TsigKeyStore,
+) {
+    let mut dgram_config = domain::net::client::dgram::Config::new();
+    dgram_config.set_max_parallel(1);
+    dgram_config.set_read_timeout(Duration::from_millis(1000));
+    dgram_config.set_max_retries(1);
+    dgram_config.set_udp_payload_size(Some(1400));
+
+    let mut msg = MessageBuilder::new_vec();
+    msg.header_mut().set_opcode(Opcode::NOTIFY);
+    let mut msg = msg.question();
+    msg.push((apex_name, Rtype::SOA)).unwrap();
+
+    for nameserver_addr in notify_set {
+        let dgram_config = dgram_config.clone();
+        let req = RequestMessage::new(msg.clone()).unwrap();
+        let nameserver_addr = *nameserver_addr;
+
+        // let tsig_key = zone_info
+        //     .config
+        //     .send_notify_to
+        //     .dst(&nameserver_addr)
+        //     .and_then(|cfg| cfg.tsig_key.as_ref())
+        //     .and_then(|(name, alg)| key_store.get_key(name, *alg));
+        //
+        // if let Some(key) = tsig_key.as_ref() {
+        //     debug!(
+        //         "Found TSIG key '{}' (algorith {}) for NOTIFY to {nameserver_addr}",
+        //         key.as_ref().name(),
+        //         key.as_ref().algorithm()
+        //     );
+        // }
+
+        tokio::spawn(async move {
+            // TODO: Use the connection factory here.
+            let udp_connect = UdpConnect::new(nameserver_addr);
+            let client = Connection::with_config(udp_connect, dgram_config.clone());
+
+            trace!("Sending NOTIFY to nameserver {nameserver_addr}");
+            let span = tracing::trace_span!("auth", addr = %nameserver_addr);
+            let _guard = span.enter();
+
+            // https://datatracker.ietf.org/doc/html/rfc1996
+            //   "4.8 Master Receives a NOTIFY Response from Slave
+            //
+            //    When a master server receives a NOTIFY response, it deletes this
+            //    query from the retry queue, thus completing the "notification
+            //    process" of "this" RRset change to "that" server."
+            //
+            // TODO: We have no retry queue at the moment. Do we need one?
+
+            // let res = if let Some(key) = tsig_key {
+            //     let client = net::client::tsig::Connection::new(key.clone(), client);
+            //     client.send_request(req.clone()).get_response().await
+            // } else {
+            //     client.send_request(req.clone()).get_response().await
+            // };
+            let res = client.send_request(req.clone()).get_response().await;
+
+            if let Err(err) = res {
+                warn!("Unable to send NOTIFY to nameserver {nameserver_addr}: {err}");
+            }
+        });
+    }
 }

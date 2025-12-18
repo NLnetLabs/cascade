@@ -208,11 +208,11 @@ impl KeyManager {
                 }
             }
             ApplicationCommand::Changed(Change::ZonePolicyChanged { name, old, new }) => {
-                if let Some(old) = old {
-                    if old.key_manager == new.key_manager {
-                        // Nothing changed.
-                        return Ok(());
-                    }
+                if let Some(old) = old
+                    && old.key_manager == new.key_manager
+                {
+                    // Nothing changed.
+                    return Ok(());
                 }
                 // Keep it simple, just send all config items to keyset even
                 // if they didn't change.
