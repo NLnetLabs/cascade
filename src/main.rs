@@ -5,7 +5,7 @@ use cascaded::{
     manager::Manager,
     policy,
 };
-use clap::{crate_authors, crate_version};
+use clap::{crate_authors, crate_description, crate_version};
 use std::{collections::HashMap, fs::create_dir_all};
 use std::{
     io,
@@ -27,6 +27,7 @@ fn main() -> ExitCode {
     let cmd = clap::Command::new("cascade")
         .version(crate_version!())
         .author(crate_authors!())
+        .about(crate_description!())
         .next_line_help(true)
         .arg(
             clap::Arg::new("check_config")
