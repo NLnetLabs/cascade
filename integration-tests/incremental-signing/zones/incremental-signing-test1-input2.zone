@@ -1,0 +1,53 @@
+; Test 1 -- Check diff creation
+
+; Set the serial number of the second version to 23456.
+@ IN SOA ns hostmaster 23456 3600 3600 86400 3600
+
+; Test for diff generation. This is not DNSSEC specific, it can also be used
+; to test IXFR.
+
+; A collection of RRsets that will be modified.
+cname.modify            CNAME   cname-target2
+dname.modify            DNAME   dname-target2
+a.modify                A       192.0.2.1
+aaaa.modify             AAAA    2001:db8::1
+txt.modify              TXT     "Modified zone"
+
+; A delegation to be able to create RRsets that are not authoritative in this
+; zone.
+not-auth		NS	ns
+
+; A collection of non-authoritative RRsets that will be modified.
+cname.modify.not-auth   CNAME   cname-target2
+dname.modify.not-auth   DNAME   dname-target2
+a.modify.not-auth       A       192.0.2.1
+aaaa.modify.not-auth    AAAA    2001:db8::1
+txt.modify.not-auth     TXT     "Modified zone"
+
+; Add a new record at APEX.
+@			TXT	"New apex record"
+
+; A delegation that obtains a DS RRset.
+delegation1		NS	ns
+
+; Add DS record to an existing delegation.
+delegation1		DS	12345 13 253 00
+
+; Existing ENTs to be converted to NTs.
+ent2nt			TXT     "was ENT, now NT"
+txt.ent2nt		TXT	"ENT to become NT"
+ent2nt.not-auth		TXT     "was ENT, now NT"
+txt.ent2nt.not-auth	TXT	"ENT to become NT"
+
+; XXX The following NS record need to be removed when Cascade gets support for
+; a standalone DS.
+ds.new-ent		NS	ns
+
+; Add just a DS record
+ds.new-ent		DS	12345 13 253 01
+
+; Create a new ENTs
+txt.new-ent		TXT	"New authoritative ENT"
+txt.new-ent.not-auth	TXT	"New not authoritative ENT"
+
+; Names that get deleted.

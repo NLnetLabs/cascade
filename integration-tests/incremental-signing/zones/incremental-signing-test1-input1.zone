@@ -1,0 +1,48 @@
+; Test 1 -- Check diff creation
+
+; Set the serial number of the first version to 12345. Use the 'keep' serial
+; policy to make it easy to check when the first version has been signed.
+@ IN SOA ns hostmaster 12345 3600 3600 86400 3600
+
+; Test for diff generation. This is not DNSSEC specific, it can also be used
+; to test IXFR.
+
+; A collection of RRsets that will be modified.
+cname.modify		CNAME	cname-target
+dname.modify		DNAME	dname-target
+a.modify		A	192.0.2.0
+aaaa.modify		AAAA	2001:db8::
+txt.modify		TXT	"Original zone"
+
+; A delegation to be able to create RRsets that are not authoritative in this
+; zone.
+not-auth		NS	ns
+
+; A collection of non-authoritative RRsets that will be modified.
+cname.modify.not-auth	CNAME	cname-target
+dname.modify.not-auth	DNAME	dname-target
+a.modify.not-auth	A	192.0.2.0
+aaaa.modify.not-auth	AAAA	2001:db8::
+txt.modify.not-auth	TXT	"Original zone"
+
+; A delegation that obtains a DS RRset.
+delegation1		NS	ns
+
+; Existing ENTs to be converted to NTs.
+txt.ent2nt		TXT	"ENT to become NT"
+txt.ent2nt.not-auth	TXT	"ENT to become NT"
+
+; Add just a DS record
+
+; Create a new ENTs
+
+; Names that get deleted.
+one.delete		A	192.0.2.1
+two.delete		A	192.0.2.2
+two.delete		AAAA	2001:db8::2
+one.delete.not-auth	A	192.0.2.1
+two.delete.not-auth	A	192.0.2.2
+two.delete.not-auth	AAAA	2001:db8::2
+delegation1.delete	NS	ns
+delegation2.delete	NS	ns
+non-auth.delegation2.delete A	192.0.2.3

@@ -1,0 +1,65 @@
+; Test 2 -- Test adding new names.
+
+; Set the serial number of the second version to 23456.
+@ IN SOA ns hostmaster 23456 3600 3600 86400 3600
+
+; Test incremental signing for new RRsets.
+
+; Add non-NS RRset
+txt.add		TXT	"New name and RRset"
+txt.ent.add	TXT	"New name and RRset with ENT"
+
+; Delegation without DS.
+delegation		NS	ns1
+cname.delegation	CNAME	cname-target
+dname.delegation	DNAME	dname-target
+a.delegation		A	192.0.2.0
+aaaa.delegation		AAAA	2001:db8::
+txt.delegation		TXT	"TXT not-below/below delegation"
+; XXX Cascade cannot handle a DS without NS.
+; ds.delegation		DS	12345 13 253 02
+txt.ent.delegation	TXT	"TXT not-below/below delegation with ENT"
+
+; Delegation with DS.
+delegation-ds		NS	ns2
+delegation-ds		DS	12345 13 253 03
+a.ds-delegation		A	192.0.2.1
+aaaa.ds-delegation	AAAA	2001:db8::1
+txt.ds-delegation	TXT	"TXT not-below/below delegation"
+txt.ent.ds-delegation	TXT	"TXT not-below/below delegation with ENT"
+
+; A delegation below an ENT.
+delegation.ent		NS	ns3
+a.delegation.ent	A	192.0.2.1
+aaaa.delegation.ent	AAAA	2001:db8::1
+txt.delegation.ent	TXT	"TXT not-below/below delegation"
+txt.ent.delegation.ent	TXT	"TXT not-below/below delegation with ENT"
+
+; Test adding an NS record that is occluded by another NS record.
+; Add DS as well. Do we need to test without DS?
+existing-delegation		NS	ns1
+occluded.existing-delegation	NS	ns2
+occluded.existing-delegation	DS	12345 13 253 04
+
+; Test adding an NS record that now occludes an existing NS record.
+; Have a DS record with the to be occluded NS record as well.
+new-delegation			NS	ns3
+to-be-occluded.new-delegation	NS	ns4
+to-be-occluded.new-delegation	DS	12345 13 253 05
+
+; For NSEC add a new last entry in the NSEC chain.
+zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	TXT "Last"
+
+; Test adding a new first NSEC3 record.
+; hash 000000kqrttushp6q101dur3od76sjl5
+qitpxpm			TXT	"new first NSEC3 hash"
+
+; Test adding a new last NSEC3 record.
+; hash vvvvvv7jibehndfrstrr0nq4tcs5n69s
+syogkgc			TXT	"new last NSEC3 hash"
+
+; Test adding a name with the same name as the NSEC3 record for apex.
+; The NSEC3 name that corresponds to example. is
+; 3msev9usmd4br9s97v51r2tdvmr9iqo1.example.
+3msev9usmd4br9s97v51r2tdvmr9iqo1.example.	TXT "At NSEC3 name"
+

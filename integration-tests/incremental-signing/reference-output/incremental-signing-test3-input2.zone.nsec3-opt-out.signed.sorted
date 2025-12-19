@@ -1,0 +1,122 @@
+1chvonhfan96laj6iq4spkbifgasnfqu.example.	3600	IN	NSEC3	1 1 0 - 2CCS29VGBTEFCQTAPGLC804NPEGF3MNG AAAA RRSIG
+1chvonhfan96laj6iq4spkbifgasnfqu.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. ZvLaPExc0H4wHNcyfPvOLRlsqBTBp14Gr0iDwxOOb0FA/yL37bk3IafCo/Bi04sPCcrXVOf5aZ3DnSmA2bZMBw==
+2ccs29vgbtefcqtapglc804npegf3mng.example.	3600	IN	NSEC3	1 1 0 - 3MSEV9USMD4BR9S97V51R2TDVMR9IQO1
+2ccs29vgbtefcqtapglc804npegf3mng.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. iz9s44FpDwuHu7Ktmin5dUGa4o9r6qVKxp5KmmYfNhUWRNZXe4aVoLJkjCQnd27fHVKtxfyVGNDIZWTdEJkpBw==
+3msev9usmd4br9s97v51r2tdvmr9iqo1.example.	3600	IN	NSEC3	1 1 0 - 6DA3FE1GRLV7G901PJSLGE161PVFTBU8 SOA RRSIG DNSKEY NSEC3PARAM
+3msev9usmd4br9s97v51r2tdvmr9iqo1.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. mQy9Y59XrGfBWfjWS2CHyK6yDqpr7CuyfYsPNml7E+LO2uwEh6Faa73d/tcgMCUPd/VHWjGeVPrWPGvNPU0cAw==
+6da3fe1grlv7g901pjslge161pvftbu8.example.	3600	IN	NSEC3	1 1 0 - BE0FOFC9NMJH1KD68OFAN3LAMHSOF2CT NS DS RRSIG
+6da3fe1grlv7g901pjslge161pvftbu8.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. X7jC/dUMe2SgG8IyHHxLBBdtBZ8mBZ6Bt2tjmPzZviUmKYPUqKk3pgJIsVp5wkJQmwKRD9Mh0xaG5S4mDFLUAg==
+aaaa.delegation.ent.example.	3600	IN	AAAA	2001:db8::1
+aaaa.delegation.example.	3600	IN	AAAA	2001:db8::
+aaaa.no-delegation.example.	3600	IN	AAAA	2001:db8::
+aaaa.no-delegation.example.	3600	IN	RRSIG	AAAA 15 3 3600 20231114221320 20200913122640 2835 example. qD9hkrOliY5o3BQ5k64kdS/9ViGJiEuQ6EFOlVZkYxrbIstuZXB7PbeA+5BNX5eqHjl9Wy+bZqztDXbGkoizAA==
+aaaa.occluded.existing-delegation2.example.	3600	IN	AAAA	2001:db8::
+aaaa.occluded.existing-delegation.example.	3600	IN	AAAA	2001:db8::
+a.delegation.ent.example.	3600	IN	A	192.0.2.1
+a.delegation.example.	3600	IN	A	192.0.2.0
+a.no-delegation.example.	3600	IN	A	192.0.2.0
+a.no-delegation.example.	3600	IN	RRSIG	A 15 3 3600 20231114221320 20200913122640 2835 example. 0lGi+qu1Si1rEVkL2nIHmNsDzceXgjQnjerV5Gn/Rc8sd5aIBfnYq8zi1+d4LsaWhcmCjvXQwj0ntUP/oumsAQ==
+a.occluded.existing-delegation2.example.	3600	IN	A	192.0.2.0
+a.occluded.existing-delegation.example.	3600	IN	A	192.0.2.0
+be0fofc9nmjh1kd68ofan3lamhsof2ct.example.	3600	IN	NSEC3	1 1 0 - CBHSLDD1T27N54NJE8SI3VM378NKR151 DNAME RRSIG
+be0fofc9nmjh1kd68ofan3lamhsof2ct.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. GBS8jsZdFwSwIOHj4cEdBWGDtFdEAAtLvptYxIBF0T1qTxbZl7jMXnrrPpWmygUQNzjYcqZfNgUXK0zVhKT5AQ==
+cbhsldd1t27n54nje8si3vm378nkr151.example.	3600	IN	NSEC3	1 1 0 - CFSQBMPK0MAS6PGQMFDBBQK6FM25I7AQ NS DS RRSIG
+cbhsldd1t27n54nje8si3vm378nkr151.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. PW/WOR7IVODBRdBOqnSgvVbG4qnvEJKXE4927Q+tJrAm32iFtd4aRfTBiCe7KuNFvNTA97jydlojQeLOpVBeBg==
+cfsqbmpk0mas6pgqmfdbbqk6fm25i7aq.example.	3600	IN	NSEC3	1 1 0 - DJQ6I8ONNVI00AKFJV64CI1OIOFEL9NU A TXT AAAA DS RRSIG
+cfsqbmpk0mas6pgqmfdbbqk6fm25i7aq.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. dLH3NEAcTKc9D2AIXe3n6PSsIs+MHTpZfbeOekTz2WUo7K+oapgEsUmX1hjOxNN4be8JFPxZgSSbPMCNlD8UBg==
+cname.delegation.example.	3600	IN	CNAME	cname-target.example.
+cname.no-delegation.example.	3600	IN	CNAME	cname-target.example.
+cname.no-delegation.example.	3600	IN	RRSIG	CNAME 15 3 3600 20231114221320 20200913122640 2835 example. iawIaRG1fs3S12yQvwt8o3fgcltdI1qQ2IO5JvuEA8TRDMWP85HAVtd1F6/qI7zL+tonox9lRLCFKWC0dhe4Cg==
+cname.occluded.existing-delegation2.example.	3600	IN	CNAME	cname-target.example.
+cname.occluded.existing-delegation.example.	3600	IN	CNAME	cname-target.example.
+delegation.ent.example.	3600	IN	A	192.0.2.0
+delegation.ent.example.	3600	IN	AAAA	2001:db8::
+delegation.ent.example.	3600	IN	DS	12345 13 253 05
+delegation.ent.example.	3600	IN	NS	ns2.example.
+delegation.ent.example.	3600	IN	RRSIG	DS 15 3 3600 20231114221320 20200913122640 2835 example. 2DGUB+2suHgLG+SfOUYCVgNTKqZ3NW5DL7KpIfhWGXOXiEx3PXkakx8tw79qOyFg8WGmppxg3Dt6MOBkzeCoAg==
+delegation.ent.example.	3600	IN	TXT	"TXT not-at/at delegation"
+delegation.example.	3600	IN	A	192.0.2.0
+delegation.example.	3600	IN	AAAA	2001:db8::
+delegation.example.	3600	IN	DS	12345 13 253 03
+delegation.example.	3600	IN	NS	ns1.example.
+delegation.example.	3600	IN	RRSIG	DS 15 2 3600 20231114221320 20200913122640 2835 example. 1oK/3Qk+TU5Dcp1RQcJSr6+BfAGb6vbJ/BNCUM4JG+8M4LaicORrpq8nIA8H6e6nD6cXzK5280+ZaSTrnsgRAg==
+delegation.example.	3600	IN	TXT	"TXT not-at/at delegation"
+djq6i8onnvi00akfjv64ci1oiofel9nu.example.	3600	IN	NSEC3	1 1 0 - E8R6DJDM0DOJ852N8R6453RRS2FPR32L
+djq6i8onnvi00akfjv64ci1oiofel9nu.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. SwYGOBnCnCioEBrFQKEKYWKe5tacRPHMTBId8DSQmtQ3jAkizgwiJLj3qvhOftC6joJcd5tpaKCu865+5FWbCQ==
+dname.delegation.example.	3600	IN	DNAME	dname-target.example.
+dname.no-delegation.example.	3600	IN	DNAME	dname-target.example.
+dname.no-delegation.example.	3600	IN	RRSIG	DNAME 15 3 3600 20231114221320 20200913122640 2835 example. 8z7CrqiKTqkZ1fInzHR6rOM92HUtGzaN7SothyAxKaO1BMjN9sQq9fnLrX38+dcziNko0Ol+qxVRWsGHpC+NAA==
+dname.occluded.existing-delegation2.example.	3600	IN	DNAME	dname-target.example.
+dname.occluded.existing-delegation.example.	3600	IN	DNAME	dname-target.example.
+ds.delegation.example.	3600	IN	DS	12345 13 253 04
+ds-delegation.example.	3600	IN	NS	ns4.example.
+ds-no-delegation.example.	3600	IN	A	192.0.2.0
+ds-no-delegation.example.	3600	IN	AAAA	2001:db8::
+ds-no-delegation.example.	3600	IN	DS	12345 13 253 03
+ds.no-delegation.example.	3600	IN	DS	12345 13 253 04
+ds-no-delegation.example.	3600	IN	RRSIG	A 15 2 3600 20231114221320 20200913122640 2835 example. 8YQ2XoOJIZZlX3xrCv6JyL1tQb0jYOmEdLMsBfL4wFb7fIQnXTInJ1d9K7GWZl88Au8vx701NQebdM3cf3akCw==
+ds-no-delegation.example.	3600	IN	RRSIG	AAAA 15 2 3600 20231114221320 20200913122640 2835 example. BaYd3ohr5Sb0++v2H23BNQ9bbzWNipdkz9uSRv0A0cf2os4Z65bWpuEclebGtOavW7/di/8vrd9hVSWIa8NODw==
+ds-no-delegation.example.	3600	IN	RRSIG	DS 15 2 3600 20231114221320 20200913122640 2835 example. jLhnHDk06kbcr8wz+kEcrkk2F6epIb4sYVUMpqSJKCwXqSPXrwSG7pzlQVgW36Gj7TavnXfZcP1E7WVHTixjAQ==
+ds.no-delegation.example.	3600	IN	RRSIG	DS 15 3 3600 20231114221320 20200913122640 2835 example. mh8GWAVViXfTbDbUrPYqvIy7oNL0Y+5p52OalhAuWZpi92I6SkptWE5IGKpb8T1YET+kfr/xQ5UE3D9YddRCAA==
+ds-no-delegation.example.	3600	IN	RRSIG	TXT 15 2 3600 20231114221320 20200913122640 2835 example. ExqMm6PtWvEa1JP8TaduVe62v/aGb7rLzeiAa9E1KZwQfL1G6iy83AhpaGLwIuZ5Jb2cmFAkOFMy5AQsNiFBDA==
+ds-no-delegation.example.	3600	IN	TXT	"TXT not-at/at delegation"
+ds.occluded.existing-delegation2.example.	3600	IN	DS	12345 13 253 04
+ds.occluded.existing-delegation.example.	3600	IN	DS	12345 13 253 04
+e8r6djdm0doj852n8r6453rrs2fpr32l.example.	3600	IN	NSEC3	1 1 0 - ECUSFB2CQ2FLU9S3KSTEKTU2RKQ7J02I NS DS RRSIG
+e8r6djdm0doj852n8r6453rrs2fpr32l.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. HDOrdJMfBahqOurozyq5VObL7yrWKMiR1tCS7Y6FMzI7RBJXf2L5kM/+HirilhlRo6MPP5n75i53qZHiHcazBQ==
+ecusfb2cq2flu9s3kstektu2rkq7j02i.example.	3600	IN	NSEC3	1 1 0 - JUR6DKS5JSEVI4KOF749OPGC8O568ED2 NS DS RRSIG
+ecusfb2cq2flu9s3kstektu2rkq7j02i.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. UKr5zxEU3y97/BBeS4BQo9KzweIpewq5bF6eh3uXGqLzawYPSeJ2sEdMcjEsx6lO+UgFaJgahLxCMP8TwW/yAw==
+example.	3600	IN	DNSKEY	256 3 15 BnnbKMXdvQp2v+tzyvO/HxQGY8iYcJsWD4MN6fnr84Q=
+example.	3600	IN	NSEC3PARAM	1 1 0 -
+example.	3600	IN	RRSIG	DNSKEY 15 1 3600 20231114221320 20200913122640 2835 example. RMn96put9kteW8DjunEY3o0J7+MZlrC/zXVBU0h0gpFwjz9mrqo/1EvQUSO6faKaNLD2uhiJ9mg91Z1AQSq4AQ==
+example.	3600	IN	RRSIG	NSEC3PARAM 15 1 3600 20231114221320 20200913122640 2835 example. Ladx6ZxxaehBhStbVOWTLQIsX0nrQmRyi6IHL4ClapIJfHMG0/w9xxE2/8kp5JRHhYNHBwFQ5g6djBBdVELvCA==
+example.	3600	IN	RRSIG	SOA 15 1 3600 20231114221320 20200913122640 2835 example. bBmNKlKLUZIRG8VveJE3bONbEq7DWywLm2wG2bRxLTTWXvX7IfLbb1RFogxT7fH0BIeyBde1azsA+/nAjUBiDg==
+example.	3600	IN	SOA	ns.example. hostmaster.example. 23456 3600 3600 86400 3600
+existing-delegation.example.	3600	IN	NS	ns1.example.
+jur6dks5jsevi4kof749opgc8o568ed2.example.	3600	IN	NSEC3	1 1 0 - N3MIVJM8DKLOBH7R7F4RD46CG6F4STOM CNAME RRSIG
+jur6dks5jsevi4kof749opgc8o568ed2.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. 5lSb0qv7wEGZCdJi7Gq/TDB0d4CHDkb4DX8d0cneCLSG6zd5eCA5Ek2X4dpMCKyDARMCXIQu0HPR7QaBm82gCw==
+n3mivjm8dklobh7r7f4rd46cg6f4stom.example.	3600	IN	NSEC3	1 1 0 - NK3JQ1UR0NQ9AA77LBUGIB68PK87V5E6
+n3mivjm8dklobh7r7f4rd46cg6f4stom.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. bsdrozNhUgkC0KRcSTMDUHleDc39CbHzkpIIk2Zd48gDpZDAgTFNbhiCgQtANAkAFsGkUghrDbZOUex9Pu8eDA==
+nk3jq1ur0nq9aa77lbugib68pk87v5e6.example.	3600	IN	NSEC3	1 1 0 - OT1SVRDFK85BGA7SEEPDGMT12283DNKG A RRSIG
+nk3jq1ur0nq9aa77lbugib68pk87v5e6.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. LfaG5YaiI/rh8DI6/+CaM8gmoTATaZ4oKDkjmgmHX+6p+Dngttf9uOVB8nP6BqnbimaN4R4gmmIJQFVVOJ9dBA==
+no-delegation.example.	3600	IN	A	192.0.2.0
+no-delegation.example.	3600	IN	AAAA	2001:db8::
+no-delegation.example.	3600	IN	DS	12345 13 253 03
+no-delegation.example.	3600	IN	RRSIG	A 15 2 3600 20231114221320 20200913122640 2835 example. wWo9FrNknF99/VRPvbxa2qJN//xA3LfzTHDQnSWroU488xjLJkm4W1yVs2x3cuI44sHVy/qyk2OhwxJ3GqK6BQ==
+no-delegation.example.	3600	IN	RRSIG	AAAA 15 2 3600 20231114221320 20200913122640 2835 example. VDnKSuiuWPDHsd+xVx3wkw4RUn6haKESMUWvmjTWvey1UKJMoNxspTti4uAiIt3l6J4sSXw9ReZS35yDukPlBQ==
+no-delegation.example.	3600	IN	RRSIG	DS 15 2 3600 20231114221320 20200913122640 2835 example. 798mm2DAHdBZX/Wb+ZChWKjJwKWkgBdPXi0n6vKJ4yjE5H5jYh6Z1t46z1qWoEgpvwvyj2238dQC/ExbvLVzCA==
+no-delegation.example.	3600	IN	RRSIG	TXT 15 2 3600 20231114221320 20200913122640 2835 example. GJTHznE/4iZa9HOhakHo3f2Sc9/SAziv7xLX9+8zaE/ijYYfS2LwA6dOCBfDKYo7bIoQYpx+Ii50okkq6KbuCw==
+no-delegation.example.	3600	IN	TXT	"TXT not-at/at delegation"
+no-ds-delegation.example.	3600	IN	DS	12345 13 253 06
+no-ds-delegation.example.	3600	IN	NS	ns3.example.
+no-ds-delegation.example.	3600	IN	RRSIG	DS 15 2 3600 20231114221320 20200913122640 2835 example. pAlR5tvcLC2xQev3UkkFAJDfbjT2HlT58rEenl2Np+zmcvfIrVkVm7aw7zlQ3dpKHVj983hK0OujKnM4cwwqCg==
+occluded.existing-delegation2.example.	3600	IN	A	192.0.2.0
+occluded.existing-delegation2.example.	3600	IN	AAAA	2001:db8::
+occluded.existing-delegation2.example.	3600	IN	DS	12345 13 253 04
+occluded.existing-delegation2.example.	3600	IN	NS	ns2.example.
+occluded.existing-delegation2.example.	3600	IN	RRSIG	DS 15 3 3600 20231114221320 20200913122640 2835 example. EgsRiaTA3ldlcYp0HYGau66/4zY5PDtPL1qQdSnXRw4DJlJr87JoX/kHeGBe4nVAvJ9zyGskCLQ6njji1stWDg==
+occluded.existing-delegation2.example.	3600	IN	TXT	"TXT not-at/at delegation"
+occluded.existing-delegation.example.	3600	IN	A	192.0.2.0
+occluded.existing-delegation.example.	3600	IN	AAAA	2001:db8::
+occluded.existing-delegation.example.	3600	IN	DS	12345 13 253 04
+occluded.existing-delegation.example.	3600	IN	TXT	"TXT not-at/at delegation"
+ot1svrdfk85bga7seepdgmt12283dnkg.example.	3600	IN	NSEC3	1 1 0 - P5QI3GOVN4PKTGO5U4JIC3M7877SD2QH A TXT AAAA DS RRSIG
+ot1svrdfk85bga7seepdgmt12283dnkg.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. miVY5hHQFvCvSL1JaIrm4Sri9bjiIgXgU24pdL0+NhNElYugRmk+QWFApbmUdvRRSQgLxTwp/UMN06u6zy3tAA==
+p5qi3govn4pktgo5u4jic3m7877sd2qh.example.	3600	IN	NSEC3	1 1 0 - TD3GCP8Q47O18HTN3HQ26JJ9QONK7912 DS RRSIG
+p5qi3govn4pktgo5u4jic3m7877sd2qh.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. ONuxrisKH5u/XK/a6r0aGabRCUh/FPPsVcFrv7K+2VpXj19SVw2p/jfFbi7tF4ej+msXa01wFO7y2k4rnp3SDA==
+td3gcp8q47o18htn3hq26jj9qonk7912.example.	3600	IN	NSEC3	1 1 0 - VT4UA5HC3LVTIHL2FJDF45RQOPUSN9C4 TXT RRSIG
+td3gcp8q47o18htn3hq26jj9qonk7912.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. JhcZWfirjXuU6AR4kCPr5OuVJsEhEelXBRowa/kyK3xOLe+Zlq8ks6z8ZbfEidAKdgGPctfASOm/fGRiLt8RBg==
+txt.delegation.ent.example.	3600	IN	TXT	"TXT not-below/below delegation"
+txt.delegation.example.	3600	IN	TXT	"TXT not-below/below delegation"
+txt.ent.delegation.ent.example.	3600	IN	TXT	"TXT not-below/below delegation with ENT"
+txt.ent.delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
+txt.ent.no-delegation.example.	3600	IN	RRSIG	TXT 15 4 3600 20231114221320 20200913122640 2835 example. NuaY3ZSeqM/WkRotfhV8MA5W4sOU+ZG4ld7+HgKc2Etb9KqSV6I7RuMO2PmJmMDNFlg4oyaoZyqmnITL+uKeBg==
+txt.ent.no-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
+txt.ent.occluded.existing-delegation2.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
+txt.ent.occluded.existing-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
+txt.no-delegation.example.	3600	IN	RRSIG	TXT 15 3 3600 20231114221320 20200913122640 2835 example. AQsSVR9J9pGeVNFGq7TDomMd3f05i2eDcJAoTWkI2OlVD5Aqz9JPJf39YyHEuxBOBTzHQBh25oU75QE2CJcpCQ==
+txt.no-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation"
+txt.occluded.existing-delegation2.example.	3600	IN	TXT	"TXT not-below/below delegation"
+txt.occluded.existing-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation"
+vt4ua5hc3lvtihl2fjdf45rqopusn9c4.example.	3600	IN	NSEC3	1 1 0 - 1CHVONHFAN96LAJ6IQ4SPKBIFGASNFQU TXT RRSIG
+vt4ua5hc3lvtihl2fjdf45rqopusn9c4.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. rNAF2dCta3EemPpEYJ5QBhdfhK2DIXFTagFU2sd8ACLjL3hmmREqjH2APj8ySCZL7bLPZoN4U2xzIoFLx5hKAw==

@@ -1,0 +1,103 @@
+; Test3 -- existing names.
+
+; Set the serial number of the second version to 23456.
+@ IN SOA ns hostmaster 23456 3600 3600 86400 3600
+
+; Test incremental signing for new RRsets.
+
+; A delegation will be added later. Force the name to exist.
+; Add NS to delegation.
+delegation		NS	ns1
+delegation		A	192.0.2.0
+delegation		AAAA	2001:db8::
+delegation		TXT	"TXT not-at/at delegation"
+delegation		DS	12345 13 253 03
+cname.delegation	CNAME	cname-target
+dname.delegation	DNAME	dname-target
+a.delegation		A	192.0.2.0
+aaaa.delegation		AAAA	2001:db8::
+txt.delegation		TXT	"TXT not-below/below delegation"
+ds.delegation		DS	12345 13 253 04
+txt.ent.delegation	TXT	"TXT not-below/below delegation iwth ENT"
+
+; A delegation belown an ENT will be added later. Force the name to exist.
+; Add NS to delegation.ent.
+delegation.ent		NS	ns2
+delegation.ent		A	192.0.2.0
+delegation.ent		AAAA	2001:db8::
+delegation.ent		TXT	"TXT not-at/at delegation"
+delegation.ent		DS	12345 13 253 05
+a.delegation.ent	A	192.0.2.1
+aaaa.delegation.ent	AAAA	2001:db8::1
+txt.delegation.ent	TXT	"TXT not-below/below delegation"
+txt.ent.delegation.ent	TXT	"TXT not-below/below delegation with ENT"
+
+; A delegation. DS will be added later.
+no-ds-delegation	NS	ns3
+; Add DS to delegation.
+no-ds-delegation	DS	12345 13 253 06
+
+; A delegation with DS. DS will be removed later.
+ds-delegation		NS	ns4
+; DS removed.
+
+; The delegation will be removed later.
+; The delegation is removed.
+no-delegation		A	192.0.2.0
+no-delegation		AAAA	2001:db8::
+no-delegation		TXT	"TXT not-at/at delegation"
+no-delegation		DS	12345 13 253 03
+cname.no-delegation	CNAME	cname-target
+dname.no-delegation	DNAME	dname-target
+a.no-delegation		A	192.0.2.0
+aaaa.no-delegation	AAAA	2001:db8::
+txt.no-delegation	TXT	"TXT not-below/below delegation"
+ds.no-delegation	DS	12345 13 253 04
+txt.ent.no-delegation	TXT	"TXT not-below/below delegation iwth ENT"
+
+; The delegation will be removed later. With DS
+; The delegation is removed.
+ds-no-delegation	A	192.0.2.0
+ds-no-delegation	AAAA	2001:db8::
+ds-no-delegation	TXT	"TXT not-at/at delegation"
+ds-no-delegation	DS	12345 13 253 03
+
+; Name to be removed.
+
+; Test removing the first NSEC3 record.
+
+; Test removing the last NSEC3 record.
+
+; Test removing a name with the same name as the NSEC3 record for apex.
+
+; Test removing an NS record that is occluded by another NS record.
+existing-delegation			NS	ns1
+; Occluded delegation removed.
+occluded.existing-delegation		DS	12345 13 253 04
+occluded.existing-delegation		A	192.0.2.0
+occluded.existing-delegation		AAAA	2001:db8::
+occluded.existing-delegation		TXT	"TXT not-at/at delegation"
+cname.occluded.existing-delegation	CNAME	cname-target
+dname.occluded.existing-delegation	DNAME	dname-target
+a.occluded.existing-delegation		A	192.0.2.0
+aaaa.occluded.existing-delegation	AAAA	2001:db8::
+txt.occluded.existing-delegation	TXT	"TXT not-below/below delegation"
+ds.occluded.existing-delegation		DS	12345 13 253 04
+txt.ent.occluded.existing-delegation	TXT	"TXT not-below/below delegation iwth ENT"
+
+; Test removing an NS record that occluded another NS record.
+; Delegation removed.
+occluded.existing-delegation2		NS	ns2
+occluded.existing-delegation2		DS	12345 13 253 04
+occluded.existing-delegation2		A	192.0.2.0
+occluded.existing-delegation2		AAAA	2001:db8::
+occluded.existing-delegation2		TXT	"TXT not-at/at delegation"
+cname.occluded.existing-delegation2	CNAME	cname-target
+dname.occluded.existing-delegation2	DNAME	dname-target
+a.occluded.existing-delegation2		A	192.0.2.0
+aaaa.occluded.existing-delegation2	AAAA	2001:db8::
+txt.occluded.existing-delegation2	TXT	"TXT not-below/below delegation"
+ds.occluded.existing-delegation2	DS	12345 13 253 04
+txt.ent.occluded.existing-delegation2	TXT	"TXT not-below/below delegation iwth ENT"
+
+; For NSEC remove the last entry in the NSEC chain.
