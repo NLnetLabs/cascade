@@ -33,6 +33,10 @@ impl ArgsSpec {
     /// Set up a [`clap::Command`] with config-related arguments.
     pub fn setup(cmd: Command) -> Command {
         cmd.args([
+            clap::Arg::new("check_config")
+                .long("check-config")
+                .action(clap::ArgAction::SetTrue)
+                .help("Check the configuration and exit"),
             Arg::new("state")
                 .long("state")
                 .value_name("PATH")
