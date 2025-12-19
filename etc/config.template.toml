@@ -112,7 +112,7 @@ log-level = "info"
 # difficult.
 log-target = { type = "stdout" }
 #log-target = { type = "syslog" }
-#log-target = { type = "file", path = "/dev/stdout" }
+#log-target = { type = "file", path = "/var/log/cascade.log" }
 
 # Whether to apply internal daemonization.
 #
