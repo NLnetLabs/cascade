@@ -11,17 +11,20 @@ Cascade is a friendly DNSSEC signing pipeline.
 An [alpha release](https://github.com/NLnetLabs/cascade/releases) is
 available now, we encourage you to test it. Read our [comprehensive
 documentation](https://cascade.docs.nlnetlabs.nl/) to get started.
-Based on your feedback, we will continue work to offer a production grade
-release of Cascade in the first half of 2026. Please do *not* use the current
-codebase in production.
+If you find a bug, please create an 
+[issue on GitHub](https://github.com/NLnetLabs/cascade/issues).
 
 If you have questions, suggestions or feature requests, don't hesitate to
-create an [issue on GitGub](https://github.com/NLnetLabs/cascade/issues),
+start a topic on our [Discourse](https://community.nlnetlabs.nl/c/cascade/10), 
 send us [an email](mailto:cascade@nlnetlabs.nl) or mention us on
-[Mastodon](https://social.nlnetlabs.nl/@nlnetlabs/)! You can also find us in
+[Mastodon](https://social.nlnetlabs.nl/@nlnetlabs/). You can also find us in
 the [NLnet Labs DNS](https://chat.dns-oarc.net/community/channels/ldns)
 channel on the [DNS OARC Mattermost
 server](https://www.dns-oarc.net/oarc/services/chat).
+
+Based on your feedback, we will continue work to offer a production grade
+release of Cascade in the first half of 2026. Please do *not* use the current
+codebase in production.
 
 ## Feature Set
 
