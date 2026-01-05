@@ -3,6 +3,7 @@
 [![CI](https://github.com/NLnetLabs/cascade/workflows/ci/badge.svg)](https://github.com/NLnetLabs/cascade/actions?query=workflow%3Aci)
 [![Packaging](https://github.com/NLnetLabs/cascade/actions/workflows/pkg.yml/badge.svg)](https://nlnetlabs.nl/packages/)
 [![Documentation Status](https://app.readthedocs.org/projects/cascade-signer/badge/?version=latest)](https://cascade.docs.nlnetlabs.nl/)
+[![Discuss on Discourse](https://img.shields.io/badge/Discourse-NLnet_Labs-orange?logo=Discourse)](https://community.nlnetlabs.nl/c/cascade/10)
 [![Mastodon Follow](https://img.shields.io/mastodon/follow/114692612288811644?domain=social.nlnetlabs.nl&style=social)](https://social.nlnetlabs.nl/@nlnetlabs)
 
 Cascade is a friendly DNSSEC signing pipeline. 
