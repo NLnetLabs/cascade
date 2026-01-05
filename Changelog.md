@@ -26,7 +26,7 @@ Released yyyy-mm-dd.
 ### Other changes
 
 - Prefix cascaded `--help` output with a one line description of the
-  application. ([#409] by ximon18)
+  application. ([#409] by @ximon18)
 
 ### Documentation improvements
 
