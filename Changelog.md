@@ -30,7 +30,7 @@ Released yyyy-mm-dd.
 
 ### Documentation improvements
 
-- Document that --daemonize changes CWD to / ([#387] by @jpmens)
+- Document that `--daemonize` changes CWD to / ([#387] by @jpmens)
 - Use a more appropriate `log-target` example file path. ([#411] by @ximon18)
 
 [#387]: https://github.com/NLnetLabs/cascade/pull/387
