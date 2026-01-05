@@ -15,6 +15,7 @@ runs:
   using: "composite"
   steps:
   - name: Print all the nameserver log files
+    shell: bash --noprofile --norc -eo pipefail -x {0}
     run: |
       for i in ${{ inputs.nameserver-dir }}/*.log; do
         echo ">>> Logfile $i:" >&2

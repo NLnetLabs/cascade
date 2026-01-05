@@ -1,0 +1,49 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'strip-dnssec-rrs'
+description: 'Add a zone containing DNSSEC RRs and verify that they are not included in the signed zone'
+inputs:
+  artifact-name:
+    description: 'The name of the artifact to fetch and unpack'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Prepare the system test environment
+      uses: ./.github/actions/prepare-systest-env
+      with:
+        artifact-name: ${{ inputs.artifact-name }}
+    - run: target/debug/cascade --version
+      shell: bash --noprofile --norc -eo pipefail -x {0}
+    - name: Setup and start the cascade daemon
+      uses: ./.github/actions/setup-and-start-cascade
+    - name: Load a zone that contains DNSSEC RRs.
+      shell: bash --noprofile --norc -eo pipefail -x {0}
+      run: |
+        INTEGRATION_TEST_DIR="${PWD}/integration-tests/strip-dnssec-rrs"
+        ZONE_FILE="${INTEGRATION_TEST_DIR}/example.test"
+        target/debug/cascade zone add --policy default --source "${ZONE_FILE}" example.test
+    - name: Check zone status
+      shell: bash --noprofile --norc -eo pipefail -x {0}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until target/debug/cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+    - name: Verify the NSEC signed zone
+      shell: bash --noprofile --norc -eo pipefail -x {0}
+      run: |
+        dig @127.0.0.1 -p 4543 example.test AXFR | \
+          dnssec-verify -q -o example.test /dev/stdin
+    - name: Check for unexpected records in the signed zone
+      shell: bash --noprofile --norc -eo pipefail -x {0}
+      run: |
+        dig @127.0.0.1 -p 4543 example.test AXFR | grep -Ev '(NSEC3|CDNSKEY|CDS)'
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()
