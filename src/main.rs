@@ -28,13 +28,7 @@ fn main() -> ExitCode {
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())
-        .next_line_help(true)
-        .arg(
-            clap::Arg::new("check_config")
-                .long("check-config")
-                .action(clap::ArgAction::SetTrue)
-                .help("Check the configuration and exit"),
-        );
+        .next_line_help(true);
     let cmd = Config::setup_cli(cmd);
 
     // Process command-line arguments.
