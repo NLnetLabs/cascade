@@ -53,10 +53,10 @@ use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
     KmipClientCredentialsFile, KmipServerCredentialsFileMode, mk_dnst_keyset_state_file_path,
 };
-use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
-use crate::zonemaintenance::types::{
+use crate::util::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
+use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -295,11 +295,11 @@ impl ZoneSigner {
                 zone_name,
                 report_tx,
             } => {
-                if let Some(status) = self.signer_status.read().await.get(&zone_name).await {
-                    if let Some(report) = self.mk_signing_report(status).await {
-                        let _ = report_tx.send(report).ok();
-                    };
-                }
+                if let Some(status) = self.signer_status.read().await.get(&zone_name).await
+                    && let Some(report) = self.mk_signing_report(status).await
+                {
+                    let _ = report_tx.send(report).ok();
+                };
             }
 
             ApplicationCommand::GetQueueReport { report_tx } => {
@@ -452,29 +452,29 @@ impl ZoneSigner {
 
         let serial = match policy.signer.serial_policy {
             SignerSerialPolicy::Keep => {
-                if let Some(previous_serial) = last_signed_serial {
-                    if soa.serial() <= previous_serial {
-                        return Err(SignerError::KeepSerialPolicyViolated);
-                    }
+                if let Some(previous_serial) = last_signed_serial
+                    && soa.serial() <= previous_serial
+                {
+                    return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
                 soa.serial()
             }
             SignerSerialPolicy::Counter => {
                 let mut serial = soa.serial();
-                if let Some(previous_serial) = last_signed_serial {
-                    if serial <= previous_serial {
-                        serial = previous_serial.add(1);
-                    }
+                if let Some(previous_serial) = last_signed_serial
+                    && serial <= previous_serial
+                {
+                    serial = previous_serial.add(1);
                 }
                 serial
             }
             SignerSerialPolicy::UnixTime => {
                 let mut serial = Serial::now();
-                if let Some(previous_serial) = last_signed_serial {
-                    if serial <= previous_serial {
-                        serial = previous_serial.add(1);
-                    }
+                if let Some(previous_serial) = last_signed_serial
+                    && serial <= previous_serial
+                {
+                    serial = previous_serial.add(1);
                 }
 
                 serial
@@ -487,10 +487,10 @@ impl ZoneSigner {
                     * 100;
                 let mut serial: Serial = serial.into();
 
-                if let Some(previous_serial) = last_signed_serial {
-                    if serial <= previous_serial {
-                        serial = previous_serial.add(1);
-                    }
+                if let Some(previous_serial) = last_signed_serial
+                    && serial <= previous_serial
+                {
+                    serial = previous_serial.add(1);
                 }
 
                 serial
@@ -1233,11 +1233,11 @@ impl ZoneSigner {
             {
                 let resign_busy = self.center.resign_busy.lock().expect("should not fail");
                 let opt_expiration = resign_busy.get(zone_name);
-                if let Some(expiration) = opt_expiration {
-                    if *expiration == min_expiration {
-                        // This zone is busy.
-                        continue;
-                    }
+                if let Some(expiration) = opt_expiration
+                    && *expiration == min_expiration
+                {
+                    // This zone is busy.
+                    continue;
                 }
             }
 

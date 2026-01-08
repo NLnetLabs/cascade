@@ -11,7 +11,7 @@ repository = "https://github.com/NLnetLabs/cascade"
 license = "BSD-3-Clause"
 
 version = "0.1.0-alpha5"
-rust-version = "1.85"
+rust-version = "1.88"
 edition = "2024"
 
 
@@ -126,7 +126,7 @@ tracing-subscriber.workspace = true
 # versions cause compilation errors with recent Rust compilers.  We manually
 # increase the minimum version by registering it as a dependency, even though we
 # don't use it ourselves.
-# 
+#
 # tracing-subscriber 0.3.20, feature "registry"
 # depends on: sharded-slab ^0.1.4
 # depends on: lazy_static ^1
@@ -160,6 +160,7 @@ features = [
     "tsig",
     "unstable-client-transport",
     "unstable-crypto-sign",
+    "unstable-new",
     "unstable-server-transport",
     "unstable-sign",
     "unstable-zonetree",
