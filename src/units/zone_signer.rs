@@ -7,13 +7,10 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
-use domain::base::iana::Class;
+use domain::base::iana::{Class, SecurityAlgorithm};
 use domain::base::name::FlattenInto;
 use domain::base::{CanonicalOrd, Record, Rtype, Serial};
-use domain::crypto::kmip::KeyUrl;
-use domain::crypto::kmip::{self, ClientCertificate, ConnectionSettings};
-use domain::crypto::sign::{KeyPair, SecretKeyBytes, SignRaw};
-use domain::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
+use domain::crypto::sign::{SecretKeyBytes, SignRaw};
 use domain::dnssec::common::parse_from_bind;
 use domain::dnssec::sign::SigningConfig;
 use domain::dnssec::sign::denial::config::DenialConfig;
@@ -30,6 +27,9 @@ use domain::zonefile::inplace::{Entry, Zonefile};
 use domain::zonetree::types::{StoredRecordData, ZoneUpdate};
 use domain::zonetree::update::ZoneUpdater;
 use domain::zonetree::{StoredName, StoredRecord, Zone};
+use domain_kmip::KeyUrl;
+use domain_kmip::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
+use domain_kmip::{self, ClientCertificate, ConnectionSettings};
 use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use rayon::slice::ParallelSliceMut;
@@ -622,12 +622,16 @@ impl ZoneSigner {
                                 SignerError::CannotReadPublicKeyFile(pub_key_path.to_string())
                             })?;
 
-                        let key_pair = KeyPair::from_bytes(&private_key, public_key.data())
-                            .map_err(|err| {
-                                SignerError::InvalidKeyPairComponents(err.to_string())
-                            })?;
-                        let signing_key =
-                            SigningKey::new(zone_name.clone(), public_key.data().flags(), key_pair);
+                        let key_pair = domain::crypto::sign::KeyPair::from_bytes(
+                            &private_key,
+                            public_key.data(),
+                        )
+                        .map_err(|err| SignerError::InvalidKeyPairComponents(err.to_string()))?;
+                        let signing_key = SigningKey::new(
+                            zone_name.clone(),
+                            public_key.data().flags(),
+                            KeyPair::Domain(key_pair),
+                        );
 
                         signing_keys.push(signing_key);
                     }
@@ -729,7 +733,7 @@ impl ZoneSigner {
                         });
 
                         let key_pair = KeyPair::Kmip(
-                            kmip::sign::KeyPair::from_urls(
+                            domain_kmip::sign::KeyPair::from_urls(
                                 priv_key_url,
                                 pub_key_url,
                                 kmip_conn_pool.clone(),
@@ -740,7 +744,7 @@ impl ZoneSigner {
                         );
 
                         let signing_key =
-                            SigningKey::new(zone_name.clone(), key_pair.flags(), key_pair);
+                            SigningKey::new(zone_name.clone(), key_pair.dnskey().flags(), key_pair);
 
                         signing_keys.push(signing_key);
                     }
@@ -859,7 +863,7 @@ impl ZoneSigner {
         // incremental signing (i.e. only regenerate, add and remove RRSIGs,
         // and update the NSEC(3) chain as needed, we can capture a diff of
         // the changes we make).
-        let mut updater = ZoneUpdater::new(zone.clone(), false).await.unwrap();
+        let mut updater = ZoneUpdater::new(zone.clone()).await.unwrap();
 
         // Clear out any RRs in the current version of the signed zone. If the zone
         // supports versioning this is a NO OP.
@@ -1849,6 +1853,44 @@ impl ZoneSignerStatus {
 
         debug!("SIGNER[{zone_name}]: Enqueuing complete.");
         Ok((approx_q_size, queue_permit, zone_permit, status))
+    }
+}
+
+//----------- KeyPair ----------------------------------------------------------
+
+/// A cryptographic keypair for signing.
+#[derive(Debug)]
+enum KeyPair {
+    /// A keypair provided by [`domain`].
+    Domain(domain::crypto::sign::KeyPair),
+
+    /// A KMIP keypair.
+    Kmip(domain_kmip::sign::KeyPair),
+}
+
+impl SignRaw for KeyPair {
+    fn algorithm(&self) -> SecurityAlgorithm {
+        match self {
+            KeyPair::Domain(k) => k.algorithm(),
+            KeyPair::Kmip(k) => k.algorithm(),
+        }
+    }
+
+    fn dnskey(&self) -> Dnskey<Vec<u8>> {
+        match self {
+            KeyPair::Domain(k) => k.dnskey(),
+            KeyPair::Kmip(k) => k.dnskey(),
+        }
+    }
+
+    fn sign_raw(
+        &self,
+        data: &[u8],
+    ) -> Result<domain::crypto::sign::Signature, domain::crypto::sign::SignError> {
+        match self {
+            KeyPair::Domain(k) => k.sign_raw(data),
+            KeyPair::Kmip(k) => k.sign_raw(data),
+        }
     }
 }
 
