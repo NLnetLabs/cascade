@@ -20,7 +20,8 @@ Options
 
 .. option:: --check-config
 
-          Check the configuration and exit.
+          Check the configuration and exit with code 0 if the configuration
+          is valid, or code 1 if the configuration is invalid.
 
 .. option:: --state <PATH>
 
