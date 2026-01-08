@@ -277,6 +277,7 @@ dependencies = [
  "crossbeam-utils",
  "daemonbase",
  "domain",
+ "domain-kmip",
  "foldhash",
  "futures",
  "futures-util",
@@ -493,10 +494,9 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.11.1"
-source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#8239c9e58a3220588c4fc95b5824a0018c7147f5"
+source = "git+https://github.com/NLnetLabs/domain?branch=main#03767469006f6a56fa1201b4bc543ea731b82682"
 dependencies = [
  "arc-swap",
- "bcder",
  "bumpalo",
  "bytes",
  "chrono",
@@ -504,7 +504,6 @@ dependencies = [
  "domain-macros",
  "futures-util",
  "hashbrown 0.16.0",
- "kmip-protocol",
  "libc",
  "log",
  "octseq",
@@ -521,6 +520,17 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+]
+
+[[package]]
+name = "domain-kmip"
+version = "0.0.1"
+source = "git+https://github.com/NLnetLabs/domain-kmip?branch=main#bcfb1ed481fc2ff0e4b36e484c4ff19cf1dc3edd"
+dependencies = [
+ "bcder",
+ "domain",
+ "kmip-protocol",
+ "tracing",
  "url",
  "uuid",
 ]
@@ -528,7 +538,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.11.1"
-source = "git+https://github.com/NLnetLabs/domain?branch=patches-for-nameshed-prototype#8239c9e58a3220588c4fc95b5824a0018c7147f5"
+source = "git+https://github.com/NLnetLabs/domain?branch=main#03767469006f6a56fa1201b4bc543ea731b82682"
 dependencies = [
  "proc-macro2",
  "quote",

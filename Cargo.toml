@@ -59,8 +59,16 @@ version = "4.5"
 #
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain]
+version = "0.11.1"
 git = "https://github.com/NLnetLabs/domain"
-branch = "patches-for-nameshed-prototype"
+branch = "main"
+
+# 'domain-kmip' offers KMIP support for DNSSEC signatures.
+#
+# It is maintained by us (NLnet Labs).
+[workspace.dependencies.domain-kmip]
+git = "https://github.com/NLnetLabs/domain-kmip"
+branch = "main"
 
 # 'jiff' is a general-purpose time library.
 #
@@ -164,8 +172,11 @@ features = [
     "unstable-server-transport",
     "unstable-sign",
     "unstable-zonetree",
-    "kmip",
 ]
+
+[dependencies.domain-kmip]
+workspace = true
+features = []
 
 [dependencies.tokio]
 workspace = true

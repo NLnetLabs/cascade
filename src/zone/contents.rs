@@ -159,7 +159,7 @@ impl ZoneContents {
 
     /// Write these contents into the given zonetree.
     pub async fn write_into_zonetree(&self, zone: &zonetree::Zone) {
-        let mut updater = ZoneUpdater::new(zone.clone(), false).await.unwrap();
+        let mut updater = ZoneUpdater::new(zone.clone()).await.unwrap();
 
         // Clear all existing records.
         updater.apply(ZoneUpdate::DeleteAllRecords).await.unwrap();
@@ -278,7 +278,7 @@ impl Compressed {
 
     /// Write these changes into the given zonetree.
     pub async fn write_into_zonetree(&self, zone: &zonetree::Zone) {
-        let mut updater = ZoneUpdater::new(zone.clone(), false).await.unwrap();
+        let mut updater = ZoneUpdater::new(zone.clone()).await.unwrap();
 
         // First remove the 'only-this' records.
         let this_soa: OldRecord = self.soa.clone().into();

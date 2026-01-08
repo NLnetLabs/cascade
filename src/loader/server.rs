@@ -696,7 +696,7 @@ pub async fn query_soa(
         let (client, transport) = client::dgram_stream::Connection::new(udp_conn, tcp_conn);
         tokio::task::spawn(transport.run());
 
-        let client = client::tsig::Connection::new(tsig_key, client);
+        let client = client::tsig::Connection::new(Arc::new(tsig_key), client);
 
         // Send the query.
         let request = RequestMessage::new(message.clone()).unwrap();
