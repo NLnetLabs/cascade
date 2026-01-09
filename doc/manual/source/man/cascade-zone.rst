@@ -134,6 +134,24 @@ Options for :subcmd:`zone add`
 
    Print the help text (short summary with ``-h``, long help with ``--help``).
 
+.. option:: <NAME>
+
+   The name of the zone to add.
+
+Options for :subcmd:`zone remove`
+---------------------------------
+
+.. option:: <NAME>
+
+   The name of the zone to remove.
+
+Options for :subcmd:`zone reload`
+---------------------------------
+
+.. option:: <NAME>
+
+   The name of the zone to reload.
+
 Options for :subcmd:`zone approve`
 ----------------------------------
 
@@ -164,7 +182,6 @@ Options for :subcmd:`zone reject`
 
    The serial number of the zone to reject.
 
-
 Options for :subcmd:`zone status`
 ---------------------------------
 
@@ -174,6 +191,9 @@ Options for :subcmd:`zone status`
    Print detailed information about the zone, including a zone's DNSSEC key
    identifiers in use, as well as the new DNSKEY records during key rolls.
 
+.. option:: <NAME>
+
+   The name of the zone to report the status of.
 
 See Also
 --------
