@@ -264,6 +264,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cascade-zonedata"
+version = "0.1.0-alpha5"
+dependencies = [
+ "bytes",
+ "domain",
+ "tokio",
+]
+
+[[package]]
 name = "cascaded"
 version = "0.1.0-alpha5"
 dependencies = [
@@ -273,6 +282,7 @@ dependencies = [
  "bytes",
  "camino",
  "cascade-api",
+ "cascade-zonedata",
  "clap",
  "crossbeam-utils",
  "daemonbase",
@@ -494,7 +504,7 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.11.1"
-source = "git+https://github.com/NLnetLabs/domain?branch=main#03767469006f6a56fa1201b4bc543ea731b82682"
+source = "git+https://github.com/NLnetLabs/domain?branch=main#80ca8b57d8b7d551b4cf5fea020674e694eeecd3"
 dependencies = [
  "arc-swap",
  "bumpalo",
@@ -538,7 +548,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.11.1"
-source = "git+https://github.com/NLnetLabs/domain?branch=main#03767469006f6a56fa1201b4bc543ea731b82682"
+source = "git+https://github.com/NLnetLabs/domain?branch=main#80ca8b57d8b7d551b4cf5fea020674e694eeecd3"
 dependencies = [
  "proc-macro2",
  "quote",
