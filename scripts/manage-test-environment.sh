@@ -244,7 +244,7 @@ stub-zone:
 stub-zone:
   name: "example.test"
   stub-host: example.test
-  stub-addr: 127.0.0.1@${_cascade_port}
+  stub-addr: 127.0.0.1@${_nsd_port}
 
 python:
 dynlib:
@@ -409,11 +409,17 @@ function test-services() {
     log-error ">> NSD (primary) status:"
     nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" status
     log-error
+    log-error ">> NSD (primary) zonestatus example.test:"
+    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" zonestatus example.test
+    log-error
     log-error ">> Unbound status:"
     sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" status
     log-error
     log-error ">> dig test SOA:"
     dig test SOA
+    log-error
+    log-error ">> dig @127.0.0.1 -p 1055 example.test AXFR:"
+    dig @127.0.0.1 -p 1055 example.test AXFR
   )
 }
 
