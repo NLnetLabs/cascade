@@ -169,7 +169,7 @@ impl HttpServer {
             Ok(b) => Ok((
                 StatusCode::OK,
                 [(
-                    reqwest::header::CONTENT_TYPE,
+                    "content-type",
                     "application/openmetrics-text; version=1.0.0; charset=utf-8",
                 )],
                 b,
