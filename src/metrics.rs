@@ -8,7 +8,6 @@
 
 use core::sync::atomic::AtomicU64;
 use std::fmt::{self, Debug, Write};
-// use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -55,10 +54,6 @@ pub struct MetricsCollection {
     /// each scrape, then this timer will be useless and should be removed.
     _assemble_time_metric: Gauge<u64, AtomicU64>,
 
-    /// This metric is a "fake" metric and only there to expose the software
-    /// build information via labels and will always be 1.
-    // _cascade_version: Family<Vec<(String, String)>, ConstGauge>,
-
     /// A collection of metrics that get collected from state on each metrics
     /// scrape.
     _state_metrics: StateMetrics,
@@ -69,20 +64,23 @@ impl MetricsCollection {
         let mut col = Self {
             cascade: Registry::with_prefix(PROMETHEUS_PREFIX),
             _assemble_time_metric: Default::default(),
-            // _cascade_version: Family::new_with_constructor(|| ConstGauge::new(1)),
             _state_metrics: Default::default(),
         };
 
+        // This metric is a "fake" metric and only there to expose the
+        // software build information via labels and will always be 1. It
+        // cannot be stored inside of `MetricsCollection` as it does not
+        // implement Clone.
         let _cascade_version = Info::new(vec![("version", clap::crate_version!())]);
 
         // The prometheus docs linked to
         // https://www.robustperception.io/exposing-the-software-version-to-prometheus/
         // for exposing software version information. And
-        // [`prometheus_client`] exposes the [`Info`] type. However, I don't
+        // `prometheus_client` exposes the `Info` type. However, I don't
         // know if we really need this. It would be more useful if it would
-        // include build information like <branch> and <revision>.
+        // include build information like <branch> and <revision> (but that
+        // requires a build-script).
         col.cascade
-            // .register("build", "Cascade build information", col._cascade_version);
             .register("build", "Cascade build information", _cascade_version);
 
         col.cascade.register_with_unit(
@@ -297,7 +295,7 @@ struct StateMetrics {
     zones_active: Gauge,
     zones_unsigned: Gauge,
     zones_signed: Gauge,
-    // waiting in signing queue
+    /// Zones waiting in signing queue
     zones_waiting: Gauge,
     zones_published: Gauge,
     zones_halted: Family<ZoneHaltMode, Gauge>,

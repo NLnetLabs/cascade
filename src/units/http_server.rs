@@ -78,6 +78,9 @@ impl HttpServer {
 
         let http_metrics = HttpMetrics::default();
 
+        // This would require some work in tracking the last API access. I did
+        // not find a way to call something on every route in axum. Maybe we
+        // need a wrapper function that sets the last_connection timestamp.
         // // - last time a CLI connection was made
         // metrics.register(
         //     "http_api_last_connection",
@@ -157,9 +160,7 @@ impl HttpServer {
         Json(())
     }
 
-    /// TODO
     async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
-        // match String::try_from(state.metrics.as_ref()) {
         match state.metrics.assemble(state.center.clone()) {
             Ok(b) => Ok((
                 StatusCode::OK,
