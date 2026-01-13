@@ -8,6 +8,8 @@ use axum::Json;
 use axum::Router;
 use axum::extract::Path;
 use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::routing::post;
 use bytes::Bytes;
@@ -24,6 +26,7 @@ use domain_kmip::ConnectionSettings;
 use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -36,8 +39,8 @@ use crate::api::*;
 use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
-use crate::daemon::SocketProvider;
 use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::units::key_manager::KmipClientCredentials;
@@ -52,26 +55,53 @@ use crate::zone::PipelineMode;
 use crate::zone::loader;
 use crate::zone::loader::LoaderMetrics;
 
-const HTTP_UNIT_NAME: &str = "HS";
+pub const HTTP_UNIT_NAME: &str = "HS";
 
 // NOTE: To send data back from a unit, send them an app command with
 // a transmitter they can use to send the reply
 
 pub struct HttpServer {
     pub center: Arc<Center>,
+    pub metrics: Arc<MetricsCollection>,
+    pub http_metrics: HttpMetrics,
+}
+
+#[derive(Default)]
+pub struct HttpMetrics {
+    // http_api_last_connection: Counter,
 }
 
 impl HttpServer {
     /// Launch the HTTP server.
     pub fn launch(
         center: Arc<Center>,
-        socket_provider: &mut SocketProvider,
+        http_sockets: Vec<TcpListener>,
+        /* mut */ metrics: MetricsCollection,
     ) -> Result<Arc<Self>, Terminated> {
-        let this = Arc::new(Self { center });
+        // TODO: register metrics here
+
+        let http_metrics = HttpMetrics::default();
+
+        // This would require some work in tracking the last API access. I did
+        // not find a way to call something on every route in axum. Maybe we
+        // need a wrapper function that sets the last_connection timestamp.
+        // // - last time a CLI connection was made
+        // metrics.register(
+        //     "http_api_last_connection",
+        //     "The last unix epoch time an API HTTP connection was made (excl. /metrics and /)",
+        //     http_metrics.http_api_last_connection.clone()
+        // );
+
+        let this = Arc::new(Self {
+            center,
+            metrics: Arc::new(metrics),
+            http_metrics,
+        });
 
         let app = Router::new()
             .route("/", get(|| async { "Hello, World!" }))
             .route("/health", get(Self::health))
+            .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
             .route("/debug/change-logging", post(Self::change_logging))
@@ -108,25 +138,10 @@ impl HttpServer {
             .route("/key/{zone}/remove", post(Self::key_remove))
             .with_state(this.clone());
 
-        // Setup listen sockets
-        let socks = this
-            .center
-            .config
-            .remote_control
-            .servers
-            .iter()
-            .map(|addr| {
-                socket_provider.take_tcp(addr).ok_or_else(|| {
-                    error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}");
-                    Terminated
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
         // Serve at the configured endpoints.
         tokio::spawn(async move {
             let mut set = JoinSet::new();
-            for sock in socks {
+            for sock in http_sockets {
                 set.spawn(axum::serve(sock, app.clone()).into_future());
             }
 
@@ -147,6 +162,23 @@ impl HttpServer {
     /// If this endpoint responds, the daemon is considered healthy.
     async fn health() -> Json<()> {
         Json(())
+    }
+
+    async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
+        match state.metrics.assemble(state.center.clone()) {
+            Ok(b) => Ok((
+                StatusCode::OK,
+                [(
+                    "content-type",
+                    "application/openmetrics-text; version=1.0.0; charset=utf-8",
+                )],
+                b,
+            )),
+            Err(_) => Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to encode metrics as text",
+            )),
+        }
     }
 
     async fn status(State(state): State<Arc<HttpServer>>) -> Json<ServerStatusResult> {
