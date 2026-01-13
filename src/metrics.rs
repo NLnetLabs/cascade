@@ -1,10 +1,11 @@
 //! Maintaining and outputting metrics.
+//!
+//! Relevant sources for selecting metrics, metric names, and labels:
+//! - https://prometheus.io/docs/practices/naming/
+//! - https://prometheus.io/docs/instrumenting/writing_exporters/#labels
+//! - https://prometheus.io/docs/practices/instrumentation/
+//! - https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md
 
-/// Relevant sources for selecting metrics, metric names, and labels:
-/// - https://prometheus.io/docs/practices/naming/
-/// - https://prometheus.io/docs/instrumenting/writing_exporters/#labels
-/// - https://prometheus.io/docs/practices/instrumentation/
-/// - https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md
 use core::sync::atomic::AtomicU64;
 use std::fmt::{self, Debug, Write};
 // use std::str::FromStr;
