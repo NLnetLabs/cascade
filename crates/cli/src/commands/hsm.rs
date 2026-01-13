@@ -15,7 +15,7 @@ use std::{
 };
 
 use clap::Subcommand;
-use futures::TryFutureExt;
+use futures_util::TryFutureExt;
 use jiff::{Span, SpanRelativeTo};
 
 use crate::{
@@ -23,7 +23,7 @@ use crate::{
         HsmServerAdd, HsmServerAddError, HsmServerAddResult, HsmServerGetResult,
         HsmServerListResult, KmipServerState, PolicyInfo, PolicyInfoError, PolicyListResult,
     },
-    cli::client::{format_http_error, CascadeApiClient},
+    client::{CascadeApiClient, format_http_error},
     println,
 };
 
@@ -179,10 +179,10 @@ async fn get_policy_names_using_hsm(
             }
         };
 
-        if let Some(hsm_server_id) = &p.key_manager.hsm_server_id {
-            if hsm_server_id == server_id {
-                policies_using_hsm.push(policy_name);
-            }
+        if let Some(hsm_server_id) = &p.key_manager.hsm_server_id
+            && hsm_server_id == server_id
+        {
+            policies_using_hsm.push(policy_name);
         }
     }
     Ok(policies_using_hsm)

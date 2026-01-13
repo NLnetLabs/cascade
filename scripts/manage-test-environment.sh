@@ -353,8 +353,8 @@ EOF
 }
 
 function setup-services() {
-  sudo apt update
-  sudo apt install bind9 nsd unbound
+  DEBIAN_FRONTEND=noninteractive sudo apt -y update
+  DEBIAN_FRONTEND=noninteractive sudo apt -y install bind9 nsd unbound
 
   generate-configuration
 }

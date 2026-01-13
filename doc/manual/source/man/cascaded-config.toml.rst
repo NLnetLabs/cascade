@@ -27,8 +27,10 @@ Example
 
     [daemon]
     log-level = "info"
-    log-target = { type = "stdout" }
-    daemonize = false
+    log-target = { type = "syslog" }
+    daemonize = true
+    pid-file = "/var/run/cascade.pid"
+    identity = "cascade:cascade"
 
     [remote-control]
     servers = ["127.0.0.1:4539", "[::1]:4539"]

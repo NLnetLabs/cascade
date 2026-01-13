@@ -10,15 +10,15 @@ use crate::zone::{HistoricalEvent, SigningTrigger};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use core::time::Duration;
-use domain::base::iana::Class;
 use domain::base::Name;
+use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt::Formatter;
-use std::fs::{metadata, File, OpenOptions};
+use std::fs::{File, OpenOptions, metadata};
 use std::io::{BufReader, BufWriter, ErrorKind, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -74,7 +74,9 @@ impl KeyManager {
                         Ok(()) => "succeeded".to_string(),
                         Err(err) => format!("failed (reason: {err})"),
                     };
-                    error!("Registration of zone '{name}' {msg} but was unable to notify the caller: report sending failed");
+                    error!(
+                        "Registration of zone '{name}' {msg} but was unable to notify the caller: report sending failed"
+                    );
                     return Err(Terminated);
                 }
 
@@ -207,11 +209,11 @@ impl KeyManager {
                 }
             }
             ApplicationCommand::Changed(Change::ZonePolicyChanged { name, old, new }) => {
-                if let Some(old) = old {
-                    if old.key_manager == new.key_manager {
-                        // Nothing changed.
-                        return Ok(());
-                    }
+                if let Some(old) = old
+                    && old.key_manager == new.key_manager
+                {
+                    // Nothing changed.
+                    return Ok(());
                 }
                 // Keep it simple, just send all config items to keyset even
                 // if they didn't change.
@@ -511,7 +513,7 @@ impl KeyManager {
                     info.retry_after(Duration::from_secs(60));
                     if info.retries >= CRON_MAX_RETRIES {
                         error!(
-                            "The command 'dnst keyset cron' failed to update state file {state_path}", 
+                            "The command 'dnst keyset cron' failed to update state file {state_path}",
                         );
                         info.clear_cron_next();
                     }
@@ -1168,7 +1170,9 @@ fn imports_to_commands(key_imports: &[KeyImport]) -> Vec<Vec<String>> {
                 algorithm,
                 flags,
             }) => {
-                strs!["import", key_type, "kmip", server, public_id, private_id, algorithm, flags]
+                strs![
+                    "import", key_type, "kmip", server, public_id, private_id, algorithm, flags
+                ]
             }
             KeyImport::File(FileKeyImport { key_type, path }) => {
                 strs!["import", key_type, "file", path]

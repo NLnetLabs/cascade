@@ -8,10 +8,8 @@ pub mod status;
 pub mod template;
 pub mod zone;
 
-use crate::cli::client::format_http_error;
+use crate::client::{CascadeApiClient, format_http_error};
 use crate::println;
-
-use super::client::CascadeApiClient;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, clap::Subcommand)]

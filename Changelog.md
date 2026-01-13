@@ -23,12 +23,22 @@ Released yyyy-mm-dd.
 - A zone configured for unsigned review no longer fails to sign. ([#398] by
   @ximon18)
 
+### Other changes
+
+- Prefix cascaded `--help` output with a one line description of the
+  application. ([#409] by @ximon18)
+
 ### Documentation improvements
 
-- Document that --daemonize changes CWD to / ([#387] by @jpmens)
+- Document that `--daemonize` changes CWD to / ([#387] by @jpmens)
+- Use a more appropriate `log-target` example file path. ([#411] by @ximon18)
+- Specify both binary crates to build from source ([#423] by @mozzieongit)
 
 [#387]: https://github.com/NLnetLabs/cascade/pull/387
 [#398]: https://github.com/NLnetLabs/cascade/pull/398
+[#409]: https://github.com/NLnetLabs/cascade/pull/409
+[#411]: https://github.com/NLnetLabs/cascade/pull/411
+[#423]: https://github.com/NLnetLabs/cascade/pull/423
 
 ## 0.1.0-alpha5 'Colline de la Croix'
 

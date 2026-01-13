@@ -142,7 +142,9 @@ pub fn reload_all(
     for (name, policy) in policies.drain() {
         // If any zones are using this policy, keep it.
         if !policy.zones.is_empty() {
-            error!("The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy");
+            error!(
+                "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
+            );
             let prev = new_policies.insert(name, policy);
             assert!(
                 prev.is_none(),

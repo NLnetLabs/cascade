@@ -1,55 +1,59 @@
 use std::future::IntoFuture;
 use std::sync::Arc;
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 use std::time::SystemTime;
 
+use axum::Json;
+use axum::Router;
 use axum::extract::Path;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::routing::post;
-use axum::Json;
-use axum::Router;
 use bytes::Bytes;
-use domain::base::iana::Class;
 use domain::base::Name;
+use domain::base::Rtype;
 use domain::base::Serial;
-use domain::crypto::kmip::ConnectionSettings;
-use domain::dep::kmip::client::pool::ConnectionManager;
+use domain::base::Ttl;
+use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::KeyType;
+use domain::rdata::Soa;
+use domain::zonetree::ReadableZone;
+use domain::zonetree::error::OutOfZone;
+use domain_kmip::ConnectionSettings;
+use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
-use tokio::time::Instant;
 use tracing::{error, info, warn};
 
 use crate::api;
-use crate::api::keyset::*;
 use crate::api::KeyInfo;
+use crate::api::keyset::*;
 use crate::api::*;
 use crate::center;
-use crate::center::get_zone;
 use crate::center::Center;
+use crate::center::get_zone;
 use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
-use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
-use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
+use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
+use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::PipelineMode;
-use crate::zone::ZoneLoadSource;
-use crate::zonemaintenance::maintainer::read_soa;
-use crate::zonemaintenance::types::ZoneReportDetails;
+use crate::zone::loader;
+use crate::zone::loader::LoaderMetrics;
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -309,15 +313,10 @@ impl HttpServer {
         state: Arc<HttpServer>,
         name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
-        let mut zone_started_at = None;
-        let mut zone_loaded_at = None;
-        let mut zone_loaded_in = None;
-        let mut zone_loaded_bytes = 0;
-        let mut zone_loaded_record_count = 0;
         let state_path;
         let app_cmd_tx;
         let policy;
-        let mut source;
+        let source;
         let unsigned_review_addr;
         let signed_review_addr;
         let publish_addr;
@@ -340,10 +339,10 @@ impl HttpServer {
                 .as_ref()
                 .map_or("<none>".into(), |p| p.name.to_string());
             // TODO: Needs some info from the zone loader?
-            source = match zone_state.source.clone() {
-                ZoneLoadSource::None => api::ZoneSource::None,
-                ZoneLoadSource::Zonefile { path } => api::ZoneSource::Zonefile { path },
-                ZoneLoadSource::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
+            source = match zone_state.loader.source.clone() {
+                loader::Source::None => api::ZoneSource::None,
+                loader::Source::Zonefile { path } => api::ZoneSource::Zonefile { path },
+                loader::Source::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
                     addr,
                     tsig_key: None,
                     xfr_status: Default::default(),
@@ -448,16 +447,16 @@ impl HttpServer {
                             // CLI should not need to know or care what internal
                             // dnst config files are being used).
                             let mut parts = line.split(' ');
-                            if parts.any(|part| part == "-c") {
-                                if let Some(dnst_config_path) = parts.next() {
-                                    let sanitized_line = line.replace(
-                                        &format!("dnst keyset -c {dnst_config_path}"),
-                                        &format!("cascade keyset {name}"),
-                                    );
-                                    sanitized_output.push_str(&sanitized_line);
-                                    sanitized_output.push('\n');
-                                    continue;
-                                }
+                            if parts.any(|part| part == "-c")
+                                && let Some(dnst_config_path) = parts.next()
+                            {
+                                let sanitized_line = line.replace(
+                                    &format!("dnst keyset -c {dnst_config_path}"),
+                                    &format!("cascade keyset {name}"),
+                                );
+                                sanitized_output.push_str(&sanitized_line);
+                                sanitized_output.push('\n');
+                                continue;
                             }
                         }
 
@@ -468,64 +467,6 @@ impl HttpServer {
                 }
             }
         };
-
-        // Query XFR status
-        let (tx, rx) = oneshot::channel();
-        app_cmd_tx
-            .send((
-                "ZL".to_owned(),
-                ApplicationCommand::GetZoneReport {
-                    zone_name: name.clone(),
-                    report_tx: tx,
-                },
-            ))
-            .ok();
-        if let Ok((zone_maintainer_report, zone_loader_report)) = rx.await {
-            match zone_maintainer_report.details() {
-                ZoneReportDetails::Primary => {
-                    if let Some(report) = zone_loader_report {
-                        zone_started_at = Some(report.started_at);
-                        if let Some(finished_at) = report.finished_at {
-                            if let Ok(duration) = finished_at.duration_since(report.started_at) {
-                                zone_loaded_in = Some(duration);
-                                zone_loaded_at = Some(finished_at);
-                                zone_loaded_bytes = report.byte_count;
-                                zone_loaded_record_count = report.record_count;
-                            } else {
-                                zone_loaded_in = Some(
-                                    SystemTime::now().duration_since(report.started_at).unwrap(),
-                                );
-                                zone_loaded_at = None;
-                                zone_loaded_bytes = report.byte_count;
-                                zone_loaded_record_count = report.record_count;
-                            }
-                        } else {
-                            zone_loaded_in = None;
-                            zone_loaded_at = None;
-                            zone_loaded_bytes = report.byte_count;
-                            zone_loaded_record_count = report.record_count;
-                        }
-                    }
-                }
-                ZoneReportDetails::PendingSecondary(s) | ZoneReportDetails::Secondary(s) => {
-                    let api::ZoneSource::Server { xfr_status, .. } = &mut source else {
-                        unreachable!("A secondary must have been configured from a server source");
-                    };
-                    *xfr_status = s.status().into();
-                    let metrics = s.metrics();
-                    let now = Instant::now();
-                    let now_t = SystemTime::now();
-                    if let (Some(checked_at), Some(refreshed_at)) = (
-                        metrics.last_soa_serial_check_succeeded_at,
-                        metrics.last_refreshed_at,
-                    ) {
-                        zone_loaded_in = Some(refreshed_at.duration_since(checked_at));
-                        zone_loaded_at = now_t.checked_sub(now.duration_since(refreshed_at));
-                        zone_loaded_bytes = metrics.last_refresh_succeeded_bytes.unwrap();
-                    }
-                }
-            }
-        }
 
         // Query zone keys
         let mut keys = vec![];
@@ -548,7 +489,9 @@ impl HttpServer {
                 }
             }
             Err(err) => {
-                error!("Unable to read `dnst keyset` state file '{state_path}' while querying status of zone {name} for the API: {err}");
+                error!(
+                    "Unable to read `dnst keyset` state file '{state_path}' while querying status of zone {name} for the API: {err}"
+                );
             }
         }
 
@@ -570,49 +513,42 @@ impl HttpServer {
             }
         }
 
-        let receipt_report = match (zone_loaded_at, zone_loaded_in, zone_started_at) {
-            (Some(finished_at), Some(zone_loaded_in), started_at) => {
-                let started_at = match started_at {
-                    Some(started_at) => started_at,
-                    None => finished_at.checked_sub(zone_loaded_in).unwrap(),
-                };
-                Some(ZoneLoaderReport {
-                    started_at,
-                    finished_at: Some(finished_at),
-                    byte_count: zone_loaded_bytes,
-                    record_count: zone_loaded_record_count,
-                })
-            }
-            (finished_at, None, Some(started_at)) => Some(ZoneLoaderReport {
+        let metrics = {
+            let zone = get_zone(&state.center, &name);
+            zone.and_then(|z| z.state.lock().unwrap().loader.metrics.as_ref().cloned())
+        };
+        let receipt_report = metrics.map(
+            |LoaderMetrics {
+                 started_at,
+                 finished_at,
+                 byte_count,
+                 record_count,
+             }| ZoneLoaderReport {
                 started_at,
                 finished_at,
-                byte_count: zone_loaded_bytes,
-                record_count: zone_loaded_record_count,
-            }),
-            other => {
-                warn!("Unable to provide receipt report for zone '{name}': {other:?}");
-                None
-            }
-        };
+                byte_count: byte_count.load(Relaxed),
+                record_count: record_count.load(Relaxed),
+            },
+        );
 
         // Query zone serials
         let mut unsigned_serial = None;
-        if let Some(zone) = unsigned_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
-                unsigned_serial = Some(soa.serial());
-            }
+        if let Some(zone) = unsigned_zone
+            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
+        {
+            unsigned_serial = Some(soa.serial());
         }
         let mut signed_serial = None;
-        if let Some(zone) = signed_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
-                signed_serial = Some(soa.serial());
-            }
+        if let Some(zone) = signed_zone
+            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
+        {
+            signed_serial = Some(soa.serial());
         }
         let mut published_serial = None;
-        if let Some(zone) = published_zone {
-            if let Ok(Some((soa, _ttl))) = read_soa(&zone.read(), name.clone()).await {
-                published_serial = Some(soa.serial());
-            }
+        if let Some(zone) = published_zone
+            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
+        {
+            published_serial = Some(soa.serial());
         }
 
         // If the timing were unlucky we may have a published serial but not
@@ -682,9 +618,8 @@ impl HttpServer {
             return Err(ZoneReloadError::ZoneHalted(reason));
         }
 
-        let source = zone_state.source.clone();
-        match zone_state.source.clone() {
-            crate::zone::ZoneLoadSource::None => Err(ZoneReloadError::ZoneWithoutSource),
+        match zone_state.loader.source.clone() {
+            loader::Source::None => Err(ZoneReloadError::ZoneWithoutSource),
             _ => {
                 api_state
                     .center
@@ -693,7 +628,6 @@ impl HttpServer {
                         "ZL".into(),
                         ApplicationCommand::ReloadZone {
                             zone_name: name.clone(),
-                            source,
                         },
                     ))
                     .unwrap();
@@ -1187,38 +1121,6 @@ impl From<KmipServerState> for api::KmipServerState {
     }
 }
 
-impl From<HsmServerAdd> for ConnectionSettings {
-    fn from(
-        HsmServerAdd {
-            ip_host_or_fqdn,
-            port,
-            username,
-            password,
-            insecure,
-            connect_timeout,
-            read_timeout,
-            write_timeout,
-            max_response_bytes,
-            ..
-        }: HsmServerAdd,
-    ) -> Self {
-        ConnectionSettings {
-            host: ip_host_or_fqdn,
-            port,
-            username,
-            password,
-            insecure,
-            client_cert: None, // TODO
-            server_cert: None, // TODO
-            ca_cert: None,     // TODO
-            connect_timeout: Some(connect_timeout),
-            read_timeout: Some(read_timeout),
-            write_timeout: Some(write_timeout),
-            max_response_bytes: Some(max_response_bytes),
-        }
-    }
-}
-
 impl HttpServer {
     async fn kmip_server_add(
         State(state): State<Arc<HttpServer>>,
@@ -1232,7 +1134,35 @@ impl HttpServer {
         let kmip_credentials_store_path = config.kmip_credentials_store_path.clone();
 
         // Test the connection before using the HSM.
-        let conn_settings = ConnectionSettings::from(req.clone());
+        let conn_settings = {
+            let HsmServerAdd {
+                ip_host_or_fqdn,
+                port,
+                username,
+                password,
+                insecure,
+                connect_timeout,
+                read_timeout,
+                write_timeout,
+                max_response_bytes,
+                ..
+            } = req.clone();
+
+            ConnectionSettings {
+                host: ip_host_or_fqdn,
+                port,
+                username,
+                password,
+                insecure,
+                client_cert: None, // TODO
+                server_cert: None, // TODO
+                ca_cert: None,     // TODO
+                connect_timeout: Some(connect_timeout),
+                read_timeout: Some(read_timeout),
+                write_timeout: Some(write_timeout),
+                max_response_bytes: Some(max_response_bytes),
+            }
+        };
 
         let pool = match ConnectionManager::create_connection_pool(
             server_id.clone(),
@@ -1248,7 +1178,7 @@ impl HttpServer {
                     host: conn_settings.host,
                     port: conn_settings.port,
                     err: format!("Error creating connection pool: {err}"),
-                }))
+                }));
             }
         };
 
@@ -1298,7 +1228,7 @@ impl HttpServer {
                         HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
                             err: err.to_string(),
                         },
-                    ))
+                    ));
                 }
             };
             let _ = creds_file.insert(server_id, creds);
@@ -1322,7 +1252,7 @@ impl HttpServer {
                         path: kmip_server_state_file.into_string(),
                         err: err.to_string(),
                     },
-                ))
+                ));
             }
         };
         if let Err(err) = serde_json::to_writer_pretty(&f, &kmip_state) {
@@ -1344,10 +1274,10 @@ impl HttpServer {
             for entry in entries {
                 let Ok(entry) = entry else { continue };
 
-                if let Ok(f) = std::fs::File::open(entry.path()) {
-                    if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
-                        servers.push(server.server_id);
-                    }
+                if let Ok(f) = std::fs::File::open(entry.path())
+                    && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
+                {
+                    servers.push(server.server_id);
                 }
             }
         }
@@ -1365,14 +1295,35 @@ impl HttpServer {
         let kmip_server_state_dir = &*state.center.config.kmip_server_state_dir;
 
         let p = kmip_server_state_dir.join(&*name);
-        if let Ok(f) = std::fs::File::open(p) {
-            if let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f) {
-                return Json(Ok(HsmServerGetResult {
-                    server: server.into(),
-                }));
-            }
+        if let Ok(f) = std::fs::File::open(p)
+            && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
+        {
+            return Json(Ok(HsmServerGetResult {
+                server: server.into(),
+            }));
         }
 
         Json(Err(()))
     }
+}
+
+pub async fn read_soa(
+    read: &dyn ReadableZone,
+    qname: Name<Bytes>,
+) -> Result<Option<(Soa<Name<Bytes>>, Ttl)>, OutOfZone> {
+    use domain::rdata::ZoneRecordData;
+    use domain::zonetree::AnswerContent;
+
+    let answer = match read.is_async() {
+        true => read.query_async(qname, Rtype::SOA).await,
+        false => read.query(qname, Rtype::SOA),
+    }?;
+
+    if let AnswerContent::Data(rrset) = answer.content()
+        && let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data()
+    {
+        return Ok(Some((soa.clone(), rrset.ttl())));
+    }
+
+    Ok(None)
 }

@@ -1,8 +1,8 @@
-use futures::TryFutureExt;
+use futures_util::TryFutureExt;
 
+use crate::ansi;
 use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult, SigningStageReport};
-use crate::cli::client::{format_http_error, CascadeApiClient};
-use crate::common::ansi;
+use crate::client::{CascadeApiClient, format_http_error};
 use crate::{eprintln, println};
 
 #[derive(Clone, Debug, clap::Args)]
