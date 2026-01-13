@@ -179,7 +179,6 @@ impl HttpServer {
                 "Failed to encode metrics as text",
             )),
         }
-        // Response::builder() .status(StatusCode::OK) .header( CONTENT_TYPE, "application/openmetrics-text; version=1.0.0; charset=utf-8",) .body(Body::from(buffer)) .unwrap()
     }
 
     async fn status(State(state): State<Arc<HttpServer>>) -> Json<ServerStatusResult> {
