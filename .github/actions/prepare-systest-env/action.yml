@@ -15,9 +15,11 @@ runs:
   steps:
   - name: Setup and start the test environment with NSD, Unbound, and BIND9
     run: scripts/manage-test-environment.sh setup-and-start
+    shell: bash --noprofile --norc -eo pipefail -x {0}
   - name: Test the setup
     if: ${{ !fromJSON(inputs.disable-env-test) }}
     run: scripts/manage-test-environment.sh test
+    shell: bash --noprofile --norc -eo pipefail -x {0}
   - uses: ./.github/actions/download-or-build
     with:
       artifact-name: ${{ inputs.artifact-name }}
