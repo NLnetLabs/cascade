@@ -4,6 +4,9 @@
 ; policy to make it easy to check when the first version has been signed.
 @ IN SOA ns hostmaster 12345 3600 3600 86400 3600
 
+; A Zone should have an NS record.
+@ NS ns1
+
 ; Test for diff generation. This is not DNSSEC specific, it can also be used
 ; to test IXFR.
 

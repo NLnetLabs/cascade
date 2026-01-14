@@ -3,6 +3,9 @@
 ; Set the serial number of the second version to 23456.
 @ IN SOA ns hostmaster 23456 3600 3600 86400 3600
 
+; A Zone should have an NS record.
+@ NS ns1
+
 ; Test for diff generation. This is not DNSSEC specific, it can also be used
 ; to test IXFR.
 
