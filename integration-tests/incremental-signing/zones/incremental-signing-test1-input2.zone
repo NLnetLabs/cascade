@@ -42,10 +42,6 @@ txt.ent2nt		TXT	"ENT to become NT"
 ent2nt.not-auth		TXT     "was ENT, now NT"
 txt.ent2nt.not-auth	TXT	"ENT to become NT"
 
-; XXX The following NS record need to be removed when Cascade gets support for
-; a standalone DS.
-ds.new-ent		NS	ns
-
 ; Add just a DS record
 ds.new-ent		DS	12345 13 253 01
 

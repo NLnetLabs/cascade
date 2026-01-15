@@ -24,10 +24,9 @@ dname.modify.example.	3600	IN	RRSIG	DNAME 15 3 3600 20231114221320 2020091312264
 dname.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. LxhaKg+u4m3K8RMy8hId1bjX7KijmJUvUxiYRvxZJPpzQwAuA1w21906GZbKOylPwI57WbCMGScPHUYS2XgIAw==
 dname.modify.not-auth.example.	3600	IN	DNAME	dname-target2.example.
 ds.new-ent.example.	3600	IN	DS	12345 13 253 01
-ds.new-ent.example.	3600	IN	NSEC	txt.new-ent.example. NS DS RRSIG NSEC
-ds.new-ent.example.	3600	IN	NS	ns.example.
+ds.new-ent.example.	3600	IN	NSEC	txt.new-ent.example. DS RRSIG NSEC
 ds.new-ent.example.	3600	IN	RRSIG	DS 15 3 3600 20231114221320 20200913122640 2835 example. ugnXumZ3uVN+dwmm93XRrQxwIwtBEedWzG7ShGRgpUcHVzeQr9DYIW+tEqx8Nf06nBBMx22hhiFS8wH1midHBA==
-ds.new-ent.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. dGWRBV9W82JSg0bWojQy0E+Xv6hdXXlBtwsh+42CrexUzgfiWsnhYfpsDiobecviSjvgWHMp8IceQx4QIJ6mBA==
+ds.new-ent.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. kzqMxHa6qB/teeWW4ZrnrwS6mf8vsKsToIhDLW8mxG3R76/Lj/I9atyj6mHBppuaLd0/pPqBG+zVkTZOZjtgCQ==
 ent2nt.example.	3600	IN	NSEC	txt.ent2nt.example. TXT RRSIG NSEC
 ent2nt.example.	3600	IN	RRSIG	NSEC 15 2 3600 20231114221320 20200913122640 2835 example. 2VvXz7I83iZ71oBSxX3RwjfL4vZCdFBkOYcRRozGaSvSqJobGlUrgfNQ7gm1xls1lKf8cZ+Dw6VIR9NunaykBQ==
 ent2nt.example.	3600	IN	RRSIG	TXT 15 2 3600 20231114221320 20200913122640 2835 example. mUuqtmkeyjB15acdOBT+kmjg3g/a2KSoSOkKKLiQXPiA6wZV9dfmdMYAv0X8ywFIcJlMWO5Jk9T4abqJFfHjBw==
