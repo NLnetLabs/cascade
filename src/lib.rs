@@ -1,10 +1,10 @@
 //! Cascade
 
 pub use cascade_api as api;
+pub use cascade_cfg as config;
 
 pub mod center;
 pub mod common;
-pub mod config;
 pub mod daemon;
 pub mod loader;
 pub mod log;
