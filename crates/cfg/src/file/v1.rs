@@ -5,7 +5,7 @@ use std::{fmt, net::SocketAddr, num::IntErrorKind, str::FromStr};
 use camino::Utf8Path;
 use serde::Deserialize;
 
-use crate::config::{
+use crate::{
     Config, DaemonConfig, GroupId, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
     RemoteControlConfig, ReviewConfig, ServerConfig, SignerConfig, SocketConfig, UserId,
 };

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = [".", "crates/api", "crates/cli"]
+members = [".", "crates/api", "crates/cfg", "crates/cli"]
 default-members = [".", "crates/cli"]
 
 [workspace.package]
@@ -70,6 +70,15 @@ branch = "main"
 git = "https://github.com/NLnetLabs/domain-kmip"
 branch = "main"
 
+# Cascade contains many performance-sensitive hashmaps and is not expected to
+# be accessible to attackers.  'std's default hasher, which is slow but secure
+# against HashDoS attacks, is not appropriate.  A performant, cryptographically
+# insecure hash function is needed.
+#
+# TODO: Maintenance?
+[workspace.dependencies.foldhash]
+version = "0.2.0"
+
 # 'jiff' is a general-purpose time library.
 #
 # TODO: Maintenance?
@@ -81,6 +90,12 @@ version = "0.2.15"
 # It is used throughout the Rust ecosystem and is maintained accordingly.
 [workspace.dependencies.serde]
 version = "1.0"
+
+# 'toml' is a Serde-compatible library for working with TOML documents.
+#
+# It is used throughout the Rust ecosystem and is maintained accordingly.
+[workspace.dependencies.toml]
+version = "0.9"
 
 # 'tokio' is an async runtime, particularly suited for networking.
 #
@@ -104,8 +119,7 @@ daemonbase         = "0.1.4"
 futures            = "0.3.17"
 futures-util       = "0.3"
 octseq             = { version = "0.5.2", default-features = false }
-serde              = { version = "1.0", features = ["derive", "rc"] }
-toml               = "0.8"
+serde              = { workspace = true, features = ["derive", "rc"] }
 axum               = { version = "0.8.4", default-features = false, features = ["http2", "query", "original-uri", "json", "tokio"] }
 
 # From Rotonda
@@ -159,10 +173,13 @@ hostname = "0.4.1"
 prometheus-client = "0.24.0"
 
 cascade-api = { path = "crates/api" }
+cascade-cfg = { path = "crates/cfg" }
 
+# 'clap' is used for top-level configuration of the command-line interface (most
+# of the work is done by 'cascade-cfg').
 [dependencies.clap]
 workspace = true
-features = ["cargo", "derive", "wrap_help"]
+features = ["cargo"]
 
 [dependencies.domain]
 workspace = true
@@ -199,21 +216,9 @@ features = [
     "tracing",
 ]
 
-# Cascade contains many performance-sensitive hashmaps and is not expected to
-# be accessible to attackers.  'std's default hasher, which is slow but secure
-# against HashDoS attacks, is not appropriate.  A performant, cryptographically
-# insecure hash function is needed.
-#
-# - 'foldhash' is a fast, insecure, general-purpose hash function.
-#
-#   TODO: Who maintains it, and how well?
-#
-# - 'rustc-hash' is the hash function used by 'rustc'.  It trades hash quality
-#   for performance, as best suites 'rustc'.
-#
-#   TODO: Who maintains it, and how well?
+# 'foldhash' is used across Cascade as it is not attacker-facing.
 [dependencies.foldhash]
-version = "0.1.5"
+workspace = true
 
 # Cascade sometimes requires filesystem paths to be encoded within UTF-8 texts.
 # To conveniently resolve the conversion between the OS filesystem encoding and
@@ -222,8 +227,9 @@ version = "0.1.5"
 workspace = true
 features = ["serde1"]
 
-[target.'cfg(unix)'.dependencies]
-syslog = "7.0"
+# 'toml' is used to parse policies from TOML.
+[dependencies.toml]
+workspace = true
 
 
 [dev-dependencies]
