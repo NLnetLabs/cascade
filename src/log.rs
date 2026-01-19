@@ -110,7 +110,7 @@ impl Filter {
     /// Construct a new [`Filter`].
     pub fn new(config: &LoggingConfig) -> Self {
         Self {
-            level: (*config.level.value()).into(),
+            level: Self::tracing_level(*config.level.value()),
             trace_targets: config.trace_targets.value().clone(),
         }
     }
@@ -118,10 +118,22 @@ impl Filter {
     /// Update this [`Filter`] based on runtime configuration.
     pub fn update(&mut self, rt_config: &RuntimeConfig) {
         if let Some(level) = rt_config.log_level {
-            self.level = level.into();
+            self.level = Self::tracing_level(level);
         }
         if let Some(trace_targets) = &rt_config.log_trace_targets {
             self.trace_targets = trace_targets.clone();
+        }
+    }
+
+    /// Convert a local log level into the [`tracing`] type.
+    fn tracing_level(level: LogLevel) -> tracing::Level {
+        match level {
+            LogLevel::Trace => tracing::Level::TRACE,
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Warning => tracing::Level::WARN,
+            LogLevel::Error => tracing::Level::ERROR,
+            LogLevel::Critical => tracing::Level::ERROR,
         }
     }
 }
@@ -474,19 +486,4 @@ pub enum LaunchError {
     /// The syslog writer could not be initialized.
     #[cfg(unix)]
     Syslog(unix::InitError),
-}
-
-//------------------------------------------------------------------------------
-
-impl From<LogLevel> for tracing::Level {
-    fn from(value: LogLevel) -> Self {
-        match value {
-            LogLevel::Trace => tracing::Level::TRACE,
-            LogLevel::Debug => tracing::Level::DEBUG,
-            LogLevel::Info => tracing::Level::INFO,
-            LogLevel::Warning => tracing::Level::WARN,
-            LogLevel::Error => tracing::Level::ERROR,
-            LogLevel::Critical => tracing::Level::ERROR,
-        }
-    }
 }
