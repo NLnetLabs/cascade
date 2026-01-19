@@ -112,7 +112,7 @@ jobs:
       run: cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root target/dnst/release --locked --bin=dnst
     - name: Tar built binaries to preserve permissions
       if: needs.check-for-artifact-server.outputs.status == 'success'
-      run: tar -cf target.tar target
+      run: tar -cvf target.tar target/{debug,release}/{cascaded,cascade} target/dnst
     - name: Upload built binaries
       if: needs.check-for-artifact-server.outputs.status == 'success'
       # To allow running the workflow without an artifact server an error here
