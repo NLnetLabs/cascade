@@ -130,33 +130,13 @@ of text printed you can:
   using `unbuffer` from the `expect` package; left as an excercise for the
   user)
 
+### Miscellaneous notes
+
+- By default, tests are run using a debug build for both Cascade and dnst.
+  - This can be changed per test using the `build-profile` environment variable.
+- `cascade`, `cascaded`, and `dnst` are added to the `$PATH`.
+
 ### Example test job
 
-```yml
-  job-name:
-    name: Run tests with resolvers/nameservers
-    runs-on: ${{ matrix.os }}
-    needs: build
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable] # see build job
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    - name: Prepare the system test environment
-      uses: ./.github/actions/prepare-systest-env
-      with:
-        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
-    # - name: Only download/build the binaries without setting up the test environment
-    #   uses: ./.github/actions/download-or-build
-    #   with:
-    #     artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
-    - name: Setup and start the cascade daemon
-      uses: ./.github/actions/setup-and-start-cascade
-    - run: target/debug/cascade --version
-    ### RUN YOUR TESTS HERE
-    # # Optional, the container gets cleaned up anyway (at least in act)
-    # - name: Stop the setup
-    #   run: scripts/manage-test-environment.sh stop
-```
+You can find the example test job at the top of the workflow file
+`.github/workflows/system-tests.yml`.
