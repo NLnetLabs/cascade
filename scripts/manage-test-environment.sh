@@ -2,6 +2,12 @@
 
 # Log every action taken or command run
 # set -x
+if [[ -n "$GITHUB_ACTIONS" ]]; then
+  exec 2>>manage-test-environment.log
+  echo "$0 $*" >&2
+  date +Is >&2
+  set -x
+fi
 # Exit the script if any command errors
 set -e
 # Return an error for a pipeline if any command of the pipeline fails and not
