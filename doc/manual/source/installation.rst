@@ -350,7 +350,4 @@ Updating
    .. group-tab:: Docker
 
        .. Note:: Docker images are coming soon.
-
-
-       .. Note:: Docker images are coming soon.
                
