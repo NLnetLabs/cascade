@@ -14,7 +14,7 @@ do
 		params="-n -P"
 	;;
 	esac
-	for z in zones/*input2.zone
+	for z in zones/*input[23].zone
 	do
 		echo $z
 		dnst signzone -T -o example -f - -e $EXPIRATION -i $INCEPTION $params $z keys/Kexample.+015+02835 |
