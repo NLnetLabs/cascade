@@ -88,7 +88,7 @@ pub struct ZoneState {
     pub loader: LoaderState,
 
     /// The contents of the zone.
-    pub contents: Option<Arc<ZoneContents>>,
+    pub contents: Arc<tokio::sync::Mutex<Option<Arc<ZoneContents>>>>,
     // TODO:
     // - A log?
     // - Initialization?

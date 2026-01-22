@@ -110,14 +110,14 @@ impl LoaderState {
     ) {
         let start = Instant::now();
         let source = state.loader.source.clone();
-        let latest = state.contents.as_ref().map(|contents| contents.clone());
+        let contents = state.contents.clone().try_lock_owned().unwrap();
 
         let handle = tokio::task::spawn(Self::refresh(
             zone,
             start,
             source,
             refresh == EnqueuedRefresh::Reload,
-            latest,
+            contents,
             loader,
         ));
 
@@ -132,7 +132,7 @@ impl LoaderState {
         start: Instant,
         source: Source,
         force: bool,
-        latest: Option<Arc<ZoneContents>>,
+        mut contents: tokio::sync::OwnedMutexGuard<Option<Arc<ZoneContents>>>,
         loader: Arc<Loader>,
     ) {
         info!("Refreshing {:?}", zone.name);
@@ -142,20 +142,21 @@ impl LoaderState {
         let source_is_server = matches!(&source, Source::Server { .. });
 
         // Perform the source-specific reload into the zone contents.
-        let (result, lock) = match source {
-            Source::None => (Ok(None), None),
-            Source::Zonefile { path } => loader::load_zonefile(&metrics, &zone, &path).await,
+        let result = match source {
+            Source::None => Ok(None),
+            Source::Zonefile { path } => {
+                loader::load_zonefile(&metrics, &zone, &path, &mut contents).await
+            }
             Source::Server { addr, tsig_key } if force => {
-                loader::reload_server(&metrics, &zone, &addr, &tsig_key).await
+                loader::reload_server(&metrics, &zone, &addr, &tsig_key, &mut contents).await
             }
             Source::Server { addr, tsig_key } => {
-                loader::refresh_server(&metrics, &zone, &addr, &tsig_key, latest).await
+                loader::refresh_server(&metrics, &zone, &addr, &tsig_key, &mut contents).await
             }
         };
 
-        let latest = {
-            // Try to re-use a recent lock from the reload.
-            let mut lock = lock.unwrap_or_else(|| zone.state.lock().unwrap());
+        {
+            let mut lock = zone.state.lock().unwrap();
             let state = &mut *lock;
             state
                 .loader
@@ -168,13 +169,11 @@ impl LoaderState {
             // refresh or a retry. The user should just reload again when the
             // zonefile has updated or been fixed if it was in a broken state.
             if source_is_server {
-                Self::schedule_next(&result, state, &zone, &loader, start);
+                Self::schedule_next(&result, state, &zone, contents.as_ref(), &loader, start);
             }
+        }
 
-            state.contents.as_ref().unwrap().clone()
-        };
-
-        Self::process_new_zone_version(result, &zone, &loader, latest).await;
+        Self::process_new_zone_version(result, &zone, &contents, &loader).await;
 
         Self::start_next_refresh(&zone, loader);
     }
@@ -219,11 +218,12 @@ impl LoaderState {
         result: &Result<Option<Serial>, E>,
         state: &mut ZoneState,
         zone: &Arc<Zone>,
+        contents: Option<&Arc<ZoneContents>>,
         loader: &Arc<Loader>,
         start: Instant,
     ) {
         // Update the zone refresh timers.
-        let soa = state.contents.as_ref().map(|contents| &contents.soa);
+        let soa = contents.map(|c| &c.soa);
         if result.is_ok() {
             state
                 .loader
@@ -240,8 +240,8 @@ impl LoaderState {
     async fn process_new_zone_version(
         result: Result<Option<Serial>, RefreshError>,
         zone: &Arc<Zone>,
+        contents: &Option<Arc<ZoneContents>>,
         loader: &Arc<Loader>,
-        latest: Arc<ZoneContents>,
     ) {
         // Process the result of the reload.
         match result {
@@ -255,7 +255,11 @@ impl LoaderState {
                 let loader_copy = loader.clone();
 
                 let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
-                latest.write_into_zonetree(&zonetree).await;
+                contents
+                    .as_ref()
+                    .unwrap()
+                    .write_into_zonetree(&zonetree)
+                    .await;
 
                 loader_copy.center.unsigned_zones.rcu(|tree| {
                     let mut tree = Arc::unwrap_or_clone(tree.clone());
