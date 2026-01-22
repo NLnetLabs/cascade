@@ -53,7 +53,6 @@ use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::PipelineMode;
 use crate::zone::loader;
-use crate::zone::loader::LoaderMetrics;
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -512,23 +511,28 @@ impl HttpServer {
             }
         }
 
-        let metrics = {
-            let zone = get_zone(&state.center, &name);
-            zone.and_then(|z| z.state.lock().unwrap().loader.metrics.as_ref().cloned())
+        // TODO: Report separate information for ongoing and completed loads.
+        let receipt_report = {
+            let zone = get_zone(&state.center, &name).unwrap();
+            let state = zone.state.lock().unwrap();
+            let active = state.loader.active_load_metrics.as_ref();
+            let last = state.loader.last_load_metrics.as_ref();
+            active
+                .map(|metrics| ZoneLoaderReport {
+                    started_at: metrics.start.1,
+                    finished_at: None,
+                    byte_count: metrics.num_loaded_bytes.load(Relaxed),
+                    record_count: metrics.num_loaded_records.load(Relaxed),
+                })
+                .or_else(|| {
+                    last.map(|metrics| ZoneLoaderReport {
+                        started_at: metrics.start,
+                        finished_at: Some(metrics.end),
+                        byte_count: metrics.num_loaded_bytes,
+                        record_count: metrics.num_loaded_records,
+                    })
+                })
         };
-        let receipt_report = metrics.map(
-            |LoaderMetrics {
-                 started_at,
-                 finished_at,
-                 byte_count,
-                 record_count,
-             }| ZoneLoaderReport {
-                started_at,
-                finished_at,
-                byte_count: byte_count.load(Relaxed),
-                record_count: record_count.load(Relaxed),
-            },
-        );
 
         // Query zone serials
         let mut unsigned_serial = None;

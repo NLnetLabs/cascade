@@ -18,10 +18,12 @@ use domain::{
     zonefile::inplace,
 };
 
-use crate::zone::{
-    Zone,
-    contents::{RegularRecord, SoaRecord, ZoneContents},
-    loader::LoaderMetrics,
+use crate::{
+    loader::ActiveLoadMetrics,
+    zone::{
+        Zone,
+        contents::{RegularRecord, SoaRecord, ZoneContents},
+    },
 };
 
 enum Parsed {
@@ -35,12 +37,12 @@ enum Parsed {
 ///
 /// This will always read the entire zone, regardless of the serial in the SOA.
 pub fn load(
-    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     path: &Utf8Path,
     contents: &mut Option<ZoneContents>,
+    metrics: &ActiveLoadMetrics,
 ) -> Result<(), Error> {
-    let mut reader = make_reader(metrics, zone, path)?;
+    let mut reader = make_reader(zone, path, metrics)?;
 
     // The collection of all the records that we will parse
     let mut all = Vec::<RegularRecord>::new();
@@ -53,7 +55,7 @@ pub fn load(
 
     // Parse all the records, extracting the SOA. We always read the whole zone.
     while let Some(record) = parse_record(&mut buf, zone, &mut reader)? {
-        metrics.record_count.fetch_add(1, Relaxed);
+        metrics.num_loaded_records.fetch_add(1, Relaxed);
         match record {
             Parsed::Soa(soa_record) => {
                 if soa.is_some() {
@@ -84,16 +86,18 @@ pub fn load(
 ///
 /// It will add the size of the file to the byte count of the metrics.
 fn make_reader(
-    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     path: &Utf8Path,
+    metrics: &ActiveLoadMetrics,
 ) -> Result<inplace::Zonefile, Error> {
     // Open the zonefile.
     let mut file = File::open(path).map_err(Error::Open)?;
 
     let file_len = file.metadata().map_err(Error::Open)?.len();
 
-    metrics.byte_count.fetch_add(file_len as usize, Relaxed);
+    metrics
+        .num_loaded_bytes
+        .fetch_add(file_len as usize, Relaxed);
 
     let mut zone_file = inplace::Zonefile::with_capacity(file_len as usize).writer();
 

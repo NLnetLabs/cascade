@@ -2,8 +2,8 @@
 use std::{
     fmt::Display,
     net::SocketAddr,
-    sync::{Arc, atomic::AtomicUsize},
-    time::{Duration, Instant, SystemTime},
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use camino::Utf8Path;
@@ -11,7 +11,7 @@ use domain::{base::iana::Class, new::base::Serial, tsig, zonetree::ZoneBuilder};
 use tracing::{debug, error, info};
 
 use crate::{
-    loader::{self, Loader, RefreshError, RefreshMonitor},
+    loader::{self, ActiveLoadMetrics, LoadMetrics, Loader, RefreshError, RefreshMonitor},
     manager::Update,
     util::AbortOnDrop,
     zone::ZoneContents,
@@ -33,18 +33,17 @@ pub struct LoaderState {
     /// Ongoing and enqueued refreshes of the zone.
     pub refreshes: Option<Refreshes>,
 
-    /// Metrics of the current or last load of this zone
-    ///
-    /// This is `None` if we have never attempted to load this zone.
-    pub metrics: Option<LoaderMetrics>,
-}
+    /// Metrics for an active load, if any.
+    //
+    // TODO: Embed in a state machine.
+    pub active_load_metrics: Option<Arc<ActiveLoadMetrics>>,
 
-#[derive(Clone, Debug)]
-pub struct LoaderMetrics {
-    pub started_at: SystemTime,
-    pub finished_at: Option<SystemTime>,
-    pub byte_count: Arc<AtomicUsize>,
-    pub record_count: Arc<AtomicUsize>,
+    /// Metrics for the last finished load, if any.
+    ///
+    /// This is [`None`] if we have never attempted to load this zone.
+    //
+    // TODO: Make part of zone history?
+    pub last_load_metrics: Option<LoadMetrics>,
 }
 
 impl LoaderState {
@@ -108,36 +107,35 @@ impl LoaderState {
         refresh: EnqueuedRefresh,
         loader: Arc<Loader>,
     ) {
-        let start = Instant::now();
+        let metrics = Arc::new(ActiveLoadMetrics::begin());
         let source = state.loader.source.clone();
         let contents = state.contents.clone().try_lock_owned().unwrap();
 
         let handle = tokio::task::spawn(Self::refresh(
             zone,
-            start,
             source,
             refresh == EnqueuedRefresh::Reload,
             contents,
             loader,
+            metrics.clone(),
         ));
 
         let handle = AbortOnDrop::from(handle);
         let ongoing = OngoingRefresh { handle };
+        state.loader.active_load_metrics = Some(metrics);
         state.loader.refreshes = Some(Refreshes::new(ongoing));
     }
 
     /// Refresh this zone from a source.
     async fn refresh(
         zone: Arc<Zone>,
-        start: Instant,
         source: Source,
         force: bool,
         mut contents: tokio::sync::OwnedMutexGuard<Option<ZoneContents>>,
         loader: Arc<Loader>,
+        metrics: Arc<ActiveLoadMetrics>,
     ) {
         info!("Refreshing {:?}", zone.name);
-
-        let metrics = Self::initialize_metrics(&zone);
 
         let source_is_server = matches!(&source, Source::Server { .. });
 
@@ -145,51 +143,41 @@ impl LoaderState {
         let result = match source {
             Source::None => Ok(None),
             Source::Zonefile { path } => {
-                loader::load_zonefile(&metrics, &zone, &path, &mut contents).await
+                loader::load_zonefile(&zone, &path, &mut contents, &metrics).await
             }
             Source::Server { addr, tsig_key } if force => {
-                loader::reload_server(&metrics, &zone, &addr, &tsig_key, &mut contents).await
+                loader::reload_server(&zone, &addr, &tsig_key, &mut contents, &metrics).await
             }
             Source::Server { addr, tsig_key } => {
-                loader::refresh_server(&metrics, &zone, &addr, &tsig_key, &mut contents).await
+                loader::refresh_server(&zone, &addr, &tsig_key, &mut contents, &metrics).await
             }
         };
 
         {
             let mut lock = zone.state.lock().unwrap();
             let state = &mut *lock;
-            state
-                .loader
-                .metrics
-                .as_mut()
-                .expect("we just added the metrics")
-                .finished_at = Some(SystemTime::now());
+            let start_time = metrics.start.monotonic();
+            state.loader.active_load_metrics = None;
+            state.loader.last_load_metrics = Some(metrics.finish());
 
             // Zonefiles are not refreshed automatically so we don't schedule a
             // refresh or a retry. The user should just reload again when the
             // zonefile has updated or been fixed if it was in a broken state.
             if source_is_server {
-                Self::schedule_next(&result, state, &zone, contents.as_ref(), &loader, start);
+                Self::schedule_next(
+                    &result,
+                    state,
+                    &zone,
+                    contents.as_ref(),
+                    &loader,
+                    start_time,
+                );
             }
         }
 
         Self::process_new_zone_version(result, &zone, &contents, &loader).await;
 
         Self::start_next_refresh(&zone, loader);
-    }
-
-    fn initialize_metrics(zone: &Arc<Zone>) -> LoaderMetrics {
-        let metrics = LoaderMetrics {
-            started_at: SystemTime::now(),
-            finished_at: None,
-            byte_count: Arc::new(AtomicUsize::new(0)),
-            record_count: Arc::new(AtomicUsize::new(0)),
-        };
-
-        let mut state = zone.state.lock().unwrap();
-        state.loader.metrics = Some(metrics.clone());
-
-        metrics
     }
 
     fn start_next_refresh(zone: &Arc<Zone>, loader: Arc<Loader>) {
