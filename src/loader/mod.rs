@@ -152,21 +152,24 @@ pub async fn refresh_server<'z>(
 
     let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
 
-    let result = server::refresh(metrics, zone, addr, tsig_key, latest).await;
+    let old_serial = latest.as_ref().map(|l| l.soa.rdata.serial);
+    let mut contents = latest;
+    let result = server::refresh(metrics, zone, addr, tsig_key, &mut contents).await;
 
-    let new_contents = match result {
-        // The local copy is up-to-date.
-        Ok(None) => return (Ok(None), None),
-
-        // The local copy is outdated.
-        Ok(Some(new_contents)) => Arc::new(new_contents),
-
-        // An error occurred.
+    match result {
+        Ok(()) => {}
         Err(error) => return (Err(error), None),
-    };
+    }
+
+    let new_contents = contents.unwrap();
+    let remote_serial = new_contents.soa.rdata.serial;
+
+    if old_serial == Some(remote_serial) {
+        // The local copy is up-to-date.
+        return (Ok(None), None);
+    }
 
     // Integrate the results with the zone state.
-    let remote_serial = new_contents.soa.rdata.serial;
 
     // Lock the zone state.
     let mut lock = zone.state.lock().unwrap();
@@ -229,16 +232,18 @@ pub async fn reload_server<'z>(
     Result<Option<Serial>, RefreshError>,
     Option<MutexGuard<'z, ZoneState>>,
 ) {
+    let mut contents = None;
     let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-    let result = server::axfr(metrics, zone, addr, tsig_key)
+    let result = server::axfr(metrics, zone, addr, tsig_key, &mut contents)
         .await
         .map_err(RefreshError::Axfr);
 
-    let contents = match result {
-        Ok(contents) => Arc::new(contents),
+    match result {
+        Ok(()) => (),
         Err(error) => return (Err(error), None),
     };
 
+    let contents = contents.unwrap();
     let serial = contents.soa.rdata.serial;
 
     // Lock the zone state.
