@@ -57,7 +57,7 @@ pub async fn refresh(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    contents: &mut Option<Arc<ZoneContents>>,
+    contents: &mut Option<ZoneContents>,
 ) -> Result<(), RefreshError> {
     if contents.is_none() {
         trace!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
@@ -90,7 +90,7 @@ pub async fn ixfr(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    contents: &mut Option<Arc<ZoneContents>>,
+    contents: &mut Option<ZoneContents>,
 ) -> Result<(), IxfrError> {
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
     let local_soa = &contents.as_ref().unwrap().soa;
@@ -164,7 +164,7 @@ pub async fn ixfr(
 
             assert!(interpreter.is_finished());
             let all = all.into_boxed_slice();
-            *contents = Some(Arc::new(ZoneContents { soa, all }));
+            *contents = Some(ZoneContents { soa, all });
             return Ok(());
         }
 
@@ -198,7 +198,7 @@ pub async fn ixfr(
 
             // Forward the local copy through the compressed diffs.
             let new_contents = contents.as_ref().unwrap().forward(&compressed)?;
-            *contents = Some(Arc::new(new_contents));
+            *contents = Some(new_contents);
 
             return Ok(());
         }
@@ -309,7 +309,7 @@ pub async fn ixfr(
 
             assert!(interpreter.is_finished());
             let all = all.into_boxed_slice();
-            *contents = Some(Arc::new(ZoneContents { soa, all }));
+            *contents = Some(ZoneContents { soa, all });
             metrics.byte_count.fetch_add(bytes, Relaxed);
             Ok(())
         }
@@ -359,7 +359,7 @@ pub async fn ixfr(
 
             // Forward the local copy through the compressed diffs.
             let new_contents = contents.as_ref().unwrap().forward(&compressed)?;
-            *contents = Some(Arc::new(new_contents));
+            *contents = Some(new_contents);
 
             Ok(())
         }
@@ -486,7 +486,7 @@ pub async fn axfr(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    contents: &mut Option<Arc<ZoneContents>>,
+    contents: &mut Option<ZoneContents>,
 ) -> Result<(), AxfrError> {
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
 
@@ -569,7 +569,7 @@ pub async fn axfr(
     let all = all.into_boxed_slice();
 
     metrics.byte_count.fetch_add(bytes, Relaxed);
-    *contents = Some(Arc::new(ZoneContents { soa, all }));
+    *contents = Some(ZoneContents { soa, all });
 
     Ok(())
 }

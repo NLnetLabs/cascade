@@ -38,7 +38,7 @@ pub fn load(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     path: &Utf8Path,
-    contents: &mut Option<Arc<ZoneContents>>,
+    contents: &mut Option<ZoneContents>,
 ) -> Result<(), Error> {
     let mut reader = make_reader(metrics, zone, path)?;
 
@@ -73,7 +73,7 @@ pub fn load(
     all.sort_unstable();
     let all = all.into_boxed_slice();
 
-    *contents = Some(Arc::new(ZoneContents { soa, all }));
+    *contents = Some(ZoneContents { soa, all });
 
     Ok(())
 }
