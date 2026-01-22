@@ -4,12 +4,7 @@
 //! zones known to Cascade.  Every zone has a configured source (e.g. zonefile,
 //! DNS server, etc.) that will be monitored for changes.
 
-use std::{
-    cmp::Ordering,
-    fmt,
-    net::SocketAddr,
-    sync::{Arc, MutexGuard},
-};
+use std::{fmt, net::SocketAddr, sync::Arc};
 
 use camino::Utf8Path;
 use domain::{new::base::Serial, tsig};
@@ -20,7 +15,7 @@ use crate::{
     manager::{ApplicationCommand, Terminated},
     util::AbortOnDrop,
     zone::{
-        LoaderState, Zone, ZoneContents, ZoneState, contents,
+        LoaderState, Zone, ZoneContents, contents,
         loader::{LoaderMetrics, Source},
     },
 };
@@ -138,80 +133,29 @@ impl Loader {
 /// local copy of this version is not already available, it will be loaded.
 /// Where possible, an incremental zone transfer will be used to communicate
 /// more efficiently.
-pub async fn refresh_server<'z>(
+pub async fn refresh_server(
     metrics: &LoaderMetrics,
-    zone: &'z Arc<Zone>,
+    zone: &Arc<Zone>,
     addr: &std::net::SocketAddr,
     tsig_key: &Option<Arc<domain::tsig::Key>>,
-    latest: Option<Arc<ZoneContents>>,
-) -> (
-    Result<Option<Serial>, RefreshError>,
-    Option<MutexGuard<'z, ZoneState>>,
-) {
+    contents: &mut Option<Arc<ZoneContents>>,
+) -> Result<Option<Serial>, RefreshError> {
     trace!("Refreshing {:?} from server {addr:?}", zone.name);
 
     let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
 
-    let old_serial = latest.as_ref().map(|l| l.soa.rdata.serial);
-    let mut contents = latest;
-    let result = server::refresh(metrics, zone, addr, tsig_key, &mut contents).await;
+    let old_serial = contents.as_ref().map(|c| c.soa.rdata.serial);
+    server::refresh(metrics, zone, addr, tsig_key, contents).await?;
 
-    match result {
-        Ok(()) => {}
-        Err(error) => return (Err(error), None),
-    }
-
-    let new_contents = contents.unwrap();
+    let new_contents = contents.as_ref().unwrap();
     let remote_serial = new_contents.soa.rdata.serial;
 
     if old_serial == Some(remote_serial) {
         // The local copy is up-to-date.
-        return (Ok(None), None);
+        return Ok(None);
     }
 
-    // Integrate the results with the zone state.
-
-    // Lock the zone state.
-    let mut lock = zone.state.lock().unwrap();
-
-    // If no previous version of the zone exists (or if the zone
-    // contents have been cleared since the start of the refresh),
-    // insert the remote copy directly.
-    let Some(contents) = &mut lock.contents else {
-        lock.contents = Some(new_contents);
-
-        return (Ok(Some(remote_serial)), Some(lock));
-    };
-
-    // Compare the _current_ latest version of the zone against the
-    // remote.
-    let local_serial = contents.soa.rdata.serial;
-    match local_serial.partial_cmp(&remote_serial) {
-        Some(Ordering::Less) => {}
-
-        Some(Ordering::Equal) => {
-            // The local copy was updated externally, and is now
-            // up-to-date with respect to the remote copy.  Stop.
-            return (Ok(None), Some(lock));
-        }
-
-        Some(Ordering::Greater) | None => {
-            // The local copy was updated externally, and is now more
-            // recent than the remote copy.  While it is possible the remote
-            // copy has also been updated, we will assume it's unchanged,
-            // and report that the remote has become outdated.
-            return (
-                Err(RefreshError::OutdatedRemote {
-                    local_serial,
-                    remote_serial,
-                }),
-                Some(lock),
-            );
-        }
-    }
-
-    *contents = new_contents;
-    (Ok(Some(remote_serial)), Some(lock))
+    Ok(Some(remote_serial))
 }
 
 //----------- reload() ---------------------------------------------------------
@@ -223,60 +167,32 @@ pub async fn refresh_server<'z>(
 /// zone, it is registered in the zone storage; otherwise, the loaded data is
 /// compared to the local copy of the same zone version.  If an inconsistency is
 /// detected, an error is returned, and the zone storage is unchanged.
-pub async fn reload_server<'z>(
+pub async fn reload_server(
     metrics: &LoaderMetrics,
-    zone: &'z Arc<Zone>,
+    zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: &Option<Arc<tsig::Key>>,
-) -> (
-    Result<Option<Serial>, RefreshError>,
-    Option<MutexGuard<'z, ZoneState>>,
-) {
-    let mut contents = None;
+    contents: &mut Option<Arc<ZoneContents>>,
+) -> Result<Option<Serial>, RefreshError> {
     let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-    let result = server::axfr(metrics, zone, addr, tsig_key, &mut contents)
-        .await
-        .map_err(RefreshError::Axfr);
+    server::axfr(metrics, zone, addr, tsig_key, contents).await?;
 
-    match result {
-        Ok(()) => (),
-        Err(error) => return (Err(error), None),
-    };
-
-    let contents = contents.unwrap();
-    let serial = contents.soa.rdata.serial;
-
-    // Lock the zone state.
-    let mut lock = zone.state.lock().unwrap();
-    lock.contents = Some(contents);
-
-    (Ok(Some(serial)), Some(lock))
+    let new_contents = contents.as_ref().unwrap();
+    let serial = new_contents.soa.rdata.serial;
+    Ok(Some(serial))
 }
 
-pub async fn load_zonefile<'z>(
+pub async fn load_zonefile(
     metrics: &LoaderMetrics,
-    zone: &'z Arc<Zone>,
+    zone: &Arc<Zone>,
     path: &Utf8Path,
-) -> (
-    Result<Option<Serial>, RefreshError>,
-    Option<MutexGuard<'z, ZoneState>>,
-) {
-    let mut contents = None;
-    let result = zonefile::load(metrics, zone, path, &mut contents).map_err(RefreshError::Zonefile);
+    contents: &mut Option<Arc<ZoneContents>>,
+) -> Result<Option<Serial>, RefreshError> {
+    zonefile::load(metrics, zone, path, contents)?;
 
-    match result {
-        Ok(()) => {}
-        Err(error) => return (Err(error), None),
-    };
-
-    let contents = contents.unwrap();
-    let serial = contents.soa.rdata.serial;
-
-    // Lock the zone state.
-    let mut lock = zone.state.lock().unwrap();
-    lock.contents = Some(contents);
-
-    (Ok(Some(serial)), Some(lock))
+    let new_contents = contents.as_ref().unwrap();
+    let serial = new_contents.soa.rdata.serial;
+    Ok(Some(serial))
 }
 
 //============ Errors ==========================================================
@@ -379,6 +295,12 @@ impl From<server::IxfrError> for RefreshError {
 impl From<server::AxfrError> for RefreshError {
     fn from(v: server::AxfrError) -> Self {
         Self::Axfr(v)
+    }
+}
+
+impl From<zonefile::Error> for RefreshError {
+    fn from(v: zonefile::Error) -> Self {
+        Self::Zonefile(v)
     }
 }
 
