@@ -4,7 +4,15 @@
 //! zones known to Cascade.  Every zone has a configured source (e.g. zonefile,
 //! DNS server, etc.) that will be monitored for changes.
 
-use std::{fmt, net::SocketAddr, sync::Arc};
+use std::{
+    fmt,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{self, AtomicUsize},
+    },
+    time::{Duration, Instant, SystemTime},
+};
 
 use camino::Utf8Path;
 use domain::{new::base::Serial, tsig};
@@ -14,10 +22,7 @@ use crate::{
     center::{Center, Change},
     manager::{ApplicationCommand, Terminated},
     util::AbortOnDrop,
-    zone::{
-        LoaderState, Zone, ZoneContents, contents,
-        loader::{LoaderMetrics, Source},
-    },
+    zone::{LoaderState, Zone, ZoneContents, contents, loader::Source},
 };
 
 mod refresh;
@@ -134,18 +139,18 @@ impl Loader {
 /// Where possible, an incremental zone transfer will be used to communicate
 /// more efficiently.
 pub async fn refresh_server(
-    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     addr: &std::net::SocketAddr,
     tsig_key: &Option<Arc<domain::tsig::Key>>,
     contents: &mut Option<ZoneContents>,
+    metrics: &ActiveLoadMetrics,
 ) -> Result<Option<Serial>, RefreshError> {
     trace!("Refreshing {:?} from server {addr:?}", zone.name);
 
     let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
 
     let old_serial = contents.as_ref().map(|c| c.soa.rdata.serial);
-    server::refresh(metrics, zone, addr, tsig_key, contents).await?;
+    server::refresh(zone, addr, tsig_key, contents, metrics).await?;
 
     let new_contents = contents.as_ref().unwrap();
     let remote_serial = new_contents.soa.rdata.serial;
@@ -168,14 +173,14 @@ pub async fn refresh_server(
 /// compared to the local copy of the same zone version.  If an inconsistency is
 /// detected, an error is returned, and the zone storage is unchanged.
 pub async fn reload_server(
-    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: &Option<Arc<tsig::Key>>,
     contents: &mut Option<ZoneContents>,
+    metrics: &ActiveLoadMetrics,
 ) -> Result<Option<Serial>, RefreshError> {
     let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-    server::axfr(metrics, zone, addr, tsig_key, contents).await?;
+    server::axfr(zone, addr, tsig_key, contents, metrics).await?;
 
     let new_contents = contents.as_ref().unwrap();
     let serial = new_contents.soa.rdata.serial;
@@ -183,16 +188,124 @@ pub async fn reload_server(
 }
 
 pub async fn load_zonefile(
-    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     path: &Utf8Path,
     contents: &mut Option<ZoneContents>,
+    metrics: &ActiveLoadMetrics,
 ) -> Result<Option<Serial>, RefreshError> {
-    zonefile::load(metrics, zone, path, contents)?;
+    zonefile::load(zone, path, contents, metrics)?;
 
     let new_contents = contents.as_ref().unwrap();
     let serial = new_contents.soa.rdata.serial;
     Ok(Some(serial))
+}
+
+//============ Metrics =========================================================
+
+//----------- LoadMetrics ------------------------------------------------------
+
+/// Metrics for a (completed) zone load.
+///
+/// Every refresh (i.e. load) of a zone is paired with [`LoadMetrics`]. It's
+/// important to note that not _all_ refreshes lead to new zone instances. A
+/// refresh can also report up-to-date or fail.
+///
+/// This is built from [`ActiveLoadMetrics::finish()`].
+#[derive(Clone, Debug)]
+pub struct LoadMetrics {
+    /// When the load began.
+    ///
+    /// All actions/requests relating to the load will begin after this time.
+    pub start: SystemTime,
+
+    /// When the load ended.
+    ///
+    /// All actions/requests relating to the load will finish before this time.
+    pub end: SystemTime,
+
+    /// How long the load took.
+    ///
+    /// This should be preferred over `end - start`, as they are affected by
+    /// discontinuous changes to the system clock. This duration is measured
+    /// using a monotonic clock.
+    pub duration: Duration,
+
+    /// The (approximate) number of bytes loaded.
+    ///
+    /// This may include network overhead (e.g. TCP/UDP/IP headers, DNS message
+    /// headers, extraneous DNS records). If multiple network requests are
+    /// performed (e.g. IXFR before falling back to AXFR), it may include counts
+    /// from previous requests. It should be treated as a measure of effort, not
+    /// information about the new instance of the zone being built.
+    pub num_loaded_bytes: usize,
+
+    /// The (approximate) number of DNS records loaded.
+    ///
+    /// When loading from a DNS server, this count may include deleted records,
+    /// delimiting SOA records, and additional-section records (e.g. DNS
+    /// COOKIEs). If multiple network requests are performed (e.g. IXFR before
+    /// falling back to AXFR), it may include counts from earlier requests. It
+    /// should be treated as a measure of effort, not information about the new
+    /// instance of the zone being built.
+    pub num_loaded_records: usize,
+}
+
+//----------- ActiveLoadMetrics ------------------------------------------------
+
+/// Metrics for an active zone load.
+///
+/// An instance of [`ActiveLoadMetrics`] is available when a load (refresh or
+/// reload of a particular zone) is ongoing. It can be used to report statistics
+/// about the ongoing load (e.g. on queries for Cascade's status).
+///
+/// When the load completes, [`Self::finish()`] will convert it into
+/// [`LoadMetrics`]. [`ActiveLoadMetrics`] has a subset of its fields.
+#[derive(Debug)]
+pub struct ActiveLoadMetrics {
+    /// When the load began.
+    ///
+    /// See [`LoadMetrics::start`].
+    pub start: (Instant, SystemTime),
+
+    /// The (approximate) number of bytes loaded thus far.
+    ///
+    /// See [`LoadMetrics::num_loaded_bytes`].
+    pub num_loaded_bytes: AtomicUsize,
+
+    /// The (approximate) number of DNS records loaded thus far.
+    ///
+    /// See [`LoadMetrics::num_loaded_records`].
+    pub num_loaded_records: AtomicUsize,
+}
+
+impl ActiveLoadMetrics {
+    /// Begin (the metrics for) a new load.
+    pub fn begin() -> Self {
+        Self {
+            start: (Instant::now(), SystemTime::now()),
+            num_loaded_bytes: AtomicUsize::new(0),
+            num_loaded_records: AtomicUsize::new(0),
+        }
+    }
+
+    /// Finish this load.
+    ///
+    /// This does not take `self` by value; observers of the load may still be
+    /// using it, so it is hard to take back ownership of it synchronously.
+    pub fn finish(&self) -> LoadMetrics {
+        // It is expected that the caller was the loader, and so was responsible
+        // for setting the atomic variables being read here; there should not be
+        // any need for synchronization.
+
+        let end = (Instant::now(), SystemTime::now());
+        LoadMetrics {
+            start: self.start.1,
+            end: end.1,
+            duration: end.0.duration_since(self.start.0),
+            num_loaded_bytes: self.num_loaded_bytes.load(atomic::Ordering::Relaxed),
+            num_loaded_records: self.num_loaded_records.load(atomic::Ordering::Relaxed),
+        }
+    }
 }
 
 //============ Errors ==========================================================
