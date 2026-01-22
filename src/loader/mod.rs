@@ -256,13 +256,15 @@ pub async fn load_zonefile<'z>(
     Result<Option<Serial>, RefreshError>,
     Option<MutexGuard<'z, ZoneState>>,
 ) {
-    let result = zonefile::load(metrics, zone, path).map_err(RefreshError::Zonefile);
+    let mut contents = None;
+    let result = zonefile::load(metrics, zone, path, &mut contents).map_err(RefreshError::Zonefile);
 
-    let contents = match result {
-        Ok(contents) => Arc::new(contents),
+    match result {
+        Ok(()) => {}
         Err(error) => return (Err(error), None),
     };
 
+    let contents = contents.unwrap();
     let serial = contents.soa.rdata.serial;
 
     // Lock the zone state.

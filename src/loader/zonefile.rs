@@ -38,7 +38,8 @@ pub fn load(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     path: &Utf8Path,
-) -> Result<ZoneContents, Error> {
+    contents: &mut Option<Arc<ZoneContents>>,
+) -> Result<(), Error> {
     let mut reader = make_reader(metrics, zone, path)?;
 
     // The collection of all the records that we will parse
@@ -72,7 +73,9 @@ pub fn load(
     all.sort_unstable();
     let all = all.into_boxed_slice();
 
-    Ok(ZoneContents { soa, all })
+    *contents = Some(Arc::new(ZoneContents { soa, all }));
+
+    Ok(())
 }
 
 //----------- Helper functions -------------------------------------------------
