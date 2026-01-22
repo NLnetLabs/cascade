@@ -132,7 +132,7 @@ impl LoaderState {
         start: Instant,
         source: Source,
         force: bool,
-        mut contents: tokio::sync::OwnedMutexGuard<Option<Arc<ZoneContents>>>,
+        mut contents: tokio::sync::OwnedMutexGuard<Option<ZoneContents>>,
         loader: Arc<Loader>,
     ) {
         info!("Refreshing {:?}", zone.name);
@@ -218,7 +218,7 @@ impl LoaderState {
         result: &Result<Option<Serial>, E>,
         state: &mut ZoneState,
         zone: &Arc<Zone>,
-        contents: Option<&Arc<ZoneContents>>,
+        contents: Option<&ZoneContents>,
         loader: &Arc<Loader>,
         start: Instant,
     ) {
@@ -240,7 +240,7 @@ impl LoaderState {
     async fn process_new_zone_version(
         result: Result<Option<Serial>, RefreshError>,
         zone: &Arc<Zone>,
-        contents: &Option<Arc<ZoneContents>>,
+        contents: &Option<ZoneContents>,
         loader: &Arc<Loader>,
     ) {
         // Process the result of the reload.

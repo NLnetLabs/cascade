@@ -138,7 +138,7 @@ pub async fn refresh_server(
     zone: &Arc<Zone>,
     addr: &std::net::SocketAddr,
     tsig_key: &Option<Arc<domain::tsig::Key>>,
-    contents: &mut Option<Arc<ZoneContents>>,
+    contents: &mut Option<ZoneContents>,
 ) -> Result<Option<Serial>, RefreshError> {
     trace!("Refreshing {:?} from server {addr:?}", zone.name);
 
@@ -172,7 +172,7 @@ pub async fn reload_server(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: &Option<Arc<tsig::Key>>,
-    contents: &mut Option<Arc<ZoneContents>>,
+    contents: &mut Option<ZoneContents>,
 ) -> Result<Option<Serial>, RefreshError> {
     let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
     server::axfr(metrics, zone, addr, tsig_key, contents).await?;
@@ -186,7 +186,7 @@ pub async fn load_zonefile(
     metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     path: &Utf8Path,
-    contents: &mut Option<Arc<ZoneContents>>,
+    contents: &mut Option<ZoneContents>,
 ) -> Result<Option<Serial>, RefreshError> {
     zonefile::load(metrics, zone, path, contents)?;
 
