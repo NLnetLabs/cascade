@@ -9,12 +9,13 @@ use tokio::sync::OwnedMutexGuard;
 use tracing::{debug, error, info};
 
 use crate::{
+    center::Center,
     manager::Update,
     util::AbortOnDrop,
     zone::{Zone, ZoneContents, ZoneState, contents::SoaRecord},
 };
 
-use super::{ActiveLoadMetrics, LoadMetrics, Loader, RefreshError, RefreshMonitor, Source};
+use super::{ActiveLoadMetrics, LoadMetrics, RefreshError, RefreshMonitor, Source};
 
 //----------- LoaderState ------------------------------------------------------
 
@@ -68,7 +69,7 @@ impl LoaderState {
         state: &mut ZoneState,
         zone: &Arc<Zone>,
         reload: bool,
-        loader: &Arc<Loader>,
+        center: &Arc<Center>,
     ) {
         debug!("Enqueueing a refresh for {:?}", zone.name);
 
@@ -76,7 +77,7 @@ impl LoaderState {
             state
                 .loader
                 .refresh_timer
-                .disable(zone, &loader.refresh_monitor);
+                .disable(zone, &center.loader.refresh_monitor);
             return;
         }
 
@@ -93,7 +94,7 @@ impl LoaderState {
             refreshes.enqueue(refresh);
         } else {
             // Start this refresh immediately.
-            Self::start(state, zone.clone(), refresh, loader.clone());
+            Self::start(state, zone.clone(), refresh, center.clone());
         }
     }
 
@@ -102,7 +103,7 @@ impl LoaderState {
         state: &mut ZoneState,
         zone: Arc<Zone>,
         refresh: EnqueuedRefresh,
-        loader: Arc<Loader>,
+        center: Arc<Center>,
     ) {
         let metrics = Arc::new(ActiveLoadMetrics::begin());
         let source = state.loader.source.clone();
@@ -113,7 +114,7 @@ impl LoaderState {
             source,
             refresh == EnqueuedRefresh::Reload,
             contents,
-            loader,
+            center,
             metrics.clone(),
         ));
 
@@ -129,7 +130,7 @@ impl LoaderState {
         source: Source,
         force: bool,
         mut contents: tokio::sync::OwnedMutexGuard<Option<ZoneContents>>,
-        loader: Arc<Loader>,
+        center: Arc<Center>,
         metrics: Arc<ActiveLoadMetrics>,
     ) {
         info!("Refreshing {:?}", zone.name);
@@ -190,18 +191,18 @@ impl LoaderState {
                     state,
                     &zone,
                     soa.as_ref(),
-                    &loader,
+                    &center,
                     start_time,
                 );
             }
         }
 
-        Self::process_new_zone_version(result, &zone, &loader).await;
+        Self::process_new_zone_version(result, &zone, &center).await;
 
-        Self::start_next_refresh(&zone, loader);
+        Self::start_next_refresh(&zone, center);
     }
 
-    fn start_next_refresh(zone: &Arc<Zone>, loader: Arc<Loader>) {
+    fn start_next_refresh(zone: &Arc<Zone>, center: Arc<Center>) {
         let mut lock = zone.state.lock().unwrap();
         let state = &mut *lock;
 
@@ -219,7 +220,7 @@ impl LoaderState {
 
         // Start the next enqueued refresh.
         if let Some(refresh) = enqueued {
-            Self::start(state, zone.clone(), refresh, loader);
+            Self::start(state, zone.clone(), refresh, center);
         }
     }
 
@@ -228,26 +229,30 @@ impl LoaderState {
         state: &mut ZoneState,
         zone: &Arc<Zone>,
         soa: Option<&SoaRecord>,
-        loader: &Arc<Loader>,
+        center: &Arc<Center>,
         start: Instant,
     ) {
         if succeeded {
-            state
-                .loader
-                .refresh_timer
-                .schedule_refresh(zone, start, soa, &loader.refresh_monitor);
+            state.loader.refresh_timer.schedule_refresh(
+                zone,
+                start,
+                soa,
+                &center.loader.refresh_monitor,
+            );
         } else {
-            state
-                .loader
-                .refresh_timer
-                .schedule_retry(zone, start, soa, &loader.refresh_monitor);
+            state.loader.refresh_timer.schedule_retry(
+                zone,
+                start,
+                soa,
+                &center.loader.refresh_monitor,
+            );
         }
     }
 
     async fn process_new_zone_version(
         result: Result<Option<OwnedMutexGuard<Option<ZoneContents>>>, RefreshError>,
         zone: &Arc<Zone>,
-        loader: &Arc<Loader>,
+        center: &Arc<Center>,
     ) {
         // Process the result of the reload.
         match result {
@@ -260,12 +265,11 @@ impl LoaderState {
                 debug!("Loaded serial {serial:?} for {:?}", zone.name);
 
                 let zone_copy = zone.clone();
-                let loader_copy = loader.clone();
 
                 let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
                 new_contents.write_into_zonetree(&zonetree).await;
 
-                loader_copy.center.unsigned_zones.rcu(|tree| {
+                center.unsigned_zones.rcu(|tree| {
                     let mut tree = Arc::unwrap_or_clone(tree.clone());
                     let _ = tree.remove_zone(&zone_copy.name, Class::IN);
                     tree.insert_zone(zonetree.clone()).unwrap();
@@ -275,8 +279,7 @@ impl LoaderState {
                 // Inform the central command.
                 let zone_name = zone_copy.name.clone();
                 let zone_serial = domain::base::Serial(serial.into());
-                loader_copy
-                    .center
+                center
                     .update_tx
                     .send(Update::UnsignedZoneUpdatedEvent {
                         zone_name,

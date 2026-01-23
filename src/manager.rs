@@ -33,10 +33,7 @@ pub struct Manager {
     /// The HTTP server.
     pub http_server: Arc<HttpServer>,
 
-    /// The zone loader.
-    pub zone_loader: Arc<Loader>,
-
-    /// A handle to the zone loader task
+    /// A handle to the zone loader task.
     ///
     /// Might seem unused but it's important to drop at the right moment, i.e.
     /// when the manager is dropped.
@@ -68,8 +65,7 @@ impl Manager {
 
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");
-        let zone_loader = Loader::launch(center.clone());
-        let loader_runner = zone_loader.run();
+        let loader_runner = Loader::run(center.clone());
 
         // Spawn the unsigned zone review server.
         info!("Starting unit 'RS'");
@@ -131,7 +127,6 @@ impl Manager {
         Ok(Self {
             center,
             http_server,
-            zone_loader,
             _loader_handle: loader_runner,
             unsigned_review,
             key_manager,
@@ -145,8 +140,8 @@ impl Manager {
     pub fn on_app_cmd(&self, unit: &str, cmd: ApplicationCommand) {
         match unit {
             "ZL" => tokio::spawn({
-                let unit = self.zone_loader.clone();
-                async move { unit.on_command(cmd).await }
+                let center = self.center.clone();
+                async move { center.loader.on_command(&center, cmd).await }
             }),
             "RS" => tokio::spawn({
                 let unit = self.unsigned_review.clone();

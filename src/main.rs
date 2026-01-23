@@ -2,6 +2,7 @@ use cascaded::{
     center::{self, Center},
     config::{Config, SocketConfig},
     daemon::{PreBindError, SocketProvider, daemonize},
+    loader::Loader,
     manager::Manager,
     policy,
 };
@@ -173,6 +174,7 @@ fn main() -> ExitCode {
         state: Mutex::new(state),
         config,
         logger,
+        loader: Loader::new(),
         unsigned_zones: Default::default(),
         signable_zones: Default::default(),
         signed_zones: Default::default(),
@@ -182,6 +184,12 @@ fn main() -> ExitCode {
         app_cmd_tx,
         update_tx,
     });
+
+    // Perform pre-async initialization.
+    {
+        let mut state = center.state.lock().unwrap();
+        center.loader.init(&center, &mut state);
+    }
 
     // Set up the rayon threadpool
     rayon::ThreadPoolBuilder::new()
