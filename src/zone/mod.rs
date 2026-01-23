@@ -5,7 +5,7 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
-    io, mem,
+    io,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
@@ -20,7 +20,7 @@ use crate::{
     api::{self, ZoneReviewStatus},
     center::{Center, Change},
     config::Config,
-    loader::{Source, zone::LoaderState},
+    loader::zone::LoaderState,
     manager::Update,
     policy::{Policy, PolicyVersion},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
@@ -538,49 +538,6 @@ pub fn change_policy(
     zone.0.mark_dirty(&mut zone_state, center);
 
     info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
-    Ok(())
-}
-
-/// Change the source of the zone.
-pub fn change_source(
-    center: &Arc<Center>,
-    name: Name<Bytes>,
-    source: api::ZoneSource,
-) -> Result<(), ChangeSourceError> {
-    // Find the zone.
-    let zone = {
-        let state = center.state.lock().unwrap();
-        state
-            .zones
-            .get(&name)
-            .ok_or(ChangeSourceError::NoSuchZone)?
-            .0
-            .clone()
-    };
-
-    // Set the source in the zone.
-    let mut state = zone.state.lock().unwrap();
-    let new_source = match source {
-        api::ZoneSource::None => Source::None,
-
-        api::ZoneSource::Zonefile { path } => Source::Zonefile { path },
-
-        // TODO: Look up the TSIG key.
-        api::ZoneSource::Server { addr, .. } => Source::Server {
-            addr,
-            tsig_key: None,
-        },
-    };
-    let old_source = mem::replace(&mut state.loader.source, new_source.clone());
-
-    center
-        .update_tx
-        .send(Update::Changed(Change::ZoneSourceChanged(name.clone())))
-        .unwrap();
-
-    zone.mark_dirty(&mut state, center);
-
-    info!("Set source of zone '{name}' from '{old_source:?}' to '{new_source:?}'");
     Ok(())
 }
 

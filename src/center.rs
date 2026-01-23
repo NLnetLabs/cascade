@@ -19,6 +19,7 @@ use tracing::{debug, error, info, trace};
 use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
+use crate::loader::zone::LoaderZoneHandle;
 use crate::zone::PipelineMode;
 use crate::{
     api,
@@ -145,12 +146,32 @@ pub async fn add_zone(
     }
 
     {
-        match crate::zone::change_source(center, name.clone(), source) {
-            Ok(()) => {}
-            Err(crate::zone::ChangeSourceError::NoSuchZone) => unreachable!(),
-            // NOTE: When proper TSIG support is added, it should be checked
-            //       for _before_ the zone is added.
+        let mut state = zone.state.lock().unwrap();
+
+        let source = match source {
+            cascade_api::ZoneSource::None => crate::loader::Source::None,
+            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
+            cascade_api::ZoneSource::Server {
+                addr,
+                tsig_key,
+                xfr_status: _,
+            } => {
+                // TODO: TSIG.
+                let _ = tsig_key;
+                crate::loader::Source::Server {
+                    addr,
+                    tsig_key: None,
+                }
+            }
+        };
+
+        // Set the source of the zone, and begin loading it.
+        LoaderZoneHandle {
+            zone: &zone,
+            state: &mut state,
+            center,
         }
+        .set_source(source);
 
         // NOTE: The zone is marked as dirty by the above operation.
     }

@@ -4,12 +4,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{
     center::Center,
     util::AbortOnDrop,
-    zone::{Zone, ZoneState, contents::SoaRecord},
+    zone::{HistoricalEvent, Zone, ZoneState, contents::SoaRecord},
 };
 
 use super::{ActiveLoadMetrics, LoadMetrics, RefreshMonitor, Source};
@@ -29,6 +29,29 @@ pub struct LoaderZoneHandle<'a> {
 }
 
 impl LoaderZoneHandle<'_> {
+    /// Set the source of this zone.
+    ///
+    /// A (soft) refresh will be initiated via [`Self::enqueue_refresh()`].
+    pub fn set_source(&mut self, source: Source) {
+        info!(
+            "Setting source of zone '{}' from '{:?}' to '{source:?}'",
+            self.zone.name, self.state.loader.source
+        );
+
+        self.state.loader.source = source;
+
+        crate::manager::record_zone_event(
+            self.center,
+            &self.zone.name,
+            HistoricalEvent::SourceChanged,
+            None,
+        );
+
+        self.zone.mark_dirty(self.state, self.center);
+
+        self.enqueue_refresh(false);
+    }
+
     /// Enqueue a refresh of this zone.
     ///
     /// If the zone is not being refreshed already, a new refresh will be
