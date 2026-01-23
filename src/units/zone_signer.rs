@@ -48,6 +48,7 @@ use crate::api::{
 use crate::center::{Center, get_zone};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::metrics::MetricsCollection;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
@@ -89,7 +90,7 @@ pub struct ZoneSigner {
 
 impl ZoneSigner {
     /// Launch the zone signer.
-    pub fn launch(center: Arc<Center>) -> Arc<Self> {
+    pub fn launch(center: Arc<Center>, _metrics: &mut MetricsCollection) -> Arc<Self> {
         let (next_resign_time_tx, next_resign_time_rx) = watch::channel(None);
 
         let max_concurrent_operations = 1;

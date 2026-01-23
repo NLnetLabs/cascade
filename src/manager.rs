@@ -6,6 +6,8 @@ use crate::api::{self, KeyImport, SigningQueueReport, SigningReport};
 use crate::center::{Center, Change, ZoneAddError, get_zone, halt_zone};
 use crate::daemon::SocketProvider;
 use crate::loader::Loader;
+use crate::metrics::MetricsCollection;
+use crate::units::http_server::HTTP_UNIT_NAME;
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::{self, ZoneServer};
@@ -16,7 +18,7 @@ use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
 use domain::zonetree::StoredName;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 //----------- Manager ----------------------------------------------------------
 
@@ -62,10 +64,11 @@ impl Manager {
         center: Arc<Center>,
         mut socket_provider: SocketProvider,
     ) -> Result<Self, Error> {
+        let mut metrics = MetricsCollection::new();
+
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");
         let zone_loader = Loader::launch(center.clone());
-
         let loader_runner = zone_loader.run();
 
         // Spawn the unsigned zone review server.
@@ -74,15 +77,16 @@ impl Manager {
             center.clone(),
             zone_server::Source::Unsigned,
             &mut socket_provider,
+            &mut metrics,
         )?);
 
         // Spawn the key manager.
         info!("Starting unit 'KM'");
-        let key_manager = KeyManager::launch(center.clone());
+        let key_manager = KeyManager::launch(center.clone(), &mut metrics);
 
         // Spawn the zone signer.
         info!("Starting unit 'ZS'");
-        let zone_signer = ZoneSigner::launch(center.clone());
+        let zone_signer = ZoneSigner::launch(center.clone(), &mut metrics);
 
         // Spawn the signed zone review server.
         info!("Starting unit 'RS2'");
@@ -90,18 +94,37 @@ impl Manager {
             center.clone(),
             zone_server::Source::Signed,
             &mut socket_provider,
+            &mut metrics,
         )?);
 
-        // Spawn the HTTP server.
-        info!("Starting unit 'HS'");
-        let http_server = HttpServer::launch(center.clone(), &mut socket_provider)?;
+        // Take out HTTP listen sockets before PS takes them all.
+        debug!("Pre-fetching listen sockets for 'HS'");
+        let http_sockets = center
+            .config
+            .remote_control
+            .servers
+            .iter()
+            .map(|addr| {
+                socket_provider.take_tcp(addr).ok_or_else(|| {
+                    error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}",);
+                    Terminated
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         info!("Starting unit 'PS'");
         let zone_server = Arc::new(ZoneServer::launch(
             center.clone(),
             zone_server::Source::Published,
             &mut socket_provider,
+            &mut metrics,
         )?);
+
+        // Register any Manager metrics here, before giving the metrics to the HttpServer
+
+        // Spawn the HTTP server.
+        info!("Starting unit 'HS'");
+        let http_server = HttpServer::launch(center.clone(), http_sockets, metrics)?;
 
         info!("All units report ready.");
 
