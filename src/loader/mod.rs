@@ -15,15 +15,15 @@ use std::{
 };
 
 use camino::Utf8Path;
-use domain::{new::base::Serial, tsig};
-use tracing::debug;
+use domain::{base::iana::Class, new::base::Serial, tsig, zonetree::ZoneBuilder};
+use tracing::{debug, error, info};
 
 use crate::{
     center::{Center, Change, State},
-    loader::zone::LoaderState,
-    manager::{ApplicationCommand, Terminated},
+    loader::zone::LoaderZoneHandle,
+    manager::{ApplicationCommand, Terminated, Update},
     util::AbortOnDrop,
-    zone::{Zone, contents},
+    zone::{Zone, ZoneContents, contents},
 };
 
 mod refresh;
@@ -54,7 +54,13 @@ impl Loader {
     pub fn init(&self, center: &Arc<Center>, state: &mut State) {
         // Enqueue refreshes for all known zones.
         for zone in &state.zones {
-            self.enqueue_refresh(center, &zone.0);
+            let mut state = zone.0.state.lock().unwrap();
+            LoaderZoneHandle {
+                zone: &zone.0,
+                state: &mut state,
+                center,
+            }
+            .enqueue_refresh(false);
         }
     }
 
@@ -78,7 +84,13 @@ impl Loader {
                     // a specific case for that.
                     Change::ZoneSourceChanged(name) => {
                         let zone = crate::center::get_zone(center, &name).expect("zone exists");
-                        self.enqueue_refresh(center, &zone);
+                        let mut state = zone.state.lock().expect("lock is not poisoned");
+                        LoaderZoneHandle {
+                            zone: &zone,
+                            state: &mut state,
+                            center,
+                        }
+                        .enqueue_refresh(false);
                         Ok(())
                     }
                     Change::ZoneRemoved(name) => {
@@ -94,7 +106,13 @@ impl Loader {
                             .iter()
                             .find(|z| z.zone.0.name == name)
                         {
-                            self.disable(center, &zone.zone.0);
+                            let mut state = zone.zone.0.state.lock().unwrap();
+                            LoaderZoneHandle {
+                                zone: &zone.zone.0,
+                                state: &mut state,
+                                center,
+                            }
+                            .prep_removal();
                         }
                         Ok(())
                     }
@@ -104,34 +122,173 @@ impl Loader {
             ApplicationCommand::RefreshZone { zone_name } => {
                 let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
                 let mut state = zone.state.lock().expect("lock is not poisoned");
-                LoaderState::enqueue_refresh(&mut state, &zone, false, center);
+                LoaderZoneHandle {
+                    zone: &zone,
+                    state: &mut state,
+                    center,
+                }
+                .enqueue_refresh(false);
                 Ok(())
             }
             ApplicationCommand::ReloadZone { zone_name } => {
                 let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
                 let mut state = zone.state.lock().expect("lock is not poisoned");
-                LoaderState::enqueue_refresh(&mut state, &zone, true, center);
+                LoaderZoneHandle {
+                    zone: &zone,
+                    state: &mut state,
+                    center,
+                }
+                .enqueue_refresh(true);
                 Ok(())
             }
             _ => panic!("Got an unexpected command!"),
         }
-    }
-
-    fn enqueue_refresh(&self, center: &Arc<Center>, zone: &Arc<Zone>) {
-        let mut state = zone.state.lock().unwrap();
-        LoaderState::enqueue_refresh(&mut state, zone, false, center);
-    }
-
-    fn disable(&self, center: &Arc<Center>, zone: &Arc<Zone>) {
-        let mut state = zone.state.lock().unwrap();
-        state.loader.source = Source::None;
-        LoaderState::enqueue_refresh(&mut state, zone, true, center);
     }
 }
 
 impl Default for Loader {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+//----------- refresh() --------------------------------------------------------
+
+/// Refresh a zone.
+async fn refresh(
+    zone: Arc<Zone>,
+    source: Source,
+    force: bool,
+    mut contents: tokio::sync::OwnedMutexGuard<Option<ZoneContents>>,
+    center: Arc<Center>,
+    metrics: Arc<ActiveLoadMetrics>,
+) {
+    info!("Refreshing {:?}", zone.name);
+
+    let source_is_server = matches!(&source, Source::Server { .. });
+    let old_soa = contents.as_ref().map(|c| c.soa.clone());
+
+    // Perform the source-specific reload into the zone contents.
+    let result = match source {
+        Source::None => Ok(None),
+        Source::Zonefile { path } => {
+            let zone = zone.clone();
+            let metrics = metrics.clone();
+            tokio::task::spawn_blocking(move || {
+                zonefile::load(&zone, &path, &mut contents, &metrics)
+                    .map(|()| Some(contents))
+                    .map_err(Into::into)
+            })
+            .await
+            .unwrap()
+        }
+        Source::Server { addr, tsig_key } if force => {
+            let tsig_key = tsig_key.as_deref().cloned();
+            server::axfr(&zone, &addr, tsig_key, &mut contents, &metrics)
+                .await
+                .map(|()| Some(contents))
+                .map_err(Into::into)
+        }
+        Source::Server { addr, tsig_key } => {
+            let tsig_key = tsig_key.as_deref().cloned();
+            server::refresh(&zone, &addr, tsig_key, &mut contents, &metrics)
+                .await
+                .map(|new| new.then_some(contents))
+        }
+    };
+
+    // On success, use the updated SOA record for scheduling.
+    let soa = result
+        .as_ref()
+        .ok()
+        .and_then(|c| c.as_ref())
+        .map(|c| c.as_ref().unwrap().soa.clone())
+        .or(old_soa);
+
+    // Finalize the load metrics and update refresh timer state.
+    {
+        let mut lock = zone.state.lock().unwrap();
+        let state = &mut *lock;
+        let start_time = metrics.start.0;
+        state.loader.active_load_metrics = None;
+        state.loader.last_load_metrics = Some(metrics.finish());
+
+        // Zonefiles are not refreshed automatically so we don't schedule a
+        // refresh or a retry. The user should just reload again when the
+        // zonefile has updated or been fixed if it was in a broken state.
+        if source_is_server {
+            let refresh_timer = &mut state.loader.refresh_timer;
+            let refresh_monitor = &center.loader.refresh_monitor;
+            if result.is_ok() {
+                refresh_timer.schedule_refresh(&zone, start_time, soa.as_ref(), refresh_monitor);
+            } else {
+                refresh_timer.schedule_retry(&zone, start_time, soa.as_ref(), refresh_monitor);
+            }
+        }
+    }
+
+    // Process the result of the reload.
+    match result {
+        Ok(None) => {
+            debug!("{:?} is up-to-date and consistent", zone.name);
+        }
+
+        Ok(Some(contents)) => {
+            let new_contents = contents.as_ref().unwrap();
+            let serial = new_contents.soa.rdata.serial;
+            debug!("Loaded serial {serial:?} for {:?}", zone.name);
+
+            let zone_copy = zone.clone();
+
+            let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
+            new_contents.write_into_zonetree(&zonetree).await;
+
+            center.unsigned_zones.rcu(|tree| {
+                let mut tree = Arc::unwrap_or_clone(tree.clone());
+                let _ = tree.remove_zone(&zone_copy.name, Class::IN);
+                tree.insert_zone(zonetree.clone()).unwrap();
+                tree
+            });
+
+            // Inform the central command.
+            let zone_name = zone_copy.name.clone();
+            let zone_serial = domain::base::Serial(serial.into());
+            center
+                .update_tx
+                .send(Update::UnsignedZoneUpdatedEvent {
+                    zone_name,
+                    zone_serial,
+                })
+                .unwrap();
+        }
+
+        Err(err) => {
+            error!("Could not reload {:?}: {err}", zone.name);
+        }
+    }
+
+    let mut lock = zone.state.lock().unwrap();
+    let mut handle = LoaderZoneHandle {
+        zone: &zone,
+        state: &mut lock,
+        center: &center,
+    };
+
+    // Update the state of ongoing refreshes.
+    let id = tokio::task::id();
+    let enqueued = match handle.state.loader.refreshes.take() {
+        Some(zone::Refreshes {
+            ongoing: zone::OngoingRefresh { handle },
+            enqueued,
+        }) if handle.id() == id => enqueued,
+        refreshes => {
+            panic!("ongoing reload ({id:?}) is unregistered (state: {refreshes:?})")
+        }
+    };
+
+    // Start the next enqueued refresh.
+    if let Some(refresh) = enqueued {
+        handle.start(refresh);
     }
 }
 
