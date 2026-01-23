@@ -348,6 +348,9 @@ pub struct LoadMetrics {
     /// using a monotonic clock.
     pub duration: Duration,
 
+    /// The source loaded from.
+    pub source: Source,
+
     /// The (approximate) number of bytes loaded.
     ///
     /// This may include network overhead (e.g. TCP/UDP/IP headers, DNS message
@@ -385,6 +388,11 @@ pub struct ActiveLoadMetrics {
     /// See [`LoadMetrics::start`].
     pub start: (Instant, SystemTime),
 
+    /// The source being loaded from.
+    ///
+    /// See [`LoadMetrics::source`].
+    pub source: Source,
+
     /// The (approximate) number of bytes loaded thus far.
     ///
     /// See [`LoadMetrics::num_loaded_bytes`].
@@ -398,9 +406,10 @@ pub struct ActiveLoadMetrics {
 
 impl ActiveLoadMetrics {
     /// Begin (the metrics for) a new load.
-    pub fn begin() -> Self {
+    pub fn begin(source: Source) -> Self {
         Self {
             start: (Instant::now(), SystemTime::now()),
+            source,
             num_loaded_bytes: AtomicUsize::new(0),
             num_loaded_records: AtomicUsize::new(0),
         }
@@ -420,6 +429,7 @@ impl ActiveLoadMetrics {
             start: self.start.1,
             end: end.1,
             duration: end.0.duration_since(self.start.0),
+            source: self.source.clone(),
             num_loaded_bytes: self.num_loaded_bytes.load(atomic::Ordering::Relaxed),
             num_loaded_records: self.num_loaded_records.load(atomic::Ordering::Relaxed),
         }

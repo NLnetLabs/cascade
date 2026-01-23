@@ -102,8 +102,8 @@ impl LoaderZoneHandle<'_> {
 
     /// Start an enqueued refresh.
     pub(super) fn start(&mut self, refresh: EnqueuedRefresh) {
-        let metrics = Arc::new(ActiveLoadMetrics::begin());
         let source = self.state.loader.source.clone();
+        let metrics = Arc::new(ActiveLoadMetrics::begin(source.clone()));
         let contents = self.state.contents.clone().try_lock_owned().unwrap();
 
         let handle = tokio::task::spawn(super::refresh(
