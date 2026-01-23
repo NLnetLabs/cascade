@@ -16,14 +16,14 @@ use std::{
 
 use camino::Utf8Path;
 use domain::{new::base::Serial, tsig};
-use tracing::{debug, trace};
+use tracing::debug;
 
 use crate::{
     center::{Center, Change},
     loader::zone::LoaderState,
     manager::{ApplicationCommand, Terminated},
     util::AbortOnDrop,
-    zone::{Zone, ZoneContents, contents},
+    zone::{Zone, contents},
 };
 
 mod refresh;
@@ -130,76 +130,6 @@ impl Loader {
         state.loader.source = Source::None;
         LoaderState::enqueue_refresh(&mut state, zone, true, self);
     }
-}
-
-//----------- refresh() --------------------------------------------------------
-
-/// Refresh a zone from DNS server.
-///
-/// The DNS server will be queried for the latest version of the zone; if a
-/// local copy of this version is not already available, it will be loaded.
-/// Where possible, an incremental zone transfer will be used to communicate
-/// more efficiently.
-pub async fn refresh_server(
-    zone: &Arc<Zone>,
-    addr: &std::net::SocketAddr,
-    tsig_key: &Option<Arc<domain::tsig::Key>>,
-    contents: &mut Option<ZoneContents>,
-    metrics: &ActiveLoadMetrics,
-) -> Result<Option<Serial>, RefreshError> {
-    trace!("Refreshing {:?} from server {addr:?}", zone.name);
-
-    let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-
-    let old_serial = contents.as_ref().map(|c| c.soa.rdata.serial);
-    server::refresh(zone, addr, tsig_key, contents, metrics).await?;
-
-    let new_contents = contents.as_ref().unwrap();
-    let remote_serial = new_contents.soa.rdata.serial;
-
-    if old_serial == Some(remote_serial) {
-        // The local copy is up-to-date.
-        return Ok(None);
-    }
-
-    Ok(Some(remote_serial))
-}
-
-//----------- reload() ---------------------------------------------------------
-
-/// Reload a zone.
-///
-/// The complete contents of the zone will be loaded from the source, without
-/// relying on the local copy at all.  If this results in a new version of the
-/// zone, it is registered in the zone storage; otherwise, the loaded data is
-/// compared to the local copy of the same zone version.  If an inconsistency is
-/// detected, an error is returned, and the zone storage is unchanged.
-pub async fn reload_server(
-    zone: &Arc<Zone>,
-    addr: &SocketAddr,
-    tsig_key: &Option<Arc<tsig::Key>>,
-    contents: &mut Option<ZoneContents>,
-    metrics: &ActiveLoadMetrics,
-) -> Result<Option<Serial>, RefreshError> {
-    let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-    server::axfr(zone, addr, tsig_key, contents, metrics).await?;
-
-    let new_contents = contents.as_ref().unwrap();
-    let serial = new_contents.soa.rdata.serial;
-    Ok(Some(serial))
-}
-
-pub async fn load_zonefile(
-    zone: &Arc<Zone>,
-    path: &Utf8Path,
-    contents: &mut Option<ZoneContents>,
-    metrics: &ActiveLoadMetrics,
-) -> Result<Option<Serial>, RefreshError> {
-    zonefile::load(zone, path, contents, metrics)?;
-
-    let new_contents = contents.as_ref().unwrap();
-    let serial = new_contents.soa.rdata.serial;
-    Ok(Some(serial))
 }
 
 //----------- Source -----------------------------------------------------------

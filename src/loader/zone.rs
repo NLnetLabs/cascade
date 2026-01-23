@@ -1,11 +1,11 @@
 //! Zone-specific loader state.
 use std::{
-    fmt::Display,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use domain::{base::iana::Class, new::base::Serial, zonetree::ZoneBuilder};
+use domain::{base::iana::Class, zonetree::ZoneBuilder};
+use tokio::sync::OwnedMutexGuard;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -135,20 +135,44 @@ impl LoaderState {
         info!("Refreshing {:?}", zone.name);
 
         let source_is_server = matches!(&source, Source::Server { .. });
+        let old_soa = contents.as_ref().map(|c| c.soa.clone());
 
         // Perform the source-specific reload into the zone contents.
         let result = match source {
             Source::None => Ok(None),
             Source::Zonefile { path } => {
-                super::load_zonefile(&zone, &path, &mut contents, &metrics).await
+                let zone = zone.clone();
+                let metrics = metrics.clone();
+                tokio::task::spawn_blocking(move || {
+                    super::zonefile::load(&zone, &path, &mut contents, &metrics)
+                        .map(|()| Some(contents))
+                        .map_err(Into::into)
+                })
+                .await
+                .unwrap()
             }
             Source::Server { addr, tsig_key } if force => {
-                super::reload_server(&zone, &addr, &tsig_key, &mut contents, &metrics).await
+                let tsig_key = tsig_key.as_deref().cloned();
+                super::server::axfr(&zone, &addr, tsig_key, &mut contents, &metrics)
+                    .await
+                    .map(|()| Some(contents))
+                    .map_err(Into::into)
             }
             Source::Server { addr, tsig_key } => {
-                super::refresh_server(&zone, &addr, &tsig_key, &mut contents, &metrics).await
+                let tsig_key = tsig_key.as_deref().cloned();
+                super::server::refresh(&zone, &addr, tsig_key, &mut contents, &metrics)
+                    .await
+                    .map(|new| new.then_some(contents))
             }
         };
+
+        // On success, use the updated SOA record for scheduling.
+        let soa = result
+            .as_ref()
+            .ok()
+            .and_then(|c| c.as_ref())
+            .map(|c| c.as_ref().unwrap().soa.clone())
+            .or(old_soa);
 
         {
             let mut lock = zone.state.lock().unwrap();
@@ -162,17 +186,17 @@ impl LoaderState {
             // zonefile has updated or been fixed if it was in a broken state.
             if source_is_server {
                 Self::schedule_next(
-                    &result,
+                    result.is_ok(),
                     state,
                     &zone,
-                    contents.as_ref(),
+                    soa.as_ref(),
                     &loader,
                     start_time,
                 );
             }
         }
 
-        Self::process_new_zone_version(result, &zone, &contents, &loader).await;
+        Self::process_new_zone_version(result, &zone, &loader).await;
 
         Self::start_next_refresh(&zone, loader);
     }
@@ -199,17 +223,15 @@ impl LoaderState {
         }
     }
 
-    fn schedule_next<E: Display>(
-        result: &Result<Option<Serial>, E>,
+    fn schedule_next(
+        succeeded: bool,
         state: &mut ZoneState,
         zone: &Arc<Zone>,
-        contents: Option<&ZoneContents>,
+        soa: Option<&SoaRecord>,
         loader: &Arc<Loader>,
         start: Instant,
     ) {
-        // Update the zone refresh timers.
-        let soa = contents.map(|c| &c.soa);
-        if result.is_ok() {
+        if succeeded {
             state
                 .loader
                 .refresh_timer
@@ -223,9 +245,8 @@ impl LoaderState {
     }
 
     async fn process_new_zone_version(
-        result: Result<Option<Serial>, RefreshError>,
+        result: Result<Option<OwnedMutexGuard<Option<ZoneContents>>>, RefreshError>,
         zone: &Arc<Zone>,
-        contents: &Option<ZoneContents>,
         loader: &Arc<Loader>,
     ) {
         // Process the result of the reload.
@@ -233,18 +254,16 @@ impl LoaderState {
             Ok(None) => {
                 debug!("{:?} is up-to-date and consistent", zone.name);
             }
-            Ok(Some(serial)) => {
+            Ok(Some(contents)) => {
+                let new_contents = contents.as_ref().unwrap();
+                let serial = new_contents.soa.rdata.serial;
                 debug!("Loaded serial {serial:?} for {:?}", zone.name);
 
                 let zone_copy = zone.clone();
                 let loader_copy = loader.clone();
 
                 let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
-                contents
-                    .as_ref()
-                    .unwrap()
-                    .write_into_zonetree(&zonetree)
-                    .await;
+                new_contents.write_into_zonetree(&zonetree).await;
 
                 loader_copy.center.unsigned_zones.rcu(|tree| {
                     let mut tree = Arc::unwrap_or_clone(tree.clone());

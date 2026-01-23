@@ -37,7 +37,7 @@ use domain::{
     zonetree::types::ZoneUpdate,
 };
 use tokio::net::TcpStream;
-use tracing::trace;
+use tracing::{debug, trace};
 
 use crate::{
     loader::ActiveLoadMetrics,
@@ -53,29 +53,34 @@ use super::RefreshError;
 
 /// Refresh a zone from a DNS server.
 ///
-/// See [`super::refresh()`].
+/// The DNS server will be queried for the latest version of the zone; if a
+/// local copy of this version is not already available, it will be loaded.
+/// Where possible, an incremental zone transfer will be used to communicate
+/// more efficiently.
+///
+/// Returns `true` if a new instance of the zone was loaded.
 pub async fn refresh(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
     contents: &mut Option<ZoneContents>,
     metrics: &ActiveLoadMetrics,
-) -> Result<(), RefreshError> {
+) -> Result<bool, RefreshError> {
+    debug!("Refreshing {:?} from server {addr:?}", zone.name);
+
     if contents.is_none() {
         trace!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
 
         // Fetch the whole zone.
         axfr(zone, addr, tsig_key, contents, metrics).await?;
 
-        return Ok(());
+        return Ok(true);
     };
 
     trace!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
 
     // Fetch the zone relative to the latest local copy.
-    ixfr(zone, addr, tsig_key, contents, metrics).await?;
-
-    Ok(())
+    Ok(ixfr(zone, addr, tsig_key, contents, metrics).await?)
 }
 
 //----------- ixfr() -----------------------------------------------------------
@@ -83,17 +88,18 @@ pub async fn refresh(
 /// Perform an incremental zone transfer.
 ///
 /// The server is queried for the diff between the version of the zone indicated
-/// by the provided SOA record, and the latest version known to the server.  The
+/// by the provided SOA record, and the latest version known to the server. The
 /// diff is transformed into a compressed representation of the _local_ version
-/// of the zone.  If the local version is identical to the server's version,
-/// [`None`] is returned.
+/// of the zone.
+///
+/// Returns `true` if a new instance of the zone was loaded.
 pub async fn ixfr(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
     contents: &mut Option<ZoneContents>,
     metrics: &ActiveLoadMetrics,
-) -> Result<(), IxfrError> {
+) -> Result<bool, IxfrError> {
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
     let local_soa = &contents.as_ref().unwrap().soa;
 
@@ -139,12 +145,18 @@ pub async fn ixfr(
         // Query the server for its SOA record only.
         let remote_soa = query_soa(zone, addr, tsig_key.clone()).await?;
 
-        if local_soa.rdata.serial != remote_soa.rdata.serial {
+        if local_soa.rdata.serial == remote_soa.rdata.serial {
+            // The zone has not changed.
+            return Ok(false);
+        } else {
+            // If the remote serial is ahead of the local serial, the new zone
+            // needs to be fetched. If the remote serial is behind, we treat it
+            // as a new instance of the zone anyway.
+
             // Perform a full AXFR.
             axfr(zone, addr, tsig_key, contents, metrics).await?;
+            return Ok(true);
         }
-
-        return Ok(());
     }
 
     // Process the transfer data.
@@ -167,7 +179,7 @@ pub async fn ixfr(
             assert!(interpreter.is_finished());
             let all = all.into_boxed_slice();
             *contents = Some(ZoneContents { soa, all });
-            return Ok(());
+            return Ok(true);
         }
 
         Some(Ok(ZoneUpdate::BeginBatchDelete(_))) => {
@@ -202,17 +214,17 @@ pub async fn ixfr(
             let new_contents = contents.as_ref().unwrap().forward(&compressed)?;
             *contents = Some(new_contents);
 
-            return Ok(());
+            return Ok(true);
         }
 
         // NOTE: 'domain' currently reports 'None' for a single-SOA IXFR,
-        // apparently assuming it means the local copy is up-to-date.  But
+        // apparently assuming it means the local copy is up-to-date. But
         // this misses two other possibilities:
         // - The remote copy is older than the local copy.
         // - The IXFR was too big for UDP.
         None => {
             // Assume the remote copy is identical to to the local copy.
-            return Ok(());
+            return Ok(false);
         }
 
         // NOTE: The XFR response interpreter will not return this right
@@ -227,7 +239,7 @@ pub async fn ixfr(
             let serial = Serial::from(soa.serial().into_int());
             if local_soa.rdata.serial == serial {
                 // The local copy is up-to-date.
-                return Ok(());
+                return Ok(false);
             }
 
             // The transfer may have been too big for UDP; fall back to a
@@ -277,12 +289,18 @@ pub async fn ixfr(
         // Query the server for its SOA record only.
         let remote_soa = query_soa(zone, addr, tsig_key.clone()).await?;
 
-        if local_soa.rdata.serial != remote_soa.rdata.serial {
+        if local_soa.rdata.serial == remote_soa.rdata.serial {
+            // The zone has not changed.
+            return Ok(false);
+        } else {
+            // If the remote serial is ahead of the local serial, the new zone
+            // needs to be fetched. If the remote serial is behind, we treat it
+            // as a new instance of the zone anyway.
+
             // Perform a full AXFR.
             axfr(zone, addr, tsig_key, contents, metrics).await?;
+            return Ok(true);
         }
-
-        return Ok(());
     }
 
     let mut bytes = initial.as_slice().len();
@@ -313,7 +331,7 @@ pub async fn ixfr(
             let all = all.into_boxed_slice();
             *contents = Some(ZoneContents { soa, all });
             metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
-            Ok(())
+            Ok(true)
         }
 
         Ok(ZoneUpdate::BeginBatchDelete(_)) => {
@@ -363,7 +381,7 @@ pub async fn ixfr(
             let new_contents = contents.as_ref().unwrap().forward(&compressed)?;
             *contents = Some(new_contents);
 
-            Ok(())
+            Ok(true)
         }
 
         Ok(ZoneUpdate::Finished(record)) => {
@@ -374,7 +392,7 @@ pub async fn ixfr(
             let serial = Serial::from(soa.serial().into_int());
             if local_soa.rdata.serial == serial {
                 // The local copy is up-to-date.
-                Ok(())
+                Ok(false)
             } else {
                 // The server says the local copy is up-to-date, but it's not.
                 Err(IxfrError::InconsistentUpToDate)
