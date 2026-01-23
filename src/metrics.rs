@@ -126,7 +126,7 @@ impl MetricsCollection {
                 let zone_state = zone.state.lock().unwrap();
 
                 // Don't count a zone that doesn't have a source
-                if matches!(zone_state.loader.source, crate::zone::loader::Source::None) {
+                if matches!(zone_state.loader.source, crate::loader::Source::None) {
                     continue;
                 } else {
                     zones_loaded += 1;

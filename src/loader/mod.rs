@@ -20,16 +20,19 @@ use tracing::{debug, trace};
 
 use crate::{
     center::{Center, Change},
+    loader::zone::LoaderState,
     manager::{ApplicationCommand, Terminated},
     util::AbortOnDrop,
-    zone::{LoaderState, Zone, ZoneContents, contents, loader::Source},
+    zone::{Zone, ZoneContents, contents},
 };
 
 mod refresh;
 mod server;
+pub mod zone;
 mod zonefile;
 
 pub use refresh::RefreshMonitor;
+pub use zone::Source;
 
 //----------- Loader -----------------------------------------------------------
 

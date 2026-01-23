@@ -39,6 +39,7 @@ use crate::api::*;
 use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
+use crate::loader;
 use crate::manager::{ApplicationCommand, Terminated, Update};
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
@@ -52,7 +53,6 @@ use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::PipelineMode;
-use crate::zone::loader;
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
