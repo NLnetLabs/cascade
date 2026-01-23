@@ -11,7 +11,10 @@ use std::{
 use tokio::sync::watch;
 use tracing::debug;
 
-use crate::zone::{self, Zone, ZoneByPtr};
+use crate::{
+    loader::zone::LoaderState,
+    zone::{Zone, ZoneByPtr},
+};
 
 use super::Loader;
 
@@ -150,7 +153,7 @@ impl RefreshMonitor {
                     continue;
                 };
 
-                zone::LoaderState::enqueue_refresh(&mut state, &zone, false, loader);
+                LoaderState::enqueue_refresh(&mut state, &zone, false, loader);
             }
 
             // Wait for a refresh or a change to the schedule.

@@ -20,17 +20,16 @@ use crate::{
     api::{self, ZoneReviewStatus},
     center::{Center, Change},
     config::Config,
+    loader::zone::{LoaderState, Source},
     manager::Update,
     policy::{Policy, PolicyVersion},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
 pub mod contents;
-pub mod loader;
 pub mod state;
 
 pub use contents::ZoneContents;
-pub use loader::LoaderState;
 
 //----------- Zone -------------------------------------------------------------
 
@@ -562,12 +561,12 @@ pub fn change_source(
     // Set the source in the zone.
     let mut state = zone.state.lock().unwrap();
     let new_source = match source {
-        api::ZoneSource::None => loader::Source::None,
+        api::ZoneSource::None => Source::None,
 
-        api::ZoneSource::Zonefile { path } => loader::Source::Zonefile { path },
+        api::ZoneSource::Zonefile { path } => Source::Zonefile { path },
 
         // TODO: Look up the TSIG key.
-        api::ZoneSource::Server { addr, .. } => loader::Source::Server {
+        api::ZoneSource::Server { addr, .. } => Source::Server {
             addr,
             tsig_key: None,
         },

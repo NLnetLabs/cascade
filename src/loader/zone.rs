@@ -11,13 +11,12 @@ use domain::{base::iana::Class, new::base::Serial, tsig, zonetree::ZoneBuilder};
 use tracing::{debug, error, info};
 
 use crate::{
-    loader::{self, ActiveLoadMetrics, LoadMetrics, Loader, RefreshError, RefreshMonitor},
     manager::Update,
     util::AbortOnDrop,
-    zone::ZoneContents,
+    zone::{Zone, ZoneContents, ZoneState, contents::SoaRecord},
 };
 
-use super::{Zone, ZoneState, contents::SoaRecord};
+use super::{ActiveLoadMetrics, LoadMetrics, Loader, RefreshError, RefreshMonitor};
 
 //----------- LoaderState ------------------------------------------------------
 
@@ -143,13 +142,13 @@ impl LoaderState {
         let result = match source {
             Source::None => Ok(None),
             Source::Zonefile { path } => {
-                loader::load_zonefile(&zone, &path, &mut contents, &metrics).await
+                super::load_zonefile(&zone, &path, &mut contents, &metrics).await
             }
             Source::Server { addr, tsig_key } if force => {
-                loader::reload_server(&zone, &addr, &tsig_key, &mut contents, &metrics).await
+                super::reload_server(&zone, &addr, &tsig_key, &mut contents, &metrics).await
             }
             Source::Server { addr, tsig_key } => {
-                loader::refresh_server(&zone, &addr, &tsig_key, &mut contents, &metrics).await
+                super::refresh_server(&zone, &addr, &tsig_key, &mut contents, &metrics).await
             }
         };
 
