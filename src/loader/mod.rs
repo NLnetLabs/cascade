@@ -32,7 +32,6 @@ pub mod zone;
 mod zonefile;
 
 pub use refresh::RefreshMonitor;
-pub use zone::Source;
 
 //----------- Loader -----------------------------------------------------------
 
@@ -201,6 +200,45 @@ pub async fn load_zonefile(
     let new_contents = contents.as_ref().unwrap();
     let serial = new_contents.soa.rdata.serial;
     Ok(Some(serial))
+}
+
+//----------- Source -----------------------------------------------------------
+
+/// The source of a zone.
+#[derive(Clone, Debug, Default)]
+pub enum Source {
+    /// The lack of a source.
+    ///
+    /// The zone will not be loaded from any external source.  This is the
+    /// default state for new zones.
+    #[default]
+    None,
+
+    /// A zonefile on disk.
+    ///
+    /// The specified path should point to a regular file (possibly through
+    /// symlinks, as per OS limitations) containing the contents of the zone in
+    /// the conventional "DNS zonefile" format.
+    ///
+    /// In addition to the default zone refresh triggers, the zonefile will also
+    /// be monitored for changes (through OS-specific mechanisms), and will be
+    /// refreshed when a change is detected.
+    Zonefile {
+        /// The path to the zonefile.
+        path: Box<Utf8Path>,
+    },
+
+    /// A DNS server.
+    ///
+    /// The specified server will be queried for the contents of the zone using
+    /// incremental and authoritative zone transfers (IXFRs and AXFRs).
+    Server {
+        /// The address of the server.
+        addr: SocketAddr,
+
+        /// The TSIG key for communicating with the server, if any.
+        tsig_key: Option<Arc<tsig::Key>>,
+    },
 }
 
 //============ Metrics =========================================================

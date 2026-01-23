@@ -20,7 +20,7 @@ use crate::{
     api::{self, ZoneReviewStatus},
     center::{Center, Change},
     config::Config,
-    loader::zone::{LoaderState, Source},
+    loader::{Source, zone::LoaderState},
     manager::Update,
     policy::{Policy, PolicyVersion},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
