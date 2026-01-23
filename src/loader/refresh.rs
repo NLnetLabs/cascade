@@ -12,15 +12,15 @@ use tokio::sync::watch;
 use tracing::debug;
 
 use crate::{
+    center::Center,
     loader::zone::LoaderState,
     zone::{Zone, ZoneByPtr},
 };
 
-use super::Loader;
-
 //----------- RefreshMonitor ---------------------------------------------------
 
 /// A monitor for zone refreshes.
+#[derive(Debug)]
 pub struct RefreshMonitor {
     /// Scheduled refreshes.
     pub scheduled: Mutex<BTreeSet<ZoneByRefreshTime>>,
@@ -106,7 +106,7 @@ impl RefreshMonitor {
     }
 
     /// Drive this refresh monitor.
-    pub async fn run(&self, loader: &Arc<Loader>) -> Infallible {
+    pub async fn run(&self, center: &Arc<Center>) -> Infallible {
         /// Wait until the specified instant.
         async fn wait(deadline: Option<Instant>) {
             if let Some(deadline) = deadline {
@@ -153,7 +153,7 @@ impl RefreshMonitor {
                     continue;
                 };
 
-                LoaderState::enqueue_refresh(&mut state, &zone, false, loader);
+                LoaderState::enqueue_refresh(&mut state, &zone, false, center);
             }
 
             // Wait for a refresh or a change to the schedule.

@@ -19,7 +19,7 @@ use domain::{new::base::Serial, tsig};
 use tracing::debug;
 
 use crate::{
-    center::{Center, Change},
+    center::{Center, Change, State},
     loader::zone::LoaderState,
     manager::{ApplicationCommand, Terminated},
     util::AbortOnDrop,
@@ -35,43 +35,41 @@ pub use refresh::RefreshMonitor;
 
 //----------- Loader -----------------------------------------------------------
 
-/// The loader.
+/// The zone loader.
+#[derive(Debug)]
 pub struct Loader {
-    /// The refresh monitor.
-    pub refresh_monitor: RefreshMonitor,
-
-    /// A sender for updates from the loader.
-    pub center: Arc<Center>,
+    /// A monitor for SOA-based zone refreshes.
+    refresh_monitor: RefreshMonitor,
 }
 
 impl Loader {
     /// Construct a new [`Loader`].
-    pub fn launch(center: Arc<Center>) -> Arc<Self> {
-        let this = Arc::new(Self {
+    pub fn new() -> Self {
+        Self {
             refresh_monitor: RefreshMonitor::new(),
-            center,
-        });
-
-        {
-            let state = this.center.state.lock().unwrap();
-
-            for zone in &state.zones {
-                this.enqueue_refresh(&zone.0);
-            }
         }
+    }
 
-        this
+    /// Initialize the loader, synchronously.
+    pub fn init(&self, center: &Arc<Center>, state: &mut State) {
+        // Enqueue refreshes for all known zones.
+        for zone in &state.zones {
+            self.enqueue_refresh(center, &zone.0);
+        }
     }
 
     /// Drive this [`Loader`].
-    pub fn run(self: &Arc<Self>) -> AbortOnDrop {
-        let this = self.clone();
+    pub fn run(center: Arc<Center>) -> AbortOnDrop {
         AbortOnDrop::from(tokio::spawn(async move {
-            this.refresh_monitor.run(&this).await
+            center.loader.refresh_monitor.run(&center).await
         }))
     }
 
-    pub async fn on_command(self: &Arc<Self>, cmd: ApplicationCommand) -> Result<(), Terminated> {
+    pub async fn on_command(
+        &self,
+        center: &Arc<Center>,
+        cmd: ApplicationCommand,
+    ) -> Result<(), Terminated> {
         debug!("Received cmd: {cmd:?}");
         match cmd {
             ApplicationCommand::Changed(change) => {
@@ -79,9 +77,8 @@ impl Loader {
                     // This event is also fired at zone add so we don't need
                     // a specific case for that.
                     Change::ZoneSourceChanged(name) => {
-                        let zone =
-                            crate::center::get_zone(&self.center, &name).expect("zone exists");
-                        self.enqueue_refresh(&zone);
+                        let zone = crate::center::get_zone(center, &name).expect("zone exists");
+                        self.enqueue_refresh(center, &zone);
                         Ok(())
                     }
                     Change::ZoneRemoved(name) => {
@@ -97,7 +94,7 @@ impl Loader {
                             .iter()
                             .find(|z| z.zone.0.name == name)
                         {
-                            self.disable(&zone.zone.0);
+                            self.disable(center, &zone.zone.0);
                         }
                         Ok(())
                     }
@@ -105,30 +102,36 @@ impl Loader {
                 }
             }
             ApplicationCommand::RefreshZone { zone_name } => {
-                let zone = crate::center::get_zone(&self.center, &zone_name).expect("zone exists");
+                let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
                 let mut state = zone.state.lock().expect("lock is not poisoned");
-                LoaderState::enqueue_refresh(&mut state, &zone, false, self);
+                LoaderState::enqueue_refresh(&mut state, &zone, false, center);
                 Ok(())
             }
             ApplicationCommand::ReloadZone { zone_name } => {
-                let zone = crate::center::get_zone(&self.center, &zone_name).expect("zone exists");
+                let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
                 let mut state = zone.state.lock().expect("lock is not poisoned");
-                LoaderState::enqueue_refresh(&mut state, &zone, true, self);
+                LoaderState::enqueue_refresh(&mut state, &zone, true, center);
                 Ok(())
             }
             _ => panic!("Got an unexpected command!"),
         }
     }
 
-    fn enqueue_refresh(self: &Arc<Self>, zone: &Arc<Zone>) {
+    fn enqueue_refresh(&self, center: &Arc<Center>, zone: &Arc<Zone>) {
         let mut state = zone.state.lock().unwrap();
-        LoaderState::enqueue_refresh(&mut state, zone, false, self);
+        LoaderState::enqueue_refresh(&mut state, zone, false, center);
     }
 
-    fn disable(self: &Arc<Self>, zone: &Arc<Zone>) {
+    fn disable(&self, center: &Arc<Center>, zone: &Arc<Zone>) {
         let mut state = zone.state.lock().unwrap();
         state.loader.source = Source::None;
-        LoaderState::enqueue_refresh(&mut state, zone, true, self);
+        LoaderState::enqueue_refresh(&mut state, zone, true, center);
+    }
+}
+
+impl Default for Loader {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

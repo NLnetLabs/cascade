@@ -18,6 +18,7 @@ use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
+use crate::loader::Loader;
 use crate::zone::PipelineMode;
 use crate::{
     api,
@@ -42,6 +43,9 @@ pub struct Center {
 
     /// The logger.
     pub logger: Logger,
+
+    /// The zone loader.
+    pub loader: Loader,
 
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
