@@ -4,18 +4,109 @@ use std::{
     time::{Duration, Instant},
 };
 
-use domain::{base::iana::Class, zonetree::ZoneBuilder};
-use tokio::sync::OwnedMutexGuard;
-use tracing::{debug, error, info};
+use tracing::debug;
 
 use crate::{
     center::Center,
-    manager::Update,
     util::AbortOnDrop,
-    zone::{Zone, ZoneContents, ZoneState, contents::SoaRecord},
+    zone::{Zone, ZoneState, contents::SoaRecord},
 };
 
-use super::{ActiveLoadMetrics, LoadMetrics, RefreshError, RefreshMonitor, Source};
+use super::{ActiveLoadMetrics, LoadMetrics, RefreshMonitor, Source};
+
+//----------- LoaderZoneHandle -------------------------------------------------
+
+/// A handle for loader-related operations on a [`Zone`].
+pub struct LoaderZoneHandle<'a> {
+    /// The zone being operated on.
+    pub zone: &'a Arc<Zone>,
+
+    /// The locked zone state.
+    pub state: &'a mut ZoneState,
+
+    /// Cascade's global state.
+    pub center: &'a Arc<Center>,
+}
+
+impl LoaderZoneHandle<'_> {
+    /// Enqueue a refresh of this zone.
+    ///
+    /// If the zone is not being refreshed already, a new refresh will be
+    /// initiated.  Otherwise, a refresh will be enqueued; if one is enqueued
+    /// already, the two will be merged.  If `reload` is true, the refresh will
+    /// verify the local copy of the zone by loading the entire zone from
+    /// scratch.
+    ///
+    /// # Standards
+    ///
+    /// Complies with [RFC 1996, section 4.4], when this is used to enqueue a
+    /// refresh in response to a `QTYPE=SOA` NOTIFY message.
+    ///
+    /// > 4.4. A slave which receives a valid NOTIFY should defer action on any
+    /// > subsequent NOTIFY with the same \<QNAME,QCLASS,QTYPE\> until it has
+    /// > completed the transaction begun by the first NOTIFY.  This duplicate
+    /// > rejection is necessary to avoid having multiple notifications lead to
+    /// > pummeling the master server.
+    ///
+    /// [RFC 1996, section 4.4]: https://datatracker.ietf.org/doc/html/rfc1996#section-4
+    pub fn enqueue_refresh(&mut self, reload: bool) {
+        debug!("Enqueueing a refresh for {:?}", self.zone.name);
+
+        if let Source::None = self.state.loader.source {
+            self.state
+                .loader
+                .refresh_timer
+                .disable(self.zone, &self.center.loader.refresh_monitor);
+            return;
+        }
+
+        let refresh = match reload {
+            false => EnqueuedRefresh::Refresh,
+            true => EnqueuedRefresh::Reload,
+        };
+
+        // Determine whether a refresh is ongoing.
+        if let Some(refreshes) = &mut self.state.loader.refreshes {
+            // There is an ongoing refresh.  Enqueue a new one, which will
+            // start when the ongoing one finishes.  If a refresh is already
+            // enqueued, the two will be merged.
+            refreshes.enqueue(refresh);
+        } else {
+            // Start this refresh immediately.
+            self.start(refresh);
+        }
+    }
+
+    /// Start an enqueued refresh.
+    pub(super) fn start(&mut self, refresh: EnqueuedRefresh) {
+        let metrics = Arc::new(ActiveLoadMetrics::begin());
+        let source = self.state.loader.source.clone();
+        let contents = self.state.contents.clone().try_lock_owned().unwrap();
+
+        let handle = tokio::task::spawn(super::refresh(
+            self.zone.clone(),
+            source,
+            refresh == EnqueuedRefresh::Reload,
+            contents,
+            self.center.clone(),
+            metrics.clone(),
+        ));
+
+        let handle = AbortOnDrop::from(handle);
+        let ongoing = OngoingRefresh { handle };
+        self.state.loader.active_load_metrics = Some(metrics);
+        self.state.loader.refreshes = Some(Refreshes::new(ongoing));
+    }
+
+    /// Prepare for the removal of this zone.
+    pub fn prep_removal(&mut self) {
+        // Remove the zone from the refresh monitor.
+        self.state
+            .loader
+            .refresh_timer
+            .disable(self.zone, &self.center.loader.refresh_monitor);
+    }
+}
 
 //----------- LoaderState ------------------------------------------------------
 
@@ -42,257 +133,6 @@ pub struct LoaderState {
     //
     // TODO: Make part of zone history?
     pub last_load_metrics: Option<LoadMetrics>,
-}
-
-impl LoaderState {
-    /// Enqueue a refresh of this zone.
-    ///
-    /// If the zone is not being refreshed already, a new refresh will be
-    /// initiated.  Otherwise, a refresh will be enqueued; if one is enqueued
-    /// already, the two will be merged.  If `reload` is true, the refresh will
-    /// verify the local copy of the zone by loading the entire zone from
-    /// scratch.
-    ///
-    /// # Standards
-    ///
-    /// Complies with [RFC 1996, section 4.4], when this is used to enqueue a
-    /// refresh in response to a `QTYPE=SOA` NOTIFY message.
-    ///
-    /// > 4.4. A slave which receives a valid NOTIFY should defer action on any
-    /// > subsequent NOTIFY with the same \<QNAME,QCLASS,QTYPE\> until it has
-    /// > completed the transaction begun by the first NOTIFY.  This duplicate
-    /// > rejection is necessary to avoid having multiple notifications lead to
-    /// > pummeling the master server.
-    ///
-    /// [RFC 1996, section 4.4]: https://datatracker.ietf.org/doc/html/rfc1996#section-4
-    pub fn enqueue_refresh(
-        state: &mut ZoneState,
-        zone: &Arc<Zone>,
-        reload: bool,
-        center: &Arc<Center>,
-    ) {
-        debug!("Enqueueing a refresh for {:?}", zone.name);
-
-        if let Source::None = state.loader.source {
-            state
-                .loader
-                .refresh_timer
-                .disable(zone, &center.loader.refresh_monitor);
-            return;
-        }
-
-        let refresh = match reload {
-            false => EnqueuedRefresh::Refresh,
-            true => EnqueuedRefresh::Reload,
-        };
-
-        // Determine whether a refresh is ongoing.
-        if let Some(refreshes) = &mut state.loader.refreshes {
-            // There is an ongoing refresh.  Enqueue a new one, which will
-            // start when the ongoing one finishes.  If a refresh is already
-            // enqueued, the two will be merged.
-            refreshes.enqueue(refresh);
-        } else {
-            // Start this refresh immediately.
-            Self::start(state, zone.clone(), refresh, center.clone());
-        }
-    }
-
-    /// Start an enqueued refresh.
-    fn start(
-        state: &mut ZoneState,
-        zone: Arc<Zone>,
-        refresh: EnqueuedRefresh,
-        center: Arc<Center>,
-    ) {
-        let metrics = Arc::new(ActiveLoadMetrics::begin());
-        let source = state.loader.source.clone();
-        let contents = state.contents.clone().try_lock_owned().unwrap();
-
-        let handle = tokio::task::spawn(Self::refresh(
-            zone,
-            source,
-            refresh == EnqueuedRefresh::Reload,
-            contents,
-            center,
-            metrics.clone(),
-        ));
-
-        let handle = AbortOnDrop::from(handle);
-        let ongoing = OngoingRefresh { handle };
-        state.loader.active_load_metrics = Some(metrics);
-        state.loader.refreshes = Some(Refreshes::new(ongoing));
-    }
-
-    /// Refresh this zone from a source.
-    async fn refresh(
-        zone: Arc<Zone>,
-        source: Source,
-        force: bool,
-        mut contents: tokio::sync::OwnedMutexGuard<Option<ZoneContents>>,
-        center: Arc<Center>,
-        metrics: Arc<ActiveLoadMetrics>,
-    ) {
-        info!("Refreshing {:?}", zone.name);
-
-        let source_is_server = matches!(&source, Source::Server { .. });
-        let old_soa = contents.as_ref().map(|c| c.soa.clone());
-
-        // Perform the source-specific reload into the zone contents.
-        let result = match source {
-            Source::None => Ok(None),
-            Source::Zonefile { path } => {
-                let zone = zone.clone();
-                let metrics = metrics.clone();
-                tokio::task::spawn_blocking(move || {
-                    super::zonefile::load(&zone, &path, &mut contents, &metrics)
-                        .map(|()| Some(contents))
-                        .map_err(Into::into)
-                })
-                .await
-                .unwrap()
-            }
-            Source::Server { addr, tsig_key } if force => {
-                let tsig_key = tsig_key.as_deref().cloned();
-                super::server::axfr(&zone, &addr, tsig_key, &mut contents, &metrics)
-                    .await
-                    .map(|()| Some(contents))
-                    .map_err(Into::into)
-            }
-            Source::Server { addr, tsig_key } => {
-                let tsig_key = tsig_key.as_deref().cloned();
-                super::server::refresh(&zone, &addr, tsig_key, &mut contents, &metrics)
-                    .await
-                    .map(|new| new.then_some(contents))
-            }
-        };
-
-        // On success, use the updated SOA record for scheduling.
-        let soa = result
-            .as_ref()
-            .ok()
-            .and_then(|c| c.as_ref())
-            .map(|c| c.as_ref().unwrap().soa.clone())
-            .or(old_soa);
-
-        {
-            let mut lock = zone.state.lock().unwrap();
-            let state = &mut *lock;
-            let start_time = metrics.start.monotonic();
-            state.loader.active_load_metrics = None;
-            state.loader.last_load_metrics = Some(metrics.finish());
-
-            // Zonefiles are not refreshed automatically so we don't schedule a
-            // refresh or a retry. The user should just reload again when the
-            // zonefile has updated or been fixed if it was in a broken state.
-            if source_is_server {
-                Self::schedule_next(
-                    result.is_ok(),
-                    state,
-                    &zone,
-                    soa.as_ref(),
-                    &center,
-                    start_time,
-                );
-            }
-        }
-
-        Self::process_new_zone_version(result, &zone, &center).await;
-
-        Self::start_next_refresh(&zone, center);
-    }
-
-    fn start_next_refresh(zone: &Arc<Zone>, center: Arc<Center>) {
-        let mut lock = zone.state.lock().unwrap();
-        let state = &mut *lock;
-
-        // Update the state of ongoing refreshes.
-        let id = tokio::task::id();
-        let enqueued = match state.loader.refreshes.take() {
-            Some(Refreshes {
-                ongoing: OngoingRefresh { handle },
-                enqueued,
-            }) if handle.id() == id => enqueued,
-            refreshes => {
-                panic!("ongoing reload ({id:?}) is unregistered (state: {refreshes:?})")
-            }
-        };
-
-        // Start the next enqueued refresh.
-        if let Some(refresh) = enqueued {
-            Self::start(state, zone.clone(), refresh, center);
-        }
-    }
-
-    fn schedule_next(
-        succeeded: bool,
-        state: &mut ZoneState,
-        zone: &Arc<Zone>,
-        soa: Option<&SoaRecord>,
-        center: &Arc<Center>,
-        start: Instant,
-    ) {
-        if succeeded {
-            state.loader.refresh_timer.schedule_refresh(
-                zone,
-                start,
-                soa,
-                &center.loader.refresh_monitor,
-            );
-        } else {
-            state.loader.refresh_timer.schedule_retry(
-                zone,
-                start,
-                soa,
-                &center.loader.refresh_monitor,
-            );
-        }
-    }
-
-    async fn process_new_zone_version(
-        result: Result<Option<OwnedMutexGuard<Option<ZoneContents>>>, RefreshError>,
-        zone: &Arc<Zone>,
-        center: &Arc<Center>,
-    ) {
-        // Process the result of the reload.
-        match result {
-            Ok(None) => {
-                debug!("{:?} is up-to-date and consistent", zone.name);
-            }
-            Ok(Some(contents)) => {
-                let new_contents = contents.as_ref().unwrap();
-                let serial = new_contents.soa.rdata.serial;
-                debug!("Loaded serial {serial:?} for {:?}", zone.name);
-
-                let zone_copy = zone.clone();
-
-                let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
-                new_contents.write_into_zonetree(&zonetree).await;
-
-                center.unsigned_zones.rcu(|tree| {
-                    let mut tree = Arc::unwrap_or_clone(tree.clone());
-                    let _ = tree.remove_zone(&zone_copy.name, Class::IN);
-                    tree.insert_zone(zonetree.clone()).unwrap();
-                    tree
-                });
-
-                // Inform the central command.
-                let zone_name = zone_copy.name.clone();
-                let zone_serial = domain::base::Serial(serial.into());
-                center
-                    .update_tx
-                    .send(Update::UnsignedZoneUpdatedEvent {
-                        zone_name,
-                        zone_serial,
-                    })
-                    .unwrap();
-            }
-
-            Err(err) => {
-                error!("Could not reload {:?}: {err}", zone.name);
-            }
-        };
-    }
 }
 
 //----------- RefreshTimerState ------------------------------------------------
@@ -449,7 +289,7 @@ impl Refreshes {
 #[derive(Debug)]
 pub struct OngoingRefresh {
     /// A handle to the refresh.
-    handle: AbortOnDrop,
+    pub(super) handle: AbortOnDrop,
 }
 
 //----------- EnqueuedRefresh --------------------------------------------------

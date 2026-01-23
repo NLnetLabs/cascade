@@ -13,7 +13,7 @@ use tracing::debug;
 
 use crate::{
     center::Center,
-    loader::zone::LoaderState,
+    loader::zone::LoaderZoneHandle,
     zone::{Zone, ZoneByPtr},
 };
 
@@ -153,7 +153,12 @@ impl RefreshMonitor {
                     continue;
                 };
 
-                LoaderState::enqueue_refresh(&mut state, &zone, false, center);
+                LoaderZoneHandle {
+                    zone: &zone,
+                    state: &mut state,
+                    center,
+                }
+                .enqueue_refresh(false);
             }
 
             // Wait for a refresh or a change to the schedule.
