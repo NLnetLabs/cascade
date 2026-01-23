@@ -80,19 +80,6 @@ impl Loader {
         match cmd {
             ApplicationCommand::Changed(change) => {
                 match change {
-                    // This event is also fired at zone add so we don't need
-                    // a specific case for that.
-                    Change::ZoneSourceChanged(name) => {
-                        let zone = crate::center::get_zone(center, &name).expect("zone exists");
-                        let mut state = zone.state.lock().expect("lock is not poisoned");
-                        LoaderZoneHandle {
-                            zone: &zone,
-                            state: &mut state,
-                            center,
-                        }
-                        .enqueue_refresh(false);
-                        Ok(())
-                    }
                     Change::ZoneRemoved(name) => {
                         // We have to get the reference to the zone from our refresh monitor
                         // because it doesn't exist in center.zones anymore!
