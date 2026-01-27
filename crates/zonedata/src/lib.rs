@@ -165,6 +165,9 @@ use domain::{
 mod data;
 use data::{Data, InstanceData};
 
+mod diff;
+pub use diff::DiffData;
+
 //============ Helpers =========================================================
 
 pub type OldName = domain::base::ParsedName<bytes::Bytes>;
