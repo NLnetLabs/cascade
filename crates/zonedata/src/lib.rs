@@ -171,6 +171,12 @@ pub use diff::DiffData;
 mod reader;
 pub use reader::{SignedZoneReader, UnsignedZoneReader};
 
+mod writer;
+pub use writer::{
+    PatchError, ReplaceError, SignedZonePatcher, SignedZoneReplacer, UnsignedZonePatcher,
+    UnsignedZoneReplacer,
+};
+
 //============ Helpers =========================================================
 
 pub type OldName = domain::base::ParsedName<bytes::Bytes>;
