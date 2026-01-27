@@ -1,4 +1,4 @@
-//! Reading instances of zones.
+//! Viewing existing instances of zones.
 
 use std::sync::Arc;
 

@@ -177,6 +177,11 @@ pub use builder::{SignedZoneBuilder, ZoneBuilder};
 pub mod reader;
 pub use reader::{SignedZoneReader, UnsignedZoneReader};
 
+pub mod writer;
+pub use writer::{
+    SignedZonePatcher, SignedZoneReplacer, UnsignedZonePatcher, UnsignedZoneReplacer,
+};
+
 //============ Helpers =========================================================
 
 /// An absolute instance of a zone.
