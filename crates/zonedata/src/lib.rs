@@ -165,6 +165,9 @@ use domain::{
 pub mod auth;
 pub use auth::AuthData;
 
+pub mod viewer;
+pub use viewer::{UnsignedZoneViewer, ZoneViewer};
+
 //============ Helpers =========================================================
 
 /// An absolute instance of a zone.

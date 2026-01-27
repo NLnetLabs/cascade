@@ -9,10 +9,13 @@
 
 use std::{
     cell::UnsafeCell,
-    sync::atomic::{self, AtomicI32},
+    sync::{
+        Arc,
+        atomic::{self, AtomicI32},
+    },
 };
 
-use crate::Instance;
+use crate::{Instance, UnsignedZoneViewer, ZoneViewer};
 
 //----------- AuthData ---------------------------------------------------------
 
@@ -46,6 +49,66 @@ impl AuthData {
             curr: UnsafeCell::new(Instance::new()),
             next: UnsafeCell::new(Instance::new()),
         }
+    }
+
+    /// Obtain a [`ZoneViewer`] over the authoritative instance.
+    ///
+    /// This can be called to observe (the signed and unsigned components
+    /// of) the current authoritative instance. It should only be called on
+    /// startup, or on explicit notification that a new authoritative instance
+    /// is available.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if (either the unsigned or signed component of) the instance
+    /// is write-locked or if the number of simultaneous read locks causes an
+    /// overflow.
+    pub fn view_curr(self: Arc<Self>) -> ZoneViewer {
+        ZoneViewer::obtain_curr(self)
+    }
+
+    /// Obtain a [`ZoneViewer`] over the upcoming instance.
+    ///
+    /// This can be called to observe (the signed and unsigned components of)
+    /// the upcoming instance. It should only be called on explicit notification
+    /// that a new upcoming instance is available.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if (either the unsigned or signed component of) the instance
+    /// is write-locked or if the number of simultaneous read locks causes an
+    /// overflow.
+    pub fn view_next(self: Arc<Self>) -> ZoneViewer {
+        ZoneViewer::obtain_next(self)
+    }
+
+    /// Obtain an [`UnsignedZoneReader`] over the authoritative instance.
+    ///
+    /// This can be called to observe (the unsigned component of) the current
+    /// authoritative instance. It should only be called on startup, or on
+    /// explicit notification that a new unsigned authoritative instance is
+    /// available.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if (the unsigned component of) the instance is write-locked or if
+    /// the number of simultaneous read locks causes an overflow.
+    pub fn view_unsigned_curr(self: Arc<Self>) -> UnsignedZoneViewer {
+        UnsignedZoneViewer::obtain_curr(self)
+    }
+
+    /// Obtain an [`UnsignedZoneReader`] over the upcoming instance.
+    ///
+    /// This can be called to observe (the unsigned component of) the upcoming
+    /// instance. It should only be called on explicit notification that a new
+    /// unsigned upcoming instance is available.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if (the unsigned component of) the instance is write-locked or if
+    /// the number of simultaneous read locks causes an overflow.
+    pub fn view_unsigned_next(self: Arc<Self>) -> UnsignedZoneViewer {
+        UnsignedZoneViewer::obtain_next(self)
     }
 }
 
