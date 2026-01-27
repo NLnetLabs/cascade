@@ -162,7 +162,42 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 
+pub mod auth;
+pub use auth::AuthData;
+
 //============ Helpers =========================================================
+
+/// An absolute instance of a zone.
+pub(crate) struct Instance {
+    /// The unsigned component, if any.
+    pub(crate) unsigned: Option<InstanceHalf>,
+
+    /// The signed component, if any.
+    pub(crate) signed: Option<InstanceHalf>,
+}
+
+impl Instance {
+    /// Construct a new [`Instance`].
+    pub const fn new() -> Self {
+        Self {
+            unsigned: None,
+            signed: None,
+        }
+    }
+}
+
+/// A particular half of an absolute instance of a zone.
+pub(crate) struct InstanceHalf {
+    /// The SOA record.
+    pub(crate) soa: SoaRecord,
+
+    /// All other records of the zone.
+    ///
+    /// The records are in ascending order of owner name and record type.
+    pub(crate) all: Box<[RegularRecord]>,
+}
+
+//------------------------------------------------------------------------------
 
 pub type OldName = domain::base::ParsedName<bytes::Bytes>;
 pub type OldRecordData = domain::rdata::ZoneRecordData<bytes::Bytes, OldName>;
