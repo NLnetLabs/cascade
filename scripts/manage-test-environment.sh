@@ -2,6 +2,12 @@
 
 # Log every action taken or command run
 # set -x
+if [[ -n "$GITHUB_ACTIONS" ]]; then
+  exec 2>>manage-test-environment.log
+  echo "$0 $*" >&2
+  date +Is >&2
+  set -x
+fi
 # Exit the script if any command errors
 set -e
 # Return an error for a pipeline if any command of the pipeline fails and not
@@ -244,7 +250,7 @@ stub-zone:
 stub-zone:
   name: "example.test"
   stub-host: example.test
-  stub-addr: 127.0.0.1@${_cascade_port}
+  stub-addr: 127.0.0.1@${_nsd_port}
 
 python:
 dynlib:
@@ -409,11 +415,17 @@ function test-services() {
     log-error ">> NSD (primary) status:"
     nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" status
     log-error
+    log-error ">> NSD (primary) zonestatus example.test:"
+    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" zonestatus example.test
+    log-error
     log-error ">> Unbound status:"
     sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" status
     log-error
     log-error ">> dig test SOA:"
     dig test SOA
+    log-error
+    log-error ">> dig @127.0.0.1 -p 1055 example.test AXFR:"
+    dig @127.0.0.1 -p 1055 example.test AXFR
   )
 }
 
