@@ -168,6 +168,9 @@ pub use auth::AuthData;
 pub mod viewer;
 pub use viewer::{UnsignedZoneViewer, ZoneViewer};
 
+pub mod builder;
+pub use builder::{SignedZoneBuilder, ZoneBuilder};
+
 //============ Helpers =========================================================
 
 /// An absolute instance of a zone.

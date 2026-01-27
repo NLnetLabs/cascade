@@ -15,7 +15,7 @@ use std::{
     },
 };
 
-use crate::{Instance, UnsignedZoneViewer, ZoneViewer};
+use crate::{Instance, SignedZoneBuilder, UnsignedZoneViewer, ZoneBuilder, ZoneViewer};
 
 //----------- AuthData ---------------------------------------------------------
 
@@ -109,6 +109,34 @@ impl AuthData {
     /// the number of simultaneous read locks causes an overflow.
     pub fn view_unsigned_next(self: Arc<Self>) -> UnsignedZoneViewer {
         UnsignedZoneViewer::obtain_next(self)
+    }
+
+    /// Obtain a [`ZoneBuilder`] over this.
+    ///
+    /// This can be used to build a new (unsigned and signed) instance of the
+    /// zone.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if `data` has conflicting locks (write locks of the authoritative
+    /// instance or read locks of the upcoming instance), or if too many read
+    /// locks were established.
+    pub fn builder(self: Arc<Self>) -> ZoneBuilder {
+        ZoneBuilder::obtain(self)
+    }
+
+    /// Obtain a [`SignedZoneBuilder`] over this.
+    ///
+    /// This can be used to build a new signed instance of the zone, when no
+    /// unsigned instance is needed (e.g. when re-signing).
+    ///
+    /// ## Panics
+    ///
+    /// Panics if `data` has conflicting locks (write locks of the authoritative
+    /// instance or upcoming unsigned instance, or read locks of the upcoming
+    /// signed instance), or if too many read locks were established.
+    pub fn signed_builder(self: Arc<Self>) -> SignedZoneBuilder {
+        SignedZoneBuilder::obtain(self)
     }
 }
 
