@@ -165,6 +165,9 @@ use domain::{
 pub mod auth;
 pub use auth::AuthData;
 
+pub mod diff;
+pub use diff::DiffData;
+
 pub mod viewer;
 pub use viewer::{UnsignedZoneViewer, ZoneViewer};
 
