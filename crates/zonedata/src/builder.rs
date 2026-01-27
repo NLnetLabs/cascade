@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::{
-    AuthData, DiffData, SignedZonePatcher, SignedZoneReader, SignedZoneReplacer,
+    AuthData, DiffData, InstanceHalf, SignedZonePatcher, SignedZoneReader, SignedZoneReplacer,
     UnsignedZonePatcher, UnsignedZoneReader, UnsignedZoneReplacer,
 };
 
@@ -102,6 +102,37 @@ impl ZoneBuilder {
 }
 
 impl ZoneBuilder {
+    /// Don't make changes to the unsigned component.
+    ///
+    /// The unsigned component will be left as is from the authoritative
+    /// instance.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the unsigned component of the upcoming instance has already
+    /// been built.
+    pub fn keep_unsigned(&mut self) {
+        assert!(
+            !self.built_unsigned,
+            "a unsigned instance has already been built"
+        );
+
+        // SAFETY: 'self' has a read lock over 'data.curr.unsigned'.
+        let curr = unsafe { &(*self.data.curr.get()).unsigned };
+
+        // SAFETY: 'self' has a write lock over 'data.next.unsigned'.
+        let next = unsafe { &mut (*self.data.next.get()).unsigned };
+
+        if let Some(curr) = curr {
+            *next = Some(InstanceHalf {
+                soa: curr.soa.clone(),
+                all: curr.all.clone(),
+            });
+        }
+
+        self.built_unsigned = true;
+    }
+
     /// Replace the unsigned component of the authoritative instance.
     ///
     /// The unsigned component of the upcoming instance will be built by the
@@ -165,6 +196,36 @@ impl ZoneBuilder {
             &mut self.built_unsigned,
             &mut self.unsigned_diff,
         ))
+    }
+
+    /// Don't make changes to the signed component.
+    ///
+    /// The signed component will be left as is from the authoritative instance.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the signed component of the upcoming instance has already
+    /// been built.
+    pub fn keep_signed(&mut self) {
+        assert!(
+            !self.built_signed,
+            "a signed instance has already been built"
+        );
+
+        // SAFETY: 'self' has a read lock over 'data.curr.signed'.
+        let curr = unsafe { &(*self.data.curr.get()).signed };
+
+        // SAFETY: 'self' has a write lock over 'data.next.signed'.
+        let next = unsafe { &mut (*self.data.next.get()).signed };
+
+        if let Some(curr) = curr {
+            *next = Some(InstanceHalf {
+                soa: curr.soa.clone(),
+                all: curr.all.clone(),
+            });
+        }
+
+        self.built_signed = true;
     }
 
     /// Replace the signed component of the authoritative instance.
@@ -348,6 +409,33 @@ impl SignedZoneBuilder {
 }
 
 impl SignedZoneBuilder {
+    /// Don't make changes to the signed component.
+    ///
+    /// The signed component will be left as is from the authoritative instance.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the signed component of the upcoming instance has already
+    /// been built.
+    pub fn keep_signed(&mut self) {
+        assert!(!self.built, "a signed instance has already been built");
+
+        // SAFETY: 'self' has a read lock over 'data.curr.signed'.
+        let curr = unsafe { &(*self.data.curr.get()).signed };
+
+        // SAFETY: 'self' has a write lock over 'data.next.signed'.
+        let next = unsafe { &mut (*self.data.next.get()).signed };
+
+        if let Some(curr) = curr {
+            *next = Some(InstanceHalf {
+                soa: curr.soa.clone(),
+                all: curr.all.clone(),
+            });
+        }
+
+        self.built = true;
+    }
+
     /// Replace the signed component of the authoritative instance.
     ///
     /// The signed component of the upcoming instance will be built by the
