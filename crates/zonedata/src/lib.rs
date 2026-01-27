@@ -165,6 +165,9 @@ use domain::{
 mod data;
 use data::{Data, InstanceData};
 
+mod diff;
+pub use diff::DiffData;
+
 mod reader;
 pub use reader::{SignedZoneReader, UnsignedZoneReader};
 
