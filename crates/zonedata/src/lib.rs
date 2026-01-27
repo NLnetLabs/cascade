@@ -174,6 +174,9 @@ pub use viewer::{UnsignedZoneViewer, ZoneViewer};
 pub mod builder;
 pub use builder::{SignedZoneBuilder, ZoneBuilder};
 
+pub mod applier;
+pub use applier::{ZoneApplier, ZoneCleaner};
+
 pub mod reader;
 pub use reader::{SignedZoneReader, UnsignedZoneReader};
 

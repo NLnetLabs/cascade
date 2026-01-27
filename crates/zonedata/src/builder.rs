@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{
     AuthData, DiffData, InstanceHalf, SignedZonePatcher, SignedZoneReader, SignedZoneReplacer,
-    UnsignedZonePatcher, UnsignedZoneReader, UnsignedZoneReplacer,
+    UnsignedZonePatcher, UnsignedZoneReader, UnsignedZoneReplacer, ZoneApplier,
 };
 
 //----------- ZoneBuilder ------------------------------------------------------
@@ -286,6 +286,28 @@ impl ZoneBuilder {
             &mut self.built_signed,
             &mut self.signed_diff,
         ))
+    }
+}
+
+impl ZoneBuilder {
+    /// Apply the prepared changes.
+    ///
+    /// A [`ZoneApplier`] is returned. This can be held while any read locks
+    /// on the authoritative data are being released, after which the changes
+    /// can actually be applied.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the signed and unsigned components have not been built.
+    pub fn apply(mut self) -> ZoneApplier {
+        assert!(self.built_unsigned, "the unsigned instance was not built");
+        assert!(self.built_signed, "the signed instance was not built");
+
+        let data = self.data.clone();
+        self.applied = true;
+        std::mem::drop(self);
+
+        ZoneApplier::new(data)
     }
 }
 
