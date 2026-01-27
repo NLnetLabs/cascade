@@ -8,6 +8,7 @@ use std::{
 
 use bytes::BufMut;
 use camino::Utf8Path;
+use cascade_zonedata::{RegularRecord, SoaRecord, ZoneBuilder, writer::ReplaceError};
 use domain::{
     base::{ToName, iana::Class},
     new::{
@@ -18,18 +19,7 @@ use domain::{
     zonefile::inplace,
 };
 
-use crate::{
-    loader::ActiveLoadMetrics,
-    zone::{
-        Zone,
-        contents::{RegularRecord, SoaRecord, ZoneContents},
-    },
-};
-
-enum Parsed {
-    Soa(SoaRecord),
-    Record(RegularRecord),
-}
+use crate::{loader::ActiveLoadMetrics, zone::Zone};
 
 //----------- load() -----------------------------------------------------------
 
@@ -39,44 +29,29 @@ enum Parsed {
 pub fn load(
     zone: &Arc<Zone>,
     path: &Utf8Path,
-    contents: &mut Option<ZoneContents>,
+    builder: &mut ZoneBuilder,
     metrics: &ActiveLoadMetrics,
 ) -> Result<(), Error> {
     let mut reader = make_reader(zone, path, metrics)?;
 
-    // The collection of all the records that we will parse
-    let mut all = Vec::<RegularRecord>::new();
+    // The zone writer, which we give records.
+    let mut writer = builder.replace_unsigned();
 
     // A scratch buffer that we can use to parse
     let mut buf = Vec::new();
-
-    // The SOA of the file
-    let mut soa = None;
 
     // Parse all the records, extracting the SOA. We always read the whole zone.
     while let Some(record) = parse_record(&mut buf, zone, &mut reader)? {
         metrics.num_loaded_records.fetch_add(1, Relaxed);
         match record {
             Parsed::Soa(soa_record) => {
-                if soa.is_some() {
-                    return Err(Error::MultipleSoaRecords);
-                }
-                soa = Some(soa_record);
+                writer.set_soa(soa_record)?;
             }
-            Parsed::Record(regular_record) => all.push(regular_record),
+            Parsed::Record(regular_record) => writer.add(regular_record)?,
         }
     }
 
-    let Some(soa) = soa else {
-        return Err(Error::MissingSoaRecord);
-    };
-
-    // Finalize the remote copy.
-    all.sort_unstable();
-    let all = all.into_boxed_slice();
-
-    *contents = Some(ZoneContents { soa, all });
-
+    writer.apply()?;
     Ok(())
 }
 
@@ -156,6 +131,12 @@ fn parse_record(
     }
 }
 
+/// A parsed record.
+enum Parsed {
+    Soa(SoaRecord),
+    Record(RegularRecord),
+}
+
 //----------- Error ------------------------------------------------------------
 
 /// An error in loading a zone from a zonefile.
@@ -167,14 +148,11 @@ pub enum Error {
     /// The zonefile was misformatted.
     Misformatted(inplace::Error),
 
+    /// A zone writing error occurred.
+    Write(ReplaceError),
+
     /// The zonefile starts with a SOA record for a different zone.
     MismatchedOrigin,
-
-    /// The zonefile did not contain a SOA record.
-    MissingSoaRecord,
-
-    /// The zonefile did not start with a SOA record.
-    MultipleSoaRecords,
 
     /// Zonefile include directories are not supported.
     UnsupportedInclude,
@@ -185,9 +163,8 @@ impl std::error::Error for Error {
         match self {
             Error::Open(error) => Some(error),
             Error::Misformatted(error) => Some(error),
+            Error::Write(error) => Some(error),
             Error::MismatchedOrigin => None,
-            Error::MissingSoaRecord => None,
-            Error::MultipleSoaRecords => None,
             Error::UnsupportedInclude => None,
         }
     }
@@ -198,10 +175,20 @@ impl fmt::Display for Error {
         match self {
             Error::Open(error) => error.fmt(f),
             Error::Misformatted(error) => error.fmt(f),
+            Error::Write(ReplaceError::MissingSoa) => {
+                write!(f, "the zonefile does not contain a SOA record")
+            }
+            Error::Write(ReplaceError::MultipleSoas) => {
+                write!(f, "the zonefile contains multiple SOA records")
+            }
             Error::MismatchedOrigin => write!(f, "the zonefile has the wrong origin name"),
-            Error::MissingSoaRecord => write!(f, "the zonefile does not contain a SOA record"),
-            Error::MultipleSoaRecords => write!(f, "the zonefile contain multiple SOA records"),
             Error::UnsupportedInclude => write!(f, "zonefile include directives are not supported"),
         }
+    }
+}
+
+impl From<ReplaceError> for Error {
+    fn from(value: ReplaceError) -> Self {
+        Self::Write(value)
     }
 }

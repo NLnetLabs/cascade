@@ -15,7 +15,13 @@ use std::{
 };
 
 use camino::Utf8Path;
-use domain::{base::iana::Class, new::base::Serial, tsig, zonetree::ZoneBuilder};
+use cascade_zonedata::ZoneBuilder;
+use domain::{
+    base::iana::Class,
+    new::base::Serial,
+    tsig,
+    zonetree::{self, types::ZoneUpdate, update::ZoneUpdater},
+};
 use tracing::{debug, error, info};
 
 use crate::{
@@ -23,7 +29,7 @@ use crate::{
     loader::zone::LoaderZoneHandle,
     manager::{ApplicationCommand, Terminated, Update},
     util::AbortOnDrop,
-    zone::{Zone, ZoneContents, contents},
+    zone::Zone,
 };
 
 mod refresh;
@@ -146,14 +152,14 @@ async fn refresh(
     zone: Arc<Zone>,
     source: Source,
     force: bool,
-    mut contents: tokio::sync::OwnedMutexGuard<Option<ZoneContents>>,
+    mut zone_builder: ZoneBuilder,
     center: Arc<Center>,
     metrics: Arc<ActiveLoadMetrics>,
 ) {
     info!("Refreshing {:?}", zone.name);
 
     let source_is_server = matches!(&source, Source::Server { .. });
-    let old_soa = contents.as_ref().map(|c| c.soa.clone());
+    let old_soa = zone_builder.unsigned_curr().map(|r| r.soa().clone());
 
     // Perform the source-specific reload into the zone contents.
     let result = match source {
@@ -162,8 +168,8 @@ async fn refresh(
             let zone = zone.clone();
             let metrics = metrics.clone();
             tokio::task::spawn_blocking(move || {
-                zonefile::load(&zone, &path, &mut contents, &metrics)
-                    .map(|()| Some(contents))
+                zonefile::load(&zone, &path, &mut zone_builder, &metrics)
+                    .map(|()| Some(zone_builder))
                     .map_err(Into::into)
             })
             .await
@@ -171,16 +177,16 @@ async fn refresh(
         }
         Source::Server { addr, tsig_key } if force => {
             let tsig_key = tsig_key.as_deref().cloned();
-            server::axfr(&zone, &addr, tsig_key, &mut contents, &metrics)
+            server::axfr(&zone, &addr, tsig_key, &mut zone_builder, &metrics)
                 .await
-                .map(|()| Some(contents))
+                .map(|()| Some(zone_builder))
                 .map_err(Into::into)
         }
         Source::Server { addr, tsig_key } => {
             let tsig_key = tsig_key.as_deref().cloned();
-            server::refresh(&zone, &addr, tsig_key, &mut contents, &metrics)
+            server::refresh(&zone, &addr, tsig_key, &mut zone_builder, &metrics)
                 .await
-                .map(|new| new.then_some(contents))
+                .map(|new| new.then_some(zone_builder))
         }
     };
 
@@ -188,8 +194,8 @@ async fn refresh(
     let soa = result
         .as_ref()
         .ok()
-        .and_then(|c| c.as_ref())
-        .map(|c| c.as_ref().unwrap().soa.clone())
+        .and_then(|builder| builder.as_ref())
+        .map(|builder| builder.unsigned_next().unwrap().soa().clone())
         .or(old_soa);
 
     // Finalize the load metrics and update refresh timer state.
@@ -220,15 +226,29 @@ async fn refresh(
             debug!("{:?} is up-to-date and consistent", zone.name);
         }
 
-        Ok(Some(contents)) => {
-            let new_contents = contents.as_ref().unwrap();
-            let serial = new_contents.soa.rdata.serial;
+        Ok(Some(zone_builder)) => {
+            let new_contents = zone_builder.unsigned_next().unwrap();
+            let serial = new_contents.soa().rdata.serial;
             debug!("Loaded serial {serial:?} for {:?}", zone.name);
 
             let zone_copy = zone.clone();
 
-            let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
-            new_contents.write_into_zonetree(&zonetree).await;
+            let zonetree = zonetree::ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
+            let mut updater = ZoneUpdater::new(zonetree.clone()).await.unwrap();
+            updater.apply(ZoneUpdate::DeleteAllRecords).await.unwrap();
+            for record in new_contents.records() {
+                updater
+                    .apply(ZoneUpdate::AddRecord(record.clone().into()))
+                    .await
+                    .unwrap();
+            }
+            updater
+                .apply(ZoneUpdate::Finished(new_contents.soa().clone().into()))
+                .await
+                .unwrap();
+
+            // Apply the built changes.
+            zone_builder.apply().apply().clean();
 
             center.unsigned_zones.rcu(|tree| {
                 let mut tree = Arc::unwrap_or_clone(tree.clone());
@@ -461,12 +481,6 @@ pub enum RefreshError {
     /// The zonefile could not be loaded.
     Zonefile(zonefile::Error),
 
-    /// An IXFR's diff was internally inconsistent.
-    MergeIxfr(contents::MergeError),
-
-    /// An IXFR's diff was not consistent with the local copy.
-    ForwardIxfr(contents::ForwardError),
-
     /// While we were processing a refresh another refresh or reload happened, changing the serial
     LocalSerialChanged,
 }
@@ -479,8 +493,6 @@ impl std::error::Error for RefreshError {
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
             Self::Zonefile(error) => Some(error),
-            Self::MergeIxfr(error) => Some(error),
-            Self::ForwardIxfr(error) => Some(error),
         }
     }
 }
@@ -512,15 +524,6 @@ impl fmt::Display for RefreshError {
             RefreshError::Zonefile(error) => {
                 write!(f, "the zonefile could not be loaded: {error}")
             }
-            RefreshError::MergeIxfr(error) => {
-                write!(f, "the IXFR was internally inconsistent: {error}")
-            }
-            RefreshError::ForwardIxfr(error) => {
-                write!(
-                    f,
-                    "the IXFR was inconsistent with the local zone contents: {error}"
-                )
-            }
         }
     }
 }
@@ -542,17 +545,5 @@ impl From<server::AxfrError> for RefreshError {
 impl From<zonefile::Error> for RefreshError {
     fn from(v: zonefile::Error) -> Self {
         Self::Zonefile(v)
-    }
-}
-
-impl From<contents::MergeError> for RefreshError {
-    fn from(v: contents::MergeError) -> Self {
-        Self::MergeIxfr(v)
-    }
-}
-
-impl From<contents::ForwardError> for RefreshError {
-    fn from(v: contents::ForwardError) -> Self {
-        Self::ForwardIxfr(v)
     }
 }

@@ -2,13 +2,15 @@
 
 use std::{
     fmt,
-    iter::Peekable,
-    mem,
     net::SocketAddr,
     sync::{Arc, atomic::Ordering::Relaxed},
 };
 
 use bytes::Bytes;
+use cascade_zonedata::{
+    SoaRecord, UnsignedZonePatcher, UnsignedZoneReplacer, ZoneBuilder,
+    writer::{PatchError, ReplaceError},
+};
 use domain::{
     base::iana::Rcode,
     net::{
@@ -23,8 +25,8 @@ use domain::{
     },
     new::{
         base::{
-            CanonicalRecordData, HeaderFlags, Message, MessageItem, QClass, QType, Question,
-            RClass, RType, Record, Serial,
+            HeaderFlags, Message, MessageItem, QClass, QType, Question, RClass, RType, Record,
+            Serial,
             build::MessageBuilder,
             name::{Name, NameCompressor, RevNameBuf},
             wire::{AsBytes, ParseBytes, ParseBytesZC, ParseError},
@@ -39,13 +41,7 @@ use domain::{
 use tokio::net::TcpStream;
 use tracing::{debug, trace};
 
-use crate::{
-    loader::ActiveLoadMetrics,
-    zone::{
-        Zone,
-        contents::{self, RegularRecord, SoaRecord, ZoneContents},
-    },
-};
+use crate::{loader::ActiveLoadMetrics, zone::Zone};
 
 use super::RefreshError;
 
@@ -63,16 +59,16 @@ pub async fn refresh(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    contents: &mut Option<ZoneContents>,
+    zone_builder: &mut ZoneBuilder,
     metrics: &ActiveLoadMetrics,
 ) -> Result<bool, RefreshError> {
     debug!("Refreshing {:?} from server {addr:?}", zone.name);
 
-    if contents.is_none() {
+    if zone_builder.unsigned_curr().is_none() {
         trace!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
 
         // Fetch the whole zone.
-        axfr(zone, addr, tsig_key, contents, metrics).await?;
+        axfr(zone, addr, tsig_key, zone_builder, metrics).await?;
 
         return Ok(true);
     };
@@ -80,7 +76,7 @@ pub async fn refresh(
     trace!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
 
     // Fetch the zone relative to the latest local copy.
-    Ok(ixfr(zone, addr, tsig_key, contents, metrics).await?)
+    Ok(ixfr(zone, addr, tsig_key, zone_builder, metrics).await?)
 }
 
 //----------- ixfr() -----------------------------------------------------------
@@ -97,11 +93,11 @@ pub async fn ixfr(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    contents: &mut Option<ZoneContents>,
+    zone_builder: &mut ZoneBuilder,
     metrics: &ActiveLoadMetrics,
 ) -> Result<bool, IxfrError> {
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
-    let local_soa = &contents.as_ref().unwrap().soa;
+    let local_soa = zone_builder.unsigned_curr().unwrap().soa();
 
     // Prepare the IXFR query message.
     let mut buffer = [0u8; 1024];
@@ -154,7 +150,7 @@ pub async fn ixfr(
             // as a new instance of the zone anyway.
 
             // Perform a full AXFR.
-            axfr(zone, addr, tsig_key, contents, metrics).await?;
+            axfr(zone, addr, tsig_key, zone_builder, metrics).await?;
             return Ok(true);
         }
     }
@@ -164,56 +160,33 @@ pub async fn ixfr(
     metrics
         .num_loaded_bytes
         .fetch_add(response.as_slice().len(), Relaxed);
-    let mut updates = interpreter.interpret_response(response)?.peekable();
+    let mut updates = interpreter.interpret_response(response)?;
 
-    match updates.peek() {
+    match updates.next() {
         Some(Ok(ZoneUpdate::DeleteAllRecords)) => {
             // This is an AXFR.
-            let _ = updates.next().unwrap();
-            let mut all = Vec::new();
-            let Some(soa) = process_axfr(&mut all, updates, metrics)? else {
+            let mut writer = zone_builder.replace_unsigned();
+            let Some(soa) = process_axfr(&mut writer, updates, metrics)? else {
                 // Fail: UDP-based IXFR returned a partial AXFR.
                 return Err(IxfrError::IncompleteResponse);
             };
 
             assert!(interpreter.is_finished());
-            let all = all.into_boxed_slice();
-            *contents = Some(ZoneContents { soa, all });
+            writer.set_soa(soa).map_err(AxfrError::Write)?;
+            writer.apply().map_err(AxfrError::Write)?;
             return Ok(true);
         }
 
         Some(Ok(ZoneUpdate::BeginBatchDelete(_))) => {
             // This is an IXFR.
-            let mut versions = Vec::new();
-            let mut this_soa = None;
-            let mut next_soa = None;
-            let mut all_this = Vec::new();
-            let mut all_next = Vec::new();
-            process_ixfr(
-                &mut versions,
-                &mut this_soa,
-                &mut next_soa,
-                &mut all_this,
-                &mut all_next,
-                updates,
-                metrics,
-            )?;
+            let mut writer = zone_builder.patch_unsigned().unwrap();
+            process_ixfr(&mut writer, updates, metrics)?;
             if !interpreter.is_finished() {
                 // Fail: UDP-based IXFR returned a partial IXFR
                 return Err(IxfrError::IncompleteResponse);
             }
 
-            // Coalesce the diffs together.
-            let mut versions = versions.into_iter();
-            let initial = versions.next().unwrap();
-            let compressed = versions.try_fold(initial, |mut whole, sub| {
-                whole.merge_from_next(&sub).map(|()| whole)
-            })?;
-
-            // Forward the local copy through the compressed diffs.
-            let new_contents = contents.as_ref().unwrap().forward(&compressed)?;
-            *contents = Some(new_contents);
-
+            writer.apply()?;
             return Ok(true);
         }
 
@@ -298,23 +271,22 @@ pub async fn ixfr(
             // as a new instance of the zone anyway.
 
             // Perform a full AXFR.
-            axfr(zone, addr, tsig_key, contents, metrics).await?;
+            axfr(zone, addr, tsig_key, zone_builder, metrics).await?;
             return Ok(true);
         }
     }
 
     let mut bytes = initial.as_slice().len();
-    let mut updates = interpreter.interpret_response(initial)?.peekable();
+    let mut updates = interpreter.interpret_response(initial)?;
 
-    match updates.peek().unwrap() {
+    match updates.next().unwrap() {
         Ok(ZoneUpdate::DeleteAllRecords) => {
             // This is an AXFR.
-            let _ = updates.next().unwrap();
-            let mut all = Vec::new();
+            let mut writer = zone_builder.replace_unsigned();
 
             // Process the response messages.
             let soa = loop {
-                if let Some(soa) = process_axfr(&mut all, updates, metrics)? {
+                if let Some(soa) = process_axfr(&mut writer, updates, metrics)? {
                     break soa;
                 } else {
                     // Retrieve the next message.
@@ -323,36 +295,24 @@ pub async fn ixfr(
                         .await?
                         .ok_or(IxfrError::IncompleteResponse)?;
                     bytes += message.as_slice().len();
-                    updates = interpreter.interpret_response(message)?.peekable();
+                    updates = interpreter.interpret_response(message)?;
                 }
             };
 
             assert!(interpreter.is_finished());
-            let all = all.into_boxed_slice();
-            *contents = Some(ZoneContents { soa, all });
+            writer.set_soa(soa).map_err(AxfrError::Write)?;
+            writer.apply().map_err(AxfrError::Write)?;
             metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
             Ok(true)
         }
 
         Ok(ZoneUpdate::BeginBatchDelete(_)) => {
             // This is an IXFR.
-            let mut versions = Vec::new();
-            let mut this_soa = None;
-            let mut next_soa = None;
-            let mut all_this = Vec::new();
-            let mut all_next = Vec::new();
+            let mut writer = zone_builder.patch_unsigned().unwrap();
 
             // Process the response messages.
             loop {
-                process_ixfr(
-                    &mut versions,
-                    &mut this_soa,
-                    &mut next_soa,
-                    &mut all_this,
-                    &mut all_next,
-                    updates,
-                    metrics,
-                )?;
+                process_ixfr(&mut writer, updates, metrics)?;
 
                 if interpreter.is_finished() {
                     break;
@@ -363,24 +323,14 @@ pub async fn ixfr(
                         .await?
                         .ok_or(IxfrError::IncompleteResponse)?;
                     bytes += message.as_slice().len();
-                    updates = interpreter.interpret_response(message)?.peekable();
+                    updates = interpreter.interpret_response(message)?;
                 }
             }
 
             metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
             assert!(interpreter.is_finished());
 
-            // Coalesce the diffs together.
-            let mut versions = versions.into_iter();
-            let initial = versions.next().unwrap();
-            let compressed = versions.try_fold(initial, |mut whole, sub| {
-                whole.merge_from_next(&sub).map(|()| whole)
-            })?;
-
-            // Forward the local copy through the compressed diffs.
-            let new_contents = contents.as_ref().unwrap().forward(&compressed)?;
-            *contents = Some(new_contents);
-
+            writer.apply()?;
             Ok(true)
         }
 
@@ -405,89 +355,31 @@ pub async fn ixfr(
 
 /// Process an IXFR message.
 fn process_ixfr(
-    versions: &mut Vec<contents::Compressed>,
-    this_soa: &mut Option<SoaRecord>,
-    next_soa: &mut Option<SoaRecord>,
-    only_this: &mut Vec<RegularRecord>,
-    only_next: &mut Vec<RegularRecord>,
-    updates: Peekable<XfrZoneUpdateIterator<'_, '_>>,
+    writer: &mut UnsignedZonePatcher,
+    updates: XfrZoneUpdateIterator<'_, '_>,
     metrics: &ActiveLoadMetrics,
 ) -> Result<(), IxfrError> {
     for update in updates {
         metrics.num_loaded_records.fetch_add(1, Relaxed);
         match update? {
             ZoneUpdate::BeginBatchDelete(record) => {
-                // If there was a previous zone version, write it out.
-                assert!(this_soa.is_some() == next_soa.is_some());
-                if let Some((soa, next_soa)) = this_soa.take().zip(next_soa.take()) {
-                    // Sort the contents of the batch addition.
-                    only_next.sort_unstable();
-
-                    let only_this = mem::take(only_this).into_boxed_slice();
-                    let only_next = mem::take(only_next).into_boxed_slice();
-                    versions.push(contents::Compressed {
-                        soa,
-                        next_soa,
-                        only_this,
-                        only_next,
-                    });
-                }
-
-                assert!(this_soa.is_none());
-                assert!(next_soa.is_none());
-                assert!(only_this.is_empty());
-                assert!(only_next.is_empty());
-
-                *this_soa = Some(record.into());
+                writer.next_patchset()?;
+                writer.remove_soa(record.into())?;
             }
 
             ZoneUpdate::DeleteRecord(record) => {
-                assert!(this_soa.is_some());
-                assert!(next_soa.is_none());
-
-                only_this.push(record.into());
+                writer.remove(record.into())?;
             }
 
             ZoneUpdate::BeginBatchAdd(record) => {
-                assert!(this_soa.is_some());
-                assert!(next_soa.is_none());
-                assert!(only_next.is_empty());
-
-                // Sort the contents of the batch deletion.
-                only_this.sort_unstable_by(|l, r| {
-                    (&l.rname, l.rtype)
-                        .cmp(&(&r.rname, r.rtype))
-                        .then_with(|| l.rdata.cmp_canonical(&r.rdata))
-                });
-
-                *next_soa = Some(record.into());
+                writer.add_soa(record.into())?;
             }
 
             ZoneUpdate::AddRecord(record) => {
-                assert!(this_soa.is_some());
-                assert!(next_soa.is_some());
-
-                only_next.push(record.into());
+                writer.add(record.into())?;
             }
 
-            ZoneUpdate::Finished(record) => {
-                assert!(this_soa.is_some());
-                assert!(next_soa.is_some());
-
-                assert!(*next_soa == Some(record.into()));
-
-                // Sort the contents of the batch addition.
-                only_next.sort_unstable();
-
-                let only_this = mem::take(only_this).into_boxed_slice();
-                let only_next = mem::take(only_next).into_boxed_slice();
-                versions.push(contents::Compressed {
-                    soa: this_soa.take().unwrap(),
-                    next_soa: next_soa.take().unwrap(),
-                    only_this,
-                    only_next,
-                });
-
+            ZoneUpdate::Finished(_) => {
                 break;
             }
 
@@ -505,7 +397,7 @@ pub async fn axfr(
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    contents: &mut Option<ZoneContents>,
+    zone_builder: &mut ZoneBuilder,
     metrics: &ActiveLoadMetrics,
 ) -> Result<(), AxfrError> {
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
@@ -565,14 +457,14 @@ pub async fn axfr(
         .ok_or(AxfrError::IncompleteResponse)?;
 
     let mut bytes = initial.as_slice().len();
-    let mut updates = interpreter.interpret_response(initial)?.peekable();
+    let mut updates = interpreter.interpret_response(initial)?;
 
     assert!(updates.next().unwrap()? == ZoneUpdate::DeleteAllRecords);
-    let mut all = Vec::new();
 
     // Process the response messages.
+    let mut writer = zone_builder.replace_unsigned();
     let soa = loop {
-        if let Some(soa) = process_axfr(&mut all, updates, metrics)? {
+        if let Some(soa) = process_axfr(&mut writer, updates, metrics)? {
             break soa;
         } else {
             // Retrieve the next message.
@@ -581,23 +473,23 @@ pub async fn axfr(
                 .await?
                 .ok_or(AxfrError::IncompleteResponse)?;
             bytes += message.as_slice().len();
-            updates = interpreter.interpret_response(message)?.peekable();
+            updates = interpreter.interpret_response(message)?;
         }
     };
+    writer.set_soa(soa)?;
 
     assert!(interpreter.is_finished());
-    let all = all.into_boxed_slice();
 
     metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
-    *contents = Some(ZoneContents { soa, all });
 
+    writer.apply()?;
     Ok(())
 }
 
 /// Process an AXFR message.
 fn process_axfr(
-    all: &mut Vec<RegularRecord>,
-    updates: Peekable<XfrZoneUpdateIterator<'_, '_>>,
+    writer: &mut UnsignedZoneReplacer,
+    updates: XfrZoneUpdateIterator<'_, '_>,
     metrics: &ActiveLoadMetrics,
 ) -> Result<Option<SoaRecord>, AxfrError> {
     // Process the updates.
@@ -605,17 +497,10 @@ fn process_axfr(
         metrics.num_loaded_records.fetch_add(1, Relaxed);
         match update? {
             ZoneUpdate::AddRecord(record) => {
-                all.push(record.into());
+                writer.add(record.into())?;
             }
 
             ZoneUpdate::Finished(record) => {
-                // Sort the zone contents.
-                all.sort_unstable_by(|l, r| {
-                    (&l.rname, l.rtype)
-                        .cmp(&(&r.rname, r.rtype))
-                        .then_with(|| l.rdata.cmp_canonical(&r.rdata))
-                });
-
                 return Ok(Some(record.into()));
             }
 
@@ -759,11 +644,8 @@ pub enum IxfrError {
     /// An AXFR related error occurred.
     Axfr(AxfrError),
 
-    /// An IXFR's diff was internally inconsistent.
-    MergeIxfr(contents::MergeError),
-
-    /// An IXFR's diff was not consistent with the local copy.
-    ForwardIxfr(contents::ForwardError),
+    /// A zone writing error occurred.
+    Write(PatchError),
 }
 
 impl std::error::Error for IxfrError {
@@ -777,8 +659,7 @@ impl std::error::Error for IxfrError {
             IxfrError::InconsistentUpToDate => None,
             IxfrError::QuerySoa(error) => Some(error),
             IxfrError::Axfr(error) => Some(error),
-            IxfrError::MergeIxfr(error) => Some(error),
-            IxfrError::ForwardIxfr(error) => Some(error),
+            IxfrError::Write(error) => Some(error),
         }
     }
 }
@@ -802,14 +683,8 @@ impl fmt::Display for IxfrError {
             ),
             IxfrError::QuerySoa(error) => write!(f, "could not query for the SOA record: {error}"),
             IxfrError::Axfr(error) => write!(f, "the fallback AXFR failed: {error}"),
-            IxfrError::MergeIxfr(error) => {
-                write!(f, "the IXFR was internally inconsistent: {error}")
-            }
-            IxfrError::ForwardIxfr(error) => {
-                write!(
-                    f,
-                    "the IXFR was inconsistent with the local zone contents: {error}"
-                )
+            IxfrError::Write(error) => {
+                write!(f, "the zone could not be written: {error}")
             }
         }
     }
@@ -847,15 +722,9 @@ impl From<AxfrError> for IxfrError {
     }
 }
 
-impl From<contents::MergeError> for IxfrError {
-    fn from(v: contents::MergeError) -> Self {
-        Self::MergeIxfr(v)
-    }
-}
-
-impl From<contents::ForwardError> for IxfrError {
-    fn from(v: contents::ForwardError) -> Self {
-        Self::ForwardIxfr(v)
+impl From<PatchError> for IxfrError {
+    fn from(value: PatchError) -> Self {
+        Self::Write(value)
     }
 }
 
@@ -876,6 +745,9 @@ pub enum AxfrError {
     /// An XFR interpretation error occurred.
     XfrIter(xfr::protocol::IterationError),
 
+    /// A zone writing error occurred.
+    Write(ReplaceError),
+
     /// An incomplete response was received.
     IncompleteResponse,
 }
@@ -887,6 +759,7 @@ impl std::error::Error for AxfrError {
             AxfrError::Connection(error) => Some(error),
             AxfrError::Xfr(_) => None,
             AxfrError::XfrIter(_) => None,
+            AxfrError::Write(error) => Some(error),
             AxfrError::IncompleteResponse => None,
         }
     }
@@ -904,6 +777,7 @@ impl fmt::Display for AxfrError {
             AxfrError::XfrIter(_) => {
                 write!(f, "the server's response was semantically incorrect")
             }
+            AxfrError::Write(error) => write!(f, "could not write the zone: {error}"),
             AxfrError::IncompleteResponse => {
                 write!(f, "the server's response appears to be incomplete")
             }
@@ -928,6 +802,12 @@ impl From<xfr::protocol::Error> for AxfrError {
 impl From<xfr::protocol::IterationError> for AxfrError {
     fn from(value: xfr::protocol::IterationError) -> Self {
         Self::XfrIter(value)
+    }
+}
+
+impl From<ReplaceError> for AxfrError {
+    fn from(value: ReplaceError) -> Self {
+        Self::Write(value)
     }
 }
 
