@@ -99,6 +99,52 @@ impl ZoneBuilder {
             .as_ref()
             .map(|instance| SignedZoneReader { data: instance })
     }
+
+    /// The unsigned component of the prepared upcoming instance, if any.
+    pub fn unsigned_next(&self) -> Option<UnsignedZoneReader<'_>> {
+        if !self.built_unsigned {
+            return None;
+        }
+
+        // SAFETY: 'self' has a write lock over 'self.data.next'.
+        let instance = unsafe { &(*self.data.next.get()).unsigned };
+
+        instance
+            .as_ref()
+            .map(|instance| UnsignedZoneReader { data: instance })
+    }
+
+    /// The prepared unsigned diff, if any.
+    ///
+    /// The diff is available if the unsigned upcoming instance has been built
+    /// and an unsigned authoritative instance exists. It maps from the existing
+    /// authoritative instance to the new one.
+    pub fn unsigned_diff(&self) -> Option<&DiffData> {
+        self.unsigned_diff.as_ref()
+    }
+
+    /// The signed component of the prepared upcoming instance, if any.
+    pub fn signed_next(&self) -> Option<SignedZoneReader<'_>> {
+        if !self.built_signed {
+            return None;
+        }
+
+        // SAFETY: 'self' has a write lock over 'self.data.next'.
+        let instance = unsafe { &(*self.data.next.get()).signed };
+
+        instance
+            .as_ref()
+            .map(|instance| SignedZoneReader { data: instance })
+    }
+
+    /// The prepared signed diff, if any.
+    ///
+    /// The diff is available if the signed upcoming instance has been built
+    /// and a signed authoritative instance exists. It maps from the existing
+    /// authoritative instance to the new one.
+    pub fn signed_diff(&self) -> Option<&DiffData> {
+        self.signed_diff.as_ref()
+    }
 }
 
 impl ZoneBuilder {
