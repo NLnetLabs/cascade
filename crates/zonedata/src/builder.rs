@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::AuthData;
+use crate::{AuthData, SignedZoneReader, UnsignedZoneReader};
 
 //----------- ZoneBuilder ------------------------------------------------------
 
@@ -57,6 +57,28 @@ impl ZoneBuilder {
             data,
             applied: false,
         }
+    }
+}
+
+impl ZoneBuilder {
+    /// The unsigned component of the authoritative instance, if any.
+    pub fn unsigned_curr(&self) -> Option<UnsignedZoneReader<'_>> {
+        // SAFETY: 'self' has a read lock over 'self.data.curr'.
+        let instance = unsafe { &(*self.data.curr.get()).unsigned };
+
+        instance
+            .as_ref()
+            .map(|instance| UnsignedZoneReader { data: instance })
+    }
+
+    /// The signed component of the authoritative instance, if any.
+    pub fn signed_curr(&self) -> Option<SignedZoneReader<'_>> {
+        // SAFETY: 'self' has a read lock over 'self.data.curr'.
+        let instance = unsafe { &(*self.data.curr.get()).signed };
+
+        instance
+            .as_ref()
+            .map(|instance| SignedZoneReader { data: instance })
     }
 }
 
@@ -136,6 +158,38 @@ impl SignedZoneBuilder {
             data,
             applied: false,
         }
+    }
+}
+
+impl SignedZoneBuilder {
+    /// The unsigned component of the authoritative instance, if any.
+    pub fn unsigned_curr(&self) -> Option<UnsignedZoneReader<'_>> {
+        // SAFETY: 'self' has a read lock over 'self.data.curr'.
+        let instance = unsafe { &(*self.data.curr.get()).unsigned };
+
+        instance
+            .as_ref()
+            .map(|instance| UnsignedZoneReader { data: instance })
+    }
+
+    /// The signed component of the authoritative instance, if any.
+    pub fn signed_curr(&self) -> Option<SignedZoneReader<'_>> {
+        // SAFETY: 'self' has a read lock over 'self.data.curr'.
+        let instance = unsafe { &(*self.data.curr.get()).signed };
+
+        instance
+            .as_ref()
+            .map(|instance| SignedZoneReader { data: instance })
+    }
+
+    /// The unsigned component of the upcoming instance, if any.
+    pub fn unsigned_next(&self) -> Option<UnsignedZoneReader<'_>> {
+        // SAFETY: 'self' has a read lock over 'self.data.next'.
+        let instance = unsafe { &(*self.data.next.get()).unsigned };
+
+        instance
+            .as_ref()
+            .map(|instance| UnsignedZoneReader { data: instance })
     }
 }
 

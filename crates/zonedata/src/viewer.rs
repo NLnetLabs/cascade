@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::AuthData;
+use crate::{AuthData, SignedZoneReader, UnsignedZoneReader};
 
 //----------- ZoneViewer -------------------------------------------------------
 
@@ -60,6 +60,40 @@ impl ZoneViewer {
         );
 
         Self { data, curr: true }
+    }
+}
+
+impl ZoneViewer {
+    /// The unsigned component of this instance, if any.
+    pub fn unsigned(&self) -> Option<UnsignedZoneReader<'_>> {
+        let instance = if self.curr {
+            &self.data.curr
+        } else {
+            &self.data.next
+        };
+
+        // SAFETY: 'self' has a read lock over 'instance'.
+        let instance = unsafe { &(*instance.get()).unsigned };
+
+        instance
+            .as_ref()
+            .map(|instance| UnsignedZoneReader { data: instance })
+    }
+
+    /// The signed component of this instance, if any.
+    pub fn signed(&self) -> Option<SignedZoneReader<'_>> {
+        let instance = if self.curr {
+            &self.data.curr
+        } else {
+            &self.data.next
+        };
+
+        // SAFETY: 'self' has a read lock over 'instance'.
+        let instance = unsafe { &(*instance.get()).signed };
+
+        instance
+            .as_ref()
+            .map(|instance| SignedZoneReader { data: instance })
     }
 }
 
@@ -127,6 +161,24 @@ impl UnsignedZoneViewer {
         );
 
         Self { data, curr: true }
+    }
+}
+
+impl UnsignedZoneViewer {
+    /// Obtain a reader over the underlying data, if it exists.
+    pub fn reader(&self) -> Option<UnsignedZoneReader<'_>> {
+        let instance = if self.curr {
+            &self.data.curr
+        } else {
+            &self.data.next
+        };
+
+        // SAFETY: 'self' has a read lock over 'instance.unsigned'.
+        let instance = unsafe { &(*instance.get()).unsigned };
+
+        instance
+            .as_ref()
+            .map(|instance| UnsignedZoneReader { data: instance })
     }
 }
 
