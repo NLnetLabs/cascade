@@ -136,7 +136,7 @@ impl AuthData {
     /// instance or upcoming unsigned instance, or read locks of the upcoming
     /// signed instance), or if too many read locks were established.
     pub fn signed_builder(self: Arc<Self>) -> SignedZoneBuilder {
-        SignedZoneBuilder::obtain(self)
+        SignedZoneBuilder::obtain(self, false, None, None)
     }
 }
 

@@ -336,7 +336,7 @@ impl ZoneBuilder {
 }
 
 impl ZoneBuilder {
-    /// Apply the prepared changes.
+    /// Prepare the changes for application.
     ///
     /// A [`ZoneApplier`] is returned. This can be held while any read locks
     /// on the authoritative data are being released, after which the changes
@@ -345,15 +345,38 @@ impl ZoneBuilder {
     /// ## Panics
     ///
     /// Panics if the signed and unsigned components have not been built.
-    pub fn apply(mut self) -> ZoneApplier {
+    pub fn prepare(mut self) -> ZoneApplier {
         assert!(self.built_unsigned, "the unsigned instance was not built");
         assert!(self.built_signed, "the signed instance was not built");
 
         let data = self.data.clone();
+        let unsigned_diff = self.unsigned_diff.take();
+        let signed_diff = self.signed_diff.take();
         self.applied = true;
         std::mem::drop(self);
 
-        ZoneApplier::new(data)
+        ZoneApplier::new(data, unsigned_diff, signed_diff)
+    }
+
+    /// Convert into a [`SignedZoneBuilder`].
+    ///
+    /// The unsigned component will be made immutable.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the unsigned component has not been built.
+    pub fn into_signed(mut self) -> SignedZoneBuilder {
+        assert!(self.built_unsigned, "the unsigned instance was not built");
+
+        let built = self.built_signed;
+        let unsigned_diff = self.unsigned_diff.take();
+        let signed_diff = self.signed_diff.take();
+        let data = self.data.clone();
+
+        self.applied = true;
+        std::mem::drop(self);
+
+        SignedZoneBuilder::obtain(data, built, unsigned_diff, signed_diff)
     }
 }
 
@@ -397,8 +420,11 @@ pub struct SignedZoneBuilder {
     /// Whether the instance has been built.
     built: bool,
 
-    /// The diff, if built.
-    diff: Option<DiffData>,
+    /// The diff of the unsigned component, if previously built.
+    unsigned_diff: Option<DiffData>,
+
+    /// The diff (of the signed component), if built.
+    signed_diff: Option<DiffData>,
 
     /// Whether the built changes have been applied.
     ///
@@ -415,7 +441,12 @@ impl SignedZoneBuilder {
     /// Panics if `data` has conflicting locks (write locks of the authoritative
     /// instance or upcoming unsigned instance, or read locks of the upcoming
     /// signed instance), or if too many read locks were established.
-    pub(crate) fn obtain(data: Arc<AuthData>) -> Self {
+    pub(crate) fn obtain(
+        data: Arc<AuthData>,
+        built: bool,
+        unsigned_diff: Option<DiffData>,
+        signed_diff: Option<DiffData>,
+    ) -> Self {
         // Lock every component of the data appropriately.
         assert!(
             data.ctrl.curr_un.read(),
@@ -437,8 +468,9 @@ impl SignedZoneBuilder {
         // Construct 'Self' now that the requisite locks are taken.
         Self {
             data,
-            built: false,
-            diff: None,
+            built,
+            unsigned_diff,
+            signed_diff,
             applied: false,
         }
     }
@@ -473,6 +505,24 @@ impl SignedZoneBuilder {
         instance
             .as_ref()
             .map(|instance| UnsignedZoneReader { data: instance })
+    }
+
+    /// The prepared unsigned diff, if any.
+    ///
+    /// The diff is available if the unsigned upcoming instance has been built
+    /// and an unsigned authoritative instance exists. It maps from the existing
+    /// authoritative instance to the new one.
+    pub fn unsigned_diff(&self) -> Option<&DiffData> {
+        self.unsigned_diff.as_ref()
+    }
+
+    /// The prepared signed diff, if any.
+    ///
+    /// The diff is available if the signed upcoming instance has been built
+    /// and a signed authoritative instance exists. It maps from the existing
+    /// authoritative instance to the new one.
+    pub fn signed_diff(&self) -> Option<&DiffData> {
+        self.signed_diff.as_ref()
     }
 }
 
@@ -523,7 +573,7 @@ impl SignedZoneBuilder {
         // SAFETY: 'self' has a write lock over 'data.next.signed'.
         let next = unsafe { &mut (*self.data.next.get()).signed };
 
-        SignedZoneReplacer::new(curr, next, &mut self.built, &mut self.diff)
+        SignedZoneReplacer::new(curr, next, &mut self.built, &mut self.signed_diff)
     }
 
     /// Patch the signed component of the authoritative instance.
@@ -554,8 +604,31 @@ impl SignedZoneBuilder {
             curr,
             next,
             &mut self.built,
-            &mut self.diff,
+            &mut self.signed_diff,
         ))
+    }
+}
+
+impl SignedZoneBuilder {
+    /// Prepare the changes for application.
+    ///
+    /// A [`ZoneApplier`] is returned. This can be held while any read locks
+    /// on the authoritative data are being released, after which the changes
+    /// can actually be applied.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the signed component has not been built.
+    pub fn prepare(mut self) -> ZoneApplier {
+        assert!(self.built, "the signed instance was not built");
+
+        let data = self.data.clone();
+        let unsigned_diff = self.unsigned_diff.take();
+        let signed_diff = self.signed_diff.take();
+        self.applied = true;
+        std::mem::drop(self);
+
+        ZoneApplier::new(data, unsigned_diff, signed_diff)
     }
 }
 

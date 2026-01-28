@@ -248,7 +248,10 @@ async fn refresh(
                 .unwrap();
 
             // Apply the built changes.
-            zone_builder.apply().apply().clean();
+            // TODO: Use the built diffs.
+            let applier = zone_builder.prepare();
+            let (cleaner, _, _) = applier.apply();
+            cleaner.clean();
 
             center.unsigned_zones.rcu(|tree| {
                 let mut tree = Arc::unwrap_or_clone(tree.clone());

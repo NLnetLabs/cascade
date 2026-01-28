@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::{AuthData, InstanceHalf, UnsignedZoneViewer, ZoneViewer};
+use crate::{AuthData, DiffData, InstanceHalf, UnsignedZoneViewer, ZoneViewer};
 
 //----------- ZoneApplier ------------------------------------------------------
 
@@ -27,6 +27,12 @@ pub struct ZoneApplier {
     ///
     /// [`ZoneApplier`] has a read lock over the upcoming instance.
     data: Arc<AuthData>,
+
+    /// The prepared unsigned diff, if any.
+    unsigned_diff: Option<DiffData>,
+
+    /// The prepared signed diff, if any.
+    signed_diff: Option<DiffData>,
 }
 
 impl ZoneApplier {
@@ -36,7 +42,11 @@ impl ZoneApplier {
     ///
     /// Panics if `data` has conflicting locks (write locks of the upcoming
     /// instance), or if too many read locks were established.
-    pub(crate) fn new(data: Arc<AuthData>) -> Self {
+    pub(crate) fn new(
+        data: Arc<AuthData>,
+        unsigned_diff: Option<DiffData>,
+        signed_diff: Option<DiffData>,
+    ) -> Self {
         // Lock every component of the data appropriately.
         assert!(
             data.ctrl.next_un.read(),
@@ -48,7 +58,11 @@ impl ZoneApplier {
         );
 
         // Construct 'Self' now that the requisite locks are taken.
-        Self { data }
+        Self {
+            data,
+            unsigned_diff,
+            signed_diff,
+        }
     }
 
     /// Obtain a [`ZoneViewer`] over the upcoming instance.
@@ -61,18 +75,35 @@ impl ZoneApplier {
         UnsignedZoneViewer::obtain_next(self.data.clone())
     }
 
+    /// The prepared unsigned diff, if any.
+    ///
+    /// The diff is available if an unsigned authoritative instance exists. It
+    /// maps from the existing authoritative instance to the newly built one.
+    pub fn unsigned_diff(&self) -> Option<&DiffData> {
+        self.unsigned_diff.as_ref()
+    }
+
+    /// The prepared signed diff, if any.
+    ///
+    /// The diff is available if a signed authoritative instance exists. It maps
+    /// from the existing authoritative instance to the newly built one.
+    pub fn signed_diff(&self) -> Option<&DiffData> {
+        self.signed_diff.as_ref()
+    }
+
     /// Apply the change.
     ///
     /// All read locks of the authoritative instance should have been released.
     /// The upcoming instance will be copied to the authoritative instance. On
     /// success, the authoritative instance will become available to read-lock
     /// once more, and a [`ZoneCleaner`] is returned to handle cleaning up the
-    /// upcoming instance state.
+    /// upcoming instance state. The prepared diffs (unsigned and signed) are
+    /// also returned.
     ///
     /// ## Panics
     ///
     /// Panics if the authoritative instance is still read-locked.
-    pub fn apply(self) -> ZoneCleaner {
+    pub fn apply(mut self) -> (ZoneCleaner, Option<DiffData>, Option<DiffData>) {
         // Write-lock the authoritative instance.
         assert!(self.data.ctrl.curr_un.write());
         assert!(self.data.ctrl.curr_si.write());
@@ -100,7 +131,12 @@ impl ZoneApplier {
             self.data.ctrl.curr_si.stop_write();
         }
 
-        ZoneCleaner::new(self.data.clone())
+        let data = self.data.clone();
+        let unsigned_diff = self.unsigned_diff.take();
+        let signed_diff = self.signed_diff.take();
+        std::mem::drop(self);
+
+        (ZoneCleaner::new(data), unsigned_diff, signed_diff)
     }
 }
 
