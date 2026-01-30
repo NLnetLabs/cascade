@@ -35,4 +35,5 @@ runs:
       cat "/etc/resolv.conf" >&2 || true
       echo ">>> Processes active:" >&2
       ps -ef >&2 || true
-      # ss -tulnp >&2 || true
+      echo ">>> Listening sockets active:" >&2
+      ss -tulnp >&2 || true
