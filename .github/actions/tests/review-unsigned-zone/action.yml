@@ -33,15 +33,15 @@ runs:
         # Make sure our test hooks are executable.
         chmod +x ${INTEGRATION_TEST_DIR}/hooks/*
         # Tell Cascade to load our new test policy.
-        target/debug/cascade policy reload
+        cascade policy reload
     - name: Add a zone
       run: |
-        target/debug/cascade zone add --policy test --source 127.0.0.1:1055 example.test
+        cascade zone add --policy test --source 127.0.0.1:1055 example.test
     - name: Check zone status
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until target/debug/cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status example.test | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
             cascade zone status example.test
             echo "::error:: timeout: zone status did not report published zone available"

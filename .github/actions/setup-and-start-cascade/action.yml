@@ -16,11 +16,10 @@ runs:
   - name: Start cascade with a working-directory-local config
     run: |
       CASCADE_DIR="${{ inputs.cascade-dir }}"
-      BUILD_PROFILE="${{ env.build-profile }}"
 
       mkdir -p "${CASCADE_DIR}/policies"
       # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
       cascade template config | \
-        "${GITHUB_WORKSPACE}/integration-tests/scripts/sed-config-dirs.sh" "${BUILD_PROFILE}" "${CASCADE_DIR}" | tee "${CASCADE_DIR}/config.toml" >&2
+        "${GITHUB_WORKSPACE}/integration-tests/scripts/sed-config-dirs.sh" "${CASCADE_DIR}" | tee "${CASCADE_DIR}/config.toml" >/dev/null
       cascade template policy > "${CASCADE_DIR}/policies/default.toml"
       cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"
