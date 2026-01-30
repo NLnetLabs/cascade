@@ -1,24 +1,22 @@
-# This workflow is primarily for use with https://github.com/nektos/act and has
-# been tested using the full image (catthehacker/ubuntu:full-latest).
+# This workflow is currently only for use with https://github.com/nektos/act
+# via the `act-wrapper` script at the root of this repository, which creates
+# a custom container with a freshly built cascade.
 #
 # Further documentation is in TESTING.md.
 #
 # TL;DR:
-#   - Docker: `act --network default -W .github/workflows/system-tests.yml --job your-test`
-#   - Podman: `act --network podman -W .github/workflows/system-tests.yml --job your-test`
-#   Optionally start a standalone artifact server to deduplicate compilation between tests (see TESTING.md).
+#   - Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml --job your-test`
+#   - Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml --job your-test`
 #
 # ## Example test job
 #
 # ```yml
 #   job-name:
-#     name: Run tests with resolvers/nameservers
+#     name: Name of this test
 #     runs-on: ubuntu-latest
 #     strategy:
 #       matrix:
 #         rust: [stable] # see build job
-#     # env:
-#     #   build-profile: release # uncomment this to run this test with a release build
 #     steps:
 #     # WARNING: You MUST checkout the repository otherwise subsequent 'uses'
 #     # steps will fail to find the action.
@@ -46,7 +44,6 @@ env:
   # Set this assignment to your choosing to set the cargo build verbosity
   CARGO_TERM_VERBOSE: ${{ github.actor != 'nektos/act' }}
   # CARGO_TERM_VERBOSE: true
-  build-profile: debug
 
 defaults:
   run:
