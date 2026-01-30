@@ -54,6 +54,7 @@ EOF
 COPY etc/ /cascade/etc/
 COPY Cargo.toml Cargo.lock /cascade/
 COPY src/ /cascade/src/
+COPY crates/ /cascade/crates/
 
 RUN <<EOF
   cd /cascade/
