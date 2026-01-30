@@ -40,12 +40,8 @@ impl LoaderZoneHandle<'_> {
 
         self.state.loader.source = source;
 
-        crate::manager::record_zone_event(
-            self.center,
-            &self.zone.name,
-            HistoricalEvent::SourceChanged,
-            None,
-        );
+        self.state
+            .record_event(HistoricalEvent::SourceChanged, None);
 
         self.zone.mark_dirty(self.state, self.center);
 
