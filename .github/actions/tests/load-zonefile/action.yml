@@ -9,31 +9,10 @@ defaults:
 runs:
   using: "composite"
   steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
     - name: Prepare the system test environment
       uses: ./.github/actions/prepare-systest-env
-      with:
-        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
-    - run: target/debug/cascade --version
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade
-    - name: Add a policy
-      run: |
-        # Based on actions/setup-and-start-cascade/, query the Cascade config
-        # to find the policy directory, at least until we have a better way of
-        # doing this.
-        CASCADE_CONF="${GITHUB_WORKSPACE}/cascade-dir/config.toml"
-        POLICY_DIR=$(grep -E '^policy-dir.*=' ${CASCADE_CONF} | cut -d '=' -f 2 | cut -d '"' -f 2)
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-unsigned-zone"
-        # Copy the new test policy into the Cascade policy directory.
-        cp ${INTEGRATION_TEST_DIR}/policies/test.toml ${POLICY_DIR}/
-        # Fix the path to the review hook specified in the new test policy.
-        sed -i -e "s|<INTEGRATION_TEST_DIR>|${INTEGRATION_TEST_DIR}|" ${POLICY_DIR}/test.toml
-        # Make sure our test hooks are executable.
-        chmod +x ${INTEGRATION_TEST_DIR}/hooks/*
-        # Tell Cascade to load our new test policy.
-        target/debug/cascade policy reload
     - name: Make a zonefile
       run: |
         tee example.test.zone <<'EOF'
@@ -56,13 +35,14 @@ runs:
         EOF
     - name: Add a zone
       run: |
-        target/debug/cascade zone add --policy test --source example.test.zone example.test
+        cascade zone add --policy default --source $PWD/example.test.zone example.test
     - name: Check zone status
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until target/debug/cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status example.test | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
+            cascade zone status example.test
             echo "timeout: zone status did not report published zone available" >&2
             exit 1
           fi
