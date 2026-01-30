@@ -159,7 +159,7 @@ function generate-configuration() {
 
   mkdir -p "${base_dir}"/{bind,nsd/zones,nsd-primary/zones}
 
-tee "${base_dir}/bind.conf" <<EOF
+tee "${base_dir}/bind.conf" <<EOF >&2
 options {
   // Set bind's working directory
   directory "${base_dir}/bind";
@@ -198,7 +198,7 @@ controls {
 };
 EOF
 
-tee "${base_dir}/bind/rndc.conf" <<EOF
+tee "${base_dir}/bind/rndc.conf" <<EOF >&2
 key "rndc-key" {
   algorithm hmac-sha256;
   secret "4SXolSodx0SzFKwUyfBmcLjZ5WxJGsQQpDB+p3JXxFg=";
@@ -211,7 +211,7 @@ options {
 };
 EOF
 
-tee "${base_dir}/bind/test.zone" <<'EOF'
+tee "${base_dir}/bind/test.zone" <<'EOF' >&2
 $TTL 5 ; use a very short TTL for sped up keyset rolls
 test.   IN SOA ns1.test. mail.test. (
                       1          ; serial
@@ -231,7 +231,7 @@ example.test.       A   127.0.0.1
 ns1.example.test.   A   127.0.0.1
 EOF
 
-tee "${base_dir}/unbound.conf" <<EOF
+tee "${base_dir}/unbound.conf" <<EOF >&2
 server:
   num-threads: 4
   do-daemonize: yes
@@ -266,7 +266,7 @@ forward-zone:
   forward-addr: 1.0.0.1
 EOF
 
-tee "${base_dir}/nsd.conf" <<EOF
+tee "${base_dir}/nsd.conf" <<EOF >&2
 server:
   ip-address: 127.0.0.1@${_nsd_port}
   verbosity: 5
@@ -302,7 +302,7 @@ zone:
   include-pattern: secondary
 EOF
 
-tee "${base_dir}/nsd-primary.conf" <<EOF
+tee "${base_dir}/nsd-primary.conf" <<EOF >&2
 server:
   ip-address: 127.0.0.1@${_nsd_primary_port}
   verbosity: 5
@@ -336,7 +336,7 @@ zone:
   include-pattern: primary
 EOF
 
-tee "${base_dir}/nsd-primary/zones/example.test.primary-zone" <<'EOF'
+tee "${base_dir}/nsd-primary/zones/example.test.primary-zone" <<'EOF' >&2
 $TTL 5 ; use a very short TTL for sped up keyset rolls
 example.test.   IN SOA ns1.example.test. mail.example.test. (
                       1          ; serial
@@ -359,23 +359,20 @@ EOF
 }
 
 function setup-services() {
-  DEBIAN_FRONTEND=noninteractive sudo apt -y update
-  DEBIAN_FRONTEND=noninteractive sudo apt -y install bind9 nsd unbound
-
   generate-configuration
 }
 
 function restore-resolv.conf() {
   # We cannot replace the file /etc/resolv.conf itself, only the content,
   # because it is a bind-mount by Docker.
-  sudo cp "${_nameserver_base_dir}/resolv.conf.bak" /etc/resolv.conf
-  sudo rm "${_nameserver_base_dir}/resolv.conf.bak"
+  cp "${_nameserver_base_dir}/resolv.conf.bak" /etc/resolv.conf
+  rm "${_nameserver_base_dir}/resolv.conf.bak"
 }
 
 function backup-and-replace-resolv.conf() {
   # cp -a to preserve links
-  sudo cp /etc/resolv.conf "${_nameserver_base_dir}/resolv.conf.bak"
-  sudo tee /etc/resolv.conf <<EOF
+  cp /etc/resolv.conf "${_nameserver_base_dir}/resolv.conf.bak"
+  tee /etc/resolv.conf <<EOF >&2
 nameserver 127.0.0.1
 options edns0 trust-ad
 EOF
@@ -391,7 +388,7 @@ function start-services() {
   )
   nsd -c "${_nameserver_base_dir}/nsd.conf"
   nsd -c "${_nameserver_base_dir}/nsd-primary.conf"
-  sudo unbound -c "${_nameserver_base_dir}/unbound.conf"
+  unbound -c "${_nameserver_base_dir}/unbound.conf"
   backup-and-replace-resolv.conf
 }
 
@@ -400,32 +397,32 @@ function stop-services() {
   rndc -c "${_nameserver_base_dir}/bind/rndc.conf" stop
   nsd-control -c "${_nameserver_base_dir}/nsd.conf" stop
   nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" stop
-  sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" stop
+  unbound-control -c "${_nameserver_base_dir}/unbound.conf" stop
 }
 
 function test-services() {
   (
     set +e # don't exit on error
     log-error ">> BIND9 status:"
-    rndc -c "${_nameserver_base_dir}/bind/rndc.conf" status
+    rndc -c "${_nameserver_base_dir}/bind/rndc.conf" status >&2
     log-error
     log-error ">> NSD (secondary) status:"
-    nsd-control -c "${_nameserver_base_dir}/nsd.conf" status
+    nsd-control -c "${_nameserver_base_dir}/nsd.conf" status >&2
     log-error
     log-error ">> NSD (primary) status:"
-    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" status
+    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" status >&2
     log-error
     log-error ">> NSD (primary) zonestatus example.test:"
-    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" zonestatus example.test
+    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" zonestatus example.test >&2
     log-error
     log-error ">> Unbound status:"
-    sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" status
+    unbound-control -c "${_nameserver_base_dir}/unbound.conf" status >&2
     log-error
     log-error ">> dig test SOA:"
-    dig test SOA
+    dig test SOA >&2
     log-error
     log-error ">> dig @127.0.0.1 -p 1055 example.test AXFR:"
-    dig @127.0.0.1 -p 1055 example.test AXFR
+    dig @127.0.0.1 -p 1055 example.test AXFR >&2
   )
 }
 
@@ -442,7 +439,7 @@ function nsd-primary-control-cmd() {
 }
 
 function unbound-control-cmd() {
-  sudo unbound-control -c "${_nameserver_base_dir}/unbound.conf" "$@"
+  unbound-control -c "${_nameserver_base_dir}/unbound.conf" "$@"
 }
 
 function run-control-cmd() {

@@ -40,7 +40,7 @@
 #     ### RUN YOUR TESTS HERE
 #     # # Optional, the container gets cleaned up anyway (at least in act)
 #     # - name: Stop the setup
-#     #   run: scripts/manage-test-environment.sh stop
+#     #   run: integration-tests/scripts/manage-test-environment.sh stop
 # ```
 
 # GitHub Actions environment variables are documented at

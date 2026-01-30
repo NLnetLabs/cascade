@@ -41,7 +41,7 @@ runs:
     - name: Tell NSD that the zone is now available
       # Only necessary if NOTIFY is not setup for cascade
       run: |
-        ./scripts/manage-test-environment.sh control nsd-secondary transfer example.test
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer example.test
     - name: The new zone should now be available via the resolver
       run: |
         dig text.example.test TXT | grep "Hello World"
