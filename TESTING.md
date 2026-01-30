@@ -8,26 +8,27 @@ Unit tests can be run as usual for Rust projects using `cargo test`:
 1. `cargo test --no-default-features`
 1. `cargo test --all-features`
 
+
 ## Integration/System testing with `act`
 
-The GitHub Action workflow in `.github/workflows/system-tests.yml` is primarily
-for use with https://github.com/nektos/act and has been tested using the full
-image (`catthehacker/ubuntu:full-latest`).
+The GitHub Action workflow in `.github/workflows/system-tests.yml` is currently
+only for use with https://github.com/nektos/act via the `act-wrapper` script at
+the root of this repository, which creates a custom container with a freshly
+built cascade.
+
 
 ### TL;DR
 
 Run all tests with:
 
-- Docker: `act --network default -W .github/workflows/system-tests.yml`
-- Podman: `act --network podman -W .github/workflows/system-tests.yml`
+- Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml`
+- Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml`
 
 Run a single test with:
 
-- Docker: `act --network default -W .github/workflows/system-tests.yml --job your-test`
-- Podman: `act --network podman -W .github/workflows/system-tests.yml --job your-test`
+- Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml --job your-test`
+- Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml --job your-test`
 
-Optionally start a standalone artifact server to deduplicate compilation
-between tests (see below, "Standalone artifact server...").
 
 ### Network requirement (why --network default)
 
@@ -43,51 +44,12 @@ network is called `default`, while Podman's default network is called `podman`.
 Therefore, you need to use `act --network default` on Docker, and `act
 --network podman` on Podman.
 
-### Standalone artifact server for use with --network (optional)
-
-In a non-host network, act cannot access its own artifact server (that would be
-started using the `--artifact-server-path` option). Therefore, Jannik has
-hacked together a standalone artifact server binary that uses the existing act
-artifact server code (https://github.com/mozzieongit/act). You can run that
-server in a separate container on the same network (see the README of
-https://github.com/mozzieongit/act) and have act use that artifact server.
-
-Using an artifact server is optional. Using an artifact server enables the
-testing workflow to only build Cascade and dnst once (see "Building from
-source..." below), upload the generated binaries as artifacts, and download
-them for use in each test job.
-
-If you are not using an artifact server, you will get error messages like
-below, which you can ignore. The test jobs will continue as normal and build
-Cascade and dnst from source at the start of each test job. You might want to
-disable a job's dependency on the `build` job while running your tests to
-remove the then unnecessary build step.
-
-```
-[System/Integration tests/Build the project for use by the later tests]   ❗  ::error::Failed to CreateArtifact: Unable to make request: EHOSTUNREACH%0AIf you are using self-hosted runners, please make sure your runner has access to all GitHub endpoints: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners#communication-between-self-hosted-runners-and-github
-[System/Integration tests/Build the project for use by the later tests] Failed but continue next step
-[System/Integration tests/Build the project for use by the later tests]   ❌  Failure - Main Upload built binaries [4.19147036s]
-```
-
-
-### Building from source (once or always)
-
-The `build` job builds the project and uploads the target directory as an
-artifact for use by the other jobs to deduplicate the compilation step.
-If fetching the pre-built fails in the other jobs, they will just build them
-from source. This means that the workflow is still usable without an artifact
-server.
 
 ### Running single jobs/tests
 
 You can run single jobs with act using the `--job` option. However, if the job
 has the `needs` option set to depend on other jobs, those jobs will always be run
-before. If you want to test/debug your test without always re-building the
-source, you could comment out the `needs: build` option, build once using `act ...
---job build` and then use `act ... --job your-test` to only run your test. If
-there is no artifact server available, the code will still always be built from
-source.
-
+before.
 
 ### Limitations
 
@@ -133,8 +95,17 @@ of text printed you can:
 ### Miscellaneous notes
 
 - By default, tests are run using a debug build for both Cascade and dnst.
-  - This can be changed per test using the `build-profile` environment variable.
+  - This can be changed per test using the `set-build-profile` action:
+    ```
+    - uses: ./.github/actions/set-build-profile
+      with:
+        build-profile: release
+    ```
 - `cascade`, `cascaded`, and `dnst` are added to the `$PATH`.
+- By default, cascade is configured to use the directory:
+  `${GITHUB_WORKSPACE}/cascade-dir`
+- The default paths for configuration files can be fetched using the
+  `integration-tests/scripts/get-default-path.sh` script.
 
 ### Example test job
 
