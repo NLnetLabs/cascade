@@ -7,7 +7,7 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
   cascade-dir:
-    description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
+    description: 'The name of the directory to store cascade configuration in'
     required: false
     default: ${{ github.workspace }}/cascade-dir
 runs:
