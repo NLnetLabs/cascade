@@ -43,7 +43,7 @@ if [[ "$1" != "+nobuild" ]]; then
 	echo "Built Cascade integration test runner based on local repository."
 fi
 
-act --pull=false -P "ubuntu-latest=localhost/nlnetlabs/cascade-runner" "$@"
+act --pull=false -P "ubuntu-latest=localhost/nlnetlabs/cascade-runner" "$@" || true
 
 if docker container ls --format '{{.Names}}' --all | grep -q "^act-"; then
 	echo "NOTE: act seemingly failed to clean up all containers it created."
