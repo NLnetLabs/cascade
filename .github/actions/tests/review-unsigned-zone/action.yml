@@ -20,11 +20,7 @@ runs:
       uses: ./.github/actions/setup-and-start-cascade
     - name: Add a policy
       run: |
-        # Based on actions/setup-and-start-cascade/, query the Cascade config
-        # to find the policy directory, at least until we have a better way of
-        # doing this.
-        CASCADE_CONF="${GITHUB_WORKSPACE}/cascade-dir/config.toml"
-        POLICY_DIR=$(grep -E '^policy-dir.*=' ${CASCADE_CONF} | cut -d '=' -f 2 | cut -d '"' -f 2)
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
         INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-unsigned-zone"
         # Copy the new test policy into the Cascade policy directory.
         cp ${INTEGRATION_TEST_DIR}/policies/test.toml ${POLICY_DIR}/
