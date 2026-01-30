@@ -35,11 +35,20 @@ description="${2-}"
 pr="${3-}"
 
 git_root=$(git rev-parse --show-toplevel)
+git_root=$(realpath "--relative-to=$PWD" "$git_root")
 workflow_file="${git_root}/.github/workflows/system-tests.yml"
-tests_dir="${git_root}/.github/actions/tests/"
+tests_dir="${git_root}/.github/actions/tests"
 tests_template="${git_root}/.github/actions/tests/test-template"
 
+if [[ -e "${tests_dir}/${job}" ]]; then
+  echo "Test '$job' already exists"
+  exit 1
+fi
 
+cp -Tr --update=none-fail "${tests_template}" "${tests_dir}/${job}"
+sed -i "s%<NAME>%${description}%; s%<DESCRIPTION>%${description}%g" "${tests_dir}/${job}/action.yml"
+
+echo >> "$workflow_file"
 
 if [[ -n "$pr" ]]; then
   echo "  # Added for https://github.com/NLnetLabs/cascade/pull/$pr" >> "$workflow_file"
@@ -56,6 +65,3 @@ tee -a "${workflow_file}" >/dev/null <<EOF
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tests/${job}
 EOF
-
-cp -r "${tests_template}" "${tests_dir}/${job}"
-sed -i "s%<NAME>%${description}%; s%<DESCRIPTION>%${description}%g" "${tests_dir}/${job}/action.yml"
