@@ -27,6 +27,12 @@ runs:
       cat "${{ inputs.cascade-dir }}/cascade-startup.log" >&2 || true
       echo ">>> Logfile cascade.log:" >&2
       cat "${{ inputs.cascade-dir }}//cascade.log" >&2 || true
+      echo ">>> Config cascade:" >&2
+      cat "${{ inputs.cascade-dir }}//config.toml" >&2 || true
       echo ">>> Logfile manage-test-environment.log:" >&2
       cat "manage-test-environment.log" >&2 || true
+      echo ">>> Config resolv.conf:" >&2
+      cat "/etc/resolv.conf" >&2 || true
+      echo ">>> Processes active:" >&2
+      ps -ef >&2 || true
       # ss -tulnp >&2 || true
