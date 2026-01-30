@@ -165,6 +165,9 @@ use domain::{
 mod data;
 use data::{Data, InstanceData};
 
+mod reader;
+pub use reader::{SignedZoneReader, UnsignedZoneReader};
+
 //============ Helpers =========================================================
 
 pub type OldName = domain::base::ParsedName<bytes::Bytes>;
