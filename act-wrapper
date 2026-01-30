@@ -44,3 +44,8 @@ if [[ "$1" != "+nobuild" ]]; then
 fi
 
 act --pull=false -P "ubuntu-latest=localhost/nlnetlabs/cascade-runner" "$@"
+
+if docker container ls --format '{{.Names}}' --all | grep -q "^act-"; then
+	echo "NOTE: act seemingly failed to clean up all containers it created."
+	echo "You may wish to check and clean up lingering containers"
+fi
