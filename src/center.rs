@@ -9,6 +9,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
+use domain::base::iana::Class;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
@@ -17,6 +18,8 @@ use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
+use crate::loader::Loader;
+use crate::loader::zone::LoaderZoneHandle;
 use crate::zone::PipelineMode;
 use crate::{
     api,
@@ -25,7 +28,7 @@ use crate::{
     manager::{ApplicationCommand, Update},
     policy::{Policy, PolicyVersion},
     tsig::TsigStore,
-    zone::{Zone, ZoneByName, ZoneLoadSource},
+    zone::{Zone, ZoneByName},
 };
 
 //----------- Center -----------------------------------------------------------
@@ -41,6 +44,9 @@ pub struct Center {
 
     /// The logger.
     pub logger: Logger,
+
+    /// The zone loader.
+    pub loader: Loader,
 
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
@@ -140,12 +146,32 @@ pub async fn add_zone(
     }
 
     {
-        match crate::zone::change_source(center, name.clone(), source) {
-            Ok(()) => {}
-            Err(crate::zone::ChangeSourceError::NoSuchZone) => unreachable!(),
-            // NOTE: When proper TSIG support is added, it should be checked
-            //       for _before_ the zone is added.
+        let mut state = zone.state.lock().unwrap();
+
+        let source = match source {
+            cascade_api::ZoneSource::None => crate::loader::Source::None,
+            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
+            cascade_api::ZoneSource::Server {
+                addr,
+                tsig_key,
+                xfr_status: _,
+            } => {
+                // TODO: TSIG.
+                let _ = tsig_key;
+                crate::loader::Source::Server {
+                    addr,
+                    tsig_key: None,
+                }
+            }
+        };
+
+        // Set the source of the zone, and begin loading it.
+        LoaderZoneHandle {
+            zone: &zone,
+            state: &mut state,
+            center,
         }
+        .set_source(source);
 
         // NOTE: The zone is marked as dirty by the above operation.
     }
@@ -194,6 +220,29 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 
     let mut state = center.state.lock().unwrap();
     let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?;
+
+    // Remove the zone from all the places it might be stored.
+    // The zone might not have made it to these places, but that's not an issue
+    // so we just ignore any errors.
+
+    center.unsigned_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
+    center.signed_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
+    center.published_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
     let mut zone_state = zone.0.state.lock().unwrap();
 
     // Update the policy's referenced zones.
@@ -370,7 +419,7 @@ pub enum Change {
     },
 
     /// The source of a zone has changed.
-    ZoneSourceChanged(Name<Bytes>, ZoneLoadSource),
+    ZoneSourceChanged(Name<Bytes>),
 
     /// A zone has been removed.
     ZoneRemoved(Name<Bytes>),

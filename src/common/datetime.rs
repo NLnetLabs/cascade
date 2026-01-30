@@ -3,8 +3,8 @@ use std::{fmt, str::FromStr, time::Duration};
 use domain::base::Ttl;
 use jiff::{Span, SpanRelativeTo};
 use serde::{
-    de::{self, Visitor},
     Deserialize, Deserializer, Serialize,
+    de::{self, Visitor},
 };
 
 /// A wrapper around [`u32`] representing a [`Duration`]

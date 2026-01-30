@@ -194,8 +194,8 @@ impl SocketProvider {
                 EnvSocketsError::NotAvailable => { /* No problem, ignore */ }
                 EnvSocketsError::Malformed => {
                     warn!(
-                    "Ignoring malformed systemd LISTEN_PID/LISTEN_FDS environment variable value"
-                );
+                        "Ignoring malformed systemd LISTEN_PID/LISTEN_FDS environment variable value"
+                    );
                 }
                 EnvSocketsError::Unusable => {
                     warn!("Ignoring unusable systemd LISTEN_FDS environment variable socket(s)");

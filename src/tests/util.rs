@@ -1,17 +1,13 @@
 pub fn assert_json_eq(actual_json: serde_json::Value, expected_json: serde_json::Value) {
-    use assert_json_diff::{assert_json_matches_no_panic, CompareMode};
+    use assert_json_diff::{CompareMode, assert_json_matches_no_panic};
 
     let config = assert_json_diff::Config::new(CompareMode::Strict);
     if let Err(err) = assert_json_matches_no_panic(&actual_json, &expected_json, config) {
-        eprintln!(
-            "Actual JSON: {}",
-            serde_json::to_string_pretty(&actual_json).unwrap()
+        panic!(
+            "JSON doesn't match expectations: {err}\nActual JSON: {}\nExpected JSON: {}",
+            serde_json::to_string_pretty(&actual_json).unwrap(),
+            serde_json::to_string_pretty(&expected_json).unwrap(),
         );
-        eprintln!(
-            "Expected JSON: {}",
-            serde_json::to_string_pretty(&expected_json).unwrap()
-        );
-        panic!("JSON doesn't match expectations: {err}");
     }
 }
 
@@ -51,7 +47,6 @@ pub mod net {
         }
     }
 
-    #[async_trait::async_trait]
     impl<T, U, Fut> TcpListenerFactory<MockTcpListener<U, Fut>> for MockTcpListenerFactory<T, U, Fut>
     where
         T: Fn(String) -> std::io::Result<MockTcpListener<U, Fut>> + std::marker::Sync,
@@ -84,7 +79,6 @@ pub mod net {
         }
     }
 
-    #[async_trait::async_trait]
     impl<Fut, T> TcpListener<MockTcpStreamWrapper> for MockTcpListener<T, Fut>
     where
         T: Fn() -> Fut + Sync + Send,

@@ -1,11 +1,8 @@
-use std::{convert::Infallible, str::FromStr};
-
-use clap::{builder::PossibleValue, ValueEnum};
-use futures::TryFutureExt;
+use futures_util::TryFutureExt;
 
 use crate::{
-    api::{ChangeLogging, ChangeLoggingResult, LogLevel, TraceTarget},
-    cli::client::{format_http_error, CascadeApiClient},
+    api::{self, ChangeLogging, ChangeLoggingResult, TraceTarget},
+    client::{CascadeApiClient, format_http_error},
     println,
 };
 
@@ -29,9 +26,9 @@ pub enum Command {
         /// The new trace targets to use.
         ///
         /// These are names of Cascade modules for which trace-level logging
-        /// will be enabled, even the overall log level is lower.
+        /// will be enabled, even if the overall log level is lower.
         #[arg(long = "trace-targets")]
-        trace_targets: Option<Vec<TraceTarget>>,
+        trace_targets: Option<Vec<String>>,
     },
 }
 
@@ -42,6 +39,8 @@ impl Debug {
                 level,
                 trace_targets,
             } => {
+                let level = level.map(Into::into);
+                let trace_targets = trace_targets.map(|t| t.into_iter().map(TraceTarget).collect());
                 let (): ChangeLoggingResult = client
                     .post("debug/change-logging")
                     .json(&ChangeLogging {
@@ -62,35 +61,37 @@ impl Debug {
 
 //------------------------------------------------------------------------------
 
-impl ValueEnum for LogLevel {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[
-            LogLevel::Trace,
-            LogLevel::Debug,
-            LogLevel::Info,
-            LogLevel::Warning,
-            LogLevel::Error,
-            LogLevel::Critical,
-        ]
-    }
+/// A logging level.
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum LogLevel {
+    /// A function or variable was interacted with, for debugging.
+    Trace,
 
-    fn to_possible_value(&self) -> Option<PossibleValue> {
-        Some(PossibleValue::new(match self {
-            LogLevel::Trace => "trace",
-            LogLevel::Debug => "debug",
-            LogLevel::Info => "info",
-            LogLevel::Warning => "warning",
-            LogLevel::Error => "error",
-            LogLevel::Critical => "critical",
-        }))
-    }
+    /// Something occurred that may be relevant to debugging.
+    Debug,
+
+    /// Things are proceeding as expected.
+    Info,
+
+    /// Something does not appear to be correct.
+    Warning,
+
+    /// Something is wrong (but Cascade can recover).
+    Error,
+
+    /// Something is wrong and Cascade can't function at all.
+    Critical,
 }
 
-impl FromStr for TraceTarget {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // TODO: Validate the trace target syntax?
-        Ok(Self(s.into()))
+impl From<LogLevel> for api::LogLevel {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Trace => Self::Trace,
+            LogLevel::Debug => Self::Debug,
+            LogLevel::Info => Self::Info,
+            LogLevel::Warning => Self::Warning,
+            LogLevel::Error => Self::Error,
+            LogLevel::Critical => Self::Critical,
+        }
     }
 }

@@ -1,23 +1,24 @@
 //! Controlling the entire operation.
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
-use crate::api::{self, KeyImport, SigningQueueReport, SigningReport, ZoneLoaderReport};
-use crate::center::{get_zone, halt_zone, Center, Change, ZoneAddError};
+use crate::api::{self, KeyImport, SigningQueueReport, SigningReport};
+use crate::center::{Center, Change, ZoneAddError, get_zone, halt_zone};
 use crate::daemon::SocketProvider;
+use crate::loader::Loader;
+use crate::metrics::MetricsCollection;
+use crate::units::http_server::HTTP_UNIT_NAME;
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
-use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneLoadSource};
-use crate::zonemaintenance::types::ZoneReport;
+use crate::util::AbortOnDrop;
+use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger};
 use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
 use domain::zonetree::StoredName;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 //----------- Manager ----------------------------------------------------------
 
@@ -32,8 +33,11 @@ pub struct Manager {
     /// The HTTP server.
     pub http_server: Arc<HttpServer>,
 
-    /// The zone loader.
-    pub zone_loader: Arc<ZoneLoader>,
+    /// A handle to the zone loader task.
+    ///
+    /// Might seem unused but it's important to drop at the right moment, i.e.
+    /// when the manager is dropped.
+    _loader_handle: AbortOnDrop,
 
     /// The review server for unsigned zones.
     pub unsigned_review: Arc<ZoneServer>,
@@ -53,13 +57,18 @@ pub struct Manager {
 
 impl Manager {
     /// Spawn all targets.
-    pub async fn spawn(
-        center: Arc<Center>,
-        mut socket_provider: SocketProvider,
-    ) -> Result<Self, Error> {
+    pub fn spawn(center: Arc<Center>, mut socket_provider: SocketProvider) -> Result<Self, Error> {
+        let mut metrics = MetricsCollection::new();
+
+        // Initialize the components.
+        {
+            let mut state = center.state.lock().unwrap();
+            Loader::init(&center, &mut state);
+        }
+
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");
-        let zone_loader = Arc::new(ZoneLoader::launch(center.clone()));
+        let loader_runner = Loader::run(center.clone());
 
         // Spawn the unsigned zone review server.
         info!("Starting unit 'RS'");
@@ -67,15 +76,16 @@ impl Manager {
             center.clone(),
             zone_server::Source::Unsigned,
             &mut socket_provider,
+            &mut metrics,
         )?);
 
         // Spawn the key manager.
         info!("Starting unit 'KM'");
-        let key_manager = KeyManager::launch(center.clone());
+        let key_manager = KeyManager::launch(center.clone(), &mut metrics);
 
         // Spawn the zone signer.
         info!("Starting unit 'ZS'");
-        let zone_signer = ZoneSigner::launch(center.clone());
+        let zone_signer = ZoneSigner::launch(center.clone(), &mut metrics);
 
         // Spawn the signed zone review server.
         info!("Starting unit 'RS2'");
@@ -83,25 +93,44 @@ impl Manager {
             center.clone(),
             zone_server::Source::Signed,
             &mut socket_provider,
+            &mut metrics,
         )?);
 
-        // Spawn the HTTP server.
-        info!("Starting unit 'HS'");
-        let http_server = HttpServer::launch(center.clone(), &mut socket_provider)?;
+        // Take out HTTP listen sockets before PS takes them all.
+        debug!("Pre-fetching listen sockets for 'HS'");
+        let http_sockets = center
+            .config
+            .remote_control
+            .servers
+            .iter()
+            .map(|addr| {
+                socket_provider.take_tcp(addr).ok_or_else(|| {
+                    error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}",);
+                    Terminated
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         info!("Starting unit 'PS'");
         let zone_server = Arc::new(ZoneServer::launch(
             center.clone(),
             zone_server::Source::Published,
             &mut socket_provider,
+            &mut metrics,
         )?);
+
+        // Register any Manager metrics here, before giving the metrics to the HttpServer
+
+        // Spawn the HTTP server.
+        info!("Starting unit 'HS'");
+        let http_server = HttpServer::launch(center.clone(), http_sockets, metrics)?;
 
         info!("All units report ready.");
 
         Ok(Self {
             center,
             http_server,
-            zone_loader,
+            _loader_handle: loader_runner,
             unsigned_review,
             key_manager,
             zone_signer,
@@ -114,8 +143,8 @@ impl Manager {
     pub fn on_app_cmd(&self, unit: &str, cmd: ApplicationCommand) {
         match unit {
             "ZL" => tokio::spawn({
-                let unit = self.zone_loader.clone();
-                async move { unit.on_command(cmd).await }
+                let center = self.center.clone();
+                async move { center.loader.on_command(&center, cmd).await }
             }),
             "RS" => tokio::spawn({
                 let unit = self.unsigned_review.clone();
@@ -158,7 +187,7 @@ impl Manager {
                     Change::ZonePolicyChanged { name, .. } => {
                         record_zone_event(&self.center, name, HistoricalEvent::PolicyChanged, None);
                     }
-                    Change::ZoneSourceChanged(name, _) => {
+                    Change::ZoneSourceChanged(name) => {
                         record_zone_event(&self.center, name, HistoricalEvent::SourceChanged, None);
                     }
                     Change::ZoneRemoved(name) => {
@@ -173,18 +202,10 @@ impl Manager {
                 return;
             }
 
-            Update::RefreshZone {
-                zone_name,
-                source,
-                serial,
-            } => (
+            Update::RefreshZone { zone_name } => (
                 "Instructing zone loader to refresh the zone",
                 "ZL",
-                ApplicationCommand::RefreshZone {
-                    zone_name,
-                    source,
-                    serial,
-                },
+                ApplicationCommand::RefreshZone { zone_name },
             ),
 
             Update::ReviewZone {
@@ -217,18 +238,22 @@ impl Manager {
                     Some(zone_serial),
                 );
 
-                if let Some(zone) = get_zone(&self.center, &zone_name) {
-                    if let Ok(mut zone_state) = zone.state.lock() {
-                        match zone_state.pipeline_mode.clone() {
-                            PipelineMode::Running => {}
-                            PipelineMode::SoftHalt(message) => {
-                                info!("[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running");
-                                zone_state.resume();
-                            }
-                            PipelineMode::HardHalt(_) => {
-                                warn!("[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted");
-                                return;
-                            }
+                if let Some(zone) = get_zone(&self.center, &zone_name)
+                    && let Ok(mut zone_state) = zone.state.lock()
+                {
+                    match zone_state.pipeline_mode.clone() {
+                        PipelineMode::Running => {}
+                        PipelineMode::SoftHalt(message) => {
+                            info!(
+                                "[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running"
+                            );
+                            zone_state.resume();
+                        }
+                        PipelineMode::HardHalt(_) => {
+                            warn!(
+                                "[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted"
+                            );
+                            return;
                         }
                     }
                 }
@@ -441,24 +466,10 @@ pub enum ApplicationCommand {
     RefreshZone {
         /// The name of the zone to refresh.
         zone_name: StoredName,
-
-        /// The source address of the NOTIFY message.
-        source: Option<IpAddr>,
-
-        /// The expected new SOA serial for the zone.
-        ///
-        /// If this is set, and the zone's SOA serial is greater than or equal
-        /// to this value, the refresh can be ignored.
-        serial: Option<Serial>,
     },
 
     /// Reload a zone.
-    ///
-    /// The zone loader will immediately remove and re-add the zone.
-    ReloadZone {
-        zone_name: StoredName,
-        source: ZoneLoadSource,
-    },
+    ReloadZone { zone_name: StoredName },
 
     SignZone {
         zone_name: StoredName,
@@ -478,10 +489,6 @@ pub enum ApplicationCommand {
         policy: String,
         key_imports: Vec<KeyImport>,
         report_tx: oneshot::Sender<Result<(), ZoneAddError>>,
-    },
-    GetZoneReport {
-        zone_name: StoredName,
-        report_tx: oneshot::Sender<(ZoneReport, Option<ZoneLoaderReport>)>,
     },
     GetSigningReport {
         zone_name: StoredName,
@@ -522,15 +529,6 @@ pub enum Update {
     RefreshZone {
         /// The name of the zone to refresh.
         zone_name: StoredName,
-
-        /// The source address of the NOTIFY message.
-        source: Option<IpAddr>,
-
-        /// The expected new SOA serial for the zone.
-        ///
-        /// If this is set, and the zone's SOA serial is greater than or equal
-        /// to this value, the refresh can be ignored.
-        serial: Option<Serial>,
     },
 
     /// Review a zone.

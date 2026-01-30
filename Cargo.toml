@@ -1,49 +1,114 @@
-[package]
-name = "cascade"
-default-run = "cascaded"
-description = "friendly DNSSEC signing solution: sensible defaults, controllability, observability and flexibility"
-version = "0.1.0-alpha5"
+[workspace]
+resolver = "3"
+members = [".", "crates/api", "crates/cli"]
+default-members = [".", "crates/cli"]
+
+[workspace.package]
+authors = ["NLnet Labs <cascade@nlnetlabs.nl>"]
 homepage = "https://nlnetlabs.nl/projects/cascade"
 documentation = "https://cascade.docs.nlnetlabs.nl"
-edition = "2021"
+repository = "https://github.com/NLnetLabs/cascade"
 license = "BSD-3-Clause"
+
+version = "0.1.0-alpha5"
+rust-version = "1.88"
+edition = "2024"
+
+
+[package]
+name = "cascaded"
+description = "A friendly DNSSEC signer."
+
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
 exclude = [".github", ".gitignore"]
 readme = "README.md"
-rust-version = "1.84"
 
-[[bin]]
-name = "cascaded"
-path = "src/main.rs"
+default-run = "cascaded"
+
+
+[profile.release]
+panic = "abort"
+
+
+# --- Dependencies -------------------------------------------------------------
+
+[workspace.dependencies]
+
+# 'camino' offers platform-independent, UTF-8-only paths.
+#
+# TODO: Maintenance?
+[workspace.dependencies.camino]
+version = "1.1.6"
+
+# 'clap' is a command-line argument parsing library.
+#
+# TODO: Maintenance?
+[workspace.dependencies.clap]
+version = "4.5"
+
+# 'domain' is a general-purpose library for DNS.
+#
+# It is maintained by us (NLnet Labs).
+[workspace.dependencies.domain]
+version = "0.11.1"
+git = "https://github.com/NLnetLabs/domain"
+branch = "main"
+
+# 'domain-kmip' offers KMIP support for DNSSEC signatures.
+#
+# It is maintained by us (NLnet Labs).
+[workspace.dependencies.domain-kmip]
+git = "https://github.com/NLnetLabs/domain-kmip"
+branch = "main"
+
+# 'jiff' is a general-purpose time library.
+#
+# TODO: Maintenance?
+[workspace.dependencies.jiff]
+version = "0.2.15"
+
+# 'serde' is a framework for (de)serializing data.
+#
+# It is used throughout the Rust ecosystem and is maintained accordingly.
+[workspace.dependencies.serde]
+version = "1.0"
+
+# 'tokio' is an async runtime, particularly suited for networking.
+#
+# It is used throughout the Rust ecosystem and is maintained accordingly.
+[workspace.dependencies.tokio]
+version = "1.40"
+
+# tracing and tracing-subscriber provide structured and async-compatible logging
+# functionality. They are part of Tokio, a widely used and well maintained
+# ecosystem of crates.
+[workspace.dependencies.tracing]
+version = "0.1.40"
+[workspace.dependencies.tracing-subscriber]
+version = "0.3.20"
+
 
 [dependencies]
 arc-swap           = "1.7.0"
 bytes              = "1.0"
-clap               = { version = "4.5", features = [ "cargo", "wrap_help", "derive" ] }
 daemonbase         = "0.1.4"
-domain             = { git = "https://github.com/NLnetLabs/domain", branch = "patches-for-nameshed-prototype", features = [
-    "openssl",
-    "tokio-stream",
-    "tsig",
-    "unstable-client-transport",
-    "unstable-crypto-sign",
-    "unstable-server-transport",
-    "unstable-sign",
-    "unstable-zonetree",
-    "kmip",
-] }
 futures            = "0.3.17"
 futures-util       = "0.3"
 octseq             = { version = "0.5.2", default-features = false }
-tokio              = { version = "1.40", features = ["fs", "io-util", "macros", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "test-util", "time", "tracing"] }
 serde              = { version = "1.0", features = ["derive", "rc"] }
 toml               = "0.8"
-# Added for CLI to access HTTP API
-# `default-features = false` was copied from previous import from the Rotonda base
-reqwest            = { version = "0.12", default-features = false, features = ["http2", "json"] }
 axum               = { version = "0.8.4", default-features = false, features = ["http2", "query", "original-uri", "json", "tokio"] }
 
 # From Rotonda
-async-trait        = "0.1"
 crossbeam-utils    = "0.8"
 serde_json         = "1.0"
 serde_with         = "3"
@@ -51,7 +116,7 @@ url                = { version = "2.4", features = ["serde"] }
 rayon = "1.10.0"
 
 # Jiff is used by zone_signer for the DateCounter serial policy.
-jiff = "0.2.15"
+jiff.workspace = true
 
 # 'ring' is used by 'domain' for various cryptographic operations.  There have
 # been issues regarding its maintenance and a different solution will be needed
@@ -61,14 +126,24 @@ ring = "0.17.0"
 # 'tempfile' is used to generate temporary files as part of atomic file writes.
 tempfile = "3.21.0"
 
-# Anstream can strip ansi codes for TERM=dumb and other similar situations
-anstream = "0.6.21"
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
-# tracing and tracing-subscriber provide structured and async-compatible logging
-# functionality. They are part of Tokio, a widely used and well maintained
-# ecosystem of crates.
-tracing            = { version = "0.1.40" }
-tracing-subscriber = { version = "0.3.20" }
+# The 'lazy_static' library, which is pulled in by a subtle transitive
+# dependency, is specified with a low minimal version.  The oldest allowed
+# versions cause compilation errors with recent Rust compilers.  We manually
+# increase the minimum version by registering it as a dependency, even though we
+# don't use it ourselves.
+#
+# tracing-subscriber 0.3.20, feature "registry"
+# depends on: sharded-slab ^0.1.4
+# depends on: lazy_static ^1
+#
+# Ideally, this would be fixed in a new version of 'sharded-slab'.  But
+# as of 2025-12-09, sharded-slab appears to be unmaintained. See
+# <https://github.com/tokio-rs/tracing/issues/3436> for its use in
+# 'tracing-subscriber'.
+lazy_static = { version = "1.5" }
 
 # support-color checks various environment variables and terminal settings for
 # whether ANSI escape codes should be emitted. It is also used by `anstream`
@@ -78,6 +153,51 @@ supports-color = "3.0.2"
 # `hostname` is a very popular crate to get the hostname of the current process.
 # It is maintained  by Dirkjan Ochtman.
 hostname = "0.4.1"
+
+# `prometheus-client` is used for metrics and is maintained by the Prometheus
+# organization.
+prometheus-client = "0.24.0"
+
+cascade-api = { path = "crates/api" }
+
+[dependencies.clap]
+workspace = true
+features = ["cargo", "derive", "wrap_help"]
+
+[dependencies.domain]
+workspace = true
+features = [
+    "openssl",
+    "tokio-stream",
+    "tsig",
+    "unstable-client-transport",
+    "unstable-crypto-sign",
+    "unstable-new",
+    "unstable-server-transport",
+    "unstable-sign",
+    "unstable-zonetree",
+]
+
+[dependencies.domain-kmip]
+workspace = true
+features = []
+
+[dependencies.tokio]
+workspace = true
+features = [
+    "fs",
+    "io-util",
+    "macros",
+    "net",
+    "process",
+    "rt",
+    "rt-multi-thread",
+    "signal",
+    "sync",
+    "test-util",
+    "time",
+    "tracing",
+]
 
 # Cascade contains many performance-sensitive hashmaps and is not expected to
 # be accessible to attackers.  'std's default hasher, which is slow but secure
@@ -98,23 +218,19 @@ version = "0.1.5"
 # Cascade sometimes requires filesystem paths to be encoded within UTF-8 texts.
 # To conveniently resolve the conversion between the OS filesystem encoding and
 # UTF-8, 'camino' is used, which restricts filesystem paths to UTF-8.
-#
-# TODO: Who maintains it, and how well?
 [dependencies.camino]
-version = "1.1.0"
+workspace = true
 features = ["serde1"]
-
-[dev-dependencies]
-assert-json-diff = "2.0"
 
 [target.'cfg(unix)'.dependencies]
 syslog = "7.0"
 
-[features]
-default = []
 
-[profile.release]
-panic = "abort"
+[dev-dependencies]
+assert-json-diff = "2.0"
+
+
+# --- Packaging ----------------------------------------------------------------
 
 [package.metadata.deb]
 assets = [
