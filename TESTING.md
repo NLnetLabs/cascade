@@ -29,6 +29,10 @@ Run a single test with:
 - Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml --job your-test`
 - Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml --job your-test`
 
+Create a new test with:
+
+- `./integration-tests/scripts/add-test.sh your-test "Your test name"`
+
 
 ### Network requirement (why --network default)
 
@@ -107,7 +111,11 @@ of text printed you can:
 - The default paths for configuration files can be fetched using the
   `integration-tests/scripts/get-default-path.sh` script.
 
-### Example test job
+### Creating a test
 
-You can find the example test job at the top of the workflow file
-`.github/workflows/system-tests.yml`.
+The workflow file `.github/workflows/system-tests.yml` only contains "stub"
+runners for the tests, with the tests themselves being written in actions in
+`.github/actions/tests/`.
+
+You can easily generate the scaffolding for a test with the script
+`./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.

@@ -11,7 +11,9 @@
 # ## Creating a new test
 #
 # You can use the test creation script to generate a new test:
+#
 # `integration-tests/scripts/add-test.sh <test-name> [<description>] [<PR>]`.
+#
 # It will add the stub job to this workflow file and create the action file for
 # the actual test in `.github/actions/tests/<test-name>` .
 
