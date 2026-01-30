@@ -168,6 +168,9 @@ use data::{Data, InstanceData};
 mod diff;
 pub use diff::DiffData;
 
+mod reader;
+pub use reader::{LoadedZoneReader, SignedZoneReader};
+
 //============ Helpers =========================================================
 
 pub type OldName = domain::base::ParsedName<bytes::Bytes>;
