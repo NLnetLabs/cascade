@@ -16,7 +16,7 @@
 #     runs-on: ubuntu-latest
 #     strategy:
 #       matrix:
-#         rust: [stable] # see build job
+#         rust: [stable]
 #     steps:
 #     # WARNING: You MUST checkout the repository otherwise subsequent 'uses'
 #     # steps will fail to find the action.
@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable] # see build job
+        rust: [stable]
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable] # see build job
+        rust: [stable]
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable] # see build job
+        rust: [stable]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tests/add-zone-query
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable] # see build job
+        rust: [stable]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tests/load-zonefile
@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable] # see build job
+        rust: [stable]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tests/review-unsigned-zone
