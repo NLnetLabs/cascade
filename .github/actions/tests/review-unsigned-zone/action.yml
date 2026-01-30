@@ -15,9 +15,7 @@ runs:
   steps:
     - name: Prepare the system test environment
       uses: ./.github/actions/prepare-systest-env
-      with:
-        artifact-name: ${{ inputs.artifact-name }}
-    - run: target/debug/cascade --version
+    - run: cascade --version
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade
     - name: Add a policy

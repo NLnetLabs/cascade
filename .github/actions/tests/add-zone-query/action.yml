@@ -2,10 +2,6 @@
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'Add a zone, approve the unsigned zone, query the published zone'
 description: 'Add a zone, approve the unsigned zone, query the published zone'
-inputs:
-  artifact-name:
-    description: 'The name of the artifact to fetch and unpack'
-    required: true
 defaults:
   # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
   run:
@@ -15,8 +11,6 @@ runs:
   steps:
     - name: Prepare the system test environment
       uses: ./.github/actions/prepare-systest-env
-      with:
-        artifact-name: ${{ inputs.artifact-name }}
     - run: cascade --version
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade

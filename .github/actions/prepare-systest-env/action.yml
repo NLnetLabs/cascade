@@ -6,9 +6,6 @@ defaults:
   run:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
-  artifact-name:
-    description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
-    required: true
   disable-env-test:
     description: 'Disable the test step that checks if all nameservers are accessible'
     required: false
@@ -21,6 +18,3 @@ runs:
   - name: Test the setup
     if: ${{ !fromJSON(inputs.disable-env-test) }}
     run: integration-tests/scripts/manage-test-environment.sh test
-  - uses: ./.github/actions/download-or-build
-    with:
-      artifact-name: ${{ inputs.artifact-name }}
