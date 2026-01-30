@@ -57,11 +57,14 @@ pub struct Manager {
 
 impl Manager {
     /// Spawn all targets.
-    pub async fn spawn(
-        center: Arc<Center>,
-        mut socket_provider: SocketProvider,
-    ) -> Result<Self, Error> {
+    pub fn spawn(center: Arc<Center>, mut socket_provider: SocketProvider) -> Result<Self, Error> {
         let mut metrics = MetricsCollection::new();
+
+        // Initialize the components.
+        {
+            let mut state = center.state.lock().unwrap();
+            Loader::init(&center, &mut state);
+        }
 
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");

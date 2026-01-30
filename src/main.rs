@@ -185,12 +185,6 @@ fn main() -> ExitCode {
         update_tx,
     });
 
-    // Perform pre-async initialization.
-    {
-        let mut state = center.state.lock().unwrap();
-        center.loader.init(&center, &mut state);
-    }
-
     // Set up the rayon threadpool
     rayon::ThreadPoolBuilder::new()
         .thread_name(|_| "cascade-signer".into())
@@ -213,7 +207,7 @@ fn main() -> ExitCode {
     // Enter the runtime.
     let result = runtime.block_on(async {
         // Spawn Cascade's units.
-        let manager = match Manager::spawn(center.clone(), socket_provider).await {
+        let manager = match Manager::spawn(center.clone(), socket_provider) {
             Ok(manager) => manager,
             Err(err) => {
                 error!("Failed to spawn units: {err}");
