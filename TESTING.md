@@ -110,6 +110,8 @@ of text printed you can:
   `${GITHUB_WORKSPACE}/cascade-dir`
 - The default paths for configuration files can be fetched using the
   `integration-tests/scripts/get-default-path.sh` script.
+- The workflow action `.github/actions/setup-and-start-cascade` also generates
+  a default policy with `cascade template policy`.
 
 ### Creating a test
 
