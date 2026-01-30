@@ -8,27 +8,12 @@
 #   - Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml --job your-test`
 #   - Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml --job your-test`
 #
-# ## Example test job
+# ## Creating a new test
 #
-# ```yml
-#   job-name:
-#     name: Name of this test
-#     runs-on: ubuntu-latest
-#     strategy:
-#       matrix:
-#         rust: [stable]
-#     steps:
-#     # WARNING: You MUST checkout the repository otherwise subsequent 'uses'
-#     # steps will fail to find the action.
-#     - uses: actions/checkout@v4
-#     - uses: ./.github/actions/prepare-systest-env
-#     - uses: ./.github/actions/setup-and-start-cascade
-#     - run: cascade --version
-#     ### RUN YOUR TESTS HERE
-#     # # Optional, the container gets cleaned up anyway (at least in act)
-#     # - name: Stop the setup
-#     #   run: integration-tests/scripts/manage-test-environment.sh stop
-# ```
+# You can use the test creation script to generate a new test:
+# `integration-tests/scripts/add-test.sh <test-name> [<description>] [<PR>]`.
+# It will add the stub job to this workflow file and create the action file for
+# the actual test in `.github/actions/tests/<test-name>` .
 
 # GitHub Actions environment variables are documented at
 # https://docs.github.com/en/actions/reference/workflows-and-actions/variables
