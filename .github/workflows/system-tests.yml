@@ -13,10 +13,9 @@
 # ```yml
 #   job-name:
 #     name: Run tests with resolvers/nameservers
-#     runs-on: ${{ matrix.os }}
+#     runs-on: ubuntu-latest
 #     strategy:
 #       matrix:
-#         os: [ubuntu-latest]
 #         rust: [stable] # see build job
 #     # env:
 #     #   build-profile: release # uncomment this to run this test with a release build
@@ -57,10 +56,9 @@ defaults:
 jobs:
   test-release-version:
     name: Example test with prepare environment and cascade --version (release)
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest]
         rust: [stable] # see build job
     steps:
     - uses: actions/checkout@v4
@@ -73,11 +71,9 @@ jobs:
 
   test-version:
     name: Example test with prepare environment and cascade --version (debug)
-    runs-on: ${{ matrix.os }}
-
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest]
         rust: [stable] # see build job
     steps:
     - uses: actions/checkout@v4
@@ -87,10 +83,9 @@ jobs:
 
   add-zone-query:
     name: Add a zone, query the published zone
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest]
         rust: [stable] # see build job
     steps:
       - uses: actions/checkout@v4
@@ -99,10 +94,9 @@ jobs:
   # Added for https://github.com/NLnetLabs/cascade/pull/398
   review-unsigned-zone:
     name: Add a zone, approve the unsigned zone, query the published zone
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest]
         rust: [stable] # see build job
     steps:
       - uses: actions/checkout@v4
