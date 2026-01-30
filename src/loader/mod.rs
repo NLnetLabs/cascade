@@ -51,7 +51,7 @@ impl Loader {
     }
 
     /// Initialize the loader, synchronously.
-    pub fn init(&self, center: &Arc<Center>, state: &mut State) {
+    pub fn init(center: &Arc<Center>, state: &mut State) {
         // Enqueue refreshes for all known zones.
         for zone in &state.zones {
             let mut state = zone.0.state.lock().unwrap();
