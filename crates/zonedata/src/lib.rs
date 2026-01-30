@@ -162,6 +162,9 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 
+mod data;
+use data::{Data, InstanceData};
+
 //============ Helpers =========================================================
 
 pub type OldName = domain::base::ParsedName<bytes::Bytes>;
