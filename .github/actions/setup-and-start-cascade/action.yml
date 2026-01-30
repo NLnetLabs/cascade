@@ -2,30 +2,24 @@
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'Setup and start cascade'
 description: 'Setup and start the cascade daemon'
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
   cascade-dir:
-    description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
-    required: true
+    description: 'The name of the directory to store cascade configuration in'
+    required: false
+    default: ${{ github.workspace }}/cascade-dir
 runs:
   using: "composite"
   steps:
   - name: Start cascade with a working-directory-local config
     run: |
-      # Variant 1: Just using absolute paths
-      mkdir -p cascade-dir/policies
-      cascade_dir="$PWD/cascade-dir"
-      # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
-      ./target/debug/cascade template config | \
-        ./scripts/sed-config-dirs.sh "${cascade_dir}" | tee "${cascade_dir}/config.toml" >&2
-      ./target/debug/cascade template policy > "${cascade_dir}/policies/default.toml"
-      ./target/debug/cascaded --config "${cascade_dir}/config.toml" --state "${cascade_dir}/state.db" --daemonize &>"${cascade_dir}/cascade-startup.log"
+      CASCADE_DIR="${{ inputs.cascade-dir }}"
 
-      # Variant 2: Using cd to change directories and using relative paths (beware of Cascade --daemonize changing the current working directory to '/')
-      # mkdir -p cascade-dir/policies
-      # cd cascade-dir
-      # # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
-      # ../target/debug/cascade template config | \
-      #   ../scripts/sed-config-dirs.sh > config.toml
-      # cat config.toml >&2
-      # ../target/debug/cascade template policy > policies/default.toml
-      # ../target/debug/cascaded --config config.toml --state "$GITHUB_WORKSPACE/cascade-dir/state.db" --daemonize &>cascade-startup.log
+      mkdir -p "${CASCADE_DIR}/policies"
+      # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
+      cascade template config | \
+        "${GITHUB_WORKSPACE}/integration-tests/scripts/sed-config-dirs.sh" "${CASCADE_DIR}" | tee "${CASCADE_DIR}/config.toml" >/dev/null
+      cascade template policy > "${CASCADE_DIR}/policies/default.toml"
+      cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"
