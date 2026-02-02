@@ -367,5 +367,6 @@ required = false
 #
 # If empty, no NOTIFY messages will be sent.
 # 
-# A collection of IP:[port], defaulting to port 53 when not specified.
+# A comma-separated set of zero or more "IP:[port]" values, defaulting to
+# port 53 when not specified.
 send-notify-to = []
