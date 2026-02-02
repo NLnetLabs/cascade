@@ -96,6 +96,17 @@ of text printed you can:
   using `unbuffer` from the `expect` package; left as an excercise for the
   user)
 
+
+### Running act with Podman
+
+act uses Docker. If you want to use Podman instead, you will need to enable the
+Podman daemon and set the DOCKER_HOST variable accordingly. If you are using
+rootless Podman, you will likely need to run `systemctl --user enable --now
+podman.socket` and set `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock`
+in your shell's rc file (e.g. `.bashrc`). With that set, all docker programs
+will use Podman as their backend instead of the Docker daemon.
+
+
 ### Miscellaneous notes
 
 - By default, tests are run using a debug build for both Cascade and dnst.
