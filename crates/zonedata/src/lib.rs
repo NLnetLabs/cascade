@@ -168,6 +168,9 @@ pub use builder::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder, SignedZ
 mod viewer;
 pub use viewer::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer};
 
+mod cleaner;
+pub use cleaner::{SignedZoneCleaned, SignedZoneCleaner, ZoneCleaned, ZoneCleaner};
+
 mod data;
 use data::{Data, InstanceData};
 
