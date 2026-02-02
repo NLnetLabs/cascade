@@ -6,6 +6,9 @@
 //! not consider the concurrent access different instances of zone data; they
 //! are limited to considering a single instance. They offer concurrency, but
 //! only for parallelizing the writing of the zone, for efficiency.
+//!
+//! See the [`crate::builder`] module for high-level types that do consider
+//! concurrent access.
 
 use std::fmt;
 
