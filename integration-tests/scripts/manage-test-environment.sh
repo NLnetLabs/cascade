@@ -429,11 +429,11 @@ function bind-control-cmd() {
 }
 
 function nsd-secondary-control-cmd() {
-  nsd-control -c "${_nameserver_base_dir}/nsd.conf" stop
+  nsd-control -c "${_nameserver_base_dir}/nsd.conf" "$@"
 }
 
 function nsd-primary-control-cmd() {
-  nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" stop
+  nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" "$@"
 }
 
 function unbound-control-cmd() {
