@@ -162,6 +162,9 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 
+mod viewer;
+pub use viewer::{UnsignedZoneReviewer, ZoneReviewer, ZoneViewer};
+
 mod data;
 use data::{Data, InstanceData};
 
