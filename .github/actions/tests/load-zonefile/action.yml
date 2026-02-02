@@ -50,6 +50,13 @@ runs:
         done
     - name: Query zone
       run: |
+        dig @127.0.0.1 -p 4543 example.test AXFR
+    - name: Tell NSD that the zone is now available
+      # Only necessary if NOTIFY is not setup for cascade
+      run: |
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer example.test
+    - name: The new zone should now be available via the resolver
+      run: |
         dig text.example.test TXT | grep "Hello World"
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
