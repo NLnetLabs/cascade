@@ -162,6 +162,9 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 
+mod builder;
+pub use builder::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder, SignedZoneBuilt};
+
 mod viewer;
 pub use viewer::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer};
 
