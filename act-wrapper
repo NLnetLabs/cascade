@@ -39,6 +39,9 @@ else
 fi
 
 if [[ "$1" != "+nobuild" ]]; then
+	cargo build
+	cargo build --release
+
 	docker build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-runner --build-arg MSRV=$MSRV "${args[@]}"
 	echo "Built Cascade integration test runner based on local repository."
 fi
