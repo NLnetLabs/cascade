@@ -6,6 +6,9 @@
 //! different instances of zone data; they are limited to considering a single
 //! instance. They offer concurrency, but only for parallelizing access to one
 //! instance, for efficiency.
+//!
+//! See the [`crate::viewer`] module for high-level types that do consider
+//! concurrent access.
 
 use crate::{InstanceData, RegularRecord, SoaRecord};
 
