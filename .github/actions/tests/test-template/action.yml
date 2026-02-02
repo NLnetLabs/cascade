@@ -1,0 +1,19 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: '<NAME>'
+description: '<DESCRIPTION>'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+    ###
+    ### Create your test here
+    ###
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

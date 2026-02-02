@@ -2,30 +2,21 @@
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'Add a zone, approve the unsigned zone, query the published zone'
 description: 'Add a zone, approve the unsigned zone, query the published zone'
-inputs:
-  artifact-name:
-    description: 'The name of the artifact to fetch and unpack'
-    required: true
 defaults:
   # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
-  shell: bash --noprofile --norc -eo pipefail -x {0}
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
 runs:
   using: "composite"
   steps:
     - name: Prepare the system test environment
       uses: ./.github/actions/prepare-systest-env
-      with:
-        artifact-name: ${{ inputs.artifact-name }}
-    - run: target/debug/cascade --version
+    - run: cascade --version
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade
     - name: Add a policy
       run: |
-        # Based on actions/setup-and-start-cascade/, query the Cascade config
-        # to find the policy directory, at least until we have a better way of
-        # doing this.
-        CASCADE_CONF="${GITHUB_WORKSPACE}/cascade-dir/config.toml"
-        POLICY_DIR=$(grep -E '^policy-dir.*=' ${CASCADE_CONF} | cut -d '=' -f 2 | cut -d '"' -f 2)
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
         INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-unsigned-zone"
         # Copy the new test policy into the Cascade policy directory.
         cp ${INTEGRATION_TEST_DIR}/policies/test.toml ${POLICY_DIR}/
@@ -34,17 +25,18 @@ runs:
         # Make sure our test hooks are executable.
         chmod +x ${INTEGRATION_TEST_DIR}/hooks/*
         # Tell Cascade to load our new test policy.
-        target/debug/cascade policy reload
+        cascade policy reload
     - name: Add a zone
       run: |
-        target/debug/cascade zone add --policy test --source 127.0.0.1:1055 example.test
+        cascade zone add --policy test --source 127.0.0.1:1055 example.test
     - name: Check zone status
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until target/debug/cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status example.test | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
-            echo "timeout: zone status did not report published zone available" >&2
+            cascade zone status example.test
+            echo "::error:: timeout: zone status did not report published zone available"
             exit 1
           fi
           sleep 1

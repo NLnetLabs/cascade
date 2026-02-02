@@ -27,6 +27,7 @@ Released yyyy-mm-dd.
 
 - Prefix cascaded `--help` output with a one line description of the
   application. ([#409] by @ximon18)
+- Improve integration tests framework ([#401] by @mozzieongit)
 
 ### Documentation improvements
 
@@ -36,6 +37,7 @@ Released yyyy-mm-dd.
 
 [#387]: https://github.com/NLnetLabs/cascade/pull/387
 [#398]: https://github.com/NLnetLabs/cascade/pull/398
+[#401]: https://github.com/NLnetLabs/cascade/pull/401
 [#409]: https://github.com/NLnetLabs/cascade/pull/409
 [#411]: https://github.com/NLnetLabs/cascade/pull/411
 [#423]: https://github.com/NLnetLabs/cascade/pull/423

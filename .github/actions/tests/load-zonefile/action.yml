@@ -1,7 +1,7 @@
 # Making reusable composite actions documented at
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
-name: 'Add a zone, approve the unsigned zone, query the published zone'
-description: 'Add a zone, approve the unsigned zone, query the published zone'
+name: 'Load a zone from a file, query the published zone'
+description: 'Load a zone from a file, query the published zone'
 defaults:
   # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
   run:
@@ -11,12 +11,31 @@ runs:
   steps:
     - name: Prepare the system test environment
       uses: ./.github/actions/prepare-systest-env
-    - run: cascade --version
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade
+    - name: Make a zonefile
+      run: |
+        tee example.test.zone <<'EOF'
+        $TTL 5 ; use a very short TTL for sped up keyset rolls
+        example.test.   IN SOA ns1.example.test. mail.example.test. (
+                           1          ; serial
+                          60          ; refresh (60 seconds)
+                          60          ; retry (60 seconds)
+                        3600          ; expire (1 hour)
+                           5          ; minimum (5 seconds)
+                        )
+        @           NS  example.test.
+        @           NS  ns1.example.test.
+        @           A   127.0.0.1
+        ns1         A   127.0.0.1
+
+        www         A   169.254.1.1
+        mail        MX  10 example.test.
+        text        TXT "Hello World!"
+        EOF
     - name: Add a zone
       run: |
-        cascade zone add --policy default --source 127.0.0.1:1055 example.test
+        cascade zone add --policy default --source $PWD/example.test.zone example.test
     - name: Check zone status
       run: |
         timeout=10 # seconds
@@ -24,7 +43,7 @@ runs:
         until cascade zone status example.test | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
             cascade zone status example.test
-            echo "::error:: timeout: zone status did not report published zone available"
+            echo "timeout: zone status did not report published zone available" >&2
             exit 1
           fi
           sleep 1
