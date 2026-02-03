@@ -162,6 +162,9 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 
+pub mod storage;
+pub use storage::ZoneDataStorage;
+
 mod builder;
 pub use builder::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder, SignedZoneBuilt};
 
