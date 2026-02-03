@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = [".", "crates/api", "crates/cli"]
+members = [".", "crates/api", "crates/cli", "crates/zonedata"]
 default-members = [".", "crates/cli"]
 
 [workspace.package]
@@ -159,6 +159,7 @@ hostname = "0.4.1"
 prometheus-client = "0.24.0"
 
 cascade-api = { path = "crates/api" }
+cascade-zonedata = { path = "crates/zonedata" }
 
 [dependencies.clap]
 workspace = true

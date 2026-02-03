@@ -26,10 +26,11 @@ use crate::{
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
-pub mod contents;
-pub mod state;
+mod instance;
+pub use instance::Instances;
 
-pub use contents::ZoneContents;
+pub mod review;
+pub mod state;
 
 //----------- Zone -------------------------------------------------------------
 
@@ -69,6 +70,9 @@ pub struct ZoneState {
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
 
+    /// Instances of the zone.
+    pub instances: Instances,
+
     /// Unsigned versions of the zone.
     pub unsigned: foldhash::HashMap<Serial, UnsignedZoneVersionState>,
 
@@ -85,9 +89,7 @@ pub struct ZoneState {
 
     /// Loading new versions of the zone.
     pub loader: LoaderState,
-
-    /// The contents of the zone.
-    pub contents: Arc<tokio::sync::Mutex<Option<ZoneContents>>>,
+    //
     // TODO:
     // - A log?
     // - Initialization?

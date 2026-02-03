@@ -4,12 +4,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+use cascade_zonedata::SoaRecord;
 use tracing::{debug, info};
 
 use crate::{
     center::Center,
     util::AbortOnDrop,
-    zone::{HistoricalEvent, Zone, ZoneState, contents::SoaRecord},
+    zone::{HistoricalEvent, Zone, ZoneState},
 };
 
 use super::{ActiveLoadMetrics, LoadMetrics, RefreshMonitor, Source};
@@ -100,13 +101,13 @@ impl LoaderZoneHandle<'_> {
     pub(super) fn start(&mut self, refresh: EnqueuedRefresh) {
         let source = self.state.loader.source.clone();
         let metrics = Arc::new(ActiveLoadMetrics::begin(source.clone()));
-        let contents = self.state.contents.clone().try_lock_owned().unwrap();
+        let builder = self.state.instances.data.clone().builder();
 
         let handle = tokio::task::spawn(super::refresh(
             self.zone.clone(),
             source,
             refresh == EnqueuedRefresh::Reload,
-            contents,
+            builder,
             self.center.clone(),
             metrics.clone(),
         ));
