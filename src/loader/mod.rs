@@ -71,7 +71,7 @@ impl Loader {
         }))
     }
 
-    pub async fn on_command(
+    pub fn on_command(
         &self,
         center: &Arc<Center>,
         cmd: ApplicationCommand,

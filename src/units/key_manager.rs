@@ -3,9 +3,9 @@ use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, Change, ZoneAddError};
 use crate::manager::record_zone_event;
 use crate::manager::{ApplicationCommand, Terminated, Update};
-use crate::metrics::MetricsCollection;
 use crate::policy::{KeyParameters, PolicyVersion};
 use crate::units::http_server::KmipServerState;
+use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, SigningTrigger};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -30,37 +30,53 @@ use tracing::{debug, error, warn};
 //------------ KeyManager ----------------------------------------------------
 
 /// The key manager.
+#[derive(Debug)]
 pub struct KeyManager {
-    center: Arc<Center>,
     ks_info: Mutex<HashMap<String, KeySetInfo>>,
 }
 
 impl KeyManager {
-    /// Launch the key manager.
-    pub fn launch(center: Arc<Center>, _metrics: &mut MetricsCollection) -> Arc<Self> {
-        let this = Arc::new(Self {
-            center,
+    #[expect(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
             ks_info: Default::default(),
-        });
+        }
+    }
 
+    /// Launch the key manager.
+    pub fn run(center: Arc<Center>) -> AbortOnDrop {
         // Perform periodic ticks in the background.
-        tokio::task::spawn({
-            let this = this.clone();
+        AbortOnDrop::from(tokio::task::spawn({
             async move {
                 let mut interval = tokio::time::interval(Duration::from_secs(5));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    this.tick().await;
+                    center.key_manager.tick(&center).await;
                 }
             }
-        });
-
-        this
+        }))
     }
 
     /// Respond to an external command.
-    pub async fn on_command(&self, cmd: ApplicationCommand) -> Result<(), Terminated> {
+    pub fn on_command(
+        &self,
+        center: &Arc<Center>,
+        cmd: ApplicationCommand,
+    ) -> Result<(), Terminated> {
+        let center = center.clone();
+
+        // Key manager is inherently async at the moment, so even though we try
+        // to be as sync as possible, we just make this part async anyway.
+        tokio::spawn(Self::on_command_async(center, cmd));
+
+        Ok(())
+    }
+
+    async fn on_command_async(
+        center: Arc<Center>,
+        cmd: ApplicationCommand,
+    ) -> Result<(), Terminated> {
         match cmd {
             ApplicationCommand::RegisterZone {
                 name,
@@ -68,7 +84,7 @@ impl KeyManager {
                 key_imports,
                 report_tx,
             } => {
-                let res = self.register_zone(name.clone(), policy, &key_imports).await;
+                let res = Self::register_zone(&center, name.clone(), policy, &key_imports).await;
                 if let Err(unsent_res) = report_tx.send(res.clone()) {
                     let msg = match unsent_res {
                         Ok(()) => "succeeded".to_string(),
@@ -97,7 +113,7 @@ impl KeyManager {
                     },
                 http_tx,
             } => {
-                let mut cmd = self.keyset_cmd(zone, RecordingMode::Record);
+                let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
 
                 cmd.arg(match roll_variant {
                     api::keyset::KeyRollVariant::Ksk => "ksk",
@@ -151,7 +167,7 @@ impl KeyManager {
                     },
                 http_tx,
             } => {
-                let mut cmd = self.keyset_cmd(zone, RecordingMode::Record);
+                let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
 
                 cmd.arg("remove-key").arg(key);
 
@@ -178,12 +194,12 @@ impl KeyManager {
             }
 
             ApplicationCommand::KeySetStatus { zone, http_tx } => {
-                let res = self
-                    .keyset_cmd(zone, RecordingMode::RecordOnlyOnWarningOrError)
-                    .arg("status")
-                    .arg("-v")
-                    .output()
-                    .await;
+                let res =
+                    Self::keyset_cmd(&center, zone, RecordingMode::RecordOnlyOnWarningOrError)
+                        .arg("status")
+                        .arg("-v")
+                        .output()
+                        .await;
                 match res {
                     Err(KeySetCommandError { err, output, .. }) => {
                         // The dnst keyset status command failed.
@@ -219,7 +235,7 @@ impl KeyManager {
                 // if they didn't change.
                 let config_commands = policy_to_commands(&new);
                 for c in config_commands {
-                    let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
+                    let mut cmd = Self::keyset_cmd(&center, name.clone(), RecordingMode::Record);
                     cmd.arg("set");
 
                     for a in c {
@@ -246,7 +262,7 @@ impl KeyManager {
     }
 
     async fn register_zone(
-        &self,
+        center: &Arc<Center>,
         name: Name<Bytes>,
         policy_name: String,
         key_imports: &[KeyImport],
@@ -256,7 +272,7 @@ impl KeyManager {
         let policy;
         let kmip_server_id;
         {
-            let state = self.center.state.lock().unwrap();
+            let state = center.state.lock().unwrap();
             policy = state
                 .policies
                 .get(policy_name.as_str())
@@ -265,21 +281,21 @@ impl KeyManager {
             kmip_server_id = policy.latest.key_manager.hsm_server_id.clone();
         };
 
-        let kmip_server_state_dir = &self.center.config.kmip_server_state_dir;
-        let kmip_credentials_store_path = &self.center.config.kmip_credentials_store_path;
+        let kmip_server_state_dir = &center.config.kmip_server_state_dir;
+        let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
 
         // Check if the zone already exist. If it does we should not be
         // here and panic. For the moment, assume there is a bug and
         // return an error.
-        let zone_tree = &self.center.unsigned_zones.load();
+        let zone_tree = &center.unsigned_zones.load();
         let zone = zone_tree.get_zone(&name, Class::IN);
         if zone.is_some() {
             return Err(ZoneAddError::Other(format!("zone {name} already exists")));
         }
 
-        let state_path = mk_dnst_keyset_state_file_path(&self.center.config.keys_dir, &name);
+        let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &name);
 
-        let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
+        let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
 
         cmd.arg("create")
             .arg("-n")
@@ -322,7 +338,7 @@ impl KeyManager {
                 has_credentials,
             } = kmip_server;
 
-            let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
+            let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
 
             cmd.arg("kmip")
                 .arg("add-server")
@@ -370,7 +386,7 @@ impl KeyManager {
         );
 
         for c in config_commands {
-            let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
+            let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
 
             for a in c {
                 cmd.arg(a);
@@ -385,7 +401,7 @@ impl KeyManager {
         // `keyset create` but only once the zone is enabled.
         // We currently do not have a good mechanism for that
         // so we init the key immediately.
-        self.keyset_cmd(name.clone(), RecordingMode::Record)
+        Self::keyset_cmd(center, name.clone(), RecordingMode::Record)
             .arg("init")
             .output()
             .await
@@ -395,18 +411,22 @@ impl KeyManager {
     }
 
     /// Create a keyset command with the config file for the given zone.
-    fn keyset_cmd(&self, name: StoredName, recording_mode: RecordingMode) -> KeySetCommand {
+    fn keyset_cmd(
+        center: &Arc<Center>,
+        name: StoredName,
+        recording_mode: RecordingMode,
+    ) -> KeySetCommand {
         KeySetCommand::new(
             name,
-            self.center.clone(),
-            self.center.config.keys_dir.clone(),
-            self.center.config.dnst_binary_path.clone(),
+            center.clone(),
+            center.config.keys_dir.clone(),
+            center.config.dnst_binary_path.clone(),
             recording_mode,
         )
     }
 
-    async fn tick(&self) {
-        let zone_tree = &self.center.unsigned_zones;
+    async fn tick(&self, center: &Arc<Center>) {
+        let zone_tree = &center.unsigned_zones;
         let Ok(mut ks_info) = self.ks_info.try_lock() else {
             // An existing call to tick() is still busy, don't do anything.
             return;
@@ -414,7 +434,7 @@ impl KeyManager {
         for zone in zone_tree.load().iter_zones() {
             let apex_name = zone.apex_name().to_string();
             let state_path =
-                mk_dnst_keyset_state_file_path(&self.center.config.keys_dir, zone.apex_name());
+                mk_dnst_keyset_state_file_path(&center.config.keys_dir, zone.apex_name());
             if !state_path.exists() {
                 continue;
             }
@@ -452,7 +472,7 @@ impl KeyManager {
                     }
                 };
                 let _ = ks_info.insert(apex_name, new_info);
-                self.center
+                center
                     .update_tx
                     .send(Update::ResignZoneEvent {
                         zone_name: zone.apex_name().clone(),
@@ -471,11 +491,11 @@ impl KeyManager {
                 // keyset times out trying to contact nameservers. This will
                 // block the loop so we won't check the keyset state for the
                 // next zone till after the call to cron finishes.
-                let Ok(res) = self
-                    .keyset_cmd(zone.apex_name().clone(), RecordingMode::Record)
-                    .arg("cron")
-                    .output()
-                    .await
+                let Ok(res) =
+                    Self::keyset_cmd(center, zone.apex_name().clone(), RecordingMode::Record)
+                        .arg("cron")
+                        .output()
+                        .await
                 else {
                     info.clear_cron_next();
                     continue;
@@ -497,7 +517,7 @@ impl KeyManager {
                         // signer.
                         // let new_info = get_keyset_info(&state_path);
                         let _ = ks_info.insert(apex_name, new_info);
-                        self.center
+                        center
                             .update_tx
                             .send(Update::ResignZoneEvent {
                                 zone_name: zone.apex_name().clone(),
@@ -559,7 +579,7 @@ pub fn mk_dnst_keyset_state_file_path(keys_dir: &Utf8Path, name: &Name<Bytes>) -
 
 //------------ KeySetInfo ----------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KeySetInfo {
     keyset_state_modified: UnixTime,
     cron_next: Option<UnixTime>,

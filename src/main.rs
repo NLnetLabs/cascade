@@ -5,6 +5,11 @@ use cascaded::{
     loader::Loader,
     manager::Manager,
     policy,
+    units::{
+        key_manager::KeyManager,
+        zone_server::{Source, ZoneServer},
+        zone_signer::ZoneSigner,
+    },
 };
 use clap::{crate_authors, crate_description, crate_version};
 use std::{collections::HashMap, fs::create_dir_all};
@@ -175,6 +180,11 @@ fn main() -> ExitCode {
         config,
         logger,
         loader: Loader::new(),
+        key_manager: KeyManager::new(),
+        unsigned_review: ZoneServer::new(Source::Unsigned),
+        signed_review: ZoneServer::new(Source::Signed),
+        zone_server: ZoneServer::new(Source::Published),
+        zone_signer: ZoneSigner::new(),
         unsigned_zones: Default::default(),
         signable_zones: Default::default(),
         signed_zones: Default::default(),

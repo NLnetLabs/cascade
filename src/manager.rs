@@ -33,32 +33,14 @@ pub struct Manager {
     /// The HTTP server.
     pub http_server: Arc<HttpServer>,
 
-    /// A handle to the zone loader task.
-    ///
-    /// Might seem unused but it's important to drop at the right moment, i.e.
-    /// when the manager is dropped.
-    _loader_handle: AbortOnDrop,
-
-    /// The review server for unsigned zones.
-    pub unsigned_review: Arc<ZoneServer>,
-
-    /// The key manager.
-    pub key_manager: Arc<KeyManager>,
-
-    /// The zone signer.
-    pub zone_signer: Arc<ZoneSigner>,
-
-    /// The review server for signed zones.
-    pub signed_review: Arc<ZoneServer>,
-
-    /// The zone server.
-    pub zone_server: Arc<ZoneServer>,
+    /// Handles to tasks that should abort when we exit Cascade
+    _handles: Vec<AbortOnDrop>,
 }
 
 impl Manager {
     /// Spawn all targets.
     pub fn spawn(center: Arc<Center>, mut socket_provider: SocketProvider) -> Result<Self, Error> {
-        let mut metrics = MetricsCollection::new();
+        let metrics = MetricsCollection::new();
 
         // Initialize the components.
         {
@@ -66,34 +48,34 @@ impl Manager {
             Loader::init(&center, &mut state);
         }
 
+        let mut handles = Vec::new();
+
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");
-        let loader_runner = Loader::run(center.clone());
+        handles.push(Loader::run(center.clone()));
 
         // Spawn the unsigned zone review server.
         info!("Starting unit 'RS'");
-        let unsigned_review = Arc::new(ZoneServer::launch(
+        handles.extend(ZoneServer::run(
             center.clone(),
             zone_server::Source::Unsigned,
             &mut socket_provider,
-            &mut metrics,
         )?);
 
         // Spawn the key manager.
         info!("Starting unit 'KM'");
-        let key_manager = KeyManager::launch(center.clone(), &mut metrics);
+        handles.push(KeyManager::run(center.clone()));
 
         // Spawn the zone signer.
         info!("Starting unit 'ZS'");
-        let zone_signer = ZoneSigner::launch(center.clone(), &mut metrics);
+        handles.push(ZoneSigner::run(center.clone()));
 
         // Spawn the signed zone review server.
         info!("Starting unit 'RS2'");
-        let signed_review = Arc::new(ZoneServer::launch(
+        handles.extend(ZoneServer::run(
             center.clone(),
             zone_server::Source::Signed,
             &mut socket_provider,
-            &mut metrics,
         )?);
 
         // Take out HTTP listen sockets before PS takes them all.
@@ -112,11 +94,10 @@ impl Manager {
             .collect::<Result<Vec<_>, _>>()?;
 
         info!("Starting unit 'PS'");
-        let zone_server = Arc::new(ZoneServer::launch(
+        handles.extend(ZoneServer::run(
             center.clone(),
             zone_server::Source::Published,
             &mut socket_provider,
-            &mut metrics,
         )?);
 
         // Register any Manager metrics here, before giving the metrics to the HttpServer
@@ -130,44 +111,23 @@ impl Manager {
         Ok(Self {
             center,
             http_server,
-            _loader_handle: loader_runner,
-            unsigned_review,
-            key_manager,
-            zone_signer,
-            signed_review,
-            zone_server,
+            _handles: handles,
         })
     }
 
     /// Process an application update command.
     pub fn on_app_cmd(&self, unit: &str, cmd: ApplicationCommand) {
+        let center = self.center.clone();
         match unit {
-            "ZL" => tokio::spawn({
-                let center = self.center.clone();
-                async move { center.loader.on_command(&center, cmd).await }
-            }),
-            "RS" => tokio::spawn({
-                let unit = self.unsigned_review.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "KM" => tokio::spawn({
-                let unit = self.key_manager.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "ZS" => tokio::spawn({
-                let unit = self.zone_signer.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "RS2" => tokio::spawn({
-                let unit = self.signed_review.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "PS" => tokio::spawn({
-                let unit = self.zone_server.clone();
-                async move { unit.on_command(cmd).await }
-            }),
+            "ZL" => center.loader.on_command(&center, cmd),
+            "RS" => center.unsigned_review.on_command(&center, cmd),
+            "KM" => center.key_manager.on_command(&center, cmd),
+            "ZS" => center.zone_signer.on_command(&center, cmd),
+            "RS2" => center.signed_review.on_command(&center, cmd),
+            "PS" => center.zone_server.on_command(&center, cmd),
             _ => unreachable!(),
-        };
+        }
+        .unwrap();
     }
 
     /// Process an update command.

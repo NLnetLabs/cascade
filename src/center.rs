@@ -20,6 +20,9 @@ use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::units::key_manager::KeyManager;
+use crate::units::zone_server::ZoneServer;
+use crate::units::zone_signer::ZoneSigner;
 use crate::zone::PipelineMode;
 use crate::{
     api,
@@ -47,6 +50,20 @@ pub struct Center {
 
     /// The zone loader.
     pub loader: Loader,
+
+    pub key_manager: KeyManager,
+
+    /// The review server for unsigned zones.
+    pub unsigned_review: ZoneServer,
+
+    /// The review server for signed zones.
+    pub signed_review: ZoneServer,
+
+    /// The zone server.
+    pub zone_server: ZoneServer,
+
+    /// The zone signer
+    pub zone_signer: ZoneSigner,
 
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
@@ -260,7 +277,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     Ok(())
 }
 
-pub fn get_zone(center: &Center, name: &StoredName) -> Option<Arc<Zone>> {
+pub fn get_zone(center: &Arc<Center>, name: &StoredName) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
 }
