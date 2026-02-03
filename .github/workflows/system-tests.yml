@@ -244,3 +244,18 @@ jobs:
       - uses: ./.github/actions/tests/review-unsigned-zone
         with:
           artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
+
+  # Added for https://github.com/NLnetLabs/cascade/issues/105
+  strip-dnssec-rrs:
+    name: Add a zone containing DNSSEC RRs and verify that they are not included in the signed zone
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable] # see build job
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tests/strip-dnssec-rrs
+        with:
+          artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
