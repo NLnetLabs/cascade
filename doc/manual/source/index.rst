@@ -164,5 +164,6 @@ Examples of things we're interested in:
    man/cascade-zone
    kmip2pkcs11 Daemon <https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/man/kmip2pkcs11.html>
    kmip2pkcs11 Configuration File Format <https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/man/kmip2pkcs11-config.toml.html>
+   ods2cascade <https://cascade.docs.nlnetlabs.nl/projects/ods2cascade/>
 
 .. ^ need to work around lack of intersphinx links in toctree by creating a hyperlink
