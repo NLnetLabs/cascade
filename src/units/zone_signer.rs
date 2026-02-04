@@ -33,7 +33,7 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot, watch};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use tokio::task::spawn_blocking;
 use tokio::time::Instant;
 use tracing::{Level, debug, error, info, trace, warn};
@@ -299,20 +299,13 @@ impl ZoneSigner {
         &self,
         _center: &Arc<Center>,
         zone_name: StoredName,
-        report_tx: oneshot::Sender<SigningReport>,
-    ) {
-        if let Some(status) = self.signer_status.get(&zone_name)
-            && let Some(report) = self.mk_signing_report(status)
-        {
-            let _ = report_tx.send(report).ok();
-        };
+    ) -> Option<SigningReport> {
+        self.signer_status
+            .get(&zone_name)
+            .and_then(|status| self.mk_signing_report(status))
     }
 
-    pub fn on_queue_report(
-        &self,
-        _center: &Arc<Center>,
-        report_tx: oneshot::Sender<Vec<SigningQueueReport>>,
-    ) {
+    pub fn on_queue_report(&self, _center: &Arc<Center>) -> Vec<SigningQueueReport> {
         let mut report = vec![];
         let zone_signer_status = &self.signer_status;
         let q = zone_signer_status.zones_being_signed.read().unwrap();
@@ -324,7 +317,7 @@ impl ZoneSigner {
                 });
             }
         }
-        let _ = report_tx.send(report).ok();
+        report
     }
 
     pub fn on_publish_signed_zone(&self, center: &Arc<Center>) {

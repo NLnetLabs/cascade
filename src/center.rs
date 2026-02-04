@@ -13,7 +13,7 @@ use domain::base::iana::Class;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
@@ -82,9 +82,6 @@ pub struct Center {
 
     /// The old TSIG key store.
     pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
-
-    /// A channel to send units commands.
-    // pub app_cmd_tx: mpsc::UnboundedSender<(String, ApplicationCommand)>,
 
     /// A channel to send the central command updates.
     pub update_tx: mpsc::UnboundedSender<Update>,
@@ -203,23 +200,10 @@ async fn register_zone(
     policy: Box<str>,
     key_imports: Vec<KeyImport>,
 ) -> Result<(), ZoneAddError> {
-    let (report_tx, report_rx) = oneshot::channel();
-
-    center.key_manager.on_register_zone(
-        center,
-        name,
-        policy.clone().into(),
-        key_imports,
-        report_tx,
-    );
-
-    report_rx
+    center
+        .key_manager
+        .on_register_zone(center, name, policy.clone().into(), key_imports)
         .await
-        .map_err(|err| {
-            ZoneAddError::Other(format!(
-                "Zone registration failed: internal command could not be sent: {err}"
-            ))
-        })?
         .map_err(|err| ZoneAddError::Other(format!("Zone registration failed: {err}")))
 }
 

@@ -568,8 +568,7 @@ impl ZoneServer {
         zone_name: Name<Bytes>,
         zone_serial: Serial,
         decision: ZoneReviewDecision,
-        tx: tokio::sync::oneshot::Sender<ZoneReviewResult>,
-    ) {
+    ) -> ZoneReviewResult {
         let unit_name = self.unit_name();
 
         // Look up the zone.
@@ -577,8 +576,7 @@ impl ZoneServer {
             debug!(
                 "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist"
             );
-            let _ = tx.send(Err(ZoneReviewError::NoSuchZone));
-            return;
+            return Err(ZoneReviewError::NoSuchZone);
         };
 
         let new_review_state = match decision {
@@ -599,8 +597,7 @@ impl ZoneServer {
                         debug!(
                             "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
                         );
-                        let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
-                        return;
+                        return Err(ZoneReviewError::NotUnderReview);
                     };
 
                     // Check that the zone was not already approved.
@@ -609,8 +606,7 @@ impl ZoneServer {
                         //
                         // TODO: Differentiate this from 'NotUnderReview'?
 
-                        let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
-                        return;
+                        return Err(ZoneReviewError::NotUnderReview);
                     }
 
                     version.review = new_review_state;
@@ -650,8 +646,7 @@ impl ZoneServer {
                         debug!(
                             "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
                         );
-                        let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
-                        return;
+                        return Err(ZoneReviewError::NotUnderReview);
                     };
 
                     // Check that the zone was not already approved.
@@ -660,8 +655,7 @@ impl ZoneServer {
                         //
                         // TODO: Differentiate this from 'NotUnderReview'?
 
-                        let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
-                        return;
+                        return Err(ZoneReviewError::NotUnderReview);
                     }
 
                     version.review = new_review_state;
@@ -682,7 +676,7 @@ impl ZoneServer {
             Source::Published => unreachable!(),
         };
 
-        let _ = tx.send(Ok(ZoneReviewOutput {}));
+        Ok(ZoneReviewOutput {})
     }
 
     fn promote_zone_to_signable(

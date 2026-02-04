@@ -167,13 +167,7 @@ impl Manager {
                     api::ZoneReviewStage::Signed => &center.signed_review,
                 };
 
-                server.on_zone_review(
-                    center,
-                    name,
-                    serial,
-                    decision,
-                    tokio::sync::oneshot::channel().0,
-                );
+                let _ = server.on_zone_review(center, name, serial, decision);
             }
 
             Update::UnsignedZoneUpdatedEvent {
@@ -360,90 +354,6 @@ pub fn record_zone_event(
         zone.mark_dirty(&mut zone_state, center);
     }
 }
-
-//----------- ApplicationCommand -----------------------------------------------
-
-// #[derive(Debug)]
-// pub enum ApplicationCommand {
-//     /// A change has occurred.
-//     Changed(Change),
-
-//     /// Review a zone.
-//     ReviewZone {
-//         /// The name of the zone.
-//         name: StoredName,
-
-//         /// The serial number of the zone.
-//         serial: Serial,
-
-//         /// Whether to approve or reject the zone.
-//         decision: api::ZoneReviewDecision,
-
-//         /// A handle for returning a response.
-//         tx: tokio::sync::oneshot::Sender<api::ZoneReviewResult>,
-//     },
-
-//     SeekApprovalForUnsignedZone {
-//         zone_name: StoredName,
-//         zone_serial: Serial,
-//     },
-
-//     /// Refresh a zone.
-//     ///
-//     /// The zone loader will initiate a refresh for the zone, and query the
-//     /// zone's source to look for a newer version of the zone.  This command
-//     /// can be used in response to a user request or a NOTIFY message.
-//     RefreshZone {
-//         /// The name of the zone to refresh.
-//         zone_name: StoredName,
-//     },
-
-//     /// Reload a zone.
-//     ReloadZone { zone_name: StoredName },
-
-//     SignZone {
-//         zone_name: StoredName,
-//         zone_serial: Option<Serial>,
-//         trigger: SigningTrigger,
-//     },
-//     SeekApprovalForSignedZone {
-//         zone_name: StoredName,
-//         zone_serial: Serial,
-//     },
-//     PublishSignedZone {
-//         zone_name: StoredName,
-//         zone_serial: Serial,
-//     },
-//     RegisterZone {
-//         name: StoredName,
-//         policy: String,
-//         key_imports: Vec<KeyImport>,
-//         report_tx: oneshot::Sender<Result<(), ZoneAddError>>,
-//     },
-//     GetSigningReport {
-//         zone_name: StoredName,
-//         report_tx: oneshot::Sender<SigningReport>,
-//     },
-//     GetQueueReport {
-//         report_tx: oneshot::Sender<Vec<SigningQueueReport>>,
-//     },
-
-//     RollKey {
-//         zone: StoredName,
-//         key_roll: api::keyset::KeyRoll,
-//         http_tx: mpsc::Sender<Result<(), String>>,
-//     },
-//     RemoveKey {
-//         zone: StoredName,
-//         key_remove: api::keyset::KeyRemove,
-//         http_tx: mpsc::Sender<Result<(), String>>,
-//     },
-
-//     KeySetStatus {
-//         zone: StoredName,
-//         http_tx: oneshot::Sender<Result<String, String>>,
-//     },
-// }
 
 //------------ Update --------------------------------------------------------
 
