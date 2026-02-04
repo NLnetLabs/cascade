@@ -28,7 +28,7 @@ use crate::{
     api,
     config::Config,
     log::Logger,
-    manager::{ApplicationCommand, Update},
+    manager::Update,
     policy::{Policy, PolicyVersion},
     tsig::TsigStore,
     zone::{Zone, ZoneByName},
@@ -84,7 +84,7 @@ pub struct Center {
     pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
 
     /// A channel to send units commands.
-    pub app_cmd_tx: mpsc::UnboundedSender<(String, ApplicationCommand)>,
+    // pub app_cmd_tx: mpsc::UnboundedSender<(String, ApplicationCommand)>,
 
     /// A channel to send the central command updates.
     pub update_tx: mpsc::UnboundedSender<Update>,
@@ -205,18 +205,13 @@ async fn register_zone(
 ) -> Result<(), ZoneAddError> {
     let (report_tx, report_rx) = oneshot::channel();
 
-    center
-        .app_cmd_tx
-        .send((
-            "KM".into(),
-            ApplicationCommand::RegisterZone {
-                name,
-                policy: policy.clone().into(),
-                key_imports,
-                report_tx,
-            },
-        ))
-        .unwrap();
+    center.key_manager.on_register_zone(
+        center,
+        name,
+        policy.clone().into(),
+        key_imports,
+        report_tx,
+    );
 
     report_rx
         .await

@@ -33,7 +33,7 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot, watch};
 use tokio::task::spawn_blocking;
 use tokio::time::Instant;
 use tracing::{Level, debug, error, info, trace, warn};
@@ -43,9 +43,9 @@ use crate::api::{
     SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
     SigningRequestedReport, SigningStageReport,
 };
-use crate::center::{Center, get_zone};
+use crate::center::{Center, Change, get_zone};
 use crate::common::light_weight_zone::LightWeightZone;
-use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::manager::{Terminated, Update};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
@@ -250,87 +250,86 @@ impl ZoneSigner {
         })
     }
 
-    /// Handle incoming requests.
-    pub fn on_command(
+    pub fn on_change(&self, _center: &Arc<Center>, _change: Change) {
+        // nothing to do
+    }
+
+    pub fn on_sign_zone(
         &self,
         center: &Arc<Center>,
-        cmd: ApplicationCommand,
-    ) -> Result<(), Terminated> {
-        debug!("[ZS]: Received command: {cmd:?}");
-        match cmd {
-            ApplicationCommand::SignZone {
-                zone_name,
-                zone_serial, // None means re-sign last signed & published serial
-                trigger,
-            } => {
-                let center = center.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = center
-                        .zone_signer
-                        .join_sign_zone_queue(&center, &zone_name, zone_serial.is_none(), trigger)
-                        .await
-                    {
-                        if err.is_benign() {
-                            // Ignore this benign case. It was probably caused
-                            // by dnst keyset cron triggering resigning before
-                            // we even signed the first time, either because
-                            // the zone was large and slow to load and sign,
-                            // or because the unsigned zone was pending
-                            // review.
-                            debug!(
-                                "[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}"
-                            );
-                        } else {
-                            error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
+        zone_name: StoredName,
+        zone_serial: Option<Serial>,
+        trigger: SigningTrigger,
+    ) {
+        let center = center.clone();
+        tokio::spawn(async move {
+            if let Err(err) = center
+                .zone_signer
+                .join_sign_zone_queue(&center, &zone_name, zone_serial.is_none(), trigger)
+                .await
+            {
+                if err.is_benign() {
+                    // Ignore this benign case. It was probably caused
+                    // by dnst keyset cron triggering resigning before
+                    // we even signed the first time, either because
+                    // the zone was large and slow to load and sign,
+                    // or because the unsigned zone was pending
+                    // review.
+                    debug!(
+                        "[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}"
+                    );
+                } else {
+                    error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
-                            center
-                                .update_tx
-                                .send(Update::ZoneSigningFailedEvent {
-                                    zone_name,
-                                    zone_serial,
-                                    trigger,
-                                    reason: err.to_string(),
-                                })
-                                .unwrap();
-                        }
-                    }
+                    center
+                        .update_tx
+                        .send(Update::ZoneSigningFailedEvent {
+                            zone_name,
+                            zone_serial,
+                            trigger,
+                            reason: err.to_string(),
+                        })
+                        .unwrap();
+                }
+            }
+        });
+    }
+
+    pub fn on_signing_report(
+        &self,
+        _center: &Arc<Center>,
+        zone_name: StoredName,
+        report_tx: oneshot::Sender<SigningReport>,
+    ) {
+        if let Some(status) = self.signer_status.get(&zone_name)
+            && let Some(report) = self.mk_signing_report(status)
+        {
+            let _ = report_tx.send(report).ok();
+        };
+    }
+
+    pub fn on_queue_report(
+        &self,
+        _center: &Arc<Center>,
+        report_tx: oneshot::Sender<Vec<SigningQueueReport>>,
+    ) {
+        let mut report = vec![];
+        let zone_signer_status = &self.signer_status;
+        let q = zone_signer_status.zones_being_signed.read().unwrap();
+        for q_item in q.iter().rev() {
+            if let Some(stage_report) = self.mk_signing_report(q_item.clone()) {
+                report.push(SigningQueueReport {
+                    zone_name: q_item.read().unwrap().zone_name.clone(),
+                    signing_report: stage_report,
                 });
             }
-
-            ApplicationCommand::GetSigningReport {
-                zone_name,
-                report_tx,
-            } => {
-                if let Some(status) = self.signer_status.get(&zone_name)
-                    && let Some(report) = self.mk_signing_report(status)
-                {
-                    let _ = report_tx.send(report).ok();
-                };
-            }
-
-            ApplicationCommand::GetQueueReport { report_tx } => {
-                let mut report = vec![];
-                let zone_signer_status = &self.signer_status;
-                let q = zone_signer_status.zones_being_signed.read().unwrap();
-                for q_item in q.iter().rev() {
-                    if let Some(stage_report) = self.mk_signing_report(q_item.clone()) {
-                        report.push(SigningQueueReport {
-                            zone_name: q_item.read().unwrap().zone_name.clone(),
-                            signing_report: stage_report,
-                        });
-                    }
-                }
-                let _ = report_tx.send(report).ok();
-            }
-
-            ApplicationCommand::PublishSignedZone { .. } => {
-                trace!("[ZS]: a zone is published, recompute next time to re-sign");
-                let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
-            }
-            _ => { /* Not for us */ }
         }
+        let _ = report_tx.send(report).ok();
+    }
 
-        Ok(())
+    pub fn on_publish_signed_zone(&self, center: &Arc<Center>) {
+        trace!("[ZS]: a zone is published, recompute next time to re-sign");
+        let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
     }
 
     /// Signs zone_name from the Center::signable_zones zone collection,

@@ -40,7 +40,7 @@ use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
 use crate::loader;
-use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::manager::{Terminated, Update};
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
@@ -184,8 +184,10 @@ impl HttpServer {
         let mut soft_halted_zones = vec![];
         let mut hard_halted_zones = vec![];
 
+        let center = &state.center;
+
         // Determine which pipelines are halted.
-        for zone in state.center.state.lock().unwrap().zones.iter() {
+        for zone in center.state.lock().unwrap().zones.iter() {
             if let Ok(zone_state) = zone.0.state.lock() {
                 match &zone_state.pipeline_mode {
                     PipelineMode::Running => { /* Nothing to do */ }
@@ -201,14 +203,7 @@ impl HttpServer {
 
         // Fetch the signing queue.
         let (tx, rx) = oneshot::channel();
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "ZS".to_owned(),
-                ApplicationCommand::GetQueueReport { report_tx: tx },
-            ))
-            .ok();
+        center.zone_signer.on_queue_report(center, tx);
 
         let signing_queue = (rx.await).unwrap_or_default();
 
@@ -312,7 +307,6 @@ impl HttpServer {
         name: Name<Bytes>,
     ) -> Result<ZoneStatus, ZoneStatusError> {
         let state_path;
-        let app_cmd_tx;
         let policy;
         let source;
         let unsigned_review_addr;
@@ -325,7 +319,6 @@ impl HttpServer {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
             state_path = mk_dnst_keyset_state_file_path(keys_dir, &name);
-            app_cmd_tx = state.center.app_cmd_tx.clone();
             let zone = locked_state
                 .zones
                 .get(&name)
@@ -416,15 +409,10 @@ impl HttpServer {
         // Query key status
         let key_status = {
             let (tx, rx) = oneshot::channel();
-            app_cmd_tx
-                .send((
-                    "KM".to_owned(),
-                    ApplicationCommand::KeySetStatus {
-                        zone: name.clone(),
-                        http_tx: tx,
-                    },
-                ))
-                .ok();
+
+            let center = &state.center;
+            center.key_manager.on_status(center, name.clone(), tx);
+
             match rx.await {
                 Err(_) => "Internal error: Could not retrieve status response".to_string(),
                 Ok(Err(output)) | Ok(Ok(output)) => {
@@ -497,15 +485,11 @@ impl HttpServer {
         let mut signing_report = None;
         if stage >= ZoneStage::Signed {
             let (report_tx, rx) = oneshot::channel();
-            app_cmd_tx
-                .send((
-                    "ZS".to_owned(),
-                    ApplicationCommand::GetSigningReport {
-                        zone_name: name.clone(),
-                        report_tx,
-                    },
-                ))
-                .ok();
+            let center = &state.center;
+            center
+                .zone_signer
+                .on_signing_report(center, name.clone(), report_tx);
+
             if let Ok(report) = rx.await {
                 signing_report = Some(report);
             }
@@ -624,16 +608,8 @@ impl HttpServer {
         match zone_state.loader.source.clone() {
             loader::Source::None => Err(ZoneReloadError::ZoneWithoutSource),
             _ => {
-                api_state
-                    .center
-                    .app_cmd_tx
-                    .send((
-                        "ZL".into(),
-                        ApplicationCommand::ReloadZone {
-                            zone_name: name.clone(),
-                        },
-                    ))
-                    .unwrap();
+                let center = &api_state.center;
+                center.loader.on_reload_zone(center, name.clone());
                 Ok(ZoneReloadResult { name })
             }
         }
@@ -646,19 +622,14 @@ impl HttpServer {
     ) -> Json<ZoneReviewResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "RS".into(),
-                ApplicationCommand::ReviewZone {
-                    name,
-                    serial,
-                    decision: ZoneReviewDecision::Approve,
-                    tx,
-                },
-            ))
-            .unwrap();
+        let center = &state.center;
+        center.unsigned_review.on_zone_review(
+            center,
+            name,
+            serial,
+            ZoneReviewDecision::Approve,
+            tx,
+        );
 
         Json(rx.await.unwrap())
     }
@@ -670,19 +641,10 @@ impl HttpServer {
     ) -> Json<ZoneReviewResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "RS".into(),
-                ApplicationCommand::ReviewZone {
-                    name,
-                    serial,
-                    decision: ZoneReviewDecision::Reject,
-                    tx,
-                },
-            ))
-            .unwrap();
+        let center = &state.center;
+        center
+            .unsigned_review
+            .on_zone_review(center, name, serial, ZoneReviewDecision::Reject, tx);
 
         Json(rx.await.unwrap())
     }
@@ -694,19 +656,10 @@ impl HttpServer {
     ) -> Json<ZoneReviewResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "RS2".into(),
-                ApplicationCommand::ReviewZone {
-                    name,
-                    serial,
-                    decision: ZoneReviewDecision::Approve,
-                    tx,
-                },
-            ))
-            .unwrap();
+        let center = &state.center;
+        center
+            .signed_review
+            .on_zone_review(center, name, serial, ZoneReviewDecision::Approve, tx);
 
         Json(rx.await.unwrap())
     }
@@ -718,19 +671,10 @@ impl HttpServer {
     ) -> Json<ZoneReviewResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "RS2".into(),
-                ApplicationCommand::ReviewZone {
-                    name,
-                    serial,
-                    decision: ZoneReviewDecision::Reject,
-                    tx,
-                },
-            ))
-            .unwrap();
+        let center = &state.center;
+        center
+            .signed_review
+            .on_zone_review(center, name, serial, ZoneReviewDecision::Reject, tx);
 
         Json(rx.await.unwrap())
     }
@@ -870,21 +814,14 @@ impl HttpServer {
     async fn key_roll(
         State(state): State<Arc<HttpServer>>,
         Path(zone): Path<Name<Bytes>>,
-        Json(key_roll): Json<KeyRoll>,
+        Json(KeyRoll { variant, cmd }): Json<KeyRoll>,
     ) -> Json<Result<(), String>> {
         let (tx, mut rx) = mpsc::channel(10);
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "KM".into(),
-                ApplicationCommand::RollKey {
-                    zone: zone.clone(),
-                    key_roll,
-                    http_tx: tx,
-                },
-            ))
-            .unwrap();
+
+        let center = &state.center;
+        center
+            .key_manager
+            .on_roll_key(center, zone, variant, cmd, tx);
 
         let res = rx.recv().await;
         let Some(res) = res else {
@@ -903,21 +840,18 @@ impl HttpServer {
     async fn key_remove(
         State(state): State<Arc<HttpServer>>,
         Path(zone): Path<Name<Bytes>>,
-        Json(key_remove): Json<KeyRemove>,
+        Json(KeyRemove {
+            key,
+            force,
+            continue_flag,
+        }): Json<KeyRemove>,
     ) -> Json<Result<(), String>> {
         let (tx, mut rx) = mpsc::channel(10);
-        state
-            .center
-            .app_cmd_tx
-            .send((
-                "KM".into(),
-                ApplicationCommand::RemoveKey {
-                    zone: zone.clone(),
-                    key_remove,
-                    http_tx: tx,
-                },
-            ))
-            .unwrap();
+
+        let center = &state.center;
+        center
+            .key_manager
+            .on_remove_key(center, zone, key, force, continue_flag, tx);
 
         let res = rx.recv().await;
         let Some(res) = res else {

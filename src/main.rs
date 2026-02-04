@@ -173,7 +173,6 @@ fn main() -> ExitCode {
     }
 
     // Prepare Cascade.
-    let (app_cmd_tx, mut app_cmd_rx) = mpsc::unbounded_channel();
     let (update_tx, mut update_rx) = mpsc::unbounded_channel();
     let center = Arc::new(Center {
         state: Mutex::new(state),
@@ -191,7 +190,6 @@ fn main() -> ExitCode {
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
-        app_cmd_tx,
         update_tx,
     });
 
@@ -237,11 +235,6 @@ fn main() -> ExitCode {
                     }
                     break ExitCode::SUCCESS;
                 }
-
-                Some((unit, cmd)) = app_cmd_rx.recv() => {
-                    manager.on_app_cmd(&unit, cmd);
-                }
-
                 Some(update) = update_rx.recv() => {
                     manager.on_update(update);
                 }

@@ -40,12 +40,12 @@ use crate::api::{
     ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage,
     ZoneReviewStatus,
 };
-use crate::center::{Center, get_zone};
+use crate::center::{Center, Change, get_zone};
 use crate::common::tsig::TsigKeyStore;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::record_zone_event;
-use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::manager::{Terminated, Update};
 use crate::util::AbortOnDrop;
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, ZoneVersionReviewState,
@@ -230,66 +230,25 @@ impl ZoneServer {
         Ok(handles)
     }
 
-    /// Respond to an application command.
-    pub fn on_command(
-        &self,
-        center: &Arc<Center>,
-        cmd: ApplicationCommand,
-    ) -> Result<(), Terminated> {
-        let unit_name = match self.source {
+    fn unit_name(&self) -> &'static str {
+        match self.source {
             Source::Unsigned => "RS",
             Source::Signed => "RS2",
             Source::Published => "PS",
-        };
-
-        debug!("[{unit_name}] Received command: {cmd:?}",);
-        match cmd {
-            ApplicationCommand::ReviewZone {
-                name,
-                serial,
-                decision,
-                tx,
-            } => {
-                self.on_zone_review_api_cmd(
-                    center,
-                    unit_name,
-                    name,
-                    serial,
-                    matches!(decision, ZoneReviewDecision::Approve),
-                    tx,
-                );
-            }
-
-            ApplicationCommand::SeekApprovalForUnsignedZone { .. }
-            | ApplicationCommand::SeekApprovalForSignedZone { .. } => {
-                self.on_seek_approval_for_zone_cmd(
-                    center,
-                    cmd,
-                    unit_name,
-                    center.update_tx.clone(),
-                );
-            }
-
-            ApplicationCommand::PublishSignedZone {
-                zone_name,
-                zone_serial,
-            } => {
-                self.on_publish_signed_zone_cmd(center, unit_name, zone_name, zone_serial);
-            }
-
-            _ => { /* Not for us */ }
         }
-
-        Ok(())
     }
 
-    fn on_publish_signed_zone_cmd(
+    pub fn on_change(&self, _center: &Arc<Center>, _change: Change) {
+        // nothing to do
+    }
+
+    pub fn on_publish_signed_zone(
         &self,
         center: &Arc<Center>,
-        unit_name: &str,
         zone_name: Name<Bytes>,
         zone_serial: Serial,
     ) {
+        let unit_name = self.unit_name();
         info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.");
 
         // Move next_min_expiration to min_expiration, and determine policy.
@@ -361,23 +320,17 @@ impl ZoneServer {
         }
     }
 
-    fn on_seek_approval_for_zone_cmd(
+    pub fn on_seek_approval_for_zone(
         &self,
         center: &Arc<Center>,
-        cmd: ApplicationCommand,
-        unit_name: &'static str,
-        update_tx: mpsc::UnboundedSender<Update>,
+        zone_name: Name<Bytes>,
+        zone_serial: Serial,
     ) -> Option<Result<(), Terminated>> {
-        let (zone_name, zone_serial, zone_type) = match cmd {
-            ApplicationCommand::SeekApprovalForUnsignedZone {
-                zone_name,
-                zone_serial,
-            } => (zone_name, zone_serial, "unsigned"),
-            ApplicationCommand::SeekApprovalForSignedZone {
-                zone_name,
-                zone_serial,
-            } => (zone_name, zone_serial, "signed"),
-            _ => unreachable!(),
+        let unit_name = self.unit_name();
+        let zone_type = match self.source {
+            Source::Unsigned => "unsigned",
+            Source::Signed => "signed",
+            Source::Published => unreachable!(),
         };
 
         let zone = get_zone(center, &zone_name).unwrap();
@@ -419,7 +372,8 @@ impl ZoneServer {
                             "[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}"
                         );
                     } else {
-                        update_tx
+                        center
+                            .update_tx
                             .send(Update::UnsignedZoneApprovedEvent {
                                 zone_name: zone_name.clone(),
                                 zone_serial,
@@ -428,7 +382,8 @@ impl ZoneServer {
                     }
                 }
                 Source::Signed => {
-                    update_tx
+                    center
+                        .update_tx
                         .send(Update::SignedZoneApprovedEvent {
                             zone_name: zone_name.clone(),
                             zone_serial,
@@ -607,15 +562,16 @@ impl ZoneServer {
         Ok(())
     }
 
-    fn on_zone_review_api_cmd(
+    pub fn on_zone_review(
         &self,
         center: &Arc<Center>,
-        unit_name: &str,
         zone_name: Name<Bytes>,
         zone_serial: Serial,
-        approve: bool,
+        decision: ZoneReviewDecision,
         tx: tokio::sync::oneshot::Sender<ZoneReviewResult>,
     ) {
+        let unit_name = self.unit_name();
+
         // Look up the zone.
         let Some(zone) = get_zone(center, &zone_name) else {
             debug!(
@@ -625,10 +581,9 @@ impl ZoneServer {
             return;
         };
 
-        let new_review_state = if approve {
-            ZoneVersionReviewState::Approved
-        } else {
-            ZoneVersionReviewState::Rejected
+        let new_review_state = match decision {
+            ZoneReviewDecision::Approve => ZoneVersionReviewState::Approved,
+            ZoneReviewDecision::Reject => ZoneVersionReviewState::Rejected,
         };
 
         // Look up the version of the zone being reviewed.
@@ -660,7 +615,7 @@ impl ZoneServer {
 
                     version.review = new_review_state;
                 }
-                if approve {
+                if matches!(decision, ZoneReviewDecision::Approve) {
                     info!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been approved."
                     );
@@ -711,7 +666,7 @@ impl ZoneServer {
 
                     version.review = new_review_state;
                 }
-                if approve {
+                if matches!(decision, ZoneReviewDecision::Approve) {
                     info!("Signed zone '{zone_name}' with serial {zone_serial} has been approved.");
                     let _ = center.update_tx.send(Update::SignedZoneApprovedEvent {
                         zone_name,
