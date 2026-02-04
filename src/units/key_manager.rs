@@ -1,14 +1,15 @@
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, Change, ZoneAddError};
+use crate::manager::Update;
 use crate::manager::record_zone_event;
-use crate::manager::{ApplicationCommand, Terminated, Update};
-use crate::metrics::MetricsCollection;
 use crate::policy::{KeyParameters, PolicyVersion};
 use crate::units::http_server::KmipServerState;
+use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, SigningTrigger};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
+use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
 use core::time::Duration;
 use domain::base::Name;
 use domain::base::iana::Class;
@@ -30,223 +31,201 @@ use tracing::{debug, error, warn};
 //------------ KeyManager ----------------------------------------------------
 
 /// The key manager.
+#[derive(Debug)]
 pub struct KeyManager {
-    center: Arc<Center>,
     ks_info: Mutex<HashMap<String, KeySetInfo>>,
 }
 
 impl KeyManager {
-    /// Launch the key manager.
-    pub fn launch(center: Arc<Center>, _metrics: &mut MetricsCollection) -> Arc<Self> {
-        let this = Arc::new(Self {
-            center,
+    #[expect(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
             ks_info: Default::default(),
-        });
+        }
+    }
 
+    /// Launch the key manager.
+    pub fn run(center: Arc<Center>) -> AbortOnDrop {
         // Perform periodic ticks in the background.
-        tokio::task::spawn({
-            let this = this.clone();
+        AbortOnDrop::from(tokio::task::spawn({
             async move {
                 let mut interval = tokio::time::interval(Duration::from_secs(5));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    this.tick().await;
+                    center.key_manager.tick(&center).await;
                 }
             }
-        });
-
-        this
+        }))
     }
 
-    /// Respond to an external command.
-    pub async fn on_command(&self, cmd: ApplicationCommand) -> Result<(), Terminated> {
-        match cmd {
-            ApplicationCommand::RegisterZone {
-                name,
-                policy,
-                key_imports,
-                report_tx,
-            } => {
-                let res = self.register_zone(name.clone(), policy, &key_imports).await;
-                if let Err(unsent_res) = report_tx.send(res.clone()) {
-                    let msg = match unsent_res {
-                        Ok(()) => "succeeded".to_string(),
-                        Err(err) => format!("failed (reason: {err})"),
-                    };
-                    error!(
-                        "Registration of zone '{name}' {msg} but was unable to notify the caller: report sending failed"
-                    );
-                    return Err(Terminated);
-                }
+    pub async fn on_register_zone(
+        &self,
+        center: &Arc<Center>,
+        name: Name<Bytes>,
+        policy: String,
+        key_imports: Vec<KeyImport>,
+    ) -> Result<(), ZoneAddError> {
+        let center = center.clone();
+        let res = Self::register_zone(&center, name.clone(), policy, &key_imports).await;
 
-                if let Err(err) = res {
-                    error!("Registration of zone '{name}' failed: {err}");
-                    return Err(Terminated);
-                }
+        if let Err(err) = &res {
+            error!("Registration of zone '{name}' failed: {err}");
+        }
 
-                Ok(())
+        res
+    }
+
+    pub async fn on_roll_key(
+        &self,
+        center: &Arc<Center>,
+        zone: Name<Bytes>,
+        roll_variant: KeyRollVariant,
+        roll_cmd: KeyRollCommand,
+    ) -> Result<(), String> {
+        let center = center.clone();
+        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+
+        cmd.arg(match roll_variant {
+            api::keyset::KeyRollVariant::Ksk => "ksk",
+            api::keyset::KeyRollVariant::Zsk => "zsk",
+            api::keyset::KeyRollVariant::Csk => "csk",
+            api::keyset::KeyRollVariant::Algorithm => "algorithm",
+        });
+
+        match roll_cmd {
+            api::keyset::KeyRollCommand::StartRoll => {
+                cmd.arg("start-roll");
+            }
+            api::keyset::KeyRollCommand::Propagation1Complete { ttl } => {
+                cmd.arg("propagation1-complete").arg(ttl.to_string());
+            }
+            api::keyset::KeyRollCommand::CacheExpired1 => {
+                cmd.arg("cache-expired1");
+            }
+            api::keyset::KeyRollCommand::Propagation2Complete { ttl } => {
+                cmd.arg("propagation2-complete").arg(ttl.to_string());
+            }
+            api::keyset::KeyRollCommand::CacheExpired2 => {
+                cmd.arg("cache-expired2");
+            }
+            api::keyset::KeyRollCommand::RollDone => {
+                cmd.arg("roll-done");
+            }
+        }
+
+        if let Err(KeySetCommandError { err, output, .. }) = cmd.output().await {
+            error!("key roll command failed: {err}");
+            return Err(format_cmd_error(&err, output));
+        }
+
+        Ok(())
+    }
+
+    pub async fn on_remove_key(
+        &self,
+        center: &Arc<Center>,
+        zone: StoredName,
+        key: String,
+        force: bool,
+        continue_flag: bool,
+    ) -> Result<(), String> {
+        let center = center.clone();
+        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+
+        cmd.arg("remove-key").arg(key);
+
+        if force {
+            cmd.arg("--force");
+        }
+
+        if continue_flag {
+            cmd.arg("--continue");
+        }
+
+        if let Err(KeySetCommandError { err, output, .. }) = cmd.output().await {
+            error!("key removal command failed: {err}");
+            return Err(format_cmd_error(&err, output));
+        }
+
+        Ok(())
+    }
+
+    pub async fn on_status(
+        &self,
+        center: &Arc<Center>,
+        zone: StoredName,
+    ) -> Result<String, String> {
+        let center = center.clone();
+        let res = Self::keyset_cmd(&center, zone, RecordingMode::RecordOnlyOnWarningOrError)
+            .arg("status")
+            .arg("-v")
+            .output()
+            .await;
+        match res {
+            Err(KeySetCommandError { err, output, .. }) => {
+                // The dnst keyset status command failed.
+                error!("key status command failed: {err}");
+                Err(format_cmd_error(&err, output))
             }
 
-            ApplicationCommand::RollKey {
-                zone,
-                key_roll:
-                    api::keyset::KeyRoll {
-                        variant: roll_variant,
-                        cmd: roll_cmd,
-                    },
-                http_tx,
-            } => {
-                let mut cmd = self.keyset_cmd(zone, RecordingMode::Record);
+            Ok(output) => {
+                let mut status = String::from_utf8_lossy(&output.stdout).to_string();
 
-                cmd.arg(match roll_variant {
-                    api::keyset::KeyRollVariant::Ksk => "ksk",
-                    api::keyset::KeyRollVariant::Zsk => "zsk",
-                    api::keyset::KeyRollVariant::Csk => "csk",
-                    api::keyset::KeyRollVariant::Algorithm => "algorithm",
-                });
-
-                match roll_cmd {
-                    api::keyset::KeyRollCommand::StartRoll => {
-                        cmd.arg("start-roll");
-                    }
-                    api::keyset::KeyRollCommand::Propagation1Complete { ttl } => {
-                        cmd.arg("propagation1-complete").arg(ttl.to_string());
-                    }
-                    api::keyset::KeyRollCommand::CacheExpired1 => {
-                        cmd.arg("cache-expired1");
-                    }
-                    api::keyset::KeyRollCommand::Propagation2Complete { ttl } => {
-                        cmd.arg("propagation2-complete").arg(ttl.to_string());
-                    }
-                    api::keyset::KeyRollCommand::CacheExpired2 => {
-                        cmd.arg("cache-expired2");
-                    }
-                    api::keyset::KeyRollCommand::RollDone => {
-                        cmd.arg("roll-done");
-                    }
+                // Include any stderr output under a warning heading
+                // in the status text that we send to the client.
+                if !output.stderr.is_empty() {
+                    status.push_str("Warning:\n");
+                    status.push_str(&String::from_utf8_lossy(&output.stderr));
                 }
 
-                if let Err(KeySetCommandError { err, output, .. }) = cmd.output().await {
-                    http_tx
-                        .send(Err(format_cmd_error(&err, output)))
-                        .await
-                        .unwrap();
-                    error!("key roll command failed: {err}");
-                    return Err(Terminated);
-                }
-
-                http_tx.send(Ok(())).await.unwrap();
-
-                Ok(())
+                Ok(status)
             }
-
-            ApplicationCommand::RemoveKey {
-                zone,
-                key_remove:
-                    api::keyset::KeyRemove {
-                        key,
-                        force,
-                        continue_flag,
-                    },
-                http_tx,
-            } => {
-                let mut cmd = self.keyset_cmd(zone, RecordingMode::Record);
-
-                cmd.arg("remove-key").arg(key);
-
-                if force {
-                    cmd.arg("--force");
-                }
-
-                if continue_flag {
-                    cmd.arg("--continue");
-                }
-
-                if let Err(KeySetCommandError { err, output, .. }) = cmd.output().await {
-                    http_tx
-                        .send(Err(format_cmd_error(&err, output)))
-                        .await
-                        .unwrap();
-                    error!("key removal command failed: {err}");
-                    return Err(Terminated);
-                }
-
-                http_tx.send(Ok(())).await.unwrap();
-
-                Ok(())
-            }
-
-            ApplicationCommand::KeySetStatus { zone, http_tx } => {
-                let res = self
-                    .keyset_cmd(zone, RecordingMode::RecordOnlyOnWarningOrError)
-                    .arg("status")
-                    .arg("-v")
-                    .output()
-                    .await;
-                match res {
-                    Err(KeySetCommandError { err, output, .. }) => {
-                        // The dnst keyset status command failed.
-                        http_tx.send(Err(format_cmd_error(&err, output))).unwrap();
-                        error!("key status command failed: {err}");
-                        Err(Terminated)
-                    }
-
-                    Ok(output) => {
-                        let mut status = String::from_utf8_lossy(&output.stdout).to_string();
-
-                        // Include any stderr output under a warning heading
-                        // in the status text that we send to the client.
-                        if !output.stderr.is_empty() {
-                            status.push_str("Warning:\n");
-                            status.push_str(&String::from_utf8_lossy(&output.stderr));
-                        }
-
-                        http_tx.send(Ok(status)).unwrap();
-
-                        Ok(())
-                    }
-                }
-            }
-            ApplicationCommand::Changed(Change::ZonePolicyChanged { name, old, new }) => {
-                if let Some(old) = old
-                    && old.key_manager == new.key_manager
-                {
-                    // Nothing changed.
-                    return Ok(());
-                }
-                // Keep it simple, just send all config items to keyset even
-                // if they didn't change.
-                let config_commands = policy_to_commands(&new);
-                for c in config_commands {
-                    let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
-                    cmd.arg("set");
-
-                    for a in c {
-                        cmd.arg(a);
-                    }
-
-                    let res = cmd.output().await;
-
-                    // Use match to make sure the pattern s exhaustive.
-                    #[allow(clippy::single_match)]
-                    match res {
-                        Err(KeySetCommandError { err, output, .. }) => {
-                            error!("{}", format_cmd_error(&err, output));
-                            return Err(Terminated);
-                        }
-                        Ok(_) => (),
-                    }
-                }
-                Ok(())
-            }
-
-            _ => Ok(()), // not for us
         }
     }
 
+    pub fn on_change(&self, center: &Arc<Center>, change: Change) {
+        let Change::ZonePolicyChanged { name, old, new } = change else {
+            return;
+        };
+
+        let center = center.clone();
+
+        tokio::spawn(async move {
+            if let Some(old) = old
+                && old.key_manager == new.key_manager
+            {
+                // Nothing changed.
+                return;
+            }
+            // Keep it simple, just send all config items to keyset even
+            // if they didn't change.
+            let config_commands = policy_to_commands(&new);
+            for c in config_commands {
+                let mut cmd = Self::keyset_cmd(&center, name.clone(), RecordingMode::Record);
+                cmd.arg("set");
+
+                for a in c {
+                    cmd.arg(a);
+                }
+
+                let res = cmd.output().await;
+
+                // Use match to make sure the pattern s exhaustive.
+                #[allow(clippy::single_match)]
+                match res {
+                    Err(KeySetCommandError { err, output, .. }) => {
+                        error!("{}", format_cmd_error(&err, output));
+                        return;
+                    }
+                    Ok(_) => (),
+                }
+            }
+        });
+    }
+
     async fn register_zone(
-        &self,
+        center: &Arc<Center>,
         name: Name<Bytes>,
         policy_name: String,
         key_imports: &[KeyImport],
@@ -256,7 +235,7 @@ impl KeyManager {
         let policy;
         let kmip_server_id;
         {
-            let state = self.center.state.lock().unwrap();
+            let state = center.state.lock().unwrap();
             policy = state
                 .policies
                 .get(policy_name.as_str())
@@ -265,21 +244,21 @@ impl KeyManager {
             kmip_server_id = policy.latest.key_manager.hsm_server_id.clone();
         };
 
-        let kmip_server_state_dir = &self.center.config.kmip_server_state_dir;
-        let kmip_credentials_store_path = &self.center.config.kmip_credentials_store_path;
+        let kmip_server_state_dir = &center.config.kmip_server_state_dir;
+        let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
 
         // Check if the zone already exist. If it does we should not be
         // here and panic. For the moment, assume there is a bug and
         // return an error.
-        let zone_tree = &self.center.unsigned_zones.load();
+        let zone_tree = &center.unsigned_zones.load();
         let zone = zone_tree.get_zone(&name, Class::IN);
         if zone.is_some() {
             return Err(ZoneAddError::Other(format!("zone {name} already exists")));
         }
 
-        let state_path = mk_dnst_keyset_state_file_path(&self.center.config.keys_dir, &name);
+        let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &name);
 
-        let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
+        let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
 
         cmd.arg("create")
             .arg("-n")
@@ -322,7 +301,7 @@ impl KeyManager {
                 has_credentials,
             } = kmip_server;
 
-            let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
+            let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
 
             cmd.arg("kmip")
                 .arg("add-server")
@@ -370,7 +349,7 @@ impl KeyManager {
         );
 
         for c in config_commands {
-            let mut cmd = self.keyset_cmd(name.clone(), RecordingMode::Record);
+            let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
 
             for a in c {
                 cmd.arg(a);
@@ -385,7 +364,7 @@ impl KeyManager {
         // `keyset create` but only once the zone is enabled.
         // We currently do not have a good mechanism for that
         // so we init the key immediately.
-        self.keyset_cmd(name.clone(), RecordingMode::Record)
+        Self::keyset_cmd(center, name.clone(), RecordingMode::Record)
             .arg("init")
             .output()
             .await
@@ -395,18 +374,22 @@ impl KeyManager {
     }
 
     /// Create a keyset command with the config file for the given zone.
-    fn keyset_cmd(&self, name: StoredName, recording_mode: RecordingMode) -> KeySetCommand {
+    fn keyset_cmd(
+        center: &Arc<Center>,
+        name: StoredName,
+        recording_mode: RecordingMode,
+    ) -> KeySetCommand {
         KeySetCommand::new(
             name,
-            self.center.clone(),
-            self.center.config.keys_dir.clone(),
-            self.center.config.dnst_binary_path.clone(),
+            center.clone(),
+            center.config.keys_dir.clone(),
+            center.config.dnst_binary_path.clone(),
             recording_mode,
         )
     }
 
-    async fn tick(&self) {
-        let zone_tree = &self.center.unsigned_zones;
+    async fn tick(&self, center: &Arc<Center>) {
+        let zone_tree = &center.unsigned_zones;
         let Ok(mut ks_info) = self.ks_info.try_lock() else {
             // An existing call to tick() is still busy, don't do anything.
             return;
@@ -414,7 +397,7 @@ impl KeyManager {
         for zone in zone_tree.load().iter_zones() {
             let apex_name = zone.apex_name().to_string();
             let state_path =
-                mk_dnst_keyset_state_file_path(&self.center.config.keys_dir, zone.apex_name());
+                mk_dnst_keyset_state_file_path(&center.config.keys_dir, zone.apex_name());
             if !state_path.exists() {
                 continue;
             }
@@ -452,7 +435,7 @@ impl KeyManager {
                     }
                 };
                 let _ = ks_info.insert(apex_name, new_info);
-                self.center
+                center
                     .update_tx
                     .send(Update::ResignZoneEvent {
                         zone_name: zone.apex_name().clone(),
@@ -471,11 +454,11 @@ impl KeyManager {
                 // keyset times out trying to contact nameservers. This will
                 // block the loop so we won't check the keyset state for the
                 // next zone till after the call to cron finishes.
-                let Ok(res) = self
-                    .keyset_cmd(zone.apex_name().clone(), RecordingMode::Record)
-                    .arg("cron")
-                    .output()
-                    .await
+                let Ok(res) =
+                    Self::keyset_cmd(center, zone.apex_name().clone(), RecordingMode::Record)
+                        .arg("cron")
+                        .output()
+                        .await
                 else {
                     info.clear_cron_next();
                     continue;
@@ -497,7 +480,7 @@ impl KeyManager {
                         // signer.
                         // let new_info = get_keyset_info(&state_path);
                         let _ = ks_info.insert(apex_name, new_info);
-                        self.center
+                        center
                             .update_tx
                             .send(Update::ResignZoneEvent {
                                 zone_name: zone.apex_name().clone(),
@@ -559,7 +542,7 @@ pub fn mk_dnst_keyset_state_file_path(keys_dir: &Utf8Path, name: &Name<Bytes>) -
 
 //------------ KeySetInfo ----------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KeySetInfo {
     keyset_state_modified: UnixTime,
     cron_next: Option<UnixTime>,
