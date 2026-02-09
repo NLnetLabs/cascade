@@ -124,6 +124,13 @@ will use Podman as their backend instead of the Docker daemon.
 - The workflow action `.github/actions/setup-and-start-cascade` also generates
   a default policy with `cascade template policy`.
 
+
+### Docker dependencies
+
+When using Docker to run the integration tests, you need to make sure that the
+`docker-buildx` plugin is installed, otherwise Docker will complain about
+unknown flags.
+
 ### Creating a test
 
 The workflow file `.github/workflows/system-tests.yml` only contains "stub"
