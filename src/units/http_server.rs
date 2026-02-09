@@ -579,24 +579,9 @@ impl HttpServer {
         api_state: Arc<HttpServer>,
         name: Name<Bytes>,
     ) -> Result<ZoneReloadResult, ZoneReloadError> {
-        let the_state = api_state.center.state.lock().unwrap();
-        let zone = the_state
-            .zones
-            .get(&name)
-            .ok_or(ZoneReloadError::ZoneDoesNotExist)?;
-        let zone_state = zone.0.state.lock().unwrap();
-        if let Some(reason) = zone_state.halted(true) {
-            return Err(ZoneReloadError::ZoneHalted(reason));
-        }
-
-        match zone_state.loader.source.clone() {
-            loader::Source::None => Err(ZoneReloadError::ZoneWithoutSource),
-            _ => {
-                let center = &api_state.center;
-                center.loader.on_reload_zone(center, name.clone());
-                Ok(ZoneReloadResult { name })
-            }
-        }
+        let center = &api_state.center;
+        center.loader.on_reload_zone(center, name.clone())?;
+        Ok(ZoneReloadResult { name })
     }
 
     /// Approve an unsigned version of a zone.

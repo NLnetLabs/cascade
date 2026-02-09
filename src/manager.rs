@@ -117,6 +117,7 @@ impl Manager {
     /// Process an update command.
     pub fn on_update(&self, update: Update) {
         debug!("[CC]: Event received: {update:?}");
+        let center = &self.center;
         match update {
             Update::Changed(change) => {
                 match &change {
@@ -140,7 +141,6 @@ impl Manager {
                 }
 
                 // Inform all units about the change.
-                let center = &self.center;
                 center.loader.on_change(center, change.clone());
                 center.zone_signer.on_change(center, change.clone());
                 center.key_manager.on_change(center, change.clone());
@@ -150,7 +150,6 @@ impl Manager {
             }
             Update::RefreshZone { zone_name } => {
                 info!("[CC]: Instructing zone loader to refresh the zone");
-                let center = &self.center;
                 center.loader.on_refresh_zone(center, zone_name);
             }
             Update::ReviewZone {
@@ -161,7 +160,6 @@ impl Manager {
             } => {
                 info!("[CC]: Passing back zone review");
 
-                let center = &self.center;
                 let server = match stage {
                     api::ZoneReviewStage::Unsigned => &center.unsigned_review,
                     api::ZoneReviewStage::Signed => &center.signed_review,
@@ -174,7 +172,6 @@ impl Manager {
                 zone_name,
                 zone_serial,
             } => {
-                let center = &self.center;
                 record_zone_event(
                     center,
                     &zone_name,
@@ -213,14 +210,14 @@ impl Manager {
                 zone_serial,
             } => {
                 halt_zone(
-                    &self.center,
+                    center,
                     &zone_name,
                     false,
                     "Unsigned zone was rejected at the review stage.",
                 );
 
                 record_zone_event(
-                    &self.center,
+                    center,
                     &zone_name,
                     HistoricalEvent::UnsignedZoneReview {
                         status: api::ZoneReviewStatus::Rejected,
@@ -233,7 +230,6 @@ impl Manager {
                 zone_name,
                 zone_serial,
             } => {
-                let center = &self.center;
                 record_zone_event(
                     center,
                     &zone_name,
@@ -253,7 +249,6 @@ impl Manager {
 
             Update::ResignZoneEvent { zone_name, trigger } => {
                 info!("[CC]: Instructing zone signer to re-sign the zone");
-                let center = &self.center;
                 center
                     .zone_signer
                     .on_sign_zone(center, zone_name, None, trigger);
@@ -264,7 +259,6 @@ impl Manager {
                 zone_serial,
                 trigger,
             } => {
-                let center = &self.center;
                 record_zone_event(
                     center,
                     &zone_name,
@@ -282,7 +276,6 @@ impl Manager {
                 zone_name,
                 zone_serial,
             } => {
-                let center = &self.center;
                 record_zone_event(
                     &self.center,
                     &zone_name,
@@ -307,14 +300,14 @@ impl Manager {
                 zone_serial,
             } => {
                 halt_zone(
-                    &self.center,
+                    center,
                     &zone_name,
                     false,
                     "Signed zone was rejected at the review stage.",
                 );
 
                 record_zone_event(
-                    &self.center,
+                    center,
                     &zone_name,
                     HistoricalEvent::SignedZoneReview {
                         status: api::ZoneReviewStatus::Rejected,
@@ -329,10 +322,10 @@ impl Manager {
                 trigger,
                 reason,
             } => {
-                halt_zone(&self.center, &zone_name, true, reason.as_str());
+                halt_zone(center, &zone_name, true, reason.as_str());
 
                 record_zone_event(
-                    &self.center,
+                    center,
                     &zone_name,
                     HistoricalEvent::SigningFailed { trigger, reason },
                     zone_serial,

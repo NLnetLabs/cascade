@@ -15,6 +15,7 @@ use std::{
 };
 
 use camino::Utf8Path;
+use cascade_api::ZoneReloadError;
 use domain::{
     base::iana::Class,
     new::base::Serial,
@@ -113,15 +114,27 @@ impl Loader {
         .enqueue_refresh(false);
     }
 
-    pub fn on_reload_zone(&self, center: &Arc<Center>, zone_name: StoredName) {
-        let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
-        let mut state = zone.state.lock().expect("lock is not poisoned");
+    pub fn on_reload_zone(
+        &self,
+        center: &Arc<Center>,
+        zone_name: StoredName,
+    ) -> Result<(), ZoneReloadError> {
+        let zone =
+            crate::center::get_zone(center, &zone_name).ok_or(ZoneReloadError::ZoneDoesNotExist)?;
+        let mut zone_state = zone.state.lock().expect("lock is not poisoned");
+        if let Some(reason) = zone_state.halted(true) {
+            return Err(ZoneReloadError::ZoneHalted(reason));
+        }
+        if let Source::None = zone_state.loader.source {
+            return Err(ZoneReloadError::ZoneWithoutSource);
+        }
         LoaderZoneHandle {
             zone: &zone,
-            state: &mut state,
+            state: &mut zone_state,
             center,
         }
         .enqueue_refresh(true);
+        Ok(())
     }
 }
 
