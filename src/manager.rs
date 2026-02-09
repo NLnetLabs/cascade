@@ -142,11 +142,15 @@ impl Manager {
 
                 // Inform all units about the change.
                 center.loader.on_change(center, change.clone());
-                center.zone_signer.on_change(center, change.clone());
+                center.signer.on_change(center, change.clone());
                 center.key_manager.on_change(center, change.clone());
-                center.unsigned_review.on_change(center, change.clone());
-                center.signed_review.on_change(center, change.clone());
-                center.zone_server.on_change(center, change.clone());
+                center
+                    .unsigned_review_server
+                    .on_change(center, change.clone());
+                center
+                    .signed_review_server
+                    .on_change(center, change.clone());
+                center.publication_server.on_change(center, change.clone());
             }
             Update::RefreshZone { zone_name } => {
                 info!("[CC]: Instructing zone loader to refresh the zone");
@@ -161,8 +165,8 @@ impl Manager {
                 info!("[CC]: Passing back zone review");
 
                 let server = match stage {
-                    api::ZoneReviewStage::Unsigned => &center.unsigned_review,
-                    api::ZoneReviewStage::Signed => &center.signed_review,
+                    api::ZoneReviewStage::Unsigned => &center.unsigned_review_server,
+                    api::ZoneReviewStage::Signed => &center.signed_review_server,
                 };
 
                 let _ = server.on_zone_review(center, name, serial, decision);
@@ -200,9 +204,11 @@ impl Manager {
                 }
 
                 info!("[CC]: Instructing review server to publish the unsigned zone");
-                center
-                    .unsigned_review
-                    .on_seek_approval_for_zone(center, zone_name, zone_serial);
+                center.unsigned_review_server.on_seek_approval_for_zone(
+                    center,
+                    zone_name,
+                    zone_serial,
+                );
             }
 
             Update::UnsignedZoneRejectedEvent {
@@ -239,7 +245,7 @@ impl Manager {
                     Some(zone_serial),
                 );
                 info!("[CC]: Instructing zone signer to sign the approved zone");
-                center.zone_signer.on_sign_zone(
+                center.signer.on_sign_zone(
                     center,
                     zone_name,
                     Some(zone_serial),
@@ -249,9 +255,7 @@ impl Manager {
 
             Update::ResignZoneEvent { zone_name, trigger } => {
                 info!("[CC]: Instructing zone signer to re-sign the zone");
-                center
-                    .zone_signer
-                    .on_sign_zone(center, zone_name, None, trigger);
+                center.signer.on_sign_zone(center, zone_name, None, trigger);
             }
 
             Update::ZoneSignedEvent {
@@ -267,9 +271,11 @@ impl Manager {
                 );
 
                 info!("Instructing review server to publish the signed zone");
-                center
-                    .signed_review
-                    .on_seek_approval_for_zone(center, zone_name, zone_serial);
+                center.signed_review_server.on_seek_approval_for_zone(
+                    center,
+                    zone_name,
+                    zone_serial,
+                );
             }
 
             Update::SignedZoneApprovedEvent {
@@ -287,11 +293,11 @@ impl Manager {
 
                 // Send a message to the zone signer to trigger a re-scan of
                 // when to re-sign next.
-                center.zone_signer.on_publish_signed_zone(center);
+                center.signer.on_publish_signed_zone(center);
 
                 info!("[CC]: Instructing publication server to publish the signed zone");
                 center
-                    .zone_server
+                    .publication_server
                     .on_publish_signed_zone(center, zone_name, zone_serial);
             }
 

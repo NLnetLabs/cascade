@@ -51,19 +51,20 @@ pub struct Center {
     /// The zone loader.
     pub loader: Loader,
 
+    /// The zone signer
+    pub signer: ZoneSigner,
+
+    /// The key manager
     pub key_manager: KeyManager,
 
     /// The review server for unsigned zones.
-    pub unsigned_review: ZoneServer,
+    pub unsigned_review_server: ZoneServer,
 
     /// The review server for signed zones.
-    pub signed_review: ZoneServer,
+    pub signed_review_server: ZoneServer,
 
     /// The zone server.
-    pub zone_server: ZoneServer,
-
-    /// The zone signer
-    pub zone_signer: ZoneSigner,
+    pub publication_server: ZoneServer,
 
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,

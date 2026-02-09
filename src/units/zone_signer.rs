@@ -109,7 +109,7 @@ impl ZoneSigner {
 
     /// Launch the zone signer.
     pub fn run(center: Arc<Center>) -> AbortOnDrop {
-        let this = &center.zone_signer;
+        let this = &center.signer;
         let resign_time = this.next_resign_time(&center);
         this.next_resign_time_tx.send(resign_time).unwrap();
 
@@ -136,10 +136,10 @@ impl ZoneSigner {
 
                         _ = sleep_until(resign_time) => {
                             // It's time to resign.
-                            center.zone_signer.resign_zones(&center);
+                            center.signer.resign_zones(&center);
 
                             // TODO: Should 'resign_zones()' do this?
-                            center.zone_signer.next_resign_time_tx.send(center.zone_signer.next_resign_time(&center)).unwrap();
+                            center.signer.next_resign_time_tx.send(center.signer.next_resign_time(&center)).unwrap();
                         }
                     }
                 }
@@ -264,7 +264,7 @@ impl ZoneSigner {
         let center = center.clone();
         tokio::spawn(async move {
             if let Err(err) = center
-                .zone_signer
+                .signer
                 .join_sign_zone_queue(&center, &zone_name, zone_serial.is_none(), trigger)
                 .await
             {

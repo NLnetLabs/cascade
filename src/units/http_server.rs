@@ -200,7 +200,7 @@ impl HttpServer {
         }
 
         // Fetch the signing queue.
-        let signing_queue = center.zone_signer.on_queue_report(center);
+        let signing_queue = center.signer.on_queue_report(center);
 
         Json(ServerStatusResult {
             soft_halted_zones,
@@ -474,7 +474,7 @@ impl HttpServer {
         // Query signing status
         let signing_report = if stage >= ZoneStage::Signed {
             let center = &state.center;
-            center.zone_signer.on_signing_report(center, name.clone())
+            center.signer.on_signing_report(center, name.clone())
         } else {
             None
         };
@@ -590,7 +590,7 @@ impl HttpServer {
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let center = &state.center;
-        let result = center.unsigned_review.on_zone_review(
+        let result = center.unsigned_review_server.on_zone_review(
             center,
             name,
             serial,
@@ -606,10 +606,12 @@ impl HttpServer {
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let center = &state.center;
-        let result =
-            center
-                .unsigned_review
-                .on_zone_review(center, name, serial, ZoneReviewDecision::Reject);
+        let result = center.unsigned_review_server.on_zone_review(
+            center,
+            name,
+            serial,
+            ZoneReviewDecision::Reject,
+        );
 
         Json(result)
     }
@@ -620,10 +622,12 @@ impl HttpServer {
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let center = &state.center;
-        let result =
-            center
-                .signed_review
-                .on_zone_review(center, name, serial, ZoneReviewDecision::Approve);
+        let result = center.signed_review_server.on_zone_review(
+            center,
+            name,
+            serial,
+            ZoneReviewDecision::Approve,
+        );
 
         Json(result)
     }
@@ -634,10 +638,12 @@ impl HttpServer {
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let center = &state.center;
-        let result =
-            center
-                .signed_review
-                .on_zone_review(center, name, serial, ZoneReviewDecision::Reject);
+        let result = center.signed_review_server.on_zone_review(
+            center,
+            name,
+            serial,
+            ZoneReviewDecision::Reject,
+        );
 
         Json(result)
     }
