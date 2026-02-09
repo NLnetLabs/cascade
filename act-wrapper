@@ -42,11 +42,11 @@ if [[ "$1" != "+nobuild" ]]; then
 	cargo build
 	cargo build --release
 
-	docker buildx build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-runner --build-arg MSRV=$MSRV "${args[@]}"
+	docker buildx build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-tests-runner --build-arg MSRV=$MSRV "${args[@]}"
 	echo "Built Cascade integration test runner based on local repository."
 fi
 
-act --pull=false -P "ubuntu-latest=localhost/nlnetlabs/cascade-runner" "$@" || true
+act --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" "$@" || true
 
 if docker container ls --format '{{.Names}}' --all | grep -q "^act-"; then
 	echo "NOTE: act seemingly failed to clean up all containers it created."
