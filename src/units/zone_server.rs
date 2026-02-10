@@ -846,6 +846,7 @@ fn zone_server_service(
             // temporary "fix", strictly speaking this is incorrect as not all
             // queries should be responded to with the AA flag set, e.g. we
             // cannot respond authoritatively for glue records.
+            // TODO: Implement a proper fix.
             answer.set_authoritative(true);
             answer
         }
