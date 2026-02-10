@@ -9,6 +9,15 @@ use std::sync::Arc;
 
 use crate::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data};
 
+mod states;
+pub use states::{
+    CleanLoadedPendingStorage, CleanSignedPendingStorage, CleanWholePendingStorage,
+    CleaningSignedStorage, CleaningStorage, LoadingStorage, PassiveStorage,
+    PersistingLoadedStorage, PersistingSignedStorage, ReviewLoadedPendingStorage,
+    ReviewSignedPendingStorage, ReviewingLoadedStorage, ReviewingSignedStorage, SigningStorage,
+    SwitchingStorage,
+};
+
 //----------- ZoneDataStorage --------------------------------------------------
 
 /// Storage for the data of a zone.
@@ -20,49 +29,49 @@ use crate::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data};
 /// the zone are always achievable without `&mut` access.
 pub enum ZoneDataStorage {
     /// The zone is passive.
-    Passive,
+    Passive(PassiveStorage),
 
     /// A new instance is being loaded.
-    Loading,
+    Loading(LoadingStorage),
 
     /// A new instance is being signed.
-    Signing,
+    Signing(SigningStorage),
 
     /// A loaded instance is pending review.
-    ReviewLoadedPending,
+    ReviewLoadedPending(ReviewLoadedPendingStorage),
 
     /// A signed instance is pending review.
-    ReviewSignedPending,
+    ReviewSignedPending(ReviewSignedPendingStorage),
 
     /// A loaded instance is being reviewed.
-    ReviewingLoaded,
+    ReviewingLoaded(ReviewingLoadedStorage),
 
     /// A signed instance is being reviewed.
-    ReviewingSigned,
+    ReviewingSigned(ReviewingSignedStorage),
 
     /// A loaded instance is being persisted.
-    PersistingLoaded,
+    PersistingLoaded(PersistingLoadedStorage),
 
     /// A signed instance is being persisted.
-    PersistingSigned,
+    PersistingSigned(PersistingSignedStorage),
 
     /// A loaded instance is waiting to be cleaned.
-    CleanLoadedPending,
+    CleanLoadedPending(CleanLoadedPendingStorage),
 
     /// A signed instance is waiting to be cleaned.
-    CleanSignedPending,
+    CleanSignedPending(CleanSignedPendingStorage),
 
     /// A loaded and signed instance are waiting to be cleaned.
-    CleanWholePending,
+    CleanWholePending(CleanWholePendingStorage),
 
     /// An instance is being cleaned.
-    Cleaning,
+    Cleaning(CleaningStorage),
 
     /// A signed instance is being cleaned.
-    CleaningSigned,
+    CleaningSigned(CleaningSignedStorage),
 
     /// A new instance is being switched to.
-    Switching,
+    Switching(SwitchingStorage),
 
     /// The state is poisoned.
     ///
@@ -97,7 +106,13 @@ impl ZoneDataStorage {
         let viewer =
             unsafe { ZoneViewer::new(data.clone(), curr_unsigned_index, curr_signed_index) };
 
-        (Self::Passive, ureviewer, reviewer, viewer)
+        let storage = Self::Passive(PassiveStorage {
+            data,
+            curr_loaded_index: false,
+            curr_signed_index: false,
+        });
+
+        (storage, ureviewer, reviewer, viewer)
     }
 
     /// Extract the current state of the [`ZoneDataStorage`].
