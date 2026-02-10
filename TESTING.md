@@ -123,6 +123,11 @@ will use Podman as their backend instead of the Docker daemon.
   `integration-tests/scripts/get-default-path.sh` script.
 - The workflow action `.github/actions/setup-and-start-cascade` also generates
   a default policy with `cascade template policy`.
+- If you encounter the error `bash: /root/cargo-debug/bin/cascaded: cannot
+  execute: required file not found`, you can run `./act-wrapper +build-inside
+  ...` to build cascade inside of the container build step. This lacks the
+  benefit of cargo's build caching, but works around the issue until it is
+  properly fixed.
 
 
 ### Docker dependencies
