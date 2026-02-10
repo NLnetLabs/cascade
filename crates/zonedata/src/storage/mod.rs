@@ -18,6 +18,8 @@ pub use states::{
     SwitchingStorage,
 };
 
+mod transitions;
+
 //----------- ZoneDataStorage --------------------------------------------------
 
 /// Storage for the data of a zone.
