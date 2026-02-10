@@ -836,7 +836,19 @@ fn zone_server_service(
         Some(zone) => {
             let qname = question.qname().to_bytes();
             let qtype = question.qtype();
-            zone.query(qname, qtype).unwrap()
+            let mut answer = zone.query(qname, qtype).unwrap();
+
+            // https://github.com/NLnetLabs/cascade/issues/435
+            // Set the AA flag on responses to workaround the scenario where
+            // BIND refuses to fetch the zone via XFR, because after receiving
+            // a NOTIFY from Cascade it issues a SOA query and is not happy
+            // with the SOA response containing an unset AA flag. This is a
+            // temporary "fix", strictly speaking this is incorrect as not all
+            // queries should be responded to with the AA flag set, e.g. we
+            // cannot respond authoritatively for glue records.
+            // TODO: Implement a proper fix.
+            answer.set_authoritative(true);
+            answer
         }
         None => Answer::new(Rcode::NXDOMAIN),
     };
