@@ -171,6 +171,9 @@ pub use viewer::{UnsignedZoneReviewer, ZoneReviewer, ZoneViewer};
 mod cleaner;
 pub use cleaner::{SignedZoneCleaned, SignedZoneCleaner, ZoneCleaned, ZoneCleaner};
 
+mod persister;
+pub use persister::{UnsignedZonePersisted, UnsignedZonePersister, ZonePersisted, ZonePersister};
+
 mod data;
 use data::{Data, InstanceData};
 
