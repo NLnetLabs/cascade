@@ -13,7 +13,13 @@ if [[ "$1" =~ ^-h|--help$ ]]; then
 	echo "available version of the cascade test runner image you can use:"
 	echo
 	echo "'$0 +nobuild <act-args>'"
-	echo "(NOTE: '+nobuild' MUST be the first argument to the act-wrapper)"
+	echo
+	echo "If you want to build cascade within the container build, use:"
+	echo
+	echo "'$0 +build-inside <act-args>'"
+	echo
+	echo "(NOTE: '+nobuild' or '+build-inside' MUST be the first argument to"
+	echo "the act-wrapper)"
 	exit
 fi
 
@@ -38,9 +44,24 @@ else
 	args=()
 fi
 
-if [[ "$1" != "+nobuild" ]]; then
-	cargo build
-	cargo build --release
+while [[ "$1" =~ ^\+ ]]; do
+	case "$1" in
+		+build-inside)
+			args+=(--build-arg REBUILD_INSIDE=true)
+			build_inside=true
+			;;
+		+nobuild)
+			no_build=true
+			;;
+	esac
+	shift
+done
+
+if [[ "$no_build" != true ]]; then
+	if [[ "$build_inside" != true ]]; then
+		cargo build
+		cargo build --release
+	fi
 
 	docker buildx build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-tests-runner --build-arg MSRV=$MSRV "${args[@]}"
 	echo "Built Cascade integration test runner based on local repository."

@@ -56,3 +56,30 @@ EOF
 # Make sure this stays at the end of the Dockerfile to make best use of image step caching
 COPY target/release/cascaded target/release/cascade /root/cargo-release/bin/
 COPY target/debug/cascaded target/debug/cascade /root/cargo-debug/bin/
+
+# Copy source files into container in case we need to build from source
+COPY etc/ /cascade/etc/
+COPY Cargo.toml Cargo.lock /cascade/
+COPY src/ /cascade/src/
+COPY crates/ /cascade/crates/
+
+ARG REBUILD_INSIDE=false
+
+RUN <<EOF
+  if [[ "$REBUILD_INSIDE" == true ]]; then
+    cd /cascade/
+
+    # Build Cascade
+    cargo build
+    cargo build --release
+
+    # Save built binaries
+    cp -v -t /root/cargo-release/bin/ target/release/{cascade,cascaded}
+    cp -v -t /root/cargo-debug/bin/ target/debug/{cascade,cascaded}
+
+    # Delete the repository to reduce the size of the image (and act will copy
+    # the repository into the container anyway)
+    cd /
+    rm -rf /cascade
+  fi
+EOF
