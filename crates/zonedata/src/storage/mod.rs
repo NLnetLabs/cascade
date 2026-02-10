@@ -20,6 +20,8 @@ pub use states::{
     ReviewingWholeStorage, SwitchingStorage,
 };
 
+mod transitions;
+
 //----------- ZoneDataStorage --------------------------------------------------
 
 /// Storage for the data of a zone.

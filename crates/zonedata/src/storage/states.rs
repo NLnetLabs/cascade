@@ -34,14 +34,6 @@ use crate::{
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// [`ZoneDataStorage::Passive`] can transition into:
-///
-/// - [`ZoneDataStorage::Building`], to load a new instance.
-///
-/// - [`ZoneDataStorage::BuildingResigned`], to resign the current instance.
 pub struct PassiveStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -80,18 +72,6 @@ pub struct PassiveStorage {
 ///
 /// There is no [`SignedZoneBuilder`], [`ZoneCleaner`], [`SignedZoneCleaner`],
 /// [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given [`UnsignedZoneBuilt`], [`ZoneDataStorage::Building`] transitions into
-/// [`ZoneDataStorage::PendingUnsignedReview`], to review the built unsigned
-/// component.
-///
-/// Given [`ZoneBuilt`], [`ZoneDataStorage::Building`] transitions into
-/// [`ZoneDataStorage::PendingWholeReview`], to review the whole built instance.
-///
-/// Given the [`ZoneBuilder`], [`ZoneDataStorage::Building`] can transition into
-/// [`ZoneDataStorage::Cleaning`], to clean up leftover data on failure.
 pub struct BuildingStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -131,19 +111,6 @@ pub struct BuildingStorage {
 ///
 /// There is no [`ZoneBuilder`], [`ZoneCleaner`], [`SignedZoneCleaner`],
 /// [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given [`ZoneBuilt`], [`ZoneDataStorage::BuildingSigned`] transitions
-/// into [`ZoneDataStorage::PendingSignedReview`], to review the built signed
-/// component.
-///
-/// Given the [`SignedZoneBuilder`], [`ZoneDataStorage::BuildingSigned`] can
-/// transition into:
-///
-/// - [`ZoneDataStorage::CleaningSigned`], to clean up leftover data on failure.
-///
-/// - [`ZoneDataStorage::PendingUnsignedClean`], to clean up the whole instance.
 pub struct BuildingSignedStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -182,16 +149,6 @@ pub struct BuildingSignedStorage {
 ///
 /// There is no [`ZoneBuilder`], [`ZoneCleaner`], [`SignedZoneCleaner`],
 /// [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given [`SignedZoneBuilt`], [`ZoneDataStorage::BuildingResigned`] transitions
-/// into [`ZoneDataStorage::PendingResignedReview`], to review the built
-/// instance.
-///
-/// Given the [`SignedZoneBuilder`], [`ZoneDataStorage::BuildingResigned`] can
-/// transition into [`ZoneDataStorage::Cleaning`], to clean up leftover data
-/// on failure.
 pub struct BuildingResignedStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -226,12 +183,6 @@ pub struct BuildingResignedStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`UnsignedZoneReviewer`],
-/// [`ZoneDataStorage::PendingUnsignedReview`] transitions into
-/// [`ZoneDataStorage::ReviewingUnsigned`].
 pub struct PendingUnsignedReviewStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -272,11 +223,6 @@ pub struct PendingUnsignedReviewStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`ZoneReviewer`], [`ZoneDataStorage::PendingSignedReview`]
-/// transitions into [`ZoneDataStorage::ReviewingSigned`].
 pub struct PendingSignedReviewStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -317,11 +263,6 @@ pub struct PendingSignedReviewStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`ZoneReviewer`], [`ZoneDataStorage::PendingResignedReview`]
-/// transitions into [`ZoneDataStorage::ReviewingResigned`].
 pub struct PendingResignedReviewStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -360,12 +301,6 @@ pub struct PendingResignedReviewStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`UnsignedZoneReviewer`],
-/// [`ZoneDataStorage::PendingWholeReview`] transitions into
-/// [`ZoneDataStorage::PendingWholeSignedReview`].
 pub struct PendingWholeReviewStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -409,11 +344,6 @@ pub struct PendingWholeReviewStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`ZoneReviewer`], [`ZoneDataStorage::PendingWholeSignedReview`]
-/// transitions into [`ZoneDataStorage::ReviewingWhole`].
 pub struct PendingWholeSignedReviewStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -455,16 +385,6 @@ pub struct PendingWholeSignedReviewStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// [`ZoneDataStorage::ReviewingUnsigned`] can transition into:
-///
-/// - [`ZoneDataStorage::PersistingUnsigned`], to persist the unsigned component
-///   once it is approved.
-///
-/// - [`ZoneDataStorage::PendingUnsignedClean`], to clean up the rejected
-/// instance.
 pub struct ReviewingUnsignedStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -504,19 +424,6 @@ pub struct ReviewingUnsignedStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// [`ZoneDataStorage::ReviewingSigned`] can transition into:
-///
-/// - [`ZoneDataStorage::Persisting`], to persist the signed component once it
-///   is approved.
-///
-/// - [`ZoneDataStorage::PendingSignedClean`], to clean up the rejected signed
-///   component.
-///
-/// - [`ZoneDataStorage::PendingWholeClean`], to clean up the whole upcoming
-///   instance.
 pub struct ReviewingSignedStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -558,15 +465,6 @@ pub struct ReviewingSignedStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// [`ZoneDataStorage::ReviewingResigned`] can transition into:
-///
-/// - [`ZoneDataStorage::Persisting`], to persist the approved instance.
-///
-/// - [`ZoneDataStorage::PendingResignedClean`], to clean up the rejected
-///   instance.
 pub struct ReviewingResignedStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -607,14 +505,6 @@ pub struct ReviewingResignedStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// [`ZoneDataStorage::ReviewingResigned`] can transition into:
-///
-/// - [`ZoneDataStorage::Persisting`], to persist the approved instance.
-///
-/// - [`ZoneDataStorage::PendingWholeClean`], to clean up the rejected instance.
 pub struct ReviewingWholeStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -658,13 +548,6 @@ pub struct ReviewingWholeStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given [`UnsignedZonePersisted`], [`ZoneDataStorage::PersistingUnsigned`] can
-/// transition into:
-///
-/// - [`ZoneDataStorage::BuildingSigned`], to sign the now-persisted instance.
 pub struct PersistingUnsignedStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -706,14 +589,6 @@ pub struct PersistingUnsignedStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], or [`UnsignedZonePersister`].
-///
-/// ## Transitions
-///
-/// Given [`ZonePersisted`], [`ZoneDataStorage::Persisting`] can transition
-/// into:
-///
-/// - [`ZoneDataStorage::Switching`], to make the now-persisted instance
-///   authoritative.
 pub struct PersistingStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -757,12 +632,6 @@ pub struct PersistingStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`UnsignedZoneReviewer`],
-/// [`ZoneDataStorage::PendingUnsignedClean`] transitions into
-/// [`ZoneDataStorage::Cleaning`].
 pub struct PendingUnsignedCleanStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -800,11 +669,6 @@ pub struct PendingUnsignedCleanStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`ZoneReviewer`], [`ZoneDataStorage::PendingSignedClean`]
-/// transitions into [`ZoneDataStorage::CleaningSigned`].
 pub struct PendingSignedCleanStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -845,11 +709,6 @@ pub struct PendingSignedCleanStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`ZoneReviewer`], [`ZoneDataStorage::PendingResignedClean`]
-/// transitions into [`ZoneDataStorage::Cleaning`].
 pub struct PendingResignedCleanStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -886,11 +745,6 @@ pub struct PendingResignedCleanStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the old [`ZoneReviewer`], [`ZoneDataStorage::PendingWholeClean`]
-/// transitions into [`ZoneDataStorage::PendingUnsignedClean`].
 pub struct PendingWholeCleanStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -928,11 +782,6 @@ pub struct PendingWholeCleanStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`SignedZoneCleaner`],
 /// [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given [`ZoneCleaned`], [`ZoneDataStorage::Cleaning`] transitions into
-/// [`ZoneDataStorage::Passive`].
 pub struct CleaningStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -973,12 +822,6 @@ pub struct CleaningStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given [`SignedZoneCleaned`], [`ZoneDataStorage::CleaningSigned`] transitions
-/// into [`ZoneDataStorage::BuildingSigned`], to attempt rebuilding the signed
-/// component.
 pub struct CleaningSignedStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
@@ -1018,11 +861,6 @@ pub struct CleaningSignedStorage {
 ///
 /// There is no [`ZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
 /// [`SignedZoneCleaner`], [`UnsignedZonePersister`], or [`ZonePersister`].
-///
-/// ## Transitions
-///
-/// Given the [`ZoneViewer`], [`ZoneDataStorage::Switching`] transitions into
-/// [`ZoneDataStorage::Cleaning`], to remove the old instance.
 pub struct SwitchingStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
