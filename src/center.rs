@@ -13,19 +13,22 @@ use domain::base::iana::Class;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::units::key_manager::KeyManager;
+use crate::units::zone_server::ZoneServer;
+use crate::units::zone_signer::ZoneSigner;
 use crate::zone::PipelineMode;
 use crate::{
     api,
     config::Config,
     log::Logger,
-    manager::{ApplicationCommand, Update},
+    manager::Update,
     policy::{Policy, PolicyVersion},
     tsig::TsigStore,
     zone::{Zone, ZoneByName},
@@ -48,6 +51,21 @@ pub struct Center {
     /// The zone loader.
     pub loader: Loader,
 
+    /// The zone signer
+    pub signer: ZoneSigner,
+
+    /// The key manager
+    pub key_manager: KeyManager,
+
+    /// The review server for unsigned zones.
+    pub unsigned_review_server: ZoneServer,
+
+    /// The review server for signed zones.
+    pub signed_review_server: ZoneServer,
+
+    /// The zone server.
+    pub publication_server: ZoneServer,
+
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
 
@@ -65,9 +83,6 @@ pub struct Center {
 
     /// The old TSIG key store.
     pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
-
-    /// A channel to send units commands.
-    pub app_cmd_tx: mpsc::UnboundedSender<(String, ApplicationCommand)>,
 
     /// A channel to send the central command updates.
     pub update_tx: mpsc::UnboundedSender<Update>,
@@ -186,28 +201,10 @@ async fn register_zone(
     policy: Box<str>,
     key_imports: Vec<KeyImport>,
 ) -> Result<(), ZoneAddError> {
-    let (report_tx, report_rx) = oneshot::channel();
-
     center
-        .app_cmd_tx
-        .send((
-            "KM".into(),
-            ApplicationCommand::RegisterZone {
-                name,
-                policy: policy.clone().into(),
-                key_imports,
-                report_tx,
-            },
-        ))
-        .unwrap();
-
-    report_rx
+        .key_manager
+        .on_register_zone(center, name, policy.clone().into(), key_imports)
         .await
-        .map_err(|err| {
-            ZoneAddError::Other(format!(
-                "Zone registration failed: internal command could not be sent: {err}"
-            ))
-        })?
         .map_err(|err| ZoneAddError::Other(format!("Zone registration failed: {err}")))
 }
 
@@ -260,7 +257,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     Ok(())
 }
 
-pub fn get_zone(center: &Center, name: &StoredName) -> Option<Arc<Zone>> {
+pub fn get_zone(center: &Arc<Center>, name: &StoredName) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
 }

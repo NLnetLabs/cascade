@@ -5,6 +5,11 @@ use cascaded::{
     loader::Loader,
     manager::Manager,
     policy,
+    units::{
+        key_manager::KeyManager,
+        zone_server::{Source, ZoneServer},
+        zone_signer::ZoneSigner,
+    },
 };
 use clap::{crate_authors, crate_description, crate_version};
 use std::{collections::HashMap, fs::create_dir_all};
@@ -168,20 +173,23 @@ fn main() -> ExitCode {
     }
 
     // Prepare Cascade.
-    let (app_cmd_tx, mut app_cmd_rx) = mpsc::unbounded_channel();
     let (update_tx, mut update_rx) = mpsc::unbounded_channel();
     let center = Arc::new(Center {
         state: Mutex::new(state),
         config,
         logger,
         loader: Loader::new(),
+        key_manager: KeyManager::new(),
+        unsigned_review_server: ZoneServer::new(Source::Unsigned),
+        signed_review_server: ZoneServer::new(Source::Signed),
+        publication_server: ZoneServer::new(Source::Published),
+        signer: ZoneSigner::new(),
         unsigned_zones: Default::default(),
         signable_zones: Default::default(),
         signed_zones: Default::default(),
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
-        app_cmd_tx,
         update_tx,
     });
 
@@ -227,11 +235,6 @@ fn main() -> ExitCode {
                     }
                     break ExitCode::SUCCESS;
                 }
-
-                Some((unit, cmd)) = app_cmd_rx.recv() => {
-                    manager.on_app_cmd(&unit, cmd);
-                }
-
                 Some(update) = update_rx.recv() => {
                     manager.on_update(update);
                 }

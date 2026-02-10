@@ -15,13 +15,19 @@ use std::{
 };
 
 use camino::Utf8Path;
-use domain::{base::iana::Class, new::base::Serial, tsig, zonetree::ZoneBuilder};
+use cascade_api::ZoneReloadError;
+use domain::{
+    base::iana::Class,
+    new::base::Serial,
+    tsig,
+    zonetree::{StoredName, ZoneBuilder},
+};
 use tracing::{debug, error, info};
 
 use crate::{
     center::{Center, Change, State},
     loader::zone::LoaderZoneHandle,
-    manager::{ApplicationCommand, Terminated, Update},
+    manager::Update,
     util::AbortOnDrop,
     zone::{Zone, ZoneContents, contents},
 };
@@ -71,65 +77,64 @@ impl Loader {
         }))
     }
 
-    pub async fn on_command(
+    pub fn on_change(&self, center: &Arc<Center>, change: Change) {
+        let Change::ZoneRemoved(name) = change else {
+            return;
+        };
+        // We have to get the reference to the zone from our refresh monitor
+        // because it doesn't exist in center.zones anymore!
+        // Ideally, the ZoneRemoved command would pass the zone as Arc<Zone>
+        // instead of just giving the same. That would make this more performant.
+        if let Some(zone) = self
+            .refresh_monitor
+            .scheduled
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|z| z.zone.0.name == name)
+        {
+            let mut state = zone.zone.0.state.lock().unwrap();
+            LoaderZoneHandle {
+                zone: &zone.zone.0,
+                state: &mut state,
+                center,
+            }
+            .prep_removal();
+        }
+    }
+
+    pub fn on_refresh_zone(&self, center: &Arc<Center>, zone_name: StoredName) {
+        let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
+        let mut state = zone.state.lock().expect("lock is not poisoned");
+        LoaderZoneHandle {
+            zone: &zone,
+            state: &mut state,
+            center,
+        }
+        .enqueue_refresh(false);
+    }
+
+    pub fn on_reload_zone(
         &self,
         center: &Arc<Center>,
-        cmd: ApplicationCommand,
-    ) -> Result<(), Terminated> {
-        debug!("Received cmd: {cmd:?}");
-        match cmd {
-            ApplicationCommand::Changed(change) => {
-                match change {
-                    Change::ZoneRemoved(name) => {
-                        // We have to get the reference to the zone from our refresh monitor
-                        // because it doesn't exist in center.zones anymore!
-                        // Ideally, the ZoneRemoved command would pass the zone as Arc<Zone>
-                        // instead of just giving the same. That would make this more performant.
-                        if let Some(zone) = self
-                            .refresh_monitor
-                            .scheduled
-                            .lock()
-                            .unwrap()
-                            .iter()
-                            .find(|z| z.zone.0.name == name)
-                        {
-                            let mut state = zone.zone.0.state.lock().unwrap();
-                            LoaderZoneHandle {
-                                zone: &zone.zone.0,
-                                state: &mut state,
-                                center,
-                            }
-                            .prep_removal();
-                        }
-                        Ok(())
-                    }
-                    _ => Ok(()), // ignore other changes
-                }
-            }
-            ApplicationCommand::RefreshZone { zone_name } => {
-                let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
-                let mut state = zone.state.lock().expect("lock is not poisoned");
-                LoaderZoneHandle {
-                    zone: &zone,
-                    state: &mut state,
-                    center,
-                }
-                .enqueue_refresh(false);
-                Ok(())
-            }
-            ApplicationCommand::ReloadZone { zone_name } => {
-                let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
-                let mut state = zone.state.lock().expect("lock is not poisoned");
-                LoaderZoneHandle {
-                    zone: &zone,
-                    state: &mut state,
-                    center,
-                }
-                .enqueue_refresh(true);
-                Ok(())
-            }
-            _ => panic!("Got an unexpected command!"),
+        zone_name: StoredName,
+    ) -> Result<(), ZoneReloadError> {
+        let zone =
+            crate::center::get_zone(center, &zone_name).ok_or(ZoneReloadError::ZoneDoesNotExist)?;
+        let mut zone_state = zone.state.lock().expect("lock is not poisoned");
+        if let Some(reason) = zone_state.halted(true) {
+            return Err(ZoneReloadError::ZoneHalted(reason));
         }
+        if let Source::None = zone_state.loader.source {
+            return Err(ZoneReloadError::ZoneWithoutSource);
+        }
+        LoaderZoneHandle {
+            zone: &zone,
+            state: &mut zone_state,
+            center,
+        }
+        .enqueue_refresh(true);
+        Ok(())
     }
 }
 
