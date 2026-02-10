@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -e
+
+if [[ "$1" =~ ^-h|--help$ ]]; then
+	echo "The act wrapper script."
+	echo
+	echo "This script first builds the container image for running the tests"
+	echo "with a freshly compiled Cascade, before executing act with"
+	echo "the provided arguments."
+	echo
+	echo "If you want to skip the build step and run act with the latest"
+	echo "available version of the cascade test runner image you can use:"
+	echo
+	echo "'$0 +nobuild <act-args>'"
+	echo "(NOTE: '+nobuild' MUST be the first argument to the act-wrapper)"
+	exit
+fi
+
+# Change to the directory where this script lies
+cd "$(dirname "$0")"
+
+# Make sure that this script is located at the root of this repository
+test -d .github
+test -d src
+test -f Cargo.toml
+
+MSRV=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="cascade")|.rust_version')
+
+if docker context list --help | grep -qi "podman"; then
+	DOCKER_IS_PODMAN=true
+fi
+
+# The Dockerfile uses the SHELL instruction, which is not supported by OCI images
+if [[ "$DOCKER_IS_PODMAN" == true ]]; then
+	args=(--format docker)
+else
+	args=()
+fi
+
+if [[ "$1" != "+nobuild" ]]; then
+	cargo build
+	cargo build --release
+
+	docker buildx build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-tests-runner --build-arg MSRV=$MSRV "${args[@]}"
+	echo "Built Cascade integration test runner based on local repository."
+fi
+
+act --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" "$@" || true
+
+if docker container ls --format '{{.Names}}' --all | grep -q "^act-"; then
+	echo "NOTE: act seemingly failed to clean up all containers it created."
+	echo "You may wish to check and clean up lingering containers"
+fi

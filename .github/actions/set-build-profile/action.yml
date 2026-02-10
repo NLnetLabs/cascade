@@ -1,0 +1,21 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Set cascade and dnst build profile'
+description: 'This updates the symlinks of the cascade and dnst binaries'
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  build-profile:
+    description: 'The build profile to use'
+    required: false
+    default: debug
+runs:
+  using: "composite"
+  steps:
+  - name: Update the symlinks in /usr/local/bin to point to the binaries of the chosen profile
+    run: |
+      BUILD_PROFILE="${{ inputs.build-profile }}"
+      [[ "$BUILD_PROFILE" =~ ^debug|release$ ]]
+
+      ln -sft /usr/local/bin/ /root/cargo-${BUILD_PROFILE}/bin/*
