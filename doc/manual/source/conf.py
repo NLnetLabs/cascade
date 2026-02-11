@@ -98,7 +98,8 @@ if versionbanner:
 
 intersphinx_mapping = {
     'dnst': ('https://dnst.docs.nlnetlabs.nl/en/latest/', None),
-    'kmip2pkcs11': ('https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/', None)
+    'kmip2pkcs11': ('https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/', None),
+    'ods2cascade': ('https://cascade.docs.nlnetlabs.nl/projects/ods2cascade/en/latest/', None)
 }
 
 # We recommend adding the following config value.
