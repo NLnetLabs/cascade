@@ -7,8 +7,8 @@
 use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
-    UnsignedZoneBuilt, UnsignedZoneReader, UnsignedZoneReviewer, ZoneBuilder, ZoneCleaner,
-    ZoneDataStorage, ZoneReviewer, ZoneViewer,
+    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZoneReader, LoadedZoneReviewer, SignedZoneReviewer,
+    ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::zonetree;
 use tracing::{trace, trace_span};
@@ -49,7 +49,7 @@ impl StorageZoneHandle<'_> {
 impl StorageZoneHandle<'_> {
     /// Begin loading a new instance of the zone.
     ///
-    /// If the zone data storage is not busy, a [`ZoneBuilder`] will be
+    /// If the zone data storage is not busy, a [`LoadedZoneBuilder`] will be
     /// returned through which a new instance of the zone can be loaded.
     /// Follow up by calling:
     ///
@@ -59,7 +59,7 @@ impl StorageZoneHandle<'_> {
     ///
     /// If the zone data storage is busy, [`None`] is returned; the loader
     /// should enqueue the load operation and wait for an idle notification.
-    pub fn start_load(&mut self) -> Option<ZoneBuilder> {
+    pub fn start_load(&mut self) -> Option<LoadedZoneBuilder> {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
         match machine.take() {
@@ -68,11 +68,11 @@ impl StorageZoneHandle<'_> {
                 // and it is possible to begin building a new instance.
                 trace!(
                     zone = %self.zone.name,
-                    "Obtaining a 'ZoneBuilder' for performing a load"
+                    "Obtaining a 'LoadedZoneBuilder' for performing a load"
                 );
 
-                let (s, builder) = s.build();
-                *machine = ZoneDataStorage::Building(s);
+                let (s, builder) = s.load();
+                *machine = ZoneDataStorage::Loading(s);
                 Some(builder)
             }
 
@@ -91,25 +91,25 @@ impl StorageZoneHandle<'_> {
 
     /// Complete a load.
     ///
-    /// The prepared unsigned instance of the zone is finalized, and passed on
-    /// to the unsigned zone reviewer.
-    pub fn finish_load(&mut self, built: UnsignedZoneBuilt) {
+    /// The prepared loaded instance of the zone is finalized, and passed on
+    /// to the loaded zone reviewer.
+    pub fn finish_load(&mut self, built: LoadedZoneBuilt) {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
         match machine.take() {
-            ZoneDataStorage::Building(s) => {
+            ZoneDataStorage::Loading(s) => {
                 trace!(
                     zone = %self.zone.name,
                     "Successfully finishing the ongoing load"
                 );
 
-                let (s, ureviewer) = s.finish_unsigned(built);
-                *machine = ZoneDataStorage::PendingUnsignedReview(s);
-                self.start_unsigned_review(ureviewer);
+                let (s, ureviewer) = s.finish(built);
+                *machine = ZoneDataStorage::ReviewLoadedPending(s);
+                self.start_loaded_review(ureviewer);
             }
 
             _ => unreachable!(
-                "'ZoneDataStorage::Building' is the only state where a 'ZoneBuilder' is available"
+                "'ZoneDataStorage::Loading' is the only state where a 'LoadedZoneBuilder' is available"
             ),
         }
     }
@@ -118,11 +118,11 @@ impl StorageZoneHandle<'_> {
     ///
     /// Any intermediate artifacts will be cleaned up automatically, in the
     /// background. Once the zone storage is idle, a notification will be sent.
-    pub fn give_up_load(&mut self, builder: ZoneBuilder) {
+    pub fn give_up_load(&mut self, builder: LoadedZoneBuilder) {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
         match machine.take() {
-            ZoneDataStorage::Building(s) => {
+            ZoneDataStorage::Loading(s) => {
                 trace!(
                     zone = %self.zone.name,
                     "Giving up on the ongoing load"
@@ -134,7 +134,7 @@ impl StorageZoneHandle<'_> {
             }
 
             _ => unreachable!(
-                "'ZoneDataStorage::Building' is the only state where a 'ZoneBuilder' is available"
+                "'ZoneDataStorage::Loading' is the only state where a 'LoadedZoneBuilder' is available"
             ),
         }
     }
@@ -142,24 +142,24 @@ impl StorageZoneHandle<'_> {
 
 /// # Server Operations
 impl StorageZoneHandle<'_> {
-    /// Initiate review of a new unsigned instance of a zone.
-    fn start_unsigned_review(&mut self, ureviewer: UnsignedZoneReviewer) {
+    /// Initiate review of a new loaded instance of a zone.
+    fn start_loaded_review(&mut self, ureviewer: LoadedZoneReviewer) {
         // NOTE: This function provides compatibility with 'zonetree's.
 
         let zone = self.zone.clone();
         let center = self.center.clone();
         let task = tokio::task::spawn_blocking(move || {
-            let span = trace_span!("start_unsigned_review", zone = %zone.name);
+            let span = trace_span!("start_loaded_review", zone = %zone.name);
             let _guard = span.enter();
 
-            // Read the unsigned instance.
+            // Read the loaded instance.
             let reader = ureviewer
-                .read_unsigned()
+                .read_loaded()
                 .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
             let serial = reader.soa().rdata.serial;
 
             // Build a `zonetree` for the new instance.
-            let zonetree = Self::build_unsigned_zonetree(&zone, &reader);
+            let zonetree = Self::build_loaded_zonetree(&zone, &reader);
 
             // Insert the new `zonetree`.
             center.unsigned_zones.rcu(|tree| {
@@ -206,16 +206,16 @@ impl StorageZoneHandle<'_> {
             tracing::debug!("Transitioning zone state...");
             let machine = &mut handle.state.storage.machine;
             match machine.take() {
-                ZoneDataStorage::PendingUnsignedReview(s) => {
+                ZoneDataStorage::ReviewLoadedPending(s) => {
                     let old_ureviewer =
-                        std::mem::replace(&mut handle.state.storage.unsigned_reviewer, ureviewer);
+                        std::mem::replace(&mut handle.state.storage.loaded_reviewer, ureviewer);
                     let s = s.start(old_ureviewer);
 
                     // For now, transition all the way back to 'Passive' state.
                     let (s, persister) = s.mark_approved();
                     let persisted = persister.persist();
                     let (s, mut builder) = s.mark_complete(persisted);
-                    builder.clear_signed();
+                    builder.clear();
                     let built = builder.finish().unwrap_or_else(|_| unreachable!());
                     let (s, reviewer) = s.finish(built);
                     let old_reviewer =
@@ -230,11 +230,8 @@ impl StorageZoneHandle<'_> {
                     handle.storage().start_cleanup(cleaner);
                 }
 
-                // TODO: Whole review is only possible with pass-through mode.
-                ZoneDataStorage::PendingWholeReview(_) => todo!(),
-
                 _ => unreachable!(
-                    "'ZoneDataStorage::PendingUnsignedReview' and 'ZoneDataStorage::PendingWholeReview' are the only states where an 'UnsignedZoneReviewer' is available"
+                    "'ZoneDataStorage::ReviewLoadedPending' is the only states where an 'LoadedZoneReviewer' is available"
                 ),
             }
         });
@@ -242,11 +239,8 @@ impl StorageZoneHandle<'_> {
         self.state.storage.background_task = Some(task.into());
     }
 
-    /// Build a `zonetree` for an unsigned instance of a zone.
-    fn build_unsigned_zonetree(
-        zone: &Arc<Zone>,
-        reader: &UnsignedZoneReader<'_>,
-    ) -> zonetree::Zone {
+    /// Build a `zonetree` for an loaded instance of a zone.
+    fn build_loaded_zonetree(zone: &Arc<Zone>, reader: &LoadedZoneReader<'_>) -> zonetree::Zone {
         use zonetree::{types::ZoneUpdate, update::ZoneUpdater};
 
         let zone =
@@ -355,6 +349,11 @@ impl StorageZoneHandle<'_> {
         //
         // TODO: If we introduce a top-level state machine for a zone, should
         // this method be implemented there?
+
+        if self.zone().loader().start_pending() {
+            // The zone storage is no longer idle.
+            //return;
+        }
     }
 }
 
@@ -365,15 +364,15 @@ pub struct StorageState {
     /// The underlying state machine.
     machine: ZoneDataStorage,
 
-    /// The current unsigned zone reviewer.
+    /// The current loaded zone reviewer.
     //
     // TODO: Move into the zone server unit.
-    unsigned_reviewer: UnsignedZoneReviewer,
+    loaded_reviewer: LoadedZoneReviewer,
 
     /// The current zone reviewer.
     //
     // TODO: Move into the zone server unit.
-    reviewer: ZoneReviewer,
+    reviewer: SignedZoneReviewer,
 
     /// The current zone viewer.
     //
@@ -390,11 +389,11 @@ pub struct StorageState {
 impl StorageState {
     /// Construct a new [`StorageState`].
     pub fn new() -> Self {
-        let (machine, unsigned_reviewer, reviewer, viewer) = ZoneDataStorage::new();
+        let (machine, loaded_reviewer, reviewer, viewer) = ZoneDataStorage::new();
 
         Self {
             machine,
-            unsigned_reviewer,
+            loaded_reviewer,
             reviewer,
             viewer,
             background_task: None,
