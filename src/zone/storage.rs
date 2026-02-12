@@ -355,6 +355,10 @@ impl StorageZoneHandle<'_> {
         //
         // TODO: If we introduce a top-level state machine for a zone, should
         // this method be implemented there?
+
+        if self.zone().loader().start_pending() {
+            // The zone storage is no longer idle.
+        }
     }
 }
 
