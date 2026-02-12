@@ -9,7 +9,7 @@ use tracing::{debug, info};
 use crate::{
     center::Center,
     util::AbortOnDrop,
-    zone::{HistoricalEvent, Zone, ZoneState, contents::SoaRecord},
+    zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState, contents::SoaRecord},
 };
 
 use super::{ActiveLoadMetrics, LoadMetrics, RefreshMonitor, Source};
@@ -29,6 +29,15 @@ pub struct LoaderZoneHandle<'a> {
 }
 
 impl LoaderZoneHandle<'_> {
+    /// Access the generic [`ZoneHandle`].
+    pub const fn zone(&mut self) -> ZoneHandle<'_> {
+        ZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+
     /// Set the source of this zone.
     ///
     /// A (soft) refresh will be initiated via [`Self::enqueue_refresh()`].
