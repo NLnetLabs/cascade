@@ -26,9 +26,12 @@ use crate::{
 };
 
 pub mod contents;
-pub mod state;
-
 pub use contents::ZoneContents;
+
+mod storage;
+pub use storage::{StorageState, StorageZoneHandle};
+
+pub mod state;
 
 pub use crate::loader::zone::{LoaderState, LoaderZoneHandle};
 
@@ -66,6 +69,15 @@ impl ZoneHandle<'_> {
     /// Consider loader-specific operations.
     pub const fn loader(&mut self) -> LoaderZoneHandle<'_> {
         LoaderZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider storage-specific operations.
+    pub const fn storage(&mut self) -> StorageZoneHandle<'_> {
+        StorageZoneHandle {
             zone: self.zone,
             state: self.state,
             center: self.center,
@@ -113,6 +125,9 @@ pub struct ZoneState {
 
     /// Loading new versions of the zone.
     pub loader: LoaderState,
+
+    /// Data storage for the zone.
+    pub storage: StorageState,
 
     /// The contents of the zone.
     pub contents: Arc<tokio::sync::Mutex<Option<ZoneContents>>>,
