@@ -29,7 +29,7 @@ use crate::{
     loader::zone::LoaderZoneHandle,
     manager::Update,
     util::AbortOnDrop,
-    zone::{Zone, ZoneContents, contents},
+    zone::{Zone, ZoneContents, ZoneHandle, contents},
 };
 
 mod refresh;
@@ -61,11 +61,12 @@ impl Loader {
         // Enqueue refreshes for all known zones.
         for zone in &state.zones {
             let mut state = zone.0.state.lock().unwrap();
-            LoaderZoneHandle {
+            ZoneHandle {
                 zone: &zone.0,
                 state: &mut state,
                 center,
             }
+            .loader()
             .enqueue_refresh(false);
         }
     }
@@ -94,11 +95,12 @@ impl Loader {
             .find(|z| z.zone.0.name == name)
         {
             let mut state = zone.zone.0.state.lock().unwrap();
-            LoaderZoneHandle {
+            ZoneHandle {
                 zone: &zone.zone.0,
                 state: &mut state,
                 center,
             }
+            .loader()
             .prep_removal();
         }
     }
@@ -106,11 +108,12 @@ impl Loader {
     pub fn on_refresh_zone(&self, center: &Arc<Center>, zone_name: StoredName) {
         let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
         let mut state = zone.state.lock().expect("lock is not poisoned");
-        LoaderZoneHandle {
+        ZoneHandle {
             zone: &zone,
             state: &mut state,
             center,
         }
+        .loader()
         .enqueue_refresh(false);
     }
 
@@ -128,11 +131,12 @@ impl Loader {
         if let Source::None = zone_state.loader.source {
             return Err(ZoneReloadError::ZoneWithoutSource);
         }
-        LoaderZoneHandle {
+        ZoneHandle {
             zone: &zone,
             state: &mut zone_state,
             center,
         }
+        .loader()
         .enqueue_refresh(true);
         Ok(())
     }

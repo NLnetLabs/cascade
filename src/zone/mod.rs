@@ -20,7 +20,6 @@ use crate::{
     api::{self, ZoneReviewStatus},
     center::{Center, Change},
     config::Config,
-    loader::zone::LoaderState,
     manager::Update,
     policy::{Policy, PolicyVersion},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
@@ -30,6 +29,8 @@ pub mod contents;
 pub mod state;
 
 pub use contents::ZoneContents;
+
+pub use crate::loader::zone::{LoaderState, LoaderZoneHandle};
 
 //----------- Zone -------------------------------------------------------------
 
@@ -46,6 +47,33 @@ pub struct Zone {
     /// single (sequentially consistent) order.
     pub state: Mutex<ZoneState>,
 }
+
+//----------- ZoneHandle -------------------------------------------------------
+
+/// A handle for working with a zone.
+pub struct ZoneHandle<'a> {
+    /// The zone being operated on.
+    pub zone: &'a Arc<Zone>,
+
+    /// The locked zone state.
+    pub state: &'a mut ZoneState,
+
+    /// Cascade's global state.
+    pub center: &'a Arc<Center>,
+}
+
+impl ZoneHandle<'_> {
+    /// Consider loader-specific operations.
+    pub const fn loader(&mut self) -> LoaderZoneHandle<'_> {
+        LoaderZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+}
+
+//----------- ZoneState --------------------------------------------------------
 
 /// The state of a zone.
 #[derive(Debug, Default)]
