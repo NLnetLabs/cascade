@@ -14,14 +14,13 @@ use bytes::Bytes;
 use domain::base::{Name, Serial};
 use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, trace};
 
 use crate::{
     api::{self, ZoneReviewStatus},
-    center::{Center, Change},
+    center::Center,
     config::Config,
     loader::zone::LoaderState,
-    manager::Update,
     policy::{Policy, PolicyVersion},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
@@ -288,29 +287,24 @@ pub enum HistoricalEvent {
 }
 
 impl HistoricalEvent {
-    pub fn is_of_type(&self, typ: HistoricalEventType) -> bool {
-        #[allow(clippy::match_like_matches_macro)]
-        match (self, typ) {
-            (HistoricalEvent::Added, HistoricalEventType::Added) => true,
-            (HistoricalEvent::Removed, HistoricalEventType::Removed) => true,
-            (HistoricalEvent::PolicyChanged, HistoricalEventType::PolicyChanged) => true,
-            (HistoricalEvent::SourceChanged, HistoricalEventType::SourceChanged) => true,
-            (HistoricalEvent::NewVersionReceived, HistoricalEventType::NewVersionReceived) => true,
-            (HistoricalEvent::SigningSucceeded { .. }, HistoricalEventType::SigningSucceeded) => {
-                true
-            }
-            (HistoricalEvent::SigningFailed { .. }, HistoricalEventType::SigningFailed) => true,
-            (
-                HistoricalEvent::UnsignedZoneReview { .. },
-                HistoricalEventType::UnsignedZoneReview,
-            ) => true,
-            (HistoricalEvent::SignedZoneReview { .. }, HistoricalEventType::SignedZoneReview) => {
-                true
-            }
-            (HistoricalEvent::KeySetCommand { .. }, HistoricalEventType::KeySetCommand) => true,
-            (HistoricalEvent::KeySetError { .. }, HistoricalEventType::KeySetError) => true,
-            _ => false,
+    fn get_type(&self) -> HistoricalEventType {
+        match self {
+            HistoricalEvent::Added => HistoricalEventType::Added,
+            HistoricalEvent::Removed => HistoricalEventType::Removed,
+            HistoricalEvent::PolicyChanged => HistoricalEventType::PolicyChanged,
+            HistoricalEvent::SourceChanged => HistoricalEventType::SourceChanged,
+            HistoricalEvent::NewVersionReceived => HistoricalEventType::NewVersionReceived,
+            HistoricalEvent::SigningSucceeded { .. } => HistoricalEventType::SigningSucceeded,
+            HistoricalEvent::SigningFailed { .. } => HistoricalEventType::SigningFailed,
+            HistoricalEvent::UnsignedZoneReview { .. } => HistoricalEventType::UnsignedZoneReview,
+            HistoricalEvent::SignedZoneReview { .. } => HistoricalEventType::SignedZoneReview,
+            HistoricalEvent::KeySetCommand { .. } => HistoricalEventType::KeySetCommand,
+            HistoricalEvent::KeySetError { .. } => HistoricalEventType::KeySetError,
         }
+    }
+
+    pub fn is_of_type(&self, typ: HistoricalEventType) -> bool {
+        self.get_type() == typ
     }
 }
 
@@ -471,74 +465,6 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
             error!("Could not save the state of zone '{name}' to '{path}': {err}");
         }
     }
-}
-
-/// Change the policy used by a zone.
-pub fn change_policy(
-    center: &Arc<Center>,
-    name: Name<Bytes>,
-    policy: Box<str>,
-) -> Result<(), ChangePolicyError> {
-    let mut state = center.state.lock().unwrap();
-    let state = &mut *state;
-
-    // Verify the operation will succeed.
-    {
-        state
-            .zones
-            .get(&name)
-            .ok_or(ChangePolicyError::NoSuchZone)?;
-
-        let policy = state
-            .policies
-            .get(&policy)
-            .ok_or(ChangePolicyError::NoSuchPolicy)?;
-        if policy.mid_deletion {
-            return Err(ChangePolicyError::PolicyMidDeletion);
-        }
-    }
-
-    // Perform the operation.
-    let zone = state.zones.get(&name).unwrap();
-    let mut zone_state = zone.0.state.lock().unwrap();
-
-    // Unlink the previous policy of the zone.
-    let old_policy = zone_state.policy.take();
-    if let Some(policy) = &old_policy {
-        let policy = state
-            .policies
-            .get_mut(&policy.name)
-            .expect("zones and policies are consistent");
-        assert!(
-            policy.zones.remove(&name),
-            "zones and policies are consistent"
-        );
-    }
-
-    // Link the zone to the selected policy.
-    let policy = state
-        .policies
-        .get_mut(&policy)
-        .ok_or(ChangePolicyError::NoSuchPolicy)?;
-    if policy.mid_deletion {
-        return Err(ChangePolicyError::PolicyMidDeletion);
-    }
-    zone_state.policy = Some(policy.latest.clone());
-    policy.zones.insert(name.clone());
-
-    center
-        .update_tx
-        .send(Update::Changed(Change::ZonePolicyChanged {
-            name: name.clone(),
-            old: old_policy,
-            new: policy.latest.clone(),
-        }))
-        .unwrap();
-
-    zone.0.mark_dirty(&mut zone_state, center);
-
-    info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
-    Ok(())
 }
 
 //----------- ZoneByName -------------------------------------------------------

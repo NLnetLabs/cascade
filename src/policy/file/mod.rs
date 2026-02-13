@@ -3,10 +3,11 @@
 use std::{fs, io, sync::Arc};
 
 use camino::Utf8Path;
+use cascade_api::PolicyChange;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::{center::Change, zone::ZoneByName};
+use crate::zone::ZoneByName;
 
 use super::Policy;
 
@@ -46,7 +47,7 @@ impl Spec {
         self,
         existing: &mut Policy,
         zones: &foldhash::HashSet<ZoneByName>,
-        mut on_change: impl FnMut(Change),
+        mut on_change: impl FnMut(&Box<str>, PolicyChange),
     ) -> bool {
         let latest = &*existing.latest;
         let new = match self {
@@ -64,7 +65,7 @@ impl Spec {
 
         // Output change notifications.
         info!("Updated policy '{}'", new.name);
-        (on_change)(Change::PolicyChanged(old.clone(), new.clone()));
+        (on_change)(&new.name, PolicyChange::Updated);
         for zone in &existing.zones {
             let zone = zones.get(zone).expect("zones and policies are consistent");
             let mut state = zone.0.state.lock().unwrap();
@@ -74,11 +75,6 @@ impl Spec {
                 old_for_zone.as_ref().map(|z| &z.name),
                 "zones and policies are consistent"
             );
-            (on_change)(Change::ZonePolicyChanged {
-                name: zone.0.name.clone(),
-                old: Some(old.clone()),
-                new: new.clone(),
-            });
         }
         true
     }

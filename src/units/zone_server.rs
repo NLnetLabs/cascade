@@ -33,22 +33,21 @@ use domain::tsig::{Algorithm, Key};
 use domain::zonetree::Answer;
 use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::{StoredName, ZoneTree};
-use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{
-    ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage,
-    ZoneReviewStatus,
+    ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStatus,
 };
-use crate::center::{Center, Change, get_zone};
+use crate::center::{Center, get_zone};
 use crate::common::tsig::TsigKeyStore;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
+use crate::manager::Terminated;
 use crate::manager::record_zone_event;
-use crate::manager::{Terminated, Update};
 use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, ZoneVersionReviewState,
+    HistoricalEvent, SignedZoneVersionState, SigningTrigger, UnsignedZoneVersionState,
+    ZoneVersionReviewState,
 };
 
 /// The source of a zone server.
@@ -204,7 +203,7 @@ impl ZoneServer {
         // Propagate NOTIFY messages if this is the publication server.
         let notifier = LoaderNotifier {
             enabled: matches!(source, Source::Published),
-            update_tx: center.update_tx.clone(),
+            center: center.clone(),
         };
 
         // let svc = ZoneServerService::new(zones.clone());
@@ -236,10 +235,6 @@ impl ZoneServer {
             Source::Signed => "RS2",
             Source::Published => "PS",
         }
-    }
-
-    pub fn on_change(&self, _center: &Arc<Center>, _change: Change) {
-        // nothing to do
     }
 
     pub fn on_publish_signed_zone(
@@ -372,23 +367,11 @@ impl ZoneServer {
                             "[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}"
                         );
                     } else {
-                        center
-                            .update_tx
-                            .send(Update::UnsignedZoneApprovedEvent {
-                                zone_name: zone_name.clone(),
-                                zone_serial,
-                            })
-                            .unwrap();
+                        self.on_unsigned_zone_approved(center, zone_name, zone_serial);
                     }
                 }
                 Source::Signed => {
-                    center
-                        .update_tx
-                        .send(Update::SignedZoneApprovedEvent {
-                            zone_name: zone_name.clone(),
-                            zone_serial,
-                        })
-                        .unwrap();
+                    self.on_signed_zone_approved(center, zone_name, zone_serial);
                 }
                 Source::Published => unreachable!(),
             }
@@ -482,7 +465,7 @@ impl ZoneServer {
                 );
 
                 // Wait for the child to complete.
-                let update_tx = center.update_tx.clone();
+                let center = center.clone();
                 let stdout = child.stdout.take().expect("we use Stdio::piped");
                 let stderr = child.stderr.take().expect("we use Stdio::piped");
 
@@ -508,16 +491,12 @@ impl ZoneServer {
                         false => ZoneReviewDecision::Reject,
                     };
 
-                    let _ = update_tx.send(Update::ReviewZone {
-                        name: zone_name,
-                        stage: match zone_type {
-                            "unsigned" => ZoneReviewStage::Unsigned,
-                            "signed" => ZoneReviewStage::Signed,
-                            _ => unreachable!(),
-                        },
-                        serial: zone_serial,
-                        decision,
-                    });
+                    let server = match zone_type {
+                        "unsigned" => &center.unsigned_review_server,
+                        "signed" => &center.signed_review_server,
+                        _ => unreachable!(),
+                    };
+                    let _ = server.on_zone_review(&center, zone_name, zone_serial, decision);
                 });
             }
             Err(err) => {
@@ -542,6 +521,54 @@ impl ZoneServer {
             }
         }
         None
+    }
+
+    fn on_unsigned_zone_approved(
+        &self,
+        center: &Arc<Center>,
+        zone_name: Name<Bytes>,
+        zone_serial: Serial,
+    ) {
+        record_zone_event(
+            center,
+            &zone_name,
+            HistoricalEvent::UnsignedZoneReview {
+                status: crate::api::ZoneReviewStatus::Approved,
+            },
+            Some(zone_serial),
+        );
+        info!("[CC]: Instructing zone signer to sign the approved zone");
+        center.signer.on_sign_zone(
+            center,
+            zone_name,
+            Some(zone_serial),
+            SigningTrigger::ZoneChangesApproved,
+        );
+    }
+
+    fn on_signed_zone_approved(
+        &self,
+        center: &Arc<Center>,
+        zone_name: Name<Bytes>,
+        zone_serial: Serial,
+    ) {
+        record_zone_event(
+            center,
+            &zone_name,
+            HistoricalEvent::SignedZoneReview {
+                status: crate::api::ZoneReviewStatus::Approved,
+            },
+            Some(zone_serial),
+        );
+
+        // Send a message to the zone signer to trigger a re-scan of
+        // when to re-sign next.
+        center.signer.on_publish_signed_zone(center);
+
+        info!("[CC]: Instructing publication server to publish the signed zone");
+        center
+            .publication_server
+            .on_publish_signed_zone(center, zone_name, zone_serial);
     }
 
     async fn process_output(
@@ -617,10 +644,7 @@ impl ZoneServer {
                     );
                     match Self::promote_zone_to_signable(center.clone(), &zone_name) {
                         Ok(()) => {
-                            let _ = center.update_tx.send(Update::UnsignedZoneApprovedEvent {
-                                zone_name,
-                                zone_serial,
-                            });
+                            self.on_unsigned_zone_approved(center, zone_name, zone_serial);
                         }
                         Err(err) => {
                             error!(
@@ -631,6 +655,14 @@ impl ZoneServer {
                 } else {
                     error!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
+                    );
+                    record_zone_event(
+                        center,
+                        &zone_name,
+                        HistoricalEvent::UnsignedZoneReview {
+                            status: crate::api::ZoneReviewStatus::Rejected,
+                        },
+                        Some(zone_serial),
                     );
                 }
             }
@@ -662,13 +694,18 @@ impl ZoneServer {
                 }
                 if matches!(decision, ZoneReviewDecision::Approve) {
                     info!("Signed zone '{zone_name}' with serial {zone_serial} has been approved.");
-                    let _ = center.update_tx.send(Update::SignedZoneApprovedEvent {
-                        zone_name,
-                        zone_serial,
-                    });
+                    self.on_signed_zone_approved(center, zone_name, zone_serial);
                 } else {
                     error!(
                         "Signed zone '{zone_name}' with serial {zone_serial} has been rejected."
+                    );
+                    record_zone_event(
+                        center,
+                        &zone_name,
+                        HistoricalEvent::SignedZoneReview {
+                            status: crate::api::ZoneReviewStatus::Rejected,
+                        },
+                        Some(zone_serial),
                     );
                 }
             }
@@ -770,8 +807,7 @@ pub struct LoaderNotifier {
     /// Whether the forwarder is enabled.
     enabled: bool,
 
-    /// A channel to propagate updates to Cascade.
-    update_tx: mpsc::UnboundedSender<Update>,
+    center: Arc<Center>,
 }
 
 impl Notifiable for LoaderNotifier {
@@ -788,9 +824,9 @@ impl Notifiable for LoaderNotifier {
             // Propagate a request for the zone refresh.
             // This request ignores the serial and source because we will just
             // do a SOA query to our configured upstreams.
-            let _ = self.update_tx.send(Update::RefreshZone {
-                zone_name: apex_name.clone(),
-            });
+            info!("[CC]: Instructing zone loader to refresh the zone");
+            let center = &self.center;
+            center.loader.on_refresh_zone(center, apex_name.clone());
         }
 
         Box::pin(std::future::ready(Ok(())))
