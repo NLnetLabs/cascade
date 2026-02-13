@@ -11,13 +11,13 @@ use cascade_zonedata::{
     ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::zonetree;
-use tracing::{trace, trace_span};
+use tracing::{info, trace, trace_span, warn};
 
 use crate::{
-    center::Center,
-    manager::Update,
+    center::{Center, get_zone},
+    manager::record_zone_event,
     util::AbortOnDrop,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -170,13 +170,42 @@ impl StorageZoneHandle<'_> {
             });
 
             // Inform the central command.
-            center
-                .update_tx
-                .send(Update::UnsignedZoneUpdatedEvent {
-                    zone_name: zone.name.clone(),
-                    zone_serial: domain::base::Serial(serial.into()),
-                })
-                .unwrap();
+            let zone_name = zone.name.clone();
+            let zone_serial = domain::base::Serial(serial.into());
+
+            record_zone_event(
+                &center,
+                &zone_name,
+                HistoricalEvent::NewVersionReceived,
+                Some(zone_serial),
+            );
+
+            if let Some(zone) = get_zone(&center, &zone_name)
+                && let Ok(mut zone_state) = zone.state.lock()
+            {
+                match zone_state.pipeline_mode.clone() {
+                    PipelineMode::Running => {}
+                    PipelineMode::SoftHalt(message) => {
+                        info!(
+                            "[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running"
+                        );
+                        zone_state.resume();
+                    }
+                    PipelineMode::HardHalt(_) => {
+                        warn!(
+                            "[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted"
+                        );
+                        return;
+                    }
+                }
+            }
+
+            info!("[CC]: Instructing review server to publish the unsigned zone");
+            center.unsigned_review_server.on_seek_approval_for_zone(
+                &center,
+                zone_name,
+                zone_serial,
+            );
 
             let mut state = zone.state.lock().unwrap();
             let mut handle = ZoneHandle {

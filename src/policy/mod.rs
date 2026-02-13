@@ -6,12 +6,12 @@ use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
 use camino::Utf8PathBuf;
+use cascade_api::PolicyChange;
 use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
-use crate::center::Change;
 use crate::zone::ZoneByName;
 use crate::{api::PolicyReloadError, config::Config};
 
@@ -45,7 +45,7 @@ impl Policy {
         &mut self,
         config: &Config,
         zones: &foldhash::HashSet<ZoneByName>,
-        on_change: impl FnMut(Change),
+        on_change: impl FnMut(&Box<str>, PolicyChange),
     ) -> io::Result<()> {
         // TODO: Carefully consider how 'config.policy_dir' and the path last
         // loaded from are synchronized.
@@ -62,7 +62,7 @@ pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     zones: &foldhash::HashSet<ZoneByName>,
     config: &Config,
-    mut on_change: impl FnMut(Change),
+    mut on_change: impl FnMut(&Box<str>, PolicyChange),
 ) -> Result<(), PolicyReloadError> {
     // TODO: This function is not atomic: it may have effects even if it fails.
 
@@ -129,7 +129,7 @@ pub fn reload_all(
         } else {
             info!("Loaded new policy '{name}'");
             let policy = spec.parse(name);
-            (on_change)(Change::PolicyAdded(policy.latest.clone()));
+            (on_change)(&policy.latest.name, PolicyChange::Added);
             policy
         };
 
@@ -152,7 +152,7 @@ pub fn reload_all(
             );
         } else {
             info!("Forgetting now-removed policy '{name}'");
-            (on_change)(Change::PolicyRemoved(policy.latest));
+            (on_change)(&policy.latest.name, PolicyChange::Removed);
         }
     }
 

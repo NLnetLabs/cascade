@@ -13,23 +13,22 @@ use domain::base::iana::Class;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
-use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::manager::record_zone_event;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::ZoneServer;
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::PipelineMode;
+use crate::zone::{HistoricalEvent, PipelineMode};
 use crate::{
     api,
     config::Config,
     log::Logger,
-    manager::Update,
-    policy::{Policy, PolicyVersion},
+    policy::Policy,
     tsig::TsigStore,
     zone::{Zone, ZoneByName},
 };
@@ -83,9 +82,6 @@ pub struct Center {
 
     /// The old TSIG key store.
     pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
-
-    /// A channel to send the central command updates.
-    pub update_tx: mpsc::UnboundedSender<Update>,
 }
 
 //--- Actions
@@ -150,13 +146,10 @@ pub async fn add_zone(
         return Err(err);
     }
 
+    record_zone_event(center, &name, HistoricalEvent::Added, None);
+
     {
         let mut state = center.state.lock().unwrap();
-        center
-            .update_tx
-            .send(Update::Changed(Change::ZoneAdded(name.clone())))
-            .unwrap();
-
         state.mark_dirty(center);
     }
 
@@ -210,10 +203,7 @@ async fn register_zone(
 
 /// Remove a zone.
 pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
-    center
-        .update_tx
-        .send(Update::Changed(Change::ZoneRemoved(name.clone())))
-        .unwrap();
+    center.loader.remove_zone(center, &name);
 
     let mut state = center.state.lock().unwrap();
     let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?;
@@ -254,6 +244,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     }
 
     info!("Removed zone '{name}'");
+    record_zone_event(center, &name, HistoricalEvent::Removed, None);
     Ok(())
 }
 
@@ -330,7 +321,7 @@ impl State {
     pub fn init_from_file(&mut self, config: &Config) -> io::Result<()> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        spec.parse_into(self, |_| {});
+        spec.parse_into(self);
         Ok(())
     }
 
@@ -375,51 +366,6 @@ impl State {
         });
         self.enqueued_save = Some(task);
     }
-}
-
-//----------- Change -----------------------------------------------------------
-
-/// A change to global state.
-#[derive(Clone, Debug)]
-pub enum Change {
-    /// The configuration has been changed.
-    ConfigChanged,
-
-    /// A policy has been added.
-    PolicyAdded(Arc<PolicyVersion>),
-
-    /// A policy has been changed.
-    PolicyChanged(Arc<PolicyVersion>, Arc<PolicyVersion>),
-
-    /// A policy has been removed.
-    PolicyRemoved(Arc<PolicyVersion>),
-
-    /// A zone has been added.
-    ZoneAdded(Name<Bytes>),
-
-    /// The policy of a zone has changed.
-    ZonePolicyChanged {
-        /// The name of the zone.
-        name: Name<Bytes>,
-
-        /// The previous policy used by the zone.
-        ///
-        /// If this is [`None`], the zone did not previously have a policy.
-        old: Option<Arc<PolicyVersion>>,
-
-        /// The new policy used by the zone.
-        ///
-        /// If this has the same name as the old policy, the policy was updated
-        /// (as per [`Self::PolicyChanged`]); if this has a different name, the
-        /// policy for this zone was explicitly changed.
-        new: Arc<PolicyVersion>,
-    },
-
-    /// The source of a zone has changed.
-    ZoneSourceChanged(Name<Bytes>),
-
-    /// A zone has been removed.
-    ZoneRemoved(Name<Bytes>),
 }
 
 //----------- ZoneAddError -----------------------------------------------------

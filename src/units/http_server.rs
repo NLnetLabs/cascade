@@ -38,7 +38,7 @@ use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
 use crate::loader;
-use crate::manager::{Terminated, Update};
+use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
@@ -680,25 +680,10 @@ impl HttpServer {
             &mut state.policies,
             &state.zones,
             &center.config,
-            |change| {
+            |name, change| {
                 changed = true;
 
-                // Update 'changes' based on what happened.
-                match &change {
-                    center::Change::PolicyAdded(p) => {
-                        changes.insert(p.name.clone(), PolicyChange::Added);
-                    }
-                    center::Change::PolicyChanged(p, _) => {
-                        *changes.get_mut(&p.name).unwrap() = PolicyChange::Updated;
-                    }
-                    center::Change::PolicyRemoved(p) => {
-                        *changes.get_mut(&p.name).unwrap() = PolicyChange::Removed;
-                    }
-                    _ => {}
-                };
-
-                // Propagate the changes globally.
-                let _ = center.update_tx.send(Update::Changed(change));
+                changes.insert(name.clone(), change);
             },
         );
         if changed {
