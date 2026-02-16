@@ -27,13 +27,13 @@ Released yyyy-mm-dd.
 
 - Prefix cascaded `--help` output with a one line description of the
   application. ([#409] by @ximon18)
-- Improve integration tests framework ([#401] by @mozzieongit)
+- Improve integration tests framework. ([#401] by @mozzieongit)
 
 ### Documentation improvements
 
-- Document that `--daemonize` changes CWD to / ([#387] by @jpmens)
+- Document that `--daemonize` changes CWD to /. ([#387] by @jpmens)
 - Use a more appropriate `log-target` example file path. ([#411] by @ximon18)
-- Specify both binary crates to build from source ([#423] by @mozzieongit)
+- Specify both binary crates to build from source. ([#423] by @mozzieongit)
 - Add missing `cascade zone` argument documentation. ([#406] by @ximon18)
 
 [#387]: https://github.com/NLnetLabs/cascade/pull/387
