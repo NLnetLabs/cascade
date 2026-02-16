@@ -25,9 +25,6 @@ use crate::{
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
-pub mod contents;
-pub use contents::ZoneContents;
-
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
@@ -128,9 +125,7 @@ pub struct ZoneState {
 
     /// Data storage for the zone.
     pub storage: StorageState,
-
-    /// The contents of the zone.
-    pub contents: Arc<tokio::sync::Mutex<Option<ZoneContents>>>,
+    //
     // TODO:
     // - A log?
     // - Initialization?
