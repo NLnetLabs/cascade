@@ -35,6 +35,7 @@ Released yyyy-mm-dd.
 - Use a more appropriate `log-target` example file path. ([#411] by @ximon18)
 - Specify both binary crates to build from source. ([#423] by @mozzieongit)
 - Add missing `cascade zone` argument documentation. ([#406] by @ximon18)
+- Add missing `README.md` in the generated RPM package. ([#428] by @ximon18)
 
 [#387]: https://github.com/NLnetLabs/cascade/pull/387
 [#398]: https://github.com/NLnetLabs/cascade/pull/398
@@ -43,6 +44,7 @@ Released yyyy-mm-dd.
 [#409]: https://github.com/NLnetLabs/cascade/pull/409
 [#411]: https://github.com/NLnetLabs/cascade/pull/411
 [#423]: https://github.com/NLnetLabs/cascade/pull/423
+[#428]: https://github.com/NLnetLabs/cascade/pull/428
 
 ## 0.1.0-alpha5 'Colline de la Croix'
 
