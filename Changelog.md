@@ -22,6 +22,7 @@ Released yyyy-mm-dd.
 
 - A zone configured for unsigned review no longer fails to sign. ([#398] by
   @ximon18)
+- Support using BIND as a secondary nameserver. ([#444] by @ximon18)
 
 ### Other changes
 
@@ -45,6 +46,7 @@ Released yyyy-mm-dd.
 [#411]: https://github.com/NLnetLabs/cascade/pull/411
 [#423]: https://github.com/NLnetLabs/cascade/pull/423
 [#428]: https://github.com/NLnetLabs/cascade/pull/428
+[#444]: https://github.com/NLnetLabs/cascade/pull/444
 
 ## 0.1.0-alpha5 'Colline de la Croix'
 
