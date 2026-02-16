@@ -47,7 +47,7 @@ pub struct ZoneBuilder {
     ///
     /// If this is `Some`, the unsigned component has been prepared, and will
     /// not be modified further.
-    unsigned_diff: Option<DiffData>,
+    unsigned_diff: Option<Box<DiffData>>,
 
     /// The index of the signed component to build into.
     ///
@@ -72,7 +72,7 @@ pub struct ZoneBuilder {
     ///
     /// If this is `Some`, the signed component has been prepared, and will not
     /// be modified further.
-    signed_diff: Option<DiffData>,
+    signed_diff: Option<Box<DiffData>>,
 }
 
 impl ZoneBuilder {
@@ -259,14 +259,14 @@ impl ZoneBuilder {
 
         // Create the diff.
         if let Some(reader) = self.curr_unsigned() {
-            self.unsigned_diff = Some(DiffData {
+            self.unsigned_diff = Some(Box::new(DiffData {
                 removed_soa: Some(reader.soa().clone()),
                 added_soa: None,
                 removed_records: reader.records().to_vec(),
                 added_records: Vec::new(),
-            });
+            }));
         } else {
-            self.unsigned_diff = Some(DiffData::new());
+            self.unsigned_diff = Some(Box::new(DiffData::new()));
         }
     }
 
@@ -322,7 +322,7 @@ impl ZoneBuilder {
     /// between the two (from the old instance to the new one) can be accessed
     /// here.
     pub fn unsigned_diff(&self) -> Option<&DiffData> {
-        self.unsigned_diff.as_ref()
+        self.unsigned_diff.as_deref()
     }
 }
 
@@ -416,14 +416,14 @@ impl ZoneBuilder {
 
         // Create the diff.
         if let Some(reader) = self.curr_signed() {
-            self.signed_diff = Some(DiffData {
+            self.signed_diff = Some(Box::new(DiffData {
                 removed_soa: Some(reader.soa().clone()),
                 added_soa: None,
                 removed_records: reader.records().to_vec(),
                 added_records: Vec::new(),
-            });
+            }));
         } else {
-            self.signed_diff = Some(DiffData::new());
+            self.signed_diff = Some(Box::new(DiffData::new()));
         }
     }
 
@@ -479,7 +479,7 @@ impl ZoneBuilder {
     /// between the two (from the old instance to the new one) can be accessed
     /// here.
     pub fn signed_diff(&self) -> Option<&DiffData> {
-        self.signed_diff.as_ref()
+        self.signed_diff.as_deref()
     }
 }
 
@@ -574,7 +574,7 @@ pub struct SignedZoneBuilder {
     ///
     /// If this is `Some`, the signed component has been prepared, and will not
     /// be modified further.
-    signed_diff: Option<DiffData>,
+    signed_diff: Option<Box<DiffData>>,
 }
 
 impl SignedZoneBuilder {
@@ -811,14 +811,14 @@ impl SignedZoneBuilder {
 
         // Create the diff.
         if let Some(reader) = self.curr_signed() {
-            self.signed_diff = Some(DiffData {
+            self.signed_diff = Some(Box::new(DiffData {
                 removed_soa: Some(reader.soa().clone()),
                 added_soa: None,
                 removed_records: reader.records().to_vec(),
                 added_records: Vec::new(),
-            });
+            }));
         } else {
-            self.signed_diff = Some(DiffData::new());
+            self.signed_diff = Some(Box::new(DiffData::new()));
         }
     }
 
@@ -874,7 +874,7 @@ impl SignedZoneBuilder {
     /// between the two (from the old instance to the new one) can be accessed
     /// here.
     pub fn signed_diff(&self) -> Option<&DiffData> {
-        self.signed_diff.as_ref()
+        self.signed_diff.as_deref()
     }
 }
 
@@ -904,7 +904,7 @@ pub struct UnsignedZoneBuilt {
     pub(crate) data: Arc<Data>,
 
     /// The unsigned diff.
-    pub(crate) unsigned_diff: DiffData,
+    pub(crate) unsigned_diff: Box<DiffData>,
 }
 
 //----------- ZoneBuilt --------------------------------------------------------
@@ -915,10 +915,10 @@ pub struct ZoneBuilt {
     pub(crate) data: Arc<Data>,
 
     /// The unsigned diff.
-    pub(crate) unsigned_diff: DiffData,
+    pub(crate) unsigned_diff: Box<DiffData>,
 
     /// The signed diff.
-    pub(crate) signed_diff: DiffData,
+    pub(crate) signed_diff: Box<DiffData>,
 }
 
 //----------- SignedZoneBuilt --------------------------------------------------
@@ -929,5 +929,5 @@ pub struct SignedZoneBuilt {
     pub(crate) data: Arc<Data>,
 
     /// The signed diff.
-    pub(crate) signed_diff: DiffData,
+    pub(crate) signed_diff: Box<DiffData>,
 }

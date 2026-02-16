@@ -32,7 +32,7 @@ pub struct UnsignedZoneReplacer<'d> {
     /// The built diff.
     ///
     /// This exists iff building succeeds.
-    diff: &'d mut Option<DiffData>,
+    diff: &'d mut Option<Box<DiffData>>,
 }
 
 impl<'d> UnsignedZoneReplacer<'d> {
@@ -44,7 +44,7 @@ impl<'d> UnsignedZoneReplacer<'d> {
     pub(crate) const fn new(
         curr: &'d InstanceData,
         next: &'d mut InstanceData,
-        diff: &'d mut Option<DiffData>,
+        diff: &'d mut Option<Box<DiffData>>,
     ) -> Self {
         assert!(next.soa.is_none(), "'next' is not empty");
         assert!(diff.is_none());
@@ -116,7 +116,7 @@ pub struct UnsignedZonePatcher<'d> {
     next: &'d mut InstanceData,
 
     /// The built diff.
-    diff: &'d mut Option<DiffData>,
+    diff: &'d mut Option<Box<DiffData>>,
 
     /// An accumulated diff.
     accumulated: DiffData,
@@ -137,7 +137,7 @@ impl<'d> UnsignedZonePatcher<'d> {
     pub(crate) const fn new(
         curr: &'d InstanceData,
         next: &'d mut InstanceData,
-        diff: &'d mut Option<DiffData>,
+        diff: &'d mut Option<Box<DiffData>>,
     ) -> Self {
         assert!(curr.soa.is_some());
         assert!(next.soa.is_none());
@@ -250,7 +250,7 @@ pub struct SignedZoneReplacer<'d> {
     /// The built diff.
     ///
     /// This exists iff `curr.is_some()` and building succeeds.
-    diff: &'d mut Option<DiffData>,
+    diff: &'d mut Option<Box<DiffData>>,
 }
 
 impl<'d> SignedZoneReplacer<'d> {
@@ -262,7 +262,7 @@ impl<'d> SignedZoneReplacer<'d> {
     pub(crate) const fn new(
         curr: &'d InstanceData,
         next: &'d mut InstanceData,
-        diff: &'d mut Option<DiffData>,
+        diff: &'d mut Option<Box<DiffData>>,
     ) -> Self {
         assert!(next.soa.is_none(), "'next' is not empty");
         assert!(diff.is_none());
@@ -334,7 +334,7 @@ pub struct SignedZonePatcher<'d> {
     next: &'d mut InstanceData,
 
     /// The built diff.
-    diff: &'d mut Option<DiffData>,
+    diff: &'d mut Option<Box<DiffData>>,
 
     /// An accumulated diff.
     accumulated: DiffData,
@@ -355,7 +355,7 @@ impl<'d> SignedZonePatcher<'d> {
     pub(crate) const fn new(
         curr: &'d InstanceData,
         next: &'d mut InstanceData,
-        diff: &'d mut Option<DiffData>,
+        diff: &'d mut Option<Box<DiffData>>,
     ) -> Self {
         assert!(curr.soa.is_some());
         assert!(next.soa.is_none());
@@ -461,7 +461,7 @@ impl Drop for SignedZonePatcher<'_> {
 fn apply_replacement(
     curr: &InstanceData,
     next: &mut InstanceData,
-) -> Result<DiffData, ReplaceError> {
+) -> Result<Box<DiffData>, ReplaceError> {
     let Some(soa) = &next.soa else {
         return Err(ReplaceError::MissingSoa);
     };
@@ -487,19 +487,19 @@ fn apply_replacement(
             }
         }
 
-        Ok(DiffData {
+        Ok(Box::new(DiffData {
             removed_soa: curr.soa.clone(),
             added_soa: Some(soa.clone()),
             removed_records,
             added_records,
-        })
+        }))
     } else {
-        Ok(DiffData {
+        Ok(Box::new(DiffData {
             removed_soa: None,
             added_soa: Some(soa.clone()),
             removed_records: Vec::new(),
             added_records: next.records.clone(),
-        })
+        }))
     }
 }
 
@@ -589,7 +589,7 @@ fn apply_patches(
     curr: &InstanceData,
     next: &mut InstanceData,
     accumulated: &mut DiffData,
-) -> Result<DiffData, PatchError> {
+) -> Result<Box<DiffData>, PatchError> {
     // Make sure changes happened.
     if accumulated.is_empty() {
         return Err(PatchError::Empty);
@@ -626,7 +626,7 @@ fn apply_patches(
         }
     }
 
-    Ok(std::mem::take(accumulated))
+    Ok(Box::new(std::mem::take(accumulated)))
 }
 
 //============ Errors ==========================================================

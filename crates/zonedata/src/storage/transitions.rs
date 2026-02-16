@@ -89,7 +89,7 @@ impl BuildingStorage {
             "'built' is for a different zone"
         );
 
-        let unsigned_diff = Arc::new(built.unsigned_diff);
+        let unsigned_diff = Arc::new(*built.unsigned_diff);
 
         let reviewer = unsafe {
             UnsignedZoneReviewer::new(
@@ -123,8 +123,8 @@ impl BuildingStorage {
             "'built' is for a different zone"
         );
 
-        let unsigned_diff = Arc::new(built.unsigned_diff);
-        let signed_diff = Arc::new(built.signed_diff);
+        let unsigned_diff = Arc::new(*built.unsigned_diff);
+        let signed_diff = Arc::new(*built.signed_diff);
 
         let ureviewer = unsafe {
             UnsignedZoneReviewer::new(
@@ -193,7 +193,7 @@ impl BuildingSignedStorage {
             "'built' is for a different zone"
         );
 
-        let signed_diff = Arc::new(built.signed_diff);
+        let signed_diff = Arc::new(*built.signed_diff);
 
         let reviewer = unsafe {
             ZoneReviewer::new(
@@ -277,7 +277,7 @@ impl BuildingResignedStorage {
             "'built' is for a different zone"
         );
 
-        let signed_diff = Arc::new(built.signed_diff);
+        let signed_diff = Arc::new(*built.signed_diff);
 
         let reviewer = unsafe {
             ZoneReviewer::new(
