@@ -183,7 +183,8 @@ impl KeyManager {
         }
     }
 
-    pub fn change_policy(
+    pub fn on_zone_policy_changed(
+        &self,
         center: &Arc<Center>,
         name: StoredName,
         old: Option<Arc<PolicyVersion>>,
@@ -191,13 +192,14 @@ impl KeyManager {
     ) {
         let center = center.clone();
 
+        if let Some(old) = old
+            && old.key_manager == new.key_manager
+        {
+            // Nothing changed.
+            return;
+        }
+
         tokio::spawn(async move {
-            if let Some(old) = old
-                && old.key_manager == new.key_manager
-            {
-                // Nothing changed.
-                return;
-            }
             // Keep it simple, just send all config items to keyset even
             // if they didn't change.
             let config_commands = policy_to_commands(&new);

@@ -1,13 +1,11 @@
 //! The policy file.
 
-use std::{fs, io, sync::Arc};
+use std::{fs, io};
 
 use camino::Utf8Path;
-use cascade_api::PolicyChange;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
-use crate::zone::ZoneByName;
+use crate::policy::PolicyVersion;
 
 use super::Policy;
 
@@ -26,57 +24,11 @@ pub enum Spec {
 //--- Conversion
 
 impl Spec {
-    /// Parse a new [`Policy`].
-    pub fn parse(self, name: &str) -> Policy {
-        let latest = Arc::new(match self {
+    /// Parse a new [`PolicyVersion`].
+    pub fn parse(self, name: &str) -> PolicyVersion {
+        match self {
             Self::V1(spec) => spec.parse(name),
-        });
-
-        Policy {
-            latest: latest.clone(),
-            mid_deletion: false,
-            zones: Default::default(),
         }
-    }
-
-    /// Merge with an existing [`Policy`].
-    ///
-    /// Returns `true` if the policy has changed.
-    #[allow(clippy::mutable_key_type)]
-    pub fn parse_into(
-        self,
-        existing: &mut Policy,
-        zones: &foldhash::HashSet<ZoneByName>,
-        mut on_change: impl FnMut(&Box<str>, PolicyChange),
-    ) -> bool {
-        let latest = &*existing.latest;
-        let new = match self {
-            Self::V1(spec) => spec.parse(&latest.name),
-        };
-
-        if *latest == new {
-            // The policy has not changed.
-            return false;
-        }
-
-        // The policy has changed.
-        let new = Arc::new(new);
-        let old = core::mem::replace(&mut existing.latest, new.clone());
-
-        // Output change notifications.
-        info!("Updated policy '{}'", new.name);
-        (on_change)(&new.name, PolicyChange::Updated);
-        for zone in &existing.zones {
-            let zone = zones.get(zone).expect("zones and policies are consistent");
-            let mut state = zone.0.state.lock().unwrap();
-            let old_for_zone = state.policy.replace(new.clone());
-            assert_eq!(
-                Some(&old.name),
-                old_for_zone.as_ref().map(|z| &z.name),
-                "zones and policies are consistent"
-            );
-        }
-        true
     }
 
     /// Build into this specification.

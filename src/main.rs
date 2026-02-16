@@ -106,10 +106,29 @@ fn main() -> ExitCode {
         }
 
         // Load all policies.
-        if let Err(err) = policy::reload_all(&mut state.policies, &state.zones, &config, |_, _| {})
-        {
-            error!("Cascade couldn't load all policies: {err}");
-            return ExitCode::FAILURE;
+        match policy::reload_all(&mut state.policies, &config, |_, _| {}) {
+            Err(err) => {
+                error!("Cascade couldn't load all policies: {err}");
+                return ExitCode::FAILURE;
+            }
+            Ok(updates) => {
+                for (name, _old) in updates {
+                    let pol = state
+                        .policies
+                        .get(&name)
+                        .expect("we just reloaded these policies");
+
+                    for zone_name in &pol.zones {
+                        let zone = state
+                            .zones
+                            .get(zone_name)
+                            .expect("zones and policies are consistent");
+
+                        let mut state = zone.0.state.lock().expect("lock isn't poisoned");
+                        state.policy = Some(pol.latest.clone());
+                    }
+                }
+            }
         }
 
         // TODO: Fail if any zone state files exist.
