@@ -9,7 +9,7 @@ use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 
-use crate::center::{Center, Change, State};
+use crate::center::{Center, State};
 
 pub mod v1;
 
@@ -53,9 +53,9 @@ pub enum Spec {
 
 impl Spec {
     /// Parse from this specification.
-    pub fn parse_into(self, state: &mut State, on_change: impl FnMut(Change)) {
+    pub fn parse_into(self, state: &mut State) {
         match self {
-            Self::V1(spec) => spec.parse_into(state, on_change),
+            Self::V1(spec) => spec.parse_into(state),
         }
     }
 

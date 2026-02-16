@@ -22,14 +22,14 @@ use domain::{
     tsig,
     zonetree::{StoredName, ZoneBuilder},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
-    center::{Center, Change, State},
+    center::{Center, State, get_zone},
     loader::zone::LoaderZoneHandle,
-    manager::Update,
+    manager::record_zone_event,
     util::AbortOnDrop,
-    zone::{Zone, ZoneContents, contents},
+    zone::{HistoricalEvent, PipelineMode, Zone, ZoneContents, contents},
 };
 
 mod refresh;
@@ -77,10 +77,7 @@ impl Loader {
         }))
     }
 
-    pub fn on_change(&self, center: &Arc<Center>, change: Change) {
-        let Change::ZoneRemoved(name) = change else {
-            return;
-        };
+    pub fn remove_zone(&self, center: &Arc<Center>, name: &StoredName) {
         // We have to get the reference to the zone from our refresh monitor
         // because it doesn't exist in center.zones anymore!
         // Ideally, the ZoneRemoved command would pass the zone as Arc<Zone>
@@ -245,13 +242,40 @@ async fn refresh(
             // Inform the central command.
             let zone_name = zone_copy.name.clone();
             let zone_serial = domain::base::Serial(serial.into());
-            center
-                .update_tx
-                .send(Update::UnsignedZoneUpdatedEvent {
-                    zone_name,
-                    zone_serial,
-                })
-                .unwrap();
+
+            record_zone_event(
+                &center,
+                &zone_name,
+                HistoricalEvent::NewVersionReceived,
+                Some(zone_serial),
+            );
+
+            if let Some(zone) = get_zone(&center, &zone_name)
+                && let Ok(mut zone_state) = zone.state.lock()
+            {
+                match zone_state.pipeline_mode.clone() {
+                    PipelineMode::Running => {}
+                    PipelineMode::SoftHalt(message) => {
+                        info!(
+                            "[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running"
+                        );
+                        zone_state.resume();
+                    }
+                    PipelineMode::HardHalt(_) => {
+                        warn!(
+                            "[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted"
+                        );
+                        return;
+                    }
+                }
+            }
+
+            info!("[CC]: Instructing review server to publish the unsigned zone");
+            center.unsigned_review_server.on_seek_approval_for_zone(
+                &center,
+                zone_name,
+                zone_serial,
+            );
         }
 
         Err(err) => {

@@ -11,7 +11,7 @@ use tracing::{error, info, trace};
 use crate::policy::file::v1::OutboundSpec;
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
 use crate::{
-    center::{Change, State},
+    center::State,
     policy::{
         KeyManagerPolicy, LoaderPolicy, Policy, PolicyVersion, ReviewPolicy, ServerPolicy,
         SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
@@ -39,7 +39,7 @@ pub struct Spec {
 
 impl Spec {
     /// Parse from this specification.
-    pub fn parse_into(self, state: &mut State, mut on_change: impl FnMut(Change)) {
+    pub fn parse_into(self, state: &mut State) {
         // TODO: There may be interdependencies between zones and policies
         // (e.g. if a removed policy was being used by a removed zone), so we
         // can't just update them one after the other.
@@ -50,14 +50,12 @@ impl Spec {
             let policy = match state.policies.remove(&name) {
                 Some(mut policy) => {
                     trace!("Retaining existing policy '{name}'");
-                    spec.parse_into(&mut policy, &mut on_change);
+                    spec.parse_into(&mut policy);
                     policy
                 }
                 None => {
                     info!("Adding policy '{name}' from global state");
-                    let policy = spec.parse(&name);
-                    (on_change)(Change::PolicyAdded(policy.latest.clone()));
-                    policy
+                    spec.parse(&name)
                 }
             };
             new_policies.insert(name, policy);
@@ -70,7 +68,6 @@ impl Spec {
                 new_policies.insert(name, policy);
             } else {
                 info!("Removing policy '{name}'");
-                (on_change)(Change::PolicyRemoved(policy.latest));
             }
         }
         state.policies = new_policies;
@@ -91,10 +88,7 @@ impl Spec {
                 }
             })
             .collect();
-        for zone in state.zones.drain() {
-            info!("Removing zone '{}'", zone.0.name);
-            (on_change)(Change::ZoneRemoved(zone.0.name.clone()));
-        }
+
         state.zones = new_zones;
     }
 
@@ -137,20 +131,12 @@ impl PolicySpec {
     }
 
     /// Merge from this specification.
-    pub fn parse_into(self, policy: &mut Policy, mut on_change: impl FnMut(Change)) {
+    pub fn parse_into(self, policy: &mut Policy) {
         let name = &policy.latest.name;
         let latest = self.latest.parse(name);
         if *policy.latest != latest {
             let new = Arc::new(latest);
-            let old = core::mem::replace(&mut policy.latest, new.clone());
-            (on_change)(Change::PolicyChanged(old.clone(), new.clone()));
-            for zone in &policy.zones {
-                (on_change)(Change::ZonePolicyChanged {
-                    name: zone.clone(),
-                    old: Some(old.clone()),
-                    new: new.clone(),
-                });
-            }
+            let _ = core::mem::replace(&mut policy.latest, new.clone());
         }
         // TODO: How does this affect zones using the policy?
         policy.mid_deletion |= self.mid_deletion;

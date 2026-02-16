@@ -43,9 +43,9 @@ use crate::api::{
     SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
     SigningRequestedReport, SigningStageReport,
 };
-use crate::center::{Center, Change, get_zone};
+use crate::center::{Center, get_zone, halt_zone};
 use crate::common::light_weight_zone::LightWeightZone;
-use crate::manager::{Terminated, Update};
+use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
@@ -55,7 +55,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEventType, PipelineMode, SigningTrigger};
+use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, SigningTrigger};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -250,10 +250,6 @@ impl ZoneSigner {
         })
     }
 
-    pub fn on_change(&self, _center: &Arc<Center>, _change: Change) {
-        // nothing to do
-    }
-
     pub fn on_sign_zone(
         &self,
         center: &Arc<Center>,
@@ -281,15 +277,17 @@ impl ZoneSigner {
                 } else {
                     error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
 
-                    center
-                        .update_tx
-                        .send(Update::ZoneSigningFailedEvent {
-                            zone_name,
-                            zone_serial,
+                    halt_zone(&center, &zone_name, true, &err.to_string());
+
+                    record_zone_event(
+                        &center,
+                        &zone_name,
+                        HistoricalEvent::SigningFailed {
                             trigger,
                             reason: err.to_string(),
-                        })
-                        .unwrap();
+                        },
+                        zone_serial,
+                    );
                 }
             }
         });
@@ -1074,15 +1072,20 @@ impl ZoneSigner {
             total_time.as_secs_f64()
         );
 
-        // Notify Central Command that we have finished.
-        center
-            .update_tx
-            .send(Update::ZoneSignedEvent {
-                zone_name: zone_name.clone(),
-                zone_serial,
-                trigger,
-            })
-            .unwrap();
+        record_zone_event(
+            center,
+            zone_name,
+            HistoricalEvent::SigningSucceeded { trigger },
+            Some(zone_serial),
+        );
+
+        // Notify the review server that the zone is ready.
+        info!("Instructing review server to publish the signed zone");
+        center.signed_review_server.on_seek_approval_for_zone(
+            center,
+            zone_name.clone(),
+            zone_serial,
+        );
 
         Ok(())
     }
@@ -1260,13 +1263,13 @@ impl ZoneSigner {
                     let mut resign_busy = center.resign_busy.lock().expect("should not fail");
                     resign_busy.insert(zone_name.clone(), min_expiration);
                 }
-                center
-                    .update_tx
-                    .send(Update::ResignZoneEvent {
-                        zone_name: zone_name.clone(),
-                        trigger: SigningTrigger::SignatureExpiration,
-                    })
-                    .unwrap();
+                info!("[CC]: Instructing zone signer to re-sign the zone");
+                self.on_sign_zone(
+                    center,
+                    zone_name.clone(),
+                    None,
+                    SigningTrigger::SignatureExpiration,
+                );
             }
         }
     }

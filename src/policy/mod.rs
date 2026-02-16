@@ -6,13 +6,12 @@ use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
 use camino::Utf8PathBuf;
+use cascade_api::PolicyChange;
 use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
-use crate::center::Change;
-use crate::zone::ZoneByName;
 use crate::{api::PolicyReloadError, config::Config};
 
 pub mod file;
@@ -38,34 +37,76 @@ pub struct Policy {
 
 //--- Loading / Saving
 
-impl Policy {
-    /// Reload this policy.
-    #[allow(clippy::mutable_key_type)]
-    pub fn reload(
-        &mut self,
-        config: &Config,
-        zones: &foldhash::HashSet<ZoneByName>,
-        on_change: impl FnMut(Change),
-    ) -> io::Result<()> {
-        // TODO: Carefully consider how 'config.policy_dir' and the path last
-        // loaded from are synchronized.
-
-        let path = config.policy_dir.join(format!("{}.toml", self.latest.name));
-        file::Spec::load(&path)?.parse_into(self, zones, on_change);
-        Ok(())
-    }
-}
-
 /// Reload all policies.
-#[allow(clippy::mutable_key_type)]
+///
+/// Returns the names of the policies that have been updated or added, because
+/// the zones for those policies need to be notified.
+#[expect(clippy::type_complexity)]
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
-    zones: &foldhash::HashSet<ZoneByName>,
     config: &Config,
-    mut on_change: impl FnMut(Change),
-) -> Result<(), PolicyReloadError> {
-    // TODO: This function is not atomic: it may have effects even if it fails.
+    mut on_change: impl FnMut(&Box<str>, PolicyChange),
+) -> Result<Vec<(Box<str>, Option<Arc<PolicyVersion>>)>, PolicyReloadError> {
+    let new_versions = load_all(policies, config)?;
 
+    let mut new_policies = foldhash::HashMap::default();
+
+    let mut updated = Vec::new();
+
+    for (name, new_version) in new_versions {
+        if let Some(mut pol) = policies.remove(&name) {
+            if *pol.latest == new_version {
+                new_policies.insert(name, pol);
+            } else {
+                let old = std::mem::replace(&mut pol.latest, Arc::new(new_version));
+                (on_change)(&name, PolicyChange::Updated);
+
+                updated.push((name.clone(), Some(old)));
+
+                new_policies.insert(name, pol);
+            }
+        } else {
+            (on_change)(&name, PolicyChange::Added);
+            updated.push((name.clone(), None));
+            new_policies.insert(
+                name,
+                Policy {
+                    latest: Arc::new(new_version),
+                    mid_deletion: false,
+                    zones: Default::default(),
+                },
+            );
+        }
+    }
+
+    // Traverse policies whose files were not found.
+    for (name, policy) in policies.drain() {
+        // If any zones are using this policy, keep it.
+        if !policy.zones.is_empty() {
+            error!(
+                "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
+            );
+            let prev = new_policies.insert(name, policy);
+            assert!(
+                prev.is_none(),
+                "'new_policies' and 'policies' are disjoint sets"
+            );
+        } else {
+            info!("Forgetting now-removed policy '{name}'");
+            (on_change)(&policy.latest.name, PolicyChange::Removed);
+        }
+    }
+
+    // Update the set of policies.
+    *policies = new_policies;
+
+    Ok(updated)
+}
+
+pub fn load_all(
+    policies: &foldhash::HashMap<Box<str>, Policy>,
+    config: &Config,
+) -> Result<foldhash::HashMap<Box<str>, PolicyVersion>, PolicyReloadError> {
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
     let mut new_policies = foldhash::HashMap::<_, _>::default();
@@ -123,43 +164,20 @@ pub fn reload_all(
         let name = path
             .file_stem()
             .expect("this path points to a readable file, so it must have a file name");
-        let policy = if let Some(mut policy) = policies.remove(name) {
-            spec.parse_into(&mut policy, zones, &mut on_change);
-            policy
+
+        let policy = spec.parse(name);
+        if policies.contains_key(name) {
+            info!("Reloaded policy '{name}'");
         } else {
             info!("Loaded new policy '{name}'");
-            let policy = spec.parse(name);
-            (on_change)(Change::PolicyAdded(policy.latest.clone()));
-            policy
-        };
+        }
 
         // Record the new policy.
         let prev = new_policies.insert(name.into(), policy);
         assert!(prev.is_none(), "there is at most one policy per path");
     }
 
-    // Traverse policies whose files were not found.
-    for (name, policy) in policies.drain() {
-        // If any zones are using this policy, keep it.
-        if !policy.zones.is_empty() {
-            error!(
-                "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
-            );
-            let prev = new_policies.insert(name, policy);
-            assert!(
-                prev.is_none(),
-                "'new_policies' and 'policies' are disjoint sets"
-            );
-        } else {
-            info!("Forgetting now-removed policy '{name}'");
-            (on_change)(Change::PolicyRemoved(policy.latest));
-        }
-    }
-
-    // Update the set of policies.
-    *policies = new_policies;
-
-    Ok(())
+    Ok(new_policies)
 }
 
 //----------- PolicyVersion ----------------------------------------------------
