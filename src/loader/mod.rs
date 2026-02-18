@@ -16,20 +16,15 @@ use std::{
 
 use camino::Utf8Path;
 use cascade_api::ZoneReloadError;
-use domain::{
-    base::iana::Class,
-    new::base::Serial,
-    tsig,
-    zonetree::{StoredName, ZoneBuilder},
-};
+use cascade_zonedata::ZoneBuilder;
+use domain::{new::base::Serial, tsig, zonetree::StoredName};
 use tracing::{debug, error, info};
 
 use crate::{
     center::{Center, Change, State},
-    loader::zone::LoaderZoneHandle,
-    manager::Update,
+    loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{Zone, ZoneContents, contents},
+    zone::{Zone, ZoneHandle},
 };
 
 mod refresh;
@@ -61,11 +56,12 @@ impl Loader {
         // Enqueue refreshes for all known zones.
         for zone in &state.zones {
             let mut state = zone.0.state.lock().unwrap();
-            LoaderZoneHandle {
+            ZoneHandle {
                 zone: &zone.0,
                 state: &mut state,
                 center,
             }
+            .loader()
             .enqueue_refresh(false);
         }
     }
@@ -94,11 +90,12 @@ impl Loader {
             .find(|z| z.zone.0.name == name)
         {
             let mut state = zone.zone.0.state.lock().unwrap();
-            LoaderZoneHandle {
+            ZoneHandle {
                 zone: &zone.zone.0,
                 state: &mut state,
                 center,
             }
+            .loader()
             .prep_removal();
         }
     }
@@ -106,11 +103,12 @@ impl Loader {
     pub fn on_refresh_zone(&self, center: &Arc<Center>, zone_name: StoredName) {
         let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
         let mut state = zone.state.lock().expect("lock is not poisoned");
-        LoaderZoneHandle {
+        ZoneHandle {
             zone: &zone,
             state: &mut state,
             center,
         }
+        .loader()
         .enqueue_refresh(false);
     }
 
@@ -128,11 +126,12 @@ impl Loader {
         if let Source::None = zone_state.loader.source {
             return Err(ZoneReloadError::ZoneWithoutSource);
         }
-        LoaderZoneHandle {
+        ZoneHandle {
             zone: &zone,
             state: &mut zone_state,
             center,
         }
+        .loader()
         .enqueue_refresh(true);
         Ok(())
     }
@@ -147,140 +146,138 @@ impl Default for Loader {
 //----------- refresh() --------------------------------------------------------
 
 /// Refresh a zone.
+#[tracing::instrument(
+    level = "debug",
+    skip_all,
+    fields(zone = %zone.name, source = ?source),
+)]
 async fn refresh(
     zone: Arc<Zone>,
     source: Source,
-    force: bool,
-    mut contents: tokio::sync::OwnedMutexGuard<Option<ZoneContents>>,
+    refresh: EnqueuedRefresh,
+    mut builder: ZoneBuilder,
     center: Arc<Center>,
     metrics: Arc<ActiveLoadMetrics>,
 ) {
     info!("Refreshing {:?}", zone.name);
-
-    let source_is_server = matches!(&source, Source::Server { .. });
-    let old_soa = contents.as_ref().map(|c| c.soa.clone());
+    let force = refresh == EnqueuedRefresh::Reload;
 
     // Perform the source-specific reload into the zone contents.
     let result = match source {
-        Source::None => Ok(None),
+        Source::None => Ok(false),
         Source::Zonefile { path } => {
+            // Zonefile loading is a synchronous process, so it is executing on
+            // its own blocking task. It cannot borrow 'builder', so 'builder'
+            // is moved and returned by value.
             let zone = zone.clone();
             let metrics = metrics.clone();
-            tokio::task::spawn_blocking(move || {
-                zonefile::load(&zone, &path, &mut contents, &metrics)
-                    .map(|()| Some(contents))
-                    .map_err(Into::into)
+            let result;
+            (builder, result) = tokio::task::spawn_blocking(move || {
+                let result = zonefile::load(&zone, &path, &mut builder, &metrics);
+                (builder, result)
             })
             .await
-            .unwrap()
+            .unwrap();
+            result.map(|()| true).map_err(Into::into)
         }
         Source::Server { addr, tsig_key } if force => {
             let tsig_key = tsig_key.as_deref().cloned();
-            server::axfr(&zone, &addr, tsig_key, &mut contents, &metrics)
+            server::axfr(&zone, &addr, tsig_key, &mut builder, &metrics)
                 .await
-                .map(|()| Some(contents))
+                .map(|()| true)
                 .map_err(Into::into)
         }
         Source::Server { addr, tsig_key } => {
             let tsig_key = tsig_key.as_deref().cloned();
-            server::refresh(&zone, &addr, tsig_key, &mut contents, &metrics)
-                .await
-                .map(|new| new.then_some(contents))
+            server::refresh(&zone, &addr, tsig_key, &mut builder, &metrics).await
         }
     };
 
-    // On success, use the updated SOA record for scheduling.
-    let soa = result
-        .as_ref()
-        .ok()
-        .and_then(|c| c.as_ref())
-        .map(|c| c.as_ref().unwrap().soa.clone())
-        .or(old_soa);
-
-    // Finalize the load metrics and update refresh timer state.
-    {
-        let mut lock = zone.state.lock().unwrap();
-        let state = &mut *lock;
-        let start_time = metrics.start.0;
-        state.loader.active_load_metrics = None;
-        state.loader.last_load_metrics = Some(metrics.finish());
-
-        // Zonefiles are not refreshed automatically so we don't schedule a
-        // refresh or a retry. The user should just reload again when the
-        // zonefile has updated or been fixed if it was in a broken state.
-        if source_is_server {
-            let refresh_timer = &mut state.loader.refresh_timer;
-            let refresh_monitor = &center.loader.refresh_monitor;
-            if result.is_ok() {
-                refresh_timer.schedule_refresh(&zone, start_time, soa.as_ref(), refresh_monitor);
-            } else {
-                refresh_timer.schedule_retry(&zone, start_time, soa.as_ref(), refresh_monitor);
-            }
-        }
-    }
-
-    // Process the result of the reload.
-    match result {
-        Ok(None) => {
-            debug!("{:?} is up-to-date and consistent", zone.name);
-        }
-
-        Ok(Some(contents)) => {
-            let new_contents = contents.as_ref().unwrap();
-            let serial = new_contents.soa.rdata.serial;
-            debug!("Loaded serial {serial:?} for {:?}", zone.name);
-
-            let zone_copy = zone.clone();
-
-            let zonetree = ZoneBuilder::new(zone_copy.name.clone(), Class::IN).build();
-            new_contents.write_into_zonetree(&zonetree).await;
-
-            center.unsigned_zones.rcu(|tree| {
-                let mut tree = Arc::unwrap_or_clone(tree.clone());
-                let _ = tree.remove_zone(&zone_copy.name, Class::IN);
-                tree.insert_zone(zonetree.clone()).unwrap();
-                tree
-            });
-
-            // Inform the central command.
-            let zone_name = zone_copy.name.clone();
-            let zone_serial = domain::base::Serial(serial.into());
-            center
-                .update_tx
-                .send(Update::UnsignedZoneUpdatedEvent {
-                    zone_name,
-                    zone_serial,
-                })
-                .unwrap();
-        }
-
-        Err(err) => {
-            error!("Could not reload {:?}: {err}", zone.name);
-        }
-    }
-
-    let mut lock = zone.state.lock().unwrap();
-    let mut handle = LoaderZoneHandle {
+    let mut state = zone.state.lock().unwrap();
+    let mut handle = ZoneHandle {
         zone: &zone,
-        state: &mut lock,
+        state: &mut state,
         center: &center,
     };
 
-    // Update the state of ongoing refreshes.
-    let id = tokio::task::id();
-    let enqueued = match handle.state.loader.refreshes.take() {
-        Some(zone::Refreshes {
-            ongoing: zone::OngoingRefresh { handle },
-            enqueued,
-        }) if handle.id() == id => enqueued,
-        refreshes => {
-            panic!("ongoing reload ({id:?}) is unregistered (state: {refreshes:?})")
-        }
-    };
+    // Finalize the load metrics.
+    let start_time = metrics.start.0;
+    handle.state.loader.active_load_metrics = None;
+    handle.state.loader.last_load_metrics = Some(metrics.finish());
 
-    // Start the next enqueued refresh.
-    if let Some(refresh) = enqueued {
-        handle.start(refresh);
+    // Update the SOA refresh timer state.
+    //
+    // NOTE: Zonefiles don't use the SOA refresh timers. They are only
+    // (re)loaded by user request.
+    if matches!(handle.state.loader.source, Source::Server { .. }) {
+        // Load the SOA.
+        let soa = if matches!(result, Ok(true)) {
+            Some(builder.next_unsigned().unwrap().soa().clone())
+        } else {
+            builder.curr_unsigned().map(|r| r.soa().clone())
+        };
+
+        let refresh_timer = &mut handle.state.loader.refresh_timer;
+        let refresh_monitor = &center.loader.refresh_monitor;
+        if result.is_ok() {
+            refresh_timer.schedule_refresh(&zone, start_time, soa.as_ref(), refresh_monitor);
+        } else {
+            refresh_timer.schedule_retry(&zone, start_time, soa.as_ref(), refresh_monitor);
+        }
+    }
+
+    // Clean up the background task.
+    let task = handle
+        .state
+        .loader
+        .refreshes
+        .ongoing
+        .take()
+        .expect("The loader task is set correctly");
+    assert_eq!(
+        task.handle.id(),
+        tokio::task::id(),
+        "A different loader task is registered"
+    );
+
+    // Process the result of the reload.
+    match result {
+        Ok(false) => {
+            debug!(
+                zone = %zone.name,
+                "The zone is up-to-date"
+            );
+
+            // Cancel the load from the perspective of zone storage.
+            handle.storage().give_up_load(builder);
+        }
+
+        Ok(true) => {
+            let soa = builder.next_unsigned().unwrap().soa().clone();
+
+            debug!(
+                zone = %zone.name,
+                serial = ?soa.rdata.serial,
+                "Loaded a new instance of the zone"
+            );
+
+            // Inform the zone storage of completion; it will initiate unsigned
+            // review automatically.
+            let built = builder.finish_unsigned().unwrap_or_else(|_| {
+                unreachable!("source-specific loading succeeded and must have filled 'builder'")
+            });
+            handle.storage().finish_load(built);
+        }
+
+        Err(err) => {
+            error!(
+                zone = %zone.name,
+                "Could not load the zone: {err}"
+            );
+
+            // Cancel the load from the perspective of zone storage.
+            handle.storage().give_up_load(builder);
+        }
     }
 }
 
@@ -466,12 +463,6 @@ pub enum RefreshError {
     /// The zonefile could not be loaded.
     Zonefile(zonefile::Error),
 
-    /// An IXFR's diff was internally inconsistent.
-    MergeIxfr(contents::MergeError),
-
-    /// An IXFR's diff was not consistent with the local copy.
-    ForwardIxfr(contents::ForwardError),
-
     /// While we were processing a refresh another refresh or reload happened, changing the serial
     LocalSerialChanged,
 }
@@ -484,8 +475,6 @@ impl std::error::Error for RefreshError {
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
             Self::Zonefile(error) => Some(error),
-            Self::MergeIxfr(error) => Some(error),
-            Self::ForwardIxfr(error) => Some(error),
         }
     }
 }
@@ -517,15 +506,6 @@ impl fmt::Display for RefreshError {
             RefreshError::Zonefile(error) => {
                 write!(f, "the zonefile could not be loaded: {error}")
             }
-            RefreshError::MergeIxfr(error) => {
-                write!(f, "the IXFR was internally inconsistent: {error}")
-            }
-            RefreshError::ForwardIxfr(error) => {
-                write!(
-                    f,
-                    "the IXFR was inconsistent with the local zone contents: {error}"
-                )
-            }
         }
     }
 }
@@ -547,17 +527,5 @@ impl From<server::AxfrError> for RefreshError {
 impl From<zonefile::Error> for RefreshError {
     fn from(v: zonefile::Error) -> Self {
         Self::Zonefile(v)
-    }
-}
-
-impl From<contents::MergeError> for RefreshError {
-    fn from(v: contents::MergeError) -> Self {
-        Self::MergeIxfr(v)
-    }
-}
-
-impl From<contents::ForwardError> for RefreshError {
-    fn from(v: contents::ForwardError) -> Self {
-        Self::ForwardIxfr(v)
     }
 }

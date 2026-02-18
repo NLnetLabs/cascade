@@ -248,6 +248,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cascade-zonedata"
+version = "0.1.0-alpha5"
+dependencies = [
+ "bytes",
+ "domain",
+]
+
+[[package]]
 name = "cascaded"
 version = "0.1.0-alpha5"
 dependencies = [
@@ -258,6 +266,7 @@ dependencies = [
  "camino",
  "cascade-api",
  "cascade-cfg",
+ "cascade-zonedata",
  "clap",
  "crossbeam-utils",
  "daemonbase",

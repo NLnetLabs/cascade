@@ -1,15 +1,17 @@
 //! Zone-specific loader state.
+
 use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
 
+use cascade_zonedata::{SoaRecord, ZoneBuilder};
 use tracing::{debug, info};
 
 use crate::{
     center::Center,
     util::AbortOnDrop,
-    zone::{HistoricalEvent, Zone, ZoneState, contents::SoaRecord},
+    zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState},
 };
 
 use super::{ActiveLoadMetrics, LoadMetrics, RefreshMonitor, Source};
@@ -29,6 +31,15 @@ pub struct LoaderZoneHandle<'a> {
 }
 
 impl LoaderZoneHandle<'_> {
+    /// Access the generic [`ZoneHandle`].
+    pub const fn zone(&mut self) -> ZoneHandle<'_> {
+        ZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+
     /// Set the source of this zone.
     ///
     /// A (soft) refresh will be initiated via [`Self::enqueue_refresh()`].
@@ -79,34 +90,56 @@ impl LoaderZoneHandle<'_> {
             return;
         }
 
-        let refresh = match reload {
+        let mut refresh = match reload {
             false => EnqueuedRefresh::Refresh,
             true => EnqueuedRefresh::Reload,
         };
 
-        // Determine whether a refresh is ongoing.
-        if let Some(refreshes) = &mut self.state.loader.refreshes {
-            // There is an ongoing refresh.  Enqueue a new one, which will
-            // start when the ongoing one finishes.  If a refresh is already
-            // enqueued, the two will be merged.
-            refreshes.enqueue(refresh);
+        // If a load is already enqueued, merge with it.
+        let enqueued = &mut self.state.loader.refreshes.enqueued;
+        if let Some(enqueued) = enqueued.take() {
+            refresh = refresh.max(enqueued);
+        }
+
+        // Initiate the load immediately, if the data storage is not busy.
+        if let Some(builder) = self.zone().storage().start_load() {
+            self.start(refresh, builder);
         } else {
-            // Start this refresh immediately.
-            self.start(refresh);
+            // Enqueue the load so it can be executed later.
+            self.state.loader.refreshes.enqueued = Some(refresh);
         }
     }
 
+    /// Start a pending enqueued refresh.
+    ///
+    /// This should be called when the zone data storage is idle. If a refresh
+    /// has been enqueued, it will be initiated, and `true` will be returned.
+    pub fn start_pending(&mut self) -> bool {
+        // Load the one enqueued refresh, if it exists.
+        let Some(refresh) = self.state.loader.refreshes.enqueued.take() else {
+            // A refresh is not enqueued, nothing to do.
+            return false;
+        };
+
+        let builder = self
+            .zone()
+            .storage()
+            .start_load()
+            .expect("'start_pending()' is only called when the zone data storage is idle");
+        self.start(refresh, builder);
+        true
+    }
+
     /// Start an enqueued refresh.
-    pub(super) fn start(&mut self, refresh: EnqueuedRefresh) {
+    fn start(&mut self, refresh: EnqueuedRefresh, builder: ZoneBuilder) {
         let source = self.state.loader.source.clone();
         let metrics = Arc::new(ActiveLoadMetrics::begin(source.clone()));
-        let contents = self.state.contents.clone().try_lock_owned().unwrap();
 
         let handle = tokio::task::spawn(super::refresh(
             self.zone.clone(),
             source,
-            refresh == EnqueuedRefresh::Reload,
-            contents,
+            refresh,
+            builder,
             self.center.clone(),
             metrics.clone(),
         ));
@@ -114,7 +147,7 @@ impl LoaderZoneHandle<'_> {
         let handle = AbortOnDrop::from(handle);
         let ongoing = OngoingRefresh { handle };
         self.state.loader.active_load_metrics = Some(metrics);
-        self.state.loader.refreshes = Some(Refreshes::new(ongoing));
+        self.state.loader.refreshes.ongoing = Some(ongoing);
     }
 
     /// Prepare for the removal of this zone.
@@ -139,7 +172,7 @@ pub struct LoaderState {
     pub refresh_timer: RefreshTimerState,
 
     /// Ongoing and enqueued refreshes of the zone.
-    pub refreshes: Option<Refreshes>,
+    pub refreshes: Refreshes,
 
     /// Metrics for an active load, if any.
     //
@@ -274,10 +307,10 @@ impl RefreshTimerState {
 //----------- Refreshes --------------------------------------------------------
 
 /// Ongoing and enqueued refreshes of a zone.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Refreshes {
-    /// A handle to an ongoing refresh.
-    pub ongoing: OngoingRefresh,
+    /// A handle to an ongoing refresh, if any.
+    pub ongoing: Option<OngoingRefresh>,
 
     /// An enqueued refresh.
     ///
@@ -286,14 +319,6 @@ pub struct Refreshes {
 }
 
 impl Refreshes {
-    /// Construct a new [`Refreshes`].
-    pub fn new(ongoing: OngoingRefresh) -> Self {
-        Self {
-            ongoing,
-            enqueued: None,
-        }
-    }
-
     /// Enqueue a refresh/reload.
     ///
     /// If one is already enqueued, the two will be merged.
