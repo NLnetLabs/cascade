@@ -31,6 +31,14 @@ where
 }
 
 fn main() {
+    if matches!(
+        option_env!("CASCADE_SKIP_VERSION_COMMIT"),
+        Some("true" | "1")
+    ) {
+        print_version(env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
     // Rust build scripts are per package, therefore this script is both run
     // from the project's root directory and the crates sub-directory.
     let package = env!("CARGO_PKG_NAME");
