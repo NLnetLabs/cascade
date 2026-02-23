@@ -120,7 +120,7 @@ futures            = "0.3.17"
 futures-util       = "0.3"
 octseq             = { version = "0.5.2", default-features = false }
 serde              = { workspace = true, features = ["derive", "rc"] }
-axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio"] }
+axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio", "tracing"] }
 
 # From Rotonda
 crossbeam-utils    = "0.8"
