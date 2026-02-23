@@ -1890,7 +1890,7 @@ impl SignRaw for KeyPair {
 
 //------------ MultiThreadedSorter -------------------------------------------
 
-/// A parallelized sort implementation for use with [`SortedRecords`].
+/// A parallelized sort implementation for signing.
 struct MultiThreadedSorter;
 
 impl domain::dnssec::sign::records::Sorter for MultiThreadedSorter {

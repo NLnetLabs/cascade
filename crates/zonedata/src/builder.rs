@@ -254,8 +254,8 @@ impl LoadedZoneBuilder {
     /// Finish building the instance.
     ///
     /// If a new instance has been built (with [`Self::replace()`],
-    /// [`Self::patch()`], or [`Self::clear()`]), a [`ZoneBuilt`] marker is
-    /// returned to prove it. Otherwise, `self` is returned to try again.
+    /// [`Self::patch()`], or [`Self::clear()`]), a [`LoadedZoneBuilt`] marker
+    /// is returned to prove it. Otherwise, `self` is returned to try again.
     pub fn finish(self) -> Result<LoadedZoneBuilt, Self> {
         if self.built() {
             Ok(LoadedZoneBuilt {
@@ -690,7 +690,7 @@ impl SignedZoneBuilder {
     }
 }
 
-//----------- LoadedZoneBuilt ------------------------------------------------
+//----------- LoadedZoneBuilt --------------------------------------------------
 
 /// Proof that the loaded component of a zone has been built.
 pub struct LoadedZoneBuilt {

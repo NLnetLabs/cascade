@@ -287,7 +287,7 @@ pub struct ReviewingSignedStorage {
     pub(super) signed_diff: Arc<DiffData>,
 }
 
-//----------- PersistingLoadedStorage ----------------------------------------
+//----------- PersistingLoadedStorage ------------------------------------------
 
 /// The [`ZoneDataStorage::PersistingLoaded`] state.
 ///

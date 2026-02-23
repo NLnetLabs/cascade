@@ -1,15 +1,15 @@
 //! Logging from Cascade.
 //!
-//! Cascade using [`tracing`] to collect and produce log messages.  Unlike the
+//! Cascade uses [`tracing`] to collect and produce log messages. Unlike the
 //! more traditional [`log`] crate, [`tracing`] can record _spans_ (ranges of
 //! time over which actions occur) and follow asynchronous code coherently.
 //!
 //! [`log`]: https://docs.rs/log
 //!
 //! Cascade supports logging to standard output, standard error, to a file, or
-//! (on UNIX systems) to syslog.  It uses [`tracing_subscriber::fmt`] to achieve
-//! this for the most part, and manually implements syslog output.  It supports
-//! colorized output and (limited) dynamic reconfiguration.
+//! (on UNIX systems) to syslog. It uses [`mod@tracing_subscriber::fmt`] to
+//! achieve this for the most part, and manually implements syslog output. It
+//! supports colorized output and (limited) dynamic reconfiguration.
 
 use camino::Utf8Path;
 use tracing::Subscriber;
@@ -21,18 +21,18 @@ use crate::config::{LogLevel, LogTarget, LoggingConfig, RuntimeConfig};
 
 /// Cascade's logger.
 ///
-/// This is implemented with [`tracing_subscriber`].  The constructed logger is
-/// set as the global default.  The subscriber is structured thusly:
+/// This is implemented with [`tracing_subscriber`]. The constructed logger is
+/// set as the global default. The subscriber is structured thusly:
 ///
-/// - A [`Filter`] that decides whether something should be logged.  It is
-///   wrapped in [`reload::Layer`] so it can be reloaded dynamically.
+/// - A filter that decides whether something should be logged. It is wrapped
+///   in [`reload::Layer`] so it can be reloaded dynamically.
 ///
-/// - For standard output/error and file targets: a [`fmt::Layer`] that
+/// - For standard output/error and file targets: a formatting layer that
 ///   prettifies log messages appropriately (including conditional colorization)
 ///   and writes text to the appropriate I/O sink.
 ///
-/// - For syslog: a [`Syslog`] layer formats log lines as per RFC 3164 and
-///   writes them to a UNIX socket.
+/// - For syslog: a syslog layer formats log lines as per RFC 3164 and writes
+///   them to a UNIX socket.
 ///
 /// - A [`tracing_subscriber::Registry`] wraps the whole thing together and
 ///   handles [`tracing`]-specific bookkeeping (e.g. tracking spans).
@@ -223,7 +223,7 @@ mod unix {
     /// A [`tracing_subscriber`] writer layer for syslog.
     ///
     /// This will format syslog messages as per [RFC 3164].
-    //
+    ///
     /// [RFC 3164]: https://www.rfc-editor.org/rfc/rfc3164
     #[derive(Debug)]
     pub struct Syslog {
@@ -259,7 +259,7 @@ mod unix {
             // Determine a "name" for the current application.
             //
             // Use the file name of the current executable, in case the user
-            // has named it something relevant to themselves.  If the path we
+            // has named it something relevant to themselves. If the path we
             // find doesn't have a file name (for some weird reason), just use
             // the whole path.
             let app_name = std::env::current_exe().map_err(InitError::AppName)?;
