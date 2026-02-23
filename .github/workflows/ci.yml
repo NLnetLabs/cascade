@@ -151,8 +151,11 @@ jobs:
   # Clippy
   # ------
   #
-  # We run Clippy separately, and only on nightly Rust because it offers a
-  # superset of the lints.
+  # Clippy checks for a wide range of lints, including common code smells and
+  # subtle bugs. It covers a superset of 'cargo check'.
+  #
+  # We run Clippy only on nightly Rust, as it offers a superset of the lints
+  # compared to stable versions.
   #
   # 'cargo clippy' and 'cargo build' can share some state for fast execution,
   # but it's faster to execute them in parallel than to establish an ordering
@@ -162,6 +165,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-D warnings"
+      RUSTDOCFLAGS: "-D warnings"
     steps:
 
     # Load the repository.
@@ -182,6 +186,44 @@ jobs:
     # Do the actually Clippy run.
     - name: Check Clippy
       run: cargo +nightly clippy --all-targets --all-features --locked
+
+  # Documentation
+  # -------------
+  #
+  # When writing documentation, it's easy to create broken documentation links;
+  # 'cargo check' / 'cargo clippy' (run manually or by LSP) will not check for
+  # them. This job builds Cascade's documentation and ensures no warnings are
+  # emitted.
+  #
+  # Even with '--no-deps', 'cargo doc' will process some dependencies,
+  # presumably due to proc macros. This processing could be reused from a
+  # previous 'cargo clippy' / 'cargo build'.
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-D warnings"
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+
+    # Load the repository.
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Set up the Rust toolchain.
+    - name: Set up Rust nightly
+      id: setup-rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: nightly
+        components: clippy
+        cache: false
+
+    # TODO: Restore a cache of dependencies and 'target'.
+
+    # Do the actual documentation check.
+    - name: Check documentation
+      run: cargo +nightly doc --no-deps --document-private-items --workspace --locked
 
   # Test
   # ----
