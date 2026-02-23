@@ -728,14 +728,14 @@ pub struct KmipClientCredentials {
     ///
     /// Mandatory if the KMIP "Credential Type" is "Username and Password".
     ///
-    /// See: https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458
+    /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
     pub username: String,
 
     /// KMIP password credential.
     ///
     /// Optional when KMIP "Credential Type" is "Username and Password".
     ///
-    /// See: https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458
+    /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub password: Option<String>,
 }
@@ -799,7 +799,7 @@ impl KmipClientCredentialsFile {
     ///
     /// Optionally:
     ///   - Create the file if missing.
-    ///   - Keep the file open for writing back changes. See ['Self::save()`].
+    ///   - Keep the file open for writing back changes. See [`Self::save()`].
     pub fn new(path: &Path, mode: KmipServerCredentialsFileMode) -> Result<Self, String> {
         let read;
         let write;

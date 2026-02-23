@@ -89,7 +89,7 @@ impl KeyStore for Inner {
 pub enum KeyParseError {
     InvalidAlgorithm,
 
-    /// TSIG key string must have the form [<algorithm>]:<base64 bytes>
+    /// TSIG key string must have the form `[<algorithm>]:<base64 bytes>`
     InvalidStructure,
 
     InvalidName(FromStrError),

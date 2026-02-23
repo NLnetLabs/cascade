@@ -163,16 +163,16 @@ impl SocketProvider {
     /// Create an empty provider.
     ///
     /// Attempts to take/pop tcp/udp will fail until either
-    /// [`init_from_env()`], [`pre_bind_udp()`] or [`pre_bind_tcp()`] have
-    /// been called to add at least one socket to the set managed by this
-    /// provider.
+    /// [`Self::init_from_env()`], [`Self::pre_bind_udp()`] or
+    /// [`Self::pre_bind_tcp()`] have been called to add at least one socket to
+    /// the set managed by this provider.
     pub fn new() -> Self {
         Default::default()
     }
 
     /// Capture socket file descriptors from environment variables.
     ///
-    /// Uses the following environment variables per [`sd_listen_fds()``]:
+    /// Uses the following environment variables per [`sd_listen_fds()`]:
     ///   - LISTEN_PID: Must match our own PID.
     ///   - LISTEN_FDS: The number of FDs being passed to the application.
     ///
@@ -180,10 +180,10 @@ impl SocketProvider {
     /// be determined, will be captured by this function. Other socket file
     /// descriptors will be ignored.
     ///
-    /// If needed one can restrict the set of number of file descriptors
-    /// to be obtained from the environment to a maximum via the
-    /// [`max_fds_to_process`] argument, which may be useful if expecting a
-    /// fixed number or not intending to bind an excessive number of sockets.
+    /// If needed one can restrict the set of number of file descriptors to be
+    /// obtained from the environment to a maximum via the `max_fds_to_process`
+    /// argument, which may be useful if expecting a fixed number or not
+    /// intending to bind an excessive number of sockets.
     ///
     /// [`sd_listen_fds()`]: https://www.man7.org/linux/man-pages/man3/sd_listen_fds.3.html#NOTES
     pub fn init_from_env(&mut self, max_fds_to_process: Option<usize>) {
@@ -252,8 +252,9 @@ impl SocketProvider {
     /// Returns the first available UDP socket from those received via the
     /// environment or registered directly.
     ///
-    /// Available sockets are those received via [`init_from_env()`] or
-    /// [`pre_bind`] and not yet removed via [`pop_udp()`] or [`take_udp()`].
+    /// Available sockets are those received via [`Self::init_from_env()`] or
+    /// [`Self::pre_bind_udp()`] and not yet removed via [`Self::pop_udp()`] or
+    /// [`Self::take_udp()`].
     ///
     /// Returns None if no more UDP sockets are available.
     pub fn pop_udp(&mut self) -> Option<tokio::net::UdpSocket> {
@@ -279,8 +280,9 @@ impl SocketProvider {
     /// Returns the first available TCP socket from those received via the
     /// environment or registered directly.
     ///
-    /// Available sockets are those received via [`init_from_env()`] or
-    /// [`pre_bind`] and not yet removed via [`pop_tcp()`] or [`take_tcp()`].
+    /// Available sockets are those received via [`Self::init_from_env()`] or
+    /// [`Self::pre_bind_tcp()`] and not yet removed via [`Self::pop_tcp()`] or
+    /// [`Self::take_tcp()`].
     ///
     /// Returns None if no more TCP sockets are available.
     pub fn pop_tcp(&mut self) -> Option<tokio::net::TcpListener> {

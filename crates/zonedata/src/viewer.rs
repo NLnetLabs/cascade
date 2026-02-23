@@ -121,7 +121,7 @@ impl ZoneViewer {
     }
 }
 
-//----------- LoadedZoneReviewer ---------------------------------------------
+//----------- LoadedZoneReviewer -----------------------------------------------
 
 /// A viewer for an upcoming instance of a zone.
 ///

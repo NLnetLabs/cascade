@@ -656,7 +656,7 @@ pub enum IxfrError {
     /// An incomplete response was received.
     IncompleteResponse,
 
-    /// An inconsistent [`Ixfr::UpToDate`] response was received.
+    /// An inconsistent IXFR up-to-date response was received.
     InconsistentUpToDate,
 
     /// A query for a SOA record failed.

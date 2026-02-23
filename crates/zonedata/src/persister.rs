@@ -130,7 +130,7 @@ impl SignedZonePersister {
     }
 }
 
-//----------- LoadedZonePersisted --------------------------------------------
+//----------- LoadedZonePersisted ----------------------------------------------
 
 /// A proof from a [`LoadedZonePersister`] that a loaded instance of a zone
 /// has been persisted.
@@ -139,7 +139,7 @@ pub struct LoadedZonePersisted {
     pub(crate) data: Arc<Data>,
 }
 
-//----------- SignedZonePersisted --------------------------------------------
+//----------- SignedZonePersisted ----------------------------------------------
 
 /// A proof from a [`SignedZonePersister`] that a signed instance of a zone
 /// has been persisted.

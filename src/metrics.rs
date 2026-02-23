@@ -1,10 +1,10 @@
 //! Maintaining and outputting metrics.
 //!
 //! Relevant sources for selecting metrics, metric names, and labels:
-//! - https://prometheus.io/docs/practices/naming/
-//! - https://prometheus.io/docs/instrumenting/writing_exporters/#labels
-//! - https://prometheus.io/docs/practices/instrumentation/
-//! - https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md
+//! - <https://prometheus.io/docs/practices/naming/>
+//! - <https://prometheus.io/docs/instrumenting/writing_exporters/#labels>
+//! - <https://prometheus.io/docs/practices/instrumentation/>
+//! - <https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md>
 
 use core::sync::atomic::AtomicU64;
 use std::fmt::{self, Debug, Write};
@@ -174,11 +174,10 @@ impl MetricsCollection {
 
     /// Register a metric with the [`Registry`].
     ///
-    /// Note: In the Open Metrics text exposition format some metric types have
-    /// a special suffix, e.g. the
-    /// [`Counter`](crate::metrics::counter::Counter`) metric with `_total`.
-    /// These suffixes are inferred through the metric type and must not be
-    /// appended to the metric name manually by the user.
+    /// Note: In the Open Metrics text exposition format some metric types
+    /// have a special suffix, e.g. the `Counter` metric with `_total`. These
+    /// suffixes are inferred through the metric type and must not be appended
+    /// to the metric name manually by the user.
     ///
     /// Note: A full stop punctuation mark (`.`) is automatically added to the
     /// passed help text.
