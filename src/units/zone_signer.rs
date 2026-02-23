@@ -836,7 +836,7 @@ impl ZoneSigner {
 
         // Work out how many RRs have to be signed and how many concurrent
         // threads to sign with and how big each chunk to be signed should be.
-        let rr_count = RecordsIter::new(&unsigned_records).count();
+        let rr_count = RecordsIter::new_from_owned(&unsigned_records).count();
         let (parallelism, chunk_size) = self.determine_signing_concurrency(rr_count);
         info!(
             "SIGNER: Using {parallelism} threads to sign {rr_count} owners in chunks of {chunk_size}.",
@@ -1428,7 +1428,7 @@ impl SignTask<'_> {
         // Perform the actual signing.
         let signatures = sign_sorted_zone_records(
             self.zone_name,
-            RecordsIter::new(&self.records[range]),
+            RecordsIter::new_from_owned(&self.records[range]),
             self.keys,
             self.config,
         )?;
