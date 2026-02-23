@@ -10,11 +10,12 @@ use tracing::{debug, info};
 
 use crate::{
     center::Center,
+    common::scheduler::Scheduler,
     util::AbortOnDrop,
-    zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle, ZoneState},
 };
 
-use super::{ActiveLoadMetrics, LoadMetrics, RefreshMonitor, Source};
+use super::{ActiveLoadMetrics, LoadMetrics, Source};
 
 //----------- LoaderZoneHandle -------------------------------------------------
 
@@ -86,7 +87,7 @@ impl LoaderZoneHandle<'_> {
             self.state
                 .loader
                 .refresh_timer
-                .disable(self.zone, &self.center.loader.refresh_monitor);
+                .disable(self.zone, &self.center.loader.refresh_scheduler);
             return;
         }
 
@@ -156,7 +157,7 @@ impl LoaderZoneHandle<'_> {
         self.state
             .loader
             .refresh_timer
-            .disable(self.zone, &self.center.loader.refresh_monitor);
+            .disable(self.zone, &self.center.loader.refresh_scheduler);
     }
 }
 
@@ -246,8 +247,8 @@ impl RefreshTimerState {
     ///
     /// This is called when the zone contents are wiped or the zone source is
     /// removed.
-    pub fn disable(&mut self, zone: &Arc<Zone>, monitor: &RefreshMonitor) {
-        monitor.update(zone, self.scheduled_time(), None);
+    pub fn disable(&mut self, zone: &Arc<Zone>, scheduler: &Scheduler<ZoneByPtr>) {
+        scheduler.update(&ZoneByPtr(zone.clone()), self.scheduled_time(), None);
         *self = Self::Disabled;
     }
 
@@ -259,18 +260,20 @@ impl RefreshTimerState {
         zone: &Arc<Zone>,
         previous: Instant,
         soa: Option<&SoaRecord>,
-        monitor: &RefreshMonitor,
+        scheduler: &Scheduler<ZoneByPtr>,
     ) {
+        let zone = ZoneByPtr(zone.clone());
+
         // If a SOA record is unavailable, don't schedule anything.
         let Some(soa) = soa else {
-            monitor.update(zone, self.scheduled_time(), None);
+            scheduler.update(&zone, self.scheduled_time(), None);
             *self = Self::Disabled;
             return;
         };
 
         let refresh = Duration::from_secs(soa.rdata.refresh.get().into());
         let scheduled = previous + refresh;
-        monitor.update(zone, self.scheduled_time(), Some(scheduled));
+        scheduler.update(&zone, self.scheduled_time(), Some(scheduled));
         *self = Self::Refresh {
             previous,
             scheduled,
@@ -285,18 +288,20 @@ impl RefreshTimerState {
         zone: &Arc<Zone>,
         previous: Instant,
         soa: Option<&SoaRecord>,
-        monitor: &RefreshMonitor,
+        scheduler: &Scheduler<ZoneByPtr>,
     ) {
+        let zone = ZoneByPtr(zone.clone());
+
         // If a SOA record is unavailable, don't schedule anything.
         let Some(soa) = soa else {
-            monitor.update(zone, self.scheduled_time(), None);
+            scheduler.update(&zone, self.scheduled_time(), None);
             *self = Self::Disabled;
             return;
         };
 
         let retry = Duration::from_secs(soa.rdata.retry.get().into());
         let scheduled = previous + retry;
-        monitor.update(zone, self.scheduled_time(), Some(scheduled));
+        scheduler.update(&zone, self.scheduled_time(), Some(scheduled));
         *self = Self::Retry {
             previous,
             scheduled,

@@ -22,32 +22,30 @@ use tracing::{debug, error, info};
 
 use crate::{
     center::{Center, State},
+    common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{Zone, ZoneHandle},
+    zone::{Zone, ZoneByPtr, ZoneHandle},
 };
 
-mod refresh;
 mod server;
 pub mod zone;
 mod zonefile;
-
-pub use refresh::RefreshMonitor;
 
 //----------- Loader -----------------------------------------------------------
 
 /// The zone loader.
 #[derive(Debug)]
 pub struct Loader {
-    /// A monitor for SOA-based zone refreshes.
-    refresh_monitor: RefreshMonitor,
+    /// A scheduler for SOA timer based zone refreshes.
+    refresh_scheduler: Scheduler<ZoneByPtr>,
 }
 
 impl Loader {
     /// Construct a new [`Loader`].
     pub fn new() -> Self {
         Self {
-            refresh_monitor: RefreshMonitor::new(),
+            refresh_scheduler: Scheduler::new(),
         }
     }
 
@@ -69,7 +67,21 @@ impl Loader {
     /// Drive this [`Loader`].
     pub fn run(center: Arc<Center>) -> AbortOnDrop {
         AbortOnDrop::from(tokio::spawn(async move {
-            center.loader.refresh_monitor.run(&center).await
+            center
+                .loader
+                .refresh_scheduler
+                .run(|_time, zone| {
+                    // Enqueue a (soft) refresh for the zone.
+                    let mut state = zone.0.state.lock().unwrap();
+                    ZoneHandle {
+                        zone: &zone.0,
+                        state: &mut state,
+                        center: &center,
+                    }
+                    .loader()
+                    .enqueue_refresh(false);
+                })
+                .await
         }))
     }
 
@@ -191,7 +203,7 @@ async fn refresh(
         };
 
         let refresh_timer = &mut handle.state.loader.refresh_timer;
-        let refresh_monitor = &center.loader.refresh_monitor;
+        let refresh_monitor = &center.loader.refresh_scheduler;
         if result.is_ok() {
             refresh_timer.schedule_refresh(&zone, start_time, soa.as_ref(), refresh_monitor);
         } else {
