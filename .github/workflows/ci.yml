@@ -108,7 +108,7 @@ jobs:
         msrv=`cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="cascade")|.rust_version'`
         echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
 
-  # TODO: Add feature flag checks, when we add feature flags.
+  # TODO: Add feature flag checks, if/when we add feature flags.
 
   # Check Minimal Versions
   # ----------------------
@@ -181,7 +181,7 @@ jobs:
 
     # Do the actually Clippy run.
     - name: Check Clippy
-      run: cargo +nightly clippy --all-targets --all-features
+      run: cargo +nightly clippy --all-targets --all-features --locked
 
   # Test
   # ----
@@ -215,10 +215,10 @@ jobs:
 
     # Build and run the test suite.
     - name: Test
-      run: cargo test --all-targets
+      run: cargo test --all-targets --locked
 
     # Test docs.
     - name: Test docs
-      run: cargo test --doc
+      run: cargo test --doc --locked
 
   # TODO: Build a cache.
