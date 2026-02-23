@@ -73,30 +73,6 @@ impl Loader {
         }))
     }
 
-    pub fn remove_zone(&self, center: &Arc<Center>, name: &StoredName) {
-        // We have to get the reference to the zone from our refresh monitor
-        // because it doesn't exist in center.zones anymore!
-        // Ideally, the ZoneRemoved command would pass the zone as Arc<Zone>
-        // instead of just giving the same. That would make this more performant.
-        if let Some(zone) = self
-            .refresh_monitor
-            .scheduled
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|z| z.zone.0.name == name)
-        {
-            let mut state = zone.zone.0.state.lock().unwrap();
-            ZoneHandle {
-                zone: &zone.zone.0,
-                state: &mut state,
-                center,
-            }
-            .loader()
-            .prep_removal();
-        }
-    }
-
     pub fn on_refresh_zone(&self, center: &Arc<Center>, zone_name: StoredName) {
         let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
         let mut state = zone.state.lock().expect("lock is not poisoned");
