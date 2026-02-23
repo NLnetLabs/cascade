@@ -23,7 +23,7 @@ use crate::manager::record_zone_event;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::ZoneServer;
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, PipelineMode};
+use crate::zone::{HistoricalEvent, PipelineMode, ZoneHandle};
 use crate::{
     api,
     config::Config,
@@ -203,8 +203,6 @@ async fn register_zone(
 
 /// Remove a zone.
 pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
-    center.loader.remove_zone(center, &name);
-
     let mut state = center.state.lock().unwrap();
     let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?;
 
@@ -231,6 +229,14 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     });
 
     let mut zone_state = zone.0.state.lock().unwrap();
+
+    ZoneHandle {
+        zone: &zone.0,
+        state: &mut zone_state,
+        center,
+    }
+    .loader()
+    .prep_removal();
 
     // Update the policy's referenced zones.
     if let Some(policy) = zone_state.policy.take() {
