@@ -676,48 +676,65 @@ impl HttpServer {
             .map(|p| (p.clone(), PolicyChange::Unchanged))
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
+        let mut updates = Vec::new();
         let res = crate::policy::reload_all(&mut state.policies, &center.config, |name, change| {
             changed = true;
-            changes.insert(name.clone(), change);
+
+            changes.insert(
+                name.clone(),
+                match change {
+                    crate::policy::PolicyChange::Removed { .. } => PolicyChange::Removed,
+                    crate::policy::PolicyChange::Updated { .. } => PolicyChange::Updated,
+                    crate::policy::PolicyChange::Added { .. } => PolicyChange::Added,
+                },
+            );
+
+            updates.push((name.clone(), change));
         });
+
+        if let Err(err) = res {
+            return Json(Err(err));
+        }
 
         if changed {
             state.mark_dirty(center);
         }
 
-        match res {
-            Ok(updated) => {
-                for (name, old) in updated {
-                    let pol = state
-                        .policies
-                        .get(&name)
-                        .expect("we just reloaded these policies");
+        for (name, change) in updates {
+            let (old, new) = match change {
+                crate::policy::PolicyChange::Removed { .. } => continue,
+                crate::policy::PolicyChange::Updated { old, new } => (Some(old), new),
+                crate::policy::PolicyChange::Added(new) => (None, new),
+            };
 
-                    for zone_name in &pol.zones {
-                        let zone = state
-                            .zones
-                            .get(zone_name)
-                            .expect("zones and policies are consistent");
+            let pol = state
+                .policies
+                .get(&name)
+                .expect("we just reloaded these policies");
 
-                        let mut state = zone.0.state.lock().expect("lock isn't poisoned");
-                        state.policy = Some(pol.latest.clone());
+            for zone_name in &pol.zones {
+                let zone = state
+                    .zones
+                    .get(zone_name)
+                    .expect("zones and policies are consistent");
 
-                        center.key_manager.on_zone_policy_changed(
-                            center,
-                            zone_name.clone(),
-                            old.clone(),
-                            pol.latest.clone(),
-                        );
-                    }
-                }
-                let mut changes: Vec<(String, _)> =
-                    changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
-                changes.sort_unstable_by(|l, r| l.0.cmp(&r.0));
+                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
+                state.policy = Some(pol.latest.clone());
 
-                Json(Ok(PolicyChanges { changes }))
+                center.key_manager.on_zone_policy_changed(
+                    center,
+                    zone_name.clone(),
+                    old.clone(),
+                    new.clone(),
+                );
             }
-            Err(err) => Json(Err(err)),
         }
+
+        let mut changes: Vec<(String, _)> =
+            changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
+        changes.sort_unstable_by(|l, r| l.0.cmp(&r.0));
+
+        Json(Ok(PolicyChanges { changes }))
     }
 
     async fn policy_show(

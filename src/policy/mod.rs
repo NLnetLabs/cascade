@@ -6,7 +6,6 @@ use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
 use camino::Utf8PathBuf;
-use cascade_api::PolicyChange;
 use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
@@ -37,41 +36,46 @@ pub struct Policy {
 
 //--- Loading / Saving
 
+pub enum PolicyChange {
+    Removed(Arc<PolicyVersion>),
+    Updated {
+        old: Arc<PolicyVersion>,
+        new: Arc<PolicyVersion>,
+    },
+    Added(Arc<PolicyVersion>),
+}
+
 /// Reload all policies.
 ///
-/// Returns the names of the policies that have been updated or added, because
-/// the zones for those policies need to be notified.
-#[expect(clippy::type_complexity)]
+/// Any changes are reported via the `on_change` callback.
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
     mut on_change: impl FnMut(&Box<str>, PolicyChange),
-) -> Result<Vec<(Box<str>, Option<Arc<PolicyVersion>>)>, PolicyReloadError> {
+) -> Result<(), PolicyReloadError> {
     let new_versions = load_all(policies, config)?;
 
     let mut new_policies = foldhash::HashMap::default();
-
-    let mut updated = Vec::new();
 
     for (name, new_version) in new_versions {
         if let Some(mut pol) = policies.remove(&name) {
             if *pol.latest == new_version {
                 new_policies.insert(name, pol);
             } else {
-                let old = std::mem::replace(&mut pol.latest, Arc::new(new_version));
-                (on_change)(&name, PolicyChange::Updated);
-
-                updated.push((name.clone(), Some(old)));
+                let new = Arc::new(new_version);
+                let old = std::mem::replace(&mut pol.latest, new.clone());
+                (on_change)(&name, PolicyChange::Updated { old, new });
 
                 new_policies.insert(name, pol);
             }
         } else {
-            (on_change)(&name, PolicyChange::Added);
-            updated.push((name.clone(), None));
+            let new = Arc::new(new_version);
+            (on_change)(&name, PolicyChange::Added(new.clone()));
+
             new_policies.insert(
                 name,
                 Policy {
-                    latest: Arc::new(new_version),
+                    latest: new,
                     mid_deletion: false,
                     zones: Default::default(),
                 },
@@ -93,16 +97,23 @@ pub fn reload_all(
             );
         } else {
             info!("Forgetting now-removed policy '{name}'");
-            (on_change)(&policy.latest.name, PolicyChange::Removed);
+            (on_change)(
+                &policy.latest.name,
+                PolicyChange::Removed(policy.latest.clone()),
+            );
         }
     }
 
     // Update the set of policies.
     *policies = new_policies;
 
-    Ok(updated)
+    Ok(())
 }
 
+/// Load all the policies based on the path to the config
+///
+/// The current policies are used for logging purposes so we can log whether
+/// a policy is new, updated, unchanged or removed.
 pub fn load_all(
     policies: &foldhash::HashMap<Box<str>, Policy>,
     config: &Config,

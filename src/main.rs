@@ -106,28 +106,30 @@ fn main() -> ExitCode {
         }
 
         // Load all policies.
-        match policy::reload_all(&mut state.policies, &config, |_, _| {}) {
-            Err(err) => {
-                error!("Cascade couldn't load all policies: {err}");
-                return ExitCode::FAILURE;
-            }
-            Ok(updates) => {
-                for (name, _old) in updates {
-                    let pol = state
-                        .policies
-                        .get(&name)
-                        .expect("we just reloaded these policies");
+        let mut updates = Vec::new();
+        let res = policy::reload_all(&mut state.policies, &config, |name, _| {
+            updates.push(name.clone());
+        });
 
-                    for zone_name in &pol.zones {
-                        let zone = state
-                            .zones
-                            .get(zone_name)
-                            .expect("zones and policies are consistent");
+        if let Err(err) = res {
+            error!("Cascade couldn't load all policies: {err}");
+            return ExitCode::FAILURE;
+        }
 
-                        let mut state = zone.0.state.lock().expect("lock isn't poisoned");
-                        state.policy = Some(pol.latest.clone());
-                    }
-                }
+        for name in updates {
+            let pol = state
+                .policies
+                .get(&name)
+                .expect("we just reloaded these policies");
+
+            for zone_name in &pol.zones {
+                let zone = state
+                    .zones
+                    .get(zone_name)
+                    .expect("zones and policies are consistent");
+
+                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
+                state.policy = Some(pol.latest.clone());
             }
         }
 

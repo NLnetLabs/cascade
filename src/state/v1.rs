@@ -89,6 +89,10 @@ impl Spec {
             })
             .collect();
 
+        for zone in state.zones.drain() {
+            info!("Removing zone '{}'", zone.0.name);
+        }
+
         state.zones = new_zones;
     }
 
@@ -135,8 +139,7 @@ impl PolicySpec {
         let name = &policy.latest.name;
         let latest = self.latest.parse(name);
         if *policy.latest != latest {
-            let new = Arc::new(latest);
-            let _ = core::mem::replace(&mut policy.latest, new.clone());
+            policy.latest = Arc::new(latest);
         }
         // TODO: How does this affect zones using the policy?
         policy.mid_deletion |= self.mid_deletion;

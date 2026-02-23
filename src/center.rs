@@ -149,11 +149,6 @@ pub async fn add_zone(
     record_zone_event(center, &name, HistoricalEvent::Added, None);
 
     {
-        let mut state = center.state.lock().unwrap();
-        state.mark_dirty(center);
-    }
-
-    {
         let mut state = zone.state.lock().unwrap();
 
         let source = match source {
