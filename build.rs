@@ -13,30 +13,32 @@ fn strip_newline(s: String) -> String {
     s.strip_suffix("\n").unwrap_or(&s).into()
 }
 
-fn run_cmd<I, S>(cmd: &str, args: I) -> Output
+fn run_cmd<I, S>(cmd: &str, args: I) -> Result<Output, std::io::Error>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    Command::new(cmd).args(args).output().unwrap()
+    Command::new(cmd).args(args).output()
 }
 
-fn run_cmd_strip<I, S>(cmd: &str, args: I) -> String
+fn run_cmd_strip<I, S>(cmd: &str, args: I) -> Result<String, std::io::Error>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let out = Command::new(cmd).args(args).output().unwrap();
-    strip_newline(String::from_utf8(out.stdout).unwrap())
+    Command::new(cmd)
+        .args(args)
+        .output()
+        .map(|o| strip_newline(String::from_utf8(o.stdout).unwrap()))
 }
 
-fn main() {
+fn main() -> Result<(), ()> {
     if matches!(
         option_env!("CASCADE_SKIP_VERSION_COMMIT"),
         Some("true" | "1")
     ) {
         print_version(env!("CARGO_PKG_VERSION"));
-        return;
+        return Ok(());
     }
 
     // Rust build scripts are per package, therefore this script is both run
@@ -52,62 +54,95 @@ fn main() {
     };
 
     let git_root = if is_jj {
-        run_cmd_strip("jj", ["workspace", "root", "--ignore-working-copy"])
-    } else {
-        let is_in_git_worktree = run_cmd("git", ["rev-parse", "--is-inside-work-tree"])
-            .status
-            .success();
-        if is_in_git_worktree {
-            run_cmd_strip("git", ["rev-parse", "--show-toplevel"])
-        } else {
+        // On first run of jj, check if it executes ok (aka do not unwrap, but catch the error)
+        run_cmd_strip("jj", ["workspace", "root", "--ignore-working-copy"]).map_err(|e| {
+            let msg = match e.kind() {
+                std::io::ErrorKind::NotFound => "jj it not installed",
+                std::io::ErrorKind::PermissionDenied => "jj is not executable",
+                _ => "there was an unknown error while attempting to run jj",
+            };
+            println!(
+                "cargo::warning=A .jj directory exists, but {msg}. Unable to determine git revision..."
+            );
             match package {
-                "cascaded" => println!("cargo::rerun-if-changed=.git"),
-                "cascade" => println!("cargo::rerun-if-changed=../../.git"),
+                "cascaded" => println!("cargo::rerun-if-changed=.jj"),
+                "cascade" => println!("cargo::rerun-if-changed=../../.jj"),
                 _ => {}
             }
-            print_version(concat!(env!("CARGO_PKG_VERSION"), " at ", "no-git"));
-            return;
+        }).ok()
+    } else {
+        // On first run of git, check if it executes ok (aka do not unwrap, but catch the error)
+        let is_in_git_worktree = run_cmd("git", ["rev-parse", "--is-inside-work-tree"])
+            .map_err(|e| {
+                let msg = match e.kind() {
+                    std::io::ErrorKind::NotFound => "git is not installed",
+                    std::io::ErrorKind::PermissionDenied => "git is not executable",
+                    _ => "unknown error occured while attempting to run git",
+                };
+                println!("cargo::warning={msg}. Unable to determine git revision...");
+                match package {
+                    "cascaded" => println!("cargo::rerun-if-changed=.git"),
+                    "cascade" => println!("cargo::rerun-if-changed=../../.git"),
+                    _ => {}
+                }
+            })
+            .ok()
+            .map(|o| o.status.success());
+        if let Some(is_in_git_worktree) = is_in_git_worktree
+            && is_in_git_worktree
+        {
+            Some(run_cmd_strip("git", ["rev-parse", "--show-toplevel"]).unwrap())
+        } else {
+            None
         }
     };
 
-    // Generate rerun-if statements to tell Cargo to run this script again
-    // when relevant files change (including relevant git files to catch
-    // commits, etc.).
-    // If a file does not exist, cargo will always rerun the build script.
-    generate_project_rerun_with_prefix(
-        &git_root,
-        vec![
-            "Cargo.lock",
-            "Cargo.toml",
-            "build.rs",
-            "crates/",
-            "etc/",
-            "src/",
-        ],
-    );
+    if let Some(git_root) = git_root {
+        // Generate rerun-if statements to tell Cargo to run this script again
+        // when relevant files change (including relevant git files to catch
+        // commits, etc.).
+        // If a file does not exist, cargo will always rerun the build script.
+        generate_project_rerun_with_prefix(
+            &git_root,
+            vec![
+                "Cargo.lock",
+                "Cargo.toml",
+                "build.rs",
+                "crates/",
+                "etc/",
+                "src/",
+            ],
+        );
 
-    // Monitor files related to commit changes
-    if is_jj {
-        generate_project_rerun_with_prefix(&git_root, vec![".jj/working_copy/checkout"]);
-    } else {
-        let git_head_ref_cmd = run_cmd("git", ["symbolic-ref", "HEAD"]);
-        let git_dir = run_cmd_strip("git", ["rev-parse", "--git-dir"]);
-
-        generate_project_rerun_with_prefix(&git_dir, vec!["HEAD"]);
-
-        if git_head_ref_cmd.status.success() {
-            let git_head_ref = strip_newline(String::from_utf8(git_head_ref_cmd.stdout).unwrap());
-            let git_common_dir = run_cmd_strip("git", ["rev-parse", "--git-common-dir"]);
-            generate_project_rerun_with_prefix(&git_common_dir, vec![&git_head_ref]);
+        // Monitor files related to commit changes
+        if is_jj {
+            generate_project_rerun_with_prefix(&git_root, vec![".jj/working_copy/checkout"]);
         } else {
-            // .git/HEAD is likely a detached HEAD right now (aka contains
-            // a commit hash). Once that changes, the build script will be
-            // re-run and the above branch will be triggered.
-        }
-    }
+            let git_head_ref_cmd = run_cmd("git", ["symbolic-ref", "HEAD"]).unwrap();
+            let git_dir = run_cmd_strip("git", ["rev-parse", "--git-dir"]).unwrap();
 
-    let version = generate_version_string(is_jj);
-    print_version(&version);
+            generate_project_rerun_with_prefix(&git_dir, vec!["HEAD"]);
+
+            if git_head_ref_cmd.status.success() {
+                let git_head_ref =
+                    strip_newline(String::from_utf8(git_head_ref_cmd.stdout).unwrap());
+                let git_common_dir =
+                    run_cmd_strip("git", ["rev-parse", "--git-common-dir"]).unwrap();
+                generate_project_rerun_with_prefix(&git_common_dir, vec![&git_head_ref]);
+            } else {
+                // .git/HEAD is likely a detached HEAD right now (aka contains
+                // a commit hash). Once that changes, the build script will be
+                // re-run and the above branch will be triggered.
+            }
+        }
+
+        let version = generate_version_string(is_jj);
+        print_version(&version);
+        Ok(())
+    } else {
+        print_version(concat!(env!("CARGO_PKG_VERSION"), " (no-git)"));
+        Ok(())
+    }
 }
 
 fn generate_version_string(is_jj: bool) -> String {
@@ -123,16 +158,21 @@ fn generate_version_string(is_jj: bool) -> String {
                 "-r",
                 "@-",
             ],
-        );
-        let is_dirty = match run_cmd_strip("jj", ["log", "-G", "-T", "empty"]).as_str() {
+        )
+        .unwrap();
+        let is_dirty = match run_cmd_strip("jj", ["log", "-G", "-T", "empty"])
+            .unwrap()
+            .as_str()
+        {
             "true" => false,
             "false" => true,
             _ => unreachable!(),
         };
         (git_hash, is_dirty)
     } else {
-        let git_hash = run_cmd_strip("git", ["rev-parse", "--short", "HEAD"]);
+        let git_hash = run_cmd_strip("git", ["rev-parse", "--short", "HEAD"]).unwrap();
         let is_dirty = !run_cmd("git", ["diff-index", "--quiet", "HEAD"])
+            .unwrap()
             .status
             .success();
         (git_hash, is_dirty)
