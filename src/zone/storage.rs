@@ -14,8 +14,7 @@ use domain::zonetree;
 use tracing::{info, trace, trace_span, warn};
 
 use crate::{
-    center::{Center, get_zone},
-    manager::record_zone_event,
+    center::Center,
     util::AbortOnDrop,
     zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
 };
@@ -105,6 +104,15 @@ impl StorageZoneHandle<'_> {
 
                 let (s, ureviewer) = s.finish(built);
                 *machine = ZoneDataStorage::ReviewLoadedPending(s);
+
+                // TODO: Use the instance ID here, which will not require
+                // examining the zone contents.
+                let serial = ureviewer.read_loaded().unwrap().soa().rdata.serial;
+                self.state.record_event(
+                    HistoricalEvent::NewVersionReceived,
+                    Some(domain::base::Serial(serial.into())),
+                );
+
                 self.start_loaded_review(ureviewer);
             }
 
@@ -169,45 +177,37 @@ impl StorageZoneHandle<'_> {
                 tree
             });
 
-            // Inform the central command.
-            let zone_name = zone.name.clone();
-            let zone_serial = domain::base::Serial(serial.into());
+            let mut state = zone.state.lock().unwrap();
 
-            record_zone_event(
-                &center,
-                &zone_name,
-                HistoricalEvent::NewVersionReceived,
-                Some(zone_serial),
-            );
-
-            if let Some(zone) = get_zone(&center, &zone_name)
-                && let Ok(mut zone_state) = zone.state.lock()
-            {
-                match zone_state.pipeline_mode.clone() {
-                    PipelineMode::Running => {}
-                    PipelineMode::SoftHalt(message) => {
-                        info!(
-                            "[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running"
-                        );
-                        zone_state.resume();
-                    }
-                    PipelineMode::HardHalt(_) => {
-                        warn!(
-                            "[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted"
-                        );
-                        return;
-                    }
+            // Resume the pipeline if needed.
+            let review = match state.pipeline_mode.clone() {
+                PipelineMode::Running => true,
+                PipelineMode::SoftHalt(message) => {
+                    info!("Resuming soft-halted pipeline (halt message: {message})");
+                    state.resume();
+                    true
                 }
+                PipelineMode::HardHalt(_) => {
+                    warn!("Not reviewing newly-loaded instance because pipeline is hard-halted");
+                    false
+                }
+            };
+
+            if review {
+                info!("Initiating review of newly-loaded instance");
+
+                // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
+                std::mem::drop(state);
+
+                center.unsigned_review_server.on_seek_approval_for_zone(
+                    &center,
+                    zone.name.clone(),
+                    domain::base::Serial(serial.into()),
+                );
+
+                state = zone.state.lock().unwrap();
             }
 
-            info!("[CC]: Instructing review server to publish the unsigned zone");
-            center.unsigned_review_server.on_seek_approval_for_zone(
-                &center,
-                zone_name,
-                zone_serial,
-            );
-
-            let mut state = zone.state.lock().unwrap();
             let mut handle = ZoneHandle {
                 zone: &zone,
                 state: &mut state,
