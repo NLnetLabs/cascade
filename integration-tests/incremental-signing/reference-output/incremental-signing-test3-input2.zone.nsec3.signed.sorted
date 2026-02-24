@@ -118,7 +118,6 @@ txt.ent.delegation.ent.example.	3600	IN	TXT	"TXT not-below/below delegation with
 txt.ent.delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
 txt.ent.no-delegation.example.	3600	IN	RRSIG	TXT 15 4 3600 20231114221320 20200913122640 2835 example. NuaY3ZSeqM/WkRotfhV8MA5W4sOU+ZG4ld7+HgKc2Etb9KqSV6I7RuMO2PmJmMDNFlg4oyaoZyqmnITL+uKeBg==
 txt.ent.no-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
-txt.ent.occluded.existing-delegation2.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
 txt.ent.occluded.existing-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
 txt.no-delegation.example.	3600	IN	RRSIG	TXT 15 3 3600 20231114221320 20200913122640 2835 example. AQsSVR9J9pGeVNFGq7TDomMd3f05i2eDcJAoTWkI2OlVD5Aqz9JPJf39YyHEuxBOBTzHQBh25oU75QE2CJcpCQ==
 txt.no-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation"

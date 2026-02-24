@@ -35,6 +35,14 @@ delegation1		NS	ns
 txt.ent2nt		TXT	"ENT to become NT"
 txt.ent2nt.not-auth	TXT	"ENT to become NT"
 
+; Extisting NTs to be converted to ENTs.
+txt.nt2ent		TXT	"NT to become ENT"
+nt2ent			TXT	"to be removed to become ENT"
+txt.nt2ent.not-auth	TXT	"NT to become ENT"
+nt2ent.not-auth		TXT	"to be removed to become ENT"
+
+; Add just an NS record
+
 ; Add just a DS record
 
 ; Create a new ENTs
@@ -49,3 +57,9 @@ two.delete.not-auth	AAAA	2001:db8::2
 delegation1.delete	NS	ns
 delegation2.delete	NS	ns
 non-auth.delegation2.delete A	192.0.2.3
+
+; Make sure NSEC3PARAM gets deleted or replaced.
+@		        IN      NSEC3PARAM      1 2 3 4567
+
+; Make sure ZONEMD gets deleted or replaced.
+@			IN	ZONEMD		1 2 3 4567

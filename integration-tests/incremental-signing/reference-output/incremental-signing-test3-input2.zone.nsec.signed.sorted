@@ -110,7 +110,6 @@ txt.ent.no-delegation.example.	3600	IN	NSEC	txt.no-delegation.example. TXT RRSIG
 txt.ent.no-delegation.example.	3600	IN	RRSIG	NSEC 15 4 3600 20231114221320 20200913122640 2835 example. TNp6fCZQYxSuB5oF+1JfsNCOucu7T2/Wfelj2TwddX6xq2lkXJUyyaMd04iVvSukdio9jw43OIAeHc9C380yDw==
 txt.ent.no-delegation.example.	3600	IN	RRSIG	TXT 15 4 3600 20231114221320 20200913122640 2835 example. NuaY3ZSeqM/WkRotfhV8MA5W4sOU+ZG4ld7+HgKc2Etb9KqSV6I7RuMO2PmJmMDNFlg4oyaoZyqmnITL+uKeBg==
 txt.ent.no-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
-txt.ent.occluded.existing-delegation2.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
 txt.ent.occluded.existing-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
 txt.no-delegation.example.	3600	IN	NSEC	no-ds-delegation.example. TXT RRSIG NSEC
 txt.no-delegation.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. 6YnCX8bEG6XIHu+dL7UHplx2V1r7nKCAVI/A+jv1MvqbUKsBQ6BXhph/NIDHSp7ig8gV5Vky8zl4owbbgWVvAg==
