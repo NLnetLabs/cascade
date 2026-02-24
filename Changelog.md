@@ -29,6 +29,7 @@ Released yyyy-mm-dd.
 - Prefix cascaded `--help` output with a one line description of the
   application. ([#409] by @ximon18)
 - Improve integration tests framework. ([#401] by @mozzieongit)
+- Add the git commit hash to the version output. ([#468] by @mozzieongit)
 
 ### Documentation improvements
 
@@ -49,6 +50,7 @@ Released yyyy-mm-dd.
 [#423]: https://github.com/NLnetLabs/cascade/pull/423
 [#428]: https://github.com/NLnetLabs/cascade/pull/428
 [#444]: https://github.com/NLnetLabs/cascade/pull/444
+[#468]: https://github.com/NLnetLabs/cascade/pull/468
 
 ## 0.1.0-alpha5 'Colline de la Croix'
 

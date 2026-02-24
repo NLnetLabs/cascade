@@ -11,7 +11,7 @@ use cascaded::{
         zone_signer::ZoneSigner,
     },
 };
-use clap::{crate_authors, crate_description, crate_version};
+use clap::{crate_authors, crate_description};
 use std::{collections::HashMap, fs::create_dir_all};
 use std::{
     io,
@@ -31,7 +31,7 @@ fn main() -> ExitCode {
 
     // Set up the command-line interface.
     let cmd = clap::Command::new("cascade")
-        .version(crate_version!())
+        .version(env!("CASCADE_BUILD_VERSION"))
         .author(crate_authors!())
         .about(crate_description!())
         .next_line_help(true);
@@ -66,7 +66,7 @@ fn main() -> ExitCode {
         }
     };
 
-    info!("Cascade version {}", env!("CARGO_PKG_VERSION"));
+    info!("Cascade version {}", env!("CASCADE_BUILD_VERSION"));
 
     // Confirm the right version of 'dnst' is available.
     if !check_dnst_version(&config) {
