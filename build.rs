@@ -154,13 +154,13 @@ fn generate_version_string(is_jj: bool) -> String {
                 "--ignore-working-copy",
                 "-G",
                 "-T",
-                "'commit_id'",
+                "commit_id.short(10)",
                 "-r",
                 "@-",
             ],
         )
         .unwrap();
-        let is_dirty = match run_cmd_strip("jj", ["log", "-G", "-T", "empty"])
+        let is_dirty = match run_cmd_strip("jj", ["log", "-G", "-T", "empty", "-r", "@"])
             .unwrap()
             .as_str()
         {
@@ -170,7 +170,7 @@ fn generate_version_string(is_jj: bool) -> String {
         };
         (git_hash, is_dirty)
     } else {
-        let git_hash = run_cmd_strip("git", ["rev-parse", "--short", "HEAD"]).unwrap();
+        let git_hash = run_cmd_strip("git", ["rev-parse", "--short=10", "HEAD"]).unwrap();
         let is_dirty = !run_cmd("git", ["diff-index", "--quiet", "HEAD"])
             .unwrap()
             .status
