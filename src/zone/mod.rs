@@ -504,6 +504,74 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
     }
 }
 
+// /// Change the policy used by a zone.
+// pub fn change_policy(
+//     center: &Arc<Center>,
+//     name: Name<Bytes>,
+//     policy: Box<str>,
+// ) -> Result<(), ChangePolicyError> {
+//     let mut state = center.state.lock().unwrap();
+//     let state = &mut *state;
+//
+//     // Verify the operation will succeed.
+//     {
+//         state
+//             .zones
+//             .get(&name)
+//             .ok_or(ChangePolicyError::NoSuchZone)?;
+//
+//         let policy = state
+//             .policies
+//             .get(&policy)
+//             .ok_or(ChangePolicyError::NoSuchPolicy)?;
+//         if policy.mid_deletion {
+//             return Err(ChangePolicyError::PolicyMidDeletion);
+//         }
+//     }
+//
+//     // Perform the operation.
+//     let zone = state.zones.get(&name).unwrap();
+//     let mut zone_state = zone.0.state.lock().unwrap();
+//
+//     // Unlink the previous policy of the zone.
+//     let old_policy = zone_state.policy.take();
+//     if let Some(policy) = &old_policy {
+//         let policy = state
+//             .policies
+//             .get_mut(&policy.name)
+//             .expect("zones and policies are consistent");
+//         assert!(
+//             policy.zones.remove(&name),
+//             "zones and policies are consistent"
+//         );
+//     }
+//
+//     // Link the zone to the selected policy.
+//     let policy = state
+//         .policies
+//         .get_mut(&policy)
+//         .ok_or(ChangePolicyError::NoSuchPolicy)?;
+//     if policy.mid_deletion {
+//         return Err(ChangePolicyError::PolicyMidDeletion);
+//     }
+//     zone_state.policy = Some(policy.latest.clone());
+//     policy.zones.insert(name.clone());
+//
+//     center
+//         .update_tx
+//         .send(Update::Changed(Change::ZonePolicyChanged {
+//             name: name.clone(),
+//             old: old_policy,
+//             new: policy.latest.clone(),
+//         }))
+//         .unwrap();
+//
+//     zone.0.mark_dirty(&mut zone_state, center);
+//
+//     info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
+//     Ok(())
+// }
+
 //----------- ZoneByName -------------------------------------------------------
 
 /// A [`Zone`] keyed by its name.
