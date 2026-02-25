@@ -208,7 +208,7 @@ started.
 
           sudo yum install -y cascade
 
-       If you want to use a PKCS#11-based HSM, also install the KMIP to PKCS#11
+       If you want to use a PKCS#11-based HSM, also install cascade-hsm-bridge
        relay with:
 
        .. code-block:: bash
