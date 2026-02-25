@@ -24,9 +24,10 @@ Cascade is able to use `OpenSSL <https://www.openssl.org>`_ and `ring
 keys and to cryptographically sign DNS :term:`RRset <Resource Record Set
 (RRset)>` data, storing the generated keys in on-disk files.
 
-For operators wishing to use an HSM, Cascade can connect directly to KMIP
-compatible HSMs, or to PKCS#11 compatible HSMs via our :program:`kmip2pkcs11`
-daemon, which is installed automatically as part of our Cascade packages.
+For operators wishing to use an HSM, Cascade can connect directly
+to KMIP compatible HSMs, or to PKCS#11 compatible HSMs via our
+:program:`cascade-hsm-bridge` daemon, which is installed automatically as part
+of our Cascade packages.
 
 .. hint:: Separating the main Cascade and HSM-relay daemons avoids running 
    untrusted third-party code inside the main Cascade process. This 
@@ -74,9 +75,9 @@ CLI to reload them.
 The Cascade daemon updates its on-disk state files periodically, and when
 signalled to stop, reloading them on next start.
 
-As Cascade outsources PKCS#11 support to :program:`kmip2pkcs11`, it does not
-require access to related configuration files or other vendor specific module
-dependencies.
+As Cascade outsources PKCS#11 support to :program:`cascade-hsm-bridge`,
+it does not require access to related configuration files or other vendor
+specific module dependencies.
 
 Robustness
 ----------

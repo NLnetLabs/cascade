@@ -112,11 +112,11 @@ If you want to use a PKCS#11 compatible :doc:`Hardware Security Module (HSM)
 .. Commented out until released
 .. .. code-block:: text
 
-  cargo install --locked kmip2pkcs11
+  cargo install --locked cascade-hsm-bridge
 
 .. code-block:: bash
 
-  cargo install --locked --git https://github.com/nlnetlabs/kmip2pkcs11
+  cargo install --locked --git https://github.com/nlnetlabs/cascade-hsm-bridge
 
 Finally, before running Cascade you will need to create a few directories and
 Cascade's config file. Create the directory where you want to store the config
@@ -157,8 +157,8 @@ If you are using the KMIP to PKCS#11 relay, update it with:
 
 .. code-block:: bash
 
-    cargo install --locked --force --git https://github.com/nlnetlabs/kmip2pkcs11
-..  cargo install --locked --force kmip2pkcs11
+    cargo install --locked --force --git https://github.com/nlnetlabs/cascade-hsm-bridge
+..  cargo install --locked --force cascade-hsm-bridge
 
 Installing Specific Versions
 """"""""""""""""""""""""""""

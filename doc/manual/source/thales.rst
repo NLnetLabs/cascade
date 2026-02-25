@@ -4,11 +4,12 @@ Integrating with Thales Cloud HSM
 The instructions on this page are for use with the `Thales Data Protection on
 Demand <https://thales.eu.market.dpondemand.io/signup/>`_ (DPoD) service.
 
-These instructions show how to run :program:`kmip2pkcs11` (the tool Cascade
-uses to connect to PKCS#11 compatible :doc:`hsms`) inside a Docker container
-and connect to its listen port from a server or another Docker container.
+These instructions show how to run :program:`cascade-hsm-bridge` (the tool
+Cascade uses to connect to PKCS#11 compatible :doc:`hsms`) inside a Docker
+container and connect to its listen port from a server or another Docker
+container.
 
-Docker is **not** required to use Cascade or :program:`kmip2pkcs11`.
+Docker is **not** required to use Cascade or :program:`cascade-hsm-bridge`.
 This example uses Docker because the `Thales documentation
 <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_insta
 ll/linux_minimal_client_access_dpod.htm>`_ describes how you can easily get
@@ -28,10 +29,10 @@ PKCS#11 connectivity to a Thales Luna Cloud HSM working using Docker.
 
 .. Tip::
 
-   When running :program:`kmip2pkcs11` as a systemd service, i.e. not in a
-   Docker container as this page describes, be aware that you will need to
-   use the ``systemctl edit kmip2pkcs11`` command to set some extra systemd
-   settings that the Thales Luna Cloud HSM PKCS#11 module needs.
+   When running :program:`cascade-hsm-bridge` as a systemd service, i.e. not
+   in a Docker container as this page describes, be aware that you will need
+   to use the ``systemctl edit cascade-hsm-bridge`` command to set some extra
+   systemd settings that the Thales Luna Cloud HSM PKCS#11 module needs.
 
    .. code-block:: text
 
@@ -81,16 +82,18 @@ contains the code needed to connect to a Thales Luna Cloud HSM.
 
 This will download a ZIP archive called "setup-<YOUR_CLIENT_NAME>.zip.
 
-Inside the zip are the files needed to connect to the Luna Cloud HSM using a
-PKCS#11 client like :program:`kmip2pkcs11`, including client certificates to
-authenticate, a PKCS#11 module configuration file called ``Chrystoki.conf```,
-and a TAR archive containing the PKCS#11 module ``libs/64/libCryptoki2.so``.
+Inside the zip are the files needed to connect to the Luna Cloud HSM using
+a PKCS#11 client like :program:`cascade-hsm-bridge`, including client
+certificates to authenticate, a PKCS#11 module configuration file called
+``Chrystoki.conf```, and a TAR archive containing the PKCS#11 module
+``libs/64/libCryptoki2.so``.
 
 Testing the PKCS#11 Module
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 By this point you should in principle have everything needed to connect
-:program:`kmip2pkcs11` or any other PKCS#11 client to the Luna Cloud HSM.
+:program:`cascade-hsm-bridge` or any other PKCS#11 client to the Luna Cloud
+HSM.
 
 However, there are a lot of files in the downloaded service client
 ZIP and you'll need to work out which ones you need and how to use them.
@@ -134,9 +137,9 @@ Luna Cloud HSM instance.
 
        The docker command below has an additional ``--publish`` argument that
        is not present in the Thales documentation. This is needed to expose
-       the :program:`kmip2pkcs11` listen port outside the container so that you
-       can connect to it from Cascade running on the host or inside another
-       container.
+       the :program:`cascade-hsm-bridge` listen port outside the container so
+       that you can connect to it from Cascade running on the host or inside
+       another container.
 
     .. code-block:: bash
     
@@ -151,8 +154,8 @@ Luna Cloud HSM instance.
        lunacm:> role login -name co
        lunacm:> role changepw -name co
 
-12. To test our settings before we use :program:`kmip2pkcs11` we can use
-    the opensc ``pkcs11-tool`` program *from another shell terminal*:
+12. To test our settings before we use :program:`cascade-hsm-bridge` we can
+    use the opensc ``pkcs11-tool`` program *from another shell terminal*:
 
     .. code-block:: bash
    
@@ -169,14 +172,15 @@ Luna Cloud HSM instance.
        Logging in to "MyPartition".
        Please enter User PIN: <THE PASSWORD YOU CHOSE IN STEP 11 ABOVE>
 
-Now that that works we can install :program:`kmip2pkcs11`.
+Now that that works we can install :program:`cascade-hsm-bridge`.
 
-Installing and Configuring :program:`kmip2pkcs11`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Installing and Configuring :program:`cascade-hsm-bridge`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-13. Continuing from the same ``/bin/bash`` session inside the Docker container,
-    follow the :doc:`installation` steps to install :program:`kmip2pkcs11`
-    for Ubuntu 24.04, the base image used by our DPoD Docker container.
+13. Continuing from the same ``/bin/bash`` session inside the Docker
+    container, follow the :doc:`installation` steps to install
+    :program:`cascade-hsm-bridge` for Ubuntu 24.04, the base image used by our
+    DPoD Docker container.
 
     .. Note::
 
@@ -186,22 +190,23 @@ Installing and Configuring :program:`kmip2pkcs11`
        execute ``alias sudo=`` before copy-pasting commands that use ``sudo``.
        This will ensure that the commands work as intended.
 
-14. Next, edit the :program:`kmip2pkcs11` configuration file to point it to
-    the Thales Luna Cloud HSM PKCS#11 module, and to listen on all network
-    IPv4 interfaces inside the Docker container:
+14. Next, edit the :program:`cascade-hsm-bridge` configuration file to point
+    it to the Thales Luna Cloud HSM PKCS#11 module, and to listen on all
+    network IPv4 interfaces inside the Docker container:
 
     .. code-block:: bash
 
-       $ sed -i -e 's|^lib_path =.\+|lib_path = "/usr/local/dpodclient/libs/64/libCryptoki2.so"|' /etc/kmip2pkcs11/config.toml
-       $ sed -i -e 's|addr = .\+|addr = "0.0.0.0"|' /etc/kmip2pkcs11/config.toml
+       $ sed -i -e 's|^lib_path =.\+|lib_path = "/usr/local/dpodclient/libs/64/libCryptoki2.so"|' /etc/cascade-hsm-bridge/config.toml
+       $ sed -i -e 's|addr = .\+|addr = "0.0.0.0"|' /etc/cascade-hsm-bridge/config.toml
 
-15. Now run :program:`kmip2pkcs11` and send its logs to the terminal so that
-    we can easily verify that it loads the Thales PKCS#11 module correctly.
+15. Now run :program:`cascade-hsm-bridge` and send its logs to the terminal
+    so that we can easily verify that it loads the Thales PKCS#11 module
+    correctly.
 
     .. code-block:: text
 
-       $ kmip2pkcs11 -c /etc/kmip2pkcs11/config.toml --stderr
-       $ cat /tmp/kmip2pkcs11.log
+       $ cascade-hsm-bridge -c /etc/cascade-hsm-bridge/config.toml --stderr
+       $ cat /tmp/cascade-hsm-bridge.log
        [2025-10-03T20:48:37] [INFO] Loading and initializing PKCS#11 library /usr/local/dpodclient/libs/64/libCryptoki2.so
        [2025-10-03T20:48:37] [INFO] Loaded SafeNet PKCS#11 library v10.9 supporting Cryptoki v2.20: Chrystoki
        [2025-10-03T20:48:37] [WARN] Generating self-signed server identity certificate
@@ -209,19 +214,20 @@ Installing and Configuring :program:`kmip2pkcs11`
 
 Here we can see that the PKCS#11 module has been loaded correctly.
 
-This does NOT show that :program:`kmip2pkcs11` is able to connect to the
-Luna Cloud HSM, but the ``pkcs11-tool -O`` command we used above proved that
-the PKCS#11 module is able to connect and so :program:`kmip2pkcs11` can as
-well. To demonstrate that, however, you will need to setup Cascade to use this
-running instance of :program:`kmip2pksc11`.
+This does NOT show that :program:`cascade-hsm-bridge` is able to
+connect to the Luna Cloud HSM, but the ``pkcs11-tool -O`` command
+we used above proved that the PKCS#11 module is able to connect and
+so :program:`cascade-hsm-bridge` can as well. To demonstrate that,
+however, you will need to setup Cascade to use this running instance of
+:program:`kmip2pksc11`.
 
-Using :program:`kmip2pkcs11` to connect Cascade to the Thales HSM
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Using :program:`cascade-hsm-bridge` to connect Cascade to the Thales HSM
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To learn how to use the :program:`kmip2pkcs11` instance that you just setup
-with Cascade, visit the :doc:`hsms` page, but skip to the *"Using kmip2pkcs11
-with Cascade"* section as we have already setup :program:`kmip2pkcs11` on
-port 5659.
+To learn how to use the :program:`cascade-hsm-bridge` instance that you
+just setup with Cascade, visit the :doc:`hsms` page, but skip to the
+*"Using cascade-hsm-bridge with Cascade"* section as we have already setup
+:program:`cascade-hsm-bridge` on port 5659.
 
 If you have Cascade setup, the command to add the Thales HSM is:
 
@@ -232,13 +238,14 @@ If you have Cascade setup, the command to add the Thales HSM is:
        --username MyPartition \
        --password <THE PASSWORD YOU CHOSE IN STEP 11 ABOVE>
    [2025-10-03T21:43:43.486Z] INFO cascade::units::http_server: Writing to KMIP server file './kmip/thales
-   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label MyPartition in slot Net Token Slot via library libCryptoki2.so'.
+   Added KMIP server 'cascade-hsm-bridge 0.1.0-alpha using PKCS#11 token with label MyPartition in slot Net Token Slot via library libCryptoki2.so'.
 
 Note that the username is the PKCS#11 slot label, and the password is the
 password you chose in step 11 above when setting up the Luna Cloud HSM.
 
-We can see from the output that Cascade made an initial test connection to the
-Thales HSM via :program:`kmip2pkcs11` to query its identification strings.
+We can see from the output that Cascade made an initial test connection to
+the Thales HSM via :program:`cascade-hsm-bridge` to query its identification
+strings.
 
 For an example of how to associate the HSM with a Cascade policy and use it to
 sign a zone see the :doc:`softhsm` page.

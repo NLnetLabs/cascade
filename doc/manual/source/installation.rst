@@ -213,7 +213,7 @@ started.
 
        .. code-block:: bash
 
-          sudo yum install -y kmip2pkcs11
+          sudo yum install -y cascade-hsm-bridge
 
        After installing, refer to the :doc:`quick-start` to get started.
 

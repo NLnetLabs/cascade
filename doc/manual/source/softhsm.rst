@@ -22,32 +22,32 @@ Install SoftHSMv2
    # apt install -y softhsm2
    # softhsm2-util --init-token --label Cascade --pin 1234 --so-pin 1234 --free
 
-Configure :program:`kmip2pkcs11`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Configure :program:`cascade-hsm-bridge`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:program:`kmip2pkcs11` needs to know where to find the SoftHSMv2 PKCS#11
-module. As PKCS#11 modules are loaded into a host application, any
-access to resources needed by the PKCS#11 module must be granted to
-the host application. For SoftHSM that involves granting the user that
-:program:`kmip2pkcs11` runs as read-write access to the `/var/lib/softhsm`
-directory. Let's set this all up and start the daemon:
+:program:`cascade-hsm-bridge` needs to know where to find the SoftHSMv2
+PKCS#11 module. As PKCS#11 modules are loaded into a host application,
+any access to resources needed by the PKCS#11 module must be granted
+to the host application. For SoftHSM that involves granting the user
+that :program:`cascade-hsm-bridge` runs as read-write access to the
+`/var/lib/softhsm` directory. Let's set this all up and start the daemon:
 
 .. code-block:: bash
 
-   # sed -i -e 's|^lib_path = .\+|lib_path = "/usr/lib/softhsm/libsofthsm2.so"|' /etc/kmip2pkcs11/config.toml
-   # chown -R kmip2pkcs11: /var/lib/softhsm
-   # systemctl start kmip2pkcs11
+   # sed -i -e 's|^lib_path = .\+|lib_path = "/usr/lib/softhsm/libsofthsm2.so"|' /etc/cascade-hsm-bridge/config.toml
+   # chown -R cascade-hsm-bridge: /var/lib/softhsm
+   # systemctl start cascade-hsm-bridge
 
 Create a Cascade Policy that uses SoftHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a Cascade policy called ``softhsm`` and set it to use a HSM
-called ``kmip2pkcs11``.
+Create a Cascade policy called ``softhsm`` and set it to use a HSM called
+``cascade-hsm-bridge``.
 
 .. code-block:: bash
 
    # cascade template policy | tee /etc/cascade/policies/softhsm.toml
-   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "kmip2pkcs11"|' /etc/cascade/policies/softhsm.toml
+   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "cascade-hsm-bridge"|' /etc/cascade/policies/softhsm.toml
 
 Start the Cascade daemon:
 
@@ -56,13 +56,13 @@ Start the Cascade daemon:
    # systemctl start cascaded
    # cascade policy reload
 
-Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
-locally running :program:`kmip2pkcs11` daemon:
+Configure a HSM in Cascade called ``cascade-hsm-bridge`` that will connect to
+the locally running :program:`cascade-hsm-bridge` daemon:
 
 .. code-block:: bash
 
-   # cascade hsm add --insecure --username Cascade --password 1234 kmip2pkcs11 127.0.0.1
-   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label Cascade in slot SoftHSM slot ID 0x1948bafd via library libsofthsm2.so'.
+   # cascade hsm add --insecure --username Cascade --password 1234 cascade-hsm-bridge 127.0.0.1
+   Added KMIP server 'cascade-hsm-bridge 0.1.0-alpha using PKCS#11 token with label Cascade in slot SoftHSM slot ID 0x1948bafd via library libsofthsm2.so'.
 
 Sign a Test Zone with SoftHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -108,10 +108,10 @@ which includes the identifiers of the signing keys that were used:
      Published zone available on 127.0.0.1:4543
    DNSSEC keys:
      KSK tagged 16598:
-       Reference: kmip://kmip2pkcs11/keys/C9623EAF300AF8E4A3DF6D5F6AD6674B49CCD322_pub?algorithm=13&flags=257
+       Reference: kmip://cascade-hsm-bridge/keys/C9623EAF300AF8E4A3DF6D5F6AD6674B49CCD322_pub?algorithm=13&flags=257
        Actively used for signing
      ZSK tagged 50714:
-       Reference: kmip://kmip2pkcs11/keys/3C95A4EC3A1E26BC67EC0336926ADBB212ADB3D8_pub?algorithm=13&flags=256
+       Reference: kmip://cascade-hsm-bridge/keys/3C95A4EC3A1E26BC67EC0336926ADBB212ADB3D8_pub?algorithm=13&flags=256
        Actively used for signing
    ...
 
