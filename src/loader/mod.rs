@@ -21,7 +21,7 @@ use domain::{new::base::Serial, tsig, zonetree::StoredName};
 use tracing::{debug, error, info};
 
 use crate::{
-    center::{Center, Change, State},
+    center::{Center, State},
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
     zone::{Zone, ZoneHandle},
@@ -73,10 +73,7 @@ impl Loader {
         }))
     }
 
-    pub fn on_change(&self, center: &Arc<Center>, change: Change) {
-        let Change::ZoneRemoved(name) = change else {
-            return;
-        };
+    pub fn remove_zone(&self, center: &Arc<Center>, name: &StoredName) {
         // We have to get the reference to the zone from our refresh monitor
         // because it doesn't exist in center.zones anymore!
         // Ideally, the ZoneRemoved command would pass the zone as Arc<Zone>
@@ -266,6 +263,7 @@ async fn refresh(
             let built = builder.finish().unwrap_or_else(|_| {
                 unreachable!("source-specific loading succeeded and must have filled 'builder'")
             });
+
             handle.storage().finish_load(built);
         }
 

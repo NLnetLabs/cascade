@@ -18,7 +18,6 @@ use std::{
     process::ExitCode,
     sync::{Arc, Mutex},
 };
-use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
@@ -107,9 +106,31 @@ fn main() -> ExitCode {
         }
 
         // Load all policies.
-        if let Err(err) = policy::reload_all(&mut state.policies, &state.zones, &config, |_| {}) {
+        let mut updates = Vec::new();
+        let res = policy::reload_all(&mut state.policies, &config, |name, _| {
+            updates.push(name.clone());
+        });
+
+        if let Err(err) = res {
             error!("Cascade couldn't load all policies: {err}");
             return ExitCode::FAILURE;
+        }
+
+        for name in updates {
+            let pol = state
+                .policies
+                .get(&name)
+                .expect("we just reloaded these policies");
+
+            for zone_name in &pol.zones {
+                let zone = state
+                    .zones
+                    .get(zone_name)
+                    .expect("zones and policies are consistent");
+
+                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
+                state.policy = Some(pol.latest.clone());
+            }
         }
 
         // TODO: Fail if any zone state files exist.
@@ -173,7 +194,6 @@ fn main() -> ExitCode {
     }
 
     // Prepare Cascade.
-    let (update_tx, mut update_rx) = mpsc::unbounded_channel();
     let center = Arc::new(Center {
         state: Mutex::new(state),
         config,
@@ -190,7 +210,6 @@ fn main() -> ExitCode {
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
-        update_tx,
     });
 
     // Set up the rayon threadpool
@@ -223,25 +242,19 @@ fn main() -> ExitCode {
             }
         };
 
-        loop {
-            tokio::select! {
-                // Watch for CTRL-C (SIGINT).
-                res = tokio::signal::ctrl_c() => {
-                    if let Err(error) = res {
-                        error!(
-                            "Listening for CTRL-C (SIGINT) failed: {error}"
-                        );
-                        break ExitCode::FAILURE;
-                    }
-                    break ExitCode::SUCCESS;
-                }
-                Some(update) = update_rx.recv() => {
-                    manager.on_update(update);
-                }
+        let res = match tokio::signal::ctrl_c().await {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(error) => {
+                error!("Listening for CTRL-C (SIGINT) failed: {error}");
+                ExitCode::FAILURE
             }
-        }
+        };
 
-        // All of Cascade's units will stop with the Tokio runtime.
+        // All of Cascade's units have AbortOnDrop's in Manager, so all
+        // background tasks will be stopped when Manager is dropped.
+        drop(manager);
+
+        res
     });
 
     // Persist the current state.

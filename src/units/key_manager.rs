@@ -1,7 +1,6 @@
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{Center, Change, ZoneAddError};
-use crate::manager::Update;
+use crate::center::{Center, ZoneAddError};
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, PolicyVersion};
 use crate::units::http_server::KmipServerState;
@@ -26,7 +25,7 @@ use std::process::Output;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 //------------ KeyManager ----------------------------------------------------
 
@@ -184,20 +183,23 @@ impl KeyManager {
         }
     }
 
-    pub fn on_change(&self, center: &Arc<Center>, change: Change) {
-        let Change::ZonePolicyChanged { name, old, new } = change else {
-            return;
-        };
-
+    pub fn on_zone_policy_changed(
+        &self,
+        center: &Arc<Center>,
+        name: StoredName,
+        old: Option<Arc<PolicyVersion>>,
+        new: Arc<PolicyVersion>,
+    ) {
         let center = center.clone();
 
+        if let Some(old) = old
+            && old.key_manager == new.key_manager
+        {
+            // Nothing changed.
+            return;
+        }
+
         tokio::spawn(async move {
-            if let Some(old) = old
-                && old.key_manager == new.key_manager
-            {
-                // Nothing changed.
-                return;
-            }
             // Keep it simple, just send all config items to keyset even
             // if they didn't change.
             let config_commands = policy_to_commands(&new);
@@ -435,13 +437,13 @@ impl KeyManager {
                     }
                 };
                 let _ = ks_info.insert(apex_name, new_info);
-                center
-                    .update_tx
-                    .send(Update::ResignZoneEvent {
-                        zone_name: zone.apex_name().clone(),
-                        trigger: SigningTrigger::ExternallyModifiedKeySetState,
-                    })
-                    .unwrap();
+                info!("[CC]: Instructing zone signer to re-sign the zone");
+                center.signer.on_sign_zone(
+                    center,
+                    zone.apex_name().clone(),
+                    None,
+                    SigningTrigger::ExternallyModifiedKeySetState,
+                );
                 continue;
             }
 
@@ -480,13 +482,13 @@ impl KeyManager {
                         // signer.
                         // let new_info = get_keyset_info(&state_path);
                         let _ = ks_info.insert(apex_name, new_info);
-                        center
-                            .update_tx
-                            .send(Update::ResignZoneEvent {
-                                zone_name: zone.apex_name().clone(),
-                                trigger: SigningTrigger::KeySetModifiedAfterCron,
-                            })
-                            .unwrap();
+                        info!("[CC]: Instructing zone signer to re-sign the zone");
+                        center.signer.on_sign_zone(
+                            center,
+                            zone.apex_name().clone(),
+                            None,
+                            SigningTrigger::KeySetModifiedAfterCron,
+                        );
                         continue;
                     }
 

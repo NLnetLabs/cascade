@@ -38,7 +38,7 @@ use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
 use crate::loader;
-use crate::manager::{Terminated, Update};
+use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
@@ -676,37 +676,60 @@ impl HttpServer {
             .map(|p| (p.clone(), PolicyChange::Unchanged))
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
-        let res = crate::policy::reload_all(
-            &mut state.policies,
-            &state.zones,
-            &center.config,
-            |change| {
-                changed = true;
+        let mut updates = Vec::new();
+        let res = crate::policy::reload_all(&mut state.policies, &center.config, |name, change| {
+            changed = true;
 
-                // Update 'changes' based on what happened.
-                match &change {
-                    center::Change::PolicyAdded(p) => {
-                        changes.insert(p.name.clone(), PolicyChange::Added);
-                    }
-                    center::Change::PolicyChanged(p, _) => {
-                        *changes.get_mut(&p.name).unwrap() = PolicyChange::Updated;
-                    }
-                    center::Change::PolicyRemoved(p) => {
-                        *changes.get_mut(&p.name).unwrap() = PolicyChange::Removed;
-                    }
-                    _ => {}
-                };
+            changes.insert(
+                name.clone(),
+                match change {
+                    crate::policy::PolicyChange::Removed { .. } => PolicyChange::Removed,
+                    crate::policy::PolicyChange::Updated { .. } => PolicyChange::Updated,
+                    crate::policy::PolicyChange::Added { .. } => PolicyChange::Added,
+                },
+            );
 
-                // Propagate the changes globally.
-                let _ = center.update_tx.send(Update::Changed(change));
-            },
-        );
-        if changed {
-            state.mark_dirty(center);
-        }
+            updates.push((name.clone(), change));
+        });
+
         if let Err(err) = res {
             return Json(Err(err));
         }
+
+        if changed {
+            state.mark_dirty(center);
+        }
+
+        for (name, change) in updates {
+            let (old, new) = match change {
+                crate::policy::PolicyChange::Removed { .. } => continue,
+                crate::policy::PolicyChange::Updated { old, new } => (Some(old), new),
+                crate::policy::PolicyChange::Added(new) => (None, new),
+            };
+
+            let pol = state
+                .policies
+                .get(&name)
+                .expect("we just reloaded these policies");
+
+            for zone_name in &pol.zones {
+                let zone = state
+                    .zones
+                    .get(zone_name)
+                    .expect("zones and policies are consistent");
+
+                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
+                state.policy = Some(pol.latest.clone());
+
+                center.key_manager.on_zone_policy_changed(
+                    center,
+                    zone_name.clone(),
+                    old.clone(),
+                    new.clone(),
+                );
+            }
+        }
+
         let mut changes: Vec<(String, _)> =
             changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
         changes.sort_unstable_by(|l, r| l.0.cmp(&r.0));

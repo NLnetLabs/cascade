@@ -11,13 +11,12 @@ use cascade_zonedata::{
     ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::zonetree;
-use tracing::{trace, trace_span};
+use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
-    manager::Update,
     util::AbortOnDrop,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -105,6 +104,15 @@ impl StorageZoneHandle<'_> {
 
                 let (s, ureviewer) = s.finish(built);
                 *machine = ZoneDataStorage::ReviewLoadedPending(s);
+
+                // TODO: Use the instance ID here, which will not require
+                // examining the zone contents.
+                let serial = ureviewer.read_loaded().unwrap().soa().rdata.serial;
+                self.state.record_event(
+                    HistoricalEvent::NewVersionReceived,
+                    Some(domain::base::Serial(serial.into())),
+                );
+
                 self.start_loaded_review(ureviewer);
             }
 
@@ -169,16 +177,37 @@ impl StorageZoneHandle<'_> {
                 tree
             });
 
-            // Inform the central command.
-            center
-                .update_tx
-                .send(Update::UnsignedZoneUpdatedEvent {
-                    zone_name: zone.name.clone(),
-                    zone_serial: domain::base::Serial(serial.into()),
-                })
-                .unwrap();
-
             let mut state = zone.state.lock().unwrap();
+
+            // Resume the pipeline if needed.
+            let review = match state.pipeline_mode.clone() {
+                PipelineMode::Running => true,
+                PipelineMode::SoftHalt(message) => {
+                    info!("Resuming soft-halted pipeline (halt message: {message})");
+                    state.resume();
+                    true
+                }
+                PipelineMode::HardHalt(_) => {
+                    warn!("Not reviewing newly-loaded instance because pipeline is hard-halted");
+                    false
+                }
+            };
+
+            if review {
+                info!("Initiating review of newly-loaded instance");
+
+                // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
+                std::mem::drop(state);
+
+                center.unsigned_review_server.on_seek_approval_for_zone(
+                    &center,
+                    zone.name.clone(),
+                    domain::base::Serial(serial.into()),
+                );
+
+                state = zone.state.lock().unwrap();
+            }
+
             let mut handle = ZoneHandle {
                 zone: &zone,
                 state: &mut state,
