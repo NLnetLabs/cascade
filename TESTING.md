@@ -5,8 +5,9 @@
 - [Unit tests](#unit-tests)
 - [Integration/System testing with `act`](#integrationsystem-testing-with-act)
   - [TL;DR](#tldr)
-  - [Network requirement (why --network default)](#network-requirement-why---network-default)
+  - [Creating a test](#creating-a-test)
   - [Running single jobs/tests](#running-single-jobstests)
+  - [Network requirement (why --network default)](#network-requirement-why---network-default)
   - [Limitations](#limitations)
     - [No init or systemd](#no-init-or-systemd)
     - [All nameservers on the same address](#all-nameservers-on-the-same-address)
@@ -14,7 +15,6 @@
   - [Running act with Podman](#running-act-with-podman)
   - [Miscellaneous notes](#miscellaneous-notes)
   - [Docker dependencies](#docker-dependencies)
-  - [Creating a test](#creating-a-test)
   - [Provided Nameservers and Zones](#provided-nameservers-and-zones)
 
 ---
@@ -53,6 +53,26 @@ Create a new test with:
 - `./integration-tests/scripts/add-test.sh your-test "Your test name"`
 
 
+### Creating a test
+
+The workflow file `.github/workflows/system-tests.yml` only contains "stub"
+runners for the tests, with the tests themselves being written in actions in
+`.github/actions/tests/`.
+
+You can easily generate the scaffolding for a test with the script
+`./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.
+
+The test environment provides a few nameservers and zones for use in tests
+(see section [Provided Nameservers and Zones](#provided-nameservers-and-zones)).
+
+
+### Running single jobs/tests
+
+You can run single jobs with act using the `--job` option. However, if the job
+has the `needs` option set to depend on other jobs, those jobs will always be run
+before.
+
+
 ### Network requirement (why --network default)
 
 In the test environment, Unbound needs to bind to localhost:53, which is not
@@ -67,12 +87,6 @@ network is called `default`, while Podman's default network is called `podman`.
 Therefore, you need to use `act --network default` on Docker, and `act
 --network podman` on Podman.
 
-
-### Running single jobs/tests
-
-You can run single jobs with act using the `--job` option. However, if the job
-has the `needs` option set to depend on other jobs, those jobs will always be run
-before.
 
 ### Limitations
 
@@ -154,15 +168,6 @@ will use Podman as their backend instead of the Docker daemon.
 When using Docker to run the integration tests, you need to make sure that the
 `docker-buildx` plugin is installed, otherwise Docker will complain about
 unknown flags.
-
-### Creating a test
-
-The workflow file `.github/workflows/system-tests.yml` only contains "stub"
-runners for the tests, with the tests themselves being written in actions in
-`.github/actions/tests/`.
-
-You can easily generate the scaffolding for a test with the script
-`./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.
 
 ### Provided Nameservers and Zones
 
