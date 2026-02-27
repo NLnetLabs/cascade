@@ -1891,9 +1891,6 @@ impl SignRaw for KeyPair {
 //------------ MultiThreadedSorter -------------------------------------------
 
 /// A parallelized sort implementation for use with [`SortedRecords`].
-///
-/// TODO: Should we add a `-j` (jobs) command line argument to override the
-/// default Rayon behaviour of using as many threads as their are CPU cores?
 struct MultiThreadedSorter;
 
 impl domain::dnssec::sign::records::Sorter for MultiThreadedSorter {
