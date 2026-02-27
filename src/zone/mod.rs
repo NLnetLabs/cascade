@@ -24,7 +24,10 @@ use crate::{
     policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
+    zone::instance::Instances,
 };
+
+pub mod instance;
 
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
@@ -104,6 +107,9 @@ pub struct ZoneState {
     /// duration of time.  If the field is `None`, and the state is changed, a
     /// new save operation should be enqueued.
     pub enqueued_save: Option<tokio::task::JoinHandle<()>>,
+
+    /// Instances of the zone.
+    pub instances: Instances,
 
     /// The minimum expiration time in the signed zone we are serving from
     /// the publication server.
