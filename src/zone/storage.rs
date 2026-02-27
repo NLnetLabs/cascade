@@ -7,8 +7,8 @@
 use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
-    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZoneReader, LoadedZoneReviewer, SignedZoneReviewer,
-    ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReader, LoadedZoneReviewer,
+    SignedZoneReviewer, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::zonetree;
 use tracing::{info, trace, trace_span, warn};
@@ -102,18 +102,18 @@ impl StorageZoneHandle<'_> {
                     "Successfully finishing the ongoing load"
                 );
 
-                let (s, ureviewer) = s.finish(built);
+                let (s, loaded_reviewer) = s.finish(built);
                 *machine = ZoneDataStorage::ReviewLoadedPending(s);
 
                 // TODO: Use the instance ID here, which will not require
                 // examining the zone contents.
-                let serial = ureviewer.read_loaded().unwrap().soa().rdata.serial;
+                let serial = loaded_reviewer.read_loaded().unwrap().soa().rdata.serial;
                 self.state.record_event(
                     HistoricalEvent::NewVersionReceived,
                     Some(domain::base::Serial(serial.into())),
                 );
 
-                self.start_loaded_review(ureviewer);
+                self.start_loaded_review(loaded_reviewer);
             }
 
             _ => unreachable!(
@@ -148,10 +148,10 @@ impl StorageZoneHandle<'_> {
     }
 }
 
-/// # Server Operations
+/// # Loader Review Operations
 impl StorageZoneHandle<'_> {
     /// Initiate review of a new loaded instance of a zone.
-    fn start_loaded_review(&mut self, ureviewer: LoadedZoneReviewer) {
+    fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
         // NOTE: This function provides compatibility with 'zonetree's.
 
         let zone = self.zone.clone();
@@ -161,7 +161,7 @@ impl StorageZoneHandle<'_> {
             let _guard = span.enter();
 
             // Read the loaded instance.
-            let reader = ureviewer
+            let reader = loaded_reviewer
                 .read_loaded()
                 .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
             let serial = reader.soa().rdata.serial;
@@ -188,10 +188,28 @@ impl StorageZoneHandle<'_> {
                     true
                 }
                 PipelineMode::HardHalt(_) => {
+                    // TODO: Is this the right behavior?
                     warn!("Not reviewing newly-loaded instance because pipeline is hard-halted");
                     false
                 }
             };
+
+            // TODO: Pass on the reviewer to the zone server.
+            let old_loaded_reviewer =
+                std::mem::replace(&mut state.storage.loaded_reviewer, loaded_reviewer);
+
+            // Transition into the reviewing state.
+            tracing::debug!("Transitioning zone state...");
+            match state.storage.machine.take() {
+                ZoneDataStorage::ReviewLoadedPending(s) => {
+                    let s = s.start(old_loaded_reviewer);
+                    state.storage.machine = ZoneDataStorage::ReviewingLoaded(s);
+                }
+
+                _ => unreachable!(
+                    "'ZoneDataStorage::ReviewLoadedPending' is the only state where a 'LoadedZoneReviewer' is available"
+                ),
+            }
 
             if review {
                 info!("Initiating review of newly-loaded instance");
@@ -208,19 +226,12 @@ impl StorageZoneHandle<'_> {
                 state = zone.state.lock().unwrap();
             }
 
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
-
             // Clean up the background task.
             //
             // NOTE: The outer function is known to have finished by this
             // point (due to the above zone state lock), and it will set
             // 'background_task'. Thus, a race condition is impossible.
-            let task = handle
-                .state
+            let task = state
                 .storage
                 .background_task
                 .take()
@@ -230,39 +241,6 @@ impl StorageZoneHandle<'_> {
                 tokio::task::id(),
                 "A different background task is registered"
             );
-
-            // Transition into the reviewing state.
-            tracing::debug!("Transitioning zone state...");
-            let machine = &mut handle.state.storage.machine;
-            match machine.take() {
-                ZoneDataStorage::ReviewLoadedPending(s) => {
-                    let old_ureviewer =
-                        std::mem::replace(&mut handle.state.storage.loaded_reviewer, ureviewer);
-                    let s = s.start(old_ureviewer);
-
-                    // For now, transition all the way back to 'Passive' state.
-                    let (s, persister) = s.mark_approved();
-                    let persisted = persister.persist();
-                    let (s, mut builder) = s.mark_complete(persisted);
-                    builder.clear();
-                    let built = builder.finish().unwrap_or_else(|_| unreachable!());
-                    let (s, reviewer) = s.finish(built);
-                    let old_reviewer =
-                        std::mem::replace(&mut handle.state.storage.reviewer, reviewer);
-                    let s = s.start(old_reviewer);
-                    let (s, persister) = s.mark_approved();
-                    let persisted = persister.persist();
-                    let (s, viewer) = s.mark_complete(persisted);
-                    let old_viewer = std::mem::replace(&mut handle.state.storage.viewer, viewer);
-                    let (s, cleaner) = s.switch(old_viewer);
-                    *machine = ZoneDataStorage::Cleaning(s);
-                    handle.storage().start_cleanup(cleaner);
-                }
-
-                _ => unreachable!(
-                    "'ZoneDataStorage::ReviewLoadedPending' is the only states where an 'LoadedZoneReviewer' is available"
-                ),
-            }
         });
 
         self.state.storage.background_task = Some(task.into());
@@ -291,6 +269,32 @@ impl StorageZoneHandle<'_> {
         Self::force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
 
         zone
+    }
+
+    /// Approve a loaded instance of a zone.
+    pub fn approve_loaded(&mut self) {
+        // Examine the current state.
+        let machine = &mut self.state.storage.machine;
+        match machine.take() {
+            ZoneDataStorage::ReviewingLoaded(s) => {
+                // TODO: Specify the instance ID.
+                info!(
+                    zone = %self.zone.name,
+                    "The loaded instance has been approved"
+                );
+
+                trace!(
+                    zone = %self.zone.name,
+                    "Persisting the loaded instance"
+                );
+
+                let (s, persister) = s.mark_approved();
+                *machine = ZoneDataStorage::PersistingLoaded(s);
+                self.start_loaded_persistence(persister);
+            }
+
+            _ => panic!("The zone is not undergoing loader review"),
+        }
     }
 
     /// Force a [`Future`] to evaluate synchronously.
@@ -359,6 +363,77 @@ impl StorageZoneHandle<'_> {
                 tokio::task::id(),
                 "A different background task is registered"
             );
+
+            // Notify the rest of Cascade that the storage is idle.
+            handle.storage().on_idle();
+        });
+
+        self.state.storage.background_task = Some(task.into());
+    }
+
+    /// Begin persisting a loaded zone instance.
+    ///
+    /// A background task will be spawned to perform the provided zone
+    /// persistence and transition to the next state.
+    fn start_loaded_persistence(&mut self, persister: LoadedZonePersister) {
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            // Perform the persisting.
+            let persisted = persister.persist();
+
+            // NOTE: The outer function, which is spawning the background task,
+            // has a lock of the zone state. Thus, the following lock cannot be
+            // taken until the outer function terminates.
+            let mut state = zone.state.lock().unwrap();
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut state,
+                center: &center,
+            };
+
+            // Clean up the background task.
+            //
+            // NOTE: The outer function is known to have finished by this
+            // point (due to the above zone state lock), and it will set
+            // 'background_task'. Thus, a race condition is impossible.
+            let task = handle
+                .state
+                .storage
+                .background_task
+                .take()
+                .expect("The background task 'task' has been set");
+            assert_eq!(
+                task.id(),
+                tokio::task::id(),
+                "A different background task is registered"
+            );
+
+            // Transition the state machine.
+            let machine = &mut handle.state.storage.machine;
+            match machine.take() {
+                ZoneDataStorage::PersistingLoaded(s) => {
+                    // For now, transition all the way back to 'Passive' state.
+                    let (s, mut builder) = s.mark_complete(persisted);
+                    builder.clear();
+                    let built = builder.finish().unwrap_or_else(|_| unreachable!());
+                    let (s, reviewer) = s.finish(built);
+                    let old_reviewer =
+                        std::mem::replace(&mut handle.state.storage.reviewer, reviewer);
+                    let s = s.start(old_reviewer);
+                    let (s, persister) = s.mark_approved();
+                    let persisted = persister.persist();
+                    let (s, viewer) = s.mark_complete(persisted);
+                    let old_viewer = std::mem::replace(&mut handle.state.storage.viewer, viewer);
+                    let (s, cleaner) = s.switch(old_viewer);
+                    *machine = ZoneDataStorage::Cleaning(s);
+                    handle.storage().start_cleanup(cleaner);
+                }
+
+                _ => unreachable!(
+                    "'ZoneDataStorage::PersistingLoaded' is the only state where a 'LoadedZonePersister' is available"
+                ),
+            }
 
             // Notify the rest of Cascade that the storage is idle.
             handle.storage().on_idle();
