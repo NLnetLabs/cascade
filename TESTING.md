@@ -1,5 +1,24 @@
 # Testing Cascade
 
+## Table of Content
+
+- [Unit tests](#unit-tests)
+- [Integration/System testing with `act`](#integrationsystem-testing-with-act)
+  - [TL;DR](#tldr)
+  - [Network requirement (why --network default)](#network-requirement-why---network-default)
+  - [Running single jobs/tests](#running-single-jobstests)
+  - [Limitations](#limitations)
+    - [No init or systemd](#no-init-or-systemd)
+    - [All nameservers on the same address](#all-nameservers-on-the-same-address)
+  - [Managing act's verbosity](#managing-acts-verbosity)
+  - [Running act with Podman](#running-act-with-podman)
+  - [Miscellaneous notes](#miscellaneous-notes)
+  - [Docker dependencies](#docker-dependencies)
+  - [Creating a test](#creating-a-test)
+  - [Provided Nameservers and Zones](#provided-nameservers-and-zones)
+
+---
+
 ## Unit tests
 
 Unit tests can be run as usual for Rust projects using `cargo test`:
