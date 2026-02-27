@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+NAMESERVER_BASE_DIR=$PWD/nameservers
+
 function get-cascade-config-option() {
   local _base_dir=${1%/}
   case "$2" in
