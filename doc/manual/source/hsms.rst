@@ -88,7 +88,7 @@ to stress or performance test the interface. The tested HSMs are:
    versions.
 
 Setting up cascade-hsm-bridge
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you installed Cascade via a DEB or RPM package you should also already have
 the :program:`cascade-hsm-bridge` software installed, unless you explicitly
