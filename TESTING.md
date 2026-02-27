@@ -144,3 +144,27 @@ runners for the tests, with the tests themselves being written in actions in
 
 You can easily generate the scaffolding for a test with the script
 `./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.
+
+### Provided Nameservers and Zones
+
+The test environment provides a number of nameservers (a primary NSD,
+a secondary NSD, Bind, and the resolver Unbound) and the zone `example.test.`
+and it's parent `test.`.
+
+Unbound is used as the system's stub resolver forwarding most queries to Quad9
+or Cloudflare. Queries to `test.` are redirected to Bind on port 1053 and
+queries to `example.test.` are redirected to the secondary NSD instance on
+port 1054.
+
+Bind is configured as an authoritative for the zone `test.` and is used to
+enable updating the zone `test.` during a test, e.g. with `dnst update`, to
+update the DS RR for `example.test.`, without having to fiddle with modyfing
+the zonefile (but you still can). (Currently, the zone `test.` is not signed,
+which is ok for the current implementation of `dnst keyset`, but this may need
+to change in the future.)
+
+Both NSD instances are configured as authoritative for `example.test.`.
+The primary NSD loads the zone from a zonefile and provides AXFR and IXFR to
+anyone with IP `127.0.0.1`. The secondary NSD is configured to transfer the
+zone from Cascade (currently always using AXFR). Both NSD instances allow
+notifies from `127.0.0.1`.
