@@ -8,7 +8,7 @@ use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReader, LoadedZoneReviewer,
-    SignedZoneReviewer, ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    SignedZoneBuilder, SignedZoneReviewer, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::zonetree;
 use tracing::{info, trace, trace_span, warn};
@@ -311,6 +311,83 @@ impl StorageZoneHandle<'_> {
     }
 }
 
+/// # Signer Operations
+impl StorageZoneHandle<'_> {
+    /// Begin resigning the zone.
+    ///
+    /// If the zone data storage is not busy, a [`SignedZoneBuilder`] will be
+    /// returned through which the instance of the zone can be resigned.
+    /// Follow up by calling:
+    ///
+    /// - [`Self::finish_sign()`] when signing succeeds.
+    ///
+    /// - [`Self::give_up_sign()`] when signing fails.
+    ///
+    /// If the zone data storage is busy, [`None`] is returned; the signer
+    /// should enqueue the re-sign operation and wait for an idle notification.
+    pub fn start_resign(&mut self) -> Option<SignedZoneBuilder> {
+        // Examine the current state.
+        let machine = &mut self.state.storage.machine;
+        match machine.take() {
+            ZoneDataStorage::Passive(s) => {
+                // The zone storage is passive; no other operations are ongoing,
+                // and it is possible to begin re-signing.
+                trace!(
+                    zone = %self.zone.name,
+                    "Obtaining a 'SignedZoneBuilder' for performing a re-sign"
+                );
+
+                let (s, builder) = s.resign();
+                *machine = ZoneDataStorage::Signing(s);
+                Some(builder)
+            }
+
+            other => {
+                // The zone storage is in the middle of another operation.
+                trace!(
+                    zone = %self.zone.name,
+                    "Deferring re-sign because data storage is busy"
+                );
+
+                *machine = other;
+                None
+            }
+        }
+    }
+
+    // TODO: finish_sign()
+
+    /// Give up on the ongoing signing operation.
+    ///
+    /// Intermediate artifacts in the signed instance, and the upcoming loaded
+    /// instance (if any), will be cleaned up automatically, in the background.
+    /// Once the zone storage is idle, a notification will be sent.
+    pub fn give_up_sign(&mut self, builder: SignedZoneBuilder) {
+        // Examine the current state.
+        let machine = &mut self.state.storage.machine;
+        match machine.take() {
+            ZoneDataStorage::Signing(s) => {
+                trace!(
+                    zone = %self.zone.name,
+                    "Giving up on the ongoing (re-)sign"
+                );
+
+                let (s, loaded_reviewer) = s.give_up(builder);
+                // TODO: Communicate the new reviewer handle to the zone server.
+                let old_loaded_reviewer =
+                    std::mem::replace(&mut self.state.storage.loaded_reviewer, loaded_reviewer);
+                let (s, cleaner) = s.stop_review(old_loaded_reviewer);
+                *machine = ZoneDataStorage::Cleaning(s);
+                self.start_cleanup(cleaner);
+            }
+
+            _ => unreachable!(
+                "'ZoneDataStorage::Signing' is the only state where a 'SignedZoneBuilder' is available"
+            ),
+        }
+    }
+}
+
 /// # Background Tasks
 impl StorageZoneHandle<'_> {
     /// Run a cleanup of zone data.
@@ -447,7 +524,12 @@ impl StorageZoneHandle<'_> {
 
         if self.zone().loader().start_pending() {
             // The zone storage is no longer idle.
-            //return;
+            return;
+        }
+
+        if self.zone().signer().start_pending() {
+            // The zone storage is no longer idle.
+            // return;
         }
     }
 }
