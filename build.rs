@@ -90,7 +90,7 @@ fn main() -> Result<(), ()> {
         // avoid potential false commit hashes. A jj worktree located inside
         // an existing git repository does not contain a .git file or
         // directory. Therefore, git will act on the git repository containing
-        // the worktre and report wrong status and checked out commits.
+        // the worktree and report wrong status and checked out commits.
 
         // On first run of jj, check if it executes ok (aka do not unwrap, but catch the error)
         run_cmd_strip("jj", ["workspace", "root", "--ignore-working-copy"]).map_err(|e| {
