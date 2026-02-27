@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use axum::Json;
 use axum::Router;
 use axum::extract::Path;
+use axum::extract::Request;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -133,7 +134,8 @@ impl HttpServer {
             .route("/kmip/{server_id}", get(Self::hsm_server_get))
             .route("/key/{zone}/roll", post(Self::key_roll))
             .route("/key/{zone}/remove", post(Self::key_remove))
-            .with_state(this.clone());
+            .with_state(this.clone())
+            .fallback(Self::warn_route_not_found);
 
         // Serve at the configured endpoints.
         tokio::spawn(async move {
@@ -154,6 +156,19 @@ impl HttpServer {
         });
 
         Ok(this)
+    }
+
+    /// Log a warning if the HTTP request does not match any route handler
+    /// registered with Axum.
+    ///
+    /// As Cascade is not supposed to be exposed directly to the internet one
+    /// would not expect lots of malicious requests to end up being logged by
+    /// this handler. Instead if something is logged by this handler it likely
+    /// indicates a problem in the Cascade daemon or in the Cascade CLI client
+    /// and is thus worthy of being logged at warning level.
+    async fn warn_route_not_found(request: Request) -> StatusCode {
+        warn!("No route for {} {}", request.method(), request.uri());
+        StatusCode::NOT_FOUND
     }
 
     /// If this endpoint responds, the daemon is considered healthy.
