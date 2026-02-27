@@ -330,6 +330,8 @@ pattern:
   zonefile: "%s.primary-zone"
   allow-notify: 127.0.0.1 NOKEY
   provide-xfr: 127.0.0.1 NOKEY
+  store-ixfr: yes
+  create-ixfr: yes
 
 zone:
   name: example.test
