@@ -14,7 +14,7 @@ runs:
     - run: cascade --version
     - name: Setup and start the cascade daemon
       uses: ./.github/actions/setup-and-start-cascade
-    - name: Add a zone
+    - name: Add a zone served by the NSD primary
       run: |
         cascade zone add --policy default --source 127.0.0.1:1055 example.test
     - name: Check zone status
@@ -32,7 +32,7 @@ runs:
     - name: Query zone
       run: |
         dig @127.0.0.1 -p 4543 example.test AXFR
-    - name: Tell NSD that the zone is now available
+    - name: Tell the NSD secondary that the zone is now available
       # Only necessary if NOTIFY is not setup for cascade
       run: |
         ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer example.test
