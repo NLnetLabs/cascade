@@ -117,7 +117,7 @@ impl StorageZoneHandle<'_> {
             }
 
             _ => unreachable!(
-                "'ZoneDataStorage::Loading' is the only state where a 'LoadedZoneBuilder' is available"
+                "'ZoneDataStorage::Loading' is the only state where a 'LoadedZoneBuilt' is available"
             ),
         }
     }
@@ -253,20 +253,20 @@ impl StorageZoneHandle<'_> {
         let zone =
             zonetree::ZoneBuilder::new(zone.name.clone(), domain::base::iana::Class::IN).build();
 
-        let mut updater = Self::force_future(ZoneUpdater::new(zone.clone())).unwrap();
+        let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
 
         // Clear all existing records.
-        Self::force_future(updater.apply(ZoneUpdate::DeleteAllRecords)).unwrap();
+        force_future(updater.apply(ZoneUpdate::DeleteAllRecords)).unwrap();
 
         // Add every record in turn.
         for record in reader.records() {
             let record: cascade_zonedata::OldRecord = record.clone().into();
-            Self::force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
+            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
 
         // Commit the update with the SOA record.
         let soa: cascade_zonedata::OldRecord = reader.soa().clone().into();
-        Self::force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
+        force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
 
         zone
     }
@@ -294,19 +294,6 @@ impl StorageZoneHandle<'_> {
             }
 
             _ => panic!("The zone is not undergoing loader review"),
-        }
-    }
-
-    /// Force a [`Future`] to evaluate synchronously.
-    fn force_future<F: IntoFuture>(future: F) -> F::Output {
-        let waker = std::task::Waker::noop();
-        let mut cx = std::task::Context::from_waker(waker);
-        let future = std::pin::pin!(future.into_future());
-        match future.poll(&mut cx) {
-            std::task::Poll::Ready(output) => output,
-            std::task::Poll::Pending => {
-                panic!("Could not evaluate the future synchronously")
-            }
         }
     }
 }
@@ -514,5 +501,20 @@ impl Default for StorageState {
 impl fmt::Debug for StorageState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("DataStorage")
+    }
+}
+
+//------------------------------------------------------------------------------
+
+/// Force a [`Future`] to evaluate synchronously.
+fn force_future<F: IntoFuture>(future: F) -> F::Output {
+    let waker = std::task::Waker::noop();
+    let mut cx = std::task::Context::from_waker(waker);
+    let future = std::pin::pin!(future.into_future());
+    match future.poll(&mut cx) {
+        std::task::Poll::Ready(output) => output,
+        std::task::Poll::Pending => {
+            panic!("Could not evaluate the future synchronously")
+        }
     }
 }
