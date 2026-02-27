@@ -11,6 +11,7 @@ pub mod log;
 pub mod manager;
 pub mod metrics;
 pub mod policy;
+pub mod signer;
 pub mod state;
 pub mod tsig;
 pub mod units;
