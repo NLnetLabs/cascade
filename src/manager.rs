@@ -90,6 +90,12 @@ impl Manager {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        for socket in &http_sockets {
+            // Unwrap,because there is should always a valid IPv4/IPv6
+            // address. Otherwise this socket couldn't have been created.
+            let addr = socket.local_addr().unwrap();
+            info!("Obtained TCP listener for HTTP Server on address {addr}");
+        }
 
         info!("Starting unit 'PS'");
         handles.extend(ZoneServer::run(
