@@ -184,7 +184,7 @@ port 1054.
 
 Bind is configured as an authoritative for the zone `test.` and is used to
 enable updating the zone `test.` during a test, e.g. with `dnst update`, to
-update the DS RR for `example.test.`, without having to fiddle with modyfing
+update the DS RR for `example.test.`, without having to fiddle with modifying
 the zonefile (but you still can). (Currently, the zone `test.` is not signed,
 which is ok for the current implementation of `dnst keyset`, but this may need
 to change in the future.)
