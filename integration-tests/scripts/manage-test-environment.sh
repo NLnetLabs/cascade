@@ -330,6 +330,7 @@ pattern:
   zonefile: "%s.primary-zone"
   allow-notify: 127.0.0.1 NOKEY
   provide-xfr: 127.0.0.1 NOKEY
+  notify: 127.0.0.1@${_cascade_port} NOKEY 
   store-ixfr: yes
   create-ixfr: yes
 

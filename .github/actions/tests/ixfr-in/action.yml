@@ -1,0 +1,95 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Receive a zone via IXFR from the NSD primary.'
+description: 'Receive a zone via IXFR from the NSD primary.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+
+    - name: Query SOA at the NSD primary
+      run: |
+        SOA_RR=$(dig +short @127.0.0.1 -p 1055 example.test SOA)
+        if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 1 60 60 3600 5" ]]; then
+          echo "::error:: Expected SOA serial '1' but dig reports '${SOA_RR}'"
+          exit 1
+        fi
+
+    - name: Add a zone to be received via AXFR from the NSD primary
+      run: cascade zone add --policy default --source 127.0.0.1:1055 example.test
+
+    - name: Check zone status
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status example.test | grep "Loaded version 1"
+            echo "::error:: timeout: zone status did not report published zone available"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Query SOA at Cascade unsigned review server
+      run: |
+        SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
+        if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 1 60 60 3600 5" ]]; then
+          echo "::error:: Expected SOA serial '1' but dig reports '${SOA_RR}'"
+          exit 1
+        fi
+
+    - name: Edit the source zone and tell NSD to reload it.
+      run: |
+        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
+        perl -pi -e 's/1          ; serial/2          ; serial/' ${ZONE_FILE}
+        perl -pi -e 's/www         A   169.254.1.1/www         A   192.168.0.1/' ${ZONE_FILE}
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary verbosity 5
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+
+    - name: Query changed SOA at the NSD primary
+      run: |
+        SOA_RR=$(dig +short @127.0.0.1 -p 1055 example.test SOA)
+        if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 2 60 60 3600 5" ]]; then
+          echo "::error:: Expected SOA serial '1' but dig reports '${SOA_RR}'"
+          exit 1
+        fi
+
+    - name: Cascade should now receive a NOTIFY then fetch the zone via IXFR
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status example.test | grep "Loaded version 2"
+            echo "::error:: timeout: zone status did not report published zone available"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Query changed SOA at Cascade unsigned review server
+      run: |
+        SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
+        if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 2 60 60 3600 5" ]]; then
+          echo "::error:: Expected SOA serial '1' but dig reports '${SOA_RR}'"
+          exit 1
+        fi
+
+    - name: Verify NSD stats
+      run: |
+        IXFR_STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep rixfr)
+        if [[ "${IXFR_STAT}" != "num.rixfr=1" ]]; then
+          echo "::error:: NSD reported a different number of IXFR transfers than expected: ${IXFR_STAT}"
+          exit 1
+        fi
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

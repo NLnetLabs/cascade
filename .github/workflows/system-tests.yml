@@ -96,3 +96,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/tests/review-unsigned-zone
+
+  ixfr-in:
+    name: Receive a zone via IXFR from the NSD primary.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tests/ixfr-in
