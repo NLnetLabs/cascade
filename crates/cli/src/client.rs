@@ -49,6 +49,8 @@ impl CascadeApiClient {
 pub fn format_http_error(err: reqwest::Error) -> String {
     let mut message = String::new();
 
+    // Returning a shortened timed out message to not have a redundant text
+    // like: "... HTTP connection timed out: operation timed out"
     if err.is_timeout() {
         // "Returns true if the error is related to a timeout." [1]
         return String::from("HTTP connection timed out");
