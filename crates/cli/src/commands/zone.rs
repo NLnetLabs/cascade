@@ -288,7 +288,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                    .map_err(format_http_error)?;
 
                 match result {
                     Ok(ZoneReviewOutput {}) => {
@@ -326,7 +326,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                    .map_err(format_http_error)?;
 
                 match result {
                     Ok(ZoneReviewOutput {}) => {
@@ -348,7 +348,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                    .map_err(format_http_error)?;
 
                 match response {
                     Ok(status) => Self::print_zone_status(client, status, detailed).await,
@@ -364,7 +364,7 @@ impl Zone {
                     .send()
                     .and_then(|r| r.json())
                     .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                    .map_err(format_http_error)?;
 
                 match response {
                     Ok(response) => {
@@ -481,7 +481,7 @@ impl Zone {
             .send()
             .and_then(|r| r.json())
             .await
-            .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+            .map_err(format_http_error)?;
 
         let policy = response.map_err(|_| {
             format!(
