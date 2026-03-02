@@ -78,7 +78,7 @@ runs:
       run: |
         SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
         if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 2 60 60 3600 5" ]]; then
-          echo "::error:: Expected SOA serial '1' but dig reports '${SOA_RR}'"
+          echo "::error:: Expected SOA serial '2' but dig reports '${SOA_RR}'"
           exit 1
         fi
 
