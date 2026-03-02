@@ -153,7 +153,9 @@ will use Podman as their backend instead of the Docker daemon.
 - By default, cascade is configured to use the directory:
   `${GITHUB_WORKSPACE}/cascade-dir`
 - The default paths for configuration files can be fetched using the
-  `integration-tests/scripts/get-default-path.sh` script.
+  `integration-tests/scripts/get-default-path.sh` script (this script is
+  intended to be used from the default working directory of the test job; aka
+  do not `cd` somewhere, or the reported paths will be wrong).
 - The workflow action `.github/actions/setup-and-start-cascade` also generates
   a default policy with `cascade template policy`.
 - If you encounter the error `bash: /root/cargo-debug/bin/cascaded: cannot
