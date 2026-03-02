@@ -22,7 +22,7 @@ use prometheus_client::registry::{Metric, Registry, Unit};
 
 use crate::center::Center;
 
-// Furhter Metrics to track?:
+// Further metrics to track?:
 // - last time batching operation for zone signing succeeded (push to central metrics collection)
 // -> turn log messages into counters: (https://prometheus.io/docs/practices/instrumentation/#logging)
 //  - num of keyset errors per zone
