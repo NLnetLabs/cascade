@@ -94,7 +94,9 @@ impl Manager {
             // Unwrap, because there should always be a valid IPv4/IPv6
             // address. Otherwise this socket couldn't have been created.
             let addr = socket.local_addr().unwrap();
-            info!("Obtained TCP listener for HTTP server for remote-control and metrics on address {addr}");
+            info!(
+                "Obtained TCP listener for HTTP server for remote-control and metrics on address {addr}"
+            );
         }
 
         info!("Starting unit 'PS'");
