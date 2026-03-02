@@ -1,5 +1,24 @@
 # Testing Cascade
 
+## Table of Content
+
+- [Unit tests](#unit-tests)
+- [Integration/System testing with `act`](#integrationsystem-testing-with-act)
+  - [TL;DR](#tldr)
+  - [Creating a test](#creating-a-test)
+  - [Running single jobs/tests](#running-single-jobstests)
+  - [Network requirement (why --network default)](#network-requirement-why---network-default)
+  - [Limitations](#limitations)
+    - [No init or systemd](#no-init-or-systemd)
+    - [All nameservers on the same address](#all-nameservers-on-the-same-address)
+  - [Managing act's verbosity](#managing-acts-verbosity)
+  - [Running act with Podman](#running-act-with-podman)
+  - [Miscellaneous notes](#miscellaneous-notes)
+  - [Docker dependencies](#docker-dependencies)
+  - [Provided Nameservers and Zones](#provided-nameservers-and-zones)
+
+---
+
 ## Unit tests
 
 Unit tests can be run as usual for Rust projects using `cargo test`:
@@ -34,6 +53,26 @@ Create a new test with:
 - `./integration-tests/scripts/add-test.sh your-test "Your test name"`
 
 
+### Creating a test
+
+The workflow file `.github/workflows/system-tests.yml` only contains "stub"
+runners for the tests, with the tests themselves being written in actions in
+`.github/actions/tests/`.
+
+You can easily generate the scaffolding for a test with the script
+`./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.
+
+The test environment provides a few nameservers and zones for use in tests
+(see section [Provided Nameservers and Zones](#provided-nameservers-and-zones)).
+
+
+### Running single jobs/tests
+
+You can run single jobs with act using the `--job` option. However, if the job
+has the `needs` option set to depend on other jobs, those jobs will always be run
+before.
+
+
 ### Network requirement (why --network default)
 
 In the test environment, Unbound needs to bind to localhost:53, which is not
@@ -48,12 +87,6 @@ network is called `default`, while Podman's default network is called `podman`.
 Therefore, you need to use `act --network default` on Docker, and `act
 --network podman` on Podman.
 
-
-### Running single jobs/tests
-
-You can run single jobs with act using the `--job` option. However, if the job
-has the `needs` option set to depend on other jobs, those jobs will always be run
-before.
 
 ### Limitations
 
@@ -120,7 +153,9 @@ will use Podman as their backend instead of the Docker daemon.
 - By default, cascade is configured to use the directory:
   `${GITHUB_WORKSPACE}/cascade-dir`
 - The default paths for configuration files can be fetched using the
-  `integration-tests/scripts/get-default-path.sh` script.
+  `integration-tests/scripts/get-default-path.sh` script (this script is
+  intended to be used from the default working directory of the test job; aka
+  do not `cd` somewhere, or the reported paths will be wrong).
 - The workflow action `.github/actions/setup-and-start-cascade` also generates
   a default policy with `cascade template policy`.
 - If you encounter the error `bash: /root/cargo-debug/bin/cascaded: cannot
@@ -136,11 +171,26 @@ When using Docker to run the integration tests, you need to make sure that the
 `docker-buildx` plugin is installed, otherwise Docker will complain about
 unknown flags.
 
-### Creating a test
+### Provided Nameservers and Zones
 
-The workflow file `.github/workflows/system-tests.yml` only contains "stub"
-runners for the tests, with the tests themselves being written in actions in
-`.github/actions/tests/`.
+The test environment provides a number of nameservers (a primary NSD,
+a secondary NSD, Bind, and the resolver Unbound) and the zone `example.test.`
+and it's parent `test.`.
 
-You can easily generate the scaffolding for a test with the script
-`./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.
+Unbound is used as the system's stub resolver forwarding most queries to Quad9
+or Cloudflare. Queries to `test.` are redirected to Bind on port 1053 and
+queries to `example.test.` are redirected to the secondary NSD instance on
+port 1054.
+
+Bind is configured as an authoritative for the zone `test.` and is used to
+enable updating the zone `test.` during a test, e.g. with `dnst update`, to
+update the DS RR for `example.test.`, without having to fiddle with modifying
+the zonefile (but you still can). (Currently, the zone `test.` is not signed,
+which is ok for the current implementation of `dnst keyset`, but this may need
+to change in the future.)
+
+Both NSD instances are configured as authoritative for `example.test.`.
+The primary NSD loads the zone from a zonefile and provides AXFR and IXFR to
+anyone with IP `127.0.0.1`. The secondary NSD is configured to transfer the
+zone from Cascade (currently always using AXFR). Both NSD instances allow
+notifies from `127.0.0.1`.

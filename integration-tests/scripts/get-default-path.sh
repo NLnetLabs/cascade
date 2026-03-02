@@ -33,6 +33,7 @@ Arguments:
                     - keys-dir
                     - dnst-binary-path
                     - log-target
+                    - test-env:nameserver-base-dir
 
 Options:
   -h, --help    Print this help text
@@ -48,4 +49,16 @@ item=${1-}
 
 source "$(dirname "$0")/common.sh"
 
-get-cascade-config-option "$GITHUB_WORKSPACE/cascade-dir" "$item"
+if [[ "$item" =~ ^test-env: ]]; then
+  case "${item#test-env:}" in
+    nameserver-base-dir)
+      echo "$NAMESERVER_BASE_DIR"
+      ;;
+    *)
+      echo "Unknown test-env path name"
+      exit 1
+      ;;
+  esac
+else
+  get-cascade-config-option "$GITHUB_WORKSPACE/cascade-dir" "$item"
+fi

@@ -14,10 +14,12 @@ set -o pipefail
 # Error on accessing unset variables or parameters
 set -u
 
+source "$(dirname "$0")/common.sh"
+
 ## Globals
 _scriptname=$0
 _ignore_no_ubuntu=false
-_nameserver_base_dir=$PWD/nameservers
+_nameserver_base_dir=$NAMESERVER_BASE_DIR
 _cascade_port=4543
 _bind_port=1053
 _nsd_port=1054
@@ -328,6 +330,8 @@ pattern:
   zonefile: "%s.primary-zone"
   allow-notify: 127.0.0.1 NOKEY
   provide-xfr: 127.0.0.1 NOKEY
+  store-ixfr: yes
+  create-ixfr: yes
 
 zone:
   name: example.test
