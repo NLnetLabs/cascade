@@ -46,7 +46,7 @@ use crate::manager::Terminated;
 use crate::manager::record_zone_event;
 use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, SigningTrigger, UnsignedZoneVersionState,
+    HistoricalEvent, SignedZoneVersionState, SigningTrigger, UnsignedZoneVersionState, ZoneHandle,
     ZoneVersionReviewState,
 };
 
@@ -637,6 +637,16 @@ impl ZoneServer {
                     }
 
                     version.review = new_review_state;
+
+                    if matches!(decision, ZoneReviewDecision::Approve) {
+                        ZoneHandle {
+                            zone: &zone,
+                            state: &mut zone_state,
+                            center,
+                        }
+                        .storage()
+                        .approve_loaded();
+                    }
                 }
                 if matches!(decision, ZoneReviewDecision::Approve) {
                     info!(
