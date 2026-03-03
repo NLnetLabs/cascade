@@ -18,7 +18,7 @@ runs:
         start=$(date +%s)
         until dig +short @127.0.0.1 -p 1055 example.test SOA | grep -q 'ns1.example.test. mail.example.test. 1 60 60 3600 5'; do
           if (($(date +%s) > (start + timeout))); then
-            echo "::error:: timeout: NSD did not reload the modified zonefile"
+            echo "::error:: timeout: NSD is not serving the zone as expected"
             exit 1
           fi
           sleep 1
