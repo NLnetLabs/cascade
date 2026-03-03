@@ -118,7 +118,7 @@ runs:
         ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
         ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
         perl -pi -e 's/2          ; serial/3          ; serial/' ${ZONE_FILE}
-        perl -pi -e 's/mail         MX  10 example.test./mail        MX 20 example.test./' ${ZONE_FILE}
+        perl -pi -e 's/mail        MX  10 example.test./mail        MX  20 example.test./' ${ZONE_FILE}
         ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
 
     - name: Query changed SOA at the NSD primary
@@ -133,9 +133,8 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status example.test | grep -q "Loaded version 3"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test | grep "Loaded version 3"
             echo "::error:: timeout: zone status did not report that the zone serial 3 was loaded"
             exit 1
           fi
@@ -160,6 +159,31 @@ runs:
         STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
         if [[ "${STAT}" != "num.rixfr=2" ]]; then
           echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
+          exit 1
+        fi
+
+    - name: Cascade should sign the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: zone status did not report that the zone was published"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Query changed RRs at Cascade publication server
+      run: |
+        WWW_A_RR=$(dig +short @127.0.0.1 -p 4543 www.example.test A)
+        if [[ "${WWW_A_RR}" != "192.168.0.1" ]]; then
+          echo "::error:: Expected modified RR but dig reports '${WWW_A_RR}'"
+          exit 1
+        fi
+        MAIL_MX_RR=$(dig +short @127.0.0.1 -p 4543 mail.example.test MX)
+        if [[ "${MAIL_MX_RR}" != "20 example.test." ]]; then
+          echo "::error:: Expected modified RR but dig reports '${MAIL_MX_RR}'"
           exit 1
         fi
 
