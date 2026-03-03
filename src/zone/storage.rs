@@ -58,6 +58,11 @@ impl StorageZoneHandle<'_> {
     ///
     /// If the zone data storage is busy, [`None`] is returned; the loader
     /// should enqueue the load operation and wait for an idle notification.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
     pub fn start_load(&mut self) -> Option<LoadedZoneBuilder> {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
@@ -66,7 +71,8 @@ impl StorageZoneHandle<'_> {
                 // The zone storage is passive; no other operations are ongoing,
                 // and it is possible to begin building a new instance.
                 trace!(
-                    zone = %self.zone.name,
+                    machine.old = "Passive",
+                    machine.new = "Loading",
                     "Obtaining a 'LoadedZoneBuilder' for performing a load"
                 );
 
@@ -92,13 +98,19 @@ impl StorageZoneHandle<'_> {
     ///
     /// The prepared loaded instance of the zone is finalized, and passed on
     /// to the loaded zone reviewer.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
     pub fn finish_load(&mut self, built: LoadedZoneBuilt) {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
         match machine.take() {
             ZoneDataStorage::Loading(s) => {
                 trace!(
-                    zone = %self.zone.name,
+                    machine.old = "Loading",
+                    machine.new = "ReviewLoadedPending",
                     "Successfully finishing the ongoing load"
                 );
 
@@ -126,13 +138,19 @@ impl StorageZoneHandle<'_> {
     ///
     /// Any intermediate artifacts will be cleaned up automatically, in the
     /// background. Once the zone storage is idle, a notification will be sent.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
     pub fn give_up_load(&mut self, builder: LoadedZoneBuilder) {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
         match machine.take() {
             ZoneDataStorage::Loading(s) => {
                 trace!(
-                    zone = %self.zone.name,
+                    machine.old = "Loading",
+                    machine.new = "Cleaning",
                     "Giving up on the ongoing load"
                 );
 
@@ -151,6 +169,11 @@ impl StorageZoneHandle<'_> {
 /// # Loader Review Operations
 impl StorageZoneHandle<'_> {
     /// Initiate review of a new loaded instance of a zone.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
     fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
         // NOTE: This function provides compatibility with 'zonetree's.
 
@@ -159,6 +182,8 @@ impl StorageZoneHandle<'_> {
         let task = tokio::task::spawn_blocking(move || {
             let span = trace_span!("start_loaded_review", zone = %zone.name);
             let _guard = span.enter();
+
+            trace!("Converting the loaded instance to 'zonetree'");
 
             // Read the loaded instance.
             let reader = loaded_reviewer
@@ -199,7 +224,11 @@ impl StorageZoneHandle<'_> {
                 std::mem::replace(&mut state.storage.loaded_reviewer, loaded_reviewer);
 
             // Transition into the reviewing state.
-            tracing::debug!("Transitioning zone state...");
+            trace!(
+                machine.old = "ReviewLoadedPending",
+                machine.new = "ReviewingLoaded",
+                "Initiating loaded review"
+            );
             match state.storage.machine.take() {
                 ZoneDataStorage::ReviewLoadedPending(s) => {
                     let s = s.start(old_loaded_reviewer);
@@ -272,6 +301,11 @@ impl StorageZoneHandle<'_> {
     }
 
     /// Approve a loaded instance of a zone.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
     pub fn approve_loaded(&mut self) {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
@@ -283,10 +317,7 @@ impl StorageZoneHandle<'_> {
                     "The loaded instance has been approved"
                 );
 
-                trace!(
-                    zone = %self.zone.name,
-                    "Persisting the loaded instance"
-                );
+                trace!("Persisting the loaded instance");
 
                 let (s, persister) = s.mark_approved();
                 *machine = ZoneDataStorage::PersistingLoaded(s);
@@ -304,10 +335,20 @@ impl StorageZoneHandle<'_> {
     ///
     /// A background task will be spawned to perform the provided zone cleaning
     /// and transition to the next state.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
     fn start_cleanup(&mut self, cleaner: ZoneCleaner) {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let task = tokio::task::spawn_blocking(move || {
+            let span = trace_span!("clean", zone = %zone.name);
+            let _guard = span.enter();
+
+            trace!("Cleaning the zone");
+
             // Perform the cleaning.
             let cleaned = cleaner.clean();
 
@@ -322,6 +363,8 @@ impl StorageZoneHandle<'_> {
                 state: &mut state,
                 center: &center,
             };
+
+            trace!("Transitioning the state machine to 'Passive'");
             let machine = &mut handle.state.storage.machine;
             match machine.take() {
                 ZoneDataStorage::Cleaning(s) => {
@@ -362,10 +405,20 @@ impl StorageZoneHandle<'_> {
     ///
     /// A background task will be spawned to perform the provided zone
     /// persistence and transition to the next state.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
     fn start_loaded_persistence(&mut self, persister: LoadedZonePersister) {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let task = tokio::task::spawn_blocking(move || {
+            let span = trace_span!("persist_loaded", zone = %zone.name);
+            let _guard = span.enter();
+
+            trace!("Persisting the loaded instance");
+
             // Perform the persisting.
             let persisted = persister.persist();
 
@@ -397,10 +450,12 @@ impl StorageZoneHandle<'_> {
             );
 
             // Transition the state machine.
+            trace!("Finished persisting");
             let machine = &mut handle.state.storage.machine;
             match machine.take() {
                 ZoneDataStorage::PersistingLoaded(s) => {
                     // For now, transition all the way back to 'Passive' state.
+                    trace!("Transitioning the state machine to 'Cleaning'");
                     let (s, mut builder) = s.mark_complete(persisted);
                     builder.clear();
                     let built = builder.finish().unwrap_or_else(|_| unreachable!());
@@ -434,6 +489,11 @@ impl StorageZoneHandle<'_> {
     /// When the data storage idles, it is possible to initiate a new load or
     /// resigning of the zone. This method checks for enqueued loads or resigns
     /// and begins them appropriately.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
     fn on_idle(&mut self) {
         // TODO: Check whether resigning is needed. It has higher priority than
         // loading a new instance.
