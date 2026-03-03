@@ -3,6 +3,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use cascade_zonedata::SignedZoneBuilder;
+use tracing::info;
 
 use crate::{
     center::Center,
@@ -44,7 +45,14 @@ impl SignerZoneHandle<'_> {
     /// ## Panics
     ///
     /// Panics if `builder.have_next_loaded()` is false.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name)
+    )]
     pub fn enqueue_new_sign(&mut self, builder: SignedZoneBuilder) {
+        info!("Enqueuing a sign operation");
+
         assert!(
             builder.have_next_loaded(),
             "a new loaded instance of the zone was not provided"
@@ -83,7 +91,14 @@ impl SignerZoneHandle<'_> {
     /// have to be passed here. It does not need to be available when this
     /// method is called; it will be obtained automatically (possibly after some
     /// time, if the underlying zone storage is currently busy).
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name, keys_changed, sigs_need_refresh)
+    )]
     pub fn enqueue_resign(&mut self, trigger: ResigningTrigger) {
+        info!("Enqueuing a re-sign operation");
+
         // If a re-signing operation has already been enqueued, add to it.
         if let Some(resign) = &mut self.state.signer.enqueued_resign {
             resign.trigger |= trigger;

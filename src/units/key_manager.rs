@@ -1,12 +1,12 @@
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{Center, ZoneAddError};
+use crate::center::{Center, ZoneAddError, get_zone};
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, PolicyVersion};
-use crate::signer::{ResigningTrigger, SigningTrigger};
+use crate::signer::ResigningTrigger;
 use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
-use crate::zone::HistoricalEvent;
+use crate::zone::{HistoricalEvent, ZoneHandle};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
@@ -26,7 +26,7 @@ use std::process::Output;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 //------------ KeyManager ----------------------------------------------------
 
@@ -438,13 +438,15 @@ impl KeyManager {
                     }
                 };
                 let _ = ks_info.insert(apex_name, new_info);
-                info!("[CC]: Instructing zone signer to re-sign the zone");
-                center.signer.on_sign_zone(
+                let zone = get_zone(center, zone.apex_name()).unwrap();
+                let mut state = zone.state.lock().unwrap();
+                ZoneHandle {
+                    zone: &zone,
+                    state: &mut state,
                     center,
-                    zone.apex_name().clone(),
-                    None,
-                    SigningTrigger::Resign(ResigningTrigger::KEYS_CHANGED),
-                );
+                }
+                .signer()
+                .enqueue_resign(ResigningTrigger::KEYS_CHANGED);
                 continue;
             }
 
@@ -483,13 +485,15 @@ impl KeyManager {
                         // signer.
                         // let new_info = get_keyset_info(&state_path);
                         let _ = ks_info.insert(apex_name, new_info);
-                        info!("[CC]: Instructing zone signer to re-sign the zone");
-                        center.signer.on_sign_zone(
+                        let zone = get_zone(center, zone.apex_name()).unwrap();
+                        let mut state = zone.state.lock().unwrap();
+                        ZoneHandle {
+                            zone: &zone,
+                            state: &mut state,
                             center,
-                            zone.apex_name().clone(),
-                            None,
-                            SigningTrigger::Resign(ResigningTrigger::KEYS_CHANGED),
-                        );
+                        }
+                        .signer()
+                        .enqueue_resign(ResigningTrigger::KEYS_CHANGED);
                         continue;
                     }
 

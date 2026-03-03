@@ -25,6 +25,7 @@
 
 use std::{fmt, sync::Arc};
 
+use cascade_api::ZoneReviewStatus;
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReader, LoadedZoneReviewer,
     SignedZoneBuilder, SignedZoneBuilt, SignedZoneReader, SignedZoneReviewer, ZoneCleaner,
@@ -293,6 +294,13 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     pub fn approve_loaded(&mut self) {
+        self.state.record_event(
+            HistoricalEvent::UnsignedZoneReview {
+                status: ZoneReviewStatus::Approved,
+            },
+            None, // TODO
+        );
+
         // Examine the current state.
         let (transition, state) = transition(&mut self.state.storage.machine);
         match state {
@@ -636,31 +644,18 @@ impl StorageZoneHandle<'_> {
             };
 
             // Transition the state machine.
-            trace!("Finished persisting");
-            let cleaner = match transition(&mut handle.state.storage.machine) {
+            let builder = match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::PersistingLoaded(s)) => {
-                    // For now, transition all the way back to 'Passive' state.
-                    let (s, mut builder) = s.mark_complete(persisted);
-                    builder.clear();
-                    let built = builder.finish().unwrap_or_else(|_| unreachable!());
-                    let (s, reviewer) = s.finish(built);
-                    let old_signed_reviewer =
-                        std::mem::replace(&mut handle.state.storage.signed_reviewer, reviewer);
-                    let s = s.start(old_signed_reviewer);
-                    let (s, persister) = s.mark_approved();
-                    let persisted = persister.persist();
-                    let (s, viewer) = s.mark_complete(persisted);
-                    let old_viewer = std::mem::replace(&mut handle.state.storage.viewer, viewer);
-                    let (s, cleaner) = s.switch(old_viewer);
-                    transition.move_to(ZoneDataStorage::Cleaning(s));
-                    cleaner
+                    let (s, builder) = s.mark_complete(persisted);
+                    transition.move_to(ZoneDataStorage::Signing(s));
+                    builder
                 }
 
                 _ => unreachable!(
                     "'ZoneDataStorage::PersistingLoaded' is the only state where a 'LoadedZonePersister' is available"
                 ),
             };
-            handle.storage().start_cleanup(cleaner);
+            handle.signer().enqueue_new_sign(builder);
 
             handle.state.storage.background_tasks.finish();
         });
