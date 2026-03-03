@@ -240,21 +240,6 @@ impl StorageZoneHandle<'_> {
                 ),
             }
 
-            if review {
-                info!("Initiating review of newly-loaded instance");
-
-                // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
-                std::mem::drop(state);
-
-                center.unsigned_review_server.on_seek_approval_for_zone(
-                    &center,
-                    zone.name.clone(),
-                    domain::base::Serial(serial.into()),
-                );
-
-                state = zone.state.lock().unwrap();
-            }
-
             // Clean up the background task.
             //
             // NOTE: The outer function is known to have finished by this
@@ -270,6 +255,19 @@ impl StorageZoneHandle<'_> {
                 tokio::task::id(),
                 "A different background task is registered"
             );
+
+            if review {
+                info!("Initiating review of newly-loaded instance");
+
+                // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
+                std::mem::drop(state);
+
+                center.unsigned_review_server.on_seek_approval_for_zone(
+                    &center,
+                    zone.name.clone(),
+                    domain::base::Serial(serial.into()),
+                );
+            }
         });
 
         self.state.storage.background_task = Some(task.into());
