@@ -28,6 +28,7 @@ use tracing::{debug, error};
 use crate::{
     center::{Center, halt_zone},
     manager::record_zone_event,
+    units::zone_signer::SignerError,
     zone::{HistoricalEvent, Zone},
 };
 
@@ -59,16 +60,18 @@ async fn sign(
 ) {
     let (status, _permits) = center.signer.wait_to_sign(&zone).await;
 
-    let result = center
-        .signer
-        .sign_zone(
-            &center,
-            &zone,
-            !builder.have_next_loaded(),
-            trigger,
-            status.clone(),
-        )
-        .await;
+    let result = tokio::task::spawn_blocking({
+        let center = center.clone();
+        let zone = zone.clone();
+        let status = status.clone();
+        move || {
+            center
+                .signer
+                .sign_zone(&center, &zone, !builder.have_next_loaded(), trigger, status)
+        }
+    })
+    .await
+    .unwrap_or_else(|err| Err(SignerError::SigningError(err.to_string())));
 
     let mut status = status.write().unwrap();
 
