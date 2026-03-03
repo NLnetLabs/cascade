@@ -5,8 +5,8 @@
 # Further documentation is in TESTING.md.
 #
 # TL;DR:
-#   - Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml --job your-test`
-#   - Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml --job your-test`
+#   - Docker: `./act-wrapper --network default --job your-test`
+#   - Podman: `./act-wrapper --network podman --job your-test`
 #
 # ## Creating a new test
 #
@@ -15,7 +15,7 @@
 # `integration-tests/scripts/add-test.sh <test-name> [<description>] [<PR>]`.
 #
 # It will add the stub job to this workflow file and create the action file for
-# the actual test in `.github/actions/tests/<test-name>` .
+# the actual test in `integration-tests/tests/<test-name>` .
 
 # GitHub Actions environment variables are documented at
 # https://docs.github.com/en/actions/reference/workflows-and-actions/variables
@@ -73,7 +73,7 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/tests/add-zone-query
+      - uses: ./integration-tests/tests/add-zone-query
 
   # Added for https://github.com/NLnetLabs/cascade/pull/402
   load-zonefile:
@@ -84,7 +84,7 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/tests/load-zonefile
+      - uses: ./integration-tests/tests/load-zonefile
 
   # Added for https://github.com/NLnetLabs/cascade/pull/398
   review-unsigned-zone:
@@ -95,4 +95,4 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/tests/review-unsigned-zone
+      - uses: ./integration-tests/tests/review-unsigned-zone
