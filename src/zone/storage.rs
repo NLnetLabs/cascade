@@ -15,7 +15,7 @@ use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
-    util::AbortOnDrop,
+    util::{AbortOnDrop, force_future},
     zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
 };
 
@@ -501,20 +501,5 @@ impl Default for StorageState {
 impl fmt::Debug for StorageState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("DataStorage")
-    }
-}
-
-//------------------------------------------------------------------------------
-
-/// Force a [`Future`] to evaluate synchronously.
-fn force_future<F: IntoFuture>(future: F) -> F::Output {
-    let waker = std::task::Waker::noop();
-    let mut cx = std::task::Context::from_waker(waker);
-    let future = std::pin::pin!(future.into_future());
-    match future.poll(&mut cx) {
-        std::task::Poll::Ready(output) => output,
-        std::task::Poll::Pending => {
-            panic!("Could not evaluate the future synchronously")
-        }
     }
 }
