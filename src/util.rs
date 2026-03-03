@@ -15,6 +15,7 @@ use tokio::{
     task::{AbortHandle, JoinHandle},
     time::Instant,
 };
+use tracing::{Instrument, trace};
 
 //----------- AbortOnDrop ------------------------------------------------------
 
@@ -48,6 +49,71 @@ impl AbortOnDrop {
         self.0.id()
     }
 }
+
+//----------- BackgroundTasks --------------------------------------------------
+
+/// A monitor for background tasks.
+///
+/// This allows tracking background tasks for a particular purpose.
+///
+/// If a [`BackgroundTasks`] is dropped, all associated tasks are aborted.
+#[derive(Default)]
+pub struct BackgroundTasks {
+    /// The underlying tasks.
+    tasks: foldhash::HashMap<tokio::task::Id, JoinHandle<()>>,
+}
+
+impl BackgroundTasks {
+    /// Spawn a new background task.
+    pub fn spawn<F>(&mut self, span: tracing::Span, f: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let task = tokio::task::spawn(f.instrument(span));
+        let other = self.tasks.insert(task.id(), task);
+        assert!(
+            other.is_none(),
+            "Task IDs for two live 'JoinHandles' never collide"
+        );
+    }
+
+    /// Spawn a new blocking background task.
+    pub fn spawn_blocking<F>(&mut self, span: tracing::Span, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let task = tokio::task::spawn_blocking(move || span.in_scope(f));
+        let other = self.tasks.insert(task.id(), task);
+        assert!(
+            other.is_none(),
+            "Task IDs for two live 'JoinHandles' never collide"
+        );
+    }
+
+    /// Mark the running task as finished.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn finish(&mut self) {
+        let id = tokio::task::id();
+        match self.tasks.remove(&id) {
+            Some(handle) => {
+                trace!("Detaching background task");
+                std::mem::drop(handle);
+            }
+            None => {
+                trace!("Inconsistency: unknown task");
+            }
+        }
+    }
+}
+
+impl Drop for BackgroundTasks {
+    fn drop(&mut self) {
+        // Abort all tasks.
+        self.tasks.drain().for_each(|(_, handle)| handle.abort());
+    }
+}
+
+//------------------------------------------------------------------------------
 
 /// Force a [`Future`] to evaluate synchronously.
 pub fn force_future<F: IntoFuture>(future: F) -> F::Output {
