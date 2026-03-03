@@ -15,7 +15,7 @@ use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
-    util::{AbortOnDrop, force_future},
+    util::{BackgroundTasks, force_future},
     zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
 };
 
@@ -179,10 +179,8 @@ impl StorageZoneHandle<'_> {
 
         let zone = self.zone.clone();
         let center = self.center.clone();
-        let task = tokio::task::spawn_blocking(move || {
-            let span = trace_span!("start_loaded_review", zone = %zone.name);
-            let _guard = span.enter();
-
+        let span = trace_span!("start_loaded_review");
+        self.state.storage.background_tasks.spawn_blocking(span, move || {
             trace!("Converting the loaded instance to 'zonetree'");
 
             // Read the loaded instance.
@@ -240,22 +238,6 @@ impl StorageZoneHandle<'_> {
                 ),
             }
 
-            // Clean up the background task.
-            //
-            // NOTE: The outer function is known to have finished by this
-            // point (due to the above zone state lock), and it will set
-            // 'background_task'. Thus, a race condition is impossible.
-            let task = state
-                .storage
-                .background_task
-                .take()
-                .expect("The background task 'task' has been set");
-            assert_eq!(
-                task.id(),
-                tokio::task::id(),
-                "A different background task is registered"
-            );
-
             if review {
                 info!("Initiating review of newly-loaded instance");
 
@@ -267,10 +249,12 @@ impl StorageZoneHandle<'_> {
                     zone.name.clone(),
                     domain::base::Serial(serial.into()),
                 );
-            }
-        });
 
-        self.state.storage.background_task = Some(task.into());
+                state = zone.state.lock().unwrap();
+            }
+
+            state.storage.background_tasks.finish();
+        });
     }
 
     /// Build a `zonetree` for an loaded instance of a zone.
@@ -341,10 +325,8 @@ impl StorageZoneHandle<'_> {
     fn start_cleanup(&mut self, cleaner: ZoneCleaner) {
         let zone = self.zone.clone();
         let center = self.center.clone();
-        let task = tokio::task::spawn_blocking(move || {
-            let span = trace_span!("clean", zone = %zone.name);
-            let _guard = span.enter();
-
+        let span = trace_span!("clean");
+        self.state.storage.background_tasks.spawn_blocking(span, move || {
             trace!("Cleaning the zone");
 
             // Perform the cleaning.
@@ -375,28 +357,11 @@ impl StorageZoneHandle<'_> {
                 ),
             }
 
-            // Clean up the background task.
-            //
-            // NOTE: The outer function is known to have finished by this
-            // point (due to the above zone state lock), and it will set
-            // 'background_task'. Thus, a race condition is impossible.
-            let task = handle
-                .state
-                .storage
-                .background_task
-                .take()
-                .expect("The background task 'task' has been set");
-            assert_eq!(
-                task.id(),
-                tokio::task::id(),
-                "A different background task is registered"
-            );
-
             // Notify the rest of Cascade that the storage is idle.
             handle.storage().on_idle();
-        });
 
-        self.state.storage.background_task = Some(task.into());
+            handle.state.storage.background_tasks.finish();
+        });
     }
 
     /// Begin persisting a loaded zone instance.
@@ -411,10 +376,8 @@ impl StorageZoneHandle<'_> {
     fn start_loaded_persistence(&mut self, persister: LoadedZonePersister) {
         let zone = self.zone.clone();
         let center = self.center.clone();
-        let task = tokio::task::spawn_blocking(move || {
-            let span = trace_span!("persist_loaded", zone = %zone.name);
-            let _guard = span.enter();
-
+        let span = trace_span!("persist_loaded");
+        self.state.storage.background_tasks.spawn_blocking(span, move || {
             trace!("Persisting the loaded instance");
 
             // Perform the persisting.
@@ -429,23 +392,6 @@ impl StorageZoneHandle<'_> {
                 state: &mut state,
                 center: &center,
             };
-
-            // Clean up the background task.
-            //
-            // NOTE: The outer function is known to have finished by this
-            // point (due to the above zone state lock), and it will set
-            // 'background_task'. Thus, a race condition is impossible.
-            let task = handle
-                .state
-                .storage
-                .background_task
-                .take()
-                .expect("The background task 'task' has been set");
-            assert_eq!(
-                task.id(),
-                tokio::task::id(),
-                "A different background task is registered"
-            );
 
             // Transition the state machine.
             trace!("Finished persisting");
@@ -477,9 +423,9 @@ impl StorageZoneHandle<'_> {
 
             // Notify the rest of Cascade that the storage is idle.
             handle.storage().on_idle();
-        });
 
-        self.state.storage.background_task = Some(task.into());
+            handle.state.storage.background_tasks.finish();
+        });
     }
 
     /// Respond to the data storage idling.
@@ -528,11 +474,11 @@ pub struct StorageState {
     // TODO: Move into the zone server unit.
     viewer: ZoneViewer,
 
-    /// An ongoing background task for the zone data.
+    /// Ongoing background tasks.
     ///
     /// When the zone data needs to be cleaned or persisted, a background task
     /// is automatically spawned and tracked here.
-    background_task: Option<AbortOnDrop>,
+    background_tasks: BackgroundTasks,
 }
 
 impl StorageState {
@@ -545,7 +491,7 @@ impl StorageState {
             loaded_reviewer,
             signed_reviewer,
             viewer,
-            background_task: None,
+            background_tasks: Default::default(),
         }
     }
 }
