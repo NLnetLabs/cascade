@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use bytes::Bytes;
 use domain::base::iana::{Class, SecurityAlgorithm};
 use domain::base::name::FlattenInto;
-use domain::base::{CanonicalOrd, Record, Rtype, Serial};
+use domain::base::{CanonicalOrd, Record, Rtype};
 use domain::crypto::sign::{SecretKeyBytes, SignRaw};
 use domain::dnssec::common::parse_from_bind;
 use domain::dnssec::sign::SigningConfig;
@@ -20,12 +20,13 @@ use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
 use domain::dnssec::sign::records::{RecordsIter, Sorter};
 use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_zone_records};
 use domain::dnssec::sign::traits::SignableZoneInPlace;
+use domain::new::base::Serial;
 use domain::rdata::dnssec::Timestamp;
 use domain::rdata::{Dnskey, Nsec3param, Rrsig, Soa, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
 use domain::zonetree::types::{StoredRecordData, ZoneUpdate};
 use domain::zonetree::update::ZoneUpdater;
-use domain::zonetree::{StoredName, StoredRecord, Zone};
+use domain::zonetree::{StoredName, StoredRecord};
 use domain_kmip::KeyUrl;
 use domain_kmip::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
 use domain_kmip::{self, ClientCertificate, ConnectionSettings};
@@ -56,7 +57,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, ZoneHandle};
+use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, Zone, ZoneHandle};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -207,7 +208,7 @@ impl ZoneSigner {
             ZoneSigningStatus::InProgress(s) => {
                 Some(SigningStageReport::InProgress(SigningInProgressReport {
                     requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                    zone_serial: s.zone_serial,
+                    zone_serial: domain::base::Serial(s.zone_serial.into()),
                     started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
                     unsigned_rr_count: s.unsigned_rr_count,
                     walk_time: s.walk_time,
@@ -225,7 +226,7 @@ impl ZoneSigner {
             ZoneSigningStatus::Finished(s) => {
                 Some(SigningStageReport::Finished(SigningFinishedReport {
                     requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                    zone_serial: s.zone_serial,
+                    zone_serial: domain::base::Serial(s.zone_serial.into()),
                     started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
                     unsigned_rr_count: s.unsigned_rr_count,
                     walk_time: s.walk_time,
@@ -292,10 +293,11 @@ impl ZoneSigner {
     pub async fn join_sign_zone_queue(
         &self,
         center: &Arc<Center>,
-        zone_name: &StoredName,
+        zone: &Arc<Zone>,
         resign_last_signed_zone_content: bool,
         trigger: SigningTrigger,
     ) -> Result<(), SignerError> {
+        let zone_name = &zone.name;
         info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
 
         self.signer_status.dump_queue();
@@ -319,7 +321,7 @@ impl ZoneSigner {
         let res = self
             .sign_zone(
                 center,
-                zone_name,
+                zone,
                 resign_last_signed_zone_content,
                 trigger,
                 status.clone(),
@@ -341,19 +343,18 @@ impl ZoneSigner {
     async fn sign_zone(
         &self,
         center: &Arc<Center>,
-        zone_name: &StoredName,
+        zone: &Arc<Zone>,
         resign_last_signed_zone_content: bool,
         trigger: SigningTrigger,
         status: Arc<RwLock<NamedZoneSigningStatus>>,
     ) -> Result<(), SignerError> {
+        let zone_name = &zone.name;
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
         let start = Instant::now();
 
         let (last_signed_serial, policy) = {
             // Use a block to make sure that the mutex is clearly dropped.
-            let state = center.state.lock().unwrap();
-            let zone = state.zones.get(zone_name).unwrap();
-            let zone_state = zone.0.state.lock().unwrap();
+            let zone_state = zone.state.lock().unwrap();
 
             // Do NOT sign a zone that is halted.
             if zone_state.pipeline_mode != PipelineMode::Running {
@@ -364,7 +365,8 @@ impl ZoneSigner {
 
             let last_signed_serial = zone_state
                 .find_last_event(HistoricalEventType::SigningSucceeded, None)
-                .and_then(|item| item.serial);
+                .and_then(|item| item.serial)
+                .map(|serial| Serial::from(serial.0));
             (last_signed_serial, zone_state.policy.clone().unwrap())
         };
 
@@ -400,32 +402,39 @@ impl ZoneSigner {
         let ZoneRecordData::Soa(soa) = soa_rr.data() else {
             return Err(SignerError::SoaNotFound);
         };
+        let loaded_serial = Serial::from(soa.serial().0);
 
         let serial = match policy.signer.serial_policy {
             SignerSerialPolicy::Keep => {
                 if let Some(previous_serial) = last_signed_serial
-                    && soa.serial() <= previous_serial
+                    && loaded_serial <= previous_serial
                 {
                     return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
-                soa.serial()
+                loaded_serial
             }
             SignerSerialPolicy::Counter => {
-                let mut serial = soa.serial();
+                // Select the maximum of 'last_signed_serial + 1' and
+                // 'loaded_serial'.
+                //
+                // TODO: This is a partial workaround to help users starting
+                // out with counter mode. For ongoing discussion, see
+                // <https://github.com/NLnetLabs/cascade/issues/495>.
+                let mut serial = loaded_serial;
                 if let Some(previous_serial) = last_signed_serial
                     && serial <= previous_serial
                 {
-                    serial = previous_serial.add(1);
+                    serial = previous_serial.inc(1);
                 }
                 serial
             }
             SignerSerialPolicy::UnixTime => {
-                let mut serial = Serial::now();
+                let mut serial = Serial::unix_time();
                 if let Some(previous_serial) = last_signed_serial
                     && serial <= previous_serial
                 {
-                    serial = previous_serial.add(1);
+                    serial = previous_serial.inc(1);
                 }
 
                 serial
@@ -441,7 +450,7 @@ impl ZoneSigner {
                 if let Some(previous_serial) = last_signed_serial
                     && serial <= previous_serial
                 {
-                    serial = previous_serial.add(1);
+                    serial = previous_serial.inc(1);
                 }
 
                 serial
@@ -450,7 +459,7 @@ impl ZoneSigner {
         let new_soa = ZoneRecordData::Soa(Soa::new(
             soa.mname().clone(),
             soa.rname().clone(),
-            serial,
+            domain::base::Serial(serial.into()),
             soa.refresh(),
             soa.retry(),
             soa.expire(),
@@ -478,7 +487,7 @@ impl ZoneSigner {
                 .write()
                 .unwrap()
                 .status
-                .start(soa.serial())
+                .start(loaded_serial)
                 .map_err(|_| SignerError::InternalError("Invalid status".to_string()))?;
         }
 
@@ -486,18 +495,12 @@ impl ZoneSigner {
         // Lookup the signed zone to update, or create a new empty zone to
         // sign into.
         //
-        let zone = self.get_or_insert_signed_zone(center, zone_name);
+        let zonetree = self.get_or_insert_signed_zone(center, zone_name);
 
         //
         // Create a signing configuration.
         //
-        // Ensure that the Mutexes are locked only in this block;
-        let policy = {
-            let zone = get_zone(center, zone_name).unwrap();
-            let zone_state = zone.state.lock().unwrap();
-            zone_state.policy.clone()
-        };
-        let signing_config = self.signing_config(&policy.unwrap());
+        let signing_config = self.signing_config(&policy);
         let rrsig_cfg =
             GenerateRrsigConfig::new(signing_config.inception, signing_config.expiration);
 
@@ -526,7 +529,7 @@ impl ZoneSigner {
         status.write().unwrap().current_action =
             "Fetching apex RRs from the key manager".to_string();
         // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
-        let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, zone.apex_name());
+        let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
         let state = std::fs::read_to_string(&state_path)
             .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();
@@ -814,7 +817,7 @@ impl ZoneSigner {
         // incremental signing (i.e. only regenerate, add and remove RRSIGs,
         // and update the NSEC(3) chain as needed, we can capture a diff of
         // the changes we make).
-        let mut updater = ZoneUpdater::new(zone.clone()).await.unwrap();
+        let mut updater = ZoneUpdater::new(zonetree.clone()).await.unwrap();
 
         // Clear out any RRs in the current version of the signed zone. If the zone
         // supports versioning this is a NO OP.
@@ -961,7 +964,7 @@ impl ZoneSigner {
         updater.apply(ZoneUpdate::Finished(soa_rr)).await.unwrap();
 
         debug!("SIGNER: Determining min expiration time");
-        let reader = zone.read();
+        let reader = zonetree.read();
         let apex_name = zone_name.clone();
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
@@ -1065,7 +1068,11 @@ impl ZoneSigner {
         (parallelism, chunk_size)
     }
 
-    fn get_or_insert_signed_zone(&self, center: &Arc<Center>, zone_name: &StoredName) -> Zone {
+    fn get_or_insert_signed_zone(
+        &self,
+        center: &Arc<Center>,
+        zone_name: &StoredName,
+    ) -> domain::zonetree::Zone {
         // Create an empty zone to sign into if no existing signed zone exists.
         let signed_zones = center.signed_zones.load();
 
@@ -1076,7 +1083,8 @@ impl ZoneSigner {
                 // Use a LightWeightZone as it is able to fix RRSIG TTLs to
                 // be the same when walked as the record they sign, rather
                 // than being forced into a common RRSET with a common TTL.
-                let new_zone = Zone::new(LightWeightZone::new(zone_name.clone(), false));
+                let new_zone =
+                    domain::zonetree::Zone::new(LightWeightZone::new(zone_name.clone(), false));
 
                 center.signed_zones.rcu(|zones| {
                     let mut new_zones = Arc::unwrap_or_clone(zones.clone());
@@ -1410,7 +1418,7 @@ impl SignTask<'_> {
 
 #[allow(clippy::result_large_err)]
 fn get_zone_soa(
-    zone: Zone,
+    zone: domain::zonetree::Zone,
     zone_name: StoredName,
 ) -> Result<Record<StoredName, StoredRecordData>, SignerError> {
     let answer = zone
@@ -1424,7 +1432,7 @@ fn get_zone_soa(
     Ok(Record::new(zone_name.clone(), Class::IN, soa_ttl, soa_data))
 }
 
-fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
+fn collect_zone(zone: domain::zonetree::Zone) -> Vec<StoredRecord> {
     // Temporary: Accumulate the zone into a vec as we can only sign over a
     // slice at the moment, not over an iterator yet (nor can we iterate over
     // a zone yet, only walk it ...).
@@ -1507,7 +1515,7 @@ impl RequestedStatus {
 struct InProgressStatus {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     requested_at: tokio::time::Instant,
-    zone_serial: Serial,
+    zone_serial: domain::base::Serial,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     started_at: tokio::time::Instant,
     unsigned_rr_count: Option<usize>,
@@ -1533,7 +1541,7 @@ impl InProgressStatus {
     fn new(requested_status: RequestedStatus, zone_serial: Serial) -> Self {
         Self {
             requested_at: requested_status.requested_at,
-            zone_serial,
+            zone_serial: domain::base::Serial(zone_serial.into()),
             started_at: Instant::now(),
             unsigned_rr_count: None,
             walk_time: None,
@@ -1556,7 +1564,7 @@ struct FinishedStatus {
     requested_at: tokio::time::Instant,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     started_at: tokio::time::Instant,
-    zone_serial: Serial,
+    zone_serial: domain::base::Serial,
     unsigned_rr_count: usize,
     #[serde(serialize_with = "serialize_duration_as_secs")]
     walk_time: Duration,

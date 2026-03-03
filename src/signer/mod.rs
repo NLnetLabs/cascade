@@ -59,7 +59,7 @@ async fn sign(
 ) {
     match center
         .signer
-        .join_sign_zone_queue(&center, &zone.name, !builder.have_next_loaded(), trigger)
+        .join_sign_zone_queue(&center, &zone, !builder.have_next_loaded(), trigger)
         .await
     {
         Ok(()) => {}
