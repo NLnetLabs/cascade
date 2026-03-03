@@ -28,6 +28,7 @@ cd "$(dirname "$0")"
 
 # Make sure that this script is located at the root of this repository
 test -d .github
+test -d integration-tests
 test -d src
 test -f Cargo.toml
 

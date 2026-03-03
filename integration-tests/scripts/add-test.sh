@@ -36,9 +36,9 @@ pr="${3-}"
 
 git_root=$(git rev-parse --show-toplevel)
 git_root=$(realpath "--relative-to=$PWD" "$git_root")
-workflow_file="${git_root}/.github/workflows/system-tests.yml"
-tests_dir="${git_root}/.github/actions/tests"
-tests_template="${git_root}/.github/actions/tests/test-template"
+workflow_file="${git_root}/integration-tests/system-tests.yml"
+tests_dir="${git_root}/integration-tests/tests"
+tests_template="${git_root}/integration-tests/tests/test-template"
 
 if [[ -e "${tests_dir}/${job}" ]]; then
   echo "Test '$job' already exists"
@@ -63,5 +63,5 @@ tee -a "${workflow_file}" >/dev/null <<EOF
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/tests/${job}
+      - uses: ./integration-tests/tests/${job}
 EOF
