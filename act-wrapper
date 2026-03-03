@@ -41,8 +41,10 @@ fi
 # The Dockerfile uses the SHELL instruction, which is not supported by OCI images
 if [[ "$DOCKER_IS_PODMAN" == true ]]; then
 	args=(--format docker)
+	act_args=(--network podman)
 else
 	args=()
+	act_args=(--network default)
 fi
 
 while [[ "$1" =~ ^\+ ]]; do
@@ -68,7 +70,7 @@ if [[ "$no_build" != true ]]; then
 	echo "Built Cascade integration test runner based on local repository."
 fi
 
-act --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -W integration-tests/system-tests.yml "$@" || true
+act "${act_args[@]}" --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -W integration-tests/system-tests.yml "$@" || true
 
 if docker container ls --format '{{.Names}}' --all | grep -q "^act-"; then
 	echo "NOTE: act seemingly failed to clean up all containers it created."

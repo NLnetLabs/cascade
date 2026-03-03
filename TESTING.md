@@ -40,13 +40,13 @@ built cascade.
 
 Run all tests with:
 
-- Docker: `./act-wrapper --network default`
-- Podman: `./act-wrapper --network podman`
+- Docker: `./act-wrapper`
+- Podman: `./act-wrapper`
 
 Run a single test with:
 
-- Docker: `./act-wrapper --network default --job your-test`
-- Podman: `./act-wrapper --network podman --job your-test`
+- Docker: `./act-wrapper --job your-test`
+- Podman: `./act-wrapper --job your-test`
 
 Create a new test with:
 
@@ -84,8 +84,10 @@ need to specify a different container network to use. Docker and Podman each
 provide default networks (not to be confused with act's default network
 selection, which is Docker/Podman's `host` network). Docker's default
 network is called `default`, while Podman's default network is called `podman`.
-Therefore, you need to use `act --network default` on Docker, and `act
---network podman` on Podman.
+Therefore, the `act-wrapper` automatically sets the `--network` option for
+`act`. If you want to use a different network than the default one, you can
+simply run `act-wrapper --network <your-network>` and it will override the
+default network set by the `act-wrapper`.
 
 
 ### Limitations
