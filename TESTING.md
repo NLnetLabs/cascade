@@ -30,7 +30,7 @@ Unit tests can be run as usual for Rust projects using `cargo test`:
 
 ## Integration/System testing with `act`
 
-The GitHub Action workflow in `.github/workflows/system-tests.yml` is currently
+The GitHub Action workflow in `integration-tests/system-tests.yml` is currently
 only for use with https://github.com/nektos/act via the `act-wrapper` script at
 the root of this repository, which creates a custom container with a freshly
 built cascade.
@@ -40,13 +40,13 @@ built cascade.
 
 Run all tests with:
 
-- Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml`
-- Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml`
+- Docker: `./act-wrapper`
+- Podman: `./act-wrapper`
 
 Run a single test with:
 
-- Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml --job your-test`
-- Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml --job your-test`
+- Docker: `./act-wrapper --job your-test`
+- Podman: `./act-wrapper --job your-test`
 
 Create a new test with:
 
@@ -55,9 +55,9 @@ Create a new test with:
 
 ### Creating a test
 
-The workflow file `.github/workflows/system-tests.yml` only contains "stub"
+The workflow file `integration-tests/system-tests.yml` only contains "stub"
 runners for the tests, with the tests themselves being written in actions in
-`.github/actions/tests/`.
+`integration-tests/tests/`.
 
 You can easily generate the scaffolding for a test with the script
 `./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.
@@ -84,8 +84,10 @@ need to specify a different container network to use. Docker and Podman each
 provide default networks (not to be confused with act's default network
 selection, which is Docker/Podman's `host` network). Docker's default
 network is called `default`, while Podman's default network is called `podman`.
-Therefore, you need to use `act --network default` on Docker, and `act
---network podman` on Podman.
+Therefore, the `act-wrapper` automatically sets the `--network` option for
+`act`. If you want to use a different network than the default one, you can
+simply run `act-wrapper --network <your-network>` and it will override the
+default network set by the `act-wrapper`.
 
 
 ### Limitations

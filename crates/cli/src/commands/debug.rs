@@ -19,7 +19,7 @@ pub enum Command {
     /// Note that these changes are not persisted across restarts.
     #[command(name = "change-logging")]
     ChangeLogging {
-        // The new log level to use.
+        /// The new log level to use.
         #[arg(short = 'l', long = "level")]
         level: Option<LogLevel>,
 
