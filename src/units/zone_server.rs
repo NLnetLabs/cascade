@@ -46,8 +46,8 @@ use crate::manager::Terminated;
 use crate::manager::record_zone_event;
 use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, SigningTrigger, UnsignedZoneVersionState, ZoneHandle,
-    ZoneVersionReviewState,
+    HistoricalEvent, SignedZoneVersionState, SigningTrigger, UnsignedZoneVersionState, Zone,
+    ZoneHandle, ZoneVersionReviewState,
 };
 
 /// The source of a zone server.
@@ -367,7 +367,7 @@ impl ZoneServer {
                             "[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}"
                         );
                     } else {
-                        self.on_unsigned_zone_approved(center, zone_name, zone_serial);
+                        self.on_unsigned_zone_approved(center, &zone, zone_serial);
                     }
                 }
                 Source::Signed => {
@@ -526,21 +526,29 @@ impl ZoneServer {
     fn on_unsigned_zone_approved(
         &self,
         center: &Arc<Center>,
-        zone_name: Name<Bytes>,
+        zone: &Arc<Zone>,
         zone_serial: Serial,
     ) {
-        record_zone_event(
-            center,
-            &zone_name,
-            HistoricalEvent::UnsignedZoneReview {
-                status: crate::api::ZoneReviewStatus::Approved,
-            },
-            Some(zone_serial),
-        );
+        {
+            let mut zone_state = zone.state.lock().unwrap();
+            zone_state.record_event(
+                HistoricalEvent::UnsignedZoneReview {
+                    status: crate::api::ZoneReviewStatus::Approved,
+                },
+                Some(zone_serial),
+            );
+            ZoneHandle {
+                zone,
+                state: &mut zone_state,
+                center,
+            }
+            .storage()
+            .approve_loaded();
+        }
         info!("[CC]: Instructing zone signer to sign the approved zone");
         center.signer.on_sign_zone(
             center,
-            zone_name,
+            zone.name.clone(),
             Some(zone_serial),
             SigningTrigger::ZoneChangesApproved,
         );
@@ -637,16 +645,6 @@ impl ZoneServer {
                     }
 
                     version.review = new_review_state;
-
-                    if matches!(decision, ZoneReviewDecision::Approve) {
-                        ZoneHandle {
-                            zone: &zone,
-                            state: &mut zone_state,
-                            center,
-                        }
-                        .storage()
-                        .approve_loaded();
-                    }
                 }
                 if matches!(decision, ZoneReviewDecision::Approve) {
                     info!(
@@ -654,7 +652,7 @@ impl ZoneServer {
                     );
                     match Self::promote_zone_to_signable(center.clone(), &zone_name) {
                         Ok(()) => {
-                            self.on_unsigned_zone_approved(center, zone_name, zone_serial);
+                            self.on_unsigned_zone_approved(center, &zone, zone_serial);
                         }
                         Err(err) => {
                             error!(
