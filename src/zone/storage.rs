@@ -260,12 +260,12 @@ impl StorageZoneHandle<'_> {
 
         // Add every record in turn.
         for record in reader.records() {
-            let record: cascade_zonedata::OldRecord = record.clone().into();
+            let record: cascade_zonedata::OldParsedRecord = record.clone().into();
             force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
 
         // Commit the update with the SOA record.
-        let soa: cascade_zonedata::OldRecord = reader.soa().clone().into();
+        let soa: cascade_zonedata::OldParsedRecord = reader.soa().clone().into();
         force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
 
         zone
