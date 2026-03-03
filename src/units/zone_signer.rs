@@ -1,6 +1,5 @@
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
@@ -22,7 +21,7 @@ use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_
 use domain::dnssec::sign::traits::SignableZoneInPlace;
 use domain::new::base::Serial;
 use domain::rdata::dnssec::Timestamp;
-use domain::rdata::{Dnskey, Nsec3param, Rrsig, Soa, ZoneRecordData};
+use domain::rdata::{Dnskey, Nsec3param, Soa, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
 use domain::zonetree::types::{StoredRecordData, ZoneUpdate};
 use domain::zonetree::update::ZoneUpdater;
@@ -53,7 +52,7 @@ use crate::units::key_manager::{
     KmipClientCredentialsFile, KmipServerCredentialsFileMode, mk_dnst_keyset_state_file_path,
 };
 use crate::util::{
-    AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
+    AbortOnDrop, force_future, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
 use crate::zone::{
@@ -219,7 +218,6 @@ impl ZoneSigner {
                     rrsig_count: s.rrsig_count,
                     rrsig_reused_count: s.rrsig_reused_count,
                     rrsig_time: s.rrsig_time,
-                    insertion_time: s.insertion_time,
                     total_time: s.total_time,
                     threads_used: s.threads_used,
                 }))
@@ -237,7 +235,6 @@ impl ZoneSigner {
                     rrsig_count: s.rrsig_count,
                     rrsig_reused_count: s.rrsig_reused_count,
                     rrsig_time: s.rrsig_time,
-                    insertion_time: s.insertion_time,
                     total_time: s.total_time,
                     threads_used: s.threads_used,
                     finished_at: now_t.checked_sub(now.duration_since(s.finished_at))?,
@@ -860,87 +857,40 @@ impl ZoneSigner {
             SignerError::SigningError("Failed to insert unsigned records".to_string())
         })?;
 
-        // At the moment, 'ZoneUpdater' only allows single-threaded access.  It
-        // needs to be passed all of our records, which get created across many
-        // threads.  Rather than collecting all the records and inserting them
-        // at once, we'll let the updater run in tandem with signing.  If the
-        // updater can't keep up, the channel will accumulate a lot of objects,
-        // but that's okay.
-        let (updater_tx, updater_rx) = std::sync::mpsc::channel::<Vec<SigRecord>>();
-
-        // The inserter task; it collects all signatures and adds them to the
-        // zone.  It also computes the minimum expiration time for us.
-        let inserter_task = spawn_blocking({
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .thread_name("cascade-worker")
-                .build()
-                .unwrap();
+        // TODO: Re-parallelize this.
+        let signer_task = spawn_blocking({
+            let apex_name = zone.name.clone();
 
             move || {
-                runtime.block_on(async move {
-                    let mut total_signatures = 0usize;
-                    let start = Instant::now();
-
-                    while let Ok(signatures) = updater_rx.recv() {
-                        total_signatures += signatures.len();
-                        for sig in signatures {
-                            updater
-                                .apply(ZoneUpdate::AddRecord(Record::from_record(sig)))
-                                .await
-                                .unwrap();
-                        }
-                    }
-
-                    let duration = start.elapsed();
-                    debug!(
-                        "Inserted {total_signatures} signatures over {:.1}s",
-                        duration.as_secs_f64()
-                    );
-
-                    (updater, total_signatures, duration)
-                })
-            }
-        });
-
-        // Generate all signatures via Rayon on separate threads.
-        let generator_task = spawn_blocking({
-            let zone_name = zone_name.clone();
-            let signing_keys = Arc::new(signing_keys);
-
-            move || {
-                // TODO: Install a dedicated Rayon thread pool over here?
-
                 let start = Instant::now();
 
                 // Get the keys to sign with.  Domain's 'sign_sorted_zone_records()'
                 // needs a slice of references, so we need to build that here.
                 let keys = signing_keys.iter().collect::<Vec<_>>();
 
-                let task = SignTask {
-                    zone_name: &zone_name,
-                    records: &unsigned_records,
-                    range: 0..unsigned_records.len(),
-                    config: &rrsig_cfg,
-                    keys: &keys,
-                    updater_tx: &updater_tx,
-                };
+                let signatures = sign_sorted_zone_records(
+                    &apex_name,
+                    RecordsIter::new_from_owned(&unsigned_records),
+                    &keys,
+                    &rrsig_cfg,
+                )?;
 
-                task.execute().map(|_| start.elapsed())
+                let total_signatures = signatures.len();
+
+                for sig in signatures {
+                    force_future(updater.apply(ZoneUpdate::AddRecord(Record::from_record(sig))))
+                        .unwrap();
+                }
+
+                Ok::<_, SigningError>((updater, total_signatures, start.elapsed()))
             }
         });
-
-        // Wait for signature generation and insertion to finish.
-        let generation_time = generator_task
+        let (mut updater, total_signatures, generation_time) = signer_task
             .await
             .map_err(|_| SignerError::SigningError("Could not generate RRsigs".to_string()))?
             .map_err(|err| SignerError::SigningError(err.to_string()))?;
 
-        let (mut updater, total_signatures, insertion_time) = inserter_task
-            .await
-            .map_err(|_| SignerError::SigningError("Could not insert all records".to_string()))?;
-
         let generation_rate = total_signatures as f64 / generation_time.as_secs_f64().min(0.001);
-        let insertion_rate = total_signatures as f64 / insertion_time.as_secs_f64().min(0.001);
 
         // Finalize the signed zone update.
         let ZoneRecordData::Soa(soa_data) = soa_rr.data() else {
@@ -1012,7 +962,6 @@ impl ZoneSigner {
                 s.rrsig_count = Some(total_signatures);
                 s.rrsig_reused_count = Some(0); // Not implemented yet
                 s.rrsig_time = Some(generation_time);
-                s.insertion_time = Some(insertion_time);
                 s.total_time = Some(total_time);
             }
             v.status.finish(true);
@@ -1024,13 +973,11 @@ impl ZoneSigner {
             Collected {unsigned_rr_count} records in {:.1}s, sorted in {:.1}s\n\
             Generated {denial_rr_count} NSEC(3) records in {:.1}s\n\
             Generated {total_signatures} signatures in {:.1}s ({generation_rate:.0}sig/s)
-            Inserted signatures in {:.1}s ({insertion_rate:.0}sig/s)\n\
             Took {:.1}s in total, using {parallelism} threads",
             walk_time.as_secs_f64(),
             sort_time.as_secs_f64(),
             denial_time.as_secs_f64(),
             generation_time.as_secs_f64(),
-            insertion_time.as_secs_f64(),
             total_time.as_secs_f64()
         );
 
@@ -1279,142 +1226,6 @@ impl MinTimestamp {
     }
 }
 
-/// A signature record.
-type SigRecord = Record<StoredName, Rrsig<Bytes, StoredName>>;
-
-/// A task to sign a set of records.
-#[derive(Clone)]
-struct SignTask<'a> {
-    /// The name of the zone.
-    zone_name: &'a StoredName,
-
-    /// The entire set of unsigned records.
-    records: &'a [Record<StoredName, StoredRecordData>],
-
-    /// The apparent range of records to work on.
-    ///
-    /// The true range is slightly different; it rounds forward to full RRsets.
-    /// This means that some initial records might be skipped, and some records
-    /// beyond the end might be included.
-    range: Range<usize>,
-
-    /// The signing configuration.
-    config: &'a GenerateRrsigConfig,
-
-    /// The set of keys to sign with.
-    keys: &'a [&'a SigningKey<Bytes, KeyPair>],
-
-    /// The zone updater to insert the records into.
-    updater_tx: &'a std::sync::mpsc::Sender<Vec<SigRecord>>,
-}
-
-impl SignTask<'_> {
-    /// The ideal batch size for signing records.
-    ///
-    /// Records will be signed when they are grouped into batches of this size
-    /// or smaller.
-    const BATCH_SIZE: usize = 4096;
-
-    /// Execute this task.
-    ///
-    /// If the task is too big, it will be split into two and executed through
-    /// Rayon.  This follows Rayon's concurrency paradigm, known as Cilk-style
-    /// parallelism.  It's ideal for Rayon's work-stealing implementation.
-    pub fn execute(self) -> Result<(), SigningError> {
-        if self.range.len() <= Self::BATCH_SIZE {
-            // This task should take little enough time that we'll do it all
-            // on this thread, immediately.
-
-            self.execute_now()
-        } else {
-            // Split the task into two and allow Rayon to execute them in
-            // parallel if it can.
-
-            let (a, b) = self.split();
-            match rayon::join(|| a.execute(), || b.execute()) {
-                (Ok(()), Ok(())) => Ok(()),
-                (Err(err), Ok(())) | (Ok(()), Err(err)) => Err(err),
-                // TODO: Do we want to combine errors somehow?
-                (Err(a), Err(_b)) => Err(a),
-            }
-        }
-    }
-
-    /// Split this task in two.
-    fn split(self) -> (Self, Self) {
-        debug_assert!(self.range.len() > Self::BATCH_SIZE);
-
-        // Just split the apparent range in two.
-        let midpoint = self.range.start + self.range.len() / 2;
-        let left_range = self.range.start..midpoint;
-        let right_range = midpoint..self.range.end;
-
-        (
-            Self {
-                range: left_range,
-                ..self.clone()
-            },
-            Self {
-                range: right_range,
-                ..self.clone()
-            },
-        )
-    }
-
-    /// Execute this task right here.
-    fn execute_now(self) -> Result<(), SigningError> {
-        // Determine the true range we want to sign.
-
-        if self.range.is_empty() {
-            return Ok(());
-        }
-
-        let start = if self.range.start > 0 {
-            // The record immediately before our apparent range.
-            let previous = &self.records[self.range.start - 1];
-
-            self.records[self.range.clone()]
-                .iter()
-                .position(|r| r.owner() != previous.owner())
-                .map_or(self.range.end, |p| self.range.start + p)
-        } else {
-            self.range.start
-        };
-
-        let end = {
-            // The last record in our apparent range.
-            let last = &self.records[self.range.end - 1];
-
-            self.records[self.range.end..]
-                .iter()
-                .position(|r| r.owner() != last.owner())
-                .map_or(self.records.len(), |p| self.range.end + p)
-        };
-
-        let range = start..end;
-
-        if range.is_empty() {
-            return Ok(());
-        }
-
-        // Perform the actual signing.
-        let signatures = sign_sorted_zone_records(
-            self.zone_name,
-            RecordsIter::new_from_owned(&self.records[range]),
-            self.keys,
-            self.config,
-        )?;
-
-        // Return the signatures.
-        //
-        // If this fails, then the receiver must have panicked; an error about
-        // that will already be logged, so let's not pollute the logs further.
-        let _ = self.updater_tx.send(signatures);
-
-        Ok(())
-    }
-}
-
 #[allow(clippy::result_large_err)]
 fn get_zone_soa(
     zone: domain::zonetree::Zone,
@@ -1530,8 +1341,6 @@ struct InProgressStatus {
     #[serde(serialize_with = "serialize_opt_duration_as_secs")]
     rrsig_time: Option<Duration>,
     #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    insertion_time: Option<Duration>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
     total_time: Option<Duration>,
     threads_used: Option<usize>,
 }
@@ -1550,7 +1359,6 @@ impl InProgressStatus {
             rrsig_count: None,
             rrsig_reused_count: None,
             rrsig_time: None,
-            insertion_time: None,
             total_time: None,
             threads_used: None,
         }
@@ -1577,8 +1385,6 @@ struct FinishedStatus {
     #[serde(serialize_with = "serialize_duration_as_secs")]
     rrsig_time: Duration,
     #[serde(serialize_with = "serialize_duration_as_secs")]
-    insertion_time: Duration,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
     total_time: Duration,
     threads_used: usize,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
@@ -1600,7 +1406,6 @@ impl FinishedStatus {
             rrsig_count: in_progress_status.rrsig_count.unwrap_or_default(),
             rrsig_reused_count: in_progress_status.rrsig_reused_count.unwrap_or_default(),
             rrsig_time: in_progress_status.rrsig_time.unwrap_or_default(),
-            insertion_time: in_progress_status.insertion_time.unwrap_or_default(),
             total_time: in_progress_status.total_time.unwrap_or_default(),
             threads_used: in_progress_status.threads_used.unwrap_or_default(),
             finished_at: Instant::now(),
