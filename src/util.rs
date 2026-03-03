@@ -49,6 +49,19 @@ impl AbortOnDrop {
     }
 }
 
+/// Force a [`Future`] to evaluate synchronously.
+pub fn force_future<F: IntoFuture>(future: F) -> F::Output {
+    let waker = std::task::Waker::noop();
+    let mut cx = std::task::Context::from_waker(waker);
+    let future = std::pin::pin!(future.into_future());
+    match future.poll(&mut cx) {
+        std::task::Poll::Ready(output) => output,
+        std::task::Poll::Pending => {
+            panic!("Could not evaluate the future synchronously")
+        }
+    }
+}
+
 /// Atomically write a file.
 ///
 /// # Panics
