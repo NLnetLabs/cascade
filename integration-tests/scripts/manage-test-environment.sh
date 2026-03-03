@@ -330,6 +330,7 @@ pattern:
   zonefile: "%s.primary-zone"
   allow-notify: 127.0.0.1 NOKEY
   provide-xfr: 127.0.0.1 NOKEY
+  notify: 127.0.0.1@${_cascade_port} NOKEY 
   store-ixfr: yes
   create-ixfr: yes
 
@@ -425,6 +426,9 @@ function test-services() {
     log-error
     log-error ">> dig @127.0.0.1 -p 1055 example.test AXFR:"
     dig @127.0.0.1 -p 1055 example.test AXFR >&2
+    # reset NSD statistics
+    nsd-control -c "${_nameserver_base_dir}/nsd.conf" stats >/dev/null
+    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" stats >/dev/null
   )
 }
 
