@@ -123,11 +123,15 @@ runs:
 
     - name: Query changed SOA at the NSD primary
       run: |
-        SOA_RR=$(dig +short @127.0.0.1 -p 1055 example.test SOA)
-        if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 3 60 60 3600 5" ]]; then
-          echo "::error:: Expected SOA serial '3' but dig reports '${SOA_RR}'"
-          exit 1
-        fi
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 1055 example.test SOA | grep -q 'ns1.example.test. mail.example.test. 3 60 60 3600 5'; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: NSD did not reload the modified zonefile"
+            exit 1
+          fi
+          sleep 1
+        done
 
     - name: Cascade should now receive a NOTIFY then fetch the zone via IXFR
       run: |
