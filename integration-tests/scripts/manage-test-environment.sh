@@ -426,6 +426,9 @@ function test-services() {
     log-error
     log-error ">> dig @127.0.0.1 -p 1055 example.test AXFR:"
     dig @127.0.0.1 -p 1055 example.test AXFR >&2
+    # reset NSD statistics
+    nsd-control -c "${_nameserver_base_dir}/nsd.conf" stats >/dev/null
+    nsd-control -c "${_nameserver_base_dir}/nsd-primary.conf" stats >/dev/null
   )
 }
 
