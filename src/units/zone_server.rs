@@ -46,8 +46,8 @@ use crate::manager::Terminated;
 use crate::manager::record_zone_event;
 use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, SigningTrigger, UnsignedZoneVersionState, Zone,
-    ZoneHandle, ZoneVersionReviewState,
+    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneHandle,
+    ZoneVersionReviewState,
 };
 
 /// The source of a zone server.
@@ -529,29 +529,15 @@ impl ZoneServer {
         zone: &Arc<Zone>,
         zone_serial: Serial,
     ) {
-        {
-            let mut zone_state = zone.state.lock().unwrap();
-            zone_state.record_event(
-                HistoricalEvent::UnsignedZoneReview {
-                    status: crate::api::ZoneReviewStatus::Approved,
-                },
-                Some(zone_serial),
-            );
-            ZoneHandle {
-                zone,
-                state: &mut zone_state,
-                center,
-            }
-            .storage()
-            .approve_loaded();
-        }
-        info!("[CC]: Instructing zone signer to sign the approved zone");
-        center.signer.on_sign_zone(
+        let _ = zone_serial; // TODO
+        let mut state = zone.state.lock().unwrap();
+        ZoneHandle {
+            zone,
+            state: &mut state,
             center,
-            zone.name.clone(),
-            Some(zone_serial),
-            SigningTrigger::ZoneChangesApproved,
-        );
+        }
+        .storage()
+        .approve_loaded();
     }
 
     fn on_signed_zone_approved(

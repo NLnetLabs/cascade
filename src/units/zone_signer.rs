@@ -43,7 +43,7 @@ use crate::api::{
     SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
     SigningRequestedReport, SigningStageReport,
 };
-use crate::center::{Center, get_zone, halt_zone};
+use crate::center::{Center, get_zone};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
@@ -55,7 +55,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, SigningTrigger};
+use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, SigningTrigger, ZoneHandle};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -248,49 +248,6 @@ impl ZoneSigner {
             current_action: status.current_action.clone(),
             stage_report,
         })
-    }
-
-    pub fn on_sign_zone(
-        &self,
-        center: &Arc<Center>,
-        zone_name: StoredName,
-        zone_serial: Option<Serial>,
-        trigger: SigningTrigger,
-    ) {
-        let center = center.clone();
-        tokio::spawn(async move {
-            if let Err(err) = center
-                .signer
-                .join_sign_zone_queue(&center, &zone_name, zone_serial.is_none(), trigger)
-                .await
-            {
-                if err.is_benign() {
-                    // Ignore this benign case. It was probably caused
-                    // by dnst keyset cron triggering resigning before
-                    // we even signed the first time, either because
-                    // the zone was large and slow to load and sign,
-                    // or because the unsigned zone was pending
-                    // review.
-                    debug!(
-                        "[ZS]: Ignoring probably benign failure to (re)sign '{zone_name}': {err}"
-                    );
-                } else {
-                    error!("[ZS]: Signing of zone '{zone_name}' failed: {err}");
-
-                    halt_zone(&center, &zone_name, true, &err.to_string());
-
-                    record_zone_event(
-                        &center,
-                        &zone_name,
-                        HistoricalEvent::SigningFailed {
-                            trigger,
-                            reason: err.to_string(),
-                        },
-                        zone_serial,
-                    );
-                }
-            }
-        });
     }
 
     pub fn on_signing_report(
@@ -1263,13 +1220,15 @@ impl ZoneSigner {
                     let mut resign_busy = center.resign_busy.lock().expect("should not fail");
                     resign_busy.insert(zone_name.clone(), min_expiration);
                 }
-                info!("[CC]: Instructing zone signer to re-sign the zone");
-                self.on_sign_zone(
+                let zone = get_zone(center, zone_name).unwrap();
+                let mut state = zone.state.lock().unwrap();
+                ZoneHandle {
+                    zone: &zone,
+                    state: &mut state,
                     center,
-                    zone_name.clone(),
-                    None,
-                    SigningTrigger::SignatureExpiration,
-                );
+                }
+                .signer()
+                .enqueue_resign(false, true);
             }
         }
     }

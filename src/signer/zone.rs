@@ -3,6 +3,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use cascade_zonedata::SignedZoneBuilder;
+use tracing::info;
 
 use crate::{
     center::Center,
@@ -35,7 +36,14 @@ impl SignerZoneHandle<'_> {
     }
 
     /// Enqueue a signing operation for a newly loaded instance of the zone.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name)
+    )]
     pub fn enqueue_sign(&mut self, builder: SignedZoneBuilder) {
+        info!("Enqueuing a sign operation");
+
         // A zone can have at most one 'SignedZoneBuilder' at a time. Because
         // we have 'builder', we are guaranteed that no other signing operations
         // are ongoing right now. A re-signing operation may be enqueued, but it
@@ -64,7 +72,14 @@ impl SignerZoneHandle<'_> {
     /// ## Panics
     ///
     /// Panics if `keys_changed` and `sigs_need_refresh` are both `false`.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name, keys_changed, sigs_need_refresh)
+    )]
     pub fn enqueue_resign(&mut self, keys_changed: bool, sigs_need_refresh: bool) {
+        info!("Enqueuing a re-sign operation");
+
         assert!(
             keys_changed || sigs_need_refresh,
             "a reason for re-signing was not specified"

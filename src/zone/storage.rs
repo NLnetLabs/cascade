@@ -6,6 +6,7 @@
 
 use std::{fmt, sync::Arc};
 
+use cascade_api::ZoneReviewStatus;
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReader, LoadedZoneReviewer,
     SignedZoneBuilder, SignedZoneBuilt, SignedZoneReader, SignedZoneReviewer, ZoneCleaner,
@@ -290,6 +291,13 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     pub fn approve_loaded(&mut self) {
+        self.state.record_event(
+            HistoricalEvent::UnsignedZoneReview {
+                status: ZoneReviewStatus::Approved,
+            },
+            None, // TODO
+        );
+
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
         match machine.take() {
@@ -628,35 +636,23 @@ impl StorageZoneHandle<'_> {
             };
 
             // Transition the state machine.
-            trace!("Finished persisting");
+            trace!(
+                machine.old = "PersistingLoaded",
+                machine.new = "Signing",
+                "Finished persisting");
             let machine = &mut handle.state.storage.machine;
             match machine.take() {
                 ZoneDataStorage::PersistingLoaded(s) => {
-                    // For now, transition all the way back to 'Passive' state.
-                    trace!("Transitioning the state machine to 'Cleaning'");
-                    let (s, mut builder) = s.mark_complete(persisted);
-                    builder.clear();
-                    let built = builder.finish().unwrap_or_else(|_| unreachable!());
-                    let (s, reviewer) = s.finish(built);
-                    let old_signed_reviewer =
-                        std::mem::replace(&mut handle.state.storage.signed_reviewer, reviewer);
-                    let s = s.start(old_signed_reviewer);
-                    let (s, persister) = s.mark_approved();
-                    let persisted = persister.persist();
-                    let (s, viewer) = s.mark_complete(persisted);
-                    let old_viewer = std::mem::replace(&mut handle.state.storage.viewer, viewer);
-                    let (s, cleaner) = s.switch(old_viewer);
-                    *machine = ZoneDataStorage::Cleaning(s);
-                    handle.storage().start_cleanup(cleaner);
+                    let (s, builder) = s.mark_complete(persisted);
+                    *machine = ZoneDataStorage::Signing(s);
+
+                    handle.signer().enqueue_sign(builder);
                 }
 
                 _ => unreachable!(
                     "'ZoneDataStorage::PersistingLoaded' is the only state where a 'LoadedZonePersister' is available"
                 ),
             }
-
-            // Notify the rest of Cascade that the storage is idle.
-            handle.storage().on_idle();
 
             handle.state.storage.background_tasks.finish();
         });
