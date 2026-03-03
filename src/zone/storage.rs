@@ -405,9 +405,9 @@ impl StorageZoneHandle<'_> {
                     builder.clear();
                     let built = builder.finish().unwrap_or_else(|_| unreachable!());
                     let (s, reviewer) = s.finish(built);
-                    let old_reviewer =
-                        std::mem::replace(&mut handle.state.storage.reviewer, reviewer);
-                    let s = s.start(old_reviewer);
+                    let old_signed_reviewer =
+                        std::mem::replace(&mut handle.state.storage.signed_reviewer, reviewer);
+                    let s = s.start(old_signed_reviewer);
                     let (s, persister) = s.mark_approved();
                     let persisted = persister.persist();
                     let (s, viewer) = s.mark_complete(persisted);
@@ -463,7 +463,7 @@ pub struct StorageState {
     /// The current zone reviewer.
     //
     // TODO: Move into the zone server unit.
-    reviewer: SignedZoneReviewer,
+    signed_reviewer: SignedZoneReviewer,
 
     /// The current zone viewer.
     //
@@ -480,12 +480,12 @@ pub struct StorageState {
 impl StorageState {
     /// Construct a new [`StorageState`].
     pub fn new() -> Self {
-        let (machine, loaded_reviewer, reviewer, viewer) = ZoneDataStorage::new();
+        let (machine, loaded_reviewer, signed_reviewer, viewer) = ZoneDataStorage::new();
 
         Self {
             machine,
             loaded_reviewer,
-            reviewer,
+            signed_reviewer,
             viewer,
             background_task: None,
         }
