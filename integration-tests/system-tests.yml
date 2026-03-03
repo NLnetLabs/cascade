@@ -5,8 +5,8 @@
 # Further documentation is in TESTING.md.
 #
 # TL;DR:
-#   - Docker: `./act-wrapper --network default -W integration-tests/system-tests.yml --job your-test`
-#   - Podman: `./act-wrapper --network podman -W integration-tests/system-tests.yml --job your-test`
+#   - Docker: `./act-wrapper --network default --job your-test`
+#   - Podman: `./act-wrapper --network podman --job your-test`
 #
 # ## Creating a new test
 #

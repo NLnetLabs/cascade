@@ -40,13 +40,13 @@ built cascade.
 
 Run all tests with:
 
-- Docker: `./act-wrapper --network default -W integration-tests/system-tests.yml`
-- Podman: `./act-wrapper --network podman -W integration-tests/system-tests.yml`
+- Docker: `./act-wrapper --network default`
+- Podman: `./act-wrapper --network podman`
 
 Run a single test with:
 
-- Docker: `./act-wrapper --network default -W integration-tests/system-tests.yml --job your-test`
-- Podman: `./act-wrapper --network podman -W integration-tests/system-tests.yml --job your-test`
+- Docker: `./act-wrapper --network default --job your-test`
+- Podman: `./act-wrapper --network podman --job your-test`
 
 Create a new test with:
 
