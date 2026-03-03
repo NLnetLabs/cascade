@@ -250,7 +250,8 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     }
 
     info!("Removed zone '{name}'");
-    record_zone_event(center, &name, HistoricalEvent::Removed, None);
+    zone_state.record_event(HistoricalEvent::Removed, None);
+    zone.0.mark_dirty(&mut zone_state, center);
     Ok(())
 }
 
