@@ -5,32 +5,37 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
-use domain::base::iana::{Class, SecurityAlgorithm};
+use cascade_zonedata::{OldRecord, SignedZoneBuilder};
+use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
-use domain::base::{CanonicalOrd, Record, Rtype};
+use domain::base::{CanonicalOrd, Record};
 use domain::crypto::sign::{SecretKeyBytes, SignRaw};
 use domain::dnssec::common::parse_from_bind;
 use domain::dnssec::sign::SigningConfig;
 use domain::dnssec::sign::denial::config::DenialConfig;
-use domain::dnssec::sign::denial::nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode};
+use domain::dnssec::sign::denial::nsec::generate_nsecs;
+use domain::dnssec::sign::denial::nsec3::{
+    GenerateNsec3Config, Nsec3ParamTtlMode, Nsec3Records, generate_nsec3s,
+};
 use domain::dnssec::sign::error::SigningError;
 use domain::dnssec::sign::keys::SigningKey;
 use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
-use domain::dnssec::sign::records::{RecordsIter, Sorter};
+use domain::dnssec::sign::records::RecordsIter;
 use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_zone_records};
-use domain::dnssec::sign::traits::SignableZoneInPlace;
-use domain::new::base::Serial;
+use domain::new::base::{RType, Serial};
+use domain::new::rdata::RecordData;
 use domain::rdata::dnssec::Timestamp;
-use domain::rdata::{Dnskey, Nsec3param, Soa, ZoneRecordData};
+use domain::rdata::{Dnskey, Nsec3param};
 use domain::zonefile::inplace::{Entry, Zonefile};
-use domain::zonetree::types::{StoredRecordData, ZoneUpdate};
-use domain::zonetree::update::ZoneUpdater;
-use domain::zonetree::{StoredName, StoredRecord};
+use domain::zonetree::StoredName;
 use domain_kmip::KeyUrl;
 use domain_kmip::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
 use domain_kmip::{self, ClientCertificate, ConnectionSettings};
 use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
+use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator, ParallelExtend, ParallelIterator,
+};
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
@@ -43,7 +48,6 @@ use crate::api::{
     SigningRequestedReport, SigningStageReport,
 };
 use crate::center::{Center, get_zone};
-use crate::common::light_weight_zone::LightWeightZone;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::units::http_server::KmipServerState;
@@ -51,7 +55,7 @@ use crate::units::key_manager::{
     KmipClientCredentialsFile, KmipServerCredentialsFileMode, mk_dnst_keyset_state_file_path,
 };
 use crate::util::{
-    AbortOnDrop, force_future, serialize_duration_as_secs, serialize_instant_as_duration_secs,
+    AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
 use crate::zone::{
@@ -323,7 +327,7 @@ impl ZoneSigner {
         &self,
         center: &Arc<Center>,
         zone: &Arc<Zone>,
-        resign_last_signed_zone_content: bool,
+        builder: &mut SignedZoneBuilder,
         trigger: SigningTrigger,
         status: Arc<RwLock<NamedZoneSigningStatus>>,
     ) -> Result<(), SignerError> {
@@ -355,33 +359,13 @@ impl ZoneSigner {
         //
         // Lookup the zone to sign.
         //
-        status.write().unwrap().current_action = "Retrieving zone to sign".to_string();
-        let signable_zone = match resign_last_signed_zone_content {
-            false => {
-                let signable_zones = center.signable_zones.load();
-                let Some(signable_zone) = signable_zones.get_zone(&zone_name, Class::IN).cloned()
-                else {
-                    debug!("Ignoring request to sign unavailable zone '{zone_name}'");
-                    return Err(SignerError::CannotSignUnapprovedZone);
-                };
-                signable_zone
-            }
-            true => {
-                let published_zones = center.published_zones.load();
-                debug!("Ignoring request to re-sign zone that was never published '{zone_name}'");
-                published_zones
-                    .get_zone(&zone_name, Class::IN)
-                    .cloned()
-                    .ok_or(SignerError::CannotResignNonPublishedZone)?
-            }
-        };
-
-        status.write().unwrap().current_action = "Querying zone SOA record".to_string();
-        let soa_rr = get_zone_soa(signable_zone.clone(), zone_name.clone())?;
-        let ZoneRecordData::Soa(soa) = soa_rr.data() else {
-            return Err(SignerError::SoaNotFound);
-        };
-        let loaded_serial = Serial::from(soa.serial().0);
+        let mut writer = builder.replace().unwrap();
+        let mut new_records = Vec::new();
+        let loaded = writer
+            .next_loaded()
+            .or(writer.curr_loaded())
+            .expect("a non-empty loaded instance must exist");
+        let loaded_serial = loaded.soa().rdata.serial;
 
         let serial = match policy.signer.serial_policy {
             SignerSerialPolicy::Keep => {
@@ -435,26 +419,14 @@ impl ZoneSigner {
                 serial
             }
         };
-        let new_soa = ZoneRecordData::Soa(Soa::new(
-            soa.mname().clone(),
-            soa.rname().clone(),
-            domain::base::Serial(serial.into()),
-            soa.refresh(),
-            soa.retry(),
-            soa.expire(),
-            soa.minimum(),
-        ));
-
-        let soa_rr = Record::new(
-            soa_rr.owner().clone(),
-            soa_rr.class(),
-            soa_rr.ttl(),
-            new_soa,
-        );
+        let new_soa = {
+            let mut soa = loaded.soa().clone();
+            soa.rdata.serial = serial;
+            soa
+        };
 
         info!(
-            "[ZS]: Serials for zone '{zone_name}': last signed={last_signed_serial:?}, current={}, serial policy={}, new={serial}",
-            soa.serial(),
+            "[ZS]: Serials for zone '{zone_name}': last signed={last_signed_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
             policy.signer.serial_policy
         );
 
@@ -471,12 +443,6 @@ impl ZoneSigner {
         }
 
         //
-        // Lookup the signed zone to update, or create a new empty zone to
-        // sign into.
-        //
-        let zonetree = self.get_or_insert_signed_zone(center, zone_name);
-
-        //
         // Create a signing configuration.
         //
         let signing_config = self.signing_config(&policy);
@@ -489,9 +455,12 @@ impl ZoneSigner {
         status.write().unwrap().current_action = "Collecting records to sign".to_string();
         debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
-        let passed_zone = signable_zone.clone();
-        let mut records = collect_zone(passed_zone);
-        records.push(soa_rr.clone());
+        let mut records = loaded
+            .records()
+            .iter()
+            .map(|r| OldRecord::from(r.clone()))
+            .collect::<Vec<_>>();
+        records.push(new_soa.clone().into());
         let walk_time = walk_start.elapsed();
         let unsigned_rr_count = records.len();
 
@@ -517,7 +486,9 @@ impl ZoneSigner {
             zonefile.extend_from_slice(dnskey_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
             if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
-                records.push(rec.flatten_into());
+                let record: OldRecord = rec.flatten_into();
+                new_records.push(record.clone().into());
+                records.push(record);
             }
         }
 
@@ -711,8 +682,7 @@ impl ZoneSigner {
         status.write().unwrap().current_action = "Sorting records".to_string();
         let sort_start = Instant::now();
         // Note: This may briefly use lots of CPU and many CPU cores.
-        MultiThreadedSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
-        records.dedup();
+        records.par_sort_by(CanonicalOrd::canonical_cmp);
         let sort_time = sort_start.elapsed();
         let unsigned_rr_count = records.len();
 
@@ -730,16 +700,46 @@ impl ZoneSigner {
         debug!("[ZS]: Generating denial records for zone '{zone_name}'.");
         status.write().unwrap().current_action = "Generating denial records".to_string();
         let denial_start = Instant::now();
-        let apex_owner = zone_name.clone();
-        // By not passing any keys to sign_zone() will only add denial RRs,
-        // not RRSIGs. We could invoke generate_nsecs() or generate_nsec3s()
-        // directly here instead.
-        let no_keys: [&SigningKey<Bytes, KeyPair>; 0] = Default::default();
-        records
-            .sign_zone(&apex_owner, &signing_config, &no_keys)
-            .map_err(|err: SigningError| {
-                SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
-            })?;
+        match &signing_config.denial {
+            DenialConfig::AlreadyPresent => {}
+
+            DenialConfig::Nsec(cfg) => {
+                let nsecs = generate_nsecs(&zone.name, RecordsIter::new_from_owned(&records), cfg)
+                    .map_err(|err: SigningError| {
+                        SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
+                    })?;
+
+                new_records.par_extend(
+                    nsecs
+                        .par_iter()
+                        .map(|r| OldRecord::from_record(r.clone()).into()),
+                );
+                records.par_extend(nsecs.into_par_iter().map(Record::from_record));
+            }
+
+            DenialConfig::Nsec3(cfg) => {
+                // RFC 5155 7.1 step 5: "Sort the set of NSEC3 RRs into hash
+                // order." We store the NSEC3s as we create them and sort them
+                // afterwards.
+                let Nsec3Records { nsec3s, nsec3param } =
+                    generate_nsec3s(&zone.name, RecordsIter::new_from_owned(&records), cfg)
+                        .map_err(|err: SigningError| {
+                            SignerError::SigningError(format!(
+                                "Failed to generate denial RRs: {err}"
+                            ))
+                        })?;
+
+                // Add the generated NSEC3 records.
+                new_records.par_extend(
+                    nsec3s
+                        .par_iter()
+                        .map(|r| OldRecord::from_record(r.clone()).into()),
+                );
+                new_records.push(OldRecord::from_record(nsec3param.clone()).into());
+                records.par_extend(nsec3s.into_par_iter().map(Record::from_record));
+                records.push(Record::from_record(nsec3param));
+            }
+        }
         let unsigned_records = records;
         let denial_time = denial_start.elapsed();
         let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
@@ -780,40 +780,6 @@ impl ZoneSigner {
             }
         }
 
-        // Create a zone updater which will be used to add RRs resulting
-        // from RRSIG generation to the signed zone. We set the create_diff
-        // argument to false because we sign the zone by deleting all records
-        // so from the point of view of the automatic diff creation logic all
-        // records added to the zone appear to be new. Once we add support for
-        // incremental signing (i.e. only regenerate, add and remove RRSIGs,
-        // and update the NSEC(3) chain as needed, we can capture a diff of
-        // the changes we make).
-        let mut updater = force_future(ZoneUpdater::new(zonetree.clone())).unwrap();
-
-        // Clear out any RRs in the current version of the signed zone. If the zone
-        // supports versioning this is a NO OP.
-        debug!("SIGNER: Deleting records in existing (if any) copy of signed zone.");
-        force_future(updater.apply(ZoneUpdate::DeleteAllRecords)).unwrap();
-
-        // 'updater.apply()' is technically 'async', although we always
-        // implement it here with synchronous methods.  This still forces
-        // us to wrap the whole thing in a future, so we spawn a relatively
-        // lightweight single-threaded Tokio runtime to handle it for us.
-
-        // Insert all unsigned records into the updater.
-        let unsigned_updater_start = Instant::now();
-        for record in &unsigned_records {
-            let record = Record::from_record(record.clone());
-            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
-        }
-        debug!(
-            "Inserted {} unsigned records in {:.1}s",
-            unsigned_records.len(),
-            unsigned_updater_start.elapsed().as_secs_f64()
-        );
-
-        // TODO: Re-parallelize RRSIG generation.
-
         let generation_start = Instant::now();
 
         // Get the keys to sign with.  Domain's 'sign_sorted_zone_records()'
@@ -830,57 +796,41 @@ impl ZoneSigner {
 
         let total_signatures = signatures.len();
 
-        for sig in signatures {
-            force_future(updater.apply(ZoneUpdate::AddRecord(Record::from_record(sig)))).unwrap();
-        }
+        new_records.par_extend(
+            signatures
+                .into_par_iter()
+                .map(|r| OldRecord::from_record(r).into()),
+        );
+        new_records.par_sort();
+        writer.set_records(new_records).unwrap();
 
         let generation_time = generation_start.elapsed();
 
         let generation_rate = total_signatures as f64 / generation_time.as_secs_f64().min(0.001);
 
-        // Finalize the signed zone update.
-        let ZoneRecordData::Soa(soa_data) = soa_rr.data() else {
-            unreachable!();
-        };
-        let zone_serial = soa_data.serial();
-
-        // Store the serial in the state.
-        // Note: We do NOT do this here because CentralCommand does it when it
-        // sees the ZoneSignedEvent.
-        // {
-        //     // Use a block to make sure that the mutex is clearly dropped.
-        //     let zone = get_zone(&self.center, zone_name).unwrap();
-        //     let mut zone_state = zone.state.lock().unwrap();
-        //     zone_state.record_event(
-        //         HistoricalEvent::SigningSucceeded { trigger },
-        //         Some(zone_serial),
-        //     );
-        //     zone.mark_dirty(&mut zone_state, &self.center);
-        // }
-
-        force_future(updater.apply(ZoneUpdate::Finished(soa_rr))).unwrap();
+        writer.set_soa(new_soa.clone()).unwrap();
+        writer.apply().unwrap();
 
         debug!("SIGNER: Determining min expiration time");
-        let reader = zonetree.read();
-        let apex_name = zone_name.clone();
+        let reader = builder.next_signed().unwrap();
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
-        reader.walk(Box::new(move |name, rrset, _cut| {
-            for r in rrset.data() {
-                if let ZoneRecordData::Rrsig(rrsig) = r {
-                    if name == apex_name
-                        && (rrsig.type_covered() == Rtype::DNSKEY
-                            || rrsig.type_covered() == Rtype::CDS
-                            || rrsig.type_covered() == Rtype::CDNSKEY)
-                    {
-                        // These types come from the key manager.
-                        continue;
-                    }
+        for record in reader.records() {
+            let RecordData::RRSig(sig) = record.rdata.get() else {
+                continue;
+            };
 
-                    min_expiration.add(rrsig.expiration());
-                }
+            // Ignore RRSIG records for DNSKEY, CDS, and CDNSKEY records; these
+            // are generated by the key manager, using KSKs.
+            if sig.rtype == RType::DNSKEY
+                || sig.rtype == RType::from(59)
+                || sig.rtype == RType::from(60)
+            {
+                continue;
             }
-        }));
+
+            min_expiration.add(u32::from(sig.expiration).into());
+        }
 
         // Save the minimum of the expiration times.
         {
@@ -915,7 +865,7 @@ impl ZoneSigner {
 
         // Log signing statistics.
         info!(
-            "Signing statistics for {zone_name} serial: {zone_serial}:\n\
+            "Signing statistics for {zone_name} serial: {serial}:\n\
             Collected {unsigned_rr_count} records in {:.1}s, sorted in {:.1}s\n\
             Generated {denial_rr_count} NSEC(3) records in {:.1}s\n\
             Generated {total_signatures} signatures in {:.1}s ({generation_rate:.0}sig/s)
@@ -931,7 +881,7 @@ impl ZoneSigner {
             center,
             zone_name,
             HistoricalEvent::SigningSucceeded { trigger },
-            Some(zone_serial),
+            Some(domain::base::Serial(serial.into())),
         );
 
         // Notify the review server that the zone is ready.
@@ -939,7 +889,7 @@ impl ZoneSigner {
         center.signed_review_server.on_seek_approval_for_zone(
             center,
             zone_name.clone(),
-            zone_serial,
+            domain::base::Serial(serial.into()),
         );
 
         Ok(())
@@ -958,34 +908,6 @@ impl ZoneSigner {
         let parallelism = std::cmp::min(parallelism, self.max_concurrent_rrsig_generation_tasks);
         let chunk_size = rr_count / parallelism;
         (parallelism, chunk_size)
-    }
-
-    fn get_or_insert_signed_zone(
-        &self,
-        center: &Arc<Center>,
-        zone_name: &StoredName,
-    ) -> domain::zonetree::Zone {
-        // Create an empty zone to sign into if no existing signed zone exists.
-        let signed_zones = center.signed_zones.load();
-
-        signed_zones
-            .get_zone(zone_name, Class::IN)
-            .cloned()
-            .unwrap_or_else(move || {
-                // Use a LightWeightZone as it is able to fix RRSIG TTLs to
-                // be the same when walked as the record they sign, rather
-                // than being forced into a common RRSET with a common TTL.
-                let new_zone =
-                    domain::zonetree::Zone::new(LightWeightZone::new(zone_name.clone(), false));
-
-                center.signed_zones.rcu(|zones| {
-                    let mut new_zones = Arc::unwrap_or_clone(zones.clone());
-                    new_zones.insert_zone(new_zone.clone()).unwrap();
-                    new_zones
-                });
-
-                new_zone
-            })
     }
 
     fn signing_config(&self, policy: &PolicyVersion) -> SigningConfig<Bytes, MultiThreadedSorter> {
@@ -1170,68 +1092,6 @@ impl MinTimestamp {
         let min_ts = self.0.lock().expect("should not fail");
         *min_ts
     }
-}
-
-#[allow(clippy::result_large_err)]
-fn get_zone_soa(
-    zone: domain::zonetree::Zone,
-    zone_name: StoredName,
-) -> Result<Record<StoredName, StoredRecordData>, SignerError> {
-    let answer = zone
-        .read()
-        .query(zone_name.clone(), Rtype::SOA)
-        .map_err(|_| SignerError::SoaNotFound)?;
-    let (soa_ttl, soa_data) = answer.content().first().ok_or(SignerError::SoaNotFound)?;
-    if !matches!(soa_data, ZoneRecordData::Soa(_)) {
-        return Err(SignerError::SoaNotFound);
-    };
-    Ok(Record::new(zone_name.clone(), Class::IN, soa_ttl, soa_data))
-}
-
-fn collect_zone(zone: domain::zonetree::Zone) -> Vec<StoredRecord> {
-    // Temporary: Accumulate the zone into a vec as we can only sign over a
-    // slice at the moment, not over an iterator yet (nor can we iterate over
-    // a zone yet, only walk it ...).
-    let records = Arc::new(std::sync::Mutex::new(vec![]));
-    let passed_records = records.clone();
-
-    trace!("SIGNER: Walking");
-    zone.read()
-        .walk(Box::new(move |owner, rrset, _at_zone_cut| {
-            let mut unlocked_records = passed_records.lock().unwrap();
-
-            // SKIP DNSSEC records that should be generated by the signing
-            // process (these will be present if re-signing a published signed
-            // zone rather than signing an unsigned zone). Skip The SOA as
-            // well. A new SOA will be added later.
-            if matches!(
-                rrset.rtype(),
-                Rtype::DNSKEY
-                    | Rtype::RRSIG
-                    | Rtype::NSEC
-                    | Rtype::NSEC3
-                    | Rtype::CDS
-                    | Rtype::CDNSKEY
-                    | Rtype::SOA
-            ) {
-                return;
-            }
-
-            unlocked_records.extend(
-                rrset.data().iter().map(|rdata| {
-                    Record::new(owner.clone(), Class::IN, rrset.ttl(), rdata.to_owned())
-                }),
-            );
-        }));
-
-    let records = Arc::into_inner(records).unwrap().into_inner().unwrap();
-
-    trace!(
-        "SIGNER: Walked: accumulated {} records for signing",
-        records.len()
-    );
-
-    records
 }
 
 fn parse_nsec3_config(opt_out: bool) -> GenerateNsec3Config<Bytes, MultiThreadedSorter> {
@@ -1733,8 +1593,6 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
 
 pub enum SignerError {
     SoaNotFound,
-    CannotSignUnapprovedZone,
-    CannotResignNonPublishedZone,
     SignerNotReady,
     InternalError(String),
     KeepSerialPolicyViolated,
@@ -1749,23 +1607,10 @@ pub enum SignerError {
     SigningError(String),
 }
 
-impl SignerError {
-    pub fn is_benign(&self) -> bool {
-        matches!(
-            self,
-            SignerError::CannotSignUnapprovedZone | SignerError::CannotResignNonPublishedZone
-        )
-    }
-}
-
 impl std::fmt::Display for SignerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SignerError::SoaNotFound => f.write_str("SOA not found"),
-            SignerError::CannotSignUnapprovedZone => f.write_str("Cannot sign unapproved zone"),
-            SignerError::CannotResignNonPublishedZone => {
-                f.write_str("Cannot re-sign non-published zone")
-            }
             SignerError::SignerNotReady => f.write_str("Signer not ready"),
             SignerError::InternalError(err) => write!(f, "Internal error: {err}"),
             SignerError::KeepSerialPolicyViolated => {
