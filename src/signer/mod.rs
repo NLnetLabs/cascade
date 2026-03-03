@@ -57,21 +57,39 @@ async fn sign(
     builder: SignedZoneBuilder,
     trigger: SigningTrigger,
 ) {
-    match center
+    let (status, _permits) = center.signer.wait_to_sign(&zone).await;
+
+    let result = center
         .signer
-        .join_sign_zone_queue(&center, &zone, !builder.have_next_loaded(), trigger)
-        .await
-    {
-        Ok(()) => {}
+        .sign_zone(
+            &center,
+            &zone,
+            !builder.have_next_loaded(),
+            trigger,
+            status.clone(),
+        )
+        .await;
+
+    let mut status = status.write().unwrap();
+
+    match result {
+        Ok(()) => {
+            status.status.finish(true);
+            status.current_action = "Finished".to_string();
+        }
         Err(error) if error.is_benign() => {
             // Ignore this benign case. It was probably caused by dnst keyset
             // cron triggering resigning before we even signed the first time,
             // either because the zone was large and slow to load and sign, or
             // because the unsigned zone was pending review.
             debug!("Ignoring probably benign failure: {error}");
+            status.status.finish(false);
+            status.current_action = "Aborted".to_string();
         }
         Err(error) => {
             error!("Signing failed: {error}");
+            status.status.finish(false);
+            status.current_action = "Aborted".to_string();
 
             // TODO: Inline these methods and use a single 'ZoneState' lock.
 

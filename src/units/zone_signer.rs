@@ -77,7 +77,7 @@ use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, Zone, Zone
 pub struct ZoneSigner {
     // TODO: Discuss whether this semaphore is necessary.
     max_concurrent_operations: usize,
-    concurrent_operation_permits: Semaphore,
+    concurrent_operation_permits: Arc<Semaphore>,
     max_concurrent_rrsig_generation_tasks: usize,
     signer_status: ZoneSignerStatus,
     kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
@@ -95,7 +95,7 @@ impl ZoneSigner {
 
         Self {
             max_concurrent_operations,
-            concurrent_operation_permits: Semaphore::new(max_concurrent_operations),
+            concurrent_operation_permits: Arc::new(Semaphore::new(max_concurrent_operations)),
             max_concurrent_rrsig_generation_tasks: (std::thread::available_parallelism()
                 .unwrap()
                 .get()
@@ -279,29 +279,26 @@ impl ZoneSigner {
         let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
     }
 
-    /// Signs zone_name from the Center::signable_zones zone collection,
-    /// unless `resign_last_signed_zone_content` is true in which case
-    /// it resigns the copy of the zone from the Center::published_zones
-    /// collection instead. An alternative way to do this would be to only
-    /// read the right version of the signable zone, but that would only
-    /// be possible if the signable zone were definitely a ZoneApex zone
-    /// rather than a LightWeightZone (and XFR-in zones are LightWeightZone
-    /// instances).
-    pub async fn join_sign_zone_queue(
+    /// Enqueue a zone for signing, waiting until it can begin.
+    pub async fn wait_to_sign(
         &self,
-        center: &Arc<Center>,
         zone: &Arc<Zone>,
-        resign_last_signed_zone_content: bool,
-        trigger: SigningTrigger,
-    ) -> Result<(), SignerError> {
+    ) -> (
+        Arc<RwLock<NamedZoneSigningStatus>>,
+        [OwnedSemaphorePermit; 3],
+    ) {
         let zone_name = &zone.name;
         info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
 
         self.signer_status.dump_queue();
 
-        let (q_size, _q_permit, _zone_permit, status) = {
+        let (q_size, q_permit, zone_permit, status) = {
             let signer_status = &self.signer_status;
-            signer_status.enqueue(zone_name.clone()).await?
+            // TODO: Propagate the error properly.
+            signer_status
+                .enqueue(zone_name.clone())
+                .await
+                .unwrap_or_else(|err| panic!("{err}"))
         };
 
         let num_ops_in_progress =
@@ -311,33 +308,18 @@ impl ZoneSigner {
             q_size - 1
         );
 
-        let _permit = self.concurrent_operation_permits.acquire().await.unwrap();
+        let permit = self
+            .concurrent_operation_permits
+            .clone()
+            .acquire_owned()
+            .await
+            .unwrap();
 
-        status.write().unwrap().current_action = "Signing".to_string();
-
-        let res = self
-            .sign_zone(
-                center,
-                zone,
-                resign_last_signed_zone_content,
-                trigger,
-                status.clone(),
-            )
-            .await;
-
-        let mut status = status.write().unwrap();
-        if res.is_ok() {
-            status.status.finish(true);
-            status.current_action = "Finished".to_string();
-        } else {
-            status.status.finish(false);
-            status.current_action = "Aborted".to_string();
-        }
-
-        res
+        // TODO: Why do we need three different permits?
+        (status, [q_permit, zone_permit, permit])
     }
 
-    async fn sign_zone(
+    pub async fn sign_zone(
         &self,
         center: &Arc<Center>,
         zone: &Arc<Zone>,
@@ -1309,7 +1291,7 @@ impl std::fmt::Debug for ZoneSigner {
 //------------ ZoneSigningStatus ---------------------------------------------
 
 #[derive(Copy, Clone, Serialize)]
-struct RequestedStatus {
+pub struct RequestedStatus {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     requested_at: tokio::time::Instant,
 }
@@ -1323,7 +1305,7 @@ impl RequestedStatus {
 }
 
 #[derive(Copy, Clone, Serialize)]
-struct InProgressStatus {
+pub struct InProgressStatus {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     requested_at: tokio::time::Instant,
     zone_serial: domain::base::Serial,
@@ -1367,7 +1349,7 @@ impl InProgressStatus {
 }
 
 #[derive(Copy, Clone, Serialize)]
-struct FinishedStatus {
+pub struct FinishedStatus {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     requested_at: tokio::time::Instant,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
@@ -1416,7 +1398,7 @@ impl FinishedStatus {
 }
 
 #[derive(Copy, Clone, Serialize)]
-enum ZoneSigningStatus {
+pub enum ZoneSigningStatus {
     Requested(RequestedStatus),
 
     InProgress(InProgressStatus),
@@ -1443,7 +1425,7 @@ impl ZoneSigningStatus {
         }
     }
 
-    fn finish(&mut self, succeeded: bool) {
+    pub fn finish(&mut self, succeeded: bool) {
         match *self {
             ZoneSigningStatus::Requested(_) => {
                 *self = Self::Aborted;
@@ -1472,10 +1454,10 @@ impl std::fmt::Display for ZoneSigningStatus {
 const SIGNING_QUEUE_SIZE: usize = 100;
 
 #[derive(Serialize)]
-struct NamedZoneSigningStatus {
-    zone_name: StoredName,
-    current_action: String,
-    status: ZoneSigningStatus,
+pub struct NamedZoneSigningStatus {
+    pub zone_name: StoredName,
+    pub current_action: String,
+    pub status: ZoneSigningStatus,
 }
 
 struct ZoneSignerStatus {
