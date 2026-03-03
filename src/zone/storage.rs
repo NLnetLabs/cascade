@@ -36,6 +36,7 @@ use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
+    common::light_weight_zone::LightWeightZone,
     signer::SigningTrigger,
     util::{BackgroundTasks, force_future},
     zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
@@ -534,8 +535,10 @@ impl StorageZoneHandle<'_> {
     ) -> zonetree::Zone {
         use zonetree::{types::ZoneUpdate, update::ZoneUpdater};
 
-        let zone =
-            zonetree::ZoneBuilder::new(zone.name.clone(), domain::base::iana::Class::IN).build();
+        // Use a LightWeightZone as it is able to fix RRSIG TTLs to be the same
+        // when walked as the record they sign, rather than being forced into a
+        // common RRSET with a common TTL.
+        let zone = domain::zonetree::Zone::new(LightWeightZone::new(zone.name.clone(), false));
 
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
 
