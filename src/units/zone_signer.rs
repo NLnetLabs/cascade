@@ -34,7 +34,6 @@ use jiff::{Timestamp as JiffTimestamp, Zoned};
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
-use tokio::task::spawn_blocking;
 use tokio::time::Instant;
 use tracing::{Level, debug, error, info, trace, warn};
 use url::Url;
@@ -320,7 +319,7 @@ impl ZoneSigner {
         (status, [q_permit, zone_permit, permit])
     }
 
-    pub async fn sign_zone(
+    pub fn sign_zone(
         &self,
         center: &Arc<Center>,
         zone: &Arc<Zone>,
@@ -491,7 +490,7 @@ impl ZoneSigner {
         debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
         let passed_zone = signable_zone.clone();
-        let mut records = spawn_blocking(|| collect_zone(passed_zone)).await.unwrap();
+        let mut records = collect_zone(passed_zone);
         records.push(soa_rr.clone());
         let walk_time = walk_start.elapsed();
         let unsigned_rr_count = records.len();
@@ -711,14 +710,9 @@ impl ZoneSigner {
         debug!("[ZS]: Sorting collected records for zone '{zone_name}'.");
         status.write().unwrap().current_action = "Sorting records".to_string();
         let sort_start = Instant::now();
-        let mut records = spawn_blocking(|| {
-            // Note: This may briefly use lots of CPU and many CPU cores.
-            MultiThreadedSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
-            records.dedup();
-            records
-        })
-        .await
-        .unwrap();
+        // Note: This may briefly use lots of CPU and many CPU cores.
+        MultiThreadedSorter::sort_by(&mut records, CanonicalOrd::canonical_cmp);
+        records.dedup();
         let sort_time = sort_start.elapsed();
         let unsigned_rr_count = records.len();
 
@@ -737,19 +731,16 @@ impl ZoneSigner {
         status.write().unwrap().current_action = "Generating denial records".to_string();
         let denial_start = Instant::now();
         let apex_owner = zone_name.clone();
-        let unsigned_records = spawn_blocking(move || {
-            // By not passing any keys to sign_zone() will only add denial RRs,
-            // not RRSIGs. We could invoke generate_nsecs() or generate_nsec3s()
-            // directly here instead.
-            let no_keys: [&SigningKey<Bytes, KeyPair>; 0] = Default::default();
-            records.sign_zone(&apex_owner, &signing_config, &no_keys)?;
-            Ok(records)
-        })
-        .await
-        .unwrap()
-        .map_err(|err: SigningError| {
-            SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
-        })?;
+        // By not passing any keys to sign_zone() will only add denial RRs,
+        // not RRSIGs. We could invoke generate_nsecs() or generate_nsec3s()
+        // directly here instead.
+        let no_keys: [&SigningKey<Bytes, KeyPair>; 0] = Default::default();
+        records
+            .sign_zone(&apex_owner, &signing_config, &no_keys)
+            .map_err(|err: SigningError| {
+                SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
+            })?;
+        let unsigned_records = records;
         let denial_time = denial_start.elapsed();
         let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
 
@@ -797,12 +788,12 @@ impl ZoneSigner {
         // incremental signing (i.e. only regenerate, add and remove RRSIGs,
         // and update the NSEC(3) chain as needed, we can capture a diff of
         // the changes we make).
-        let mut updater = ZoneUpdater::new(zonetree.clone()).await.unwrap();
+        let mut updater = force_future(ZoneUpdater::new(zonetree.clone())).unwrap();
 
         // Clear out any RRs in the current version of the signed zone. If the zone
         // supports versioning this is a NO OP.
         debug!("SIGNER: Deleting records in existing (if any) copy of signed zone.");
-        updater.apply(ZoneUpdate::DeleteAllRecords).await.unwrap();
+        force_future(updater.apply(ZoneUpdate::DeleteAllRecords)).unwrap();
 
         // 'updater.apply()' is technically 'async', although we always
         // implement it here with synchronous methods.  This still forces
@@ -810,67 +801,40 @@ impl ZoneSigner {
         // lightweight single-threaded Tokio runtime to handle it for us.
 
         // Insert all unsigned records into the updater.
-        let unsigned_updater_task = spawn_blocking({
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .thread_name("cascade-worker")
-                .build()
-                .unwrap();
+        let unsigned_updater_start = Instant::now();
+        for record in &unsigned_records {
+            let record = Record::from_record(record.clone());
+            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
+        }
+        debug!(
+            "Inserted {} unsigned records in {:.1}s",
+            unsigned_records.len(),
+            unsigned_updater_start.elapsed().as_secs_f64()
+        );
 
-            move || {
-                runtime.block_on(async move {
-                    let start = Instant::now();
+        // TODO: Re-parallelize RRSIG generation.
 
-                    for record in &unsigned_records {
-                        let record = Record::from_record(record.clone());
-                        updater.apply(ZoneUpdate::AddRecord(record)).await.unwrap();
-                    }
+        let generation_start = Instant::now();
 
-                    debug!(
-                        "Inserted {} unsigned records in {:.1}s",
-                        unsigned_records.len(),
-                        start.elapsed().as_secs_f64()
-                    );
+        // Get the keys to sign with.  Domain's 'sign_sorted_zone_records()'
+        // needs a slice of references, so we need to build that here.
+        let keys = signing_keys.iter().collect::<Vec<_>>();
 
-                    (unsigned_records, updater)
-                })
-            }
-        });
-        let (unsigned_records, mut updater) = unsigned_updater_task.await.map_err(|_| {
-            SignerError::SigningError("Failed to insert unsigned records".to_string())
-        })?;
+        let signatures = sign_sorted_zone_records(
+            &zone.name,
+            RecordsIter::new_from_owned(&unsigned_records),
+            &keys,
+            &rrsig_cfg,
+        )
+        .map_err(|err| SignerError::SigningError(err.to_string()))?;
 
-        // TODO: Re-parallelize this.
-        let signer_task = spawn_blocking({
-            let apex_name = zone.name.clone();
+        let total_signatures = signatures.len();
 
-            move || {
-                let start = Instant::now();
+        for sig in signatures {
+            force_future(updater.apply(ZoneUpdate::AddRecord(Record::from_record(sig)))).unwrap();
+        }
 
-                // Get the keys to sign with.  Domain's 'sign_sorted_zone_records()'
-                // needs a slice of references, so we need to build that here.
-                let keys = signing_keys.iter().collect::<Vec<_>>();
-
-                let signatures = sign_sorted_zone_records(
-                    &apex_name,
-                    RecordsIter::new_from_owned(&unsigned_records),
-                    &keys,
-                    &rrsig_cfg,
-                )?;
-
-                let total_signatures = signatures.len();
-
-                for sig in signatures {
-                    force_future(updater.apply(ZoneUpdate::AddRecord(Record::from_record(sig))))
-                        .unwrap();
-                }
-
-                Ok::<_, SigningError>((updater, total_signatures, start.elapsed()))
-            }
-        });
-        let (mut updater, total_signatures, generation_time) = signer_task
-            .await
-            .map_err(|_| SignerError::SigningError("Could not generate RRsigs".to_string()))?
-            .map_err(|err| SignerError::SigningError(err.to_string()))?;
+        let generation_time = generation_start.elapsed();
 
         let generation_rate = total_signatures as f64 / generation_time.as_secs_f64().min(0.001);
 
@@ -894,7 +858,7 @@ impl ZoneSigner {
         //     zone.mark_dirty(&mut zone_state, &self.center);
         // }
 
-        updater.apply(ZoneUpdate::Finished(soa_rr)).await.unwrap();
+        force_future(updater.apply(ZoneUpdate::Finished(soa_rr))).unwrap();
 
         debug!("SIGNER: Determining min expiration time");
         let reader = zonetree.read();
