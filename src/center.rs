@@ -179,6 +179,11 @@ pub async fn add_zone(
         // NOTE: The zone is marked as dirty by the above operation.
     }
 
+    {
+        let mut state = center.state.lock().unwrap();
+        state.mark_dirty(center);
+    }
+
     info!("Added zone '{name}'");
     Ok(())
 }
