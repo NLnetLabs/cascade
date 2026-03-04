@@ -8,7 +8,7 @@ use tracing::info;
 use crate::{
     center::Center,
     signer::{ResigningTrigger, SigningTrigger},
-    util::AbortOnDrop,
+    util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState},
 };
 
@@ -64,21 +64,22 @@ impl SignerZoneHandle<'_> {
         // has lower priority than this (for now).
 
         assert!(self.state.signer.enqueued_new_sign.is_none());
-        assert!(self.state.signer.ongoing.is_none());
 
         // TODO: Keep state for a queue of pending (re-)signing operations, so
         // that the number of simultaneous operations can be limited. At the
         // moment, this queue is opaque and is handled within the asynchronous
         // task.
 
-        let handle = tokio::task::spawn(super::sign(
-            self.center.clone(),
-            self.zone.clone(),
-            builder,
-            SigningTrigger::Load,
-        ));
-
-        self.state.signer.ongoing = Some(handle.into());
+        let span = tracing::Span::none();
+        self.state.signer.ongoing.spawn(
+            span,
+            super::sign(
+                self.center.clone(),
+                self.zone.clone(),
+                builder,
+                SigningTrigger::Load,
+            ),
+        );
     }
 
     /// Enqueue a re-signing operation for the zone.
@@ -120,16 +121,17 @@ impl SignerZoneHandle<'_> {
             // signing operations are ongoing right now.
 
             assert!(self.state.signer.enqueued_new_sign.is_none());
-            assert!(self.state.signer.ongoing.is_none());
 
-            let handle = tokio::task::spawn(super::sign(
-                self.center.clone(),
-                self.zone.clone(),
-                builder,
-                SigningTrigger::Resign(trigger),
-            ));
-
-            self.state.signer.ongoing = Some(handle.into());
+            let span = tracing::Span::none();
+            self.state.signer.ongoing.spawn(
+                span,
+                super::sign(
+                    self.center.clone(),
+                    self.zone.clone(),
+                    builder,
+                    SigningTrigger::Resign(trigger),
+                ),
+            );
         } else {
             // TODO: Track expiration time in 'SignerState'.
             let expiration_time = self
@@ -166,7 +168,6 @@ impl SignerZoneHandle<'_> {
         // which prevents the zone data storage from being passive. This method
         // is only called if the zone data storage is in the passive state.
         assert!(self.state.signer.enqueued_new_sign.is_none());
-        assert!(self.state.signer.ongoing.is_none());
 
         // Load the one enqueued re-sign operation, if it exists.
         let Some(EnqueuedResign {
@@ -194,14 +195,16 @@ impl SignerZoneHandle<'_> {
         // add the operation to the queue before starting the re-sign. If the
         // queue is too full to start the operation yet, leave it enqueued.
 
-        let handle = tokio::task::spawn(super::sign(
-            self.center.clone(),
-            self.zone.clone(),
-            builder,
-            SigningTrigger::Resign(trigger),
-        ));
-
-        self.state.signer.ongoing = Some(handle.into());
+        let span = tracing::Span::none();
+        self.state.signer.ongoing.spawn(
+            span,
+            super::sign(
+                self.center.clone(),
+                self.zone.clone(),
+                builder,
+                SigningTrigger::Resign(trigger),
+            ),
+        );
 
         true
     }
@@ -212,8 +215,8 @@ impl SignerZoneHandle<'_> {
 /// State for signing a zone.
 #[derive(Debug, Default)]
 pub struct SignerState {
-    /// A handle to an ongoing operation, if any.
-    pub ongoing: Option<AbortOnDrop>,
+    /// Ongoing (re-)signing operations.
+    pub ongoing: BackgroundTasks,
 
     /// An enqueued signing operation, if any.
     pub enqueued_new_sign: Option<EnqueuedSign>,

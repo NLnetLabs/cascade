@@ -79,6 +79,7 @@ async fn sign(
         state: &mut state,
         center: &center,
     };
+    handle.state.signer.ongoing.finish();
 
     match result {
         Ok(()) => {
