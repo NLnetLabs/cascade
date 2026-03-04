@@ -374,7 +374,6 @@ pub struct SigningInProgressReport {
     pub rrsig_count: Option<usize>,
     pub rrsig_reused_count: Option<usize>,
     pub rrsig_time: Option<Duration>,
-    pub insertion_time: Option<Duration>,
     pub total_time: Option<Duration>,
     pub threads_used: Option<usize>,
 }
@@ -392,7 +391,6 @@ pub struct SigningFinishedReport {
     pub rrsig_count: usize,
     pub rrsig_reused_count: usize,
     pub rrsig_time: Duration,
-    pub insertion_time: Duration,
     pub total_time: Duration,
     pub threads_used: usize,
     pub finished_at: SystemTime,

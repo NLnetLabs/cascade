@@ -916,15 +916,6 @@ impl Progress {
                             rrsig_count / (rrsig_time.as_secs() as usize)
                         );
                     }
-                    if let (Some(rrsig_count), Some(insertion_time)) =
-                        (r.rrsig_count, r.insertion_time)
-                    {
-                        println!(
-                            "  Inserted signatures in {} ({} sig/s)",
-                            format_duration(insertion_time),
-                            rrsig_count / (insertion_time.as_secs() as usize)
-                        );
-                    }
                     if let Some(threads_used) = r.threads_used {
                         println!("  Using {threads_used} threads to generate signatures");
                     }
@@ -959,13 +950,6 @@ impl Progress {
                         format_duration(r.rrsig_time),
                         r.rrsig_count
                             .checked_div(r.rrsig_time.as_secs() as usize)
-                            .unwrap_or(r.rrsig_count),
-                    );
-                    println!(
-                        "  Inserted signatures in {} ({} sig/s)",
-                        format_duration(r.insertion_time),
-                        r.rrsig_count
-                            .checked_div(r.insertion_time.as_secs() as usize)
                             .unwrap_or(r.rrsig_count),
                     );
                     println!(

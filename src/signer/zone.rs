@@ -3,10 +3,11 @@
 use std::{sync::Arc, time::SystemTime};
 
 use cascade_zonedata::SignedZoneBuilder;
+use tracing::info;
 
 use crate::{
     center::Center,
-    util::AbortOnDrop,
+    util::BackgroundTasks,
     zone::{SigningTrigger, Zone, ZoneHandle, ZoneState},
 };
 
@@ -35,28 +36,36 @@ impl SignerZoneHandle<'_> {
     }
 
     /// Enqueue a signing operation for a newly loaded instance of the zone.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name)
+    )]
     pub fn enqueue_sign(&mut self, builder: SignedZoneBuilder) {
+        info!("Enqueuing a sign operation");
+
         // A zone can have at most one 'SignedZoneBuilder' at a time. Because
         // we have 'builder', we are guaranteed that no other signing operations
         // are ongoing right now. A re-signing operation may be enqueued, but it
         // has lower priority than this (for now).
 
         assert!(self.state.signer.enqueued_sign.is_none());
-        assert!(self.state.signer.ongoing.is_none());
 
         // TODO: Keep state for a queue of pending (re-)signing operations, so
         // that the number of simultaneous operations can be limited. At the
         // moment, this queue is opaque and is handled within the asynchronous
         // task.
 
-        let handle = tokio::task::spawn(super::sign(
-            self.center.clone(),
-            self.zone.clone(),
-            builder,
-            SigningTrigger::ZoneChangesApproved,
-        ));
-
-        self.state.signer.ongoing = Some(handle.into());
+        let span = tracing::Span::none();
+        self.state.signer.ongoing.spawn(
+            span,
+            super::sign(
+                self.center.clone(),
+                self.zone.clone(),
+                builder,
+                SigningTrigger::ZoneChangesApproved,
+            ),
+        );
     }
 
     /// Enqueue a re-signing operation for the zone.
@@ -64,7 +73,14 @@ impl SignerZoneHandle<'_> {
     /// ## Panics
     ///
     /// Panics if `keys_changed` and `sigs_need_refresh` are both `false`.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name, keys_changed, sigs_need_refresh)
+    )]
     pub fn enqueue_resign(&mut self, keys_changed: bool, sigs_need_refresh: bool) {
+        info!("Enqueuing a re-sign operation");
+
         assert!(
             keys_changed || sigs_need_refresh,
             "a reason for re-signing was not specified"
@@ -93,7 +109,6 @@ impl SignerZoneHandle<'_> {
             // may be enqueued, but it has lower priority than this (for now).
 
             assert!(self.state.signer.enqueued_sign.is_none());
-            assert!(self.state.signer.ongoing.is_none());
 
             // TODO: 'SigningTrigger' can't express multiple reasons.
             let trigger = if keys_changed {
@@ -102,14 +117,11 @@ impl SignerZoneHandle<'_> {
                 SigningTrigger::SignatureExpiration
             };
 
-            let handle = tokio::task::spawn(super::sign(
-                self.center.clone(),
-                self.zone.clone(),
-                builder,
-                trigger,
-            ));
-
-            self.state.signer.ongoing = Some(handle.into());
+            let span = tracing::Span::none();
+            self.state.signer.ongoing.spawn(
+                span,
+                super::sign(self.center.clone(), self.zone.clone(), builder, trigger),
+            );
         } else {
             // TODO: Track expiration time in 'SignerState'.
             let expiration_time = self
@@ -147,7 +159,6 @@ impl SignerZoneHandle<'_> {
                 .as_ref()
                 .is_none_or(|o| o.builder.is_none())
         );
-        assert!(self.state.signer.ongoing.is_none());
 
         // Load the one enqueued re-sign operation, if it exists.
         let Some(resign) = self.state.signer.enqueued_resign.take() else {
@@ -179,14 +190,11 @@ impl SignerZoneHandle<'_> {
             SigningTrigger::SignatureExpiration
         };
 
-        let handle = tokio::task::spawn(super::sign(
-            self.center.clone(),
-            self.zone.clone(),
-            builder,
-            trigger,
-        ));
-
-        self.state.signer.ongoing = Some(handle.into());
+        let span = tracing::Span::none();
+        self.state.signer.ongoing.spawn(
+            span,
+            super::sign(self.center.clone(), self.zone.clone(), builder, trigger),
+        );
 
         true
     }
@@ -197,8 +205,8 @@ impl SignerZoneHandle<'_> {
 /// State for signing a zone.
 #[derive(Debug, Default)]
 pub struct SignerState {
-    /// A handle to an ongoing operation, if any.
-    pub ongoing: Option<AbortOnDrop>,
+    /// Ongoing (re-)signing operations.
+    pub ongoing: BackgroundTasks,
 
     /// An enqueued signing operation, if any.
     pub enqueued_sign: Option<EnqueuedSign>,

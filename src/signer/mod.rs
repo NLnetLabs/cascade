@@ -5,12 +5,11 @@
 use std::sync::Arc;
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{
     center::{Center, halt_zone},
-    manager::record_zone_event,
-    zone::{HistoricalEvent, SigningTrigger, Zone},
+    zone::{HistoricalEvent, SigningTrigger, Zone, ZoneHandle},
 };
 
 pub mod zone;
@@ -30,38 +29,59 @@ pub mod zone;
 async fn sign(
     center: Arc<Center>,
     zone: Arc<Zone>,
-    builder: SignedZoneBuilder,
+    mut builder: SignedZoneBuilder,
     trigger: SigningTrigger,
 ) {
-    match center
-        .signer
-        .join_sign_zone_queue(&center, &zone.name, !builder.have_next_loaded(), trigger)
-        .await
-    {
-        Ok(()) => {}
-        Err(error) if error.is_benign() => {
-            // Ignore this benign case. It was probably caused by dnst keyset
-            // cron triggering resigning before we even signed the first time,
-            // either because the zone was large and slow to load and sign, or
-            // because the unsigned zone was pending review.
-            debug!("Ignoring probably benign failure: {error}");
+    let (status, _permits) = center.signer.wait_to_sign(&zone).await;
+
+    let (result, builder) = tokio::task::spawn_blocking({
+        let center = center.clone();
+        let zone = zone.clone();
+        let status = status.clone();
+        move || {
+            let result = center
+                .signer
+                .sign_zone(&center, &zone, &mut builder, trigger, status);
+            (result, builder)
+        }
+    })
+    .await
+    .unwrap();
+
+    let mut status = status.write().unwrap();
+    let mut state = zone.state.lock().unwrap();
+    let mut handle = ZoneHandle {
+        zone: &zone,
+        state: &mut state,
+        center: &center,
+    };
+    handle.state.signer.ongoing.finish();
+
+    match result {
+        Ok(()) => {
+            let built = builder.finish().unwrap_or_else(|_| unreachable!());
+            handle.storage().finish_sign(built);
+            status.status.finish(true);
+            status.current_action = "Finished".to_string();
         }
         Err(error) => {
             error!("Signing failed: {error}");
+            handle.storage().give_up_sign(builder);
+            status.status.finish(false);
+            status.current_action = "Aborted".to_string();
 
-            // TODO: Inline these methods and use a single 'ZoneState' lock.
-
-            halt_zone(&center, &zone.name, true, &error.to_string());
-
-            record_zone_event(
-                &center,
-                &zone.name,
+            handle.state.record_event(
                 HistoricalEvent::SigningFailed {
                     trigger,
                     reason: error.to_string(),
                 },
                 None, // TODO
             );
+
+            std::mem::drop(state);
+
+            // TODO: Inline.
+            halt_zone(&center, &zone.name, true, &error.to_string());
         }
     }
 }
