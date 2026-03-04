@@ -786,14 +786,42 @@ impl ZoneSigner {
         // needs a slice of references, so we need to build that here.
         let keys = signing_keys.iter().collect::<Vec<_>>();
 
-        let signatures = sign_sorted_zone_records(
-            &zone.name,
-            RecordsIter::new_from_owned(&unsigned_records),
-            &keys,
-            &rrsig_cfg,
-        )
-        .map_err(|err| SignerError::SigningError(err.to_string()))?;
+        // TODO: This generation code is incorrect; 'sign_sorted_zone_records'
+        // looks for zone cuts, but zone cuts may need to be detected _across_
+        // the segments we split the records into. Zone cut detection needs to
+        // be re-implemented here with parallel execution in mind. This also
+        // applies to NSEC(3) generation, but it is currently single-threaded.
 
+        // Split the records into segments.
+        let segments = rayon::iter::split(0..unsigned_records.len(), |range| {
+            // Always sign at least 1024 records at a time.
+            if range.len() < 1024 {
+                return (range, None);
+            }
+
+            let midpoint = range.start + range.len() / 2;
+            let left = range.start..midpoint;
+            let right = midpoint..range.end;
+            (left, Some(right))
+        });
+
+        // Generate signatures from each segment.
+        let signatures = segments.map(|range| {
+            sign_sorted_zone_records(
+                &zone.name,
+                RecordsIter::new_from_owned(&unsigned_records[range]),
+                &keys,
+                &rrsig_cfg,
+            )
+        });
+
+        // Collect the signatures together, folding errors together.
+        let signatures = signatures
+            .try_reduce(Vec::new, |mut a, mut b| {
+                a.append(&mut b);
+                Ok(a)
+            })
+            .map_err(|err| SignerError::SigningError(err.to_string()))?;
         let total_signatures = signatures.len();
 
         new_records.par_extend(
