@@ -1,23 +1,22 @@
 //! Controlling the entire operation.
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
-use crate::api::{self, KeyImport, SigningQueueReport, SigningReport, ZoneLoaderReport};
-use crate::center::{get_zone, halt_zone, Center, Change, ZoneAddError};
+use crate::center::{Center, get_zone};
 use crate::daemon::SocketProvider;
+use crate::loader::Loader;
+use crate::metrics::MetricsCollection;
+use crate::units::http_server::HTTP_UNIT_NAME;
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
-use crate::units::zone_loader::ZoneLoader;
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, PipelineMode, SigningTrigger, ZoneLoadSource};
-use crate::zonemaintenance::types::ZoneReport;
+use crate::util::AbortOnDrop;
+use crate::zone::HistoricalEvent;
 use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
 use domain::zonetree::StoredName;
-use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info};
 
 //----------- Manager ----------------------------------------------------------
 
@@ -32,38 +31,30 @@ pub struct Manager {
     /// The HTTP server.
     pub http_server: Arc<HttpServer>,
 
-    /// The zone loader.
-    pub zone_loader: Arc<ZoneLoader>,
-
-    /// The review server for unsigned zones.
-    pub unsigned_review: Arc<ZoneServer>,
-
-    /// The key manager.
-    pub key_manager: Arc<KeyManager>,
-
-    /// The zone signer.
-    pub zone_signer: Arc<ZoneSigner>,
-
-    /// The review server for signed zones.
-    pub signed_review: Arc<ZoneServer>,
-
-    /// The zone server.
-    pub zone_server: Arc<ZoneServer>,
+    /// Handles to tasks that should abort when we exit Cascade
+    _handles: Vec<AbortOnDrop>,
 }
 
 impl Manager {
     /// Spawn all targets.
-    pub async fn spawn(
-        center: Arc<Center>,
-        mut socket_provider: SocketProvider,
-    ) -> Result<Self, Error> {
+    pub fn spawn(center: Arc<Center>, mut socket_provider: SocketProvider) -> Result<Self, Error> {
+        let metrics = MetricsCollection::new();
+
+        // Initialize the components.
+        {
+            let mut state = center.state.lock().unwrap();
+            Loader::init(&center, &mut state);
+        }
+
+        let mut handles = Vec::new();
+
         // Spawn the zone loader.
         info!("Starting unit 'ZL'");
-        let zone_loader = Arc::new(ZoneLoader::launch(center.clone()));
+        handles.push(Loader::run(center.clone()));
 
         // Spawn the unsigned zone review server.
         info!("Starting unit 'RS'");
-        let unsigned_review = Arc::new(ZoneServer::launch(
+        handles.extend(ZoneServer::run(
             center.clone(),
             zone_server::Source::Unsigned,
             &mut socket_provider,
@@ -71,325 +62,63 @@ impl Manager {
 
         // Spawn the key manager.
         info!("Starting unit 'KM'");
-        let key_manager = KeyManager::launch(center.clone());
+        handles.push(KeyManager::run(center.clone()));
 
         // Spawn the zone signer.
         info!("Starting unit 'ZS'");
-        let zone_signer = ZoneSigner::launch(center.clone());
+        handles.push(ZoneSigner::run(center.clone()));
 
         // Spawn the signed zone review server.
         info!("Starting unit 'RS2'");
-        let signed_review = Arc::new(ZoneServer::launch(
+        handles.extend(ZoneServer::run(
             center.clone(),
             zone_server::Source::Signed,
             &mut socket_provider,
         )?);
 
-        // Spawn the HTTP server.
-        info!("Starting unit 'HS'");
-        let http_server = HttpServer::launch(center.clone(), &mut socket_provider)?;
+        // Take out HTTP listen sockets before PS takes them all.
+        debug!("Pre-fetching listen sockets for 'HS'");
+        let http_sockets = center
+            .config
+            .remote_control
+            .servers
+            .iter()
+            .map(|addr| {
+                socket_provider.take_tcp(addr).ok_or_else(|| {
+                    error!("[{HTTP_UNIT_NAME}]: No socket available for TCP {addr}",);
+                    Terminated
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for socket in &http_sockets {
+            // Unwrap, because there should always be a valid IPv4/IPv6
+            // address. Otherwise this socket couldn't have been created.
+            let addr = socket.local_addr().unwrap();
+            info!(
+                "Obtained TCP listener for HTTP server for remote-control and metrics on address {addr}"
+            );
+        }
 
         info!("Starting unit 'PS'");
-        let zone_server = Arc::new(ZoneServer::launch(
+        handles.extend(ZoneServer::run(
             center.clone(),
             zone_server::Source::Published,
             &mut socket_provider,
         )?);
+
+        // Register any Manager metrics here, before giving the metrics to the HttpServer
+
+        // Spawn the HTTP server.
+        info!("Starting unit 'HS'");
+        let http_server = HttpServer::launch(center.clone(), http_sockets, metrics)?;
 
         info!("All units report ready.");
 
         Ok(Self {
             center,
             http_server,
-            zone_loader,
-            unsigned_review,
-            key_manager,
-            zone_signer,
-            signed_review,
-            zone_server,
+            _handles: handles,
         })
-    }
-
-    /// Process an application update command.
-    pub fn on_app_cmd(&self, unit: &str, cmd: ApplicationCommand) {
-        match unit {
-            "ZL" => tokio::spawn({
-                let unit = self.zone_loader.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "RS" => tokio::spawn({
-                let unit = self.unsigned_review.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "KM" => tokio::spawn({
-                let unit = self.key_manager.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "ZS" => tokio::spawn({
-                let unit = self.zone_signer.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "RS2" => tokio::spawn({
-                let unit = self.signed_review.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            "PS" => tokio::spawn({
-                let unit = self.zone_server.clone();
-                async move { unit.on_command(cmd).await }
-            }),
-            _ => unreachable!(),
-        };
-    }
-
-    /// Process an update command.
-    pub fn on_update(&self, update: Update) {
-        debug!("[CC]: Event received: {update:?}");
-        let (msg, target, cmd) = match update {
-            Update::Changed(change) => {
-                match &change {
-                    Change::ConfigChanged
-                    | Change::PolicyAdded(_)
-                    | Change::PolicyChanged(..)
-                    | Change::PolicyRemoved(_) => { /* No zone name, nothing to do */ }
-
-                    Change::ZoneAdded(name) => {
-                        record_zone_event(&self.center, name, HistoricalEvent::Added, None);
-                    }
-                    Change::ZonePolicyChanged { name, .. } => {
-                        record_zone_event(&self.center, name, HistoricalEvent::PolicyChanged, None);
-                    }
-                    Change::ZoneSourceChanged(name, _) => {
-                        record_zone_event(&self.center, name, HistoricalEvent::SourceChanged, None);
-                    }
-                    Change::ZoneRemoved(name) => {
-                        record_zone_event(&self.center, name, HistoricalEvent::Removed, None);
-                    }
-                }
-
-                // Inform all units about the change.
-                for name in ["ZL", "RS", "KM", "ZS", "RS2", "PS"] {
-                    self.on_app_cmd(name, ApplicationCommand::Changed(change.clone()));
-                }
-                return;
-            }
-
-            Update::RefreshZone {
-                zone_name,
-                source,
-                serial,
-            } => (
-                "Instructing zone loader to refresh the zone",
-                "ZL",
-                ApplicationCommand::RefreshZone {
-                    zone_name,
-                    source,
-                    serial,
-                },
-            ),
-
-            Update::ReviewZone {
-                name,
-                stage,
-                serial,
-                decision,
-            } => (
-                "Passing back zone review",
-                match stage {
-                    api::ZoneReviewStage::Unsigned => "RS",
-                    api::ZoneReviewStage::Signed => "RS2",
-                },
-                ApplicationCommand::ReviewZone {
-                    name,
-                    serial,
-                    decision,
-                    tx: tokio::sync::oneshot::channel().0,
-                },
-            ),
-
-            Update::UnsignedZoneUpdatedEvent {
-                zone_name,
-                zone_serial,
-            } => {
-                record_zone_event(
-                    &self.center,
-                    &zone_name,
-                    HistoricalEvent::NewVersionReceived,
-                    Some(zone_serial),
-                );
-
-                if let Some(zone) = get_zone(&self.center, &zone_name) {
-                    if let Ok(mut zone_state) = zone.state.lock() {
-                        match zone_state.pipeline_mode.clone() {
-                            PipelineMode::Running => {}
-                            PipelineMode::SoftHalt(message) => {
-                                info!("[CC]: Restore the pipeline for '{zone_name}' from soft-halt ({message}) to running");
-                                zone_state.resume();
-                            }
-                            PipelineMode::HardHalt(_) => {
-                                warn!("[CC]: NOT instructing review server to publish the unsigned zone as the pipeline for the zone is hard halted");
-                                return;
-                            }
-                        }
-                    }
-                }
-
-                (
-                    "Instructing review server to publish the unsigned zone",
-                    "RS",
-                    ApplicationCommand::SeekApprovalForUnsignedZone {
-                        zone_name,
-                        zone_serial,
-                    },
-                )
-            }
-
-            Update::UnsignedZoneRejectedEvent {
-                zone_name,
-                zone_serial,
-            } => {
-                halt_zone(
-                    &self.center,
-                    &zone_name,
-                    false,
-                    "Unsigned zone was rejected at the review stage.",
-                );
-
-                record_zone_event(
-                    &self.center,
-                    &zone_name,
-                    HistoricalEvent::UnsignedZoneReview {
-                        status: api::ZoneReviewStatus::Rejected,
-                    },
-                    Some(zone_serial),
-                );
-                return;
-            }
-
-            Update::UnsignedZoneApprovedEvent {
-                zone_name,
-                zone_serial,
-            } => {
-                record_zone_event(
-                    &self.center,
-                    &zone_name,
-                    HistoricalEvent::UnsignedZoneReview {
-                        status: api::ZoneReviewStatus::Approved,
-                    },
-                    Some(zone_serial),
-                );
-                (
-                    "Instructing zone signer to sign the approved zone",
-                    "ZS",
-                    ApplicationCommand::SignZone {
-                        zone_name,
-                        zone_serial: Some(zone_serial),
-                        trigger: SigningTrigger::ZoneChangesApproved,
-                    },
-                )
-            }
-
-            Update::ResignZoneEvent { zone_name, trigger } => (
-                "Instructing zone signer to re-sign the zone",
-                "ZS",
-                ApplicationCommand::SignZone {
-                    zone_name,
-                    zone_serial: None,
-                    trigger,
-                },
-            ),
-
-            Update::ZoneSignedEvent {
-                zone_name,
-                zone_serial,
-                trigger,
-            } => {
-                record_zone_event(
-                    &self.center,
-                    &zone_name,
-                    HistoricalEvent::SigningSucceeded { trigger },
-                    Some(zone_serial),
-                );
-                (
-                    "Instructing review server to publish the signed zone",
-                    "RS2",
-                    ApplicationCommand::SeekApprovalForSignedZone {
-                        zone_name,
-                        zone_serial,
-                    },
-                )
-            }
-
-            Update::SignedZoneApprovedEvent {
-                zone_name,
-                zone_serial,
-            } => {
-                record_zone_event(
-                    &self.center,
-                    &zone_name,
-                    HistoricalEvent::SignedZoneReview {
-                        status: api::ZoneReviewStatus::Approved,
-                    },
-                    Some(zone_serial),
-                );
-                // Send a copy of PublishSignedZone to ZS to trigger a
-                // re-scan of when to re-sign next.
-                let psz = ApplicationCommand::PublishSignedZone {
-                    zone_name: zone_name.clone(),
-                    zone_serial,
-                };
-                self.center.app_cmd_tx.send(("ZS".into(), psz)).unwrap();
-                (
-                    "Instructing publication server to publish the signed zone",
-                    "PS",
-                    ApplicationCommand::PublishSignedZone {
-                        zone_name,
-                        zone_serial,
-                    },
-                )
-            }
-
-            Update::SignedZoneRejectedEvent {
-                zone_name,
-                zone_serial,
-            } => {
-                halt_zone(
-                    &self.center,
-                    &zone_name,
-                    false,
-                    "Signed zone was rejected at the review stage.",
-                );
-
-                record_zone_event(
-                    &self.center,
-                    &zone_name,
-                    HistoricalEvent::SignedZoneReview {
-                        status: api::ZoneReviewStatus::Rejected,
-                    },
-                    Some(zone_serial),
-                );
-                return;
-            }
-
-            Update::ZoneSigningFailedEvent {
-                zone_name,
-                zone_serial,
-                trigger,
-                reason,
-            } => {
-                halt_zone(&self.center, &zone_name, true, reason.as_str());
-
-                record_zone_event(
-                    &self.center,
-                    &zone_name,
-                    HistoricalEvent::SigningFailed { trigger, reason },
-                    zone_serial,
-                );
-                return;
-            }
-        };
-
-        info!("[CC]: {msg}");
-        self.center.app_cmd_tx.send((target.into(), cmd)).unwrap();
     }
 }
 
@@ -404,192 +133,6 @@ pub fn record_zone_event(
         zone_state.record_event(event, serial);
         zone.mark_dirty(&mut zone_state, center);
     }
-}
-
-//----------- ApplicationCommand -----------------------------------------------
-
-#[derive(Debug)]
-pub enum ApplicationCommand {
-    /// A change has occurred.
-    Changed(Change),
-
-    /// Review a zone.
-    ReviewZone {
-        /// The name of the zone.
-        name: StoredName,
-
-        /// The serial number of the zone.
-        serial: Serial,
-
-        /// Whether to approve or reject the zone.
-        decision: api::ZoneReviewDecision,
-
-        /// A handle for returning a response.
-        tx: tokio::sync::oneshot::Sender<api::ZoneReviewResult>,
-    },
-
-    SeekApprovalForUnsignedZone {
-        zone_name: StoredName,
-        zone_serial: Serial,
-    },
-
-    /// Refresh a zone.
-    ///
-    /// The zone loader will initiate a refresh for the zone, and query the
-    /// zone's source to look for a newer version of the zone.  This command
-    /// can be used in response to a user request or a NOTIFY message.
-    RefreshZone {
-        /// The name of the zone to refresh.
-        zone_name: StoredName,
-
-        /// The source address of the NOTIFY message.
-        source: Option<IpAddr>,
-
-        /// The expected new SOA serial for the zone.
-        ///
-        /// If this is set, and the zone's SOA serial is greater than or equal
-        /// to this value, the refresh can be ignored.
-        serial: Option<Serial>,
-    },
-
-    /// Reload a zone.
-    ///
-    /// The zone loader will immediately remove and re-add the zone.
-    ReloadZone {
-        zone_name: StoredName,
-        source: ZoneLoadSource,
-    },
-
-    SignZone {
-        zone_name: StoredName,
-        zone_serial: Option<Serial>,
-        trigger: SigningTrigger,
-    },
-    SeekApprovalForSignedZone {
-        zone_name: StoredName,
-        zone_serial: Serial,
-    },
-    PublishSignedZone {
-        zone_name: StoredName,
-        zone_serial: Serial,
-    },
-    RegisterZone {
-        name: StoredName,
-        policy: String,
-        key_imports: Vec<KeyImport>,
-        report_tx: oneshot::Sender<Result<(), ZoneAddError>>,
-    },
-    GetZoneReport {
-        zone_name: StoredName,
-        report_tx: oneshot::Sender<(ZoneReport, Option<ZoneLoaderReport>)>,
-    },
-    GetSigningReport {
-        zone_name: StoredName,
-        report_tx: oneshot::Sender<SigningReport>,
-    },
-    GetQueueReport {
-        report_tx: oneshot::Sender<Vec<SigningQueueReport>>,
-    },
-
-    RollKey {
-        zone: StoredName,
-        key_roll: api::keyset::KeyRoll,
-        http_tx: mpsc::Sender<Result<(), String>>,
-    },
-    RemoveKey {
-        zone: StoredName,
-        key_remove: api::keyset::KeyRemove,
-        http_tx: mpsc::Sender<Result<(), String>>,
-    },
-
-    KeySetStatus {
-        zone: StoredName,
-        http_tx: oneshot::Sender<Result<String, String>>,
-    },
-}
-
-//------------ Update --------------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub enum Update {
-    /// A change has occurred.
-    Changed(Change),
-
-    /// A request to refresh a zone.
-    ///
-    /// This is sent by the publication server when it receives an appropriate
-    /// NOTIFY message.
-    RefreshZone {
-        /// The name of the zone to refresh.
-        zone_name: StoredName,
-
-        /// The source address of the NOTIFY message.
-        source: Option<IpAddr>,
-
-        /// The expected new SOA serial for the zone.
-        ///
-        /// If this is set, and the zone's SOA serial is greater than or equal
-        /// to this value, the refresh can be ignored.
-        serial: Option<Serial>,
-    },
-
-    /// Review a zone.
-    ReviewZone {
-        /// The name of the zone.
-        name: StoredName,
-
-        /// The stage of review.
-        stage: api::ZoneReviewStage,
-
-        /// The serial number of the zone.
-        serial: Serial,
-
-        /// Whether to approve or reject the zone.
-        decision: api::ZoneReviewDecision,
-    },
-
-    UnsignedZoneUpdatedEvent {
-        zone_name: StoredName,
-        zone_serial: Serial,
-    },
-
-    UnsignedZoneApprovedEvent {
-        zone_name: StoredName,
-        zone_serial: Serial,
-    },
-
-    UnsignedZoneRejectedEvent {
-        zone_name: StoredName,
-        zone_serial: Serial,
-    },
-
-    ZoneSignedEvent {
-        zone_name: StoredName,
-        zone_serial: Serial,
-        trigger: SigningTrigger,
-    },
-
-    ZoneSigningFailedEvent {
-        zone_name: StoredName,
-        zone_serial: Option<Serial>,
-        trigger: SigningTrigger,
-        reason: String,
-    },
-
-    SignedZoneApprovedEvent {
-        zone_name: StoredName,
-        zone_serial: Serial,
-    },
-
-    SignedZoneRejectedEvent {
-        zone_name: StoredName,
-        zone_serial: Serial,
-    },
-
-    ResignZoneEvent {
-        zone_name: StoredName,
-        trigger: SigningTrigger,
-    },
 }
 
 //----------- Error ------------------------------------------------------------

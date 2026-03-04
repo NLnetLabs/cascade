@@ -10,17 +10,14 @@ use std::{net::SocketAddr, str::FromStr};
 use serde_with::DeserializeFromStr;
 use tokio::net::TcpStream;
 
-#[async_trait::async_trait]
 pub trait TcpListenerFactory<T> {
     async fn bind(&self, addr: String) -> std::io::Result<T>;
 }
 
-#[async_trait::async_trait]
 pub trait TcpListener<T> {
     async fn accept(&self) -> std::io::Result<(T, SocketAddr)>;
 }
 
-#[async_trait::async_trait]
 pub trait TcpStreamWrapper {
     fn into_inner(self) -> std::io::Result<TcpStream>;
 }
@@ -28,7 +25,6 @@ pub trait TcpStreamWrapper {
 /// A thin wrapper around the real Tokio TcpListener.
 pub struct StandardTcpListenerFactory;
 
-#[async_trait::async_trait]
 impl TcpListenerFactory<StandardTcpListener> for StandardTcpListenerFactory {
     async fn bind(&self, addr: String) -> std::io::Result<StandardTcpListener> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -39,7 +35,6 @@ impl TcpListenerFactory<StandardTcpListener> for StandardTcpListenerFactory {
 pub struct StandardTcpListener(::tokio::net::TcpListener);
 
 /// A thin wrapper around the real Tokio TcpListener bind call.
-#[async_trait::async_trait]
 impl TcpListener<StandardTcpStream> for StandardTcpListener {
     async fn accept(&self) -> std::io::Result<(StandardTcpStream, SocketAddr)> {
         let (stream, addr) = self.0.accept().await?;

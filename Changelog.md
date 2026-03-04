@@ -22,13 +22,35 @@ Released yyyy-mm-dd.
 
 - A zone configured for unsigned review no longer fails to sign. ([#398] by
   @ximon18)
+- Support using BIND as a secondary nameserver. ([#444] by @ximon18)
+
+### Other changes
+
+- Prefix cascaded `--help` output with a one line description of the
+  application. ([#409] by @ximon18)
+- Improve integration tests framework. ([#401] by @mozzieongit)
+- Add the git commit hash to the version output. ([#468] by @mozzieongit)
 
 ### Documentation improvements
 
-- Document that --daemonize changes CWD to / ([#387] by @jpmens)
+- Document that `--daemonize` changes CWD to /. ([#387] by @jpmens)
+- Add missing `cascade zone` argument documentation. ([#406] by @ximon18)
+- Use a more appropriate `log-target` example file path. ([#411] by @ximon18)
+- Document the exit codes used by `--check-config`. ([#415] by @ximon18)
+- Specify both binary crates to build from source. ([#423] by @mozzieongit)
+- Add missing `README.md` in the generated RPM package. ([#428] by @ximon18)
 
 [#387]: https://github.com/NLnetLabs/cascade/pull/387
 [#398]: https://github.com/NLnetLabs/cascade/pull/398
+[#401]: https://github.com/NLnetLabs/cascade/pull/401
+[#406]: https://github.com/NLnetLabs/cascade/pull/406
+[#409]: https://github.com/NLnetLabs/cascade/pull/409
+[#411]: https://github.com/NLnetLabs/cascade/pull/411
+[#415]: https://github.com/NLnetLabs/cascade/pull/415
+[#423]: https://github.com/NLnetLabs/cascade/pull/423
+[#428]: https://github.com/NLnetLabs/cascade/pull/428
+[#444]: https://github.com/NLnetLabs/cascade/pull/444
+[#468]: https://github.com/NLnetLabs/cascade/pull/468
 
 ## 0.1.0-alpha5 'Colline de la Croix'
 

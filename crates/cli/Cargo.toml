@@ -1,0 +1,80 @@
+[package]
+name = "cascade"
+description = "Cascade's command-line interface."
+
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+readme = "README.md"
+
+
+# --- Dependencies -------------------------------------------------------------
+
+[dependencies]
+
+# The CLI uses 'anstream' to conditionally disable ANSI colorization in its
+# output (e.g. in response to 'TERM=dumb').
+#
+# TODO: Maintenance?
+[dependencies.anstream]
+version = "0.6.21"
+
+# The CLI has to communicate filesystem paths.  A simple, portable option that
+# avoids platform-specific encoding issues is 'camino'.
+[dependencies.camino]
+workspace = true
+
+# The CLI uses the HTTP API to talk to the daemon.  'cascade-api' provides the
+# requisite type definitions.
+[dependencies.cascade-api]
+path = "../api"
+
+# The CLI delegates to Clap to handle basic concerns like argument parsing.
+[dependencies.clap]
+workspace = true
+features = ["cargo", "derive", "wrap_help"]
+
+# TODO: Evaluate this choice.
+[dependencies.futures-util]
+version = "0.3"
+default-features = false
+
+# The CLI uses 'jiff' to process timestamps and durations, and to print them in
+# human-readable terms.
+[dependencies.jiff]
+workspace = true
+
+# The CLI uses 'reqwest' to communicate with the daemon over HTTP.
+#
+# TODO: Maintenance?
+[dependencies.reqwest]
+version = "0.12"
+default-features = false
+features = ["http2", "json"]
+
+# The CLI internally manipulates URLs for talking over HTTP.
+#
+# TODO: Can we avoid this?
+[dependencies.url]
+version = "2.4"
+
+# The CLI talks to the daemon over the network, and uses 'async' as it's the
+# most idiomatic option.  'tokio' is the perfect 'async' runtime for this.
+[dependencies.tokio]
+workspace = true
+features = ["macros", "net", "rt"]
+
+# The CLI uses 'tracing' to log output.  While 'log' would suffice, 'tracing'
+# is already used elsewhere in this codebase.
+[dependencies.tracing]
+workspace = true
+[dependencies.tracing-subscriber]
+workspace = true
+features = ["env-filter"]

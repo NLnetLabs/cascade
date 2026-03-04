@@ -1,15 +1,19 @@
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 use std::marker::Sync;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
-use domain::base::iana::{Class, Rcode};
-use domain::base::Name;
-use domain::base::{Serial, ToName};
+use domain::base::iana::{Class, Opcode, Rcode};
+use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
+use domain::net::client::dgram::Connection;
+use domain::net::client::protocol::UdpConnect;
+use domain::net::client::request::{RequestMessage, SendRequest};
+use domain::net::server::ConnectionConfig;
 use domain::net::server::buf::VecBufSource;
 use domain::net::server::dgram::{self, DgramServer};
 use domain::net::server::message::Request;
@@ -24,29 +28,27 @@ use domain::net::server::service::{CallResult, Service, ServiceResult};
 use domain::net::server::stream::{self, StreamServer};
 use domain::net::server::util::mk_builder_for_target;
 use domain::net::server::util::service_fn;
-use domain::net::server::ConnectionConfig;
 use domain::tsig::KeyStore;
 use domain::tsig::{Algorithm, Key};
-use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::Answer;
+use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::{StoredName, ZoneTree};
-use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{
-    ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStage,
-    ZoneReviewStatus,
+    ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStatus,
 };
-use crate::center::{get_zone, Center};
+use crate::center::{Center, get_zone};
 use crate::common::tsig::TsigKeyStore;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
+use crate::manager::Terminated;
 use crate::manager::record_zone_event;
-use crate::manager::{ApplicationCommand, Terminated, Update};
+use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, ZoneVersionReviewState,
+    HistoricalEvent, SignedZoneVersionState, SigningTrigger, UnsignedZoneVersionState, Zone,
+    ZoneHandle, ZoneVersionReviewState,
 };
-use crate::zonemaintenance::maintainer::{Config, DefaultConnFactory, ZoneMaintainer};
 
 /// The source of a zone server.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -67,17 +69,23 @@ fn spawn_servers<Svc>(
     source: Source,
     svc: Svc,
     servers: &[SocketConfig],
-) -> Result<(), String>
+) -> Result<Vec<AbortOnDrop>, String>
 where
     Svc: Service<Vec<u8>, ()> + Clone,
 {
+    let mut handles = Vec::new();
+
     for sock_cfg in servers {
         if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
             info!("[{unit_name}]: Obtaining UDP socket for address {addr}");
             let sock = socket_provider
                 .take_udp(addr)
                 .ok_or(format!("No socket available for UDP {addr}"))?;
-            tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
+            handles.push(AbortOnDrop::from(tokio::spawn(serve_on_udp(
+                svc.clone(),
+                VecBufSource,
+                sock,
+            ))));
         }
 
         if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
@@ -85,7 +93,11 @@ where
             let sock = socket_provider
                 .take_tcp(addr)
                 .ok_or(format!("No socket available for TCP {addr}"))?;
-            tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
+            handles.push(AbortOnDrop::from(tokio::spawn(serve_on_tcp(
+                svc.clone(),
+                VecBufSource,
+                sock,
+            ))));
         }
     }
 
@@ -97,18 +109,26 @@ where
                 .local_addr()
                 .map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
             info!("[{unit_name}]: Receieved additional UDP socket {addr}");
-            tokio::spawn(serve_on_udp(svc.clone(), VecBufSource, sock));
+            handles.push(AbortOnDrop::from(tokio::spawn(serve_on_udp(
+                svc.clone(),
+                VecBufSource,
+                sock,
+            ))));
         }
         while let Some(sock) = socket_provider.pop_tcp() {
             let addr = sock
                 .local_addr()
                 .map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
             info!("[{unit_name}]: Receieved additional TCP listener {addr}");
-            tokio::spawn(serve_on_tcp(svc.clone(), VecBufSource, sock));
+            handles.push(AbortOnDrop::from(tokio::spawn(serve_on_tcp(
+                svc.clone(),
+                VecBufSource,
+                sock,
+            ))));
         }
     }
 
-    Ok(())
+    Ok(handles)
 }
 
 async fn serve_on_udp<Svc>(svc: Svc, buf: VecBufSource, sock: tokio::net::UdpSocket)
@@ -137,17 +157,20 @@ where
 //------------ ZoneServer ----------------------------------------------------
 
 pub struct ZoneServer {
-    center: Arc<Center>,
     source: Source,
 }
 
 impl ZoneServer {
+    pub fn new(source: Source) -> Self {
+        Self { source }
+    }
+
     /// Launch a zone server.
-    pub fn launch(
+    pub fn run(
         center: Arc<Center>,
         source: Source,
         socket_provider: &mut SocketProvider,
-    ) -> Result<Self, Terminated> {
+    ) -> Result<Vec<AbortOnDrop>, Terminated> {
         let unit_name = match source {
             Source::Unsigned => "RS",
             Source::Signed => "RS2",
@@ -180,7 +203,7 @@ impl ZoneServer {
         // Propagate NOTIFY messages if this is the publication server.
         let notifier = LoaderNotifier {
             enabled: matches!(source, Source::Published),
-            update_tx: center.update_tx.clone(),
+            center: center.clone(),
         };
 
         // let svc = ZoneServerService::new(zones.clone());
@@ -199,85 +222,48 @@ impl ZoneServer {
             Source::Published => &center.config.server.servers,
         };
 
-        spawn_servers(unit_name, socket_provider, source, svc, servers)
+        let handles = spawn_servers(unit_name, socket_provider, source, svc, servers)
             .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
             .map_err(|_| Terminated)?;
 
-        Ok(Self { center, source })
+        Ok(handles)
     }
 
-    /// Respond to an application command.
-    pub async fn on_command(&self, cmd: ApplicationCommand) -> Result<(), Terminated> {
-        let unit_name = match self.source {
+    fn unit_name(&self) -> &'static str {
+        match self.source {
             Source::Unsigned => "RS",
             Source::Signed => "RS2",
             Source::Published => "PS",
-        };
-
-        debug!("[{unit_name}] Received command: {cmd:?}",);
-        match cmd {
-            ApplicationCommand::ReviewZone {
-                name,
-                serial,
-                decision,
-                tx,
-            } => {
-                self.on_zone_review_api_cmd(
-                    unit_name,
-                    name,
-                    serial,
-                    matches!(decision, ZoneReviewDecision::Approve),
-                    tx,
-                )
-                .await;
-            }
-
-            ApplicationCommand::SeekApprovalForUnsignedZone { .. }
-            | ApplicationCommand::SeekApprovalForSignedZone { .. } => {
-                self.on_seek_approval_for_zone_cmd(cmd, unit_name, self.center.update_tx.clone())
-                    .await;
-            }
-
-            ApplicationCommand::PublishSignedZone {
-                zone_name,
-                zone_serial,
-            } => {
-                self.on_publish_signed_zone_cmd(unit_name, zone_name, zone_serial)
-                    .await;
-            }
-
-            _ => { /* Not for us */ }
         }
-
-        Ok(())
     }
 
-    async fn on_publish_signed_zone_cmd(
+    pub fn on_publish_signed_zone(
         &self,
-        unit_name: &str,
+        center: &Arc<Center>,
         zone_name: Name<Bytes>,
         zone_serial: Serial,
     ) {
+        let unit_name = self.unit_name();
         info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.");
 
         // Move next_min_expiration to min_expiration, and determine policy.
         let policy = {
             // Use a block to make sure that the mutex is clearly dropped.
-            let zone = get_zone(&self.center, &zone_name).unwrap();
+            let zone = get_zone(center, &zone_name).unwrap();
             let mut zone_state = zone.state.lock().unwrap();
 
             // Save as next_min_expiration. After the signed zone is approved
             // this value should be move to min_expiration.
             zone_state.min_expiration = zone_state.next_min_expiration;
             zone_state.next_min_expiration = None;
-            zone.mark_dirty(&mut zone_state, &self.center);
+            zone.mark_dirty(&mut zone_state, center);
 
             zone_state.policy.clone()
         };
 
         // Move the zone from the signed collection to the published collection.
         // TODO: Bump the zone serial?
-        let signed_zones = self.center.signed_zones.load();
+        let signed_zones = center.signed_zones.load();
         if let Some(zone) = signed_zones.get_zone(&zone_name, Class::IN) {
             // Create a deep copy of the set of
             // published zones. We will add the
@@ -285,7 +271,7 @@ impl ZoneServer {
             // then replace the original set with
             // the new set.
             info!("[{unit_name}]: Adding '{zone_name}' to the set of published zones.");
-            self.center.published_zones.rcu(|zones| {
+            center.published_zones.rcu(|zones| {
                 let mut new_published_zones = Arc::unwrap_or_clone(zones.clone());
                 let _ = new_published_zones.remove_zone(zone.apex_name(), zone.class());
                 new_published_zones.insert_zone(zone.clone()).unwrap();
@@ -297,7 +283,7 @@ impl ZoneServer {
             // zone from the copied set and then
             // replace the original set with the
             // new set.
-            self.center.signed_zones.rcu(|zones| {
+            center.signed_zones.rcu(|zones| {
                 let mut new_signed_zones = Arc::unwrap_or_clone(zones.clone());
                 new_signed_zones.remove_zone(&zone_name, Class::IN).unwrap();
                 new_signed_zones
@@ -318,40 +304,31 @@ impl ZoneServer {
                     .iter()
                     .filter_map(|s| {
                         if s.addr.port() != 0 {
-                            Some(&s.addr)
+                            Some(s.addr)
                         } else {
                             None
                         }
                     });
 
-                let maintainer_config =
-                    Config::<_, DefaultConnFactory>::new(self.center.old_tsig_key_store.clone());
-                let maintainer_config = Arc::new(ArcSwap::from_pointee(maintainer_config));
-                ZoneMaintainer::send_notify_to_addrs(zone_name.clone(), addrs, maintainer_config)
-                    .await;
+                send_notify_to_addrs(zone_name.clone(), addrs, &center.old_tsig_key_store);
             }
         }
     }
 
-    async fn on_seek_approval_for_zone_cmd(
+    pub fn on_seek_approval_for_zone(
         &self,
-        cmd: ApplicationCommand,
-        unit_name: &'static str,
-        update_tx: mpsc::UnboundedSender<Update>,
+        center: &Arc<Center>,
+        zone_name: Name<Bytes>,
+        zone_serial: Serial,
     ) -> Option<Result<(), Terminated>> {
-        let (zone_name, zone_serial, zone_type) = match cmd {
-            ApplicationCommand::SeekApprovalForUnsignedZone {
-                zone_name,
-                zone_serial,
-            } => (zone_name, zone_serial, "unsigned"),
-            ApplicationCommand::SeekApprovalForSignedZone {
-                zone_name,
-                zone_serial,
-            } => (zone_name, zone_serial, "signed"),
-            _ => unreachable!(),
+        let unit_name = self.unit_name();
+        let zone_type = match self.source {
+            Source::Unsigned => "unsigned",
+            Source::Signed => "signed",
+            Source::Published => unreachable!(),
         };
 
-        let zone = get_zone(&self.center, &zone_name).unwrap();
+        let zone = get_zone(center, &zone_name).unwrap();
 
         let review = {
             let zone_state = zone.state.lock().unwrap();
@@ -367,11 +344,11 @@ impl ZoneServer {
             let status = ZoneReviewStatus::Pending;
             match self.source {
                 Source::Unsigned => (
-                    self.center.config.loader.review.servers.first().cloned(),
+                    center.config.loader.review.servers.first().cloned(),
                     HistoricalEvent::UnsignedZoneReview { status },
                 ),
                 Source::Signed => (
-                    self.center.config.signer.review.servers.first().cloned(),
+                    center.config.signer.review.servers.first().cloned(),
                     HistoricalEvent::SignedZoneReview { status },
                 ),
                 Source::Published => unreachable!(),
@@ -384,25 +361,17 @@ impl ZoneServer {
                 Source::Unsigned => {
                     info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
                     if let Err(err) =
-                        ZoneServer::promote_zone_to_signable(self.center.clone(), &zone_name)
+                        ZoneServer::promote_zone_to_signable(center.clone(), &zone_name)
                     {
-                        error!("[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}");
+                        error!(
+                            "[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}"
+                        );
                     } else {
-                        update_tx
-                            .send(Update::UnsignedZoneApprovedEvent {
-                                zone_name: zone_name.clone(),
-                                zone_serial,
-                            })
-                            .unwrap();
+                        self.on_unsigned_zone_approved(center, &zone, zone_serial);
                     }
                 }
                 Source::Signed => {
-                    update_tx
-                        .send(Update::SignedZoneApprovedEvent {
-                            zone_name: zone_name.clone(),
-                            zone_serial,
-                        })
-                        .unwrap();
+                    self.on_signed_zone_approved(center, zone_name, zone_serial);
                 }
                 Source::Published => unreachable!(),
             }
@@ -410,7 +379,9 @@ impl ZoneServer {
             return None;
         };
 
-        info!("[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}.");
+        info!(
+            "[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}."
+        );
 
         // Mark this version of the zone as pending approval.
         //
@@ -443,17 +414,27 @@ impl ZoneServer {
             }
         }
 
-        record_zone_event(&self.center, &zone_name, pending_event, Some(zone_serial));
+        record_zone_event(center, &zone_name, pending_event, Some(zone_serial));
 
         if review.cmd_hook.is_none() || review_server.is_none() {
             match (review_server, review.cmd_hook) {
-                (None, None) => warn!("[{unit_name}] Review required, but neither a review server nor a review hook is set; use the CLI to approve or reject the zone"),
-                (None, Some(_)) => warn!("[{unit_name}] Review required, but no review server configured; use the CLI to approve or reject the zone"),
-                (Some(_), None) => info!("[{unit_name}] No review hook set; waiting for manual review"),
+                (None, None) => warn!(
+                    "[{unit_name}] Review required, but neither a review server nor a review hook is set; use the CLI to approve or reject the zone"
+                ),
+                (None, Some(_)) => warn!(
+                    "[{unit_name}] Review required, but no review server configured; use the CLI to approve or reject the zone"
+                ),
+                (Some(_), None) => {
+                    info!("[{unit_name}] No review hook set; waiting for manual review")
+                }
                 (Some(_), Some(_)) => unreachable!(),
             }
-            info!("[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}");
-            info!("[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}");
+            info!(
+                "[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
+            );
+            info!(
+                "[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}"
+            );
             return None;
         }
 
@@ -479,10 +460,12 @@ impl ZoneServer {
             .spawn()
         {
             Ok(mut child) => {
-                info!("[{unit_name}]: Executed hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}");
+                info!(
+                    "[{unit_name}]: Executed hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}"
+                );
 
                 // Wait for the child to complete.
-                let update_tx = self.center.update_tx.clone();
+                let center = center.clone();
                 let stdout = child.stdout.take().expect("we use Stdio::piped");
                 let stderr = child.stderr.take().expect("we use Stdio::piped");
 
@@ -508,20 +491,18 @@ impl ZoneServer {
                         false => ZoneReviewDecision::Reject,
                     };
 
-                    let _ = update_tx.send(Update::ReviewZone {
-                        name: zone_name,
-                        stage: match zone_type {
-                            "unsigned" => ZoneReviewStage::Unsigned,
-                            "signed" => ZoneReviewStage::Signed,
-                            _ => unreachable!(),
-                        },
-                        serial: zone_serial,
-                        decision,
-                    });
+                    let server = match zone_type {
+                        "unsigned" => &center.unsigned_review_server,
+                        "signed" => &center.signed_review_server,
+                        _ => unreachable!(),
+                    };
+                    let _ = server.on_zone_review(&center, zone_name, zone_serial, decision);
                 });
             }
             Err(err) => {
-                error!("[{unit_name}]: Failed to execute hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}: {err}");
+                error!(
+                    "[{unit_name}]: Failed to execute hook '{hook}' for {zone_type} zone '{zone_name}' at serial {zone_serial}: {err}"
+                );
 
                 {
                     let mut zone_state = zone.state.lock().unwrap();
@@ -542,6 +523,62 @@ impl ZoneServer {
         None
     }
 
+    fn on_unsigned_zone_approved(
+        &self,
+        center: &Arc<Center>,
+        zone: &Arc<Zone>,
+        zone_serial: Serial,
+    ) {
+        {
+            let mut zone_state = zone.state.lock().unwrap();
+            zone_state.record_event(
+                HistoricalEvent::UnsignedZoneReview {
+                    status: crate::api::ZoneReviewStatus::Approved,
+                },
+                Some(zone_serial),
+            );
+            ZoneHandle {
+                zone,
+                state: &mut zone_state,
+                center,
+            }
+            .storage()
+            .approve_loaded();
+        }
+        info!("[CC]: Instructing zone signer to sign the approved zone");
+        center.signer.on_sign_zone(
+            center,
+            zone.name.clone(),
+            Some(zone_serial),
+            SigningTrigger::ZoneChangesApproved,
+        );
+    }
+
+    fn on_signed_zone_approved(
+        &self,
+        center: &Arc<Center>,
+        zone_name: Name<Bytes>,
+        zone_serial: Serial,
+    ) {
+        record_zone_event(
+            center,
+            &zone_name,
+            HistoricalEvent::SignedZoneReview {
+                status: crate::api::ZoneReviewStatus::Approved,
+            },
+            Some(zone_serial),
+        );
+
+        // Send a message to the zone signer to trigger a re-scan of
+        // when to re-sign next.
+        center.signer.on_publish_signed_zone(center);
+
+        info!("[CC]: Instructing publication server to publish the signed zone");
+        center
+            .publication_server
+            .on_publish_signed_zone(center, zone_name, zone_serial);
+    }
+
     async fn process_output(
         pipe: impl tokio::io::AsyncRead + Unpin,
         is_warn: bool,
@@ -560,25 +597,26 @@ impl ZoneServer {
         Ok(())
     }
 
-    async fn on_zone_review_api_cmd(
+    pub fn on_zone_review(
         &self,
-        unit_name: &str,
+        center: &Arc<Center>,
         zone_name: Name<Bytes>,
         zone_serial: Serial,
-        approve: bool,
-        tx: tokio::sync::oneshot::Sender<ZoneReviewResult>,
-    ) {
+        decision: ZoneReviewDecision,
+    ) -> ZoneReviewResult {
+        let unit_name = self.unit_name();
+
         // Look up the zone.
-        let Some(zone) = get_zone(&self.center, &zone_name) else {
-            debug!("[{unit_name}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist");
-            let _ = tx.send(Err(ZoneReviewError::NoSuchZone));
-            return;
+        let Some(zone) = get_zone(center, &zone_name) else {
+            debug!(
+                "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist"
+            );
+            return Err(ZoneReviewError::NoSuchZone);
         };
 
-        let new_review_state = if approve {
-            ZoneVersionReviewState::Approved
-        } else {
-            ZoneVersionReviewState::Rejected
+        let new_review_state = match decision {
+            ZoneReviewDecision::Approve => ZoneVersionReviewState::Approved,
+            ZoneReviewDecision::Reject => ZoneVersionReviewState::Rejected,
         };
 
         // Look up the version of the zone being reviewed.
@@ -591,9 +629,10 @@ impl ZoneServer {
                         // this.  Since it doesn't exist, the zone is not under
                         // review.
 
-                        debug!("[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review");
-                        let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
-                        return;
+                        debug!(
+                            "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
+                        );
+                        return Err(ZoneReviewError::NotUnderReview);
                     };
 
                     // Check that the zone was not already approved.
@@ -602,33 +641,36 @@ impl ZoneServer {
                         //
                         // TODO: Differentiate this from 'NotUnderReview'?
 
-                        let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
-                        return;
+                        return Err(ZoneReviewError::NotUnderReview);
                     }
 
                     version.review = new_review_state;
                 }
-                if approve {
+                if matches!(decision, ZoneReviewDecision::Approve) {
                     info!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been approved."
                     );
-                    match Self::promote_zone_to_signable(self.center.clone(), &zone_name) {
+                    match Self::promote_zone_to_signable(center.clone(), &zone_name) {
                         Ok(()) => {
-                            let _ = self
-                                .center
-                                .update_tx
-                                .send(Update::UnsignedZoneApprovedEvent {
-                                    zone_name,
-                                    zone_serial,
-                                });
+                            self.on_unsigned_zone_approved(center, &zone, zone_serial);
                         }
                         Err(err) => {
-                            error!("Ignoring approval for '{zone_name}': zone could not be promoted to signable: {err}");
+                            error!(
+                                "Ignoring approval for '{zone_name}': zone could not be promoted to signable: {err}"
+                            );
                         }
                     }
                 } else {
                     error!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
+                    );
+                    record_zone_event(
+                        center,
+                        &zone_name,
+                        HistoricalEvent::UnsignedZoneReview {
+                            status: crate::api::ZoneReviewStatus::Rejected,
+                        },
+                        Some(zone_serial),
                     );
                 }
             }
@@ -641,9 +683,10 @@ impl ZoneServer {
                         // this.  Since it doesn't exist, the zone is not under
                         // review.
 
-                        debug!("[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review");
-                        let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
-                        return;
+                        debug!(
+                            "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
+                        );
+                        return Err(ZoneReviewError::NotUnderReview);
                     };
 
                     // Check that the zone was not already approved.
@@ -652,21 +695,25 @@ impl ZoneServer {
                         //
                         // TODO: Differentiate this from 'NotUnderReview'?
 
-                        let _ = tx.send(Err(ZoneReviewError::NotUnderReview));
-                        return;
+                        return Err(ZoneReviewError::NotUnderReview);
                     }
 
                     version.review = new_review_state;
                 }
-                if approve {
+                if matches!(decision, ZoneReviewDecision::Approve) {
                     info!("Signed zone '{zone_name}' with serial {zone_serial} has been approved.");
-                    let _ = self.center.update_tx.send(Update::SignedZoneApprovedEvent {
-                        zone_name,
-                        zone_serial,
-                    });
+                    self.on_signed_zone_approved(center, zone_name, zone_serial);
                 } else {
                     error!(
                         "Signed zone '{zone_name}' with serial {zone_serial} has been rejected."
+                    );
+                    record_zone_event(
+                        center,
+                        &zone_name,
+                        HistoricalEvent::SignedZoneReview {
+                            status: crate::api::ZoneReviewStatus::Rejected,
+                        },
+                        Some(zone_serial),
                     );
                 }
             }
@@ -674,7 +721,7 @@ impl ZoneServer {
             Source::Published => unreachable!(),
         };
 
-        let _ = tx.send(Ok(ZoneReviewOutput {}));
+        Ok(ZoneReviewOutput {})
     }
 
     fn promote_zone_to_signable(
@@ -768,8 +815,7 @@ pub struct LoaderNotifier {
     /// Whether the forwarder is enabled.
     enabled: bool,
 
-    /// A channel to propagate updates to Cascade.
-    update_tx: mpsc::UnboundedSender<Update>,
+    center: Arc<Center>,
 }
 
 impl Notifiable for LoaderNotifier {
@@ -778,17 +824,17 @@ impl Notifiable for LoaderNotifier {
         &self,
         class: Class,
         apex_name: &Name<Bytes>,
-        serial: Option<Serial>,
-        source: IpAddr,
+        _serial: Option<Serial>,
+        _source: IpAddr,
     ) -> Pin<Box<dyn Future<Output = Result<(), NotifyError>> + Sync + Send + '_>> {
         // Don't do anything if the notifier is disabled.
         if self.enabled && class == Class::IN {
             // Propagate a request for the zone refresh.
-            let _ = self.update_tx.send(Update::RefreshZone {
-                zone_name: apex_name.clone(),
-                source: Some(source),
-                serial,
-            });
+            // This request ignores the serial and source because we will just
+            // do a SOA query to our configured upstreams.
+            info!("[CC]: Instructing zone loader to refresh the zone");
+            let center = &self.center;
+            center.loader.on_refresh_zone(center, apex_name.clone());
         }
 
         Box::pin(std::future::ready(Ok(())))
@@ -809,7 +855,19 @@ fn zone_server_service(
         Some(zone) => {
             let qname = question.qname().to_bytes();
             let qtype = question.qtype();
-            zone.query(qname, qtype).unwrap()
+            let mut answer = zone.query(qname, qtype).unwrap();
+
+            // https://github.com/NLnetLabs/cascade/issues/435
+            // Set the AA flag on responses to workaround the scenario where
+            // BIND refuses to fetch the zone via XFR, because after receiving
+            // a NOTIFY from Cascade it issues a SOA query and is not happy
+            // with the SOA response containing an unset AA flag. This is a
+            // temporary "fix", strictly speaking this is incorrect as not all
+            // queries should be responded to with the AA flag set, e.g. we
+            // cannot respond authoritatively for glue records.
+            // TODO: Implement a proper fix.
+            answer.set_authoritative(true);
+            answer
         }
         None => Answer::new(Rcode::NXDOMAIN),
     };
@@ -817,4 +875,72 @@ fn zone_server_service(
     let builder = mk_builder_for_target();
     let additional = answer.to_message(request.message(), builder);
     Ok(CallResult::new(additional))
+}
+
+pub fn send_notify_to_addrs(
+    apex_name: StoredName,
+    notify_set: impl Iterator<Item = SocketAddr>,
+    _key_store: &TsigKeyStore,
+) {
+    let mut dgram_config = domain::net::client::dgram::Config::new();
+    dgram_config.set_max_parallel(1);
+    dgram_config.set_read_timeout(Duration::from_millis(1000));
+    dgram_config.set_max_retries(1);
+    dgram_config.set_udp_payload_size(Some(1400));
+
+    let mut msg = MessageBuilder::new_vec();
+    msg.header_mut().set_opcode(Opcode::NOTIFY);
+    let mut msg = msg.question();
+    msg.push((apex_name, Rtype::SOA)).unwrap();
+
+    for nameserver_addr in notify_set {
+        let dgram_config = dgram_config.clone();
+        let req = RequestMessage::new(msg.clone()).unwrap();
+
+        // let tsig_key = zone_info
+        //     .config
+        //     .send_notify_to
+        //     .dst(&nameserver_addr)
+        //     .and_then(|cfg| cfg.tsig_key.as_ref())
+        //     .and_then(|(name, alg)| key_store.get_key(name, *alg));
+        //
+        // if let Some(key) = tsig_key.as_ref() {
+        //     debug!(
+        //         "Found TSIG key '{}' (algorith {}) for NOTIFY to {nameserver_addr}",
+        //         key.as_ref().name(),
+        //         key.as_ref().algorithm()
+        //     );
+        // }
+
+        tokio::spawn(async move {
+            // TODO: Use the connection factory here.
+            let udp_connect = UdpConnect::new(nameserver_addr);
+            let client = Connection::with_config(udp_connect, dgram_config.clone());
+
+            trace!("Sending NOTIFY to nameserver {nameserver_addr}");
+            let span = tracing::trace_span!("auth", addr = %nameserver_addr);
+            let _guard = span.enter();
+
+            // https://datatracker.ietf.org/doc/html/rfc1996
+            //   "4.8 Master Receives a NOTIFY Response from Slave
+            //
+            //    When a master server receives a NOTIFY response, it deletes this
+            //    query from the retry queue, thus completing the "notification
+            //    process" of "this" RRset change to "that" server."
+            //
+            // TODO: We have no retry queue at the moment. Do we need one?
+
+            // let res = if let Some(key) = tsig_key {
+            //     let client = net::client::tsig::Connection::new(key.clone(), client);
+            //     client.send_request(req.clone()).get_response().await
+            // } else {
+            //     client.send_request(req.clone()).get_response().await
+            // };
+            let res = client.send_request(req.clone()).get_response().await;
+
+            if let Err(err) = res {
+                warn!("Unable to send NOTIFY to nameserver {nameserver_addr}: {err}");
+            }
+        });
+    }
 }

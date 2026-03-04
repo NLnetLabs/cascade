@@ -1,0 +1,354 @@
+//! Zone-specific loader state.
+
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use cascade_zonedata::{LoadedZoneBuilder, SoaRecord};
+use tracing::{debug, info};
+
+use crate::{
+    center::Center,
+    common::scheduler::Scheduler,
+    util::AbortOnDrop,
+    zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle, ZoneState},
+};
+
+use super::{ActiveLoadMetrics, LoadMetrics, Source};
+
+//----------- LoaderZoneHandle -------------------------------------------------
+
+/// A handle for loader-related operations on a [`Zone`].
+pub struct LoaderZoneHandle<'a> {
+    /// The zone being operated on.
+    pub zone: &'a Arc<Zone>,
+
+    /// The locked zone state.
+    pub state: &'a mut ZoneState,
+
+    /// Cascade's global state.
+    pub center: &'a Arc<Center>,
+}
+
+impl LoaderZoneHandle<'_> {
+    /// Access the generic [`ZoneHandle`].
+    pub const fn zone(&mut self) -> ZoneHandle<'_> {
+        ZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+
+    /// Set the source of this zone.
+    ///
+    /// A (soft) refresh will be initiated via [`Self::enqueue_refresh()`].
+    pub fn set_source(&mut self, source: Source) {
+        info!(
+            "Setting source of zone '{}' from '{:?}' to '{source:?}'",
+            self.zone.name, self.state.loader.source
+        );
+
+        self.state.loader.source = source;
+
+        self.state
+            .record_event(HistoricalEvent::SourceChanged, None);
+
+        self.zone.mark_dirty(self.state, self.center);
+
+        self.enqueue_refresh(false);
+    }
+
+    /// Enqueue a refresh of this zone.
+    ///
+    /// If the zone is not being refreshed already, a new refresh will be
+    /// initiated.  Otherwise, a refresh will be enqueued; if one is enqueued
+    /// already, the two will be merged.  If `reload` is true, the refresh will
+    /// verify the local copy of the zone by loading the entire zone from
+    /// scratch.
+    ///
+    /// # Standards
+    ///
+    /// Complies with [RFC 1996, section 4.4], when this is used to enqueue a
+    /// refresh in response to a `QTYPE=SOA` NOTIFY message.
+    ///
+    /// > 4.4. A slave which receives a valid NOTIFY should defer action on any
+    /// > subsequent NOTIFY with the same \<QNAME,QCLASS,QTYPE\> until it has
+    /// > completed the transaction begun by the first NOTIFY.  This duplicate
+    /// > rejection is necessary to avoid having multiple notifications lead to
+    /// > pummeling the master server.
+    ///
+    /// [RFC 1996, section 4.4]: https://datatracker.ietf.org/doc/html/rfc1996#section-4
+    pub fn enqueue_refresh(&mut self, reload: bool) {
+        debug!("Enqueueing a refresh for {:?}", self.zone.name);
+
+        if let Source::None = self.state.loader.source {
+            self.state
+                .loader
+                .refresh_timer
+                .disable(self.zone, &self.center.loader.refresh_scheduler);
+            return;
+        }
+
+        let mut refresh = match reload {
+            false => EnqueuedRefresh::Refresh,
+            true => EnqueuedRefresh::Reload,
+        };
+
+        // If a load is already enqueued, merge with it.
+        let enqueued = &mut self.state.loader.refreshes.enqueued;
+        if let Some(enqueued) = enqueued.take() {
+            refresh = refresh.max(enqueued);
+        }
+
+        // Initiate the load immediately, if the data storage is not busy.
+        if let Some(builder) = self.zone().storage().start_load() {
+            self.start(refresh, builder);
+        } else {
+            // Enqueue the load so it can be executed later.
+            self.state.loader.refreshes.enqueued = Some(refresh);
+        }
+    }
+
+    /// Start a pending enqueued refresh.
+    ///
+    /// This should be called when the zone data storage is idle. If a refresh
+    /// has been enqueued, it will be initiated, and `true` will be returned.
+    pub fn start_pending(&mut self) -> bool {
+        // Load the one enqueued refresh, if it exists.
+        let Some(refresh) = self.state.loader.refreshes.enqueued.take() else {
+            // A refresh is not enqueued, nothing to do.
+            return false;
+        };
+
+        let builder = self
+            .zone()
+            .storage()
+            .start_load()
+            .expect("'start_pending()' is only called when the zone data storage is idle");
+        self.start(refresh, builder);
+        true
+    }
+
+    /// Start an enqueued refresh.
+    fn start(&mut self, refresh: EnqueuedRefresh, builder: LoadedZoneBuilder) {
+        let source = self.state.loader.source.clone();
+        let metrics = Arc::new(ActiveLoadMetrics::begin(source.clone()));
+
+        let handle = tokio::task::spawn(super::refresh(
+            self.zone.clone(),
+            source,
+            refresh,
+            builder,
+            self.center.clone(),
+            metrics.clone(),
+        ));
+
+        let handle = AbortOnDrop::from(handle);
+        let ongoing = OngoingRefresh { handle };
+        self.state.loader.active_load_metrics = Some(metrics);
+        self.state.loader.refreshes.ongoing = Some(ongoing);
+    }
+
+    /// Prepare for the removal of this zone.
+    pub fn prep_removal(&mut self) {
+        // Remove the zone from the refresh monitor.
+        self.state
+            .loader
+            .refresh_timer
+            .disable(self.zone, &self.center.loader.refresh_scheduler);
+    }
+}
+
+//----------- LoaderState ------------------------------------------------------
+
+/// State for loading new versions of a zone.
+#[derive(Debug, Default)]
+pub struct LoaderState {
+    /// The source of the zone.
+    pub source: Source,
+
+    /// The refresh timer state of the zone.
+    pub refresh_timer: RefreshTimerState,
+
+    /// Ongoing and enqueued refreshes of the zone.
+    pub refreshes: Refreshes,
+
+    /// Metrics for an active load, if any.
+    //
+    // TODO: Embed in a state machine.
+    pub active_load_metrics: Option<Arc<ActiveLoadMetrics>>,
+
+    /// Metrics for the last finished load, if any.
+    ///
+    /// This is [`None`] if we have never attempted to load this zone.
+    //
+    // TODO: Make part of zone history?
+    pub last_load_metrics: Option<LoadMetrics>,
+}
+
+//----------- RefreshTimerState ------------------------------------------------
+
+/// State for the refresh timer of a zone.
+#[derive(Debug, Default)]
+pub enum RefreshTimerState {
+    /// The refresh timer is disabled.
+    ///
+    /// The zone will not be refreshed automatically.  This is the default state
+    /// for new zones, and is used when a local copy of the zone is unavailable.
+    #[default]
+    Disabled,
+
+    /// Following up a previous successful refresh.
+    ///
+    /// The zone was recently refreshed successfully.  A new refresh will be
+    /// enqueued following the SOA REFRESH timer.
+    Refresh {
+        /// When the previous (successful) refresh started.
+        previous: Instant,
+
+        /// The scheduled time for the next refresh.
+        ///
+        /// This is equal to `previous + soa.refresh`.  If the SOA record
+        /// changes (e.g. due to a new version of the zone being loaded), this
+        /// is recomputed, and the refresh is rescheduled accordingly.
+        scheduled: Instant,
+    },
+
+    /// Following up a previous failing refresh.
+    ///
+    /// A previous refresh of the zone failed.  A new refresh will be enqueued
+    /// following the SOA RETRY timer.
+    Retry {
+        /// When the previous (failing) refresh started.
+        previous: Instant,
+
+        /// The scheduled time for the next refresh.
+        ///
+        /// This is equal to `previous + soa.retry`.  If the SOA record changes
+        /// (e.g. due to a new version of the zone being loaded), this is
+        /// recomputed, and the refresh is rescheduled accordingly.
+        scheduled: Instant,
+    },
+}
+
+impl RefreshTimerState {
+    /// The currently scheduled refresh time, if any.
+    pub const fn scheduled_time(&self) -> Option<Instant> {
+        match *self {
+            Self::Disabled => None,
+            Self::Refresh { scheduled, .. } => Some(scheduled),
+            Self::Retry { scheduled, .. } => Some(scheduled),
+        }
+    }
+
+    /// Disable zone refreshing.
+    ///
+    /// This is called when the zone contents are wiped or the zone source is
+    /// removed.
+    pub fn disable(&mut self, zone: &Arc<Zone>, scheduler: &Scheduler<ZoneByPtr>) {
+        scheduler.update(&ZoneByPtr(zone.clone()), self.scheduled_time(), None);
+        *self = Self::Disabled;
+    }
+
+    /// Schedule a refresh.
+    ///
+    /// This is called when a previous refresh completes successfully.
+    pub fn schedule_refresh(
+        &mut self,
+        zone: &Arc<Zone>,
+        previous: Instant,
+        soa: Option<&SoaRecord>,
+        scheduler: &Scheduler<ZoneByPtr>,
+    ) {
+        let zone = ZoneByPtr(zone.clone());
+
+        // If a SOA record is unavailable, don't schedule anything.
+        let Some(soa) = soa else {
+            scheduler.update(&zone, self.scheduled_time(), None);
+            *self = Self::Disabled;
+            return;
+        };
+
+        let refresh = Duration::from_secs(soa.rdata.refresh.get().into());
+        let scheduled = previous + refresh;
+        scheduler.update(&zone, self.scheduled_time(), Some(scheduled));
+        *self = Self::Refresh {
+            previous,
+            scheduled,
+        };
+    }
+
+    /// Schedule a retry.
+    ///
+    /// This is called when a previous refresh fails.
+    pub fn schedule_retry(
+        &mut self,
+        zone: &Arc<Zone>,
+        previous: Instant,
+        soa: Option<&SoaRecord>,
+        scheduler: &Scheduler<ZoneByPtr>,
+    ) {
+        let zone = ZoneByPtr(zone.clone());
+
+        // If a SOA record is unavailable, don't schedule anything.
+        let Some(soa) = soa else {
+            scheduler.update(&zone, self.scheduled_time(), None);
+            *self = Self::Disabled;
+            return;
+        };
+
+        let retry = Duration::from_secs(soa.rdata.retry.get().into());
+        let scheduled = previous + retry;
+        scheduler.update(&zone, self.scheduled_time(), Some(scheduled));
+        *self = Self::Retry {
+            previous,
+            scheduled,
+        };
+    }
+}
+
+//----------- Refreshes --------------------------------------------------------
+
+/// Ongoing and enqueued refreshes of a zone.
+#[derive(Debug, Default)]
+pub struct Refreshes {
+    /// A handle to an ongoing refresh, if any.
+    pub ongoing: Option<OngoingRefresh>,
+
+    /// An enqueued refresh.
+    ///
+    /// If multiple refreshes/reloads are enqueued, they are merged together.
+    pub enqueued: Option<EnqueuedRefresh>,
+}
+
+impl Refreshes {
+    /// Enqueue a refresh/reload.
+    ///
+    /// If one is already enqueued, the two will be merged.
+    pub fn enqueue(&mut self, refresh: EnqueuedRefresh) {
+        self.enqueued = self.enqueued.take().max(Some(refresh));
+    }
+}
+
+//----------- OngoingRefresh ---------------------------------------------------
+
+/// An ongoing refresh or reload of a zone.
+#[derive(Debug)]
+pub struct OngoingRefresh {
+    /// A handle to the refresh.
+    pub(super) handle: AbortOnDrop,
+}
+
+//----------- EnqueuedRefresh --------------------------------------------------
+
+/// An enqueued refresh or reload of a zone.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EnqueuedRefresh {
+    /// An enqueued refresh.
+    Refresh,
+
+    /// An enqueued reload.
+    Reload,
+}

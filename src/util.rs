@@ -1,11 +1,132 @@
 //! Miscellaneous utilities for Cascade.
 
 use std::{
-    fs,
+    fmt, fs,
     io::{self, Write},
+    time::Duration,
 };
 
 use camino::Utf8Path;
+use serde::{
+    Deserializer, Serializer,
+    de::{self, Visitor},
+};
+use tokio::{
+    task::{AbortHandle, JoinHandle},
+    time::Instant,
+};
+use tracing::{Instrument, trace};
+
+//----------- AbortOnDrop ------------------------------------------------------
+
+/// A handle to a tokio task that will abort the task when dropped
+///
+/// This is useful to prevent tokio from keeping tasks around after the main
+/// thread. This type implements `From` for [`JoinHandle`] and [`AbortHandle`].
+#[derive(Debug)]
+pub struct AbortOnDrop(AbortHandle);
+
+impl<T> From<JoinHandle<T>> for AbortOnDrop {
+    fn from(value: JoinHandle<T>) -> Self {
+        Self(value.abort_handle())
+    }
+}
+
+impl From<AbortHandle> for AbortOnDrop {
+    fn from(value: AbortHandle) -> Self {
+        Self(value)
+    }
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+impl AbortOnDrop {
+    pub fn id(&self) -> tokio::task::Id {
+        self.0.id()
+    }
+}
+
+//----------- BackgroundTasks --------------------------------------------------
+
+/// A monitor for background tasks.
+///
+/// This allows tracking background tasks for a particular purpose.
+///
+/// If a [`BackgroundTasks`] is dropped, all associated tasks are aborted.
+#[derive(Default)]
+pub struct BackgroundTasks {
+    /// The underlying tasks.
+    tasks: foldhash::HashMap<tokio::task::Id, JoinHandle<()>>,
+}
+
+impl BackgroundTasks {
+    /// Spawn a new background task.
+    pub fn spawn<F>(&mut self, span: tracing::Span, f: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let task = tokio::task::spawn(f.instrument(span));
+        let other = self.tasks.insert(task.id(), task);
+        assert!(
+            other.is_none(),
+            "Task IDs for two live 'JoinHandles' never collide"
+        );
+    }
+
+    /// Spawn a new blocking background task.
+    pub fn spawn_blocking<F>(&mut self, span: tracing::Span, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let task = tokio::task::spawn_blocking(move || span.in_scope(f));
+        let other = self.tasks.insert(task.id(), task);
+        assert!(
+            other.is_none(),
+            "Task IDs for two live 'JoinHandles' never collide"
+        );
+    }
+
+    /// Mark the running task as finished.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn finish(&mut self) {
+        let id = tokio::task::id();
+        match self.tasks.remove(&id) {
+            Some(handle) => {
+                trace!("Detaching background task");
+                std::mem::drop(handle);
+            }
+            None => {
+                trace!("Inconsistency: unknown task");
+            }
+        }
+    }
+}
+
+impl Drop for BackgroundTasks {
+    fn drop(&mut self) {
+        // Abort all tasks.
+        self.tasks.drain().for_each(|(_, handle)| handle.abort());
+    }
+}
+
+//------------------------------------------------------------------------------
+
+/// Force a [`Future`] to evaluate synchronously.
+pub fn force_future<F: IntoFuture>(future: F) -> F::Output {
+    let waker = std::task::Waker::noop();
+    let mut cx = std::task::Context::from_waker(waker);
+    let future = std::pin::pin!(future.into_future());
+    match future.poll(&mut cx) {
+        std::task::Poll::Ready(output) => output,
+        std::task::Poll::Pending => {
+            panic!("Could not evaluate the future synchronously")
+        }
+    }
+}
 
 /// Atomically write a file.
 ///
@@ -38,4 +159,64 @@ pub fn update_value<T: Eq>(dst: &mut T, value: T, changed: &mut bool) {
         *changed = true;
         *dst = value;
     }
+}
+
+pub fn instant_to_duration_secs(instant: Instant) -> u64 {
+    match Instant::now().checked_duration_since(instant) {
+        Some(d) => d.as_secs(),
+        None => 0,
+    }
+}
+
+pub fn serialize_instant_as_duration_secs<S>(
+    instant: &Instant,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(instant_to_duration_secs(*instant))
+}
+
+pub fn serialize_duration_as_secs<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u64(duration.as_secs())
+}
+
+pub fn serialize_opt_duration_as_secs<S>(
+    instant: &Option<Duration>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match instant {
+        Some(v) => serialize_duration_as_secs(v, serializer),
+        None => serializer.serialize_str("null"),
+    }
+}
+
+pub fn deserialize_duration_from_secs<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct U64Visitor;
+    impl<'de> Visitor<'de> for U64Visitor {
+        type Value = u64;
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a u64 unsigned integer value")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value)
+        }
+    }
+    Ok(Duration::from_secs(
+        deserializer.deserialize_u64(U64Visitor)?,
+    ))
 }

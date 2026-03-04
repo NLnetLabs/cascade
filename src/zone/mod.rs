@@ -5,30 +5,28 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
-    io, mem,
-    net::SocketAddr,
+    io,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
-use camino::Utf8Path;
-use domain::{
-    base::{iana::Class, Name, Serial},
-    zonetree::{self, ZoneBuilder},
-};
-use domain::{rdata::dnssec::Timestamp, tsig};
+use domain::base::{Name, Serial};
+use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, trace};
 
 use crate::{
     api::{self, ZoneReviewStatus},
-    center::{Center, Change},
+    center::Center,
     config::Config,
-    manager::Update,
+    loader::zone::{LoaderState, LoaderZoneHandle},
     policy::{Policy, PolicyVersion},
-    zonemaintenance::types::{deserialize_duration_from_secs, serialize_duration_as_secs},
+    util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
+
+mod storage;
+pub use storage::{StorageState, StorageZoneHandle};
 
 pub mod state;
 
@@ -46,16 +44,43 @@ pub struct Zone {
     /// consistent with each other, and that changes to the zone happen in a
     /// single (sequentially consistent) order.
     pub state: Mutex<ZoneState>,
-
-    /// The loaded contents of the zone.
-    pub loaded: zonetree::Zone,
-
-    /// The signed contents of the zone.
-    pub signed: zonetree::Zone,
-
-    /// The published contents of the zone.
-    pub published: zonetree::Zone,
 }
+
+//----------- ZoneHandle -------------------------------------------------------
+
+/// A handle for working with a zone.
+pub struct ZoneHandle<'a> {
+    /// The zone being operated on.
+    pub zone: &'a Arc<Zone>,
+
+    /// The locked zone state.
+    pub state: &'a mut ZoneState,
+
+    /// Cascade's global state.
+    pub center: &'a Arc<Center>,
+}
+
+impl ZoneHandle<'_> {
+    /// Consider loader-specific operations.
+    pub const fn loader(&mut self) -> LoaderZoneHandle<'_> {
+        LoaderZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider storage-specific operations.
+    pub const fn storage(&mut self) -> StorageZoneHandle<'_> {
+        StorageZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+}
+
+//----------- ZoneState --------------------------------------------------------
 
 /// The state of a zone.
 #[derive(Debug, Default)]
@@ -69,9 +94,6 @@ pub struct ZoneState {
     /// duration of time.  If the field is `None`, and the state is changed, a
     /// new save operation should be enqueued.
     pub enqueued_save: Option<tokio::task::JoinHandle<()>>,
-
-    /// Where to load the contents of the zone from.
-    pub source: ZoneLoadSource,
 
     /// The minimum expiration time in the signed zone we are serving from
     /// the publication server.
@@ -95,11 +117,16 @@ pub struct ZoneState {
     /// the moment.
     // TODO: make the pipeline stop accepting new data when hard halted.
     pub pipeline_mode: PipelineMode,
+
+    /// Loading new versions of the zone.
+    pub loader: LoaderState,
+
+    /// Data storage for the zone.
+    pub storage: StorageState,
+    //
     // TODO:
     // - A log?
     // - Initialization?
-    // - Contents
-    // - Loader state
     // - Key manager state
     // - Signer state
     // - Server state
@@ -297,29 +324,24 @@ pub enum HistoricalEvent {
 }
 
 impl HistoricalEvent {
-    pub fn is_of_type(&self, typ: HistoricalEventType) -> bool {
-        #[allow(clippy::match_like_matches_macro)]
-        match (self, typ) {
-            (HistoricalEvent::Added, HistoricalEventType::Added) => true,
-            (HistoricalEvent::Removed, HistoricalEventType::Removed) => true,
-            (HistoricalEvent::PolicyChanged, HistoricalEventType::PolicyChanged) => true,
-            (HistoricalEvent::SourceChanged, HistoricalEventType::SourceChanged) => true,
-            (HistoricalEvent::NewVersionReceived, HistoricalEventType::NewVersionReceived) => true,
-            (HistoricalEvent::SigningSucceeded { .. }, HistoricalEventType::SigningSucceeded) => {
-                true
-            }
-            (HistoricalEvent::SigningFailed { .. }, HistoricalEventType::SigningFailed) => true,
-            (
-                HistoricalEvent::UnsignedZoneReview { .. },
-                HistoricalEventType::UnsignedZoneReview,
-            ) => true,
-            (HistoricalEvent::SignedZoneReview { .. }, HistoricalEventType::SignedZoneReview) => {
-                true
-            }
-            (HistoricalEvent::KeySetCommand { .. }, HistoricalEventType::KeySetCommand) => true,
-            (HistoricalEvent::KeySetError { .. }, HistoricalEventType::KeySetError) => true,
-            _ => false,
+    fn get_type(&self) -> HistoricalEventType {
+        match self {
+            HistoricalEvent::Added => HistoricalEventType::Added,
+            HistoricalEvent::Removed => HistoricalEventType::Removed,
+            HistoricalEvent::PolicyChanged => HistoricalEventType::PolicyChanged,
+            HistoricalEvent::SourceChanged => HistoricalEventType::SourceChanged,
+            HistoricalEvent::NewVersionReceived => HistoricalEventType::NewVersionReceived,
+            HistoricalEvent::SigningSucceeded { .. } => HistoricalEventType::SigningSucceeded,
+            HistoricalEvent::SigningFailed { .. } => HistoricalEventType::SigningFailed,
+            HistoricalEvent::UnsignedZoneReview { .. } => HistoricalEventType::UnsignedZoneReview,
+            HistoricalEvent::SignedZoneReview { .. } => HistoricalEventType::SignedZoneReview,
+            HistoricalEvent::KeySetCommand { .. } => HistoricalEventType::KeySetCommand,
+            HistoricalEvent::KeySetError { .. } => HistoricalEventType::KeySetError,
         }
+    }
+
+    pub fn is_of_type(&self, typ: HistoricalEventType) -> bool {
+        self.get_type() == typ
     }
 }
 
@@ -375,29 +397,6 @@ impl From<SigningTrigger> for api::SigningTrigger {
     }
 }
 
-/// How to load the contents of a zone.
-#[derive(Clone, Debug, Default)]
-pub enum ZoneLoadSource {
-    /// Don't load the zone at all.
-    #[default]
-    None,
-
-    /// Load the zone from a zonefile on disk.
-    Zonefile {
-        /// The path to the zonefile.
-        path: Box<Utf8Path>,
-    },
-
-    /// Load the zone from a DNS server via XFR.
-    Server {
-        /// The TCP/UDP address of the server.
-        addr: SocketAddr,
-
-        /// A TSIG key to communicate with the server, if any.
-        tsig_key: Option<Arc<tsig::Key>>,
-    },
-}
-
 impl Zone {
     /// Construct a new [`Zone`].
     ///
@@ -407,9 +406,6 @@ impl Zone {
         Self {
             name: name.clone(),
             state: Default::default(),
-            loaded: ZoneBuilder::new(name.clone(), Class::IN).build(),
-            signed: ZoneBuilder::new(name.clone(), Class::IN).build(),
-            published: ZoneBuilder::new(name.clone(), Class::IN).build(),
         }
     }
 }
@@ -508,119 +504,73 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
     }
 }
 
-/// Change the policy used by a zone.
-pub fn change_policy(
-    center: &Arc<Center>,
-    name: Name<Bytes>,
-    policy: Box<str>,
-) -> Result<(), ChangePolicyError> {
-    let mut state = center.state.lock().unwrap();
-    let state = &mut *state;
-
-    // Verify the operation will succeed.
-    {
-        state
-            .zones
-            .get(&name)
-            .ok_or(ChangePolicyError::NoSuchZone)?;
-
-        let policy = state
-            .policies
-            .get(&policy)
-            .ok_or(ChangePolicyError::NoSuchPolicy)?;
-        if policy.mid_deletion {
-            return Err(ChangePolicyError::PolicyMidDeletion);
-        }
-    }
-
-    // Perform the operation.
-    let zone = state.zones.get(&name).unwrap();
-    let mut zone_state = zone.0.state.lock().unwrap();
-
-    // Unlink the previous policy of the zone.
-    let old_policy = zone_state.policy.take();
-    if let Some(policy) = &old_policy {
-        let policy = state
-            .policies
-            .get_mut(&policy.name)
-            .expect("zones and policies are consistent");
-        assert!(
-            policy.zones.remove(&name),
-            "zones and policies are consistent"
-        );
-    }
-
-    // Link the zone to the selected policy.
-    let policy = state
-        .policies
-        .get_mut(&policy)
-        .ok_or(ChangePolicyError::NoSuchPolicy)?;
-    if policy.mid_deletion {
-        return Err(ChangePolicyError::PolicyMidDeletion);
-    }
-    zone_state.policy = Some(policy.latest.clone());
-    policy.zones.insert(name.clone());
-
-    center
-        .update_tx
-        .send(Update::Changed(Change::ZonePolicyChanged {
-            name: name.clone(),
-            old: old_policy,
-            new: policy.latest.clone(),
-        }))
-        .unwrap();
-
-    zone.0.mark_dirty(&mut zone_state, center);
-
-    info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
-    Ok(())
-}
-
-/// Change the source of the zone.
-pub fn change_source(
-    center: &Arc<Center>,
-    name: Name<Bytes>,
-    source: api::ZoneSource,
-) -> Result<(), ChangeSourceError> {
-    // Find the zone.
-    let zone = {
-        let state = center.state.lock().unwrap();
-        state
-            .zones
-            .get(&name)
-            .ok_or(ChangeSourceError::NoSuchZone)?
-            .0
-            .clone()
-    };
-
-    // Set the source in the zone.
-    let mut state = zone.state.lock().unwrap();
-    let new_source = match source {
-        api::ZoneSource::None => ZoneLoadSource::None,
-
-        api::ZoneSource::Zonefile { path } => ZoneLoadSource::Zonefile { path },
-
-        // TODO: Look up the TSIG key.
-        api::ZoneSource::Server { addr, .. } => ZoneLoadSource::Server {
-            addr,
-            tsig_key: None,
-        },
-    };
-    let old_source = mem::replace(&mut state.source, new_source.clone());
-
-    center
-        .update_tx
-        .send(Update::Changed(Change::ZoneSourceChanged(
-            name.clone(),
-            state.source.clone(),
-        )))
-        .unwrap();
-
-    zone.mark_dirty(&mut state, center);
-
-    info!("Set source of zone '{name}' from '{old_source:?}' to '{new_source:?}'");
-    Ok(())
-}
+// /// Change the policy used by a zone.
+// pub fn change_policy(
+//     center: &Arc<Center>,
+//     name: Name<Bytes>,
+//     policy: Box<str>,
+// ) -> Result<(), ChangePolicyError> {
+//     let mut state = center.state.lock().unwrap();
+//     let state = &mut *state;
+//
+//     // Verify the operation will succeed.
+//     {
+//         state
+//             .zones
+//             .get(&name)
+//             .ok_or(ChangePolicyError::NoSuchZone)?;
+//
+//         let policy = state
+//             .policies
+//             .get(&policy)
+//             .ok_or(ChangePolicyError::NoSuchPolicy)?;
+//         if policy.mid_deletion {
+//             return Err(ChangePolicyError::PolicyMidDeletion);
+//         }
+//     }
+//
+//     // Perform the operation.
+//     let zone = state.zones.get(&name).unwrap();
+//     let mut zone_state = zone.0.state.lock().unwrap();
+//
+//     // Unlink the previous policy of the zone.
+//     let old_policy = zone_state.policy.take();
+//     if let Some(policy) = &old_policy {
+//         let policy = state
+//             .policies
+//             .get_mut(&policy.name)
+//             .expect("zones and policies are consistent");
+//         assert!(
+//             policy.zones.remove(&name),
+//             "zones and policies are consistent"
+//         );
+//     }
+//
+//     // Link the zone to the selected policy.
+//     let policy = state
+//         .policies
+//         .get_mut(&policy)
+//         .ok_or(ChangePolicyError::NoSuchPolicy)?;
+//     if policy.mid_deletion {
+//         return Err(ChangePolicyError::PolicyMidDeletion);
+//     }
+//     zone_state.policy = Some(policy.latest.clone());
+//     policy.zones.insert(name.clone());
+//
+//     center
+//         .update_tx
+//         .send(Update::Changed(Change::ZonePolicyChanged {
+//             name: name.clone(),
+//             old: old_policy,
+//             new: policy.latest.clone(),
+//         }))
+//         .unwrap();
+//
+//     zone.0.mark_dirty(&mut zone_state, center);
+//
+//     info!("Set policy of zone '{name}' to '{}'", policy.latest.name);
+//     Ok(())
+// }
 
 //----------- ZoneByName -------------------------------------------------------
 
@@ -702,7 +652,9 @@ impl Hash for ZoneByPtr {
 
 impl fmt::Debug for ZoneByPtr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        f.debug_struct("ZoneByPtr")
+            .field("name", &self.0.name)
+            .finish_non_exhaustive()
     }
 }
 

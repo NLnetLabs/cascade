@@ -2,10 +2,10 @@
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'Prepare the system/integration test environment'
 description: 'Setup the environment, and fetch or build the binaries'
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
-  artifact-name:
-    description: 'The name of the artifact to fetch and unpack (it must contain the target.tar file)'
-    required: true
   disable-env-test:
     description: 'Disable the test step that checks if all nameservers are accessible'
     required: false
@@ -14,10 +14,7 @@ runs:
   using: "composite"
   steps:
   - name: Setup and start the test environment with NSD, Unbound, and BIND9
-    run: scripts/manage-test-environment.sh setup-and-start
+    run: integration-tests/scripts/manage-test-environment.sh setup-and-start
   - name: Test the setup
     if: ${{ !fromJSON(inputs.disable-env-test) }}
-    run: scripts/manage-test-environment.sh test
-  - uses: ./.github/actions/download-or-build
-    with:
-      artifact-name: ${{ inputs.artifact-name }}
+    run: integration-tests/scripts/manage-test-environment.sh test

@@ -5,27 +5,27 @@
 /// IXFR diff generation.
 use std::{
     any::Any,
-    collections::{btree_map::Entry, BTreeMap, HashSet},
-    future::{ready, Future},
+    collections::{BTreeMap, HashSet, btree_map::Entry},
+    future::{Future, ready},
     ops::Deref,
     pin::Pin,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
 use bytes::{Bytes, BytesMut};
 use domain::{
     base::{
+        Name, NameBuilder, Rtype,
         iana::{Class, Rcode},
         name::Label,
-        Name, NameBuilder, Rtype,
     },
     rdata::ZoneRecordData,
     zonetree::{
-        error::OutOfZone, Answer, InMemoryZoneDiff, ReadableZone, Rrset, SharedRrset, StoredName,
-        WalkOp, WritableZone, WritableZoneNode, ZoneStore,
+        Answer, InMemoryZoneDiff, ReadableZone, Rrset, SharedRrset, StoredName, WalkOp,
+        WritableZone, WritableZoneNode, ZoneStore, error::OutOfZone,
     },
 };
 use tracing::trace;

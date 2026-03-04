@@ -37,7 +37,7 @@ author = 'NLnet Labs <cascade@nlnetlabs.nl>'
 semver = toml.load('../../../Cargo.toml')
 
 # The short X.Y version
-version = semver.get('package').get('version')
+version = semver.get('workspace').get('package').get('version')
 
 try:
     response_versions = requests.get(

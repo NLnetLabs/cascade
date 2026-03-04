@@ -99,7 +99,7 @@ as simple as running:
 
 .. code-block:: bash
 
-  cargo install --locked --git https://github.com/nlnetlabs/cascade
+  cargo install --locked --git https://github.com/nlnetlabs/cascade cascade cascaded
   cargo install --locked --branch keyset --bin dnst --git https://github.com/nlnetlabs/dnst
 
 The command will build Cascade and install it in the same directory that
@@ -149,7 +149,7 @@ Cascade release:
 
 .. code-block:: text
 
-    cargo install --locked --force --git https://github.com/nlnetlabs/cascade
+    cargo install --locked --force --git https://github.com/nlnetlabs/cascade cascade cascaded
     cargo install --locked --force --branch keyset --bin dnst --git https://github.com/nlnetlabs/dnst
 ..  cargo install --locked --force cascade dnst
 
@@ -169,7 +169,7 @@ overwrite an existing version:
         
 .. code-block:: bash
 
-    cargo install --locked --force --git https://github.com/nlnetlabs/cascade --tag 0.1.0-alpha3
+    cargo install --locked --force --git https://github.com/nlnetlabs/cascade --tag 0.1.0-alpha3 cascade cascaded
 ..  cargo install --locked --force cascade --version 0.1.0-alpha
 
 Make sure to install a compatible version of :program:`dnst`.
@@ -181,7 +181,7 @@ the repository you can use the ``--git`` and ``--branch`` options:
 
 .. code-block:: bash
 
-    cargo install --git https://github.com/NLnetLabs/cascade.git --branch main
+    cargo install --git https://github.com/NLnetLabs/cascade.git --branch main cascade cascaded
     
 .. Seealso:: For more installation options refer to the `Cargo book
              <https://doc.rust-lang.org/cargo/commands/cargo-install.html#install-options>`_.

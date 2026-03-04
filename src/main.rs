@@ -1,19 +1,23 @@
-use cascade::{
+use cascaded::{
     center::{self, Center},
     config::{Config, SocketConfig},
-    daemon::{daemonize, PreBindError, SocketProvider},
-    eprintln,
+    daemon::{PreBindError, SocketProvider, daemonize},
+    loader::Loader,
     manager::Manager,
     policy,
+    units::{
+        key_manager::KeyManager,
+        zone_server::{Source, ZoneServer},
+        zone_signer::ZoneSigner,
+    },
 };
-use clap::{crate_authors, crate_version};
+use clap::{crate_authors, crate_description};
 use std::{collections::HashMap, fs::create_dir_all};
 use std::{
     io,
     process::ExitCode,
     sync::{Arc, Mutex},
 };
-use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
@@ -26,15 +30,10 @@ fn main() -> ExitCode {
 
     // Set up the command-line interface.
     let cmd = clap::Command::new("cascade")
-        .version(crate_version!())
+        .version(env!("CASCADE_BUILD_VERSION"))
         .author(crate_authors!())
-        .next_line_help(true)
-        .arg(
-            clap::Arg::new("check_config")
-                .long("check-config")
-                .action(clap::ArgAction::SetTrue)
-                .help("Check the configuration and exit"),
-        );
+        .about(crate_description!())
+        .next_line_help(true);
     let cmd = Config::setup_cli(cmd);
 
     // Process command-line arguments.
@@ -44,7 +43,7 @@ fn main() -> ExitCode {
     let config = match Config::init(&matches) {
         Ok(config) => config,
         Err(error) => {
-            eprintln!("Cascade couldn't be configured: {error}");
+            error!("Cascade couldn't be configured: {error}");
             return ExitCode::FAILURE;
         }
     };
@@ -58,15 +57,15 @@ fn main() -> ExitCode {
     drop(log_guard);
 
     // Initialize the actual logger
-    let logger = match cascade::log::Logger::launch(&config.daemon.logging) {
+    let logger = match cascaded::log::Logger::launch(&config.daemon.logging) {
         Ok(logger) => logger,
         Err(e) => {
-            eprintln!("ERROR: Failed to initialize logging: {e:?}");
+            error!("Failed to initialize logging: {e:?}");
             return ExitCode::FAILURE;
         }
     };
 
-    info!("Cascade version {}", env!("CARGO_PKG_VERSION"));
+    info!("Cascade version {}", env!("CASCADE_BUILD_VERSION"));
 
     // Confirm the right version of 'dnst' is available.
     if !check_dnst_version(&config) {
@@ -107,9 +106,31 @@ fn main() -> ExitCode {
         }
 
         // Load all policies.
-        if let Err(err) = policy::reload_all(&mut state.policies, &state.zones, &config, |_| {}) {
+        let mut updates = Vec::new();
+        let res = policy::reload_all(&mut state.policies, &config, |name, _| {
+            updates.push(name.clone());
+        });
+
+        if let Err(err) = res {
             error!("Cascade couldn't load all policies: {err}");
             return ExitCode::FAILURE;
+        }
+
+        for name in updates {
+            let pol = state
+                .policies
+                .get(&name)
+                .expect("we just reloaded these policies");
+
+            for zone_name in &pol.zones {
+                let zone = state
+                    .zones
+                    .get(zone_name)
+                    .expect("zones and policies are consistent");
+
+                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
+                state.policy = Some(pol.latest.clone());
+            }
         }
 
         // TODO: Fail if any zone state files exist.
@@ -121,7 +142,7 @@ fn main() -> ExitCode {
         for zone in &state.zones {
             let name = &zone.0.name;
             let path = zone_state_dir.join(format!("{name}.db"));
-            let spec = match cascade::zone::state::Spec::load(&path) {
+            let spec = match cascaded::zone::state::Spec::load(&path) {
                 Ok(spec) => {
                     debug!("Loaded state of zone '{name}' (from {path})");
                     spec
@@ -137,11 +158,15 @@ fn main() -> ExitCode {
     }
 
     if config.loader.review.servers.is_empty() {
-        warn!("No review server configured for [loader.review], therefore no unsigned zone transfer available for review.");
+        warn!(
+            "No review server configured for [loader.review], therefore no unsigned zone transfer available for review."
+        );
     }
 
     if config.signer.review.servers.is_empty() {
-        warn!("No review server configured for [signer.review], therefore no signed zone transfer available for review.");
+        warn!(
+            "No review server configured for [signer.review], therefore no signed zone transfer available for review."
+        );
     }
 
     // Load the TSIG store file.
@@ -169,20 +194,22 @@ fn main() -> ExitCode {
     }
 
     // Prepare Cascade.
-    let (app_cmd_tx, mut app_cmd_rx) = mpsc::unbounded_channel();
-    let (update_tx, mut update_rx) = mpsc::unbounded_channel();
     let center = Arc::new(Center {
         state: Mutex::new(state),
         config,
         logger,
+        loader: Loader::new(),
+        key_manager: KeyManager::new(),
+        unsigned_review_server: ZoneServer::new(Source::Unsigned),
+        signed_review_server: ZoneServer::new(Source::Signed),
+        publication_server: ZoneServer::new(Source::Published),
+        signer: ZoneSigner::new(),
         unsigned_zones: Default::default(),
         signable_zones: Default::default(),
         signed_zones: Default::default(),
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
-        app_cmd_tx,
-        update_tx,
     });
 
     // Set up the rayon threadpool
@@ -199,7 +226,7 @@ fn main() -> ExitCode {
     {
         Ok(runtime) => runtime,
         Err(error) => {
-            eprintln!("Couldn't start Tokio: {error}");
+            error!("Couldn't start Tokio: {error}");
             return ExitCode::FAILURE;
         }
     };
@@ -207,7 +234,7 @@ fn main() -> ExitCode {
     // Enter the runtime.
     let result = runtime.block_on(async {
         // Spawn Cascade's units.
-        let manager = match Manager::spawn(center.clone(), socket_provider).await {
+        let manager = match Manager::spawn(center.clone(), socket_provider) {
             Ok(manager) => manager,
             Err(err) => {
                 error!("Failed to spawn units: {err}");
@@ -215,42 +242,31 @@ fn main() -> ExitCode {
             }
         };
 
-        loop {
-            tokio::select! {
-                // Watch for CTRL-C (SIGINT).
-                res = tokio::signal::ctrl_c() => {
-                    if let Err(error) = res {
-                        error!(
-                            "Listening for CTRL-C (SIGINT) failed: {error}"
-                        );
-                        break ExitCode::FAILURE;
-                    }
-                    break ExitCode::SUCCESS;
-                }
-
-                Some((unit, cmd)) = app_cmd_rx.recv() => {
-                    manager.on_app_cmd(&unit, cmd);
-                }
-
-                Some(update) = update_rx.recv() => {
-                    manager.on_update(update);
-                }
+        let res = match tokio::signal::ctrl_c().await {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(error) => {
+                error!("Listening for CTRL-C (SIGINT) failed: {error}");
+                ExitCode::FAILURE
             }
-        }
+        };
 
-        // All of Cascade's units will stop with the Tokio runtime.
+        // All of Cascade's units have AbortOnDrop's in Manager, so all
+        // background tasks will be stopped when Manager is dropped.
+        drop(manager);
+
+        res
     });
 
     // Persist the current state.
-    cascade::state::save_now(&center);
-    cascade::tsig::save_now(&center);
+    cascaded::state::save_now(&center);
+    cascaded::tsig::save_now(&center);
     let zones = {
         let state = center.state.lock().unwrap();
         state.zones.iter().map(|z| z.0.clone()).collect::<Vec<_>>()
     };
     for zone in zones {
         // TODO: Maybe 'save_state_now()' should take '&Config'?
-        cascade::zone::save_state_now(&center, &zone);
+        cascaded::zone::save_state_now(&center, &zone);
     }
 
     result

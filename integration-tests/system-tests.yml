@@ -1,0 +1,108 @@
+# This workflow is currently only for use with https://github.com/nektos/act
+# via the `act-wrapper` script at the root of this repository, which creates
+# a custom container with a freshly built cascade.
+#
+# Further documentation is in TESTING.md.
+#
+# TL;DR:
+#   - Docker: `./act-wrapper --network default --job your-test`
+#   - Podman: `./act-wrapper --network podman --job your-test`
+#
+# ## Creating a new test
+#
+# You can use the test creation script to generate a new test:
+#
+# `integration-tests/scripts/add-test.sh <test-name> [<description>] [<PR>]`.
+#
+# It will add the stub job to this workflow file and create the action file for
+# the actual test in `integration-tests/tests/<test-name>` .
+
+# GitHub Actions environment variables are documented at
+# https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+
+name: System/Integration tests
+on:
+  # Triggering on PRs and arbitrary branch pushes is not enabled because most
+  # of the time this expensive test suite should not be run. Using this
+  # trigger allows explicitly running this test suite on a selected branch.
+  workflow_dispatch:
+
+env:
+  # Set this assignment to your choosing to set the cargo build verbosity
+  CARGO_TERM_VERBOSE: ${{ github.actor != 'nektos/act' }}
+  # CARGO_TERM_VERBOSE: true
+
+defaults:
+  run:
+    # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+
+jobs:
+  test-release-version:
+    name: Example test with prepare environment and cascade --version (release)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/set-build-profile
+      with:
+        build-profile: release
+    - run: cascade --version
+    - run: file $(which cascade)
+
+  test-version:
+    name: Example test with prepare environment and cascade --version (debug)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/prepare-systest-env
+    - run: cascade --version
+    - run: file $(which cascade)
+
+  add-zone-query:
+    name: Add a zone, query the published zone
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/add-zone-query
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/402
+  load-zonefile:
+    name: Load a zone from a file, query the published zone
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/load-zonefile
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/398
+  review-unsigned-zone:
+    name: Add a zone, approve the unsigned zone, query the published zone
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/review-unsigned-zone
+
+  ixfr-in:
+    name: Receive a zone via IXFR from the NSD primary.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/ixfr-in

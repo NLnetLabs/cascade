@@ -9,23 +9,28 @@ use std::{
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
+use domain::base::iana::Class;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
-use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
-use crate::zone::PipelineMode;
+use crate::loader::Loader;
+use crate::loader::zone::LoaderZoneHandle;
+use crate::manager::record_zone_event;
+use crate::units::key_manager::KeyManager;
+use crate::units::zone_server::ZoneServer;
+use crate::units::zone_signer::ZoneSigner;
+use crate::zone::{HistoricalEvent, PipelineMode, ZoneHandle};
 use crate::{
     api,
     config::Config,
     log::Logger,
-    manager::{ApplicationCommand, Update},
-    policy::{Policy, PolicyVersion},
+    policy::Policy,
     tsig::TsigStore,
-    zone::{Zone, ZoneByName, ZoneLoadSource},
+    zone::{Zone, ZoneByName},
 };
 
 //----------- Center -----------------------------------------------------------
@@ -41,6 +46,24 @@ pub struct Center {
 
     /// The logger.
     pub logger: Logger,
+
+    /// The zone loader.
+    pub loader: Loader,
+
+    /// The zone signer
+    pub signer: ZoneSigner,
+
+    /// The key manager
+    pub key_manager: KeyManager,
+
+    /// The review server for unsigned zones.
+    pub unsigned_review_server: ZoneServer,
+
+    /// The review server for signed zones.
+    pub signed_review_server: ZoneServer,
+
+    /// The zone server.
+    pub publication_server: ZoneServer,
 
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
@@ -59,12 +82,6 @@ pub struct Center {
 
     /// The old TSIG key store.
     pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
-
-    /// A channel to send units commands.
-    pub app_cmd_tx: mpsc::UnboundedSender<(String, ApplicationCommand)>,
-
-    /// A channel to send the central command updates.
-    pub update_tx: mpsc::UnboundedSender<Update>,
 }
 
 //--- Actions
@@ -129,25 +146,42 @@ pub async fn add_zone(
         return Err(err);
     }
 
-    {
-        let mut state = center.state.lock().unwrap();
-        center
-            .update_tx
-            .send(Update::Changed(Change::ZoneAdded(name.clone())))
-            .unwrap();
+    record_zone_event(center, &name, HistoricalEvent::Added, None);
 
-        state.mark_dirty(center);
+    {
+        let mut state = zone.state.lock().unwrap();
+
+        let source = match source {
+            cascade_api::ZoneSource::None => crate::loader::Source::None,
+            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
+            cascade_api::ZoneSource::Server {
+                addr,
+                tsig_key,
+                xfr_status: _,
+            } => {
+                // TODO: TSIG.
+                let _ = tsig_key;
+                crate::loader::Source::Server {
+                    addr,
+                    tsig_key: None,
+                }
+            }
+        };
+
+        // Set the source of the zone, and begin loading it.
+        LoaderZoneHandle {
+            zone: &zone,
+            state: &mut state,
+            center,
+        }
+        .set_source(source);
+
+        // NOTE: The zone is marked as dirty by the above operation.
     }
 
     {
-        match crate::zone::change_source(center, name.clone(), source) {
-            Ok(()) => {}
-            Err(crate::zone::ChangeSourceError::NoSuchZone) => unreachable!(),
-            // NOTE: When proper TSIG support is added, it should be checked
-            //       for _before_ the zone is added.
-        }
-
-        // NOTE: The zone is marked as dirty by the above operation.
+        let mut state = center.state.lock().unwrap();
+        state.mark_dirty(center);
     }
 
     info!("Added zone '{name}'");
@@ -160,41 +194,49 @@ async fn register_zone(
     policy: Box<str>,
     key_imports: Vec<KeyImport>,
 ) -> Result<(), ZoneAddError> {
-    let (report_tx, report_rx) = oneshot::channel();
-
     center
-        .app_cmd_tx
-        .send((
-            "KM".into(),
-            ApplicationCommand::RegisterZone {
-                name,
-                policy: policy.clone().into(),
-                key_imports,
-                report_tx,
-            },
-        ))
-        .unwrap();
-
-    report_rx
+        .key_manager
+        .on_register_zone(center, name, policy.clone().into(), key_imports)
         .await
-        .map_err(|err| {
-            ZoneAddError::Other(format!(
-                "Zone registration failed: internal command could not be sent: {err}"
-            ))
-        })?
         .map_err(|err| ZoneAddError::Other(format!("Zone registration failed: {err}")))
 }
 
 /// Remove a zone.
 pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
-    center
-        .update_tx
-        .send(Update::Changed(Change::ZoneRemoved(name.clone())))
-        .unwrap();
-
     let mut state = center.state.lock().unwrap();
     let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?;
+
+    // Remove the zone from all the places it might be stored.
+    // The zone might not have made it to these places, but that's not an issue
+    // so we just ignore any errors.
+
+    center.unsigned_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
+    center.signed_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
+    center.published_zones.rcu(|z| {
+        let mut z = Arc::unwrap_or_clone(z.clone());
+        let _ = z.remove_zone(&name, Class::IN);
+        z
+    });
+
     let mut zone_state = zone.0.state.lock().unwrap();
+
+    ZoneHandle {
+        zone: &zone.0,
+        state: &mut zone_state,
+        center,
+    }
+    .loader()
+    .prep_removal();
 
     // Update the policy's referenced zones.
     if let Some(policy) = zone_state.policy.take() {
@@ -208,10 +250,12 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     }
 
     info!("Removed zone '{name}'");
+    zone_state.record_event(HistoricalEvent::Removed, None);
+    zone.0.mark_dirty(&mut zone_state, center);
     Ok(())
 }
 
-pub fn get_zone(center: &Center, name: &StoredName) -> Option<Arc<Zone>> {
+pub fn get_zone(center: &Arc<Center>, name: &StoredName) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
 }
@@ -284,7 +328,7 @@ impl State {
     pub fn init_from_file(&mut self, config: &Config) -> io::Result<()> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        spec.parse_into(self, |_| {});
+        spec.parse_into(self);
         Ok(())
     }
 
@@ -329,51 +373,6 @@ impl State {
         });
         self.enqueued_save = Some(task);
     }
-}
-
-//----------- Change -----------------------------------------------------------
-
-/// A change to global state.
-#[derive(Clone, Debug)]
-pub enum Change {
-    /// The configuration has been changed.
-    ConfigChanged,
-
-    /// A policy has been added.
-    PolicyAdded(Arc<PolicyVersion>),
-
-    /// A policy has been changed.
-    PolicyChanged(Arc<PolicyVersion>, Arc<PolicyVersion>),
-
-    /// A policy has been removed.
-    PolicyRemoved(Arc<PolicyVersion>),
-
-    /// A zone has been added.
-    ZoneAdded(Name<Bytes>),
-
-    /// The policy of a zone has changed.
-    ZonePolicyChanged {
-        /// The name of the zone.
-        name: Name<Bytes>,
-
-        /// The previous policy used by the zone.
-        ///
-        /// If this is [`None`], the zone did not previously have a policy.
-        old: Option<Arc<PolicyVersion>>,
-
-        /// The new policy used by the zone.
-        ///
-        /// If this has the same name as the old policy, the policy was updated
-        /// (as per [`Self::PolicyChanged`]); if this has a different name, the
-        /// policy for this zone was explicitly changed.
-        new: Arc<PolicyVersion>,
-    },
-
-    /// The source of a zone has changed.
-    ZoneSourceChanged(Name<Bytes>, ZoneLoadSource),
-
-    /// A zone has been removed.
-    ZoneRemoved(Name<Bytes>),
 }
 
 //----------- ZoneAddError -----------------------------------------------------
