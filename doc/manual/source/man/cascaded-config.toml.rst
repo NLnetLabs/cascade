@@ -208,7 +208,9 @@ The ``[daemon]`` section.
    If this option is set to ``true``, the server changes its
    working directory to the root directory and as such influences
    where files are looked for. Use absolute path names in configuration
-   to avoid ambiguities.
+   to avoid ambiguities. Additionally, it will redirect stdout and stderr to
+   ``/dev/null`` and you need to choose ``syslog`` or ``file`` as the
+   :option:`log-target <log-target = { type = "syslog" }>`.
 
 .. TODO: Link to a dedicated systemd / daemonization guide for Cascade.
 
