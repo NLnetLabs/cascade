@@ -6,13 +6,16 @@
 //! restricted ports (<1024) and then switch to running as a non-privileged
 //! user once the privileged access is no longer required.
 use std::{
+    backtrace::{Backtrace, BacktraceStatus},
     collections::BTreeMap,
+    fmt::Write,
     net::{SocketAddr, TcpListener, UdpSocket},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use camino::Utf8Path;
 use daemonbase::process::{EnvSockets, EnvSocketsError, Process};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::config::{DaemonConfig, GroupId, UserId};
 
@@ -53,6 +56,91 @@ pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
     let mut process = Process::from_config(daemon_config);
 
     if *config.daemonize.value() {
+        // When daemonize is true, stdout and stderr will be redirected to
+        // /dev/null. That means that panic messages would be cast into the
+        // void. This has resulted in us missing panics in e.g. the
+        // integration tests. Here we override the panic hook to attempt
+        // writing to the configured logging target (which can only be a file
+        // or syslog). If we cannot write to the logging target, we don't know
+        // where else to write (other than uncommon locations), so we don't
+        // try to recover if we cannot write to the log-target. The process
+        // will get taken down in any case. If we panic in the panic hook
+        // below, rust will catch that and dump the core, ending the process
+        // too.
+        std::panic::set_hook(Box::new(move |info| {
+            static FIRST_PANIC: AtomicBool = AtomicBool::new(true);
+
+            // Make sure only one thread can print a panic message to avoid
+            // interleaved panic outputs. If a second thread panics at the
+            // same time, it won't call process::exit to allow the first
+            // thread to log the panic message. This should never happen, but
+            // who knows...
+            if FIRST_PANIC.swap(false, Ordering::Relaxed) {
+                // Create a buffer for the panic message to avoid other
+                // threads printing trace logs into the middle of our panic
+                // message.
+                let mut buf = String::new();
+
+                let thread = std::thread::current();
+                let name = thread.name().unwrap_or("<unnamed>");
+                let thread_id = thread.id();
+                let process_id = std::process::id();
+                // Print the ThreadId with Debug because it doesn't implement
+                // Display and as_u64 is unstable. While the ThreadId doesn't
+                // tell us much currently, that might change in the future if
+                // we change the logging format for example.
+                let ids_text = format!("(ProcessId({process_id}), {thread_id:?})");
+
+                // Write thread and panic location info
+                if let Some(loc) = info.location() {
+                    let file = loc.file();
+                    let line = loc.line();
+                    let col = loc.column();
+                    // String never returns an error for write_str.
+                    let _ = writeln!(
+                        buf,
+                        "thread '{name}' {ids_text} panicked at {file}:{line}:{col}"
+                    );
+                } else {
+                    // String never returns an error for write_str.
+                    let _ = writeln!(
+                        buf,
+                        "thread '{name}' {ids_text} panicked at <unknown location>"
+                    );
+                }
+
+                // The payload_as_str function is only stabilized in Rust
+                // 1.91.0. Therefore, we use the old method for now. The
+                // payload is only a Box<dyn Any> if someone calls panic_any.
+                if let Some(s) = info.payload().downcast_ref::<&str>() {
+                    buf.push_str(s);
+                } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                    buf.push_str(s);
+                } else {
+                    buf.push_str("Box<dyn Any>");
+                }
+
+                // Capture and print a backtrace if enabled.
+                let backtrace = Backtrace::capture();
+                match backtrace.status() {
+                    BacktraceStatus::Disabled => {
+                        buf.push_str("\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace");
+                    }
+                    BacktraceStatus::Captured => {
+                        let _ = writeln!(buf, "\n{backtrace}");
+                    }
+                    _ => {}
+                }
+
+                // Use tracing::error to log the created panic message to the
+                // configured log target.
+                error!("{}", buf);
+
+                // Take down the whole process if a thread panics.
+                std::process::exit(101);
+            }
+        }));
+
         debug!("Becoming daemon process");
         if process.setup_daemon(true).is_err() {
             return Err("Failed to become daemon process: unknown error".to_string());
