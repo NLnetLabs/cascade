@@ -37,8 +37,8 @@ if [[ "${1-}" =~ ^-h|--help$ ]]; then
   exit
 fi
 
-_path=${1-}
-_log_level=${2-}
+_path=${1-$PWD}
+_log_level=${2-debug}
 
 # The base dir must be an absolute path
 if [[ -n "${_path}" ]]; then
