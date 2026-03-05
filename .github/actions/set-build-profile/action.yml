@@ -19,3 +19,4 @@ runs:
       [[ "$BUILD_PROFILE" =~ ^debug|release$ ]]
 
       ln -sft /usr/local/bin/ /root/cargo-${BUILD_PROFILE}/bin/*
+      ls -l /usr/local/bin
