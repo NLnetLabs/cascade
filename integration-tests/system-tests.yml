@@ -4,9 +4,7 @@
 #
 # Further documentation is in TESTING.md.
 #
-# TL;DR:
-#   - Docker: `./act-wrapper --network default --job your-test`
-#   - Podman: `./act-wrapper --network podman --job your-test`
+# TL;DR: `./act-wrapper --job your-test`
 #
 # ## Creating a new test
 #

@@ -38,15 +38,9 @@ built cascade.
 
 ### TL;DR
 
-Run all tests with:
+Run all tests with: `./act-wrapper`
 
-- Docker: `./act-wrapper`
-- Podman: `./act-wrapper`
-
-Run a single test with:
-
-- Docker: `./act-wrapper --job your-test`
-- Podman: `./act-wrapper --job your-test`
+Run a single test with: `./act-wrapper --job your-test`
 
 Create a new test with:
 
