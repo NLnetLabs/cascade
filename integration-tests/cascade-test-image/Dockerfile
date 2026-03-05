@@ -54,7 +54,7 @@ EOF
 
 # Copy source files into container in case we need to build from source
 COPY etc/ /cascade/etc/
-COPY Cargo.toml Cargo.lock /cascade/
+COPY Cargo.toml Cargo.lock build.rs /cascade/
 COPY src/ /cascade/src/
 COPY crates/ /cascade/crates/
 
