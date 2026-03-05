@@ -79,7 +79,7 @@ Except for tests that explicitly choose the debug or release build profile, the
 build profile used can be overridden by invoking `./act-wrapper` with argument
 `--input build-profile=XXX` where XXX must be one of debug or release.
 
-### Overriding the log level to use.
+### Overriding the log level to use
 
 By default Cascade is configured to log at debug level. You can change this by
 invoking `./act-wrapper` with argument `--input log-level=XXX` where XXX must
