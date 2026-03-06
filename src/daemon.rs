@@ -142,16 +142,21 @@ fn panic_hook_log_error(info: &std::panic::PanicHookInfo<'_>) {
             buf.push_str("Box<dyn Any>");
         }
 
-        // Capture and print a backtrace if enabled.
-        let backtrace = Backtrace::capture();
-        match backtrace.status() {
-            BacktraceStatus::Disabled => {
-                buf.push_str("\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace");
+        // The backtrace is only usable when panic = "unwind". On "abort" the
+        // backtrace only contains the panic hook itself.
+        #[cfg(panic = "unwind")]
+        {
+            // Capture and print a backtrace if enabled.
+            let backtrace = Backtrace::capture();
+            match backtrace.status() {
+                BacktraceStatus::Disabled => {
+                    buf.push_str("\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace");
+                }
+                BacktraceStatus::Captured => {
+                    let _ = writeln!(buf, "\n{backtrace}");
+                }
+                _ => {}
             }
-            BacktraceStatus::Captured => {
-                let _ = writeln!(buf, "\n{backtrace}");
-            }
-            _ => {}
         }
 
         // Use tracing::error to log the created panic message to the
