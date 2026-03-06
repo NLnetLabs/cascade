@@ -77,6 +77,22 @@ pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
         if process.setup_daemon(true).is_err() {
             return Err("Failed to become daemon process: unknown error".to_string());
         }
+    } else {
+        // If cascade doesn't daemonize, also override the default panic hook
+        // to catch panics with panic = "unwind". When panic = "abort", the
+        // process would be taken down by default, but doing it here doesn't
+        // hurt. We log the panic message to the log-target, and call the
+        // default panic hook that prints the panic message to stderr, which
+        // is the expected behaviour of rust programs running in the
+        // foreground.
+        let prev_panic_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            panic_hook_log_error(info);
+            prev_panic_hook(info);
+
+            // Take down the whole process if a thread panics.
+            std::process::exit(101);
+        }));
     }
 
     if let Some((user, group)) = &config.identity {
