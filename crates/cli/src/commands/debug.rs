@@ -1,3 +1,5 @@
+use std::fmt::{Display, Write};
+
 use futures_util::TryFutureExt;
 
 use crate::{
@@ -17,17 +19,19 @@ pub enum Command {
     /// Change how Cascade logs information.
     ///
     /// Note that these changes are not persisted across restarts.
+    ///
+    /// At least one option of 'level' or 'trace-targets' is required.
     #[command(name = "change-logging")]
     ChangeLogging {
         /// The new log level to use.
-        #[arg(short = 'l', long = "level")]
+        #[arg(short = 'l', long = "level", required_unless_present_any = ["trace_targets"])]
         level: Option<LogLevel>,
 
         /// The new trace targets to use.
         ///
         /// These are names of Cascade modules for which trace-level logging
         /// will be enabled, even if the overall log level is lower.
-        #[arg(long = "trace-targets")]
+        #[arg(long = "trace-targets", value_delimiter = ',')]
         trace_targets: Option<Vec<String>>,
     },
 }
@@ -39,8 +43,20 @@ impl Debug {
                 level,
                 trace_targets,
             } => {
+                let mut msg = String::new();
+
+                if let Some(level) = &level {
+                    writeln!(msg, "Changed log-level to: {level}").unwrap();
+                }
+
+                if let Some(targets) = &trace_targets {
+                    let targets = targets.join(", ");
+                    writeln!(msg, "Changed trace targets to: {targets}").unwrap();
+                }
+
                 let level = level.map(Into::into);
                 let trace_targets = trace_targets.map(|t| t.into_iter().map(TraceTarget).collect());
+
                 let (): ChangeLoggingResult = client
                     .post("debug/change-logging")
                     .json(&ChangeLogging {
@@ -52,7 +68,8 @@ impl Debug {
                     .await
                     .map_err(format_http_error)?;
 
-                println!("Updated logging behavior");
+                println!("Updated logging behavior\n");
+                print!("{msg}");
                 Ok(())
             }
         }
@@ -93,5 +110,22 @@ impl From<LogLevel> for api::LogLevel {
             LogLevel::Error => Self::Error,
             LogLevel::Critical => Self::Critical,
         }
+    }
+}
+
+impl Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                LogLevel::Trace => "trace",
+                LogLevel::Debug => "debug",
+                LogLevel::Info => "info",
+                LogLevel::Warning => "warning",
+                LogLevel::Error => "error",
+                LogLevel::Critical => "critical",
+            }
+        )
     }
 }
