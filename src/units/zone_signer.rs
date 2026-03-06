@@ -331,7 +331,7 @@ impl ZoneSigner {
     /// be possible if the signable zone were definitely a ZoneApex zone
     /// rather than a LightWeightZone (and XFR-in zones are LightWeightZone
     /// instances).
-    async fn join_sign_zone_queue(
+    pub async fn join_sign_zone_queue(
         &self,
         center: &Arc<Center>,
         zone_name: &StoredName,
@@ -2011,7 +2011,7 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
     bytes
 }
 
-enum SignerError {
+pub enum SignerError {
     SoaNotFound,
     CannotSignUnapprovedZone,
     CannotResignNonPublishedZone,
@@ -2030,7 +2030,7 @@ enum SignerError {
 }
 
 impl SignerError {
-    fn is_benign(&self) -> bool {
+    pub fn is_benign(&self) -> bool {
         matches!(
             self,
             SignerError::CannotSignUnapprovedZone | SignerError::CannotResignNonPublishedZone

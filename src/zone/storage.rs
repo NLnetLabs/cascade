@@ -8,7 +8,8 @@ use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReader, LoadedZoneReviewer,
-    SignedZoneReviewer, ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    SignedZoneBuilder, SignedZoneBuilt, SignedZoneReader, SignedZoneReviewer, ZoneCleaner,
+    ZoneDataStorage, ZoneViewer,
 };
 use domain::zonetree;
 use tracing::{info, trace, trace_span, warn};
@@ -16,7 +17,7 @@ use tracing::{info, trace, trace_span, warn};
 use crate::{
     center::Center,
     util::{BackgroundTasks, force_future},
-    zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, PipelineMode, SigningTrigger, Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -311,6 +312,239 @@ impl StorageZoneHandle<'_> {
     }
 }
 
+/// # Signer Operations
+impl StorageZoneHandle<'_> {
+    /// Begin resigning the zone.
+    ///
+    /// If the zone data storage is not busy, a [`SignedZoneBuilder`] will be
+    /// returned through which the instance of the zone can be resigned.
+    /// Follow up by calling:
+    ///
+    /// - [`Self::finish_sign()`] when signing succeeds.
+    ///
+    /// - [`Self::give_up_sign()`] when signing fails.
+    ///
+    /// If the zone data storage is busy, [`None`] is returned; the signer
+    /// should enqueue the re-sign operation and wait for an idle notification.
+    pub fn start_resign(&mut self) -> Option<SignedZoneBuilder> {
+        // Examine the current state.
+        let machine = &mut self.state.storage.machine;
+        match machine.take() {
+            ZoneDataStorage::Passive(s) => {
+                // The zone storage is passive; no other operations are ongoing,
+                // and it is possible to begin re-signing.
+                trace!(
+                    zone = %self.zone.name,
+                    "Obtaining a 'SignedZoneBuilder' for performing a re-sign"
+                );
+
+                let (s, builder) = s.resign();
+                *machine = ZoneDataStorage::Signing(s);
+                Some(builder)
+            }
+
+            other => {
+                // The zone storage is in the middle of another operation.
+                trace!(
+                    zone = %self.zone.name,
+                    "Deferring re-sign because data storage is busy"
+                );
+
+                *machine = other;
+                None
+            }
+        }
+    }
+
+    /// Finish (re-)signing.
+    ///
+    /// The prepared signed instance of the zone is finalized, and passed on
+    /// to the signed zone reviewer.
+    pub fn finish_sign(&mut self, built: SignedZoneBuilt) {
+        // Examine the current state.
+        let machine = &mut self.state.storage.machine;
+        match machine.take() {
+            ZoneDataStorage::Signing(s) => {
+                trace!(
+                    zone = %self.zone.name,
+                    "Successfully finishing the ongoing (re-)sign"
+                );
+
+                let (s, signed_reviewer) = s.finish(built);
+                *machine = ZoneDataStorage::ReviewSignedPending(s);
+
+                // TODO: Use the instance ID here, which will not require
+                // examining the zone contents.
+                let serial = signed_reviewer.read_signed().unwrap().soa().rdata.serial;
+                self.state.record_event(
+                    // TODO: Get the right trigger.
+                    HistoricalEvent::SigningSucceeded {
+                        trigger: SigningTrigger::SignatureExpiration,
+                    },
+                    Some(domain::base::Serial(serial.into())),
+                );
+
+                self.start_signed_review(signed_reviewer);
+            }
+
+            _ => unreachable!(
+                "'ZoneDataStorage::Signing' is the only state where a 'SignedZoneBuilt' is available"
+            ),
+        }
+    }
+
+    /// Give up on the ongoing signing operation.
+    ///
+    /// Intermediate artifacts in the signed instance, and the upcoming loaded
+    /// instance (if any), will be cleaned up automatically, in the background.
+    /// Once the zone storage is idle, a notification will be sent.
+    pub fn give_up_sign(&mut self, builder: SignedZoneBuilder) {
+        // Examine the current state.
+        let machine = &mut self.state.storage.machine;
+        match machine.take() {
+            ZoneDataStorage::Signing(s) => {
+                trace!(
+                    zone = %self.zone.name,
+                    "Giving up on the ongoing (re-)sign"
+                );
+
+                let (s, loaded_reviewer) = s.give_up(builder);
+                // TODO: Communicate the new reviewer handle to the zone server.
+                let old_loaded_reviewer =
+                    std::mem::replace(&mut self.state.storage.loaded_reviewer, loaded_reviewer);
+                let (s, cleaner) = s.stop_review(old_loaded_reviewer);
+                *machine = ZoneDataStorage::Cleaning(s);
+                self.start_cleanup(cleaner);
+            }
+
+            _ => unreachable!(
+                "'ZoneDataStorage::Signing' is the only state where a 'SignedZoneBuilder' is available"
+            ),
+        }
+    }
+}
+
+/// # Signer Review Operations
+impl StorageZoneHandle<'_> {
+    /// Initiate review of a new signed instance of a zone.
+    fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer) {
+        // NOTE: This function provides compatibility with 'zonetree's.
+
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        let span = trace_span!("start_signed_review");
+        self.state.storage.background_tasks.spawn_blocking(span, move || {
+            // Read the loaded instance.
+            let loaded_reader = signed_reviewer
+                .read_loaded()
+                .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
+
+            // Read the signed instance.
+            let signed_reader = signed_reviewer
+                .read_signed()
+                .unwrap_or_else(|| unreachable!("The signer never returns an empty instance"));
+            let serial = signed_reader.soa().rdata.serial;
+
+            // Build a `zonetree` for the new instance.
+            let zonetree = Self::build_signed_zonetree(&zone, &loaded_reader, &signed_reader);
+
+            // Insert the new `zonetree`.
+            center.signed_zones.rcu(|tree| {
+                let mut tree = Arc::unwrap_or_clone(tree.clone());
+                let _ = tree.remove_zone(&zone.name, domain::base::iana::Class::IN);
+                tree.insert_zone(zonetree.clone()).unwrap();
+                tree
+            });
+
+            let mut state = zone.state.lock().unwrap();
+
+            // TODO: Pass on the reviewer to the zone server.
+            let old_signed_reviewer =
+                std::mem::replace(&mut state.storage.signed_reviewer, signed_reviewer);
+
+            // Transition into the reviewing state.
+            tracing::debug!("Transitioning zone state...");
+            match state.storage.machine.take() {
+                ZoneDataStorage::ReviewSignedPending(s) => {
+                    // For now, transition all the way back to 'Passive' state.
+                    let s = s.start(old_signed_reviewer);
+                    let (s, persister) = s.mark_approved();
+                    let persisted = persister.persist();
+                    let (s, viewer) = s.mark_complete(persisted);
+                    let old_viewer = std::mem::replace(&mut state.storage.viewer, viewer);
+                    let (s, cleaner) = s.switch(old_viewer);
+                    state.storage.machine = ZoneDataStorage::Cleaning(s);
+                    ZoneHandle {
+                        zone: &zone,
+                        state: &mut state,
+                        center: &center,
+                    }
+                    .storage()
+                    .start_cleanup(cleaner);
+                }
+
+                _ => unreachable!(
+                    "'ZoneDataStorage::ReviewSignedPending' is the only state where a 'SignedZoneReviewer' is available"
+                ),
+            }
+
+            info!("Initiating review of newly-signed instance");
+
+            // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
+            std::mem::drop(state);
+
+            center.signed_review_server.on_seek_approval_for_zone(
+                &center,
+                zone.name.clone(),
+                domain::base::Serial(serial.into()),
+            );
+
+            state = zone.state.lock().unwrap();
+
+            state.storage.background_tasks.finish()
+        });
+    }
+
+    /// Build a `zonetree` for an signed instance of a zone.
+    fn build_signed_zonetree(
+        zone: &Arc<Zone>,
+        loaded_reader: &LoadedZoneReader<'_>,
+        signed_reader: &SignedZoneReader<'_>,
+    ) -> zonetree::Zone {
+        use zonetree::{types::ZoneUpdate, update::ZoneUpdater};
+
+        let zone =
+            zonetree::ZoneBuilder::new(zone.name.clone(), domain::base::iana::Class::IN).build();
+
+        let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
+
+        // Clear all existing records.
+        force_future(updater.apply(ZoneUpdate::DeleteAllRecords)).unwrap();
+
+        // Add every record in turn.
+        for record in signed_reader.records() {
+            let record: cascade_zonedata::OldParsedRecord = record.clone().into();
+            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
+        }
+
+        // Add every loaded record in turn (excluding SOA).
+        //
+        // TODO: Which other records to exclude? DNSKEY, RRSIGs?
+        for record in loaded_reader.records() {
+            let record: cascade_zonedata::OldParsedRecord = record.clone().into();
+            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
+        }
+
+        // Commit the update with the SOA record.
+        let soa: cascade_zonedata::OldParsedRecord = signed_reader.soa().clone().into();
+        force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
+
+        zone
+    }
+
+    // TODO: approve_signed()
+}
+
 /// # Background Tasks
 impl StorageZoneHandle<'_> {
     /// Run a cleanup of zone data.
@@ -447,7 +681,12 @@ impl StorageZoneHandle<'_> {
 
         if self.zone().loader().start_pending() {
             // The zone storage is no longer idle.
-            //return;
+            return;
+        }
+
+        if self.zone().signer().start_pending() {
+            // The zone storage is no longer idle.
+            // return;
         }
     }
 }

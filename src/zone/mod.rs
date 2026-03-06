@@ -22,6 +22,7 @@ use crate::{
     config::Config,
     loader::zone::{LoaderState, LoaderZoneHandle},
     policy::{Policy, PolicyVersion},
+    signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
@@ -64,6 +65,15 @@ impl ZoneHandle<'_> {
     /// Consider loader-specific operations.
     pub const fn loader(&mut self) -> LoaderZoneHandle<'_> {
         LoaderZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider signer-specific operations.
+    pub const fn signer(&mut self) -> SignerZoneHandle<'_> {
+        SignerZoneHandle {
             zone: self.zone,
             state: self.state,
             center: self.center,
@@ -121,6 +131,9 @@ pub struct ZoneState {
     /// Loading new versions of the zone.
     pub loader: LoaderState,
 
+    /// Signing the zone.
+    pub signer: SignerState,
+
     /// Data storage for the zone.
     pub storage: StorageState,
     //
@@ -128,7 +141,6 @@ pub struct ZoneState {
     // - A log?
     // - Initialization?
     // - Key manager state
-    // - Signer state
     // - Server state
 }
 
