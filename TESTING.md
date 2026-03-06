@@ -7,6 +7,8 @@
   - [TL;DR](#tldr)
   - [Creating a test](#creating-a-test)
   - [Running single jobs/tests](#running-single-jobstests)
+  - [Overriding the build profile to use](#overriding-the-build-profile-to-use)
+  - [Overriding the log level to use](#overriding-the-log-level-to-use)
   - [Network requirement (why --network default)](#network-requirement-why---network-default)
   - [Limitations](#limitations)
     - [No init or systemd](#no-init-or-systemd)
@@ -66,6 +68,20 @@ You can run single jobs with act using the `--job` option. However, if the job
 has the `needs` option set to depend on other jobs, those jobs will always be run
 before.
 
+
+### Overriding the build profile to use
+
+By default tests are run using debug profile builds of the Cascade binaries.
+Except for tests that explicitly choose the debug or release build profile, the
+build profile used can be overridden by invoking `./act-wrapper` with argument
+`--input build-profile=XXX` where XXX must be one of debug or release.
+
+
+### Overriding the log level to use
+
+By default Cascade is configured to log at debug level. You can change this by
+invoking `./act-wrapper` with argument `--input log-level=XXX` where XXX must
+be one of error, warning, info, debug or trace.
 
 ### Network requirement (why --network default)
 
