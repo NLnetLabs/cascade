@@ -119,15 +119,15 @@ fn panic_hook_log_error(info: &std::panic::PanicHookInfo<'_>) {
             let line = loc.line();
             let col = loc.column();
             // String never returns an error for write_str.
-            let _ = writeln!(
+            let _ = write!(
                 buf,
-                "thread '{name}' {ids_text} panicked at {file}:{line}:{col}"
+                "thread '{name}' {ids_text} panicked at {file}:{line}:{col}: "
             );
         } else {
             // String never returns an error for write_str.
-            let _ = writeln!(
+            let _ = write!(
                 buf,
-                "thread '{name}' {ids_text} panicked at <unknown location>"
+                "thread '{name}' {ids_text} panicked at <unknown location>: "
             );
         }
 
