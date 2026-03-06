@@ -23,3 +23,12 @@ runs:
         "${GITHUB_WORKSPACE}/integration-tests/scripts/sed-config-dirs.sh" "${CASCADE_DIR}" | tee "${CASCADE_DIR}/config.toml" >/dev/null
       cascade template policy > "${CASCADE_DIR}/policies/default.toml"
       cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"
+
+      ## Leaving the non-daemonize invocation here for future reference
+      # nohup cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" &>"${CASCADE_DIR}/cascade-startup.log" &
+      # # Apparently, if the script finishes before the background task has been
+      # # fully started, bash will still kill it on exit. Therefore, we wait
+      # # a little bit until cascade is running.
+      # until pgrep cascade >/dev/null; do
+      #   sleep 0.1
+      # done
