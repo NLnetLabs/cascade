@@ -1,8 +1,6 @@
-use futures_util::TryFutureExt;
-
 use crate::ansi;
 use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult, SigningStageReport};
-use crate::client::{CascadeApiClient, format_http_error};
+use crate::client::CascadeApiClient;
 use crate::{eprintln, println};
 
 #[derive(Clone, Debug, clap::Args)]
@@ -27,12 +25,7 @@ impl Status {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             Some(StatusCommand::Keys) => {
-                let response: KeyStatusResult = client
-                    .get("/status/keys")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let response: KeyStatusResult = client.get_json("/status/keys").await?;
 
                 println!("First to expire (max 5):");
                 if response.expirations.is_empty() {
@@ -64,12 +57,7 @@ impl Status {
                 }
             }
             None => {
-                let response: ServerStatusResult = client
-                    .get("/status")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let response: ServerStatusResult = client.get_json("/status").await?;
 
                 if !response.hard_halted_zones.is_empty() {
                     eprintln!("The following zones are hard halted due to a serious problem:");

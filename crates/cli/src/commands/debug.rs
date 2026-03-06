@@ -1,8 +1,6 @@
-use futures_util::TryFutureExt;
-
 use crate::{
     api::{self, ChangeLogging, ChangeLoggingResult, TraceTarget},
-    client::{CascadeApiClient, format_http_error},
+    client::CascadeApiClient,
     println,
 };
 
@@ -42,15 +40,14 @@ impl Debug {
                 let level = level.map(Into::into);
                 let trace_targets = trace_targets.map(|t| t.into_iter().map(TraceTarget).collect());
                 let (): ChangeLoggingResult = client
-                    .post("debug/change-logging")
-                    .json(&ChangeLogging {
-                        level,
-                        trace_targets,
-                    })
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                    .post_json_with(
+                        "debug/change-logging",
+                        &ChangeLogging {
+                            level,
+                            trace_targets,
+                        },
+                    )
+                    .await?;
 
                 println!("Updated logging behavior");
                 Ok(())
