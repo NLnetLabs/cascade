@@ -17,17 +17,19 @@ pub enum Command {
     /// Change how Cascade logs information.
     ///
     /// Note that these changes are not persisted across restarts.
+    ///
+    /// At least one option of 'level' or 'trace-targets' is required.
     #[command(name = "change-logging")]
     ChangeLogging {
         /// The new log level to use.
-        #[arg(short = 'l', long = "level")]
+        #[arg(short = 'l', long = "level", required_unless_present_any = ["trace_targets"])]
         level: Option<LogLevel>,
 
         /// The new trace targets to use.
         ///
         /// These are names of Cascade modules for which trace-level logging
         /// will be enabled, even if the overall log level is lower.
-        #[arg(long = "trace-targets")]
+        #[arg(long = "trace-targets", value_delimiter = ',')]
         trace_targets: Option<Vec<String>>,
     },
 }
