@@ -228,6 +228,7 @@ dependencies = [
  "futures-util",
  "jiff",
  "reqwest",
+ "serde",
  "tokio",
  "tracing",
  "tracing-subscriber",
