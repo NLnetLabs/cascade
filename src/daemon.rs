@@ -68,77 +68,9 @@ pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
         // below, rust will catch that and dump the core, ending the process
         // too.
         std::panic::set_hook(Box::new(move |info| {
-            static FIRST_PANIC: AtomicBool = AtomicBool::new(true);
-
-            // Make sure only one thread can print a panic message to avoid
-            // interleaved panic outputs. If a second thread panics at the
-            // same time, it won't call process::exit to allow the first
-            // thread to log the panic message. This should never happen, but
-            // who knows...
-            if FIRST_PANIC.swap(false, Ordering::Relaxed) {
-                // Create a buffer for the panic message to avoid other
-                // threads printing trace logs into the middle of our panic
-                // message.
-                let mut buf = String::new();
-
-                let thread = std::thread::current();
-                let name = thread.name().unwrap_or("<unnamed>");
-                let thread_id = thread.id();
-                let process_id = std::process::id();
-                // Print the ThreadId with Debug because it doesn't implement
-                // Display and as_u64 is unstable. While the ThreadId doesn't
-                // tell us much currently, that might change in the future if
-                // we change the logging format for example.
-                let ids_text = format!("(ProcessId({process_id}), {thread_id:?})");
-
-                // Write thread and panic location info
-                if let Some(loc) = info.location() {
-                    let file = loc.file();
-                    let line = loc.line();
-                    let col = loc.column();
-                    // String never returns an error for write_str.
-                    let _ = writeln!(
-                        buf,
-                        "thread '{name}' {ids_text} panicked at {file}:{line}:{col}"
-                    );
-                } else {
-                    // String never returns an error for write_str.
-                    let _ = writeln!(
-                        buf,
-                        "thread '{name}' {ids_text} panicked at <unknown location>"
-                    );
-                }
-
-                // The payload_as_str function is only stabilized in Rust
-                // 1.91.0. Therefore, we use the old method for now. The
-                // payload is only a Box<dyn Any> if someone calls panic_any.
-                if let Some(s) = info.payload().downcast_ref::<&str>() {
-                    buf.push_str(s);
-                } else if let Some(s) = info.payload().downcast_ref::<String>() {
-                    buf.push_str(s);
-                } else {
-                    buf.push_str("Box<dyn Any>");
-                }
-
-                // Capture and print a backtrace if enabled.
-                let backtrace = Backtrace::capture();
-                match backtrace.status() {
-                    BacktraceStatus::Disabled => {
-                        buf.push_str("\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace");
-                    }
-                    BacktraceStatus::Captured => {
-                        let _ = writeln!(buf, "\n{backtrace}");
-                    }
-                    _ => {}
-                }
-
-                // Use tracing::error to log the created panic message to the
-                // configured log target.
-                error!("{}", buf);
-
-                // Take down the whole process if a thread panics.
-                std::process::exit(101);
-            }
+            panic_hook_log_error(info);
+            // Take down the whole process if a thread panics.
+            std::process::exit(101);
         }));
 
         debug!("Becoming daemon process");
@@ -155,6 +87,77 @@ pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn panic_hook_log_error(info: &std::panic::PanicHookInfo<'_>) {
+    static FIRST_PANIC: AtomicBool = AtomicBool::new(true);
+
+    // Make sure only one thread can print a panic message to avoid
+    // interleaved panic outputs. If a second thread panics at the
+    // same time, it won't call process::exit to allow the first
+    // thread to log the panic message. This should never happen, but
+    // who knows...
+    if FIRST_PANIC.swap(false, Ordering::Relaxed) {
+        // Create a buffer for the panic message to avoid other
+        // threads printing trace logs into the middle of our panic
+        // message.
+        let mut buf = String::new();
+
+        let thread = std::thread::current();
+        let name = thread.name().unwrap_or("<unnamed>");
+        let thread_id = thread.id();
+        let process_id = std::process::id();
+        // Print the ThreadId with Debug because it doesn't implement
+        // Display and as_u64 is unstable. While the ThreadId doesn't
+        // tell us much currently, that might change in the future if
+        // we change the logging format for example.
+        let ids_text = format!("(ProcessId({process_id}), {thread_id:?})");
+
+        // Write thread and panic location info
+        if let Some(loc) = info.location() {
+            let file = loc.file();
+            let line = loc.line();
+            let col = loc.column();
+            // String never returns an error for write_str.
+            let _ = writeln!(
+                buf,
+                "thread '{name}' {ids_text} panicked at {file}:{line}:{col}"
+            );
+        } else {
+            // String never returns an error for write_str.
+            let _ = writeln!(
+                buf,
+                "thread '{name}' {ids_text} panicked at <unknown location>"
+            );
+        }
+
+        // The payload_as_str function is only stabilized in Rust
+        // 1.91.0. Therefore, we use the old method for now. The
+        // payload is only a Box<dyn Any> if someone calls panic_any.
+        if let Some(s) = info.payload().downcast_ref::<&str>() {
+            buf.push_str(s);
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            buf.push_str(s);
+        } else {
+            buf.push_str("Box<dyn Any>");
+        }
+
+        // Capture and print a backtrace if enabled.
+        let backtrace = Backtrace::capture();
+        match backtrace.status() {
+            BacktraceStatus::Disabled => {
+                buf.push_str("\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace");
+            }
+            BacktraceStatus::Captured => {
+                let _ = writeln!(buf, "\n{backtrace}");
+            }
+            _ => {}
+        }
+
+        // Use tracing::error to log the created panic message to the
+        // configured log target.
+        error!("{}", buf);
+    }
 }
 
 fn into_daemon_path(p: Box<Utf8Path>) -> daemonbase::config::ConfigPath {
