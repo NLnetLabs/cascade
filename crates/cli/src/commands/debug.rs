@@ -1,3 +1,5 @@
+use std::fmt::{Display, Write};
+
 use futures_util::TryFutureExt;
 
 use crate::{
@@ -41,8 +43,20 @@ impl Debug {
                 level,
                 trace_targets,
             } => {
+                let mut msg = String::new();
+
+                if let Some(level) = &level {
+                    writeln!(msg, "Changed log-level to: {level}").unwrap();
+                }
+
+                if let Some(targets) = &trace_targets {
+                    let targets = targets.join(", ");
+                    writeln!(msg, "Changed trace targets to: {targets}").unwrap();
+                }
+
                 let level = level.map(Into::into);
                 let trace_targets = trace_targets.map(|t| t.into_iter().map(TraceTarget).collect());
+
                 let (): ChangeLoggingResult = client
                     .post("debug/change-logging")
                     .json(&ChangeLogging {
@@ -54,7 +68,8 @@ impl Debug {
                     .await
                     .map_err(format_http_error)?;
 
-                println!("Updated logging behavior");
+                println!("Updated logging behavior\n");
+                print!("{msg}");
                 Ok(())
             }
         }
@@ -95,5 +110,22 @@ impl From<LogLevel> for api::LogLevel {
             LogLevel::Error => Self::Error,
             LogLevel::Critical => Self::Critical,
         }
+    }
+}
+
+impl Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                LogLevel::Trace => "trace",
+                LogLevel::Debug => "debug",
+                LogLevel::Info => "info",
+                LogLevel::Warning => "warning",
+                LogLevel::Error => "error",
+                LogLevel::Critical => "critical",
+            }
+        )
     }
 }
