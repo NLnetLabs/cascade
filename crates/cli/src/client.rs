@@ -2,6 +2,8 @@ use std::error::Error;
 use std::time::Duration;
 
 use reqwest::{IntoUrl, Method, RequestBuilder};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tracing::debug;
 use url::Url;
 
@@ -34,13 +36,60 @@ impl CascadeApiClient {
         client.request(method, path)
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, s: &str) -> RequestBuilder {
         self.request(Method::GET, s)
     }
 
+    #[allow(dead_code)]
     pub fn post(&self, s: &str) -> RequestBuilder {
         self.request(Method::POST, s)
     }
+
+    #[allow(dead_code)]
+    pub async fn get_json_with<T, P>(&self, s: &str, payload: &P) -> Result<T, String>
+    where
+        T: DeserializeOwned,
+        P: Serialize,
+    {
+        send_format_decode(self.request(Method::GET, s).json(payload)).await
+    }
+
+    pub async fn post_json_with<T, P>(&self, s: &str, payload: &P) -> Result<T, String>
+    where
+        T: DeserializeOwned,
+        P: Serialize,
+    {
+        send_format_decode(self.request(Method::POST, s).json(payload)).await
+    }
+
+    pub async fn get_json<T>(&self, s: &str) -> Result<T, String>
+    where
+        T: DeserializeOwned,
+    {
+        send_format_decode(self.request(Method::GET, s)).await
+    }
+
+    pub async fn post_json<T>(&self, s: &str) -> Result<T, String>
+    where
+        T: DeserializeOwned,
+    {
+        send_format_decode(self.request(Method::POST, s)).await
+    }
+}
+
+pub async fn send_format_decode<T>(req: RequestBuilder) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    req.send()
+        .await
+        .map_err(format_http_error)? // Format connection errors
+        .error_for_status()
+        .map_err(format_http_error)? // Format status code errors
+        .json()
+        .await
+        .map_err(format_http_error) // Format decoding errors
 }
 
 /// Format HTTP errors with message based on error type, and chain error
