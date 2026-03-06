@@ -109,6 +109,16 @@ pub fn format_http_error(err: reqwest::Error) -> String {
     if err.is_connect() {
         // "Returns true if the error is related to connect" [1]
         message.push_str("HTTP connection failed");
+    } else if err.is_status() {
+        // "Returns true if the error is from Response::error_for_status" [1]
+        message.push_str("HTTP request failed with status code ");
+        if let Some(status) = err.status() {
+            message.push_str(status.as_str());
+        } else {
+            // This should not happen, as we get into this branch from
+            // Response::error_for_status.
+            message.push_str("<unknown>");
+        }
     } else if err.is_decode() {
         // "Returns true if the error is related to decoding the response’s body" [1]
         // Originally, we used the debug representation to be able to see all
