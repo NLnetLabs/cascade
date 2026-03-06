@@ -15,7 +15,6 @@ use std::{
 };
 
 use clap::Subcommand;
-use futures_util::TryFutureExt;
 use jiff::{Span, SpanRelativeTo};
 
 use crate::{
@@ -23,7 +22,7 @@ use crate::{
         HsmServerAdd, HsmServerAddError, HsmServerAddResult, HsmServerGetResult,
         HsmServerListResult, KmipServerState, PolicyInfo, PolicyInfoError, PolicyListResult,
     },
-    client::{CascadeApiClient, format_http_error},
+    client::CascadeApiClient,
     println,
 };
 
@@ -71,29 +70,28 @@ impl Hsm {
                 let ca_cert = read_binary_file(ca_cert_path.as_ref()).map_err(|e| e.to_string())?;
 
                 let res: Result<HsmServerAddResult, HsmServerAddError> = client
-                    .post("kmip")
-                    .json(&HsmServerAdd {
-                        server_id,
-                        ip_host_or_fqdn,
-                        port,
-                        username,
-                        password,
-                        client_cert,
-                        client_key,
-                        insecure,
-                        server_cert,
-                        ca_cert,
-                        connect_timeout,
-                        read_timeout,
-                        write_timeout,
-                        max_response_bytes,
-                        key_label_prefix,
-                        key_label_max_bytes,
-                    })
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                    .post_json_with(
+                        "kmip",
+                        &HsmServerAdd {
+                            server_id,
+                            ip_host_or_fqdn,
+                            port,
+                            username,
+                            password,
+                            client_cert,
+                            client_key,
+                            insecure,
+                            server_cert,
+                            ca_cert,
+                            connect_timeout,
+                            read_timeout,
+                            write_timeout,
+                            max_response_bytes,
+                            key_label_prefix,
+                            key_label_max_bytes,
+                        },
+                    )
+                    .await?;
 
                 match res {
                     Ok(HsmServerAddResult { vendor_id }) => {
@@ -104,12 +102,7 @@ impl Hsm {
             }
 
             HsmCommand::ListServers => {
-                let res: HsmServerListResult = client
-                    .get("kmip")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: HsmServerListResult = client.get_json("kmip").await?;
 
                 for server in res.servers {
                     println!("{server}");
@@ -117,12 +110,8 @@ impl Hsm {
             }
 
             HsmCommand::GetServer { server_id } => {
-                let res: Result<HsmServerGetResult, ()> = client
-                    .get(&format!("kmip/{server_id}"))
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<HsmServerGetResult, ()> =
+                    client.get_json(&format!("kmip/{server_id}")).await?;
 
                 match res {
                     Ok(res) => {
@@ -158,19 +147,10 @@ async fn get_policy_names_using_hsm(
     server_id: &String,
 ) -> Result<Vec<String>, String> {
     let mut policies_using_hsm = vec![];
-    let res: PolicyListResult = client
-        .get("policy/")
-        .send()
-        .and_then(|r| r.json())
-        .await
-        .map_err(format_http_error)?;
+    let res: PolicyListResult = client.get_json("policy/").await?;
     for policy_name in res.policies {
-        let res: Result<PolicyInfo, PolicyInfoError> = client
-            .get(&format!("policy/{policy_name}"))
-            .send()
-            .and_then(|r| r.json())
-            .await
-            .map_err(format_http_error)?;
+        let res: Result<PolicyInfo, PolicyInfoError> =
+            client.get_json(&format!("policy/{policy_name}")).await?;
 
         let p = match res {
             Ok(p) => p,

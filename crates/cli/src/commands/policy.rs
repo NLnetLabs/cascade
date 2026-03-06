@@ -1,5 +1,3 @@
-use futures_util::TryFutureExt;
-
 use crate::{
     ansi,
     api::{
@@ -7,7 +5,7 @@ use crate::{
         PolicyListResult, PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo,
         SignerSerialPolicyInfo,
     },
-    client::{CascadeApiClient, format_http_error},
+    client::CascadeApiClient,
     println,
 };
 
@@ -36,24 +34,15 @@ impl Policy {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             PolicyCommand::List => {
-                let res: PolicyListResult = client
-                    .get("policy/")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: PolicyListResult = client.get_json("policy/").await?;
 
                 for policy in res.policies {
                     println!("{policy}");
                 }
             }
             PolicyCommand::Show { name } => {
-                let res: Result<PolicyInfo, PolicyInfoError> = client
-                    .get(&format!("policy/{name}"))
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<PolicyInfo, PolicyInfoError> =
+                    client.get_json(&format!("policy/{name}")).await?;
 
                 let p = match res {
                     Ok(p) => p,
@@ -65,12 +54,8 @@ impl Policy {
                 print_policy(&p);
             }
             PolicyCommand::Reload => {
-                let res: Result<PolicyChanges, PolicyReloadError> = client
-                    .post("policy/reload")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<PolicyChanges, PolicyReloadError> =
+                    client.post_json("policy/reload").await?;
 
                 let res = match res {
                     Ok(res) => res,

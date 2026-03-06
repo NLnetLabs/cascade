@@ -2,11 +2,10 @@ use std::ops::ControlFlow;
 use std::time::{Duration, SystemTime};
 
 use camino::Utf8PathBuf;
-use futures_util::TryFutureExt;
 
 use crate::ansi;
 use crate::api::*;
-use crate::client::{CascadeApiClient, format_http_error};
+use crate::client::CascadeApiClient;
 use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -199,17 +198,16 @@ impl Zone {
                 }
 
                 let res: Result<ZoneAddResult, ZoneAddError> = client
-                    .post("zone/add")
-                    .json(&ZoneAdd {
-                        name,
-                        source,
-                        policy,
-                        key_imports,
-                    })
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                    .post_json_with(
+                        "zone/add",
+                        &ZoneAdd {
+                            name,
+                            source,
+                            policy,
+                            key_imports,
+                        },
+                    )
+                    .await?;
 
                 match res {
                     Ok(res) => {
@@ -220,12 +218,8 @@ impl Zone {
                 }
             }
             ZoneCommand::Remove { name } => {
-                let res: Result<ZoneRemoveResult, ZoneRemoveError> = client
-                    .post(&format!("zone/{name}/remove"))
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<ZoneRemoveResult, ZoneRemoveError> =
+                    client.post_json(&format!("zone/{name}/remove")).await?;
 
                 match res {
                     Ok(res) => {
@@ -236,12 +230,7 @@ impl Zone {
                 }
             }
             ZoneCommand::List => {
-                let response: ZonesListResult = client
-                    .get("zone/")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let response: ZonesListResult = client.get_json("zone/").await?;
 
                 for zone_name in response.zones {
                     println!("{}", zone_name);
@@ -250,12 +239,7 @@ impl Zone {
             }
             ZoneCommand::Reload { zone } => {
                 let url = format!("zone/{zone}/reload");
-                let res: Result<ZoneReloadResult, ZoneReloadError> = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<ZoneReloadResult, ZoneReloadError> = client.post_json(&url).await?;
 
                 match res {
                     Ok(res) => {
@@ -283,12 +267,7 @@ impl Zone {
                 };
 
                 let url = format!("/zone/{name}/{stage}/{serial}/approve");
-                let result: ZoneReviewResult = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let result: ZoneReviewResult = client.post_json(&url).await?;
 
                 match result {
                     Ok(ZoneReviewOutput {}) => {
@@ -321,12 +300,7 @@ impl Zone {
                 };
 
                 let url = format!("/zone/{name}/{stage}/{serial}/reject");
-                let result: ZoneReviewResult = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let result: ZoneReviewResult = client.post_json(&url).await?;
 
                 match result {
                     Ok(ZoneReviewOutput {}) => {
@@ -343,12 +317,7 @@ impl Zone {
             }
             ZoneCommand::Status { zone, detailed } => {
                 let url = format!("zone/{}/status", zone);
-                let response: Result<ZoneStatus, ZoneStatusError> = client
-                    .get(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let response: Result<ZoneStatus, ZoneStatusError> = client.get_json(&url).await?;
 
                 match response {
                     Ok(status) => Self::print_zone_status(client, status, detailed).await,
@@ -359,12 +328,7 @@ impl Zone {
             }
             ZoneCommand::History { zone } => {
                 let url = format!("zone/{}/history", zone);
-                let response: Result<ZoneHistory, ZoneHistoryError> = client
-                    .get(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let response: Result<ZoneHistory, ZoneHistoryError> = client.get_json(&url).await?;
 
                 match response {
                     Ok(response) => {
@@ -476,12 +440,7 @@ impl Zone {
     ) -> Result<(), String> {
         // Fetch the policy for the zone.
         let url = format!("policy/{}", zone.policy);
-        let response: Result<PolicyInfo, PolicyInfoError> = client
-            .get(&url)
-            .send()
-            .and_then(|r| r.json())
-            .await
-            .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+        let response: Result<PolicyInfo, PolicyInfoError> = client.get_json(&url).await?;
 
         let policy = response.map_err(|_| {
             format!(
