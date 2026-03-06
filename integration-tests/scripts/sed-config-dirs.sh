@@ -41,23 +41,12 @@ _path=${1-$PWD}
 _log_level=${2-debug}
 
 # The base dir must be an absolute path
-if [[ -n "${_path}" ]]; then
-  # A very naive check, but sufficient for our use case
-  if [[ "${_path}" == /* ]]; then
-    _base_dir=${_path}
-  else
-    _base_dir=$(realpath -- "${_path}")
-  fi
-else
-  _base_dir=$PWD
-# The base dir must be an absolute path
 # A very naive check, but sufficient for our use case
 if [[ "${_path}" == /* ]]; then
   _base_dir=${_path}
 else
   _base_dir=$(realpath -- "${_path}")
 fi
-
 
 source "$(dirname "$0")/common.sh"
 
