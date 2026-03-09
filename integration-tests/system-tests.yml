@@ -145,3 +145,13 @@ jobs:
       - uses: ./integration-tests/tests/ixfr-in
         with:
           log-level: ${{ inputs.log-level }}
+
+  notify-in-for-unknown-zone:
+    name: 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/notify-in-for-unknown-zone
