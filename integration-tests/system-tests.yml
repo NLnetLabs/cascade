@@ -145,3 +145,13 @@ jobs:
       - uses: ./integration-tests/tests/ixfr-in
         with:
           log-level: ${{ inputs.log-level }}
+
+  axfr-in-large:
+    name: 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/axfr-in-large
