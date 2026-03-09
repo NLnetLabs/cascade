@@ -81,7 +81,6 @@ pub struct ZoneSigner {
     // TODO: Discuss whether this semaphore is necessary.
     max_concurrent_operations: usize,
     concurrent_operation_permits: Arc<Semaphore>,
-    max_concurrent_rrsig_generation_tasks: usize,
     signer_status: ZoneSignerStatus,
     kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
 
@@ -99,11 +98,6 @@ impl ZoneSigner {
         Self {
             max_concurrent_operations,
             concurrent_operation_permits: Arc::new(Semaphore::new(max_concurrent_operations)),
-            max_concurrent_rrsig_generation_tasks: (std::thread::available_parallelism()
-                .unwrap()
-                .get()
-                - 1)
-            .clamp(1, 32),
             signer_status: ZoneSignerStatus::new(),
             kmip_servers: Default::default(),
             next_resign_time_tx,
@@ -454,6 +448,7 @@ impl ZoneSigner {
         status.write().unwrap().current_action = "Collecting records to sign".to_string();
         debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
+        // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
             .records()
             .iter()
@@ -739,6 +734,10 @@ impl ZoneSigner {
                 records.push(Record::from_record(nsec3param));
             }
         }
+        // Use a stable sort; the stable sort algorithm detects runs of sorted
+        // elements ('records' contains two concatenated pre-sorted runs) and
+        // can efficiently sort around them.
+        records.par_sort();
         let unsigned_records = records;
         let denial_time = denial_start.elapsed();
         let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
@@ -763,13 +762,9 @@ impl ZoneSigner {
         debug!("[ZS]: Generating RRSIG records.");
         status.write().unwrap().current_action = "Generating signature records".to_string();
 
-        // Work out how many RRs have to be signed and how many concurrent
-        // threads to sign with and how big each chunk to be signed should be.
-        let rr_count = RecordsIter::new_from_owned(&unsigned_records).count();
-        let (parallelism, chunk_size) = self.determine_signing_concurrency(rr_count);
-        info!(
-            "SIGNER: Using {parallelism} threads to sign {rr_count} owners in chunks of {chunk_size}.",
-        );
+        // TODO: Configure Rayon's thread pool to set the number of threads. By
+        // default, it relies on 'std::thread::available_parallelism()'.
+        let parallelism = rayon::current_num_threads();
 
         {
             let mut v = status.write().unwrap();
@@ -814,8 +809,13 @@ impl ZoneSigner {
             )
         });
 
-        // Collect the signatures together, folding errors together.
+        // Convert the signatures into new-base types and collect them together.
+        // If errors occur, one error is arbitrarily chosen and returned.
         let signatures = signatures
+            .try_fold(Vec::new, |mut a, b| {
+                a.extend(b?.into_iter().map(|r| OldRecord::from_record(r).into()));
+                Ok::<_, SigningError>(a)
+            })
             .try_reduce(Vec::new, |mut a, mut b| {
                 a.append(&mut b);
                 Ok(a)
@@ -823,11 +823,7 @@ impl ZoneSigner {
             .map_err(|err| SignerError::SigningError(err.to_string()))?;
         let total_signatures = signatures.len();
 
-        new_records.par_extend(
-            signatures
-                .into_par_iter()
-                .map(|r| OldRecord::from_record(r).into()),
-        );
+        new_records.extend(signatures);
         new_records.par_sort();
         writer.set_records(new_records).unwrap();
 
@@ -922,21 +918,6 @@ impl ZoneSigner {
         );
 
         Ok(())
-    }
-
-    fn determine_signing_concurrency(&self, rr_count: usize) -> (usize, usize) {
-        // TODO: Relevant user suggestion: "Misschien een tip voor NameShed:
-        // Het aantal signerthreads dynamisch maken, zodat de signer zelf
-        // extra threads kan opstarten als er geconstateerd wordt dat er veel
-        // nieuwe sigs gemaakt moeten worden."
-        let parallelism = if rr_count < 1024 {
-            if rr_count >= 2 { 2 } else { 1 }
-        } else {
-            self.max_concurrent_rrsig_generation_tasks
-        };
-        let parallelism = std::cmp::min(parallelism, self.max_concurrent_rrsig_generation_tasks);
-        let chunk_size = rr_count / parallelism;
-        (parallelism, chunk_size)
     }
 
     fn signing_config(&self, policy: &PolicyVersion) -> SigningConfig<Bytes, MultiThreadedSorter> {
