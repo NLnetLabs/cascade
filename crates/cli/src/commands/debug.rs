@@ -68,7 +68,6 @@ impl Debug {
                     .await
                     .map_err(format_http_error)?;
 
-                println!("Updated logging behavior\n");
                 print!("{msg}");
                 Ok(())
             }
