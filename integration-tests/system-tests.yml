@@ -145,3 +145,13 @@ jobs:
       - uses: ./integration-tests/tests/ixfr-in
         with:
           log-level: ${{ inputs.log-level }}
+
+  remove-zone:
+    name: 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/remove-zone
