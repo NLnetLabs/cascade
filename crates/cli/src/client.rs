@@ -105,7 +105,7 @@ pub fn format_http_error(err: reqwest::Error) -> String {
         return String::from("HTTP connection timed out");
     }
 
-    // [1]: https://docs.rs/reqwest/latest/reqwest/struct.Error.html
+    // [1]: https://docs.rs/reqwest/0.13.2/reqwest/struct.Error.html
     if err.is_connect() {
         // "Returns true if the error is related to connect" [1]
         message.push_str("HTTP connection failed");
