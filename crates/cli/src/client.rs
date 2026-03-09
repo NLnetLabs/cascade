@@ -36,17 +36,17 @@ impl CascadeApiClient {
         client.request(method, path)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn get(&self, s: &str) -> RequestBuilder {
         self.request(Method::GET, s)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn post(&self, s: &str) -> RequestBuilder {
         self.request(Method::POST, s)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub async fn get_json_with<T, P>(&self, s: &str, payload: &P) -> Result<T, String>
     where
         T: DeserializeOwned,
