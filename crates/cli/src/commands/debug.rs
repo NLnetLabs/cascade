@@ -5,7 +5,6 @@ use futures_util::TryFutureExt;
 use crate::{
     api::{self, ChangeLogging, ChangeLoggingResult, TraceTarget},
     client::{CascadeApiClient, format_http_error},
-    println,
 };
 
 #[derive(Clone, Debug, clap::Args)]
