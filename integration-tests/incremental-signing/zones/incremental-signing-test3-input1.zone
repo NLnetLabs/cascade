@@ -20,7 +20,7 @@ a.delegation		A	192.0.2.0
 aaaa.delegation		AAAA	2001:db8::
 txt.delegation		TXT	"TXT not-below/below delegation"
 ds.delegation		DS	12345 13 253 04
-txt.ent.delegation	TXT	"TXT not-below/below delegation iwth ENT"
+txt.ent.delegation	TXT	"TXT not-below/below delegation with ENT"
 
 ; A delegation belown an ENT will be added later. Force the name to exist.
 delegation.ent		A	192.0.2.0
@@ -51,7 +51,7 @@ a.no-delegation		A	192.0.2.0
 aaaa.no-delegation	AAAA	2001:db8::
 txt.no-delegation	TXT	"TXT not-below/below delegation"
 ds.no-delegation	DS	12345 13 253 04
-txt.ent.no-delegation	TXT	"TXT not-below/below delegation iwth ENT"
+txt.ent.no-delegation	TXT	"TXT not-below/below delegation with ENT"
 
 ; The delegation will be removed later. With DS
 ds-no-delegation	NS	ns5
@@ -91,7 +91,7 @@ a.occluded.existing-delegation		A	192.0.2.0
 aaaa.occluded.existing-delegation	AAAA	2001:db8::
 txt.occluded.existing-delegation	TXT	"TXT not-below/below delegation"
 ds.occluded.existing-delegation		DS	12345 13 253 04
-txt.ent.occluded.existing-delegation	TXT	"TXT not-below/below delegation iwth ENT"
+txt.ent.occluded.existing-delegation	TXT	"TXT not-below/below delegation with ENT"
 
 ; Test removing an NS record that occluded another NS record.
 ; Have a DS record and other records the occluded NS record as well.
@@ -108,7 +108,7 @@ a.occluded.existing-delegation2		A	192.0.2.0
 aaaa.occluded.existing-delegation2	AAAA	2001:db8::
 txt.occluded.existing-delegation2	TXT	"TXT not-below/below delegation"
 ds.occluded.existing-delegation2	DS	12345 13 253 04
-txt.ent.occluded.existing-delegation2	TXT	"TXT not-below/below delegation iwth ENT"
+txt.ent.occluded.existing-delegation2	TXT	"TXT not-below/below delegation with ENT"
 
 ; For NSEC remove the last entry in the NSEC chain.
 zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	TXT "Last"

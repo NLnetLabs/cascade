@@ -111,10 +111,11 @@ td3gcp8q47o18htn3hq26jj9qonk7912.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114
 txt.delegation.ent.example.	3600	IN	TXT	"TXT not-below/below delegation"
 txt.delegation.example.	3600	IN	TXT	"TXT not-below/below delegation"
 txt.ent.delegation.ent.example.	3600	IN	TXT	"TXT not-below/below delegation with ENT"
-txt.ent.delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
-txt.ent.no-delegation.example.	3600	IN	RRSIG	TXT 15 4 3600 20231114221320 20200913122640 2835 example. NuaY3ZSeqM/WkRotfhV8MA5W4sOU+ZG4ld7+HgKc2Etb9KqSV6I7RuMO2PmJmMDNFlg4oyaoZyqmnITL+uKeBg==
-txt.ent.no-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
-txt.ent.occluded.existing-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation iwth ENT"
+txt.ent.delegation.example.	3600	IN	TXT	"TXT not-below/below delegation with ENT"
+txt.ent.no-delegation.example.	3600	IN	RRSIG	TXT 15 4 3600 20231114221320 20200913122640 2835 example. xlq2pX04wyJk1qe3R83rR/M4B4QlFktbLmdETHc1uKVUPgKlVos3BFeItszKOz8lIrPinKmPT7FYHvEueG/6Dw==
+txt.ent.no-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation with ENT"
+txt.ent.occluded.existing-delegation2.example.	3600	IN	TXT	"TXT not-below/below delegation with ENT"
+txt.ent.occluded.existing-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation with ENT"
 txt.no-delegation.example.	3600	IN	RRSIG	TXT 15 3 3600 20231114221320 20200913122640 2835 example. AQsSVR9J9pGeVNFGq7TDomMd3f05i2eDcJAoTWkI2OlVD5Aqz9JPJf39YyHEuxBOBTzHQBh25oU75QE2CJcpCQ==
 txt.no-delegation.example.	3600	IN	TXT	"TXT not-below/below delegation"
 txt.occluded.existing-delegation2.example.	3600	IN	TXT	"TXT not-below/below delegation"

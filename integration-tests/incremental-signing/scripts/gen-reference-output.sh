@@ -30,9 +30,7 @@ do
 		do
 			echo $z
 			echo $zonemd $zonemd_params $zonemd_output_name
-			# Remove ZONEMD from input until the bug in sigzone is fixed.
-			ldns-zcat -o example $z | ldns-read-zone -e ZONEMD > /tmp/input
-			dnst signzone -T -o example -f - -e $EXPIRATION -i $INCEPTION $params $zonemd_params /tmp/input keys/Kexample.+015+02835 |
+			dnst signzone -T -o example -f - -e $EXPIRATION -i $INCEPTION $params $zonemd_params $z keys/Kexample.+015+02835 |
 				sort -u > reference-output/$(basename $z).${m}${zonemd_output_name}.signed.sorted
 		done
 	done

@@ -62,4 +62,4 @@ non-auth.delegation2.delete A	192.0.2.3
 @		        IN      NSEC3PARAM      1 2 3 4567
 
 ; Make sure ZONEMD gets deleted or replaced.
-@			IN	ZONEMD		1 2 3 4567
+@			IN	ZONEMD		1 2 3 11 22 33 44 55 66 77 88 99 aa bb cc

@@ -10,6 +10,7 @@ example.	3600	IN	RRSIG	NSEC3PARAM 15 1 3600 20231114221320 20200913122640 2835 e
 example.	3600	IN	RRSIG	SOA 15 1 3600 20231114221320 20200913122640 2835 example. JSjnW9Dd3dpq141k8IQi/AVWvV2Z9MOfJuo10PIkPN5keA9Wt2/EZ+GSun7hcOqUUs1v4NMx8nNOeCR2UPzIAQ==
 example.	3600	IN	SOA	ns1.example. hostmaster.example. 2025062901 7200 3600 1209600 3600
 ns1.site1.example.	3600	IN	A	192.168.0.1
+ns2.site1.example.	3600	IN	A	192.168.0.2
 site1.example.	3600	IN	NS	ns1.site1.example.
 site1.example.	3600	IN	NS	ns2.site1.example.
 site2.example.	3600	IN	NS	ns1.site1.example.
