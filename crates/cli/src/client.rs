@@ -4,7 +4,7 @@ use std::time::Duration;
 use reqwest::{IntoUrl, Method, RequestBuilder};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use tracing::debug;
+use tracing::{debug, warn};
 use url::Url;
 
 const HTTP_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -117,6 +117,9 @@ pub fn format_http_error(err: reqwest::Error) -> String {
         } else {
             // This should not happen, as we get into this branch from
             // Response::error_for_status.
+            warn!(
+                "internal inconsistency: HTTP error is of type status but did not contain a status code"
+            );
             message.push_str("<unknown>");
         }
     } else if err.is_decode() {
