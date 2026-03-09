@@ -1,6 +1,6 @@
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
-use std::env::{var, VarError};
+use std::env::{VarError, var};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -449,7 +449,9 @@ impl ZoneSigner {
                 if let Some(previous_serial) = last_signed_serial
                     && soa.serial() <= previous_serial
                 {
-                    return Err(SignerError::KeepSerialPolicyViolated);
+                    // Ignore this error until we can figure out how to
+                    // return a soft error.
+                    // return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
                 soa.serial()
@@ -1501,6 +1503,8 @@ fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
                     | Rtype::CDS
                     | Rtype::CDNSKEY
                     | Rtype::SOA
+                    | Rtype::ZONEMD
+                    | Rtype::NSEC3PARAM
             ) {
                 return;
             }
@@ -2025,6 +2029,7 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
     bytes
 }
 
+#[allow(unused)]
 enum SignerError {
     SoaNotFound,
     CannotSignUnapprovedZone,

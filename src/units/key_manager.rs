@@ -17,7 +17,7 @@ use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env::{var, VarError};
+use std::env::{VarError, var};
 use std::ffi::OsStr;
 use std::fmt::Formatter;
 use std::fs::{File, OpenOptions, metadata};
@@ -360,16 +360,15 @@ impl KeyManager {
             policy_to_commands(&policy.latest)
                 .into_iter()
                 .chain({
-                    let faketime_cmd = match var("CASCADE_FAKETIME") {
+                    match var("CASCADE_FAKETIME") {
                         Ok(val) => vec![vec!["fake-time".to_string(), val]],
                         Err(VarError::NotPresent) => vec![],
                         Err(e) => {
                             return Err(ZoneAddError::Other(format!(
                                 "unable to lookup CASCADE_FAKETIME: {e}"
-                            )))
+                            )));
                         }
-                    };
-                    faketime_cmd
+                    }
                 })
                 .map(|v| {
                     let mut final_cmd = vec!["set".into()];
