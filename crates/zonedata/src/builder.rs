@@ -5,7 +5,7 @@
 //! and are part of the zone instance lifecycle. They provide types from the
 //! [`crate::writer`] module for performing the actual writing.
 
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use crate::{
     Data, DiffData, LoadedZonePatcher, LoadedZoneReader, LoadedZoneReplacer, SignedZonePatcher,
@@ -265,6 +265,15 @@ impl LoadedZoneBuilder {
         } else {
             Err(self)
         }
+    }
+}
+
+impl fmt::Debug for LoadedZoneBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoadedZoneBuilder")
+            .field("index", &(self.index as usize))
+            .field("built", &self.built())
+            .finish()
     }
 }
 
@@ -687,6 +696,17 @@ impl SignedZoneBuilder {
         } else {
             Err(self)
         }
+    }
+}
+
+impl fmt::Debug for SignedZoneBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignedZoneBuilder")
+            .field("loaded_index", &(self.loaded_index as usize))
+            .field("signed_index", &(self.signed_index as usize))
+            .field("have_next_loaded", &self.have_next_loaded())
+            .field("built", &self.built())
+            .finish()
     }
 }
 

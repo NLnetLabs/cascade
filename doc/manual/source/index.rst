@@ -162,7 +162,7 @@ Examples of things we're interested in:
    man/cascade-status
    man/cascade-template
    man/cascade-zone
-   kmip2pkcs11 Daemon <https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/man/kmip2pkcs11.html>
-   kmip2pkcs11 Configuration File Format <https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/man/kmip2pkcs11-config.toml.html>
+   cascade-hsm-bridge Daemon <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge.html>
+   cascade-hsm-bridge Configuration File Format <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge-config.toml.html>
 
 .. ^ need to work around lack of intersphinx links in toctree by creating a hyperlink

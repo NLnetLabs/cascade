@@ -652,7 +652,9 @@ impl Hash for ZoneByPtr {
 
 impl fmt::Debug for ZoneByPtr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        f.debug_struct("ZoneByPtr")
+            .field("name", &self.0.name)
+            .finish_non_exhaustive()
     }
 }
 

@@ -23,7 +23,7 @@ use crate::manager::record_zone_event;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::ZoneServer;
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, PipelineMode};
+use crate::zone::{HistoricalEvent, PipelineMode, ZoneHandle};
 use crate::{
     api,
     config::Config,
@@ -179,6 +179,11 @@ pub async fn add_zone(
         // NOTE: The zone is marked as dirty by the above operation.
     }
 
+    {
+        let mut state = center.state.lock().unwrap();
+        state.mark_dirty(center);
+    }
+
     info!("Added zone '{name}'");
     Ok(())
 }
@@ -198,8 +203,6 @@ async fn register_zone(
 
 /// Remove a zone.
 pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
-    center.loader.remove_zone(center, &name);
-
     let mut state = center.state.lock().unwrap();
     let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?;
 
@@ -227,6 +230,14 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 
     let mut zone_state = zone.0.state.lock().unwrap();
 
+    ZoneHandle {
+        zone: &zone.0,
+        state: &mut zone_state,
+        center,
+    }
+    .loader()
+    .prep_removal();
+
     // Update the policy's referenced zones.
     if let Some(policy) = zone_state.policy.take() {
         let policy = state
@@ -239,7 +250,8 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     }
 
     info!("Removed zone '{name}'");
-    record_zone_event(center, &name, HistoricalEvent::Removed, None);
+    zone_state.record_event(HistoricalEvent::Removed, None);
+    zone.0.mark_dirty(&mut zone_state, center);
     Ok(())
 }
 

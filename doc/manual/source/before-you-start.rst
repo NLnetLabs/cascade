@@ -49,8 +49,8 @@ Cascade consists of three main components and an optional fourth:
   :doc:`key management <key-management>` of Cascade, including automation of
   key rolls. It is invoked as needed by the :program:`cascaded` daemon. 
 
-- The *optional* :program:`kmip2pkcs11` daemon, which is only required when
-  using a PKCS#11 compatible :doc:`HSM <hsms>`. 
+- The *optional* :program:`cascade-hsm-bridge` daemon, which is only required
+  when using a PKCS#11 compatible :doc:`HSM <hsms>`.
 
 Supported Inputs/Outputs
 ------------------------

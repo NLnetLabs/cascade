@@ -7,6 +7,8 @@
   - [TL;DR](#tldr)
   - [Creating a test](#creating-a-test)
   - [Running single jobs/tests](#running-single-jobstests)
+  - [Overriding the build profile to use](#overriding-the-build-profile-to-use)
+  - [Overriding the log level to use](#overriding-the-log-level-to-use)
   - [Network requirement (why --network default)](#network-requirement-why---network-default)
   - [Limitations](#limitations)
     - [No init or systemd](#no-init-or-systemd)
@@ -30,7 +32,7 @@ Unit tests can be run as usual for Rust projects using `cargo test`:
 
 ## Integration/System testing with `act`
 
-The GitHub Action workflow in `.github/workflows/system-tests.yml` is currently
+The GitHub Action workflow in `integration-tests/system-tests.yml` is currently
 only for use with https://github.com/nektos/act via the `act-wrapper` script at
 the root of this repository, which creates a custom container with a freshly
 built cascade.
@@ -38,15 +40,9 @@ built cascade.
 
 ### TL;DR
 
-Run all tests with:
+Run all tests with: `./act-wrapper`
 
-- Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml`
-- Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml`
-
-Run a single test with:
-
-- Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml --job your-test`
-- Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml --job your-test`
+Run a single test with: `./act-wrapper --job your-test`
 
 Create a new test with:
 
@@ -55,9 +51,9 @@ Create a new test with:
 
 ### Creating a test
 
-The workflow file `.github/workflows/system-tests.yml` only contains "stub"
+The workflow file `integration-tests/system-tests.yml` only contains "stub"
 runners for the tests, with the tests themselves being written in actions in
-`.github/actions/tests/`.
+`integration-tests/tests/`.
 
 You can easily generate the scaffolding for a test with the script
 `./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.
@@ -73,6 +69,20 @@ has the `needs` option set to depend on other jobs, those jobs will always be ru
 before.
 
 
+### Overriding the build profile to use
+
+By default tests are run using debug profile builds of the Cascade binaries.
+Except for tests that explicitly choose the debug or release build profile, the
+build profile used can be overridden by invoking `./act-wrapper` with argument
+`--input build-profile=XXX` where XXX must be one of debug or release.
+
+
+### Overriding the log level to use
+
+By default Cascade is configured to log at debug level. You can change this by
+invoking `./act-wrapper` with argument `--input log-level=XXX` where XXX must
+be one of error, warning, info, debug or trace.
+
 ### Network requirement (why --network default)
 
 In the test environment, Unbound needs to bind to localhost:53, which is not
@@ -84,8 +94,10 @@ need to specify a different container network to use. Docker and Podman each
 provide default networks (not to be confused with act's default network
 selection, which is Docker/Podman's `host` network). Docker's default
 network is called `default`, while Podman's default network is called `podman`.
-Therefore, you need to use `act --network default` on Docker, and `act
---network podman` on Podman.
+Therefore, the `act-wrapper` automatically sets the `--network` option for
+`act`. If you want to use a different network than the default one, you can
+simply run `act-wrapper --network <your-network>` and it will override the
+default network set by the `act-wrapper`.
 
 
 ### Limitations

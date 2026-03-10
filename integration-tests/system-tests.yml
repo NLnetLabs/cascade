@@ -4,9 +4,7 @@
 #
 # Further documentation is in TESTING.md.
 #
-# TL;DR:
-#   - Docker: `./act-wrapper --network default -W .github/workflows/system-tests.yml --job your-test`
-#   - Podman: `./act-wrapper --network podman -W .github/workflows/system-tests.yml --job your-test`
+# TL;DR: `./act-wrapper --job your-test`
 #
 # ## Creating a new test
 #
@@ -15,7 +13,7 @@
 # `integration-tests/scripts/add-test.sh <test-name> [<description>] [<PR>]`.
 #
 # It will add the stub job to this workflow file and create the action file for
-# the actual test in `.github/actions/tests/<test-name>` .
+# the actual test in `integration-tests/tests/<test-name>` .
 
 # GitHub Actions environment variables are documented at
 # https://docs.github.com/en/actions/reference/workflows-and-actions/variables
@@ -26,6 +24,26 @@ on:
   # of the time this expensive test suite should not be run. Using this
   # trigger allows explicitly running this test suite on a selected branch.
   workflow_dispatch:
+    inputs:
+      build-profile:
+        description: Whether to build and test in debug mode or release mode.
+        required: false
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+      log-level:
+        description: The level of logging that Cascade should output.
+        required: false
+        default: debug
+        type: choice
+        options:
+          - error
+          - warning
+          - info
+          - debug
+          - trace
 
 env:
   # Set this assignment to your choosing to set the cargo build verbosity
@@ -36,6 +54,7 @@ defaults:
   run:
     # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
     shell: bash --noprofile --norc -eo pipefail -x {0}
+  
 
 jobs:
   test-release-version:
@@ -73,7 +92,12 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/tests/add-zone-query
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/add-zone-query
+        with:
+          log-level: ${{ inputs.log-level }}
 
   # Added for https://github.com/NLnetLabs/cascade/pull/402
   load-zonefile:
@@ -84,7 +108,12 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/tests/load-zonefile
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/load-zonefile
+        with:
+          log-level: ${{ inputs.log-level }}
 
   # Added for https://github.com/NLnetLabs/cascade/pull/398
   review-unsigned-zone:
@@ -95,4 +124,24 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/tests/review-unsigned-zone
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/review-unsigned-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  ixfr-in:
+    name: Receive a zone via IXFR from the NSD primary.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/ixfr-in
+        with:
+          log-level: ${{ inputs.log-level }}

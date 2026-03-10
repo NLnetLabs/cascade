@@ -5,10 +5,10 @@ use reqwest::{IntoUrl, Method, RequestBuilder};
 use tracing::{debug, warn};
 use url::Url;
 
-use crate::api::dep::serde::de::DeserializeOwned;
 use crate::api::dep::serde::Serialize;
+use crate::api::dep::serde::de::DeserializeOwned;
 
-const HTTP_CLIENT_TIMEOUT: Duration = Duration::from_secs(120);
+const HTTP_CLIENT_TIMEOUT: Duration = Duration::from_secs(30);
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
 #[derive(Clone)]

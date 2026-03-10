@@ -1,0 +1,210 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Receive a zone via IXFR from the NSD primary.'
+description: 'Receive a zone via IXFR from the NSD primary.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Verify NSD primary zone.
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 1055 example.test SOA | grep -q 'ns1.example.test. mail.example.test. 1 60 60 3600 5'; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: NSD is not serving the zone as expected"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Add the NSD primary zone to Cascade.
+      run: cascade zone add --policy default --source 127.0.0.1:1055 example.test
+
+    - name: Wait for Cascade to load the zone.
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Loaded version 1"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: zone status did not report that the zone serial 1 was loaded"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Verify that NSD reports that the zone was fetched via AXFR.
+      run: |
+        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
+        if [[ "${STAT}" != "num.raxfr=1" ]]; then
+          echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
+          exit 1
+        fi
+        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
+        if [[ "${STAT}" != "num.rixfr=0" ]]; then
+          echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
+          exit 1
+        fi
+
+    - name: Query SOA serial at Cascade unsigned review server
+      run: |
+        SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
+        if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 1 60 60 3600 5" ]]; then
+          echo "::error:: Expected SOA serial '1' but dig reports '${SOA_RR}'"
+          exit 1
+        fi
+
+    - name: Edit the source zone and tell NSD to reload it.
+      run: |
+        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
+        perl -pi -e 's/1          ; serial/2          ; serial/' ${ZONE_FILE}
+        perl -pi -e 's/www         A   169.254.1.1/www         A   192.168.0.1/' ${ZONE_FILE}
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+
+    - name: Query changed SOA at the NSD primary
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 1055 example.test SOA | grep -q 'ns1.example.test. mail.example.test. 2 60 60 3600 5'; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: NSD did not reload the modified zonefile"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Cascade should now receive a NOTIFY then fetch the zone via IXFR
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Loaded version 2"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: zone status did not report that the zone serial 2 was loaded"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Query changed SOA at Cascade unsigned review server
+      run: |
+        SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
+        if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 2 60 60 3600 5" ]]; then
+          echo "::error:: Expected SOA serial '2' but dig reports '${SOA_RR}'"
+          exit 1
+        fi
+
+    - name: Verify that NSD reports that the zone was fetched via IXFR.
+      run: |
+        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
+        if [[ "${STAT}" != "num.raxfr=1" ]]; then
+          echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
+          exit 1
+        fi
+        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
+        if [[ "${STAT}" != "num.rixfr=1" ]]; then
+          echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
+          exit 1
+        fi
+
+    - name: Edit the source zone again and tell NSD to reload it.
+      run: |
+        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
+        perl -pi -e 's/2          ; serial/3          ; serial/' ${ZONE_FILE}
+        perl -pi -e 's/mail        MX  10 example.test./mail        MX  20 example.test./' ${ZONE_FILE}
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+
+    - name: Query changed SOA at the NSD primary
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 1055 example.test SOA | grep -q 'ns1.example.test. mail.example.test. 3 60 60 3600 5'; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: NSD did not reload the modified zonefile"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Cascade should now receive a NOTIFY then fetch the zone via IXFR
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Loaded version 3"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: zone status did not report that the zone serial 3 was loaded"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Query changed SOA at Cascade unsigned review server
+      run: |
+        SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
+        if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 3 60 60 3600 5" ]]; then
+          echo "::error:: Expected SOA serial '3' but dig reports '${SOA_RR}'"
+          exit 1
+        fi
+
+    - name: Verify that NSD reports that the zone was fetched via IXFR.
+      run: |
+        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.raxfr')
+        if [[ "${STAT}" != "num.raxfr=1" ]]; then
+          echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
+          exit 1
+        fi
+        STAT=$(./integration-tests/scripts/manage-test-environment.sh control nsd-primary stats_noreset | grep -F 'num.rixfr')
+        if [[ "${STAT}" != "num.rixfr=2" ]]; then
+          echo "::error:: NSD statistic doesn't match expectations: ${STAT}"
+          exit 1
+        fi
+
+    - name: Cascade should sign the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: zone status did not report that the zone was published"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Query changed RRs at Cascade publication server
+      run: |
+        WWW_A_RR=$(dig +short @127.0.0.1 -p 4543 www.example.test A)
+        if [[ "${WWW_A_RR}" != "192.168.0.1" ]]; then
+          echo "::error:: Expected modified RR but dig reports '${WWW_A_RR}'"
+          exit 1
+        fi
+        MAIL_MX_RR=$(dig +short @127.0.0.1 -p 4543 mail.example.test MX)
+        if [[ "${MAIL_MX_RR}" != "20 example.test." ]]; then
+          echo "::error:: Expected modified RR but dig reports '${MAIL_MX_RR}'"
+          exit 1
+        fi
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

@@ -151,6 +151,7 @@ use std::{
 };
 
 use domain::{
+    base::{ToName, name::FlattenInto},
     new::{
         base::{
             CanonicalRecordData,
@@ -196,7 +197,11 @@ pub use writer::{
 
 //============ Helpers =========================================================
 
-pub type OldName = domain::base::ParsedName<bytes::Bytes>;
+pub type OldParsedName = domain::base::ParsedName<bytes::Bytes>;
+pub type OldParsedRecordData = domain::rdata::ZoneRecordData<bytes::Bytes, OldParsedName>;
+pub type OldParsedRecord = domain::base::Record<OldParsedName, OldParsedRecordData>;
+
+pub type OldName = domain::base::Name<bytes::Bytes>;
 pub type OldRecordData = domain::rdata::ZoneRecordData<bytes::Bytes, OldName>;
 pub type OldRecord = domain::base::Record<OldName, OldRecordData>;
 
@@ -234,10 +239,31 @@ impl DerefMut for RegularRecord {
     }
 }
 
-impl From<OldRecord> for RegularRecord {
-    fn from(value: OldRecord) -> Self {
+impl From<OldParsedRecord> for RegularRecord {
+    fn from(record: OldParsedRecord) -> Self {
         let mut bytes = Vec::new();
-        value.compose(&mut bytes).unwrap();
+        record.compose(&mut bytes).unwrap();
+        let record = domain::new::base::Record::parse_bytes(&bytes)
+            .expect("'Record' serializes records correctly")
+            .transform(|name: RevNameBuf| name.unsized_copy_into(), |data| data);
+        RegularRecord(record)
+    }
+}
+
+impl From<RegularRecord> for OldParsedRecord {
+    fn from(record: RegularRecord) -> Self {
+        let mut bytes = vec![0u8; record.0.built_bytes_size()];
+        record.0.build_bytes(&mut bytes).unwrap();
+        let bytes = bytes::Bytes::from(bytes);
+        let mut parser = domain::dep::octseq::Parser::from_ref(&bytes);
+        OldParsedRecord::parse(&mut parser).unwrap().unwrap()
+    }
+}
+
+impl From<OldRecord> for RegularRecord {
+    fn from(record: OldRecord) -> Self {
+        let mut bytes = Vec::new();
+        record.compose(&mut bytes).unwrap();
         let record = domain::new::base::Record::parse_bytes(&bytes)
             .expect("'Record' serializes records correctly")
             .transform(|name: RevNameBuf| name.unsized_copy_into(), |data| data);
@@ -246,12 +272,11 @@ impl From<OldRecord> for RegularRecord {
 }
 
 impl From<RegularRecord> for OldRecord {
-    fn from(value: RegularRecord) -> Self {
-        let mut bytes = vec![0u8; value.0.built_bytes_size()];
-        value.0.build_bytes(&mut bytes).unwrap();
-        let bytes = bytes::Bytes::from(bytes);
-        let mut parser = domain::dep::octseq::Parser::from_ref(&bytes);
-        OldRecord::parse(&mut parser).unwrap().unwrap()
+    fn from(record: RegularRecord) -> Self {
+        let record = OldParsedRecord::from(record);
+        let (class, ttl) = (record.class(), record.ttl());
+        let (owner, data) = record.into_owner_and_data();
+        Self::new(owner.to_name(), class, ttl, data.flatten_into())
     }
 }
 
@@ -293,10 +318,34 @@ impl DerefMut for SoaRecord {
     }
 }
 
-impl From<OldRecord> for SoaRecord {
-    fn from(value: OldRecord) -> Self {
+impl From<OldParsedRecord> for SoaRecord {
+    fn from(record: OldParsedRecord) -> Self {
         let mut bytes = Vec::new();
-        value.compose(&mut bytes).unwrap();
+        record.compose(&mut bytes).unwrap();
+        let record = domain::new::base::Record::parse_bytes(&bytes)
+            .expect("'Record' serializes records correctly")
+            .transform(
+                |name: RevNameBuf| name.unsized_copy_into(),
+                |data: Soa<NameBuf>| data.map_names(|name| name.unsized_copy_into()),
+            );
+        SoaRecord(record)
+    }
+}
+
+impl From<SoaRecord> for OldParsedRecord {
+    fn from(record: SoaRecord) -> Self {
+        let mut bytes = vec![0u8; record.0.built_bytes_size()];
+        record.0.build_bytes(&mut bytes).unwrap();
+        let bytes = bytes::Bytes::from(bytes);
+        let mut parser = domain::dep::octseq::Parser::from_ref(&bytes);
+        OldParsedRecord::parse(&mut parser).unwrap().unwrap()
+    }
+}
+
+impl From<OldRecord> for SoaRecord {
+    fn from(record: OldRecord) -> Self {
+        let mut bytes = Vec::new();
+        record.compose(&mut bytes).unwrap();
         let record = domain::new::base::Record::parse_bytes(&bytes)
             .expect("'Record' serializes records correctly")
             .transform(
@@ -308,12 +357,11 @@ impl From<OldRecord> for SoaRecord {
 }
 
 impl From<SoaRecord> for OldRecord {
-    fn from(value: SoaRecord) -> Self {
-        let mut bytes = vec![0u8; value.0.built_bytes_size()];
-        value.0.build_bytes(&mut bytes).unwrap();
-        let bytes = bytes::Bytes::from(bytes);
-        let mut parser = domain::dep::octseq::Parser::from_ref(&bytes);
-        OldRecord::parse(&mut parser).unwrap().unwrap()
+    fn from(record: SoaRecord) -> Self {
+        let record = OldParsedRecord::from(record);
+        let (class, ttl) = (record.class(), record.ttl());
+        let (owner, data) = record.into_owner_and_data();
+        Self::new(owner.to_name(), class, ttl, data.flatten_into())
     }
 }
 

@@ -92,29 +92,29 @@ List the Smart Card's mechanisms
     ...
 
 
-Configure :program:`kmip2pkcs11`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Configure :program:`cascade-hsm-bridge`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:program:`kmip2pkcs11` needs to know where to find the OpenSC PKCS#11
-module. As PKCS#11 modules are loaded into a host application, any
-access to resources needed by the PKCS#11 module must be granted to
-the host application.
+:program:`cascade-hsm-bridge` needs to know where to find the OpenSC PKCS#11
+module. As PKCS#11 modules are loaded into a host application, any access
+to resources needed by the PKCS#11 module must be granted to the host
+application.
 
 .. code-block:: bash
 
-   # sed -i -e 's|^lib_path = .\+|lib_path = "/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"|' /etc/kmip2pkcs11/config.toml
-   # systemctl start kmip2pkcs11
+   # sed -i -e 's|^lib_path = .\+|lib_path = "/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"|' /etc/cascade-hsm-bridge/config.toml
+   # systemctl start cascade-hsm-bridge
 
 Create a Cascade Policy that uses your HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a Cascade policy called ``smartcard`` and set it to use the HSM
-called ``kmip2pkcs11`` we configured earlier.
+Create a Cascade policy called ``smartcard`` and set it to use the HSM called
+``cascade-hsm-bridge`` we configured earlier.
 
 .. code-block:: bash
 
    # cascade template policy | tee /etc/cascade/policies/smartcard.toml
-   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "kmip2pkcs11"|' /etc/cascade/policies/smartcard.toml
+   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "cascade-hsm-bridge"|' /etc/cascade/policies/smartcard.toml
 
 Start the Cascade daemon:
 
@@ -126,16 +126,17 @@ Start the Cascade daemon:
    - smartcard added
 
 
-Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
-locally running :program:`kmip2pkcs11` daemon. The ``username`` is the slot
-identifier we found our card in earlier, and the ``password`` is the user PIN
-configured for the card. (``username`` can also be the full token label which
-in our above example is the complete string ``NL-smartcard (UserPIN)``.)
+Configure a HSM in Cascade called ``cascade-hsm-bridge`` that will connect
+to the locally running :program:`cascade-hsm-bridge` daemon. The ``username``
+is the slot identifier we found our card in earlier, and the ``password``
+is the user PIN configured for the card. (``username`` can also be the full
+token label which in our above example is the complete string ``NL-smartcard
+(UserPIN)``.)
 
 .. code-block:: bash
 
-   # cascade hsm add --insecure --username 0 --password "123456" kmip2pkcs11 127.0.0.1
-   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label NL-smartcard (UserPIN) in slot Identive CLOUD 2700 R Smart Card Reader [CCID Interface] (536... via library opensc-pkcs11.so'.
+   # cascade hsm add --insecure --username 0 --password "123456" cascade-hsm-bridge 127.0.0.1
+   Added KMIP server 'cascade-hsm-bridge 0.1.0-alpha using PKCS#11 token with label NL-smartcard (UserPIN) in slot Identive CLOUD 2700 R Smart Card Reader [CCID Interface] (536... via library opensc-pkcs11.so'.
 
 Sign a Test Zone with SmartCard-HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -188,10 +189,10 @@ which includes the identifiers of the signing keys that were used:
      Published zone available on 127.0.0.1:4543
    DNSSEC keys:
      KSK tagged 15202:
-       Reference: kmip://kmip2pkcs11/keys/CE8E308B232C890B54066E6D3CF85802FB6B27F8_pub?algorithm=13&flags=257
+       Reference: kmip://cascade-hsm-bridge/keys/CE8E308B232C890B54066E6D3CF85802FB6B27F8_pub?algorithm=13&flags=257
        Actively used for signing
      ZSK tagged 43092:
-       Reference: kmip://kmip2pkcs11/keys/870D4E7E7A1C89A14D3A8FD14BDC953D249093D9_pub?algorithm=13&flags=256
+       Reference: kmip://cascade-hsm-bridge/keys/870D4E7E7A1C89A14D3A8FD14BDC953D249093D9_pub?algorithm=13&flags=256
        Actively used for signing
       ...
 

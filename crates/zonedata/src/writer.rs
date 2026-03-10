@@ -77,6 +77,16 @@ impl<'d> LoadedZoneReplacer<'d> {
         Ok(())
     }
 
+    /// Set all records.
+    ///
+    /// The given [`Vec`] will replace all the records in the instance, except
+    /// for the SOA record (which must be set via [`Self::set_soa()`]). The
+    /// records must be sorted.
+    pub fn set_records(&mut self, records: Vec<RegularRecord>) -> Result<(), ReplaceError> {
+        self.next.records = records;
+        Ok(())
+    }
+
     /// Finish and apply the collected changes.
     ///
     /// The changes will be checked for consistency and applied to the upcoming
@@ -341,6 +351,16 @@ impl<'d> SignedZoneReplacer<'d> {
     /// Add a regular record.
     pub fn add(&mut self, record: RegularRecord) -> Result<(), ReplaceError> {
         self.next.records.push(record);
+        Ok(())
+    }
+
+    /// Set all records.
+    ///
+    /// The given [`Vec`] will replace all the records in the instance, except
+    /// for the SOA record (which must be set via [`Self::set_soa()`]). The
+    /// records must be sorted.
+    pub fn set_records(&mut self, records: Vec<RegularRecord>) -> Result<(), ReplaceError> {
+        self.next.records = records;
         Ok(())
     }
 

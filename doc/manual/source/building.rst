@@ -107,16 +107,16 @@ Cargo itself lives in, likely ``$HOME/.cargo/bin``. Ensure this directory is
 in your PATH so you can run Cascade immediately.
 
 If you want to use a PKCS#11 compatible :doc:`Hardware Security Module (HSM)
-<hsms>` with Cascade, also install the KMIP to PKCS#11 relay with:
+<hsms>` with Cascade, also install the cascade-hsm-bridge with:
 
 .. Commented out until released
 .. .. code-block:: text
 
-  cargo install --locked kmip2pkcs11
+  cargo install --locked cascade-hsm-bridge
 
 .. code-block:: bash
 
-  cargo install --locked --git https://github.com/nlnetlabs/kmip2pkcs11
+  cargo install --locked --git https://github.com/nlnetlabs/cascade-hsm-bridge
 
 Finally, before running Cascade you will need to create a few directories and
 Cascade's config file. Create the directory where you want to store the config
@@ -153,12 +153,12 @@ Cascade release:
     cargo install --locked --force --branch keyset --bin dnst --git https://github.com/nlnetlabs/dnst
 ..  cargo install --locked --force cascade dnst
 
-If you are using the KMIP to PKCS#11 relay, update it with:
+If you are using cascade-hsm-bridge, update it with:
 
 .. code-block:: bash
 
-    cargo install --locked --force --git https://github.com/nlnetlabs/kmip2pkcs11
-..  cargo install --locked --force kmip2pkcs11
+    cargo install --locked --force --git https://github.com/nlnetlabs/cascade-hsm-bridge
+..  cargo install --locked --force cascade-hsm-bridge
 
 Installing Specific Versions
 """"""""""""""""""""""""""""
