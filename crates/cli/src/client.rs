@@ -131,11 +131,7 @@ pub fn format_http_error(err: reqwest::Error) -> String {
         // of the error below, which contains the relevant information.
         message.push_str("HTTP response decoding failed");
     } else {
-        // Covers unknown errors, non-OK HTTP status codes, errors "related to
-        // the request" [1], errors "related to the request or response body"
-        // [1], errors "from a type Builder" [1], errors "from
-        // a RedirectPolicy." [1], errors "related to a protocol upgrade
-        // request" [1]
+        // Covers all other errors
         message.push_str("HTTP request failed");
     }
 
