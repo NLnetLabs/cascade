@@ -77,6 +77,53 @@ systemd features used instead.
 
 .. _defining-policy:
 
+Interacting with Cascade
+------------------------
+
+Cascade consists of two parts: the program:`cascaded` daemon which runs
+continuously, receiving, signing and publishing zone records, and the
+program:`cascade` CLI (command-line interface) tool which can be used to
+inspect and control Cascade.
+
+Using the CLI we can see that on first start Cascade has no policies and
+no zones:
+
+.. code-block:: bash
+
+   $ cascade status
+   Signing queue:
+     The signing queue is currently empty.
+
+   $ cascade policy list
+
+   $ cascade zone list
+
+.. Note:: The program:`cascade` CLI connects via HTTPS to the
+   program:`cascaded` daemon. By default it connects to 127.0.0.1:4539. You
+   can override this by passing `--server <IP>:<PORT>` to connect to a
+   Cascade daemon running on another machine.
+
+The :program:`cascade` CLI is the primary means of interacting with the
+:program:`cascaded` daemon.
+
+For monitoring purposes Cascade supports `Prometheus <https://prometheus.io/>`_
+which when combined with other tools such as `Grafana <https://grafana.com/grafana/>`_
+and `Alertmanager <https://prometheus.io/docs/alerting/latest/alertmanager/>`_
+enable visual insight into the behaviour of Cascade and early warning of
+unexpected situations.
+
+Additionally, while normally not needed, the CLI and the daemon produce logs
+which can be inspected and if needed can be made more verbose. The CLI logs
+to the terminal while the daemon typically logs to syslog or to a file. Both
+the CLI and the daemon take a `--log-level` argument which can be used to
+adjust the verbosity of the produced log output. It is also possible to use
+the CLI to adjust the verbosity of an already running daemon, for example:
+
+.. code-block:: bash
+
+   $ cascade debug change-logging --level debug
+   Changed log-level to: debug
+
 Defining Policy
 ---------------
 
