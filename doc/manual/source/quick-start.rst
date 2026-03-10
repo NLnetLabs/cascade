@@ -75,8 +75,6 @@ systemd features used instead.
 
             cascaded --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
 
-.. _defining-policy:
-
 Interacting with Cascade
 ------------------------
 
@@ -123,6 +121,8 @@ the CLI to adjust the verbosity of an already running daemon, for example:
 
    $ cascade debug change-logging --level debug
    Changed log-level to: debug
+
+.. _defining-policy:
 
 Defining Policy
 ---------------
