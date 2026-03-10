@@ -1,4 +1,6 @@
 #!/bin/sh
+export LC_ALL=C
+
 INCEPTION=1600000000
 EXPIRATION=1700000000
 for zonemd in '' 'zmd384'

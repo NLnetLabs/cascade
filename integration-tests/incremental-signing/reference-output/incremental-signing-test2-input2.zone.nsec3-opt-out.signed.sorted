@@ -10,14 +10,14 @@
 5fs5ciqjcth0tja38uv0aljqk6rcgr9e.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. LGspD8tijQbZ25Qz3Owdb7AMSAEusULR2OumugKMyNJSCnFpKCBpqblzujR6C10NjcIO35zbxIYMI2X0ZfqzAA==
 9ld84qtatmm054kfks4dkchtjpbcv0gu.example.	3600	IN	NSEC3	1 1 0 - CDVM5167K7H0DLEVVDMR9N1NI9MM1PFS
 9ld84qtatmm054kfks4dkchtjpbcv0gu.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. /UyPUzJIsutYKRPlFkR3d5xWt8QqItdc82MkdY2HYsrvmFOINn9OwtC+dWH+k0gTRNnISQZ9lkwxr7oEnGbfBg==
-aaaa.delegation.ent.example.	3600	IN	AAAA	2001:db8::1
-aaaa.delegation.example.	3600	IN	AAAA	2001:db8::
-aaaa.ds-delegation.example.	3600	IN	AAAA	2001:db8::1
-aaaa.ds-delegation.example.	3600	IN	RRSIG	AAAA 15 3 3600 20231114221320 20200913122640 2835 example. Zbwm2ubJLrWdbWBbEEYF0OYEG6q6N12mZ304TT2l/18abaQuly7oKvy3GJDIQK952bGzGlwxC9a6D/8wZ1yoCA==
 a.delegation.ent.example.	3600	IN	A	192.0.2.1
 a.delegation.example.	3600	IN	A	192.0.2.0
 a.ds-delegation.example.	3600	IN	A	192.0.2.1
 a.ds-delegation.example.	3600	IN	RRSIG	A 15 3 3600 20231114221320 20200913122640 2835 example. zdw5dDNTd+HqxcIlXaLR2IAa2+VIjg0e+AIF9O01ux9VZ5dlbayWab2Ccnk+ZmcvjpaOcRw9AdTgv2Ae6h+qCA==
+aaaa.delegation.ent.example.	3600	IN	AAAA	2001:db8::1
+aaaa.delegation.example.	3600	IN	AAAA	2001:db8::
+aaaa.ds-delegation.example.	3600	IN	AAAA	2001:db8::1
+aaaa.ds-delegation.example.	3600	IN	RRSIG	AAAA 15 3 3600 20231114221320 20200913122640 2835 example. Zbwm2ubJLrWdbWBbEEYF0OYEG6q6N12mZ304TT2l/18abaQuly7oKvy3GJDIQK952bGzGlwxC9a6D/8wZ1yoCA==
 cdvm5167k7h0dlevvdmr9n1ni9mm1pfs.example.	3600	IN	NSEC3	1 1 0 - FOMV2BK1GF4G9UGEAVBBM8FKQN0NCPK1 A RRSIG
 cdvm5167k7h0dlevvdmr9n1ni9mm1pfs.example.	3600	IN	RRSIG	NSEC3 15 2 3600 20231114221320 20200913122640 2835 example. UFp4wF8Sdf7Aq6A++bDN56wxJmAuN5+bZ0L7GN+zZyqR5Q7grPQkFy+PMZ3KF3LdeMvMbt4dgGM7QbztRwkkBg==
 cname.delegation.example.	3600	IN	CNAME	cname-target.example.
@@ -28,8 +28,8 @@ delegation.ent.example.	3600	IN	NS	ns3.example.
 delegation.example.	3600	IN	NS	ns1.example.
 dname.delegation.example.	3600	IN	DNAME	dname-target.example.
 example.	3600	IN	DNSKEY	256 3 15 BnnbKMXdvQp2v+tzyvO/HxQGY8iYcJsWD4MN6fnr84Q=
-example.	3600	IN	NSEC3PARAM	1 1 0 -
 example.	3600	IN	NS	ns1.example.
+example.	3600	IN	NSEC3PARAM	1 1 0 -
 example.	3600	IN	RRSIG	DNSKEY 15 1 3600 20231114221320 20200913122640 2835 example. RMn96put9kteW8DjunEY3o0J7+MZlrC/zXVBU0h0gpFwjz9mrqo/1EvQUSO6faKaNLD2uhiJ9mg91Z1AQSq4AQ==
 example.	3600	IN	RRSIG	NS 15 1 3600 20231114221320 20200913122640 2835 example. PC1Kd4mcYtL9M/2HKsbOip6uxGOJMgVMAI/A4oaY+NKXxpmi+MEvO/PlhveWOX1vMnYdTHgbtahnRrQwURzVCg==
 example.	3600	IN	RRSIG	NSEC3PARAM 15 1 3600 20231114221320 20200913122640 2835 example. Ladx6ZxxaehBhStbVOWTLQIsX0nrQmRyi6IHL4ClapIJfHMG0/w9xxE2/8kp5JRHhYNHBwFQ5g6djBBdVELvCA==
