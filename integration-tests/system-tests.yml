@@ -54,7 +54,6 @@ defaults:
   run:
     # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
     shell: bash --noprofile --norc -eo pipefail -x {0}
-  
 
 jobs:
   test-release-version:
@@ -154,4 +153,9 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: release
       - uses: ./integration-tests/tests/notify-in-for-unknown-zone
+        with:
+          log-level: ${{ inputs.log-level }}
