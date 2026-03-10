@@ -1,0 +1,75 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Test incremental signing'
+description: 'Test incremental signing.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+  zonemd:
+    required: true
+    type: string
+  policy:
+    required: true
+    type: string
+  test_idx:
+    required: true
+    type: integer
+  key:
+    required: true
+    type: string
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Add policy
+      id: add-policy
+      env:
+        POLICY: "${{ inputs.policy }}"
+        ZONEMD: "${{ inputs.zonemd }}"
+      run: |
+        echo "::info:: policy=${POLICY}"
+        if [[ "${ZONEMD}" == "" ]]; then
+          policy="${POLICY}"
+        else
+          policy="${POLICY}-${ZONEMD}"
+        fi
+
+        echo "::info:: policy=${policy}"
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        cp "${TEST_DIR}/policies/${policy}.toml" "${POLICY_DIR}/"
+        cascade policy reload
+
+        echo "POLICY=$policy" >> "$GITHUB_OUTPUT"
+
+    - name: Load the test zone
+      env:
+        TEST_IDX: "${{ inputs.test_idx }}"
+        KEY: "${{ inputs.key }}"
+        POLICY: "${{ steps.add-policy.outputs.POLICY }}"
+      run: |
+        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        ZONE_FILE="${TEST_DIR}/zones/incremental-signing-test${TEST_IDX}-input1.zone"
+        KEY_FILE="${TEST_DIR}/keys/${KEY}"
+        cascade zone add --source "${ZONE_FILE}" --policy "${POLICY}" --import-csk-file "${KEY_FILE}" example
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()
