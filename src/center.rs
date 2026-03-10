@@ -146,7 +146,7 @@ pub async fn add_zone(
         return Err(err);
     }
 
-    record_zone_event(center, &name, HistoricalEvent::Added, None);
+    record_zone_event(center, &zone, HistoricalEvent::Added, None);
 
     {
         let mut state = zone.state.lock().unwrap();
@@ -260,20 +260,18 @@ pub fn get_zone(center: &Arc<Center>, name: &StoredName) -> Option<Arc<Zone>> {
     state.zones.get(name).map(|zone| zone.0.clone())
 }
 
-pub fn halt_zone(center: &Arc<Center>, zone_name: &StoredName, hard: bool, reason: &str) {
+pub fn halt_zone(center: &Arc<Center>, zone: &Arc<Zone>, hard: bool, reason: &str) {
     let mut state = center.state.lock().unwrap();
-    if let Some(zone) = state.zones.get(zone_name) {
-        let mut zone_state = zone.0.state.lock().unwrap();
-        if hard {
-            if !matches!(zone_state.pipeline_mode, PipelineMode::HardHalt(_)) {
-                zone_state.hard_halt(reason.to_string());
-            }
-        } else if !matches!(
-            zone_state.pipeline_mode,
-            PipelineMode::SoftHalt(_) | PipelineMode::HardHalt(_)
-        ) {
-            zone_state.soft_halt(reason.to_string());
+    let mut zone_state = zone.state.lock().unwrap();
+    if hard {
+        if !matches!(zone_state.pipeline_mode, PipelineMode::HardHalt(_)) {
+            zone_state.hard_halt(reason.to_string());
         }
+    } else if !matches!(
+        zone_state.pipeline_mode,
+        PipelineMode::SoftHalt(_) | PipelineMode::HardHalt(_)
+    ) {
+        zone_state.soft_halt(reason.to_string());
     }
     state.mark_dirty(center);
 }

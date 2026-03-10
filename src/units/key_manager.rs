@@ -1,6 +1,6 @@
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{Center, ZoneAddError};
+use crate::center::{Center, ZoneAddError, get_zone};
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, PolicyVersion};
 use crate::units::http_server::KmipServerState;
@@ -391,15 +391,19 @@ impl KeyManager {
     }
 
     async fn tick(&self, center: &Arc<Center>) {
-        let zone_tree = &center.unsigned_zones;
         let Ok(mut ks_info) = self.ks_info.try_lock() else {
             // An existing call to tick() is still busy, don't do anything.
             return;
         };
-        for zone in zone_tree.load().iter_zones() {
-            let apex_name = zone.apex_name().to_string();
-            let state_path =
-                mk_dnst_keyset_state_file_path(&center.config.keys_dir, zone.apex_name());
+        #[allow(clippy::mutable_key_type)]
+        let zones = {
+            let state = center.state.lock().unwrap();
+            state.zones.clone()
+        };
+        for zone in zones {
+            let zone = &zone.0;
+            let apex_name = zone.name.to_string();
+            let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
             if !state_path.exists() {
                 continue;
             }
@@ -440,7 +444,7 @@ impl KeyManager {
                 info!("[CC]: Instructing zone signer to re-sign the zone");
                 center.signer.on_sign_zone(
                     center,
-                    zone.apex_name().clone(),
+                    zone,
                     None,
                     SigningTrigger::ExternallyModifiedKeySetState,
                 );
@@ -456,11 +460,10 @@ impl KeyManager {
                 // keyset times out trying to contact nameservers. This will
                 // block the loop so we won't check the keyset state for the
                 // next zone till after the call to cron finishes.
-                let Ok(res) =
-                    Self::keyset_cmd(center, zone.apex_name().clone(), RecordingMode::Record)
-                        .arg("cron")
-                        .output()
-                        .await
+                let Ok(res) = Self::keyset_cmd(center, zone.name.clone(), RecordingMode::Record)
+                    .arg("cron")
+                    .output()
+                    .await
                 else {
                     info.clear_cron_next();
                     continue;
@@ -485,7 +488,7 @@ impl KeyManager {
                         info!("[CC]: Instructing zone signer to re-sign the zone");
                         center.signer.on_sign_zone(
                             center,
-                            zone.apex_name().clone(),
+                            zone,
                             None,
                             SigningTrigger::KeySetModifiedAfterCron,
                         );
@@ -1135,7 +1138,8 @@ impl KeySetCommand {
 
         if let Some(history_event) = history_event {
             // Record the error in the zone history
-            record_zone_event(&self.center, &self.name, history_event, None);
+            let zone = get_zone(&self.center, &self.name).unwrap();
+            record_zone_event(&self.center, &zone, history_event, None);
         }
 
         res
