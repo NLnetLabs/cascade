@@ -21,11 +21,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - env:
-        WOW: ${{inputs.log-level}}
-      run: |
-        echo "::error:: log-level=${WOW}"
-
     - uses: ./.github/actions/prepare-systest-env
     - uses: ./.github/actions/setup-and-start-cascade
       with:
