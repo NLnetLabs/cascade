@@ -1,0 +1,132 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Added zone should still exist after restart.'
+description: 'Added zone should still exist after restart.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    - env:
+        WOW: ${{inputs.log-level}}
+      run: |
+        echo "::error:: log-level=${WOW}"
+
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Add a zone served by the NSD primary
+      run: |
+        cascade zone add --policy default --source 127.0.0.1:1055 example.test
+
+    - name: Wait for Cascade to sign the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status example.test
+            echo "::error:: timeout: zone status did not report published zone available"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Capture the signing time and publish version
+      id: last-capture
+      run: |
+        # TODO: Once https://github.com/NLnetLabs/cascade/issues/337 is done,
+        # check this via JSON rather than text scraping.
+        CURRENT_SIGNED_AT=$(cascade zone status example.test | grep 'Signing started at' | grep -Po '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}')
+        CURRENT_PUBLISHED_SERIAL=$(cascade zone status example.test | grep 'Published version' | cut -b 23-)
+        echo "SIGNED_AT=${CURRENT_SIGNED_AT}" >> "$GITHUB_OUTPUT"
+        echo "PUBLISHED_SERIAL=${CURRENT_PUBLISHED_SERIAL}" >> "$GITHUB_OUTPUT"
+
+    - name: Query zone
+      run: |
+        dig +noall @127.0.0.1 -p 4543 example.test AXFR
+
+    - name: Stop Cascade
+      run: |
+        pkill cascaded
+
+    - name: Wait for Cascade to exit
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until ! cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade health
+            echo "::error:: timeout: health check did not indicate Cascade had stopped"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Restart Cascade
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+
+    - name: Wait for Cascade to become healthy
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: health check did not indicate Cascade had started"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check that Cascade still knows the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone list | grep -q example.test; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone list
+            echo "::error:: timeout: Cascade no longer knows the zone"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check that Cascade did NOT resign the zone
+      env:
+        LAST_SIGNED_AT: ${{ steps.last-capture.outputs.SIGNED_AT }}
+        LAST_PUBLISHED_SERIAL: ${{ steps.last-capture.outputs.PUBLISHED_SERIAL }}
+      run: |
+        # TODO: Once https://github.com/NLnetLabs/cascade/issues/337 is done,
+        # check this via JSON rather than text scraping.
+        CURRENT_SIGNED_AT="$(cascade zone status example.test | grep 'Signing started at' | grep -Po '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}')"
+        CURRENT_PUBLISHED_SERIAL="$(cascade zone status example.test | grep 'Published version' | cut -b 23-)"
+        if [[ "${CURRENT_SIGNED_AT}" != "${LAST_SIGNED_AT}" ]]; then
+          echo "::error:: zone has been re-signed but was expected to re-use persisted signed zone records from disk. Signing time=${CURRENT_SIGNED_AT} vs last signing time=${LAST_SIGNED_AT}."
+          exit 1
+        fi
+        if [[ "${CURRENT_PUBLISHED_SERIAL}" != "${LAST_PUBLISHED_SERIAL}" ]]; then
+          echo "::error:: zone has been re-signed but was expected to re-use persisted signed zone records from disk. Published serial=${CURRENT_PUBLISHED_SERIAL} vs last published serial=${LAST_PUBLISHED_SERIAL}."
+          exit 1
+        fi
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

@@ -145,3 +145,18 @@ jobs:
       - uses: ./integration-tests/tests/ixfr-in
         with:
           log-level: ${{ inputs.log-level }}
+
+  persist-zone:
+    name: Added zone should still exist after restart.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/persist-zone
+        with:
+          log-level: ${{ inputs.log-level }}
