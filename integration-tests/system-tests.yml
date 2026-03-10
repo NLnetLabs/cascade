@@ -54,7 +54,6 @@ defaults:
   run:
     # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
     shell: bash --noprofile --norc -eo pipefail -x {0}
-  
 
 jobs:
   test-release-version:
@@ -143,5 +142,21 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/ixfr-in
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  remove-zone:
+    name: 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: release
+      - uses: ./integration-tests/tests/remove-zone
         with:
           log-level: ${{ inputs.log-level }}
