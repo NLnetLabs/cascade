@@ -78,9 +78,3 @@ workspace = true
 [dependencies.tracing-subscriber]
 workspace = true
 features = ["env-filter"]
-
-# The API uses 'serde' for transforming high-level types to and from the
-# underlying wire format. The CLI needs to deserialize them.
-[dependencies.serde]
-workspace = true
-features = ["derive"]

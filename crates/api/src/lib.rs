@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 pub use domain::base::Serial;
 
+pub mod dep;
+
 const DEFAULT_AXFR_PORT: u16 = 53;
 
 //----------- ZoneName ---------------------------------------------------------
