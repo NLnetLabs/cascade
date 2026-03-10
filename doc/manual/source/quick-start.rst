@@ -80,9 +80,9 @@ systemd features used instead.
 Interacting with Cascade
 ------------------------
 
-Cascade consists of two parts: the program:`cascaded` daemon which runs
+Cascade consists of two parts: the :program:`cascaded` daemon which runs
 continuously, receiving, signing and publishing zone records, and the
-program:`cascade` CLI (command-line interface) tool which can be used to
+:program:`cascade` CLI (command-line interface) tool which can be used to
 inspect and control Cascade.
 
 Using the CLI we can see that on first start Cascade has no policies and
@@ -99,9 +99,9 @@ no zones:
    $ cascade zone list
 
 .. Note:: The program:`cascade` CLI connects via HTTPS to the
-   program:`cascaded` daemon. By default it connects to 127.0.0.1:4539. You
-   can override this by passing `--server <IP>:<PORT>` to connect to a
-   Cascade daemon running on another machine.
+   :program:`cascaded` daemon. By default it connects to 127.0.0.1:4539.
+   You can override this by passing `--server <IP>:<PORT>` to connect to
+   a Cascade daemon running on another machine.
 
 The :program:`cascade` CLI is the primary means of interacting with the
 :program:`cascaded` daemon.
