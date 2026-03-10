@@ -113,7 +113,7 @@ unexpected situations.
 Additionally, while normally not needed, the CLI and the daemon produce logs
 which can be inspected and if needed can be made more verbose. The CLI logs
 to the terminal while the daemon typically logs to syslog or to a file. Both
-the CLI and the daemon take a `--log-level` argument which can be used to
+the CLI and the daemon take a ``--log-level`` argument which can be used to
 adjust the verbosity of the produced log output. It is also possible to use
 the CLI to adjust the verbosity of an already running daemon, for example:
 
