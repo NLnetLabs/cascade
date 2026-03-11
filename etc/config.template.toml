@@ -127,6 +127,12 @@ log-target = { type = "stdout" }
 # features itself, by setting this option to 'true'.  This will also enable the
 # 'pid-file' and 'identity' settings (although they remain optional).
 #
+# If this option is set to 'true', the server changes its working directory to
+# the root directory and as such influences where files are looked for. Use
+# absolute path names in configuration to avoid ambiguities. Additionally, it
+# will redirect stdout and stderr to '/dev/null' and you need to choose
+# 'syslog' or 'file' as the 'log-target'.
+#
 # TODO: Link to a dedicated systemd / daemonization guide for Cascade.
 daemonize = false
 

@@ -27,21 +27,19 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-POLICY" "1" "Feb 25, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-DEBUG" "1" "Feb 25, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
-cascade-policy \- Manage policies
+cascade-debug \- Debug / troubleshoot Cascade
 .SH SYNOPSIS
 .sp
-\fBcascade policy\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+\fBcascade debug\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
 .sp
-\fBcascade policy\fP \fB[OPTIONS]\fP \fI\%list\fP
-.sp
-\fBcascade policy\fP \fB[OPTIONS]\fP \fI\%show\fP \fB<NAME>\fP
-.sp
-\fBcascade policy\fP \fB[OPTIONS]\fP \fI\%reload\fP
+\fBcascade debug\fP \fB[OPTIONS]\fP \fI\%change\-logging\fP \fB[OPTIONS]\fP
 .SH DESCRIPTION
 .sp
-Manage Cascade\(aqs policies.
+Debug / troubleshoot Cascade.  The sub\-commands here are tools for analyzing
+Cascade when lower\-level problems occur.  It should be combined with analysis of
+Cascade\(aqs log files.
 .SH OPTIONS
 .INDENT 0.0
 .TP
@@ -51,18 +49,30 @@ Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP
 .SH COMMANDS
 .INDENT 0.0
 .TP
-.B list
-List registered policies.
+.B change\-logging
+Change how Cascade logs information.
+.sp
+The location where logs are written to cannot be changed; but the information
+being logged can be changed.
+.UNINDENT
+.SH OPTIONS FOR DEBUG CHANGE-LOGGING
+.INDENT 0.0
+.TP
+.B \-l, \-\-level <LEVEL>
+Change the log level.  Possible values: trace, debug, info, warning, error,
+critical
 .UNINDENT
 .INDENT 0.0
 .TP
-.B show
-Show the settings contained in a policy.
+.B \-\-trace\-targets <TARGETS>
+Select internal Cascade modules to selectively log trace\-level information
+for.  The names of such modules can be found in the log files.  All other
+modules will continue using the log level.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B reload
-Reload all the policies from the files.
+.B \-h, \-\-help
+Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
 .UNINDENT
 .SH SEE ALSO
 .INDENT 0.0
@@ -75,12 +85,6 @@ Cascade online documentation
 .TP
 \fBcascaded\fP(1)
 \fI\%Cascade Daemon\fP
-.TP
-\fBcascaded\-config.toml\fP(5)
-\fI\%Configuration File Format\fP
-.TP
-\fBcascaded\-policy.toml\fP(5)
-\fI\%Policy File Format\fP
 .UNINDENT
 .SH AUTHOR
 NLnet Labs <cascade@nlnetlabs.nl>

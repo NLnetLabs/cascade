@@ -6,6 +6,17 @@ defaults:
   run:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
   cascade-dir:
     description: 'The name of the directory to store cascade configuration in'
     required: false
@@ -21,6 +32,7 @@ runs:
   - name: Start cascade with a working-directory-local config
     run: |
       CASCADE_DIR="${{ inputs.cascade-dir }}"
+      LOG_LEVEL="${{ inputs.log-level }}"
 
       if [[ "${{ inputs.fake-time }}" != "0" ]]; then
         echo "::info:: Setting CASCADE_FAKETIME to ${{ inputs.fake-time }}"
@@ -30,6 +42,15 @@ runs:
       mkdir -p "${CASCADE_DIR}/policies"
       # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
       cascade template config | \
-        "${GITHUB_WORKSPACE}/integration-tests/scripts/sed-config-dirs.sh" "${CASCADE_DIR}" | tee "${CASCADE_DIR}/config.toml" >/dev/null
+        "${GITHUB_WORKSPACE}/integration-tests/scripts/sed-config-dirs.sh" "${CASCADE_DIR}" "${LOG_LEVEL}" | tee "${CASCADE_DIR}/config.toml" >/dev/null
       cascade template policy > "${CASCADE_DIR}/policies/default.toml"
       cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"
+
+      ## Leaving the non-daemonize invocation here for future reference
+      # nohup cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" &>"${CASCADE_DIR}/cascade-startup.log" &
+      # # Apparently, if the script finishes before the background task has been
+      # # fully started, bash will still kill it on exit. Therefore, we wait
+      # # a little bit until cascade is running.
+      # until pgrep cascade >/dev/null; do
+      #   sleep 0.1
+      # done

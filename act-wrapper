@@ -20,6 +20,10 @@ if [[ "$1" =~ ^-h|--help$ ]]; then
 	echo
 	echo "(NOTE: '+nobuild' or '+build-inside' MUST be the first argument to"
 	echo "the act-wrapper)"
+	echo
+	echo "Inputs that can be provided via --input:"
+	echo "  --input build-profile=debug|release"
+	echo "  --input log-level=error|warn|info|debug|trace"
 	exit
 fi
 

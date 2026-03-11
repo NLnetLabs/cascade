@@ -106,16 +106,16 @@ Client Credentials:
 
           Optional username to authenticate to the KMIP server as.
 
-          Note: When using the Cascade ``kmip2pkcs11`` tool the username
-          set here will be used as the label of the PKCS#11 token to login
-          to.
+          Note: When using the Cascade ``cascade-hsm-bridge`` tool the
+          username set here will be used as the label of the PKCS#11 token to
+          login to.
 
 .. option:: --password <PASSWORD>
 
           Optional password to authenticate to the KMIP server with.
 
-          Note: When using the Cascdee ``kmip2pkcs11`` tool the password
-          set here will be used as the PKCS#11 PIN to login with.
+          Note: When using the Cascdee ``cascade-hsm-bridge`` tool the
+          password set here will be used as the PKCS#11 PIN to login with.
 
 Client Certificate Authentication:
 ++++++++++++++++++++++++++++++++++
@@ -209,5 +209,5 @@ https://cascade.docs.nlnetlabs.nl
 **cascaded**\ (1)
     :doc:`cascaded`
 
-**kmip2pkcs11**\ (1)
-    KMIP to PKCS#11 relay documentation
+**cascade-hsm-bridge**\ (1)
+    KMIP to PKCS#11 bridge documentation

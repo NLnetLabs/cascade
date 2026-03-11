@@ -4,9 +4,7 @@
 #
 # Further documentation is in TESTING.md.
 #
-# TL;DR:
-#   - Docker: `./act-wrapper --network default --job your-test`
-#   - Podman: `./act-wrapper --network podman --job your-test`
+# TL;DR: `./act-wrapper --job your-test`
 #
 # ## Creating a new test
 #
@@ -26,6 +24,26 @@ on:
   # of the time this expensive test suite should not be run. Using this
   # trigger allows explicitly running this test suite on a selected branch.
   workflow_dispatch:
+    inputs:
+      build-profile:
+        description: Whether to build and test in debug mode or release mode.
+        required: false
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+      log-level:
+        description: The level of logging that Cascade should output.
+        required: false
+        default: debug
+        type: choice
+        options:
+          - error
+          - warning
+          - info
+          - debug
+          - trace
 
 env:
   # Set this assignment to your choosing to set the cargo build verbosity
@@ -36,6 +54,7 @@ defaults:
   run:
     # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
     shell: bash --noprofile --norc -eo pipefail -x {0}
+  
 
 jobs:
   test-release-version:
@@ -73,7 +92,12 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/add-zone-query
+        with:
+          log-level: ${{ inputs.log-level }}
 
   # Added for https://github.com/NLnetLabs/cascade/pull/402
   load-zonefile:
@@ -84,7 +108,12 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/load-zonefile
+        with:
+          log-level: ${{ inputs.log-level }}
 
   # Added for https://github.com/NLnetLabs/cascade/pull/398
   review-unsigned-zone:
@@ -95,7 +124,12 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/review-unsigned-zone
+        with:
+          log-level: ${{ inputs.log-level }}
 
   ixfr-in:
     name: Receive a zone via IXFR from the NSD primary.
@@ -105,9 +139,12 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/ixfr-in
 
-  test-incremental-signing:
+  incremental-signing:
     name: Test incremental signing.
     runs-on: ubuntu-latest
     strategy:
@@ -121,9 +158,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
-        #with:
-        #  build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/test-incremental-signing
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/incremental-signing
         with:
           log-level: ${{ inputs.log-level }}
           zonemd: ${{ matrix.zonemd }}
