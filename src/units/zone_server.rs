@@ -825,10 +825,10 @@ impl Notifiable for LoaderNotifier {
             // do a SOA query to our configured upstreams.
             let center = &self.center;
             if let Some(zone) = crate::center::get_zone(center, apex_name) {
-                info!("[CC]: Instructing zone loader to refresh the zone");
+                info!("Instructing zone loader to refresh zone '{apex_name}");
                 center.loader.on_refresh_zone(center, &zone);
             } else {
-                error!("Got a NOTIFY for non-existent zone '{apex_name}'");
+                warn!("Ignoring NOTIFY for unknown zone '{apex_name}'");
             }
         }
 
