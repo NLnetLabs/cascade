@@ -40,6 +40,7 @@ runs:
     - uses: ./.github/actions/setup-and-start-cascade
       with:
         log-level: ${{ inputs.log-level }}
+        fake-time: 1600000000
 
     - name: Add policy
       id: add-policy

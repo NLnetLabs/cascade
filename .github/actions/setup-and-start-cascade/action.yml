@@ -10,12 +10,22 @@ inputs:
     description: 'The name of the directory to store cascade configuration in'
     required: false
     default: ${{ github.workspace }}/cascade-dir
+  fake-time:
+    description: 'The epoch timestamp to use instead of the real time'
+    required: false
+    default: 0
+    type: number
 runs:
   using: "composite"
   steps:
   - name: Start cascade with a working-directory-local config
     run: |
       CASCADE_DIR="${{ inputs.cascade-dir }}"
+
+      if [[ "${{ inputs.fake-time }}" != "0" ]]; then
+        echo "::info:: Setting CASCADE_FAKETIME to ${{ inputs.fake-time }}"
+        export CASCADE_FAKETIME=${{ inputs.fake-time }}
+      fi
 
       mkdir -p "${CASCADE_DIR}/policies"
       # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
