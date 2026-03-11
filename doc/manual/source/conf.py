@@ -98,7 +98,7 @@ if versionbanner:
 
 intersphinx_mapping = {
     'dnst': ('https://dnst.docs.nlnetlabs.nl/en/latest/', None),
-    'kmip2pkcs11': ('https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/', None)
+    'cascade-hsm-bridge': ('https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/', None)
 }
 
 # We recommend adding the following config value.

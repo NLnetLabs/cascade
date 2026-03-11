@@ -16,13 +16,13 @@ Integrating with a Nitrokey NetHSM
 .. epigraph::
 
    NetHSM is an open hardware security module created and distributed by
-   Nitrokey. It's a secure store for cryptographic keys powered by
-   open source, which enables people to verify exactly how it works.
-   The HSM is accessible through a REST interface, and a PKCS #11 shared object
-   interfaces that with Cascade's :program:`kmip2pkcs11`. The software is also
-   provided as an OCI image (used here for demonstration purposes) which can be
-   used with Docker or Podman for experimentation without having to purchase
-   the device proper.
+   Nitrokey. It's a secure store for cryptographic keys powered by open
+   source, which enables people to verify exactly how it works. The HSM
+   is accessible through a REST interface, and a PKCS #11 shared object
+   interfaces that with Cascade's :program:`cascade-hsm-bridge`. The software
+   is also provided as an OCI image (used here for demonstration purposes)
+   which can be used with Docker or Podman for experimentation without having
+   to purchase the device proper.
 
    -- https://www.nitrokey.com/products/nethsm
 
@@ -220,9 +220,9 @@ option.
 Add a dedicated user
 ~~~~~~~~~~~~~~~~~~~~
 
-We add a dedicated user with which Cascade's :program:`kmip2pkcs11` will
-connect to and interact with the NetHSM. (It is possible to have other programs
-use the same HSM with distinct usernames.)
+We add a dedicated user with which Cascade's :program:`cascade-hsm-bridge`
+will connect to and interact with the NetHSM. (It is possible to have other
+programs use the same HSM with distinct usernames.)
 
 .. code-block:: bash
 
@@ -289,29 +289,29 @@ List the HSM's mechanisms
     ...
 
 
-Configure :program:`kmip2pkcs11`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Configure :program:`cascade-hsm-bridge`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:program:`kmip2pkcs11` needs to know where to find the NetHSM PKCS#11
+:program:`cascade-hsm-bridge` needs to know where to find the NetHSM PKCS#11
 module. As PKCS#11 modules are loaded into a host application, any
 access to resources needed by the PKCS#11 module must be granted to
 the host application.
 
 .. code-block:: bash
 
-   # sed -i -e 's|^lib_path = .\+|lib_path = "/usr/lib/x86_64-linux-gnu/nethsm-pkcs11.so"|' /etc/kmip2pkcs11/config.toml
-   # systemctl start kmip2pkcs11
+   # sed -i -e 's|^lib_path = .\+|lib_path = "/usr/lib/x86_64-linux-gnu/nethsm-pkcs11.so"|' /etc/cascade-hsm-bridge/config.toml
+   # systemctl start cascade-hsm-bridge
 
 Create a Cascade Policy that uses your HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a Cascade policy called ``nethsm`` and set it to use the HSM
-called ``kmip2pkcs11`` we configured earlier.
+Create a Cascade policy called ``nethsm`` and set it to use the HSM called
+``cascade-hsm-bridge`` we configured earlier.
 
 .. code-block:: bash
 
    # cascade template policy | tee /etc/cascade/policies/nethsm.toml
-   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "kmip2pkcs11"|' /etc/cascade/policies/nethsm.toml
+   # sed -i -e 's|^#hsm-server-id = .\+|hsm-server-id = "cascade-hsm-bridge"|' /etc/cascade/policies/nethsm.toml
 
 Start the Cascade daemon:
 
@@ -323,16 +323,16 @@ Start the Cascade daemon:
    - nethsm added
 
 
-Configure a HSM in Cascade called ``kmip2pkcs11`` that will connect to the
-locally running :program:`kmip2pkcs11` daemon. The ``username`` is the slot
-identifier we found in our NetHSM earlier, and the ``password`` anything --
-it isn't actually used here, as the username/password with which we'll connect
-to the NetHSM has been configured in ``p11nethsm.conf`` above.
+Configure a HSM in Cascade called ``cascade-hsm-bridge`` that will connect
+to the locally running :program:`cascade-hsm-bridge` daemon. The ``username``
+is the slot identifier we found in our NetHSM earlier, and the ``password``
+anything -- it isn't actually used here, as the username/password with which
+we'll connect to the NetHSM has been configured in ``p11nethsm.conf`` above.
 
 .. code-block:: bash
 
-   # cascade hsm add --insecure --username 0 --password "123456" kmip2pkcs11 127.0.0.1
-   Added KMIP server 'kmip2pkcs11 0.1.0-alpha using PKCS#11 token with label LocalHSM in slot NetHSM via library nethsm-pkcs11.so'
+   # cascade hsm add --insecure --username 0 --password "123456" cascade-hsm-bridge 127.0.0.1
+   Added KMIP server 'cascade-hsm-bridge 0.1.0-alpha using PKCS#11 token with label LocalHSM in slot NetHSM via library nethsm-pkcs11.so'
 
 Sign a Test Zone with NetHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -448,7 +448,7 @@ In order to determine which key on the NetHSM belongs to a zone, we can use
    ✔ Waited for a new version of the example.net zone
    ✔ Loaded version 3
    ...
-    key kmip://kmip2pkcs11/keys/3FCCAF83FF24BDE4E0D3EE036ACAD36DEC76BD8A_pub?algorithm=13&flags=257 does not expire. No validity period is configured for the key type
+    key kmip://cascade-hsm-bridge/keys/3FCCAF83FF24BDE4E0D3EE036ACAD36DEC76BD8A_pub?algorithm=13&flags=257 does not expire. No validity period is configured for the key type
 
 The lowercased value of `3FCCAF83FF24BDE4E0D3EE036ACAD36DEC76BD8A` is the label of the key as reported by the above tools.
 

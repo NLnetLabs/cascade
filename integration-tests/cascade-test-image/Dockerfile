@@ -47,21 +47,23 @@ RUN <<EOF
 EOF
 
 RUN <<EOF
-  # Install dnst
-  cargo install --debug --git https://github.com/nlnetlabs/dnst --branch keyset --root /root/cargo-debug --locked --bin=dnst
-  cargo install --git https://github.com/nlnetlabs/dnst --branch keyset --root /root/cargo-release --locked --bin=dnst
+  # Install dnst.
+  # TODO: Switch installing release builds via apt-get install once a dnst
+  # release with keyset functionality has been released.
+  cargo install --debug --git https://github.com/nlnetlabs/dnst --rev 01e7fab --root /root/cargo-debug --locked --bin=dnst dnst
+  cargo install --git https://github.com/nlnetlabs/dnst --rev 01e7fab --root /root/cargo-release --locked --bin=dnst dnst
 EOF
+
+# Copy source files into container in case we need to build from source
+COPY etc/ /cascade/etc/
+COPY Cargo.toml Cargo.lock build.rs /cascade/
+COPY src/ /cascade/src/
+COPY crates/ /cascade/crates/
 
 # Copy built the cascade binaries into the container
 # Make sure this stays at the end of the Dockerfile to make best use of image step caching
 COPY target/release/cascaded target/release/cascade /root/cargo-release/bin/
 COPY target/debug/cascaded target/debug/cascade /root/cargo-debug/bin/
-
-# Copy source files into container in case we need to build from source
-COPY etc/ /cascade/etc/
-COPY Cargo.toml Cargo.lock /cascade/
-COPY src/ /cascade/src/
-COPY crates/ /cascade/crates/
 
 ARG REBUILD_INSIDE=false
 
