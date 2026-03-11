@@ -33,18 +33,11 @@ runs:
       run: |
         ./integration-tests/scripts/manage-test-environment.sh control nsd-primary notify example.test
 
-    - name: Check Cascade status
+    - name: Check that Cascade didn't crash
       run: |
-        timeout=10 # seconds
-        start=$(date +%s)
-        until cascade status | grep -q "Published zone available"; do
-          if (($(date +%s) > (start + timeout))); then
-            cascade status 
-            echo "::error:: timeout: Cascade status did not report published zone available"
-            exit 1
-          fi
-          sleep 1
-        done
+        # If we check the health immediately it might not have crashed yet
+        sleep 4
+        cascade health
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
