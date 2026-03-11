@@ -113,8 +113,13 @@ impl LoaderZoneHandle<'_> {
 
     /// Start a pending enqueued refresh.
     ///
-    /// This should be called when the zone data storage is idle. If a refresh
-    /// has been enqueued, it will be initiated, and `true` will be returned.
+    /// This should be called when the zone data storage is in the passive
+    /// state. If a load has been enqueued, it will be initiated (making the
+    /// data storage busy), and `true` will be returned.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the data storage is not in the passive state.
     pub fn start_pending(&mut self) -> bool {
         // Load the one enqueued refresh, if it exists.
         let Some(refresh) = self.state.loader.refreshes.enqueued.take() else {
@@ -126,7 +131,7 @@ impl LoaderZoneHandle<'_> {
             .zone()
             .storage()
             .start_load()
-            .expect("'start_pending()' is only called when the zone data storage is idle");
+            .expect("the zone data storage is passive");
         self.start(refresh, builder);
         true
     }

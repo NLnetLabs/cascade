@@ -113,15 +113,15 @@ impl SignerZoneHandle<'_> {
 
     /// Start a pending enqueued re-sign.
     ///
-    /// This should be called when the zone data storage is idle. If a re-sign
-    /// has been enqueued, it will be initiated, and `true` will be returned.
+    /// This should be called when the zone data storage is in the passive
+    /// state. If a re-sign has been enqueued, it will be initiated (making the
+    /// data storage busy), and `true` will be returned.
     ///
-    /// This method cannot initiate enqueued signing operations; when a signing
-    /// operation is enqueued, it prevents the data storage from idling.
+    /// ## Panics
+    ///
+    /// Panics if the data storage is not in the passive state.
     pub fn start_pending(&mut self) -> bool {
         // An enqueued or ongoing signing operation holds a 'SignedZoneBuilder',
-        // which prevents the zone data storage from being idle. This method is
-        // only called if the zone data storage is idle.
         assert!(self.state.signer.enqueued_sign.is_none());
         assert!(
             self.state
@@ -130,6 +130,8 @@ impl SignerZoneHandle<'_> {
                 .as_ref()
                 .is_none_or(|o| o.builder.is_none())
         );
+        // which prevents the zone data storage from being passive. This method
+        // is only called if the zone data storage is in the passive state.
         assert!(self.state.signer.ongoing.is_none());
 
         // Load the one enqueued re-sign operation, if it exists.
@@ -147,7 +149,7 @@ impl SignerZoneHandle<'_> {
             .zone()
             .storage()
             .start_resign()
-            .expect("'start_pending()' is only called when the zone data storage is idle");
+            .expect("the zone data storage is passive");
 
         // TODO: Once an explicit queue of signing operations has been
         // implemented (for limiting the number of simultaneous operations),

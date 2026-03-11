@@ -59,7 +59,7 @@ impl StorageZoneHandle<'_> {
     /// - [`Self::give_up_load()`] when loading fails.
     ///
     /// If the zone data storage is busy, [`None`] is returned; the loader
-    /// should enqueue the load operation and wait for an idle notification.
+    /// should enqueue the load operation and wait for a passive notification.
     #[tracing::instrument(
         level = "trace",
         skip_all,
@@ -139,7 +139,8 @@ impl StorageZoneHandle<'_> {
     /// Give up on the ongoing load.
     ///
     /// Any intermediate artifacts will be cleaned up automatically, in the
-    /// background. Once the zone storage is idle, a notification will be sent.
+    /// background. Once the zone storage is passive, a notification will be
+    /// sent.
     #[tracing::instrument(
         level = "trace",
         skip_all,
@@ -325,8 +326,9 @@ impl StorageZoneHandle<'_> {
     ///
     /// - [`Self::give_up_sign()`] when signing fails.
     ///
-    /// If the zone data storage is busy, [`None`] is returned; the signer
-    /// should enqueue the re-sign operation and wait for an idle notification.
+    /// If the zone data storage is busy, [`None`] is returned; the
+    /// signer should enqueue the re-sign operation and wait for a passive
+    /// notification.
     pub fn start_resign(&mut self) -> Option<SignedZoneBuilder> {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
@@ -398,7 +400,7 @@ impl StorageZoneHandle<'_> {
     ///
     /// Intermediate artifacts in the signed instance, and the upcoming loaded
     /// instance (if any), will be cleaned up automatically, in the background.
-    /// Once the zone storage is idle, a notification will be sent.
+    /// Once the zone storage is passive, a notification will be sent.
     pub fn give_up_sign(&mut self, builder: SignedZoneBuilder) {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
@@ -592,8 +594,8 @@ impl StorageZoneHandle<'_> {
                 ),
             }
 
-            // Notify the rest of Cascade that the storage is idle.
-            handle.storage().on_idle();
+            // Notify the rest of Cascade that the storage is passive.
+            handle.storage().on_passive();
 
             handle.state.storage.background_tasks.finish();
         });
@@ -656,8 +658,8 @@ impl StorageZoneHandle<'_> {
                 ),
             }
 
-            // Notify the rest of Cascade that the storage is idle.
-            handle.storage().on_idle();
+            // Notify the rest of Cascade that the storage is passive.
+            handle.storage().on_passive();
 
             handle.state.storage.background_tasks.finish();
         });
@@ -665,15 +667,15 @@ impl StorageZoneHandle<'_> {
 
     /// Respond to the data storage idling.
     ///
-    /// When the data storage idles, it is possible to initiate a new load or
-    /// resigning of the zone. This method checks for enqueued loads or resigns
-    /// and begins them appropriately.
+    /// When the data storage is passive, it is possible to initiate a new
+    /// load or resigning of the zone. This method checks for enqueued loads or
+    /// re-sign operations and begins them appropriately.
     #[tracing::instrument(
         level = "trace",
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    fn on_idle(&mut self) {
+    fn on_passive(&mut self) {
         // TODO: Check whether resigning is needed. It has higher priority than
         // loading a new instance.
         //
@@ -681,12 +683,12 @@ impl StorageZoneHandle<'_> {
         // this method be implemented there?
 
         if self.zone().loader().start_pending() {
-            // The zone storage is no longer idle.
+            // The zone storage is no longer passive.
             return;
         }
 
         if self.zone().signer().start_pending() {
-            // The zone storage is no longer idle.
+            // The zone storage is no longer passive.
             // return;
         }
     }
