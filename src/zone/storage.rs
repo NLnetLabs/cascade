@@ -75,7 +75,7 @@ impl StorageZoneHandle<'_> {
     ///
     /// - [`Self::finish_load()`] when loading succeeds.
     ///
-    /// - [`Self::give_up_load()`] when loading fails.
+    /// - [`Self::abandon_load()`] when loading fails.
     ///
     /// If the zone data storage is busy, [`None`] is returned; the loader
     /// should enqueue the load operation and wait for a passive notification.
@@ -320,7 +320,7 @@ impl StorageZoneHandle<'_> {
     ///
     /// - [`Self::finish_sign()`] when signing succeeds.
     ///
-    /// - [`Self::give_up_sign()`] when signing fails.
+    /// - [`Self::abandon_sign()`] when signing fails.
     ///
     /// If the zone data storage is busy, [`None`] is returned; the
     /// signer should enqueue the re-sign operation and wait for a passive
