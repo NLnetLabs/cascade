@@ -1,8 +1,27 @@
 //! Storing zone data.
 //!
-//! This module integrates the `cascade-zonedata` subcrate with the main daemon.
-//! It imports [`ZoneDataStorage`], the core state machine for tracking zone
-//! data, and adds helpers around it to simplify common transitions.
+//! This module integrates the [`cascade_zonedata`] subcrate with the main
+//! daemon. It imports [`ZoneDataStorage`], the core state machine for tracking
+//! zone data, and adds helpers around it to simplify common transitions.
+//!
+//! Zone data storage consists of the following components:
+//!
+//! - The *current loaded instance*.
+//! - The *current signed instance*.
+//! - An *upcoming loaded instance*.
+//! - An *upcoming signed instance*.
+//!
+//! The *current* instances have been approved and published. The *upcoming*
+//! instances are being built and reviewed; once they are (both!) approved, they
+//! will replace the current instances. Each instance is either read-locked (so
+//! it can be served or reviewed) or write-locked (so it can be built into).
+//! [`ZoneDataStorage`] is a state machine for manipulating instances.
+//!
+//! The zone data storage is *passive* or *busy*. In passive state, no instances
+//! of the zone are being built, so new operations (e.g. loading and re-signing)
+//! can be initiated. In busy state, an instance of the zone is being built, and
+//! such operations must wait. When the data storage becomes passive, it will
+//! call [`StorageZoneHandle::on_passive()`] to initiate enqueued operations.
 
 use std::{fmt, sync::Arc};
 
@@ -136,17 +155,19 @@ impl StorageZoneHandle<'_> {
         }
     }
 
-    /// Give up on the ongoing load.
+    /// Abandon the ongoing load.
     ///
-    /// Any intermediate artifacts will be cleaned up automatically, in the
-    /// background. Once the zone storage is passive, a notification will be
-    /// sent.
+    /// The caller was performing a load operation which did not succeed; this
+    /// method will consume its builder object and clean up any leftover data.
+    ///
+    /// Once the zone storage is passive, a notification will be sent to begin
+    /// enqueued operations.
     #[tracing::instrument(
         level = "trace",
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn give_up_load(&mut self, builder: LoadedZoneBuilder) {
+    pub fn abandon_load(&mut self, builder: LoadedZoneBuilder) {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
         match machine.take() {
@@ -192,14 +213,15 @@ impl StorageZoneHandle<'_> {
                 .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
             let serial = reader.soa().rdata.serial;
 
-            // Build a `zonetree` for the new instance.
-            let zonetree = Self::build_loaded_zonetree(&zone, &reader);
+            // Build a compatibility shim for the new instance.
+            let zonetree_zone = Self::build_compat_for_loaded(&zone, &reader);
 
-            // Insert the new `zonetree`.
+            // Insert the compatibility shim in the global view (possibly
+            // replacing a previous one).
             center.unsigned_zones.rcu(|tree| {
                 let mut tree = Arc::unwrap_or_clone(tree.clone());
                 let _ = tree.remove_zone(&zone.name, domain::base::iana::Class::IN);
-                tree.insert_zone(zonetree.clone()).unwrap();
+                tree.insert_zone(zonetree_zone.clone()).unwrap();
                 tree
             });
 
@@ -260,17 +282,15 @@ impl StorageZoneHandle<'_> {
         });
     }
 
-    /// Build a `zonetree` for an loaded instance of a zone.
-    fn build_loaded_zonetree(zone: &Arc<Zone>, reader: &LoadedZoneReader<'_>) -> zonetree::Zone {
+    /// Build a [`zonetree::Zone`] for a loaded instance of a zone, for
+    /// compatibility with the rest of Cascade.
+    fn build_compat_for_loaded(zone: &Arc<Zone>, reader: &LoadedZoneReader<'_>) -> zonetree::Zone {
         use zonetree::{types::ZoneUpdate, update::ZoneUpdater};
 
         let zone =
             zonetree::ZoneBuilder::new(zone.name.clone(), domain::base::iana::Class::IN).build();
 
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
-
-        // Clear all existing records.
-        force_future(updater.apply(ZoneUpdate::DeleteAllRecords)).unwrap();
 
         // Add every record in turn.
         for record in reader.records() {
@@ -396,12 +416,16 @@ impl StorageZoneHandle<'_> {
         }
     }
 
-    /// Give up on the ongoing signing operation.
+    /// Abandon the ongoing signing operation.
     ///
-    /// Intermediate artifacts in the signed instance, and the upcoming loaded
-    /// instance (if any), will be cleaned up automatically, in the background.
-    /// Once the zone storage is passive, a notification will be sent.
-    pub fn give_up_sign(&mut self, builder: SignedZoneBuilder) {
+    /// The caller was performing a signing operation which did not succeed;
+    /// this method will consume its builder object and clean up any leftover
+    /// data. It will clean up the upcoming signed instance, **and** the
+    /// upcoming loaded instance (if any).
+    ///
+    /// Once the zone storage is passive, a notification will be sent to begin
+    /// enqueued operations.
+    pub fn abandon_sign(&mut self, builder: SignedZoneBuilder) {
         // Examine the current state.
         let machine = &mut self.state.storage.machine;
         match machine.take() {
@@ -437,25 +461,24 @@ impl StorageZoneHandle<'_> {
         let center = self.center.clone();
         let span = trace_span!("start_signed_review");
         self.state.storage.background_tasks.spawn_blocking(span, move || {
-            // Read the loaded instance.
+            // Read the loaded and signed instances.
             let loaded_reader = signed_reviewer
                 .read_loaded()
                 .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
-
-            // Read the signed instance.
             let signed_reader = signed_reviewer
                 .read_signed()
                 .unwrap_or_else(|| unreachable!("The signer never returns an empty instance"));
             let serial = signed_reader.soa().rdata.serial;
 
-            // Build a `zonetree` for the new instance.
-            let zonetree = Self::build_signed_zonetree(&zone, &loaded_reader, &signed_reader);
+            // Build a compatibility shim for the new instance.
+            let zonetree_zone = Self::build_compat_for_signed(&zone, &loaded_reader, &signed_reader);
 
-            // Insert the new `zonetree`.
+            // Insert the compatibility shim in the global view (possibly
+            // replacing a previous one).
             center.signed_zones.rcu(|tree| {
                 let mut tree = Arc::unwrap_or_clone(tree.clone());
                 let _ = tree.remove_zone(&zone.name, domain::base::iana::Class::IN);
-                tree.insert_zone(zonetree.clone()).unwrap();
+                tree.insert_zone(zonetree_zone.clone()).unwrap();
                 tree
             });
 
@@ -469,7 +492,9 @@ impl StorageZoneHandle<'_> {
             tracing::debug!("Transitioning zone state...");
             match state.storage.machine.take() {
                 ZoneDataStorage::ReviewSignedPending(s) => {
-                    // For now, transition all the way back to 'Passive' state.
+                    // TODO: Once the zone server is integrated, it will handle
+                    // review. For now, transition the state machine back to the
+                    // passive state (asynchronously through 'Cleaning').
                     let s = s.start(old_signed_reviewer);
                     let (s, persister) = s.mark_approved();
                     let persisted = persister.persist();
@@ -508,8 +533,8 @@ impl StorageZoneHandle<'_> {
         });
     }
 
-    /// Build a `zonetree` for an signed instance of a zone.
-    fn build_signed_zonetree(
+    /// Build a [`zonetree::Zone`] for a signed instance of a zone.
+    fn build_compat_for_signed(
         zone: &Arc<Zone>,
         loaded_reader: &LoadedZoneReader<'_>,
         signed_reader: &SignedZoneReader<'_>,
@@ -520,9 +545,6 @@ impl StorageZoneHandle<'_> {
             zonetree::ZoneBuilder::new(zone.name.clone(), domain::base::iana::Class::IN).build();
 
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
-
-        // Clear all existing records.
-        force_future(updater.apply(ZoneUpdate::DeleteAllRecords)).unwrap();
 
         // Add every record in turn.
         for record in signed_reader.records() {
