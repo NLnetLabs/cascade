@@ -823,10 +823,13 @@ impl Notifiable for LoaderNotifier {
             // Propagate a request for the zone refresh.
             // This request ignores the serial and source because we will just
             // do a SOA query to our configured upstreams.
-            info!("[CC]: Instructing zone loader to refresh the zone");
             let center = &self.center;
-            let zone = crate::center::get_zone(center, apex_name).expect("zone exists");
-            center.loader.on_refresh_zone(center, &zone);
+            if let Some(zone) = crate::center::get_zone(center, apex_name) {
+                info!("[CC]: Instructing zone loader to refresh the zone");
+                center.loader.on_refresh_zone(center, &zone);
+            } else {
+                error!("Got a NOTIFY for non-existent zone '{apex_name}'");
+            }
         }
 
         Box::pin(std::future::ready(Ok(())))
