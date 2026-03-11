@@ -192,7 +192,7 @@ impl ZoneSigner {
 
     fn mk_signing_report(
         &self,
-        status: Arc<RwLock<NamedZoneSigningStatus>>,
+        status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Option<SigningReport> {
         let status = status.read().unwrap();
         let now = Instant::now();
@@ -385,7 +385,7 @@ impl ZoneSigner {
         zone: &Arc<Zone>,
         resign_last_signed_zone_content: bool,
         trigger: SigningTrigger,
-        status: Arc<RwLock<NamedZoneSigningStatus>>,
+        status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Result<(), SignerError> {
         let zone_name = &zone.name;
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
@@ -1685,7 +1685,7 @@ impl std::fmt::Display for ZoneSigningStatus {
 
 const SIGNING_QUEUE_SIZE: usize = 100;
 
-struct NamedZoneSigningStatus {
+struct SigningStatusPerZone {
     zone: Arc<Zone>,
     current_action: String,
     status: ZoneSigningStatus,
@@ -1698,7 +1698,7 @@ struct ZoneSignerStatus {
     //
     // TODO: Separate out signing request queuing from signing statistics
     // tracking.
-    zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<NamedZoneSigningStatus>>>>>,
+    zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<SigningStatusPerZone>>>>>,
 
     // Sign each zone only once at a time.
     zone_semaphores: Arc<RwLock<HashMap<StoredName, Arc<Semaphore>>>>,
@@ -1717,7 +1717,7 @@ impl ZoneSignerStatus {
         }
     }
 
-    pub fn get(&self, wanted_zone: &Arc<Zone>) -> Option<Arc<RwLock<NamedZoneSigningStatus>>> {
+    pub fn get(&self, wanted_zone: &Arc<Zone>) -> Option<Arc<RwLock<SigningStatusPerZone>>> {
         self.dump_queue();
 
         let zones_being_signed = self.zones_being_signed.read().unwrap();
@@ -1764,13 +1764,13 @@ impl ZoneSignerStatus {
             usize,
             OwnedSemaphorePermit,
             OwnedSemaphorePermit,
-            Arc<RwLock<NamedZoneSigningStatus>>,
+            Arc<RwLock<SigningStatusPerZone>>,
         ),
         SignerError,
     > {
         let zone_name = &zone.name;
         debug!("SIGNER[{zone_name}]: Adding to the queue");
-        let status = Arc::new(RwLock::new(NamedZoneSigningStatus {
+        let status = Arc::new(RwLock::new(SigningStatusPerZone {
             zone: zone.clone(),
             current_action: "Waiting for any existing signing operation for this zone to finish"
                 .to_string(),
