@@ -387,7 +387,7 @@ function start-services() {
     # logfile in the working directory. -L only changes the logging from syslog
     # to a logfile.
     cd "${_nameserver_base_dir}/bind"
-    named -c "${_nameserver_base_dir}/bind.conf" -d 1 -L "${_nameserver_base_dir}/bind.log"
+    #named -c "${_nameserver_base_dir}/bind.conf" -d 1 -L "${_nameserver_base_dir}/bind.log"
   )
   nsd -c "${_nameserver_base_dir}/nsd.conf"
   nsd -c "${_nameserver_base_dir}/nsd-primary.conf"

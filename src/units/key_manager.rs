@@ -13,9 +13,11 @@ use core::time::Duration;
 use domain::base::Name;
 use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
+use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env::{VarError, var};
 use std::ffi::OsStr;
 use std::fmt::Formatter;
 use std::fs::{File, OpenOptions, metadata};
@@ -45,6 +47,18 @@ impl KeyManager {
 
     /// Launch the key manager.
     pub fn run(center: Arc<Center>) -> AbortOnDrop {
+        let faketime = match var("CASCADE_FAKETIME") {
+            Ok(val) => {
+                let timestamp = val
+                    .parse::<Timestamp>()
+                    .map_err(|e| panic!("cannot parse {e} as u32"))
+                    .expect("should not fail");
+                Some(timestamp.into())
+            }
+            Err(VarError::NotPresent) => None,
+            Err(e) => panic!("unable to look up CASCADE_FAKETIME: {e}"),
+        };
+
         // Perform periodic ticks in the background.
         AbortOnDrop::from(tokio::task::spawn({
             async move {
@@ -52,7 +66,7 @@ impl KeyManager {
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    center.key_manager.tick(&center).await;
+                    center.key_manager.tick(&center, faketime.clone()).await;
                 }
             }
         }))
@@ -343,11 +357,24 @@ impl KeyManager {
 
         // Pass `set` and `import` commands to `dnst keyset`.
         let config_commands = imports_to_commands(key_imports).into_iter().chain(
-            policy_to_commands(&policy.latest).into_iter().map(|v| {
-                let mut final_cmd = vec!["set".into()];
-                final_cmd.extend(v);
-                final_cmd
-            }),
+            policy_to_commands(&policy.latest)
+                .into_iter()
+                .chain({
+                    match var("CASCADE_FAKETIME") {
+                        Ok(val) => vec![vec!["fake-time".to_string(), val]],
+                        Err(VarError::NotPresent) => vec![],
+                        Err(e) => {
+                            return Err(ZoneAddError::Other(format!(
+                                "unable to lookup CASCADE_FAKETIME: {e}"
+                            )));
+                        }
+                    }
+                })
+                .map(|v| {
+                    let mut final_cmd = vec!["set".into()];
+                    final_cmd.extend(v);
+                    final_cmd
+                }),
         );
 
         for c in config_commands {
@@ -390,7 +417,7 @@ impl KeyManager {
         )
     }
 
-    async fn tick(&self, center: &Arc<Center>) {
+    async fn tick(&self, center: &Arc<Center>, faketime: Option<UnixTime>) {
         let zone_tree = &center.unsigned_zones;
         let Ok(mut ks_info) = self.ks_info.try_lock() else {
             // An existing call to tick() is still busy, don't do anything.
@@ -451,7 +478,7 @@ impl KeyManager {
                 continue;
             };
 
-            if *cron_next < UnixTime::now() {
+            if *cron_next < faketime.clone().unwrap_or(UnixTime::now()) {
                 // Note: The call to keyset cron can take a long time if
                 // keyset times out trying to contact nameservers. This will
                 // block the loop so we won't check the keyset state for the

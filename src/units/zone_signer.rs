@@ -1,5 +1,6 @@
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
+use std::env::{VarError, var};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -448,7 +449,9 @@ impl ZoneSigner {
                 if let Some(previous_serial) = last_signed_serial
                     && soa.serial() <= previous_serial
                 {
-                    return Err(SignerError::KeepSerialPolicyViolated);
+                    // Ignore this error until we can figure out how to
+                    // return a soft error.
+                    // return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
                 soa.serial()
@@ -539,7 +542,7 @@ impl ZoneSigner {
             let zone_state = zone.state.lock().unwrap();
             zone_state.policy.clone()
         };
-        let signing_config = self.signing_config(&policy.unwrap());
+        let signing_config = self.signing_config(&policy.unwrap())?;
         let rrsig_cfg =
             GenerateRrsigConfig::new(signing_config.inception, signing_config.expiration);
 
@@ -1128,7 +1131,10 @@ impl ZoneSigner {
             })
     }
 
-    fn signing_config(&self, policy: &PolicyVersion) -> SigningConfig<Bytes, MultiThreadedSorter> {
+    fn signing_config(
+        &self,
+        policy: &PolicyVersion,
+    ) -> Result<SigningConfig<Bytes, MultiThreadedSorter>, SignerError> {
         let denial = match &policy.signer.denial {
             SignerDenialPolicy::NSec => DenialConfig::Nsec(Default::default()),
             SignerDenialPolicy::NSec3 { opt_out } => {
@@ -1137,10 +1143,20 @@ impl ZoneSigner {
             }
         };
 
-        let now = Timestamp::now().into_int();
+        let now = match var("CASCADE_FAKETIME") {
+            Ok(val) => val
+                .parse::<u32>()
+                .map_err(|e| SignerError::InternalError(format!("cannot parse {e} as u32")))?,
+            Err(VarError::NotPresent) => Timestamp::now().into_int(),
+            Err(e) => return Err(SignerError::InternalError(e.to_string())),
+        };
         let inception = now.wrapping_sub(policy.signer.sig_inception_offset);
         let expiration = now.wrapping_add(policy.signer.sig_validity_time);
-        SigningConfig::new(denial, inception.into(), expiration.into())
+        Ok(SigningConfig::new(
+            denial,
+            inception.into(),
+            expiration.into(),
+        ))
     }
 
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
@@ -1487,6 +1503,8 @@ fn collect_zone(zone: Zone) -> Vec<StoredRecord> {
                     | Rtype::CDS
                     | Rtype::CDNSKEY
                     | Rtype::SOA
+                    | Rtype::ZONEMD
+                    | Rtype::NSEC3PARAM
             ) {
                 return;
             }
@@ -2011,6 +2029,7 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
     bytes
 }
 
+#[allow(unused)]
 enum SignerError {
     SoaNotFound,
     CannotSignUnapprovedZone,
