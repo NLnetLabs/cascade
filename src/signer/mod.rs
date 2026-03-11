@@ -1,4 +1,19 @@
 //! Signing zones.
+//!
+//! Signing operations can be categorized in different ways:
+//!
+//! - When a new instance of a zone has been loaded and needs to be signed, a
+//!   *new-signing* operation is enqueued. When an existing signed instance is
+//!   updated (e.g. because signing keys have changed), a *re-signing* operation
+//!   is enqueued.
+//!
+//! - An *incremental signing operation* generates a new signed instance of a
+//!   zone by making (small) modifications to the previous, existing signed
+//!   instance. An incremental new-signing operation may consider diffs between
+//!   the old and new loaded instances of the zone. A *full signing operation*
+//!   (sometimes termed a *non-incremental signing operation*) generates a new
+//!   signed instance of a zone from scratch, only considering the current
+//!   loaded instance of the zone; it does not consider any diffs.
 //
 // TODO: Move 'src/units/zone_signer.rs' here.
 
@@ -20,11 +35,17 @@ pub mod zone;
 
 //----------- sign() -----------------------------------------------------------
 
-/// Sign or re-sign a zone.
+/// Sign a zone.
 ///
-/// A new signed instance of the zone will be generated using `builder`.
-/// `builder` provides access to the actual zone content, including previous
-/// instances of the zone for incremental signing.
+/// This is the top-level entry point for signing. It can perform a new-sign or
+/// re-sign, incrementally or non-incrementally. Its input and output is
+/// controlled by `builder`.
+///
+/// `builder` provides access to:
+/// - The loaded instance of the zone to sign.
+/// - A previous loaded instance to diff against, if any.
+/// - A previous signed instance to build relative to, if any.
+/// - Writers for building the new signed instance.
 #[tracing::instrument(
     level = "debug",
     skip_all,

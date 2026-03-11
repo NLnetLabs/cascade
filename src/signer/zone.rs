@@ -35,14 +35,27 @@ impl SignerZoneHandle<'_> {
         }
     }
 
-    /// Enqueue a signing operation for a newly loaded instance of the zone.
-    pub fn enqueue_sign(&mut self, builder: SignedZoneBuilder) {
+    /// Enqueue a new-signing operation.
+    ///
+    /// When a new instance of the zone is loaded, reviewed, and approved, this
+    /// method should be called to initiate signing for it. `builder` should
+    /// originate from the zone storage after the loaded instance is approved.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if `builder.have_next_loaded()` is false.
+    pub fn enqueue_new_sign(&mut self, builder: SignedZoneBuilder) {
+        assert!(
+            builder.have_next_loaded(),
+            "a new loaded instance of the zone was not provided"
+        );
+
         // A zone can have at most one 'SignedZoneBuilder' at a time. Because
         // we have 'builder', we are guaranteed that no other signing operations
         // are ongoing right now. A re-signing operation may be enqueued, but it
         // has lower priority than this (for now).
 
-        assert!(self.state.signer.enqueued_sign.is_none());
+        assert!(self.state.signer.enqueued_new_sign.is_none());
         assert!(self.state.signer.ongoing.is_none());
 
         // TODO: Keep state for a queue of pending (re-)signing operations, so
@@ -61,6 +74,15 @@ impl SignerZoneHandle<'_> {
     }
 
     /// Enqueue a re-signing operation for the zone.
+    ///
+    /// When the zone needs re-signing (for one or more reasons, enumerated by
+    /// `trigger`), this method should be called to enqueue the operation. The
+    /// zone will be re-signed as soon as possible.
+    ///
+    /// Unlike [`Self::enqueue_new_sign()`], a [`SignedZoneBuilder`] does not
+    /// have to be passed here. It does not need to be available when this
+    /// method is called; it will be obtained automatically (possibly after some
+    /// time, if the underlying zone storage is currently busy).
     pub fn enqueue_resign(&mut self, trigger: ResigningTrigger) {
         // If a re-signing operation has already been enqueued, add to it.
         if let Some(resign) = &mut self.state.signer.enqueued_resign {
@@ -80,10 +102,9 @@ impl SignerZoneHandle<'_> {
         if let Some(builder) = builder {
             // A zone can have at most one 'SignedZoneBuilder' at a time.
             // Because we have 'builder', we are guaranteed that no other
-            // signing operations are ongoing right now. A re-signing operation
-            // may be enqueued, but it has lower priority than this (for now).
+            // signing operations are ongoing right now.
 
-            assert!(self.state.signer.enqueued_sign.is_none());
+            assert!(self.state.signer.enqueued_new_sign.is_none());
             assert!(self.state.signer.ongoing.is_none());
 
             let handle = tokio::task::spawn(super::sign(
@@ -117,33 +138,35 @@ impl SignerZoneHandle<'_> {
     /// state. If a re-sign has been enqueued, it will be initiated (making the
     /// data storage busy), and `true` will be returned.
     ///
+    /// This method cannot initiate enqueued new-signing operations (see
+    /// [`Self::enqueue_new_sign()`]); when a new-signing operation is enqueued,
+    /// it includes a [`SignedZoneBuilder`], which prevents the data storage
+    /// from being passive.
+    ///
     /// ## Panics
     ///
     /// Panics if the data storage is not in the passive state.
     pub fn start_pending(&mut self) -> bool {
         // An enqueued or ongoing signing operation holds a 'SignedZoneBuilder',
-        assert!(self.state.signer.enqueued_sign.is_none());
-        assert!(
-            self.state
-                .signer
-                .enqueued_resign
-                .as_ref()
-                .is_none_or(|o| o.builder.is_none())
-        );
         // which prevents the zone data storage from being passive. This method
         // is only called if the zone data storage is in the passive state.
+        assert!(self.state.signer.enqueued_new_sign.is_none());
         assert!(self.state.signer.ongoing.is_none());
 
         // Load the one enqueued re-sign operation, if it exists.
-        let Some(resign) = self.state.signer.enqueued_resign.take() else {
+        let Some(EnqueuedResign {
+            builder,
+            trigger,
+            expiration_time: _, // TODO
+        }) = self.state.signer.enqueued_resign.take()
+        else {
             // A re-sign is not enqueued, nothing to do.
             return false;
         };
-        let EnqueuedResign {
-            builder: _,
-            trigger,
-            expiration_time: _, // TODO
-        } = resign;
+
+        // As mentioned above, 'SignedZoneBuilder' cannot exist when the zone
+        // data storage is in the passive state.
+        assert!(builder.is_none());
 
         let builder = self
             .zone()
@@ -178,7 +201,7 @@ pub struct SignerState {
     pub ongoing: Option<AbortOnDrop>,
 
     /// An enqueued signing operation, if any.
-    pub enqueued_sign: Option<EnqueuedSign>,
+    pub enqueued_new_sign: Option<EnqueuedSign>,
 
     /// An enqueued re-signing operation, if any.
     pub enqueued_resign: Option<EnqueuedResign>,
