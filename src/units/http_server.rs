@@ -612,7 +612,7 @@ impl HttpServer {
         let center = &state.center;
         let Some(zone) = get_zone(center, &zone_name) else {
             debug!(
-                "[{HTTP_UNIT_NAME}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist"
+                "[{HTTP_UNIT_NAME}] Got a review approval for unsigned {zone_name}/{zone_serial}, but the zone does not exist"
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
@@ -634,7 +634,7 @@ impl HttpServer {
         let center = &state.center;
         let Some(zone) = get_zone(center, &zone_name) else {
             debug!(
-                "[{HTTP_UNIT_NAME}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist"
+                "[{HTTP_UNIT_NAME}] Got a review rejection for unsigned {zone_name}/{zone_serial}, but the zone does not exist"
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
@@ -656,7 +656,7 @@ impl HttpServer {
         let center = &state.center;
         let Some(zone) = get_zone(center, &zone_name) else {
             debug!(
-                "[{HTTP_UNIT_NAME}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist"
+                "[{HTTP_UNIT_NAME}] Got a review approval for signed {zone_name}/{zone_serial}, but the zone does not exist"
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
@@ -678,7 +678,7 @@ impl HttpServer {
         let center = &state.center;
         let Some(zone) = get_zone(center, &zone_name) else {
             debug!(
-                "[{HTTP_UNIT_NAME}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist"
+                "[{HTTP_UNIT_NAME}] Got a review rejection for signed {zone_name}/{zone_serial}, but the zone does not exist"
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };

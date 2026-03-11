@@ -32,7 +32,7 @@ use tracing::{debug, error, info, warn};
 /// The key manager.
 #[derive(Debug)]
 pub struct KeyManager {
-    ks_info: Mutex<HashMap<String, KeySetInfo>>,
+    ks_info: Mutex<HashMap<Name<Bytes>, KeySetInfo>>,
 }
 
 impl KeyManager {
@@ -402,20 +402,20 @@ impl KeyManager {
         };
         for zone in zones {
             let zone = &zone.0;
-            let apex_name = zone.name.to_string();
             let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
             if !state_path.exists() {
                 continue;
             }
 
-            let info = match ks_info.entry(apex_name.clone()) {
+            let info = match ks_info.entry(zone.name.clone()) {
                 std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     match KeySetInfo::try_from(&state_path) {
                         Ok(new_info) => entry.insert(new_info.clone()),
                         Err(err) => {
                             error!(
-                                "[KM]: Failed to load key set state for zone '{apex_name}': {err}"
+                                "[KM]: Failed to load key set state for zone '{}': {err}",
+                                zone.name,
                             );
                             continue;
                         }
@@ -440,7 +440,7 @@ impl KeyManager {
                         continue;
                     }
                 };
-                let _ = ks_info.insert(apex_name, new_info);
+                let _ = ks_info.insert(zone.name.clone(), new_info);
                 info!("[CC]: Instructing zone signer to re-sign the zone");
                 center.signer.on_sign_zone(
                     center,
@@ -484,7 +484,7 @@ impl KeyManager {
                         // Something happened. Update ks_info and signal the
                         // signer.
                         // let new_info = get_keyset_info(&state_path);
-                        let _ = ks_info.insert(apex_name, new_info);
+                        let _ = ks_info.insert(zone.name.clone(), new_info);
                         info!("[CC]: Instructing zone signer to re-sign the zone");
                         center.signer.on_sign_zone(
                             center,
