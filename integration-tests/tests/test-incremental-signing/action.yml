@@ -33,7 +33,10 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: ./.github/actions/prepare-systest-env
+    # Don't prepare the system test environment as that sets up NSD, BIND and
+    # Unbound which we don't need and takes a long time compared to the rest
+    # of the test.
+    # - uses: ./.github/actions/prepare-systest-env
     - uses: ./.github/actions/setup-and-start-cascade
       with:
         log-level: ${{ inputs.log-level }}
@@ -44,14 +47,12 @@ runs:
         POLICY: "${{ inputs.policy }}"
         ZONEMD: "${{ inputs.zonemd }}"
       run: |
-        echo "::info:: policy=${POLICY}"
         if [[ "${ZONEMD}" == "" ]]; then
           policy="${POLICY}"
         else
           policy="${POLICY}-${ZONEMD}"
         fi
 
-        echo "::info:: policy=${policy}"
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
         TEST_DIR="${PWD}/integration-tests/incremental-signing"
         cp "${TEST_DIR}/policies/${policy}.toml" "${POLICY_DIR}/"
