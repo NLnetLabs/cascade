@@ -44,10 +44,11 @@ use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
+use crate::signer::SigningTrigger;
 use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, SigningTrigger, UnsignedZoneVersionState, Zone,
-    ZoneHandle, ZoneVersionReviewState,
+    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneHandle,
+    ZoneVersionReviewState,
 };
 
 /// The source of a zone server.
@@ -550,7 +551,7 @@ impl ZoneServer {
             center,
             zone.name.clone(),
             Some(zone_serial),
-            SigningTrigger::ZoneChangesApproved,
+            SigningTrigger::Load,
         );
     }
 

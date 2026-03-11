@@ -47,6 +47,7 @@ use crate::center::{Center, get_zone, halt_zone};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
     KmipClientCredentialsFile, KmipServerCredentialsFileMode, mk_dnst_keyset_state_file_path,
@@ -55,7 +56,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, SigningTrigger};
+use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -283,7 +284,7 @@ impl ZoneSigner {
                         &center,
                         &zone_name,
                         HistoricalEvent::SigningFailed {
-                            trigger,
+                            trigger: trigger.into(),
                             reason: err.to_string(),
                         },
                         zone_serial,
@@ -1075,7 +1076,9 @@ impl ZoneSigner {
         record_zone_event(
             center,
             zone_name,
-            HistoricalEvent::SigningSucceeded { trigger },
+            HistoricalEvent::SigningSucceeded {
+                trigger: trigger.into(),
+            },
             Some(zone_serial),
         );
 
@@ -1268,7 +1271,7 @@ impl ZoneSigner {
                     center,
                     zone_name.clone(),
                     None,
-                    SigningTrigger::SignatureExpiration,
+                    SigningTrigger::Resign(ResigningTrigger::SIGS_NEED_REFRESH),
                 );
             }
         }

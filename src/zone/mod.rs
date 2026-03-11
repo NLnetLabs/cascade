@@ -302,10 +302,10 @@ pub enum HistoricalEvent {
     SourceChanged,
     NewVersionReceived,
     SigningSucceeded {
-        trigger: SigningTrigger,
+        trigger: cascade_api::SigningTrigger,
     },
     SigningFailed {
-        trigger: SigningTrigger,
+        trigger: cascade_api::SigningTrigger,
         reason: String,
     },
     UnsignedZoneReview {
@@ -365,13 +365,10 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             HistoricalEvent::PolicyChanged => Self::PolicyChanged,
             HistoricalEvent::SourceChanged => Self::SourceChanged,
             HistoricalEvent::NewVersionReceived => Self::NewVersionReceived,
-            HistoricalEvent::SigningSucceeded { trigger } => Self::SigningSucceeded {
-                trigger: trigger.into(),
-            },
-            HistoricalEvent::SigningFailed { trigger, reason } => Self::SigningFailed {
-                trigger: trigger.into(),
-                reason,
-            },
+            HistoricalEvent::SigningSucceeded { trigger } => Self::SigningSucceeded { trigger },
+            HistoricalEvent::SigningFailed { trigger, reason } => {
+                Self::SigningFailed { trigger, reason }
+            }
             HistoricalEvent::UnsignedZoneReview { status } => Self::UnsignedZoneReview { status },
             HistoricalEvent::SignedZoneReview { status } => Self::SignedZoneReview { status },
             HistoricalEvent::KeySetCommand {
@@ -386,25 +383,6 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             HistoricalEvent::KeySetError { cmd, err, elapsed } => {
                 Self::KeySetError { cmd, err, elapsed }
             }
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub enum SigningTrigger {
-    ExternallyModifiedKeySetState,
-    SignatureExpiration,
-    ZoneChangesApproved,
-    KeySetModifiedAfterCron,
-}
-
-impl From<SigningTrigger> for api::SigningTrigger {
-    fn from(value: SigningTrigger) -> Self {
-        match value {
-            SigningTrigger::ExternallyModifiedKeySetState => Self::ExternallyModifiedKeySetState,
-            SigningTrigger::SignatureExpiration => Self::SignatureExpiration,
-            SigningTrigger::ZoneChangesApproved => Self::ZoneChangesApproved,
-            SigningTrigger::KeySetModifiedAfterCron => Self::KeySetModifiedAfterCron,
         }
     }
 }

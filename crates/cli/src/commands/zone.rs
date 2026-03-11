@@ -388,14 +388,24 @@ impl Zone {
                                     format!(
                                         "Signing succeeded (triggered by {})",
                                         match trigger {
-                                            SigningTrigger::ExternallyModifiedKeySetState =>
-                                                "externally modified keyset state",
-                                            SigningTrigger::SignatureExpiration =>
-                                                "pending signature expiration",
-                                            SigningTrigger::ZoneChangesApproved =>
-                                                "unsigned zone review approved",
-                                            SigningTrigger::KeySetModifiedAfterCron =>
-                                                "keyset cron modified keyset state",
+                                            SigningTrigger::Load => "loading a new instance",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: false,
+                                            }) => "a change in signing keys",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: true,
+                                            }) => "signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: true,
+                                            }) =>
+                                                "a change in signing keys and signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: false,
+                                            }) => "<unknown>",
                                         }
                                     )
                                 }
@@ -403,14 +413,24 @@ impl Zone {
                                     format!(
                                         "Signing failed (triggered by {}): {reason}",
                                         match trigger {
-                                            SigningTrigger::ExternallyModifiedKeySetState =>
-                                                "externally modified keyset state",
-                                            SigningTrigger::SignatureExpiration =>
-                                                "pending signature expiration",
-                                            SigningTrigger::ZoneChangesApproved =>
-                                                "signed zone review approved",
-                                            SigningTrigger::KeySetModifiedAfterCron =>
-                                                "keyset cron modified keyset state",
+                                            SigningTrigger::Load => "loading a new instance",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: false,
+                                            }) => "a change in signing keys",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: true,
+                                            }) => "signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: true,
+                                            }) =>
+                                                "a change in signing keys and signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: false,
+                                            }) => "<unknown>",
                                         }
                                     )
                                 }

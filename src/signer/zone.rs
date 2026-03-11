@@ -6,8 +6,9 @@ use cascade_zonedata::SignedZoneBuilder;
 
 use crate::{
     center::Center,
+    signer::{ResigningTrigger, SigningTrigger},
     util::AbortOnDrop,
-    zone::{SigningTrigger, Zone, ZoneHandle, ZoneState},
+    zone::{Zone, ZoneHandle, ZoneState},
 };
 
 //----------- SignerZoneHandle -------------------------------------------------
@@ -53,27 +54,17 @@ impl SignerZoneHandle<'_> {
             self.center.clone(),
             self.zone.clone(),
             builder,
-            SigningTrigger::ZoneChangesApproved,
+            SigningTrigger::Load,
         ));
 
         self.state.signer.ongoing = Some(handle.into());
     }
 
     /// Enqueue a re-signing operation for the zone.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if `keys_changed` and `sigs_need_refresh` are both `false`.
-    pub fn enqueue_resign(&mut self, keys_changed: bool, sigs_need_refresh: bool) {
-        assert!(
-            keys_changed || sigs_need_refresh,
-            "a reason for re-signing was not specified"
-        );
-
+    pub fn enqueue_resign(&mut self, trigger: ResigningTrigger) {
         // If a re-signing operation has already been enqueued, add to it.
         if let Some(resign) = &mut self.state.signer.enqueued_resign {
-            resign.keys_changed |= keys_changed;
-            resign.sigs_need_refresh |= sigs_need_refresh;
+            resign.trigger |= trigger;
             return;
         }
 
@@ -95,18 +86,11 @@ impl SignerZoneHandle<'_> {
             assert!(self.state.signer.enqueued_sign.is_none());
             assert!(self.state.signer.ongoing.is_none());
 
-            // TODO: 'SigningTrigger' can't express multiple reasons.
-            let trigger = if keys_changed {
-                SigningTrigger::KeySetModifiedAfterCron
-            } else {
-                SigningTrigger::SignatureExpiration
-            };
-
             let handle = tokio::task::spawn(super::sign(
                 self.center.clone(),
                 self.zone.clone(),
                 builder,
-                trigger,
+                SigningTrigger::Resign(trigger),
             ));
 
             self.state.signer.ongoing = Some(handle.into());
@@ -121,8 +105,7 @@ impl SignerZoneHandle<'_> {
 
             self.state.signer.enqueued_resign = Some(EnqueuedResign {
                 builder: None,
-                keys_changed,
-                sigs_need_refresh,
+                trigger,
                 expiration_time,
             });
         }
@@ -156,9 +139,8 @@ impl SignerZoneHandle<'_> {
         };
         let EnqueuedResign {
             builder: _,
-            keys_changed,
-            sigs_need_refresh: _, // TODO
-            expiration_time: _,   // TODO
+            trigger,
+            expiration_time: _, // TODO
         } = resign;
 
         let builder = self
@@ -172,18 +154,11 @@ impl SignerZoneHandle<'_> {
         // add the operation to the queue before starting the re-sign. If the
         // queue is too full to start the operation yet, leave it enqueued.
 
-        // TODO: 'SigningTrigger' can't express multiple reasons.
-        let trigger = if keys_changed {
-            SigningTrigger::KeySetModifiedAfterCron
-        } else {
-            SigningTrigger::SignatureExpiration
-        };
-
         let handle = tokio::task::spawn(super::sign(
             self.center.clone(),
             self.zone.clone(),
             builder,
-            trigger,
+            SigningTrigger::Resign(trigger),
         ));
 
         self.state.signer.ongoing = Some(handle.into());
@@ -229,18 +204,8 @@ pub struct EnqueuedResign {
     /// to start.
     pub builder: Option<SignedZoneBuilder>,
 
-    /// Whether zone signing keys have changed.
-    ///
-    /// This indicates the reason for re-signing; if it is `true`, re-signing
-    /// has been enqueued because the keys used to sign the zone have changed.
-    pub keys_changed: bool,
-
-    /// Whether signatures need to be refreshed.
-    ///
-    /// This indicates the reason for re-signing; if it is `true`, re-signing
-    /// has been enqueued because signatures in the current instance of the zone
-    /// will expire soon.
-    pub sigs_need_refresh: bool,
+    /// The trigger causing this operation.
+    pub trigger: ResigningTrigger,
 
     /// When signatures in the zone will expire.
     ///

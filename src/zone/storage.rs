@@ -16,8 +16,9 @@ use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
+    signer::SigningTrigger,
     util::{BackgroundTasks, force_future},
-    zone::{HistoricalEvent, PipelineMode, SigningTrigger, Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -379,7 +380,7 @@ impl StorageZoneHandle<'_> {
                 self.state.record_event(
                     // TODO: Get the right trigger.
                     HistoricalEvent::SigningSucceeded {
-                        trigger: SigningTrigger::SignatureExpiration,
+                        trigger: SigningTrigger::Load.into(),
                     },
                     Some(domain::base::Serial(serial.into())),
                 );

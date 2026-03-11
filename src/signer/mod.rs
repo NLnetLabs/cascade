@@ -2,7 +2,10 @@
 //
 // TODO: Move 'src/units/zone_signer.rs' here.
 
-use std::sync::Arc;
+use std::{
+    ops::{BitOr, BitOrAssign},
+    sync::Arc,
+};
 
 use cascade_zonedata::SignedZoneBuilder;
 use tracing::{debug, error};
@@ -10,7 +13,7 @@ use tracing::{debug, error};
 use crate::{
     center::{Center, halt_zone},
     manager::record_zone_event,
-    zone::{HistoricalEvent, SigningTrigger, Zone},
+    zone::{HistoricalEvent, Zone},
 };
 
 pub mod zone;
@@ -25,7 +28,7 @@ pub mod zone;
 #[tracing::instrument(
     level = "debug",
     skip_all,
-    fields(zone = %zone.name),
+    fields(zone = %zone.name, ?trigger),
 )]
 async fn sign(
     center: Arc<Center>,
@@ -57,11 +60,93 @@ async fn sign(
                 &center,
                 &zone.name,
                 HistoricalEvent::SigningFailed {
-                    trigger,
+                    trigger: trigger.into(),
                     reason: error.to_string(),
                 },
                 None, // TODO
             );
+        }
+    }
+}
+
+//----------- SigningTrigger ---------------------------------------------------
+//
+// TODO: Can these be named better?
+// TODO: This is mostly relevant for re-signing.
+// TODO: These may be subsumed by a more generic causality tracking system.
+
+/// The trigger for a (re-)signing operation.
+#[derive(Copy, Clone, Debug)]
+pub enum SigningTrigger {
+    /// A new instance of a zone has been loaded.
+    Load,
+
+    /// A trigger for re-signing.
+    Resign(ResigningTrigger),
+}
+
+impl From<SigningTrigger> for cascade_api::SigningTrigger {
+    fn from(value: SigningTrigger) -> Self {
+        match value {
+            SigningTrigger::Load => Self::Load,
+            SigningTrigger::Resign(trigger) => Self::Resign(trigger.into()),
+        }
+    }
+}
+
+/// The trigger for a re-signing operation.
+#[derive(Copy, Clone, Debug)]
+pub struct ResigningTrigger {
+    /// Whether zone signing keys have changed.
+    keys_changed: bool,
+
+    /// Whether signatures need to be refreshed.
+    sigs_need_refresh: bool,
+}
+
+impl ResigningTrigger {
+    /// Re-signing because keys have changed.
+    pub const KEYS_CHANGED: Self = Self {
+        keys_changed: true,
+        sigs_need_refresh: false,
+    };
+
+    /// Re-signing because signatures need to be refreshed.
+    pub const SIGS_NEED_REFRESH: Self = Self {
+        keys_changed: false,
+        sigs_need_refresh: true,
+    };
+}
+
+impl BitOr for ResigningTrigger {
+    type Output = Self;
+
+    fn bitor(mut self, rhs: Self) -> Self::Output {
+        self |= rhs;
+        self
+    }
+}
+
+impl BitOrAssign for ResigningTrigger {
+    fn bitor_assign(&mut self, rhs: Self) {
+        let Self {
+            keys_changed,
+            sigs_need_refresh,
+        } = rhs;
+        self.keys_changed |= keys_changed;
+        self.sigs_need_refresh |= sigs_need_refresh;
+    }
+}
+
+impl From<ResigningTrigger> for cascade_api::ResigningTrigger {
+    fn from(value: ResigningTrigger) -> Self {
+        let ResigningTrigger {
+            keys_changed,
+            sigs_need_refresh,
+        } = value;
+        Self {
+            keys_changed,
+            sigs_need_refresh,
         }
     }
 }

@@ -501,12 +501,24 @@ pub enum HistoricalEvent {
     },
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+/// The trigger for a (re-)signing operation.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SigningTrigger {
-    ExternallyModifiedKeySetState,
-    SignatureExpiration,
-    ZoneChangesApproved,
-    KeySetModifiedAfterCron,
+    /// A new instance of a zone has been loaded.
+    Load,
+
+    /// A trigger for re-signing.
+    Resign(ResigningTrigger),
+}
+
+/// The trigger for a re-signing operation.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResigningTrigger {
+    /// Whether zone signing keys have changed.
+    pub keys_changed: bool,
+
+    /// Whether signatures need to be refreshed.
+    pub sigs_need_refresh: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
