@@ -22,6 +22,7 @@ use crate::{
     config::Config,
     loader::zone::{LoaderState, LoaderZoneHandle},
     policy::{Policy, PolicyVersion},
+    signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
 
@@ -64,6 +65,15 @@ impl ZoneHandle<'_> {
     /// Consider loader-specific operations.
     pub const fn loader(&mut self) -> LoaderZoneHandle<'_> {
         LoaderZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider signer-specific operations.
+    pub const fn signer(&mut self) -> SignerZoneHandle<'_> {
+        SignerZoneHandle {
             zone: self.zone,
             state: self.state,
             center: self.center,
@@ -121,6 +131,9 @@ pub struct ZoneState {
     /// Loading new versions of the zone.
     pub loader: LoaderState,
 
+    /// Signing the zone.
+    pub signer: SignerState,
+
     /// Data storage for the zone.
     pub storage: StorageState,
     //
@@ -128,7 +141,6 @@ pub struct ZoneState {
     // - A log?
     // - Initialization?
     // - Key manager state
-    // - Signer state
     // - Server state
 }
 
@@ -290,10 +302,10 @@ pub enum HistoricalEvent {
     SourceChanged,
     NewVersionReceived,
     SigningSucceeded {
-        trigger: SigningTrigger,
+        trigger: cascade_api::SigningTrigger,
     },
     SigningFailed {
-        trigger: SigningTrigger,
+        trigger: cascade_api::SigningTrigger,
         reason: String,
     },
     UnsignedZoneReview {
@@ -353,13 +365,10 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             HistoricalEvent::PolicyChanged => Self::PolicyChanged,
             HistoricalEvent::SourceChanged => Self::SourceChanged,
             HistoricalEvent::NewVersionReceived => Self::NewVersionReceived,
-            HistoricalEvent::SigningSucceeded { trigger } => Self::SigningSucceeded {
-                trigger: trigger.into(),
-            },
-            HistoricalEvent::SigningFailed { trigger, reason } => Self::SigningFailed {
-                trigger: trigger.into(),
-                reason,
-            },
+            HistoricalEvent::SigningSucceeded { trigger } => Self::SigningSucceeded { trigger },
+            HistoricalEvent::SigningFailed { trigger, reason } => {
+                Self::SigningFailed { trigger, reason }
+            }
             HistoricalEvent::UnsignedZoneReview { status } => Self::UnsignedZoneReview { status },
             HistoricalEvent::SignedZoneReview { status } => Self::SignedZoneReview { status },
             HistoricalEvent::KeySetCommand {
@@ -374,25 +383,6 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             HistoricalEvent::KeySetError { cmd, err, elapsed } => {
                 Self::KeySetError { cmd, err, elapsed }
             }
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub enum SigningTrigger {
-    ExternallyModifiedKeySetState,
-    SignatureExpiration,
-    ZoneChangesApproved,
-    KeySetModifiedAfterCron,
-}
-
-impl From<SigningTrigger> for api::SigningTrigger {
-    fn from(value: SigningTrigger) -> Self {
-        match value {
-            SigningTrigger::ExternallyModifiedKeySetState => Self::ExternallyModifiedKeySetState,
-            SigningTrigger::SignatureExpiration => Self::SignatureExpiration,
-            SigningTrigger::ZoneChangesApproved => Self::ZoneChangesApproved,
-            SigningTrigger::KeySetModifiedAfterCron => Self::KeySetModifiedAfterCron,
         }
     }
 }

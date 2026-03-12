@@ -3,9 +3,10 @@ use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError};
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, PolicyVersion};
+use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
-use crate::zone::{HistoricalEvent, SigningTrigger};
+use crate::zone::HistoricalEvent;
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
@@ -442,7 +443,7 @@ impl KeyManager {
                     center,
                     zone.apex_name().clone(),
                     None,
-                    SigningTrigger::ExternallyModifiedKeySetState,
+                    SigningTrigger::Resign(ResigningTrigger::KEYS_CHANGED),
                 );
                 continue;
             }
@@ -487,7 +488,7 @@ impl KeyManager {
                             center,
                             zone.apex_name().clone(),
                             None,
-                            SigningTrigger::KeySetModifiedAfterCron,
+                            SigningTrigger::Resign(ResigningTrigger::KEYS_CHANGED),
                         );
                         continue;
                     }

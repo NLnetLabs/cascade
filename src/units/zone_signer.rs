@@ -47,6 +47,7 @@ use crate::center::{Center, get_zone, halt_zone};
 use crate::common::light_weight_zone::LightWeightZone;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
     KmipClientCredentialsFile, KmipServerCredentialsFileMode, mk_dnst_keyset_state_file_path,
@@ -55,7 +56,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, SigningTrigger};
+use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -283,7 +284,7 @@ impl ZoneSigner {
                         &center,
                         &zone_name,
                         HistoricalEvent::SigningFailed {
-                            trigger,
+                            trigger: trigger.into(),
                             reason: err.to_string(),
                         },
                         zone_serial,
@@ -331,7 +332,7 @@ impl ZoneSigner {
     /// be possible if the signable zone were definitely a ZoneApex zone
     /// rather than a LightWeightZone (and XFR-in zones are LightWeightZone
     /// instances).
-    async fn join_sign_zone_queue(
+    pub async fn join_sign_zone_queue(
         &self,
         center: &Arc<Center>,
         zone_name: &StoredName,
@@ -1075,7 +1076,9 @@ impl ZoneSigner {
         record_zone_event(
             center,
             zone_name,
-            HistoricalEvent::SigningSucceeded { trigger },
+            HistoricalEvent::SigningSucceeded {
+                trigger: trigger.into(),
+            },
             Some(zone_serial),
         );
 
@@ -1268,7 +1271,7 @@ impl ZoneSigner {
                     center,
                     zone_name.clone(),
                     None,
-                    SigningTrigger::SignatureExpiration,
+                    SigningTrigger::Resign(ResigningTrigger::SIGS_NEED_REFRESH),
                 );
             }
         }
@@ -2011,7 +2014,7 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
     bytes
 }
 
-enum SignerError {
+pub enum SignerError {
     SoaNotFound,
     CannotSignUnapprovedZone,
     CannotResignNonPublishedZone,
@@ -2030,7 +2033,7 @@ enum SignerError {
 }
 
 impl SignerError {
-    fn is_benign(&self) -> bool {
+    pub fn is_benign(&self) -> bool {
         matches!(
             self,
             SignerError::CannotSignUnapprovedZone | SignerError::CannotResignNonPublishedZone

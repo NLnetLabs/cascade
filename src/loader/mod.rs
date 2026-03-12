@@ -234,7 +234,7 @@ async fn refresh(
             );
 
             // Cancel the load from the perspective of zone storage.
-            handle.storage().give_up_load(builder);
+            handle.storage().abandon_load(builder);
         }
 
         Ok(true) => {
@@ -262,7 +262,7 @@ async fn refresh(
             );
 
             // Cancel the load from the perspective of zone storage.
-            handle.storage().give_up_load(builder);
+            handle.storage().abandon_load(builder);
         }
     }
 }
