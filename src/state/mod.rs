@@ -53,9 +53,9 @@ pub enum Spec {
 
 impl Spec {
     /// Parse from this specification.
-    pub fn parse_into(self, state: &mut State) {
+    pub fn parse(self) -> State {
         match self {
-            Self::V1(spec) => spec.parse_into(state),
+            Self::V1(spec) => spec.parse(),
         }
     }
 

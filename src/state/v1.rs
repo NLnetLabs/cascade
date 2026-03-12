@@ -6,10 +6,11 @@ use bytes::Bytes;
 use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info, trace};
+use tracing::info;
 
 use crate::policy::file::v1::OutboundSpec;
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
+use crate::tsig::TsigStore;
 use crate::{
     center::State,
     policy::{
@@ -39,61 +40,31 @@ pub struct Spec {
 
 impl Spec {
     /// Parse from this specification.
-    pub fn parse_into(self, state: &mut State) {
-        // TODO: There may be interdependencies between zones and policies
-        // (e.g. if a removed policy was being used by a removed zone), so we
-        // can't just update them one after the other.
-
-        // Update the policy set.
-        let mut new_policies = foldhash::HashMap::default();
+    pub fn parse(self) -> State {
+        let mut policies = foldhash::HashMap::default();
         for (name, spec) in self.policies {
-            let policy = match state.policies.remove(&name) {
-                Some(mut policy) => {
-                    trace!("Retaining existing policy '{name}'");
-                    spec.parse_into(&mut policy);
-                    policy
-                }
-                None => {
-                    info!("Adding policy '{name}' from global state");
-                    spec.parse(&name)
-                }
-            };
-            new_policies.insert(name, policy);
+            info!("Adding policy '{name}' from global state");
+            let policy = spec.parse(&name);
+            policies.insert(name, policy);
         }
-        for (name, policy) in state.policies.drain() {
-            if !policy.zones.is_empty() {
-                error!(
-                    "The policy '{name}' has been removed from the global state, but some zones are still using it; Cascade will preserve its internal copy"
-                );
-                new_policies.insert(name, policy);
-            } else {
-                info!("Removing policy '{name}'");
-            }
-        }
-        state.policies = new_policies;
 
-        // Update the zone set.
         #[allow(clippy::mutable_key_type)]
-        let new_zones = self
+        let zones = self
             .zones
             .into_iter()
-            .map(|name| match state.zones.take(&name) {
-                Some(zone) => {
-                    trace!("Retaining existing zone '{name}'");
-                    zone
-                }
-                None => {
-                    info!("Adding zone '{name}' from global state");
-                    ZoneByName(Arc::new(Zone::new(name.clone())))
-                }
+            .map(|name| {
+                info!("Adding zone '{name}' from global state");
+                ZoneByName(Arc::new(Zone::new(name.clone())))
             })
             .collect();
 
-        for zone in state.zones.drain() {
-            info!("Removing zone '{}'", zone.0.name);
+        State {
+            zones,
+            policies,
+            rt_config: cascade_cfg::RuntimeConfig::default(),
+            tsig_store: TsigStore::default(),
+            enqueued_save: None,
         }
-
-        state.zones = new_zones;
     }
 
     /// Build this state specification.

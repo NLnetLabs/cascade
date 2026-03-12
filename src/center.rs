@@ -325,11 +325,10 @@ pub struct State {
 
 impl State {
     /// Attempt to load the global state file.
-    pub fn init_from_file(&mut self, config: &Config) -> io::Result<()> {
+    pub fn init_from_file(config: &Config) -> io::Result<Self> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        spec.parse_into(self);
-        Ok(())
+        Ok(spec.parse())
     }
 
     /// Mark the global state as dirty.

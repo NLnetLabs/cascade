@@ -5,7 +5,6 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
-    io,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
@@ -19,9 +18,8 @@ use tracing::{debug, error, trace};
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
-    config::Config,
     loader::zone::{LoaderState, LoaderZoneHandle},
-    policy::{Policy, PolicyVersion},
+    policy::PolicyVersion,
     signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
 };
@@ -403,23 +401,6 @@ impl Zone {
 //--- Loading / Saving
 
 impl Zone {
-    /// Reload the state of this zone.
-    pub fn reload_state(
-        self: &Arc<Self>,
-        policies: &mut foldhash::HashMap<Box<str>, Policy>,
-        config: &Config,
-    ) -> io::Result<()> {
-        // Load and parse the state file.
-        let path = config.zone_state_dir.join(format!("{}.db", self.name));
-        let spec = state::Spec::load(&path)?;
-
-        // Merge the parsed data.
-        let mut state = self.state.lock().unwrap();
-        spec.parse_into(self, &mut state, policies);
-
-        Ok(())
-    }
-
     /// Mark the zone as dirty.
     ///
     /// A persistence operation for the zone will be enqueued (unless one
