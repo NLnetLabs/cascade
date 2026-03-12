@@ -36,7 +36,6 @@ Example
     servers = ["127.0.0.1:4539", "[::1]:4539"]
 
     [loader]
-    notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
 
     [loader.review]
     servers = ["127.0.0.1:4541", "[::1]:4541"]
@@ -259,22 +258,8 @@ The ``[remote-control]`` section.
 How zones are loaded.
 +++++++++++++++++++++
 
-The ``[loader]`` section.
-
-.. option:: notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
-
-   Where to listen for zone change notifications.
-
-   A DNS server will be bound to these addresses.  If a DNS NOTIFY message for
-   a known zone is received there, the zone will be reloaded appropriately.
-
-   Unless explicitly specified (e.g. ``udp://localhost:4540``), each address will
-   be served over UDP and TCP.  An empty array will disable listening entirely.
-
-   These sockets may be bound by systemd and passed into Cascade.  If systemd
-   does not provide them, Cascade will bind them itself (and will do so before
-   dropping privileges, if that is enabled).
-
+The ``[loader]`` section. (This only includes the ``[loader.review]`` section
+below, for now).
 
 How loaded zones are reviewed.
 ++++++++++++++++++++++++++++++

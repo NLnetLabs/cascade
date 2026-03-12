@@ -297,7 +297,6 @@ fn bind_to_listen_sockets_as_needed(config: &Config) -> Result<SocketProvider, (
         .review
         .servers
         .iter()
-        .chain(config.loader.notify_listeners.iter())
         .chain(config.signer.review.servers.iter())
         .chain(config.server.servers.iter())
         .chain(remote_control_servers.iter());

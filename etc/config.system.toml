@@ -24,7 +24,6 @@ daemonize = false
 servers = ["127.0.0.1:4539", "[::1]:4539"]
 
 [loader]
-notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
 review.servers = ["127.0.0.1:4541", "[::1]:4541"]
 
 [signer]
