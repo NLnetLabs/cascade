@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::center::{Center, get_zone};
+use crate::center::Center;
 use crate::daemon::SocketProvider;
 use crate::loader::Loader;
 use crate::metrics::MetricsCollection;
@@ -12,10 +12,9 @@ use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
 use crate::util::AbortOnDrop;
-use crate::zone::HistoricalEvent;
+use crate::zone::{HistoricalEvent, Zone};
 use daemonbase::process::EnvSocketsError;
 use domain::base::Serial;
-use domain::zonetree::StoredName;
 use tracing::{debug, error, info};
 
 //----------- Manager ----------------------------------------------------------
@@ -124,15 +123,13 @@ impl Manager {
 
 pub fn record_zone_event(
     center: &Arc<Center>,
-    name: &StoredName,
+    zone: &Arc<Zone>,
     event: HistoricalEvent,
     serial: Option<Serial>,
 ) {
-    if let Some(zone) = get_zone(center, name) {
-        let mut zone_state = zone.state.lock().unwrap();
-        zone_state.record_event(event, serial);
-        zone.mark_dirty(&mut zone_state, center);
-    }
+    let mut zone_state = zone.state.lock().unwrap();
+    zone_state.record_event(event, serial);
+    zone.mark_dirty(&mut zone_state, center);
 }
 
 //----------- Error ------------------------------------------------------------

@@ -254,7 +254,7 @@ impl StorageZoneHandle<'_> {
 
                 center.unsigned_review_server.on_seek_approval_for_zone(
                     &center,
-                    zone.name.clone(),
+                    &zone,
                     domain::base::Serial(serial.into()),
                 );
 
@@ -517,7 +517,7 @@ impl StorageZoneHandle<'_> {
 
             center.signed_review_server.on_seek_approval_for_zone(
                 &center,
-                zone.name.clone(),
+                &zone,
                 domain::base::Serial(serial.into()),
             );
 
