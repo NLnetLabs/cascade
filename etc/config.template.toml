@@ -174,18 +174,6 @@ servers = ["127.0.0.1:4539", "[::1]:4539"]
 
 # How zones are loaded.
 [loader]
-# Where to listen for zone change notifications.
-#
-# A DNS server will be bound to these addresses.  If a DNS NOTIFY message for a
-# known zone is received there, the zone will be reloaded appropriately.
-#
-# Unless explicitly specified (e.g. 'udp://localhost:4540'), each address will
-# be served over UDP and TCP.  An empty array will disable listening entirely.
-#
-# These sockets may be bound by systemd and passed into Cascade.  If systemd
-# does not provide them, Cascade will bind them itself (and will do so before
-# dropping privileges, if that is enabled).
-notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
 
 # How loaded zones are reviewed.
 [loader.review]
