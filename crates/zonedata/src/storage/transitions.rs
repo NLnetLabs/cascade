@@ -129,7 +129,8 @@ impl SigningStorage {
         let reviewer = unsafe {
             SignedZoneReviewer::new(
                 self.data.clone(),
-                !self.curr_loaded_index,
+                // Iff there is a loaded diff, use '!curr_loaded_index'.
+                self.curr_loaded_index ^ self.loaded_diff.is_some(),
                 !self.curr_signed_index,
                 self.loaded_diff.clone(),
                 Some(built.diff.clone()),
@@ -302,7 +303,8 @@ impl ReviewingSignedStorage {
             data: self.data,
             curr_loaded_index: self.curr_loaded_index,
             curr_signed_index: self.curr_signed_index,
-            next_loaded_index: !self.curr_loaded_index,
+            // Iff there is a loaded diff, use '!curr_loaded_index'.
+            next_loaded_index: self.curr_loaded_index ^ self.loaded_diff.is_some(),
             next_signed_index: !self.curr_signed_index,
         };
 
