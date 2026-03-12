@@ -1,0 +1,121 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Test incremental signing'
+description: 'Test incremental signing.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+  zonemd:
+    required: true
+    type: string
+  policy:
+    required: true
+    type: string
+  test_idx:
+    required: true
+    type: integer
+  key:
+    required: true
+    type: string
+runs:
+  using: "composite"
+  steps:
+    # Don't prepare the system test environment as that sets up NSD, BIND and
+    # Unbound which we don't need and takes a long time compared to the rest
+    # of the test.
+    # - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+        fake-time: 1600000000
+
+    - name: Add policy
+      id: add-policy
+      env:
+        POLICY: "${{ inputs.policy }}"
+        ZONEMD: "${{ inputs.zonemd }}"
+      run: |
+        if [[ "${ZONEMD}" == "" ]]; then
+          policy="${POLICY}"
+        else
+          policy="${POLICY}-${ZONEMD}"
+        fi
+
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        cp "${TEST_DIR}/policies/${policy}.toml" "${POLICY_DIR}/"
+        cascade policy reload
+
+        echo "POLICY=$policy" >> "$GITHUB_OUTPUT"
+
+    - name: Load the test zone
+      env:
+        TEST_IDX: "${{ inputs.test_idx }}"
+        KEY: "${{ inputs.key }}"
+        POLICY: "${{ steps.add-policy.outputs.POLICY }}"
+      run: |
+        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        ZONE_FILE="${TEST_DIR}/zones/incremental-signing-test${TEST_IDX}-input1.zone"
+        KEY_FILE="${TEST_DIR}/keys/${KEY}"
+        cp "${ZONE_FILE}" example.in
+        cascade zone add --source $PWD/example.in --policy "${POLICY}" --import-csk-file "${KEY_FILE}" example
+
+    - name: Wait for the first version to be signed
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 4543 example SOA | grep 12345; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: published SOA does not contain 12345"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Load second version of the zone
+      env:
+        TEST_IDX: "${{ inputs.test_idx }}"
+      run: |
+        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        ZONE_FILE="${TEST_DIR}/zones/incremental-signing-test${TEST_IDX}-input2.zone"
+        cp "${ZONE_FILE}" example.in
+        cascade zone reload example
+
+    - name: Wait for the second version to be signed
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 4543 example SOA | grep 23456; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: published SOA does not contain 23456"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Compare AXFR output to expected output
+      env:
+        POLICY: "${{ inputs.policy }}"
+        TEST_IDX: "${{ inputs.test_idx }}"
+      run: |
+        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        cp "${TEST_DIR}/reference-output/incremental-signing-test${TEST_IDX}-input2.zone.${POLICY}.signed.sorted" reference.output.sorted
+        dig @127.0.0.1 -p 4543 example AXFR | egrep -v '^;|^$' | sort -u > output.sorted
+        diff -w -u output.sorted reference.output.sorted
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()
