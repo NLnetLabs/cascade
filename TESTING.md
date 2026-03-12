@@ -149,7 +149,10 @@ Podman daemon and set the DOCKER_HOST variable accordingly. If you are using
 rootless Podman, you will likely need to run `systemctl --user enable --now
 podman.socket` and set `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock`
 in your shell's rc file (e.g. `.bashrc`). With that set, all docker programs
-will use Podman as their backend instead of the Docker daemon.
+will use Podman as their backend instead of the Docker daemon. Additionally,
+you will need to make sure that `docker` is in your path. As you are using
+Podman, you can create a symlink, which instructs Podman to act in a Docker
+compatibility mode: `sudo ln -s "$(which podman)" /usr/local/bin/docker`
 
 
 ### Miscellaneous notes
