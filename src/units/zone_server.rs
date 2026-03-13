@@ -38,7 +38,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::api::{
     ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStatus,
 };
-use crate::center::{Center, get_zone};
+use crate::center::Center;
 use crate::common::tsig::TsigKeyStore;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
@@ -240,16 +240,16 @@ impl ZoneServer {
     pub fn on_publish_signed_zone(
         &self,
         center: &Arc<Center>,
-        zone_name: Name<Bytes>,
+        zone: &Arc<Zone>,
         zone_serial: Serial,
     ) {
         let unit_name = self.unit_name();
-        info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.");
+        let zone_name = &zone.name;
+        info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.",);
 
         // Move next_min_expiration to min_expiration, and determine policy.
         let policy = {
             // Use a block to make sure that the mutex is clearly dropped.
-            let zone = get_zone(center, &zone_name).unwrap();
             let mut zone_state = zone.state.lock().unwrap();
 
             // Save as next_min_expiration. After the signed zone is approved
@@ -264,7 +264,8 @@ impl ZoneServer {
         // Move the zone from the signed collection to the published collection.
         // TODO: Bump the zone serial?
         let signed_zones = center.signed_zones.load();
-        if let Some(zone) = signed_zones.get_zone(&zone_name, Class::IN) {
+
+        if let Some(zone) = signed_zones.get_zone(&zone.name, Class::IN) {
             // Create a deep copy of the set of
             // published zones. We will add the
             // new zone to that copied set and
@@ -318,7 +319,7 @@ impl ZoneServer {
     pub fn on_seek_approval_for_zone(
         &self,
         center: &Arc<Center>,
-        zone_name: Name<Bytes>,
+        zone: &Arc<Zone>,
         zone_serial: Serial,
     ) -> Option<Result<(), Terminated>> {
         let unit_name = self.unit_name();
@@ -327,8 +328,6 @@ impl ZoneServer {
             Source::Signed => "signed",
             Source::Published => unreachable!(),
         };
-
-        let zone = get_zone(center, &zone_name).unwrap();
 
         let review = {
             let zone_state = zone.state.lock().unwrap();
@@ -355,23 +354,24 @@ impl ZoneServer {
             }
         };
 
+        let zone_name = &zone.name;
         if !review.required {
             // Approve immediately.
             match self.source {
                 Source::Unsigned => {
                     info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
                     if let Err(err) =
-                        ZoneServer::promote_zone_to_signable(center.clone(), &zone_name)
+                        ZoneServer::promote_zone_to_signable(center.clone(), zone_name)
                     {
                         error!(
                             "[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}"
                         );
                     } else {
-                        self.on_unsigned_zone_approved(center, &zone, zone_serial);
+                        self.on_unsigned_zone_approved(center, zone, zone_serial);
                     }
                 }
                 Source::Signed => {
-                    self.on_signed_zone_approved(center, zone_name, zone_serial);
+                    self.on_signed_zone_approved(center, zone, zone_serial);
                 }
                 Source::Published => unreachable!(),
             }
@@ -414,7 +414,7 @@ impl ZoneServer {
             }
         }
 
-        record_zone_event(center, &zone_name, pending_event, Some(zone_serial));
+        record_zone_event(center, zone, pending_event, Some(zone_serial));
 
         if review.cmd_hook.is_none() || review_server.is_none() {
             match (review_server, review.cmd_hook) {
@@ -475,6 +475,7 @@ impl ZoneServer {
                 tokio::spawn(async move {
                     let _: Result<_, _> = Self::process_output(stderr, true).await;
                 });
+                let zone = zone.clone();
                 tokio::spawn(async move {
                     let status = match child.wait().await {
                         Ok(status) => status,
@@ -496,7 +497,7 @@ impl ZoneServer {
                         "signed" => &center.signed_review_server,
                         _ => unreachable!(),
                     };
-                    let _ = server.on_zone_review(&center, zone_name, zone_serial, decision);
+                    let _ = server.on_zone_review(&center, &zone, zone_serial, decision);
                 });
             }
             Err(err) => {
@@ -540,15 +541,10 @@ impl ZoneServer {
         .approve_loaded();
     }
 
-    fn on_signed_zone_approved(
-        &self,
-        center: &Arc<Center>,
-        zone_name: Name<Bytes>,
-        zone_serial: Serial,
-    ) {
+    fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
         record_zone_event(
             center,
-            &zone_name,
+            zone,
             HistoricalEvent::SignedZoneReview {
                 status: crate::api::ZoneReviewStatus::Approved,
             },
@@ -562,7 +558,7 @@ impl ZoneServer {
         info!("[CC]: Instructing publication server to publish the signed zone");
         center
             .publication_server
-            .on_publish_signed_zone(center, zone_name, zone_serial);
+            .on_publish_signed_zone(center, zone, zone_serial);
     }
 
     async fn process_output(
@@ -586,19 +582,14 @@ impl ZoneServer {
     pub fn on_zone_review(
         &self,
         center: &Arc<Center>,
-        zone_name: Name<Bytes>,
+        zone: &Arc<Zone>,
         zone_serial: Serial,
         decision: ZoneReviewDecision,
     ) -> ZoneReviewResult {
         let unit_name = self.unit_name();
+        let zone_name = &zone.name;
 
         // Look up the zone.
-        let Some(zone) = get_zone(center, &zone_name) else {
-            debug!(
-                "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but the zone does not exist"
-            );
-            return Err(ZoneReviewError::NoSuchZone);
-        };
 
         let new_review_state = match decision {
             ZoneReviewDecision::Approve => ZoneVersionReviewState::Approved,
@@ -636,9 +627,9 @@ impl ZoneServer {
                     info!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been approved."
                     );
-                    match Self::promote_zone_to_signable(center.clone(), &zone_name) {
+                    match Self::promote_zone_to_signable(center.clone(), zone_name) {
                         Ok(()) => {
-                            self.on_unsigned_zone_approved(center, &zone, zone_serial);
+                            self.on_unsigned_zone_approved(center, zone, zone_serial);
                         }
                         Err(err) => {
                             error!(
@@ -652,7 +643,7 @@ impl ZoneServer {
                     );
                     record_zone_event(
                         center,
-                        &zone_name,
+                        zone,
                         HistoricalEvent::UnsignedZoneReview {
                             status: crate::api::ZoneReviewStatus::Rejected,
                         },
@@ -688,14 +679,14 @@ impl ZoneServer {
                 }
                 if matches!(decision, ZoneReviewDecision::Approve) {
                     info!("Signed zone '{zone_name}' with serial {zone_serial} has been approved.");
-                    self.on_signed_zone_approved(center, zone_name, zone_serial);
+                    self.on_signed_zone_approved(center, zone, zone_serial);
                 } else {
                     error!(
                         "Signed zone '{zone_name}' with serial {zone_serial} has been rejected."
                     );
                     record_zone_event(
                         center,
-                        &zone_name,
+                        zone,
                         HistoricalEvent::SignedZoneReview {
                             status: crate::api::ZoneReviewStatus::Rejected,
                         },
@@ -818,9 +809,13 @@ impl Notifiable for LoaderNotifier {
             // Propagate a request for the zone refresh.
             // This request ignores the serial and source because we will just
             // do a SOA query to our configured upstreams.
-            info!("[CC]: Instructing zone loader to refresh the zone");
             let center = &self.center;
-            center.loader.on_refresh_zone(center, apex_name.clone());
+            if let Some(zone) = crate::center::get_zone(center, apex_name) {
+                info!("Instructing zone loader to refresh zone '{apex_name}");
+                center.loader.on_refresh_zone(center, &zone);
+            } else {
+                warn!("Ignoring NOTIFY for unknown zone '{apex_name}'");
+            }
         }
 
         Box::pin(std::future::ready(Ok(())))

@@ -29,7 +29,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::api;
 use crate::api::KeyInfo;
@@ -325,15 +325,19 @@ impl HttpServer {
         let unsigned_review_status;
         let signed_review_status;
         let pipeline_mode;
+        let zone;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
             state_path = mk_dnst_keyset_state_file_path(keys_dir, &name);
-            let zone = locked_state
+            zone = locked_state
                 .zones
                 .get(&name)
-                .ok_or(ZoneStatusError::ZoneDoesNotExist)?;
-            let zone_state = zone.0.state.lock().unwrap();
+                .ok_or(ZoneStatusError::ZoneDoesNotExist)?
+                .0
+                .clone();
+
+            let zone_state = zone.state.lock().unwrap();
             pipeline_mode = zone_state.pipeline_mode.clone();
             policy = zone_state
                 .policy
@@ -489,14 +493,13 @@ impl HttpServer {
         // Query signing status
         let signing_report = if stage >= ZoneStage::Signed {
             let center = &state.center;
-            center.signer.on_signing_report(center, name.clone())
+            center.signer.on_signing_report(&zone)
         } else {
             None
         };
 
         // TODO: Report separate information for ongoing and completed loads.
         let receipt_report = {
-            let zone = get_zone(&state.center, &name).unwrap();
             let state = zone.state.lock().unwrap();
             let active = state.loader.active_load_metrics.as_ref();
             let last = state.loader.last_load_metrics.as_ref();
@@ -592,23 +595,31 @@ impl HttpServer {
 
     fn do_zone_reload(
         api_state: Arc<HttpServer>,
-        name: Name<Bytes>,
+        zone_name: Name<Bytes>,
     ) -> Result<ZoneReloadResult, ZoneReloadError> {
         let center = &api_state.center;
-        center.loader.on_reload_zone(center, name.clone())?;
-        Ok(ZoneReloadResult { name })
+        let zone =
+            crate::center::get_zone(center, &zone_name).ok_or(ZoneReloadError::ZoneDoesNotExist)?;
+        center.loader.on_reload_zone(center, &zone)?;
+        Ok(ZoneReloadResult { name: zone_name })
     }
 
     /// Approve an unsigned version of a zone.
     async fn approve_unsigned(
         State(state): State<Arc<HttpServer>>,
-        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+        Path((zone_name, zone_serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let center = &state.center;
+        let Some(zone) = get_zone(center, &zone_name) else {
+            debug!(
+                "[{HTTP_UNIT_NAME}] Got a review approval for unsigned {zone_name}/{zone_serial}, but the zone does not exist"
+            );
+            return Json(Err(ZoneReviewError::NoSuchZone));
+        };
         let result = center.unsigned_review_server.on_zone_review(
             center,
-            name,
-            serial,
+            &zone,
+            zone_serial,
             ZoneReviewDecision::Approve,
         );
 
@@ -618,13 +629,19 @@ impl HttpServer {
     /// Reject an unsigned version of a zone.
     async fn reject_unsigned(
         State(state): State<Arc<HttpServer>>,
-        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+        Path((zone_name, zone_serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let center = &state.center;
+        let Some(zone) = get_zone(center, &zone_name) else {
+            debug!(
+                "[{HTTP_UNIT_NAME}] Got a review rejection for unsigned {zone_name}/{zone_serial}, but the zone does not exist"
+            );
+            return Json(Err(ZoneReviewError::NoSuchZone));
+        };
         let result = center.unsigned_review_server.on_zone_review(
             center,
-            name,
-            serial,
+            &zone,
+            zone_serial,
             ZoneReviewDecision::Reject,
         );
 
@@ -634,13 +651,19 @@ impl HttpServer {
     /// Approve a signed version of a zone.
     async fn approve_signed(
         State(state): State<Arc<HttpServer>>,
-        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+        Path((zone_name, zone_serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let center = &state.center;
+        let Some(zone) = get_zone(center, &zone_name) else {
+            debug!(
+                "[{HTTP_UNIT_NAME}] Got a review approval for signed {zone_name}/{zone_serial}, but the zone does not exist"
+            );
+            return Json(Err(ZoneReviewError::NoSuchZone));
+        };
         let result = center.signed_review_server.on_zone_review(
             center,
-            name,
-            serial,
+            &zone,
+            zone_serial,
             ZoneReviewDecision::Approve,
         );
 
@@ -650,13 +673,19 @@ impl HttpServer {
     /// Reject a signed version of a zone.
     async fn reject_signed(
         State(state): State<Arc<HttpServer>>,
-        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+        Path((zone_name, zone_serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<ZoneReviewResult> {
         let center = &state.center;
+        let Some(zone) = get_zone(center, &zone_name) else {
+            debug!(
+                "[{HTTP_UNIT_NAME}] Got a review rejection for signed {zone_name}/{zone_serial}, but the zone does not exist"
+            );
+            return Json(Err(ZoneReviewError::NoSuchZone));
+        };
         let result = center.signed_review_server.on_zone_review(
             center,
-            name,
-            serial,
+            &zone,
+            zone_serial,
             ZoneReviewDecision::Reject,
         );
 

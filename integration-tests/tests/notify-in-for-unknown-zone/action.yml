@@ -1,0 +1,44 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Receive a NOTIFY for a zone that is unknown to Cascade.'
+description: 'Receive a NOTIFY for a zone that is unknown to Cascade.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    # If Cascade started quickly enough it may already have received a NOTIFY
+    # from NSD, but if NSD stopped trying to send a NOTIFY already force it to
+    # do so now.
+    - name: Force NSD to send a NOTIFY to Cascade for example.test
+      run: |
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary notify example.test
+
+    - name: Check that Cascade didn't crash
+      run: |
+        # If we check the health immediately it might not have crashed yet
+        sleep 4
+        cascade health
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

@@ -47,7 +47,7 @@ use crate::api::{
     SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
     SigningRequestedReport, SigningStageReport,
 };
-use crate::center::{Center, get_zone};
+use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::{ResigningTrigger, SigningTrigger};
@@ -190,7 +190,7 @@ impl ZoneSigner {
 
     fn mk_signing_report(
         &self,
-        status: Arc<RwLock<NamedZoneSigningStatus>>,
+        status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Option<SigningReport> {
         let status = status.read().unwrap();
         let now = Instant::now();
@@ -246,13 +246,9 @@ impl ZoneSigner {
         })
     }
 
-    pub fn on_signing_report(
-        &self,
-        _center: &Arc<Center>,
-        zone_name: StoredName,
-    ) -> Option<SigningReport> {
+    pub fn on_signing_report(&self, zone: &Arc<Zone>) -> Option<SigningReport> {
         self.signer_status
-            .get(&zone_name)
+            .get(zone)
             .and_then(|status| self.mk_signing_report(status))
     }
 
@@ -263,7 +259,7 @@ impl ZoneSigner {
         for q_item in q.iter().rev() {
             if let Some(stage_report) = self.mk_signing_report(q_item.clone()) {
                 report.push(SigningQueueReport {
-                    zone_name: q_item.read().unwrap().zone_name.clone(),
+                    zone_name: q_item.read().unwrap().zone.name.clone(),
                     signing_report: stage_report,
                 });
             }
@@ -280,10 +276,7 @@ impl ZoneSigner {
     pub async fn wait_to_sign(
         &self,
         zone: &Arc<Zone>,
-    ) -> (
-        Arc<RwLock<NamedZoneSigningStatus>>,
-        [OwnedSemaphorePermit; 3],
-    ) {
+    ) -> (Arc<RwLock<SigningStatusPerZone>>, [OwnedSemaphorePermit; 3]) {
         let zone_name = &zone.name;
         info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
 
@@ -293,7 +286,7 @@ impl ZoneSigner {
             let signer_status = &self.signer_status;
             // TODO: Propagate the error properly.
             signer_status
-                .enqueue(zone_name.clone())
+                .enqueue(zone)
                 .await
                 .unwrap_or_else(|err| panic!("{err}"))
         };
@@ -322,7 +315,7 @@ impl ZoneSigner {
         zone: &Arc<Zone>,
         builder: &mut SignedZoneBuilder,
         trigger: SigningTrigger,
-        status: Arc<RwLock<NamedZoneSigningStatus>>,
+        status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Result<(), SignerError> {
         let zone_name = &zone.name;
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
@@ -858,7 +851,6 @@ impl ZoneSigner {
         // Save the minimum of the expiration times.
         {
             // Use a block to make sure that the mutex is clearly dropped.
-            let zone = get_zone(center, zone_name).unwrap();
             let mut zone_state = zone.state.lock().unwrap();
 
             // Save as next_min_expiration. After the signed zone is approved
@@ -902,7 +894,7 @@ impl ZoneSigner {
 
         record_zone_event(
             center,
-            zone_name,
+            zone,
             HistoricalEvent::SigningSucceeded {
                 trigger: trigger.into(),
             },
@@ -913,7 +905,7 @@ impl ZoneSigner {
         info!("Instructing review server to publish the signed zone");
         center.signed_review_server.on_seek_approval_for_zone(
             center,
-            zone_name.clone(),
+            zone,
             domain::base::Serial(serial.into()),
         );
 
@@ -1005,17 +997,21 @@ impl ZoneSigner {
     }
 
     fn resign_zones(&self, center: &Arc<Center>) {
-        let zone_tree = &center.unsigned_zones;
         let now = SystemTime::now();
-        for zone in zone_tree.load().iter_zones() {
-            let zone_name = zone.apex_name();
+
+        #[allow(clippy::mutable_key_type)]
+        let zones = {
+            let state = center.state.lock().unwrap();
+            state.zones.clone()
+        };
+
+        for zone in zones {
+            let zone = &zone.0;
+            let zone_name = &zone.name;
 
             let min_expiration = {
                 // Use a block to make sure that the mutex is clearly dropped.
-                let state = center.state.lock().unwrap();
-                let zone = state.zones.get(zone_name).unwrap();
-                let zone_state = zone.0.state.lock().unwrap();
-
+                let zone_state = zone.state.lock().unwrap();
                 zone_state.min_expiration
             };
 
@@ -1037,9 +1033,7 @@ impl ZoneSigner {
 
             // Ensure that the Mutexes are locked only in this block;
             let remain_time = {
-                let state = center.state.lock().unwrap();
-                let zone = state.zones.get(zone_name).unwrap();
-                let zone_state = zone.0.state.lock().unwrap();
+                let zone_state = zone.state.lock().unwrap();
                 // What if there is no policy?
                 zone_state.policy.as_ref().unwrap().signer.sig_remain_time
             };
@@ -1055,10 +1049,9 @@ impl ZoneSigner {
                     let mut resign_busy = center.resign_busy.lock().expect("should not fail");
                     resign_busy.insert(zone_name.clone(), min_expiration);
                 }
-                let zone = get_zone(center, zone_name).unwrap();
                 let mut state = zone.state.lock().unwrap();
                 ZoneHandle {
-                    zone: &zone,
+                    zone,
                     state: &mut state,
                     center,
                 }
@@ -1286,9 +1279,8 @@ impl std::fmt::Display for ZoneSigningStatus {
 
 const SIGNING_QUEUE_SIZE: usize = 100;
 
-#[derive(Serialize)]
-pub struct NamedZoneSigningStatus {
-    pub zone_name: StoredName,
+pub struct SigningStatusPerZone {
+    pub zone: Arc<Zone>,
     pub current_action: String,
     pub status: ZoneSigningStatus,
 }
@@ -1300,7 +1292,7 @@ struct ZoneSignerStatus {
     //
     // TODO: Separate out signing request queuing from signing statistics
     // tracking.
-    zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<NamedZoneSigningStatus>>>>>,
+    zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<SigningStatusPerZone>>>>>,
 
     // Sign each zone only once at a time.
     zone_semaphores: Arc<RwLock<HashMap<StoredName, Arc<Semaphore>>>>,
@@ -1319,16 +1311,13 @@ impl ZoneSignerStatus {
         }
     }
 
-    pub fn get(
-        &self,
-        wanted_zone_name: &StoredName,
-    ) -> Option<Arc<RwLock<NamedZoneSigningStatus>>> {
+    pub fn get(&self, wanted_zone: &Arc<Zone>) -> Option<Arc<RwLock<SigningStatusPerZone>>> {
         self.dump_queue();
 
         let zones_being_signed = self.zones_being_signed.read().unwrap();
         for q_item in zones_being_signed.iter().rev() {
             let readable_q_item = q_item.read().unwrap();
-            if readable_q_item.zone_name == wanted_zone_name
+            if Arc::ptr_eq(&readable_q_item.zone, wanted_zone)
                 && !matches!(readable_q_item.status, ZoneSigningStatus::Aborted)
             {
                 return Some(q_item.clone());
@@ -1344,16 +1333,16 @@ impl ZoneSignerStatus {
                 let q_item = q_item.read().unwrap();
                 match q_item.status {
                     ZoneSigningStatus::Requested(_) => {
-                        debug!("[ZS]: Queue item: {} => requested", q_item.zone_name)
+                        debug!("[ZS]: Queue item: {} => requested", q_item.zone.name)
                     }
                     ZoneSigningStatus::InProgress(_) => {
-                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone_name)
+                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone.name)
                     }
                     ZoneSigningStatus::Finished(_) => {
-                        debug!("[ZS]: Queue item: {} => finished", q_item.zone_name)
+                        debug!("[ZS]: Queue item: {} => finished", q_item.zone.name)
                     }
                     ZoneSigningStatus::Aborted => {
-                        debug!("[ZS]: Queue item: {} => aborted", q_item.zone_name)
+                        debug!("[ZS]: Queue item: {} => aborted", q_item.zone.name)
                     }
                 };
             }
@@ -1363,19 +1352,20 @@ impl ZoneSignerStatus {
     /// Enqueue a zone for signing.
     pub async fn enqueue(
         &self,
-        zone_name: StoredName,
+        zone: &Arc<Zone>,
     ) -> Result<
         (
             usize,
             OwnedSemaphorePermit,
             OwnedSemaphorePermit,
-            Arc<RwLock<NamedZoneSigningStatus>>,
+            Arc<RwLock<SigningStatusPerZone>>,
         ),
         SignerError,
     > {
+        let zone_name = &zone.name;
         debug!("SIGNER[{zone_name}]: Adding to the queue");
-        let status = Arc::new(RwLock::new(NamedZoneSigningStatus {
-            zone_name: zone_name.clone(),
+        let status = Arc::new(RwLock::new(SigningStatusPerZone {
+            zone: zone.clone(),
             current_action: "Waiting for any existing signing operation for this zone to finish"
                 .to_string(),
             status: ZoneSigningStatus::new(),
