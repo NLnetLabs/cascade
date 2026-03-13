@@ -136,7 +136,7 @@ impl From<SigningTrigger> for cascade_api::SigningTrigger {
 }
 
 /// The trigger for a re-signing operation.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ResigningTrigger {
     /// Whether zone signing keys have changed.
     keys_changed: bool,
