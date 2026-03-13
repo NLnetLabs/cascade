@@ -213,7 +213,10 @@ impl Zone {
 
                 match res {
                     Ok(res) => {
-                        println!("Added zone {}", res.name);
+                        println!(
+                            "Zone {} scheduled for loading, use 'cascade zone status {}' to see the status.",
+                            res.name, res.name
+                        );
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to add zone: {e}")),
