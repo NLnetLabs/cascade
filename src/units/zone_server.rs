@@ -537,7 +537,6 @@ impl ZoneServer {
             state: &mut state,
             center,
         }
-        .storage()
         .approve_loaded();
     }
 

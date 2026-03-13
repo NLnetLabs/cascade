@@ -11,6 +11,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use cascade_zonedata::LoadedZoneBuilder;
 use domain::base::{Name, Serial};
 use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -24,11 +25,13 @@ use crate::{
     policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
+    zone::machine::ZoneStateMachine,
 };
 
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
+pub mod machine;
 pub mod state;
 
 //----------- Zone -------------------------------------------------------------
@@ -95,6 +98,8 @@ impl ZoneHandle<'_> {
 /// The state of a zone.
 #[derive(Debug, Default)]
 pub struct ZoneState {
+    pub machine: ZoneStateMachine,
+
     /// The policy (version) used by the zone.
     pub policy: Option<Arc<PolicyVersion>>,
 
