@@ -3,7 +3,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     center::Center,
@@ -95,9 +95,32 @@ impl SignerZoneHandle<'_> {
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(zone = %self.zone.name, keys_changed, sigs_need_refresh)
+        fields(zone = %self.zone.name, ?trigger)
     )]
     pub fn enqueue_resign(&mut self, trigger: ResigningTrigger) {
+        // TODO: The key manager can call 'enqueue_resign()' even when the zone
+        // has not been signed. The re-signing request is ignored if no previous
+        // signed instance of the zone seems to exist. Ideally, the key manager
+        // would check the current signed instance of the zone itself, and check
+        // that it really needs re-signing (i.e. that the signing keys used for
+        // building that instance are different from the latest ones).
+        //
+        // TODO: Explicitly track whether a signed instance exists. Maybe the
+        // zone data storage can report it via a method on 'PassiveStorage'? Or
+        // track instances of zones more explicitly in 'ZoneState' (the latter
+        // will happen / has happened when integrating the zone server with the
+        // zone data storage).
+        if self
+            .state
+            .next_min_expiration
+            .or(self.state.min_expiration)
+            .is_none()
+            && trigger == ResigningTrigger::KEYS_CHANGED
+        {
+            debug!("Ignoring re-signing request; the zone has not been signed yet");
+            return;
+        }
+
         info!("Enqueuing a re-sign operation");
 
         // If a re-signing operation has already been enqueued, add to it.
