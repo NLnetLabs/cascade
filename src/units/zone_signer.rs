@@ -47,7 +47,7 @@ use crate::api::{
     SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
     SigningRequestedReport, SigningStageReport,
 };
-use crate::center::{Center, get_zone};
+use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::{ResigningTrigger, SigningTrigger};
@@ -997,9 +997,15 @@ impl ZoneSigner {
     }
 
     fn resign_zones(&self, center: &Arc<Center>) {
-        let state = &center.state.lock().unwrap();
         let now = SystemTime::now();
-        for zone in &state.zones {
+
+        #[allow(clippy::mutable_key_type)]
+        let zones = {
+            let state = center.state.lock().unwrap();
+            state.zones.clone()
+        };
+
+        for zone in zones {
             let zone = &zone.0;
             let zone_name = &zone.name;
 
@@ -1043,10 +1049,9 @@ impl ZoneSigner {
                     let mut resign_busy = center.resign_busy.lock().expect("should not fail");
                     resign_busy.insert(zone_name.clone(), min_expiration);
                 }
-                let zone = get_zone(center, zone_name).unwrap();
                 let mut state = zone.state.lock().unwrap();
                 ZoneHandle {
-                    zone: &zone,
+                    zone,
                     state: &mut state,
                     center,
                 }
