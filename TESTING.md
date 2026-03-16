@@ -17,7 +17,8 @@
   - [Running act with Podman](#running-act-with-podman)
   - [Miscellaneous notes](#miscellaneous-notes)
   - [Docker dependencies](#docker-dependencies)
-  - [Provided Nameservers and Zones](#provided-nameservers-and-zones)
+  - [Provided nameservers and zones](#provided-nameservers-and-zones)
+  - [Monitoring resource usage](#monitoring-resource-usage)
 
 ---
 
@@ -186,7 +187,7 @@ When using Docker to run the integration tests, you need to make sure that the
 `docker-buildx` plugin is installed, otherwise Docker will complain about
 unknown flags.
 
-### Provided Nameservers and Zones
+### Provided nameservers and zones
 
 The test environment provides a number of nameservers (a primary NSD,
 a secondary NSD, Bind, and the resolver Unbound) and the zone `example.test.`
@@ -209,3 +210,22 @@ The primary NSD loads the zone from a zonefile and provides AXFR and IXFR to
 anyone with IP `127.0.0.1`. The secondary NSD is configured to transfer the
 zone from Cascade (currently always using AXFR). Both NSD instances allow
 notifies from `127.0.0.1`.
+
+### Monitoring resource usage
+
+Using `./act-wrapper +stats-report </path/to/write/report.csv>` or
+`./act-wrapper +stats-graph </path/to/write/report.png>` will generate a
+report on approximate resource usage covering the period of the execution
+of the tests, as CSV raw data and/or as a PNG formatted graph.
+
+Measured resources are CPU and memory, as reported by the `docker stats`
+command.
+
+Note that this is only intended to be used when a single test is run at once,
+i.e. when using --job XXX or --concurrent-jobs 1. If there are containers
+running prior to execution of the tests attempting to use `+stats-report` or
+`+stats-graph` or if multiple lines of statistics are output by `docker stats`
+(i.e. for more than one active container) an error will be output as the
+numbers are assumed to be for a single active container at a time.
+
+Graph generation requires that you have the `gnuplot` tool installed.
