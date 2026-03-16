@@ -71,15 +71,16 @@ impl MetricsCollection {
         // software build information via labels and will always be 1. It
         // cannot be stored inside of `MetricsCollection` as it does not
         // implement Clone.
-        let _cascade_version = Info::new(vec![("version", clap::crate_version!())]);
+        let _cascade_version = Info::new(vec![
+            ("version", clap::crate_version!()),
+            ("build", env!("CASCADE_BUILD_COMMIT")),
+        ]);
 
         // The prometheus docs linked to
         // https://www.robustperception.io/exposing-the-software-version-to-prometheus/
-        // for exposing software version information. And
-        // `prometheus_client` exposes the `Info` type. However, I don't
-        // know if we really need this. It would be more useful if it would
-        // include build information like <branch> and <revision> (but that
-        // requires a build-script).
+        // for exposing software version information. And `prometheus_client`
+        // exposes the `Info` type, which we use here to expose cascade
+        // version information just like `cascaded --version`.
         col.cascade
             .register("build", "Cascade build information", _cascade_version);
 
