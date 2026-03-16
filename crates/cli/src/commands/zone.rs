@@ -80,6 +80,24 @@ pub enum ZoneCommand {
         serial: u32,
     },
 
+    /// Override a previous rejection
+    #[command(name = "override")]
+    Override {
+        /// Whether to approve an unsigned or signed version of the zone.
+        #[command(flatten)]
+        review_stage: ZoneReviewStage,
+
+        /// The name of the zone.
+        name: ZoneName,
+    },
+
+    /// Reset the pipeline for a halted zone
+    #[command(name = "reset")]
+    Reset {
+        /// The name  of the zone
+        zone: ZoneName,
+    },
+
     /// Reject a zone being reviewed.
     #[command(name = "reject")]
     Reject {
@@ -250,6 +268,47 @@ impl Zone {
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to reload zone: {e}")),
+                }
+            }
+            ZoneCommand::Reset { zone } => {
+                let url = format!("zone/{zone}/reset");
+                let result: ZoneResetResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(ZoneResetOutput { zone }) => {
+                        println!("Reset the pipeline for zone '{zone}'");
+                        Ok(())
+                    }
+                    Err(err) => Err(format!("Could not reset zone '{zone}': {err}")),
+                }
+            }
+            ZoneCommand::Override { name, review_stage } => {
+                let stage = match review_stage {
+                    ZoneReviewStage {
+                        unsigned: true,
+                        signed: false,
+                    } => "unsigned",
+                    ZoneReviewStage {
+                        unsigned: false,
+                        signed: true,
+                    } => "signed",
+                    _ => unreachable!(),
+                };
+
+                let url = format!("zone/{name}/{stage}/reset");
+                let result: ZoneOverrideResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(ZoneOverrideOutput {
+                        zone,
+                        review_stage: _,
+                    }) => {
+                        println!("Overrode {stage} review for  '{zone}'");
+                        Ok(())
+                    }
+                    Err(err) => Err(format!(
+                        "Could not override review for zone '{name}': {err}"
+                    )),
                 }
             }
             ZoneCommand::Approve {

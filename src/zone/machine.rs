@@ -222,47 +222,50 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Halted operations
 impl<'a> ZoneHandle<'a> {
-    pub(crate) fn reset(&mut self) {
+    pub(crate) fn try_reset(&mut self) -> Result<(), ()> {
         let (transition, state) = self.state.machine.transition();
 
         let waiting = match state {
             ZoneStateMachine::HaltLoaded(halt_loaded) => halt_loaded.reset(),
             ZoneStateMachine::HaltSigned(halt_signed) => halt_signed.reset(),
             ZoneStateMachine::SigningFailed(signing_failed) => signing_failed.reset(),
-            _ => {
-                panic!("cannot reset in this state");
-            }
+            _ => return Err(()),
         };
 
         transition.move_to(ZoneStateMachine::Waiting(waiting));
+        Ok(())
     }
 }
 
 /// # Halt Loaded operations
 impl<'a> ZoneHandle<'a> {
-    pub(crate) fn override_loaded_reject(&mut self) {
+    pub(crate) fn try_override_loaded_reject(&mut self) -> Result<(), ()> {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::LoadedReview(loaded) = state else {
-            panic!("cannot override loaded review in this state");
+            return Err(());
         };
 
         transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
 
         self.storage().approve_loaded();
+
+        Ok(())
     }
 }
 
 /// # Halt Signed operations
 impl<'a> ZoneHandle<'a> {
-    pub(crate) fn override_signed_reject(&mut self) {
+    pub(crate) fn try_override_signed_reject(&mut self) -> Result<(), ()> {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::HaltSigned(halt_signed) = state else {
-            panic!("cannot start review in this state");
+            return Err(());
         };
 
         transition.move_to(ZoneStateMachine::Waiting(halt_signed.override_reject()));
+
+        Ok(())
     }
 }
 

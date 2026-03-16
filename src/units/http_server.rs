@@ -51,6 +51,7 @@ use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
+use crate::zone::ZoneHandle;
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -106,6 +107,7 @@ impl HttpServer {
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
             .route("/zone/{name}/remove", post(Self::zone_remove))
+            .route("/zone/{name}/reset", post(Self::zone_reset))
             .route("/zone/{name}/status", get(Self::zone_status))
             .route("/zone/{name}/history", get(Self::zone_history))
             .route("/zone/{name}/reload", post(Self::zone_reload))
@@ -118,12 +120,20 @@ impl HttpServer {
                 post(Self::reject_unsigned),
             )
             .route(
+                "/zone/{name}/unsigned/{serial}/override",
+                post(Self::override_unsigned),
+            )
+            .route(
                 "/zone/{name}/signed/{serial}/approve",
                 post(Self::approve_signed),
             )
             .route(
                 "/zone/{name}/signed/{serial}/reject",
                 post(Self::reject_signed),
+            )
+            .route(
+                "/zone/{name}/signed/{serial}/override",
+                post(Self::override_signed),
             )
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
@@ -284,6 +294,33 @@ impl HttpServer {
                 .map(|_| ZoneRemoveResult { name })
                 .map_err(|e| e.into()),
         )
+    }
+
+    async fn zone_reset(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneResetResult> {
+        // Poor man's try block
+        let do_zone_reset = || {
+            let zone = center::get_zone(&state.center, &name).ok_or(ZoneResetError::NoSuchZone)?;
+
+            let mut zone_state = zone.state.lock().unwrap();
+
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center: &state.center,
+            };
+
+            match handle.try_reset() {
+                Ok(_) => Ok(ZoneResetOutput {
+                    zone: zone.name.clone(),
+                }),
+                Err(_) => Err(ZoneResetError::NotHalted),
+            }
+        };
+
+        Json(do_zone_reset())
     }
 
     async fn zones_list(State(http_state): State<Arc<HttpServer>>) -> Json<ZonesListResult> {
@@ -640,6 +677,35 @@ impl HttpServer {
         Json(result)
     }
 
+    async fn override_unsigned(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneOverrideResult> {
+        // Poor man's try block
+        let do_override = || {
+            let zone =
+                center::get_zone(&state.center, &name).ok_or(ZoneOverrideError::NoSuchZone)?;
+
+            let mut zone_state = zone.state.lock().unwrap();
+
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center: &state.center,
+            };
+
+            match handle.try_override_loaded_reject() {
+                Ok(_) => Ok(ZoneOverrideOutput {
+                    review_stage: ZoneReviewStage::Unsigned,
+                    zone: zone.name.clone(),
+                }),
+                Err(_) => Err(ZoneOverrideError::NotRejected),
+            }
+        };
+
+        Json(do_override())
+    }
+
     /// Approve a signed version of a zone.
     async fn approve_signed(
         State(state): State<Arc<HttpServer>>,
@@ -682,6 +748,35 @@ impl HttpServer {
         );
 
         Json(result)
+    }
+
+    async fn override_signed(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneOverrideResult> {
+        // Poor man's try block
+        let do_override = || {
+            let zone =
+                center::get_zone(&state.center, &name).ok_or(ZoneOverrideError::NoSuchZone)?;
+
+            let mut zone_state = zone.state.lock().unwrap();
+
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center: &state.center,
+            };
+
+            match handle.try_override_signed_reject() {
+                Ok(_) => Ok(ZoneOverrideOutput {
+                    review_stage: ZoneReviewStage::Signed,
+                    zone: zone.name.clone(),
+                }),
+                Err(_) => Err(ZoneOverrideError::NotRejected),
+            }
+        };
+
+        Json(do_override())
     }
 
     async fn policy_list(State(state): State<Arc<HttpServer>>) -> Json<PolicyListResult> {

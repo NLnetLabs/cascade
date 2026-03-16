@@ -713,7 +713,7 @@ impl ZoneServer {
                     // TODO: Whether to soft or hard reject should be part of the config
                     let mut state = zone.state.lock().unwrap();
                     ZoneHandle {
-                        zone: &zone,
+                        zone,
                         state: &mut state,
                         center,
                     }

@@ -68,6 +68,59 @@ impl std::fmt::Display for ZoneReviewError {
     }
 }
 
+//----------- ZoneReset --------------------------------------------------------
+
+/// The result of a [`ZoneReset`] command.
+pub type ZoneResetResult = Result<ZoneResetOutput, ZoneResetError>;
+
+/// The output of a [`ZoneReview`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneResetOutput {
+    pub zone: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneResetError {
+    NoSuchZone,
+    NotHalted,
+}
+
+impl std::fmt::Display for ZoneResetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoSuchZone => f.write_str("No such zone"),
+            Self::NotHalted => f.write_str("Zone is not halted"),
+        }
+    }
+}
+
+//----------- ZoneOverride -----------------------------------------------------
+
+/// The result of a [`ZoneReset`] command.
+pub type ZoneOverrideResult = Result<ZoneOverrideOutput, ZoneOverrideError>;
+
+/// The output of a [`ZoneReview`] command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneOverrideOutput {
+    pub zone: ZoneName,
+    pub review_stage: ZoneReviewStage,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneOverrideError {
+    NoSuchZone,
+    NotRejected,
+}
+
+impl std::fmt::Display for ZoneOverrideError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoSuchZone => f.write_str("No such zone"),
+            Self::NotRejected => f.write_str("Zone has not been rejected"),
+        }
+    }
+}
+
 //----------- ChangeLogging ----------------------------------------------------
 
 /// Change how Cascade logs information.
