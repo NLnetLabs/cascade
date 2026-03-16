@@ -184,12 +184,7 @@ if [[ "${docker_stats_graph}" == true && "${STATS_OKAY}" == true && "${ACT_EXIT_
 		# Get the CPU info.
 		CPU_INFO="$(grep 'model name' /proc/cpuinfo | head -n 1 | cut -d ':' -f 2)"
 
-		# Convert the "N.nnMiB / M.mmGiB" style output in the last CSV column of
-		# CSV resource usgae data into the form N.nn so that it can be graphed.
-		GNUPLOT_DATA_FILE=$(mktemp)
-		sed -e 's/^\([0-9].\+\)[MG].\+\s\/.\+$/\1/' "${docker_stats_path}" > "${GNUPLOT_DATA_FILE}"
-
-    NUM_LINES=$(wc -l "${GNUPLOT_DATA_FILE}" | awk '{print $1}')
+    NUM_LINES=$(wc -l "${docker_stats_path}" | awk '{print $1}')
     if [[ "${NUM_LINES}" -gt 1 ]]; then
 		  echo "Generating usage graph in ${docker_stats_graph_path}"
 
@@ -202,7 +197,7 @@ set title "Cascade ${GIT_VER}\n{/*0.75 $*}\n{/*0.75 ${CPU_INFO}"
 set timefmt "%s"
 set xdata time
 set format x "%H:%M:%S"
-set format y2 '%.0s%cB'
+set format y2 "%.1b %B"
 set ytics nomirror
 set y2tics
 # Tell gnuplot to initially determine labels from the first line of CSV data
@@ -213,7 +208,7 @@ set key autotitle columnhead
 set xlabel "Time"
 set ylabel "CPU %"
 set y2label "Memory"
-plot "${GNUPLOT_DATA_FILE}" using 1:2 with lines title "CPU %", '' using 1:3 with lines axis x1y2 title "Memory"
+plot "${docker_stats_path}" using 1:2 with lines title "CPU %", '' using 1:3 with lines axis x1y2 title "Memory"
 EOF
 			)
 
