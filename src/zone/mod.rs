@@ -11,7 +11,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use cascade_zonedata::LoadedZoneBuilder;
 use domain::base::{Name, Serial};
 use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};

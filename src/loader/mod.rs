@@ -230,8 +230,8 @@ async fn refresh(
                 "The zone is up-to-date"
             );
 
-            // Cancel the load from the perspective of zone storage.
-            handle.storage().abandon_load(builder);
+            // Cancel the load from the perspective of the zone state machine.
+            handle.abandon_load(builder);
         }
 
         Ok(true) => {
@@ -249,7 +249,7 @@ async fn refresh(
                 unreachable!("source-specific loading succeeded and must have filled 'builder'")
             });
 
-            handle.storage().finish_load(built);
+            handle.finish_load(built);
         }
 
         Err(err) => {
@@ -258,8 +258,8 @@ async fn refresh(
                 "Could not load the zone: {err}"
             );
 
-            // Cancel the load from the perspective of zone storage.
-            handle.storage().abandon_load(builder);
+            // Cancel the load from the perspective of zone state machine.
+            handle.abandon_load(builder);
         }
     }
 }

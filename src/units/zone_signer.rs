@@ -901,14 +901,6 @@ impl ZoneSigner {
             Some(domain::base::Serial(serial.into())),
         );
 
-        // Notify the review server that the zone is ready.
-        info!("Instructing review server to publish the signed zone");
-        center.signed_review_server.on_seek_approval_for_zone(
-            center,
-            zone,
-            domain::base::Serial(serial.into()),
-        );
-
         Ok(())
     }
 

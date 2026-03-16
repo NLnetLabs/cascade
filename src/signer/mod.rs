@@ -23,7 +23,7 @@ use std::{
 };
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{
     center::{Center, halt_zone},
@@ -82,15 +82,15 @@ async fn sign(
     handle.state.signer.ongoing.finish();
 
     match result {
-        Ok(()) => {
+        Ok(serial) => {
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
-            handle.storage().finish_sign(built);
+            handle.start_signed_review(built);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
         }
         Err(error) => {
             error!("Signing failed: {error}");
-            handle.storage().abandon_sign(builder);
+            handle.signing_failed(builder);
             status.status.finish(false);
             status.current_action = "Aborted".to_string();
 

@@ -1,5 +1,5 @@
-use cascade_zonedata::{LoadedZoneBuilder, LoadedZoneBuilt};
-use tracing::trace;
+use cascade_zonedata::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder};
+use tracing::{trace, warn};
 
 use crate::zone::ZoneHandle;
 
@@ -12,7 +12,7 @@ use crate::zone::ZoneHandle;
 /// └─▲────────╥────────▲─────────────────▲──────────────────────────╥──────────────────────────▲────────────────────────▲─┘
 ///   │        ║        │                 │                          ║                          │                        ║  
 ///   │        ║ load   │ fail            │ soft reject              ║ resign                   │ soft reject            ║  
-///   │        ║        │                 │                          ║                          │                        ║  
+///   │        ║        │ abandon         │                          ║                          │                        ║  
 ///   │     ╔══▼════════╧════╗ review  ╔══╧═════════════╗ approve ╔══▼═════════════╗ review  ╔══╧═════════════╗ approve  ║  
 ///   │     ║    Loading     ╠═════════▶  LoaderReview  ╠═════════▶    Signing     ╠═════════▶  SignerReview  ╠══════════▲  
 ///   │     ╚════════════════╝         ╚══╤═════════════╝         ╚▲═╤═════════▲═══╝         ╚══╤═════════════╝          │  
@@ -42,7 +42,7 @@ pub enum ZoneStateMachine {
 
 /// # Waiting operations
 impl<'a> ZoneHandle<'a> {
-    pub fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
+    pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Waiting(waiting) = state else {
@@ -60,18 +60,32 @@ impl<'a> ZoneHandle<'a> {
         Some(builder)
     }
 
-    pub fn start_resign(&mut self) {
-        todo!()
+    pub(crate) fn try_start_resign(&mut self) -> Option<SignedZoneBuilder> {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::Waiting(waiting) = state else {
+            transition.move_to(state);
+            return None;
+        };
+
+        transition.move_to(ZoneStateMachine::Signing(waiting.start_resign()));
+
+        let builder = self
+            .storage()
+            .start_resign()
+            .expect("storage is in sync with state");
+
+        Some(builder)
     }
 }
 
 /// # Loading operations
 impl<'a> ZoneHandle<'a> {
-    pub fn abandon_load(&mut self, builder: LoadedZoneBuilder) {
+    pub(crate) fn abandon_load(&mut self, builder: LoadedZoneBuilder) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Loading(loaded) = state else {
-            panic!("cannot start review in this state");
+            panic!("cannot abandon load in this state");
         };
 
         transition.move_to(ZoneStateMachine::Waiting(loaded.abandon_load()));
@@ -79,11 +93,11 @@ impl<'a> ZoneHandle<'a> {
         self.storage().abandon_load(builder);
     }
 
-    pub fn finish_load(&mut self, built: LoadedZoneBuilt) {
+    pub(crate) fn finish_load(&mut self, built: LoadedZoneBuilt) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Loading(loaded) = state else {
-            panic!("cannot start review in this state");
+            panic!("cannot start loader review in this state");
         };
 
         transition.move_to(ZoneStateMachine::LoadedReview(loaded.finish_load()));
@@ -94,11 +108,11 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Loaded Review operations
 impl<'a> ZoneHandle<'a> {
-    pub fn approve_loaded(&mut self) {
+    pub(crate) fn approve_loaded(&mut self) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::LoadedReview(loaded) = state else {
-            panic!("cannot start review in this state");
+            panic!("cannot approve loaded in this state");
         };
 
         transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
@@ -106,12 +120,130 @@ impl<'a> ZoneHandle<'a> {
         self.storage().approve_loaded();
     }
 
-    pub fn soft_reject_loaded(&mut self) {
-        todo!()
+    pub(crate) fn soft_reject_loaded(&mut self) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::LoadedReview(loaded) = state else {
+            panic!("cannot soft reject loaded in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::Waiting(loaded.soft_reject()));
     }
 
-    pub fn hard_reject_loaded(&mut self) {
-        todo!()
+    pub(crate) fn hard_reject_loaded(&mut self) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::LoadedReview(loaded) = state else {
+            panic!("cannot hard reject loaded in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::HaltLoaded(loaded.hard_reject()));
+    }
+}
+
+/// # Signing operations
+impl<'a> ZoneHandle<'a> {
+    pub(crate) fn start_signed_review(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::Signing(signing) = state else {
+            panic!("cannot start signer review in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::SignedReview(signing.review()));
+
+        self.storage().finish_sign(built);
+    }
+
+    pub(crate) fn signing_failed(&mut self, builder: SignedZoneBuilder) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::Signing(signing) = state else {
+            panic!("cannot fail signing in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::SigningFailed(signing.signing_failed()));
+
+        self.storage().abandon_sign(builder);
+    }
+}
+
+/// # Signed Review operations
+impl<'a> ZoneHandle<'a> {
+    pub(crate) fn approve_signed(&mut self) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::SignedReview(signed) = state else {
+            panic!("cannot approve signed in this state: {}", state.as_str());
+        };
+
+        transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
+    }
+
+    pub(crate) fn soft_reject_signed(&mut self) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::SignedReview(signed) = state else {
+            panic!("cannot soft reject signed in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::Waiting(signed.soft_reject()));
+    }
+
+    pub(crate) fn hard_reject_signed(&mut self) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::SignedReview(review) = state else {
+            panic!("cannot hard reject signed in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::HaltSigned(review.hard_reject()));
+    }
+}
+
+/// # Halted operations
+impl<'a> ZoneHandle<'a> {
+    pub(crate) fn reset(&mut self) {
+        let (transition, state) = self.state.machine.transition();
+
+        let waiting = match state {
+            ZoneStateMachine::HaltLoaded(halt_loaded) => halt_loaded.reset(),
+            ZoneStateMachine::HaltSigned(halt_signed) => halt_signed.reset(),
+            ZoneStateMachine::SigningFailed(signing_failed) => signing_failed.reset(),
+            _ => {
+                panic!("cannot reset in this state");
+            }
+        };
+
+        transition.move_to(ZoneStateMachine::Waiting(waiting));
+    }
+}
+
+/// # Halt Loaded operations
+impl<'a> ZoneHandle<'a> {
+    pub(crate) fn override_loaded_reject(&mut self) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::LoadedReview(loaded) = state else {
+            panic!("cannot override loaded review in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
+
+        self.storage().approve_loaded();
+    }
+}
+
+/// # Halt Signed operations
+impl<'a> ZoneHandle<'a> {
+    pub(crate) fn override_signed_reject(&mut self) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::HaltSigned(halt_signed) = state else {
+            panic!("cannot start review in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::Waiting(halt_signed.override_reject()));
     }
 }
 
@@ -164,7 +296,7 @@ struct Transition<'a> {
 impl Transition<'_> {
     /// Complete the transition, moving to the specified state.
     fn move_to(self, state: ZoneStateMachine) {
-        trace!(old = %self.previous, new = %state.as_str(), "Transitioning");
+        warn!(old = %self.previous, new = %state.as_str(), "Transitioning");
         *self.machine = state;
         std::mem::forget(self);
     }
@@ -182,6 +314,10 @@ pub struct Waiting {}
 impl Waiting {
     fn start_load(self) -> Loading {
         Loading {}
+    }
+
+    fn start_resign(self) -> Signing {
+        Signing {}
     }
 }
 
@@ -228,28 +364,38 @@ impl HaltLoaded {
 pub struct Signing {}
 
 impl Signing {
-    fn signing_succeeded(self) -> SignedReview {
+    fn review(self) -> SignedReview {
         SignedReview {}
     }
 
-    fn signing_failed(self) -> SignedReview {
-        SignedReview {}
+    fn signing_failed(self) -> SigningFailed {
+        SigningFailed {}
     }
 }
 
 #[derive(Debug)]
 pub struct SigningFailed {}
 
+impl SigningFailed {
+    fn reset(self) -> Waiting {
+        Waiting {}
+    }
+}
+
 #[derive(Debug)]
 pub struct SignedReview {}
 
 impl SignedReview {
-    fn approved(self) -> Waiting {
+    fn approve(self) -> Waiting {
         Waiting {}
     }
 
-    fn rejected(self) -> HaltSigned {
+    fn hard_reject(self) -> HaltSigned {
         HaltSigned {}
+    }
+
+    fn soft_reject(self) -> Waiting {
+        Waiting {}
     }
 }
 
@@ -257,8 +403,8 @@ impl SignedReview {
 pub struct HaltSigned {}
 
 impl HaltSigned {
-    fn retry(self) -> Signing {
-        Signing {}
+    fn override_reject(self) -> Waiting {
+        Waiting {}
     }
 
     fn reset(self) -> Waiting {

@@ -550,6 +550,17 @@ impl ZoneServer {
             Some(zone_serial),
         );
 
+        {
+            let zone = get_zone(center, &zone_name).unwrap();
+            let mut state = zone.state.lock().unwrap();
+            ZoneHandle {
+                zone: &zone,
+                state: &mut state,
+                center,
+            }
+            .approve_signed();
+        }
+
         // Send a message to the zone signer to trigger a re-scan of
         // when to re-sign next.
         center.signer.on_publish_signed_zone(center);
@@ -648,6 +659,15 @@ impl ZoneServer {
                         },
                         Some(zone_serial),
                     );
+
+                    // TODO: Whether to soft or hard reject should be part of the config
+                    let mut state = zone.state.lock().unwrap();
+                    ZoneHandle {
+                        zone: &zone,
+                        state: &mut state,
+                        center,
+                    }
+                    .hard_reject_loaded();
                 }
             }
 
@@ -691,6 +711,14 @@ impl ZoneServer {
                         },
                         Some(zone_serial),
                     );
+                    // TODO: Whether to soft or hard reject should be part of the config
+                    let mut state = zone.state.lock().unwrap();
+                    ZoneHandle {
+                        zone: &zone,
+                        state: &mut state,
+                        center,
+                    }
+                    .hard_reject_signed();
                 }
             }
 
