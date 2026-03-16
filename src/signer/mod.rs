@@ -23,10 +23,10 @@ use std::{
 };
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::{error, info};
+use tracing::error;
 
 use crate::{
-    center::{Center, halt_zone},
+    center::Center,
     zone::{HistoricalEvent, Zone, ZoneHandle},
 };
 
@@ -82,7 +82,7 @@ async fn sign(
     handle.state.signer.ongoing.finish();
 
     match result {
-        Ok(serial) => {
+        Ok(()) => {
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
             handle.start_signed_review(built);
             status.status.finish(true);
@@ -103,9 +103,6 @@ async fn sign(
             );
 
             std::mem::drop(state);
-
-            // TODO: Inline.
-            halt_zone(&center, &zone, true, &error.to_string());
         }
     }
 }

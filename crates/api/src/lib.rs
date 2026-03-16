@@ -309,7 +309,7 @@ pub struct ZoneStatus {
     pub signing_report: Option<SigningReport>,
     pub published_serial: Option<Serial>,
     pub publish_addr: SocketAddr,
-    pub pipeline_mode: PipelineMode,
+    pub halted_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -552,8 +552,7 @@ impl fmt::Display for ZoneReloadError {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
-    pub soft_halted_zones: Vec<(ZoneName, String)>,
-    pub hard_halted_zones: Vec<(ZoneName, String)>,
+    pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
 }
 

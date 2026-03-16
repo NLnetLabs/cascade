@@ -480,24 +480,13 @@ impl Zone {
         progress.print(&zone, &policy);
 
         // If the pipeline is halted, show that.
-        match zone.pipeline_mode {
-            PipelineMode::Running => { /* Nothing to do */ }
-            PipelineMode::SoftHalt(err) => {
-                println!(
-                    "{}\u{78} An error occurred that prevents further processing of this zone version:{}",
-                    ansi::RED,
-                    ansi::RESET
-                );
-                println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
-            }
-            PipelineMode::HardHalt(err) => {
-                println!(
-                    "{}\u{78} The pipeline for this zone is hard halted due to a serious error:{}",
-                    ansi::RED,
-                    ansi::RESET
-                );
-                println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
-            }
+        if let Some(reason) = zone.halted_reason {
+            println!(
+                "{}\u{78} The pipeline for this zone is hard halted due to a serious error:{}",
+                ansi::RED,
+                ansi::RESET
+            );
+            println!("{}\u{78} {reason}{}", ansi::RED, ansi::RESET);
         }
 
         if detailed {

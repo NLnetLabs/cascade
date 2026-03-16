@@ -102,7 +102,7 @@ impl Loader {
         zone: &Arc<Zone>,
     ) -> Result<(), ZoneReloadError> {
         let mut zone_state = zone.state.lock().expect("lock is not poisoned");
-        if let Some(reason) = zone_state.halted(true) {
+        if let Some(reason) = zone_state.halted_reason() {
             return Err(ZoneReloadError::ZoneHalted(reason));
         }
         if let Source::None = zone_state.loader.source {

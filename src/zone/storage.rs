@@ -39,7 +39,7 @@ use crate::{
     common::light_weight_zone::LightWeightZone,
     signer::SigningTrigger,
     util::{BackgroundTasks, force_future},
-    zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -214,21 +214,6 @@ impl StorageZoneHandle<'_> {
 
             let mut state = zone.state.lock().unwrap();
 
-            // Resume the pipeline if needed.
-            let review = match state.pipeline_mode.clone() {
-                PipelineMode::Running => true,
-                PipelineMode::SoftHalt(message) => {
-                    info!("Resuming soft-halted pipeline (halt message: {message})");
-                    state.resume();
-                    true
-                }
-                PipelineMode::HardHalt(_) => {
-                    // TODO: Is this the right behavior?
-                    warn!("Not reviewing newly-loaded instance because pipeline is hard-halted");
-                    false
-                }
-            };
-
             // TODO: Pass on the reviewer to the zone server.
             let old_loaded_reviewer =
                 std::mem::replace(&mut state.storage.loaded_reviewer, loaded_reviewer);
@@ -246,20 +231,18 @@ impl StorageZoneHandle<'_> {
                 ),
             }
 
-            if review {
-                info!("Initiating review of newly-loaded instance");
+            info!("Initiating review of newly-loaded instance");
 
-                // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
-                std::mem::drop(state);
+            // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
+            std::mem::drop(state);
 
-                center.unsigned_review_server.on_seek_approval_for_zone(
-                    &center,
-                    &zone,
-                    domain::base::Serial(serial.into()),
-                );
+            center.unsigned_review_server.on_seek_approval_for_zone(
+                &center,
+                &zone,
+                domain::base::Serial(serial.into()),
+            );
 
-                state = zone.state.lock().unwrap();
-            }
+            state = zone.state.lock().unwrap();
 
             state.storage.background_tasks.finish();
         });

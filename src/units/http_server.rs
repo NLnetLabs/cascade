@@ -51,7 +51,6 @@ use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
-use crate::zone::PipelineMode;
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -194,23 +193,16 @@ impl HttpServer {
     }
 
     async fn status(State(state): State<Arc<HttpServer>>) -> Json<ServerStatusResult> {
-        let mut soft_halted_zones = vec![];
-        let mut hard_halted_zones = vec![];
+        let mut halted_zones = vec![];
 
         let center = &state.center;
 
         // Determine which pipelines are halted.
         for zone in center.state.lock().unwrap().zones.iter() {
-            if let Ok(zone_state) = zone.0.state.lock() {
-                match &zone_state.pipeline_mode {
-                    PipelineMode::Running => { /* Nothing to do */ }
-                    PipelineMode::SoftHalt(err) => {
-                        soft_halted_zones.push((zone.0.name.clone(), err.clone()))
-                    }
-                    PipelineMode::HardHalt(err) => {
-                        hard_halted_zones.push((zone.0.name.clone(), err.clone()))
-                    }
-                }
+            if let Ok(zone_state) = zone.0.state.lock()
+                && let Some(err) = zone_state.machine.halted_reason()
+            {
+                halted_zones.push((zone.0.name.clone(), err.clone()))
             }
         }
 
@@ -218,8 +210,7 @@ impl HttpServer {
         let signing_queue = center.signer.on_queue_report(center);
 
         Json(ServerStatusResult {
-            soft_halted_zones,
-            hard_halted_zones,
+            halted_zones,
             signing_queue,
         })
     }
@@ -324,8 +315,8 @@ impl HttpServer {
         let publish_addr;
         let unsigned_review_status;
         let signed_review_status;
-        let pipeline_mode;
         let zone;
+        let halted_reason;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -338,7 +329,8 @@ impl HttpServer {
                 .clone();
 
             let zone_state = zone.state.lock().unwrap();
-            pipeline_mode = zone_state.pipeline_mode.clone();
+            halted_reason = zone_state.halted_reason();
+
             policy = zone_state
                 .policy
                 .as_ref()
@@ -564,7 +556,7 @@ impl HttpServer {
             signing_report,
             published_serial,
             publish_addr,
-            pipeline_mode: pipeline_mode.into(),
+            halted_reason,
         })
     }
 

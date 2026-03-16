@@ -40,6 +40,25 @@ pub enum ZoneStateMachine {
     Poisoned,
 }
 
+impl ZoneStateMachine {
+    pub fn is_halted(&self) -> bool {
+        matches!(
+            self,
+            Self::HaltLoaded(_) | Self::HaltSigned(_) | Self::SigningFailed(_)
+        )
+    }
+
+    pub fn halted_reason(&self) -> Option<String> {
+        let s = match self {
+            Self::HaltLoaded(_) => "loaded zone was rejected",
+            Self::HaltSigned(_) => "signed zone was rejected",
+            Self::SigningFailed(_) => "signing the zone failed",
+            _ => return None,
+        };
+        Some(s.into())
+    }
+}
+
 /// # Waiting operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {

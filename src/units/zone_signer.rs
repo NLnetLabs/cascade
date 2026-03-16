@@ -59,7 +59,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, Zone, ZoneHandle};
+use crate::zone::{HistoricalEvent, HistoricalEventType, Zone, ZoneHandle};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -324,13 +324,6 @@ impl ZoneSigner {
         let (last_signed_serial, policy) = {
             // Use a block to make sure that the mutex is clearly dropped.
             let zone_state = zone.state.lock().unwrap();
-
-            // Do NOT sign a zone that is halted.
-            if zone_state.pipeline_mode != PipelineMode::Running {
-                // TODO: This accidentally sets an existing soft-halt to a hard-halt.
-                // return Err(SignerError::PipelineIsHalted);
-                return Ok(());
-            }
 
             let last_signed_serial = zone_state
                 .find_last_event(HistoricalEventType::SigningSucceeded, None)
