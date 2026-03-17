@@ -167,8 +167,8 @@ if [[ "$docker_stats" == true ]]; then
 	if kill "$STATS_PID" &>/dev/null; then
 		STATS_OKAY=true
 	else
-	  echo >&2 "ERROR: Usage statistics could not be collected, perhaps because more than one test was running at once?"
-	  rm "${docker_stats_path}" || true
+		echo >&2 "ERROR: Usage statistics could not be collected, perhaps because more than one test was running at once?"
+		rm "${docker_stats_path}" || true
 	fi
 fi
 
@@ -184,9 +184,9 @@ if [[ "${docker_stats_graph}" == true && "${STATS_OKAY}" == true && "${ACT_EXIT_
 		# Get the CPU info.
 		CPU_INFO="$(grep 'model name' /proc/cpuinfo | head -n 1 | cut -d ':' -f 2)"
 
-    NUM_LINES=$(wc -l "${docker_stats_path}" | awk '{print $1}')
-    if [[ "${NUM_LINES}" -gt 1 ]]; then
-		  echo "Generating usage graph in ${docker_stats_graph_path}"
+		NUM_LINES=$(wc -l "${docker_stats_path}" | awk '{print $1}')
+		if [[ "${NUM_LINES}" -gt 1 ]]; then
+			echo "Generating usage graph in ${docker_stats_graph_path}"
 
 			# Generate the gnuplot control script.	
 			GNUPLOT_SCRIPT=$(cat <<EOF
