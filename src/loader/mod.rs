@@ -18,7 +18,10 @@ use camino::Utf8Path;
 use cascade_api::ZoneReloadError;
 use cascade_zonedata::LoadedZoneBuilder;
 use domain::{new::base::Serial, tsig};
-use prometheus_client::metrics::{counter::Counter, family::Family, gauge::Gauge};
+use prometheus_client::{
+    metrics::{counter::Counter, family::Family, gauge::Gauge},
+    registry::Unit,
+};
 use tracing::{debug, error, info};
 
 use crate::{
@@ -59,6 +62,32 @@ impl Loader {
             "xfr_requests_to_upstream_succeeded",
             "Number of zone transfers succeeded by Cascade towards the upstream primary",
             loader_metrics.xfr_requests_to_upstream_succeeded.clone(),
+        );
+
+        metrics.register(
+            "zone_loaded_last_successful_records",
+            "Number of records loaded in last successful zone transfer or zonefile load",
+            loader_metrics.zone_loaded_last_successful_records.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_loaded_last_successful",
+            "Number of bytes loaded in last successful zone transfer or zonefile load",
+            Unit::Bytes,
+            loader_metrics.zone_loaded_last_successful_bytes.clone(),
+        );
+
+        metrics.register(
+            "zone_loaded_last_records",
+            "Number of records loaded in last successful zone transfer or zonefile load",
+            loader_metrics.zone_loaded_last_records.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_loaded_last",
+            "Number of bytes loaded in last successful zone transfer or zonefile load",
+            Unit::Bytes,
+            loader_metrics.zone_loaded_last_bytes.clone(),
         );
 
         Self {
@@ -215,6 +244,20 @@ async fn refresh(
     handle.state.loader.active_load_metrics = None;
     handle.state.loader.last_load_metrics = Some(metrics.finish());
 
+    let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
+    let zone_label = ZoneLabel {
+        zone: zone.name.clone().into(),
+    };
+    // Copy generated loader metrics to prometheus metrics
+    prometheus_metrics
+        .zone_loaded_last_bytes
+        .get_or_create(&zone_label)
+        .set(loader_metrics.num_loaded_bytes as i64);
+    prometheus_metrics
+        .zone_loaded_last_records
+        .get_or_create(&zone_label)
+        .set(loader_metrics.num_loaded_records as i64);
+
     // Update the SOA refresh timer state.
     //
     // NOTE: Zonefiles don't use the SOA refresh timers. They are only
@@ -270,6 +313,16 @@ async fn refresh(
                 serial = ?soa.rdata.serial,
                 "Loaded a new instance of the zone"
             );
+
+            // Copy generated loader metrics to prometheus metrics
+            prometheus_metrics
+                .zone_loaded_last_successful_bytes
+                .get_or_create(&zone_label)
+                .set(loader_metrics.num_loaded_bytes as i64);
+            prometheus_metrics
+                .zone_loaded_last_successful_records
+                .get_or_create(&zone_label)
+                .set(loader_metrics.num_loaded_records as i64);
 
             // Inform the zone storage of completion; it will initiate unsigned
             // review automatically.
