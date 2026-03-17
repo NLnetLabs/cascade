@@ -25,7 +25,7 @@ use crate::{
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{Zone, ZoneByPtr, ZoneHandle},
+    zone::{Zone, ZoneByPtr, ZoneHandle, instance::LoadedInstanceID},
 };
 
 mod server;
@@ -131,13 +131,14 @@ impl Default for Loader {
 #[tracing::instrument(
     level = "debug",
     skip_all,
-    fields(zone = %zone.name, source = ?source),
+    fields(zone = %zone.name, source = ?source, ?id),
 )]
 async fn refresh(
     zone: Arc<Zone>,
     source: Source,
     refresh: EnqueuedRefresh,
     mut builder: LoadedZoneBuilder,
+    id: LoadedInstanceID,
     center: Arc<Center>,
     metrics: Arc<ActiveLoadMetrics>,
 ) {
@@ -231,6 +232,7 @@ async fn refresh(
             );
 
             // Cancel the load from the perspective of zone storage.
+            handle.state.instances.abandon_load(id);
             handle.storage().abandon_load(builder);
         }
 
@@ -249,7 +251,8 @@ async fn refresh(
                 unreachable!("source-specific loading succeeded and must have filled 'builder'")
             });
 
-            handle.storage().finish_load(built);
+            // TODO: Update something in 'handle.state.instances'?
+            handle.storage().finish_load(built, id);
         }
 
         Err(err) => {
@@ -259,6 +262,7 @@ async fn refresh(
             );
 
             // Cancel the load from the perspective of zone storage.
+            handle.state.instances.abandon_load(id);
             handle.storage().abandon_load(builder);
         }
     }

@@ -45,6 +45,7 @@ use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
 use crate::util::AbortOnDrop;
+use crate::zone::instance::{LoadedInstanceID, SignedInstanceID};
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneHandle,
     ZoneVersionReviewState,
@@ -321,7 +322,11 @@ impl ZoneServer {
         center: &Arc<Center>,
         zone: &Arc<Zone>,
         zone_serial: Serial,
+        // TODO: Split up the function into a loaded and signed variant.
+        loaded_id: Option<LoadedInstanceID>,
+        signed_id: Option<SignedInstanceID>,
     ) -> Option<Result<(), Terminated>> {
+        let _ = signed_id; // TODO
         let unit_name = self.unit_name();
         let zone_type = match self.source {
             Source::Unsigned => "unsigned",
@@ -367,7 +372,7 @@ impl ZoneServer {
                             "[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}"
                         );
                     } else {
-                        self.on_unsigned_zone_approved(center, zone, zone_serial);
+                        self.on_unsigned_zone_approved(center, zone, loaded_id.unwrap());
                     }
                 }
                 Source::Signed => {
@@ -528,9 +533,8 @@ impl ZoneServer {
         &self,
         center: &Arc<Center>,
         zone: &Arc<Zone>,
-        zone_serial: Serial,
+        id: LoadedInstanceID,
     ) {
-        let _ = zone_serial; // TODO
         let mut state = zone.state.lock().unwrap();
         ZoneHandle {
             zone,
@@ -538,7 +542,7 @@ impl ZoneServer {
             center,
         }
         .storage()
-        .approve_loaded();
+        .approve_loaded(id);
     }
 
     fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
@@ -599,6 +603,8 @@ impl ZoneServer {
         // Look up the version of the zone being reviewed.
         match self.source {
             Source::Unsigned => {
+                // TODO: Make the reviewer pass the ID.
+                let id;
                 {
                     let mut zone_state = zone.state.lock().unwrap();
                     let Some(version) = zone_state.unsigned.get_mut(&zone_serial) else {
@@ -622,6 +628,13 @@ impl ZoneServer {
                     }
 
                     version.review = new_review_state;
+                    id = match zone_state.instances.upcoming {
+                        Some(
+                            crate::zone::instance::UpcomingInstance::Loading { id }
+                            | crate::zone::instance::UpcomingInstance::ReviewingLoaded { id },
+                        ) => id,
+                        _ => unreachable!(),
+                    }
                 }
                 if matches!(decision, ZoneReviewDecision::Approve) {
                     info!(
@@ -629,7 +642,7 @@ impl ZoneServer {
                     );
                     match Self::promote_zone_to_signable(center.clone(), zone_name) {
                         Ok(()) => {
-                            self.on_unsigned_zone_approved(center, zone, zone_serial);
+                            self.on_unsigned_zone_approved(center, zone, id);
                         }
                         Err(err) => {
                             error!(

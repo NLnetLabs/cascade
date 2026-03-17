@@ -39,7 +39,10 @@ use crate::{
     common::light_weight_zone::LightWeightZone,
     signer::SigningTrigger,
     util::{BackgroundTasks, force_future},
-    zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
+    zone::{
+        HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState,
+        instance::{LoadedInstanceID, SignedInstanceID},
+    },
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -119,7 +122,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn finish_load(&mut self, built: LoadedZoneBuilt) {
+    pub fn finish_load(&mut self, built: LoadedZoneBuilt, id: LoadedInstanceID) {
         // Examine the current state.
         let (transition, state) = transition(&mut self.state.storage.machine);
         match state {
@@ -137,7 +140,7 @@ impl StorageZoneHandle<'_> {
                     Some(domain::base::Serial(serial.into())),
                 );
 
-                self.start_loaded_review(loaded_reviewer);
+                self.start_loaded_review(loaded_reviewer, id);
             }
 
             _ => unreachable!(
@@ -185,7 +188,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
+    fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer, id: LoadedInstanceID) {
         // NOTE: This function provides compatibility with 'zonetree's.
 
         let zone = self.zone.clone();
@@ -256,6 +259,8 @@ impl StorageZoneHandle<'_> {
                     &center,
                     &zone,
                     domain::base::Serial(serial.into()),
+                    Some(id),
+                    None,
                 );
 
                 state = zone.state.lock().unwrap();
@@ -292,9 +297,9 @@ impl StorageZoneHandle<'_> {
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(zone = %self.zone.name),
+        fields(zone = %self.zone.name, ?id),
     )]
-    pub fn approve_loaded(&mut self) {
+    pub fn approve_loaded(&mut self, id: LoadedInstanceID) {
         self.state.record_event(
             HistoricalEvent::UnsignedZoneReview {
                 status: ZoneReviewStatus::Approved,
@@ -311,7 +316,7 @@ impl StorageZoneHandle<'_> {
 
                 let (s, persister) = s.mark_approved();
                 transition.move_to(ZoneDataStorage::PersistingLoaded(s));
-                self.start_loaded_persistence(persister);
+                self.start_loaded_persistence(persister, id);
             }
 
             _ => panic!("The zone is not undergoing loader review"),
@@ -370,9 +375,9 @@ impl StorageZoneHandle<'_> {
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(zone = %self.zone.name),
+        fields(zone = %self.zone.name, ?id),
     )]
-    pub fn finish_sign(&mut self, built: SignedZoneBuilt) {
+    pub fn finish_sign(&mut self, built: SignedZoneBuilt, id: SignedInstanceID) {
         // Examine the current state.
         let (transition, state) = transition(&mut self.state.storage.machine);
         match state {
@@ -393,7 +398,7 @@ impl StorageZoneHandle<'_> {
                     Some(domain::base::Serial(serial.into())),
                 );
 
-                self.start_signed_review(signed_reviewer);
+                self.start_signed_review(signed_reviewer, id);
             }
 
             _ => unreachable!(
@@ -445,9 +450,9 @@ impl StorageZoneHandle<'_> {
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(zone = %self.zone.name),
+        fields(zone = %self.zone.name, ?id),
     )]
-    fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer) {
+    fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer, id: SignedInstanceID) {
         // NOTE: This function provides compatibility with 'zonetree's.
 
         let zone = self.zone.clone();
@@ -496,6 +501,7 @@ impl StorageZoneHandle<'_> {
                     let (s, persister) = s.mark_approved();
                     let persisted = persister.persist();
                     let (s, viewer) = s.mark_complete(persisted);
+                    handle.state.instances.accept_signed(id);
                     let old_viewer = std::mem::replace(&mut handle.state.storage.viewer, viewer);
                     let (s, cleaner) = s.switch(old_viewer);
                     transition.move_to(ZoneDataStorage::Cleaning(s));
@@ -519,6 +525,8 @@ impl StorageZoneHandle<'_> {
                 &center,
                 &zone,
                 domain::base::Serial(serial.into()),
+                None,
+                Some(id),
             );
 
             state = zone.state.lock().unwrap();
@@ -624,9 +632,9 @@ impl StorageZoneHandle<'_> {
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(zone = %self.zone.name),
+        fields(zone = %self.zone.name, ?id),
     )]
-    fn start_loaded_persistence(&mut self, persister: LoadedZonePersister) {
+    fn start_loaded_persistence(&mut self, persister: LoadedZonePersister, id: LoadedInstanceID) {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("persist_loaded");
@@ -658,7 +666,7 @@ impl StorageZoneHandle<'_> {
                     "'ZoneDataStorage::PersistingLoaded' is the only state where a 'LoadedZonePersister' is available"
                 ),
             };
-            handle.signer().enqueue_new_sign(builder);
+            handle.signer().enqueue_new_sign(builder, id);
 
             handle.state.storage.background_tasks.finish();
         });

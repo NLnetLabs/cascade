@@ -27,7 +27,7 @@ use tracing::error;
 
 use crate::{
     center::{Center, halt_zone},
-    zone::{HistoricalEvent, Zone, ZoneHandle},
+    zone::{HistoricalEvent, Zone, ZoneHandle, instance::SignedInstanceID},
 };
 
 pub mod zone;
@@ -48,12 +48,13 @@ pub mod zone;
 #[tracing::instrument(
     level = "debug",
     skip_all,
-    fields(zone = %zone.name, ?trigger),
+    fields(zone = %zone.name, ?trigger, ?id),
 )]
 async fn sign(
     center: Arc<Center>,
     zone: Arc<Zone>,
     mut builder: SignedZoneBuilder,
+    id: SignedInstanceID,
     trigger: SigningTrigger,
 ) {
     let (status, _permits) = center.signer.wait_to_sign(&zone).await;
@@ -65,7 +66,7 @@ async fn sign(
         move || {
             let result = center
                 .signer
-                .sign_zone(&center, &zone, &mut builder, trigger, status);
+                .sign_zone(&center, &zone, &mut builder, id, trigger, status);
             (result, builder)
         }
     })
@@ -84,12 +85,13 @@ async fn sign(
     match result {
         Ok(()) => {
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
-            handle.storage().finish_sign(built);
+            handle.storage().finish_sign(built, id);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
         }
         Err(error) => {
             error!("Signing failed: {error}");
+            handle.state.instances.abandon_sign(id);
             handle.storage().abandon_sign(builder);
             status.status.finish(false);
             status.current_action = "Aborted".to_string();

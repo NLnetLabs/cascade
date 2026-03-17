@@ -140,12 +140,14 @@ impl LoaderZoneHandle<'_> {
     fn start(&mut self, refresh: EnqueuedRefresh, builder: LoadedZoneBuilder) {
         let source = self.state.loader.source.clone();
         let metrics = Arc::new(ActiveLoadMetrics::begin(source.clone()));
+        let id = self.state.instances.start_load();
 
         let handle = tokio::task::spawn(super::refresh(
             self.zone.clone(),
             source,
             refresh,
             builder,
+            id,
             self.center.clone(),
             metrics.clone(),
         ));

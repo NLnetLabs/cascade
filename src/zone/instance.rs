@@ -26,6 +26,177 @@ pub struct Instances {
     pub old: OldInstances,
 }
 
+/// # Loader Operations
+impl Instances {
+    /// Start loading a new instance of the zone.
+    ///
+    /// A new upcoming instance of the zone is prepared, and it is assigned an
+    /// ID (which is returned).
+    ///
+    /// ## Panics
+    ///
+    /// Panics if an upcoming instance of the zone already exists.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn start_load(&mut self) -> LoadedInstanceID {
+        assert!(
+            self.upcoming.is_none(),
+            "Cannot start a load while an upcoming instance exists"
+        );
+
+        let id = LoadedInstanceID(self.next_loaded_id);
+        // TODO(MSRV 1.91): Use 'strict_add()'.
+        self.next_loaded_id = self.next_loaded_id.checked_add(1).unwrap();
+        self.upcoming = Some(UpcomingInstance::Loading { id });
+        id
+    }
+
+    /// Abandon an ongoing load.
+    ///
+    /// The upcoming instance of the zone, initialized by
+    /// [`Self::start_load()`], will be abandoned.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the specified `id` does not match the upcoming (loaded)
+    /// instance of the zone. Panics if an upcoming signed instance of the zone
+    /// exists.
+    #[tracing::instrument(level = "trace", skip_all, fields(?expected_id))]
+    pub fn abandon_load(&mut self, expected_id: LoadedInstanceID) {
+        match self.upcoming.take() {
+            Some(UpcomingInstance::Loading { id } | UpcomingInstance::ReviewingLoaded { id }) => {
+                assert_eq!(id, expected_id, "The loaded instance has a different ID");
+                self.abandoned
+                    .push(AbandonedInstance::Loaded(AbandonedLoadedInstance { id }));
+            }
+            other => panic!("A loaded instance is not being built or reviewed: {other:?}"),
+        }
+    }
+}
+
+/// # Signer Operations
+impl Instances {
+    /// Start signing a newly loaded instance of the zone.
+    ///
+    /// A new upcoming signed instance of the zone is prepared, and it is
+    /// assigned an ID (which is returned).
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the upcoming loaded instance of the zone does not exist, or
+    /// has a different ID. Panics if the upcoming signed instance of the zone
+    /// already exists.
+    #[tracing::instrument(level = "trace", skip_all, fields(?loaded_id))]
+    pub fn start_new_sign(&mut self, loaded_id: LoadedInstanceID) -> SignedInstanceID {
+        let (upcoming, id) = self
+            .upcoming
+            .take()
+            .unwrap_or_else(|| panic!("There is no upcoming instance"))
+            .into_signing_new();
+        self.upcoming = Some(upcoming);
+        id
+    }
+
+    /// Start re-signing the zone.
+    ///
+    /// A new upcoming signed instance of the zone is prepared, relative to the
+    /// current loaded instance. The upcoming instance is assigned an ID (which
+    /// is returned).
+    ///
+    /// Note that a current signed instance does not have to exist (e.g. if
+    /// signing was previously disabled).
+    ///
+    /// ## Panics
+    ///
+    /// Panics if a current *loaded* instance of the zone does not exist. Panics
+    /// if an upcoming instance of the zone already exists.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn start_resign(&mut self) -> SignedInstanceID {
+        let current = self
+            .current
+            .as_ref()
+            .unwrap_or_else(|| panic!("There is no current instance to re-sign"));
+        assert!(
+            self.upcoming.is_none(),
+            "An upcoming instance already exists"
+        );
+
+        let id = SignedInstanceID(current.loaded.id, self.next_signed_id);
+        // TODO(MSRV 1.91): Use 'strict_add()'.
+        self.next_signed_id = self.next_signed_id.checked_add(1).unwrap();
+        self.upcoming = Some(UpcomingInstance::Resigning { id });
+        id
+    }
+
+    // TODO: `retry_sign()`
+
+    /// Abandon an ongoing signing operation.
+    ///
+    /// The upcoming signed and (if any) loaded instance of the zone will be
+    /// abandoned.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if there is no upcoming instance of the zone. Panics if the
+    /// specified `id` does not match the upcoming instance of the zone.
+    #[tracing::instrument(level = "trace", skip_all, fields(?expected_id))]
+    pub fn abandon_sign(&mut self, expected_id: SignedInstanceID) {
+        match self.upcoming.take() {
+            Some(
+                UpcomingInstance::SigningNew { id } | UpcomingInstance::ReviewingNewSigned { id },
+            ) => {
+                assert_eq!(id, expected_id, "The signed instance has a different ID");
+                self.abandoned
+                    .push(AbandonedInstance::Signed(AbandonedSignedInstance { id }));
+                self.abandoned
+                    .push(AbandonedInstance::Loaded(AbandonedLoadedInstance {
+                        id: id.0,
+                    }));
+            }
+            Some(
+                UpcomingInstance::Resigning { id } | UpcomingInstance::ReviewingResigned { id },
+            ) => {
+                assert_eq!(id, expected_id, "The signed instance has a different ID");
+                self.abandoned
+                    .push(AbandonedInstance::Signed(AbandonedSignedInstance { id }));
+            }
+            other => panic!("A signed instance is not being built or reviewed: {other:?}"),
+        }
+    }
+
+    /// Accept the upcoming signed instance.
+    ///
+    /// The upcoming signed instance will replace the current instance.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if there is no upcoming instance of the zone. Panics if the
+    /// upcoming instance has a different ID.
+    #[tracing::instrument(level = "trace", skip_all, fields(?expected_id))]
+    pub fn accept_signed(&mut self, expected_id: SignedInstanceID) {
+        match self.upcoming.take() {
+            Some(
+                UpcomingInstance::SigningNew { id } | UpcomingInstance::ReviewingNewSigned { id },
+            ) => {
+                assert_eq!(id, expected_id, "The signed instance has a different ID");
+                self.current = Some(CurrentInstance {
+                    loaded: CurrentLoadedInstance { id: id.0 },
+                    signed: Some(CurrentSignedInstance { id }),
+                });
+            }
+            Some(
+                UpcomingInstance::Resigning { id } | UpcomingInstance::ReviewingResigned { id },
+            ) => {
+                assert_eq!(id, expected_id, "The signed instance has a different ID");
+                self.current
+                    .as_mut()
+                    .expect("Re-signing only occurs if a current instance exists")
+                    .signed = Some(CurrentSignedInstance { id });
+            }
+            other => panic!("A signed instance is not being built or reviewed: {other:?}"),
+        }
+    }
+}
+
 //----------- CurrentInstance --------------------------------------------------
 
 /// The current instance of the zone.

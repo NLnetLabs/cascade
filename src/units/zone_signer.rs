@@ -59,6 +59,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
+use crate::zone::instance::SignedInstanceID;
 use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, Zone, ZoneHandle};
 
 // Re-signing zones before signatures expire works as follows:
@@ -314,6 +315,7 @@ impl ZoneSigner {
         center: &Arc<Center>,
         zone: &Arc<Zone>,
         builder: &mut SignedZoneBuilder,
+        id: SignedInstanceID,
         trigger: SigningTrigger,
         status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Result<(), SignerError> {
@@ -907,6 +909,8 @@ impl ZoneSigner {
             center,
             zone,
             domain::base::Serial(serial.into()),
+            None,
+            Some(id),
         );
 
         Ok(())

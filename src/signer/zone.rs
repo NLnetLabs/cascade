@@ -9,7 +9,7 @@ use crate::{
     center::Center,
     signer::{ResigningTrigger, SigningTrigger},
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{Zone, ZoneHandle, ZoneState, instance::LoadedInstanceID},
 };
 
 //----------- SignerZoneHandle -------------------------------------------------
@@ -48,9 +48,9 @@ impl SignerZoneHandle<'_> {
     #[tracing::instrument(
         level = "trace",
         skip_all,
-        fields(zone = %self.zone.name)
+        fields(zone = %self.zone.name, ?loaded_id)
     )]
-    pub fn enqueue_new_sign(&mut self, builder: SignedZoneBuilder) {
+    pub fn enqueue_new_sign(&mut self, builder: SignedZoneBuilder, loaded_id: LoadedInstanceID) {
         info!("Enqueuing a sign operation");
 
         assert!(
@@ -70,6 +70,7 @@ impl SignerZoneHandle<'_> {
         // moment, this queue is opaque and is handled within the asynchronous
         // task.
 
+        let id = self.state.instances.start_new_sign(loaded_id);
         let span = tracing::Span::none();
         self.state.signer.ongoing.spawn(
             span,
@@ -77,6 +78,7 @@ impl SignerZoneHandle<'_> {
                 self.center.clone(),
                 self.zone.clone(),
                 builder,
+                id,
                 SigningTrigger::Load,
             ),
         );
@@ -145,6 +147,7 @@ impl SignerZoneHandle<'_> {
 
             assert!(self.state.signer.enqueued_new_sign.is_none());
 
+            let id = self.state.instances.start_resign();
             let span = tracing::Span::none();
             self.state.signer.ongoing.spawn(
                 span,
@@ -152,6 +155,7 @@ impl SignerZoneHandle<'_> {
                     self.center.clone(),
                     self.zone.clone(),
                     builder,
+                    id,
                     SigningTrigger::Resign(trigger),
                 ),
             );
@@ -218,6 +222,7 @@ impl SignerZoneHandle<'_> {
         // add the operation to the queue before starting the re-sign. If the
         // queue is too full to start the operation yet, leave it enqueued.
 
+        let id = self.state.instances.start_resign();
         let span = tracing::Span::none();
         self.state.signer.ongoing.spawn(
             span,
@@ -225,6 +230,7 @@ impl SignerZoneHandle<'_> {
                 self.center.clone(),
                 self.zone.clone(),
                 builder,
+                id,
                 SigningTrigger::Resign(trigger),
             ),
         );
