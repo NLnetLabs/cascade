@@ -79,9 +79,6 @@ pub struct Center {
 
     /// Zones currently being re-signed.
     pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
-
-    /// The old TSIG key store.
-    pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
 }
 
 //--- Actions

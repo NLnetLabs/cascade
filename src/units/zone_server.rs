@@ -28,8 +28,8 @@ use domain::net::server::service::{CallResult, Service, ServiceResult};
 use domain::net::server::stream::{self, StreamServer};
 use domain::net::server::util::mk_builder_for_target;
 use domain::net::server::util::service_fn;
+use domain::tsig::Algorithm;
 use domain::tsig::KeyStore;
-use domain::tsig::{Algorithm, Key};
 use domain::zonetree::Answer;
 use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::{StoredName, ZoneTree};
@@ -39,7 +39,6 @@ use crate::api::{
     ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStatus,
 };
 use crate::center::{Center, get_zone};
-use crate::common::tsig::TsigKeyStore;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
@@ -197,7 +196,7 @@ impl ZoneServer {
         // TODO: Pass xfr_out to XfrDataProvidingZonesWrapper for enforcement.
         let zones = XfrDataProvidingZonesWrapper {
             zones,
-            key_store: center.old_tsig_key_store.clone(),
+            center: center.clone(),
         };
 
         // Propagate NOTIFY messages if this is the publication server.
@@ -210,7 +209,7 @@ impl ZoneServer {
         let svc = service_fn(zone_server_service, zones.clone());
         let svc = XfrMiddlewareSvc::new(svc, zones.clone(), max_concurrency);
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
-        let svc = TsigMiddlewareSvc::new(svc, center.old_tsig_key_store.clone());
+        let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = CookiesMiddlewareSvc::with_random_secret(svc);
         let svc = EdnsMiddlewareSvc::new(svc);
         let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
@@ -310,7 +309,7 @@ impl ZoneServer {
                         }
                     });
 
-                send_notify_to_addrs(zone_name.clone(), addrs, &center.old_tsig_key_store);
+                send_notify_to_addrs(zone_name.clone(), addrs, center);
             }
         }
     }
@@ -741,18 +740,41 @@ impl std::fmt::Debug for ZoneServer {
     }
 }
 
-#[derive(Clone, Default)]
-struct XfrDataProvidingZonesWrapper {
-    zones: Arc<ArcSwap<ZoneTree>>,
-    key_store: TsigKeyStore,
+//----------- CenterKeyStore -------------------------------------------------
+
+#[derive(Clone)]
+struct CenterKeyStore(Arc<Center>);
+
+impl KeyStore for CenterKeyStore {
+    type Key = Arc<domain::tsig::Key>;
+
+    fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Self::Key> {
+        let tsig_store = &self.0.state.lock().unwrap().tsig_store;
+        let key_name: domain::tsig::KeyName = name.try_to_name().ok()?;
+        tsig_store
+            .map
+            .get(&key_name)
+            .map(|k| k.inner.clone())
+            .filter(|k| k.algorithm() == algorithm)
+    }
 }
 
-impl XfrDataProvider<Option<<TsigKeyStore as KeyStore>::Key>> for XfrDataProvidingZonesWrapper {
+//----------- XfrDataProvidingZonesWrapper -----------------------------------
+
+#[derive(Clone)]
+struct XfrDataProvidingZonesWrapper {
+    zones: Arc<ArcSwap<ZoneTree>>,
+
+    /// Access to Center for TSIG key lookup.
+    center: Arc<Center>,
+}
+
+impl XfrDataProvider<Option<Arc<domain::tsig::Key>>> for XfrDataProvidingZonesWrapper {
     type Diff = EmptyZoneDiff;
 
     fn request<Octs>(
         &self,
-        req: &Request<Octs, Option<<TsigKeyStore as KeyStore>::Key>>,
+        req: &Request<Octs, Option<Arc<domain::tsig::Key>>>,
         _diff_from: Option<domain::base::Serial>,
     ) -> Pin<
         Box<
@@ -786,10 +808,16 @@ impl XfrDataProvider<Option<<TsigKeyStore as KeyStore>::Key>> for XfrDataProvidi
 }
 
 impl KeyStore for XfrDataProvidingZonesWrapper {
-    type Key = Key;
+    type Key = Arc<domain::tsig::Key>;
 
-    fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Self::Key> {
-        self.key_store.get_key(name, algorithm)
+    fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Arc<domain::tsig::Key>> {
+        let tsig_store = &self.center.state.lock().unwrap().tsig_store;
+        let key_name: domain::tsig::KeyName = name.try_to_name().ok()?;
+        tsig_store
+            .map
+            .get(&key_name)
+            .map(|k| k.inner.clone())
+            .filter(|k| k.algorithm() == algorithm)
     }
 }
 
@@ -828,7 +856,7 @@ impl Notifiable for LoaderNotifier {
 }
 
 fn zone_server_service(
-    request: Request<Vec<u8>, Option<<TsigKeyStore as KeyStore>::Key>>,
+    request: Request<Vec<u8>, Option<Arc<domain::tsig::Key>>>,
     zones: XfrDataProvidingZonesWrapper,
 ) -> ServiceResult<Vec<u8>> {
     let question = request.message().sole_question().unwrap();
@@ -866,7 +894,7 @@ fn zone_server_service(
 pub fn send_notify_to_addrs(
     apex_name: StoredName,
     notify_set: impl Iterator<Item = SocketAddr>,
-    _key_store: &TsigKeyStore,
+    _center: &Arc<Center>,
 ) {
     let mut dgram_config = domain::net::client::dgram::Config::new();
     dgram_config.set_max_parallel(1);

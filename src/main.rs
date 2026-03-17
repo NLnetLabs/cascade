@@ -208,7 +208,6 @@ fn main() -> ExitCode {
         signable_zones: Default::default(),
         signed_zones: Default::default(),
         published_zones: Default::default(),
-        old_tsig_key_store: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
     });
 
