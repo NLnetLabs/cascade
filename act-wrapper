@@ -24,7 +24,7 @@ function usage {
 	echo "'$0 +stats-report </path/to/write/report.csv>'"
 	echo
 	echo "To create a PNG graph of the usage use: (requires gnuplot)"
-	echo "Note: If +docker-stats is not used, a temporary file will be used"
+	echo "Note: If +stats-report is not used, a temporary file will be used"
 	echo "to capture resource usage in CSV format."
 	echo
 	echo "'$0 +stats-graph </path/to/write/report.png>'"
