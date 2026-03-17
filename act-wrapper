@@ -29,7 +29,7 @@ function usage {
 	echo
 	echo "'$0 +stats-graph </path/to/write/report.png>'"
 	echo
-	echo "(NOTE: '+XXX' arguments must be the first arguments to act-wrapper."
+	echo "NOTE: '+XXX' arguments must be the first arguments to act-wrapper, and can be combined."
 	echo
 	echo "Inputs that can be provided via --input:"
 	echo "	--input build-profile=debug|release"
