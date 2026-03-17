@@ -36,9 +36,11 @@ pub struct Manager {
 
 impl Manager {
     /// Spawn all targets.
-    pub fn spawn(center: Arc<Center>, mut socket_provider: SocketProvider) -> Result<Self, Error> {
-        let metrics = MetricsCollection::new();
-
+    pub fn spawn(
+        center: Arc<Center>,
+        mut socket_provider: SocketProvider,
+        metrics: MetricsCollection,
+    ) -> Result<Self, Error> {
         // Initialize the components.
         {
             let mut state = center.state.lock().unwrap();

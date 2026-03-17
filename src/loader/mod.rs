@@ -25,7 +25,7 @@ use crate::{
     center::{Center, State},
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
-    metrics::{XfrLabels, ZoneLabel},
+    metrics::{MetricsCollection, XfrLabels, ZoneLabel},
     util::AbortOnDrop,
     zone::{Zone, ZoneByPtr, ZoneHandle},
 };
@@ -41,13 +41,29 @@ mod zonefile;
 pub struct Loader {
     /// A scheduler for SOA timer based zone refreshes.
     refresh_scheduler: Scheduler<ZoneByPtr>,
+    prometheus_metrics: LoaderPrometheusMetrics,
 }
 
 impl Loader {
     /// Construct a new [`Loader`].
-    pub fn new() -> Self {
+    pub fn new(metrics: &mut MetricsCollection) -> Self {
+        let loader_metrics = LoaderPrometheusMetrics::default();
+
+        metrics.register(
+            "xfr_requests_to_upstream_attempted",
+            "Number of zone transfers attempted by Cascade towards the upstream primary",
+            loader_metrics.xfr_requests_to_upstream_attempted.clone(),
+        );
+
+        metrics.register(
+            "xfr_requests_to_upstream_succeeded",
+            "Number of zone transfers succeeded by Cascade towards the upstream primary",
+            loader_metrics.xfr_requests_to_upstream_succeeded.clone(),
+        );
+
         Self {
             refresh_scheduler: Scheduler::new(),
+            prometheus_metrics: loader_metrics,
         }
     }
 
@@ -121,12 +137,6 @@ impl Loader {
     }
 }
 
-impl Default for Loader {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 //----------- refresh() --------------------------------------------------------
 
 /// Refresh a zone.
@@ -145,6 +155,7 @@ async fn refresh(
 ) {
     info!("Refreshing {:?}", zone.name);
     let force = refresh == EnqueuedRefresh::Reload;
+    let prometheus_metrics = &center.loader.prometheus_metrics;
 
     // Perform the source-specific reload into the zone contents.
     let result = match source {
@@ -166,14 +177,29 @@ async fn refresh(
         }
         Source::Server { addr, tsig_key } if force => {
             let tsig_key = tsig_key.as_deref().cloned();
-            server::axfr(&zone, &addr, tsig_key, &mut builder, &metrics)
-                .await
-                .map(|()| true)
-                .map_err(Into::into)
+            server::axfr(
+                &zone,
+                &addr,
+                tsig_key,
+                &mut builder,
+                &metrics,
+                prometheus_metrics,
+            )
+            .await
+            .map(|()| true)
+            .map_err(Into::into)
         }
         Source::Server { addr, tsig_key } => {
             let tsig_key = tsig_key.as_deref().cloned();
-            server::refresh(&zone, &addr, tsig_key, &mut builder, &metrics).await
+            server::refresh(
+                &zone,
+                &addr,
+                tsig_key,
+                &mut builder,
+                &metrics,
+                prometheus_metrics,
+            )
+            .await
         }
     };
 
