@@ -18,12 +18,14 @@ use camino::Utf8Path;
 use cascade_api::ZoneReloadError;
 use cascade_zonedata::LoadedZoneBuilder;
 use domain::{new::base::Serial, tsig};
+use prometheus_client::metrics::{counter::Counter, family::Family, gauge::Gauge};
 use tracing::{debug, error, info};
 
 use crate::{
     center::{Center, State},
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
+    metrics::{XfrLabels, ZoneLabel},
     util::AbortOnDrop,
     zone::{Zone, ZoneByPtr, ZoneHandle},
 };
@@ -301,6 +303,18 @@ pub enum Source {
         /// The TSIG key for communicating with the server, if any.
         tsig_key: Option<Arc<tsig::Key>>,
     },
+}
+
+//----------- LoaderPrometheusMetrics ----------------------------------------
+
+#[derive(Debug, Default)]
+struct LoaderPrometheusMetrics {
+    xfr_requests_to_upstream_attempted: Family<XfrLabels, Counter>,
+    xfr_requests_to_upstream_succeeded: Family<XfrLabels, Counter>,
+    zone_loaded_last_successful_records: Family<ZoneLabel, Gauge>,
+    zone_loaded_last_successful_bytes: Family<ZoneLabel, Gauge>,
+    zone_loaded_last_records: Family<ZoneLabel, Gauge>,
+    zone_loaded_last_bytes: Family<ZoneLabel, Gauge>,
 }
 
 //============ Metrics =========================================================

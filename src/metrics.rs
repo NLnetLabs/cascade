@@ -258,7 +258,7 @@ impl Default for MetricsCollection {
 //------------ StoredName ----------------------------------------------------
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct StoredName(Name<Bytes>);
+pub struct StoredName(Name<Bytes>);
 
 impl EncodeLabelValue for StoredName {
     fn encode(
@@ -269,20 +269,57 @@ impl EncodeLabelValue for StoredName {
     }
 }
 
+impl From<Name<Bytes>> for StoredName {
+    fn from(value: Name<Bytes>) -> Self {
+        Self(value)
+    }
+}
+
+//------------ ZoneLabel -----------------------------------------------------
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ZoneLabel {
+    pub zone: StoredName,
+}
+
 //------------ ZoneHaltMode --------------------------------------------------
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
-struct ZoneHaltMode {
-    zone: StoredName,
-    mode: HaltMode,
+pub struct ZoneHaltMode {
+    pub zone: StoredName,
+    pub mode: HaltMode,
 }
 
 //------------ HaltMode ------------------------------------------------------
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
-enum HaltMode {
+pub enum HaltMode {
     SoftHalt,
     HardHalt,
+}
+
+//------------ XfrLabels -----------------------------------------------------
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct XfrLabels {
+    pub xfrtype: XfrType,
+    pub transport: XfrTransport,
+}
+
+//------------ XfrType -------------------------------------------------------
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
+pub enum XfrType {
+    AXFR,
+    IXFR,
+}
+
+//------------ XfrTransport --------------------------------------------------
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
+pub enum XfrTransport {
+    TCP,
+    UDP,
 }
 
 //------------ StateMetrics --------------------------------------------------
