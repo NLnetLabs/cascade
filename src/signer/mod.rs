@@ -105,7 +105,7 @@ async fn sign(
             std::mem::drop(state);
 
             // TODO: Inline.
-            halt_zone(&center, &zone.name, true, &error.to_string());
+            halt_zone(&center, &zone, true, &error.to_string());
         }
     }
 }
