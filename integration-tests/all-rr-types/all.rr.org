@@ -593,7 +593,7 @@ _8443._https 7200 IN HTTPS 1 . alpn=h3
 ; 257 Certificate Authority Restriction
 ; [RFC8659]
 ; Example taken from https://www.rfc-editor.org/rfc/rfc8659.html#name-caa-issue-property
-certs.example.         CAA 0 issue "ca1.example.net"
+certs.example         CAA 0 issue "ca1.example.net"
 
 ; AVC
 ; 258 Application Visibility and Control
