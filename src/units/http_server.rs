@@ -120,7 +120,7 @@ impl HttpServer {
                 post(Self::reject_unsigned),
             )
             .route(
-                "/zone/{name}/unsigned/{serial}/override",
+                "/zone/{name}/unsigned/override",
                 post(Self::override_unsigned),
             )
             .route(
@@ -131,10 +131,7 @@ impl HttpServer {
                 "/zone/{name}/signed/{serial}/reject",
                 post(Self::reject_signed),
             )
-            .route(
-                "/zone/{name}/signed/{serial}/override",
-                post(Self::override_signed),
-            )
+            .route("/zone/{name}/signed/override", post(Self::override_signed))
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/{name}", get(Self::policy_show))

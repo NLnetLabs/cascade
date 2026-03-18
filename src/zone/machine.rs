@@ -1,7 +1,11 @@
+use cascade_api::ZoneReviewStatus;
 use cascade_zonedata::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder};
-use tracing::{trace, warn};
+use tracing::trace;
 
-use crate::zone::ZoneHandle;
+use crate::{
+    signer::SigningTrigger,
+    zone::{HistoricalEvent, ZoneHandle},
+};
 
 /// State machine for a particular zone
 ///
@@ -56,6 +60,28 @@ impl ZoneStateMachine {
             _ => return None,
         };
         Some(s.into())
+    }
+}
+
+/// Respond to the zone waiting for new operations.
+///
+/// When the state machine is waiting, it is possible to initiate a new load
+/// or resigning of the zone. This method checks for enqueued loads or re-sign
+/// operations and begins them appropriately.
+impl<'a> ZoneHandle<'a> {
+    pub(crate) fn on_passive(&mut self) {
+        // TODO: Check whether resigning is needed. It has higher priority than
+        // loading a new instance.
+
+        if self.loader().start_pending() {
+            // The zone storage is no longer passive.
+            return;
+        }
+
+        if self.signer().start_pending() {
+            // The zone storage is no longer passive.
+            // return;
+        }
     }
 }
 
@@ -128,6 +154,13 @@ impl<'a> ZoneHandle<'a> {
 /// # Loaded Review operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn approve_loaded(&mut self) {
+        self.state.record_event(
+            HistoricalEvent::UnsignedZoneReview {
+                status: ZoneReviewStatus::Approved,
+            },
+            None, // TODO
+        );
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::LoadedReview(loaded) = state else {
@@ -139,7 +172,15 @@ impl<'a> ZoneHandle<'a> {
         self.storage().approve_loaded();
     }
 
+    #[expect(dead_code)]
     pub(crate) fn soft_reject_loaded(&mut self) {
+        self.state.record_event(
+            HistoricalEvent::UnsignedZoneReview {
+                status: ZoneReviewStatus::Rejected,
+            },
+            None, // TODO
+        );
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::LoadedReview(loaded) = state else {
@@ -150,6 +191,13 @@ impl<'a> ZoneHandle<'a> {
     }
 
     pub(crate) fn hard_reject_loaded(&mut self) {
+        self.state.record_event(
+            HistoricalEvent::UnsignedZoneReview {
+                status: ZoneReviewStatus::Rejected,
+            },
+            None, // TODO
+        );
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::LoadedReview(loaded) = state else {
@@ -163,6 +211,15 @@ impl<'a> ZoneHandle<'a> {
 /// # Signing operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn start_signed_review(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
+        self.state.record_event(
+            // TODO: Get the right trigger.
+            HistoricalEvent::SigningSucceeded {
+                trigger: SigningTrigger::Load.into(),
+            },
+            // TODO: Get the serial in here.
+            None,
+        );
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
@@ -199,6 +256,7 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
     }
 
+    #[expect(dead_code)]
     pub(crate) fn soft_reject_signed(&mut self) {
         let (transition, state) = self.state.machine.transition();
 
@@ -225,14 +283,26 @@ impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_reset(&mut self) -> Result<(), ()> {
         let (transition, state) = self.state.machine.transition();
 
-        let waiting = match state {
-            ZoneStateMachine::HaltLoaded(halt_loaded) => halt_loaded.reset(),
-            ZoneStateMachine::HaltSigned(halt_signed) => halt_signed.reset(),
-            ZoneStateMachine::SigningFailed(signing_failed) => signing_failed.reset(),
-            _ => return Err(()),
+        match state {
+            ZoneStateMachine::HaltLoaded(halt_loaded) => {
+                let waiting = halt_loaded.reset();
+                transition.move_to(ZoneStateMachine::Waiting(waiting));
+                self.storage().reject_loaded();
+            }
+            ZoneStateMachine::HaltSigned(halt_signed) => {
+                let waiting = halt_signed.reset();
+                transition.move_to(ZoneStateMachine::Waiting(waiting));
+            }
+            ZoneStateMachine::SigningFailed(signing_failed) => {
+                let waiting = signing_failed.reset();
+                transition.move_to(ZoneStateMachine::Waiting(waiting));
+            }
+            _ => {
+                transition.move_to(state);
+                return Err(());
+            }
         };
 
-        transition.move_to(ZoneStateMachine::Waiting(waiting));
         Ok(())
     }
 }
@@ -242,11 +312,12 @@ impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_override_loaded_reject(&mut self) -> Result<(), ()> {
         let (transition, state) = self.state.machine.transition();
 
-        let ZoneStateMachine::LoadedReview(loaded) = state else {
+        let ZoneStateMachine::HaltLoaded(halt) = state else {
+            transition.move_to(state);
             return Err(());
         };
 
-        transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
+        transition.move_to(ZoneStateMachine::Signing(halt.override_reject()));
 
         self.storage().approve_loaded();
 
@@ -260,6 +331,7 @@ impl<'a> ZoneHandle<'a> {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::HaltSigned(halt_signed) = state else {
+            transition.move_to(state);
             return Err(());
         };
 
@@ -318,7 +390,7 @@ struct Transition<'a> {
 impl Transition<'_> {
     /// Complete the transition, moving to the specified state.
     fn move_to(self, state: ZoneStateMachine) {
-        warn!(old = %self.previous, new = %state.as_str(), "Transitioning");
+        trace!(old = %self.previous, new = %state.as_str(), "Transitioning");
         *self.machine = state;
         std::mem::forget(self);
     }
@@ -377,6 +449,10 @@ impl LoadedReview {
 pub struct HaltLoaded {}
 
 impl HaltLoaded {
+    fn override_reject(self) -> Signing {
+        Signing {}
+    }
+
     fn reset(self) -> Waiting {
         Waiting {}
     }

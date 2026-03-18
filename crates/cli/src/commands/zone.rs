@@ -295,7 +295,7 @@ impl Zone {
                     _ => unreachable!(),
                 };
 
-                let url = format!("zone/{name}/{stage}/reset");
+                let url = format!("zone/{name}/{stage}/override");
                 let result: ZoneOverrideResult = client.post_json(&url).await?;
 
                 match result {
@@ -541,7 +541,7 @@ impl Zone {
         // If the pipeline is halted, show that.
         if let Some(reason) = zone.halted_reason {
             println!(
-                "{}\u{78} The pipeline for this zone is hard halted due to a serious error:{}",
+                "{}\u{78} The pipeline for this zone is halted due to an error:{}",
                 ansi::RED,
                 ansi::RESET
             );
