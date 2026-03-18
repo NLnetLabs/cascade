@@ -2,11 +2,10 @@ use std::ops::ControlFlow;
 use std::time::{Duration, SystemTime};
 
 use camino::Utf8PathBuf;
-use futures_util::TryFutureExt;
 
 use crate::ansi;
 use crate::api::*;
-use crate::client::{CascadeApiClient, format_http_error};
+use crate::client::CascadeApiClient;
 use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -199,33 +198,31 @@ impl Zone {
                 }
 
                 let res: Result<ZoneAddResult, ZoneAddError> = client
-                    .post("zone/add")
-                    .json(&ZoneAdd {
-                        name,
-                        source,
-                        policy,
-                        key_imports,
-                    })
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                    .post_json_with(
+                        "zone/add",
+                        &ZoneAdd {
+                            name,
+                            source,
+                            policy,
+                            key_imports,
+                        },
+                    )
+                    .await?;
 
                 match res {
                     Ok(res) => {
-                        println!("Added zone {}", res.name);
+                        println!(
+                            "Zone {} scheduled for loading, use 'cascade zone status {}' to see the status.",
+                            res.name, res.name
+                        );
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to add zone: {e}")),
                 }
             }
             ZoneCommand::Remove { name } => {
-                let res: Result<ZoneRemoveResult, ZoneRemoveError> = client
-                    .post(&format!("zone/{name}/remove"))
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<ZoneRemoveResult, ZoneRemoveError> =
+                    client.post_json(&format!("zone/{name}/remove")).await?;
 
                 match res {
                     Ok(res) => {
@@ -236,12 +233,7 @@ impl Zone {
                 }
             }
             ZoneCommand::List => {
-                let response: ZonesListResult = client
-                    .get("zone/")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let response: ZonesListResult = client.get_json("zone/").await?;
 
                 for zone_name in response.zones {
                     println!("{}", zone_name);
@@ -250,12 +242,7 @@ impl Zone {
             }
             ZoneCommand::Reload { zone } => {
                 let url = format!("zone/{zone}/reload");
-                let res: Result<ZoneReloadResult, ZoneReloadError> = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<ZoneReloadResult, ZoneReloadError> = client.post_json(&url).await?;
 
                 match res {
                     Ok(res) => {
@@ -283,12 +270,7 @@ impl Zone {
                 };
 
                 let url = format!("/zone/{name}/{stage}/{serial}/approve");
-                let result: ZoneReviewResult = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let result: ZoneReviewResult = client.post_json(&url).await?;
 
                 match result {
                     Ok(ZoneReviewOutput {}) => {
@@ -321,12 +303,7 @@ impl Zone {
                 };
 
                 let url = format!("/zone/{name}/{stage}/{serial}/reject");
-                let result: ZoneReviewResult = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let result: ZoneReviewResult = client.post_json(&url).await?;
 
                 match result {
                     Ok(ZoneReviewOutput {}) => {
@@ -343,12 +320,7 @@ impl Zone {
             }
             ZoneCommand::Status { zone, detailed } => {
                 let url = format!("zone/{}/status", zone);
-                let response: Result<ZoneStatus, ZoneStatusError> = client
-                    .get(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let response: Result<ZoneStatus, ZoneStatusError> = client.get_json(&url).await?;
 
                 match response {
                     Ok(status) => Self::print_zone_status(client, status, detailed).await,
@@ -359,12 +331,7 @@ impl Zone {
             }
             ZoneCommand::History { zone } => {
                 let url = format!("zone/{}/history", zone);
-                let response: Result<ZoneHistory, ZoneHistoryError> = client
-                    .get(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let response: Result<ZoneHistory, ZoneHistoryError> = client.get_json(&url).await?;
 
                 match response {
                     Ok(response) => {
@@ -388,14 +355,24 @@ impl Zone {
                                     format!(
                                         "Signing succeeded (triggered by {})",
                                         match trigger {
-                                            SigningTrigger::ExternallyModifiedKeySetState =>
-                                                "externally modified keyset state",
-                                            SigningTrigger::SignatureExpiration =>
-                                                "pending signature expiration",
-                                            SigningTrigger::ZoneChangesApproved =>
-                                                "unsigned zone review approved",
-                                            SigningTrigger::KeySetModifiedAfterCron =>
-                                                "keyset cron modified keyset state",
+                                            SigningTrigger::Load => "loading a new instance",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: false,
+                                            }) => "a change in signing keys",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: true,
+                                            }) => "signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: true,
+                                            }) =>
+                                                "a change in signing keys and signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: false,
+                                            }) => "<unknown>",
                                         }
                                     )
                                 }
@@ -403,14 +380,24 @@ impl Zone {
                                     format!(
                                         "Signing failed (triggered by {}): {reason}",
                                         match trigger {
-                                            SigningTrigger::ExternallyModifiedKeySetState =>
-                                                "externally modified keyset state",
-                                            SigningTrigger::SignatureExpiration =>
-                                                "pending signature expiration",
-                                            SigningTrigger::ZoneChangesApproved =>
-                                                "signed zone review approved",
-                                            SigningTrigger::KeySetModifiedAfterCron =>
-                                                "keyset cron modified keyset state",
+                                            SigningTrigger::Load => "loading a new instance",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: false,
+                                            }) => "a change in signing keys",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: true,
+                                            }) => "signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: true,
+                                            }) =>
+                                                "a change in signing keys and signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: false,
+                                            }) => "<unknown>",
                                         }
                                     )
                                 }
@@ -476,12 +463,7 @@ impl Zone {
     ) -> Result<(), String> {
         // Fetch the policy for the zone.
         let url = format!("policy/{}", zone.policy);
-        let response: Result<PolicyInfo, PolicyInfoError> = client
-            .get(&url)
-            .send()
-            .and_then(|r| r.json())
-            .await
-            .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+        let response: Result<PolicyInfo, PolicyInfoError> = client.get_json(&url).await?;
 
         let policy = response.map_err(|_| {
             format!(
@@ -916,15 +898,6 @@ impl Progress {
                             rrsig_count / (rrsig_time.as_secs() as usize)
                         );
                     }
-                    if let (Some(rrsig_count), Some(insertion_time)) =
-                        (r.rrsig_count, r.insertion_time)
-                    {
-                        println!(
-                            "  Inserted signatures in {} ({} sig/s)",
-                            format_duration(insertion_time),
-                            rrsig_count / (insertion_time.as_secs() as usize)
-                        );
-                    }
                     if let Some(threads_used) = r.threads_used {
                         println!("  Using {threads_used} threads to generate signatures");
                     }
@@ -959,13 +932,6 @@ impl Progress {
                         format_duration(r.rrsig_time),
                         r.rrsig_count
                             .checked_div(r.rrsig_time.as_secs() as usize)
-                            .unwrap_or(r.rrsig_count),
-                    );
-                    println!(
-                        "  Inserted signatures in {} ({} sig/s)",
-                        format_duration(r.insertion_time),
-                        r.rrsig_count
-                            .checked_div(r.insertion_time.as_secs() as usize)
                             .unwrap_or(r.rrsig_count),
                     );
                     println!(

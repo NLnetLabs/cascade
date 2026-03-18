@@ -1,11 +1,12 @@
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{Center, ZoneAddError};
+use crate::center::{Center, ZoneAddError, get_zone};
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, PolicyVersion};
+use crate::signer::ResigningTrigger;
 use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
-use crate::zone::{HistoricalEvent, SigningTrigger};
+use crate::zone::{HistoricalEvent, ZoneHandle};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
@@ -27,14 +28,14 @@ use std::process::Output;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 //------------ KeyManager ----------------------------------------------------
 
 /// The key manager.
 #[derive(Debug)]
 pub struct KeyManager {
-    ks_info: Mutex<HashMap<String, KeySetInfo>>,
+    ks_info: Mutex<HashMap<Name<Bytes>, KeySetInfo>>,
 }
 
 impl KeyManager {
@@ -418,27 +419,31 @@ impl KeyManager {
     }
 
     async fn tick(&self, center: &Arc<Center>, faketime: Option<UnixTime>) {
-        let zone_tree = &center.unsigned_zones;
         let Ok(mut ks_info) = self.ks_info.try_lock() else {
             // An existing call to tick() is still busy, don't do anything.
             return;
         };
-        for zone in zone_tree.load().iter_zones() {
-            let apex_name = zone.apex_name().to_string();
-            let state_path =
-                mk_dnst_keyset_state_file_path(&center.config.keys_dir, zone.apex_name());
+        #[allow(clippy::mutable_key_type)]
+        let zones = {
+            let state = center.state.lock().unwrap();
+            state.zones.clone()
+        };
+        for zone in zones {
+            let zone = &zone.0;
+            let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
             if !state_path.exists() {
                 continue;
             }
 
-            let info = match ks_info.entry(apex_name.clone()) {
+            let info = match ks_info.entry(zone.name.clone()) {
                 std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     match KeySetInfo::try_from(&state_path) {
                         Ok(new_info) => entry.insert(new_info.clone()),
                         Err(err) => {
                             error!(
-                                "[KM]: Failed to load key set state for zone '{apex_name}': {err}"
+                                "[KM]: Failed to load key set state for zone '{}': {err}",
+                                zone.name,
                             );
                             continue;
                         }
@@ -463,14 +468,15 @@ impl KeyManager {
                         continue;
                     }
                 };
-                let _ = ks_info.insert(apex_name, new_info);
-                info!("[CC]: Instructing zone signer to re-sign the zone");
-                center.signer.on_sign_zone(
+                let _ = ks_info.insert(zone.name.clone(), new_info);
+                let mut state = zone.state.lock().unwrap();
+                ZoneHandle {
+                    zone,
+                    state: &mut state,
                     center,
-                    zone.apex_name().clone(),
-                    None,
-                    SigningTrigger::ExternallyModifiedKeySetState,
-                );
+                }
+                .signer()
+                .enqueue_resign(ResigningTrigger::KEYS_CHANGED);
                 continue;
             }
 
@@ -483,11 +489,10 @@ impl KeyManager {
                 // keyset times out trying to contact nameservers. This will
                 // block the loop so we won't check the keyset state for the
                 // next zone till after the call to cron finishes.
-                let Ok(res) =
-                    Self::keyset_cmd(center, zone.apex_name().clone(), RecordingMode::Record)
-                        .arg("cron")
-                        .output()
-                        .await
+                let Ok(res) = Self::keyset_cmd(center, zone.name.clone(), RecordingMode::Record)
+                    .arg("cron")
+                    .output()
+                    .await
                 else {
                     info.clear_cron_next();
                     continue;
@@ -508,14 +513,15 @@ impl KeyManager {
                         // Something happened. Update ks_info and signal the
                         // signer.
                         // let new_info = get_keyset_info(&state_path);
-                        let _ = ks_info.insert(apex_name, new_info);
-                        info!("[CC]: Instructing zone signer to re-sign the zone");
-                        center.signer.on_sign_zone(
+                        let _ = ks_info.insert(zone.name.clone(), new_info);
+                        let mut state = zone.state.lock().unwrap();
+                        ZoneHandle {
+                            zone,
+                            state: &mut state,
                             center,
-                            zone.apex_name().clone(),
-                            None,
-                            SigningTrigger::KeySetModifiedAfterCron,
-                        );
+                        }
+                        .signer()
+                        .enqueue_resign(ResigningTrigger::KEYS_CHANGED);
                         continue;
                     }
 
@@ -1162,7 +1168,8 @@ impl KeySetCommand {
 
         if let Some(history_event) = history_event {
             // Record the error in the zone history
-            record_zone_event(&self.center, &self.name, history_event, None);
+            let zone = get_zone(&self.center, &self.name).unwrap();
+            record_zone_event(&self.center, &zone, history_event, None);
         }
 
         res

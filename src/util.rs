@@ -113,6 +113,12 @@ impl Drop for BackgroundTasks {
     }
 }
 
+impl fmt::Debug for BackgroundTasks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.tasks.keys()).finish()
+    }
+}
+
 //------------------------------------------------------------------------------
 
 /// Force a [`Future`] to evaluate synchronously.
