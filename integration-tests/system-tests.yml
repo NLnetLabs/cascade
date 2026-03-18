@@ -162,7 +162,6 @@ jobs:
 
   all-rr-types:
     name: Tests loading of all supported RR types.
-    name: 
     runs-on: ubuntu-latest
     strategy:
       matrix:
