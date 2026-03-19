@@ -6,8 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
-use cascade_zonedata::RegularRecord;
-use cascade_zonedata::{OldRecord, SignedZoneBuilder};
+use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
 use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
 use domain::base::{CanonicalOrd, Record};
