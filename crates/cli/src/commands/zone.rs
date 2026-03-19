@@ -108,7 +108,7 @@ pub enum ZoneCommand {
     /// Get the history of a single zone
     #[command(name = "history")]
     History {
-        /// The zone toe report the history of.
+        /// The zone to report the history of.
         zone: ZoneName,
     },
 }
