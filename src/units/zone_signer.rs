@@ -361,7 +361,7 @@ impl ZoneSigner {
                 {
                     // TODO Ignore this error until we can figure out how to
                     // return a soft error. Waits for new pipeline to
-		    // land.
+                    // land.
                     // return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
