@@ -39,7 +39,7 @@ runs:
         until cascade zone list | grep -q "example.test"; do
           if (($(date +%s) > (start + timeout))); then
             cascade zone list
-            echo "timeout: zone status did not report published zone available" >&2
+            echo "timeout: zone list output did not include the zone" >&2
             exit 1
           fi
           sleep 1
@@ -69,10 +69,10 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone list | grep -qv "example.test"; do
+        until ! cascade zone list | grep -q "example.test"; do
           if (($(date +%s) > (start + timeout))); then
             cascade zone list
-            echo "timeout: zone status did not report published zone available" >&2
+            echo "timeout: zone list output still includes the zone" >&2
             exit 1
           fi
           sleep 1
@@ -80,7 +80,7 @@ runs:
 
     - name: Querying the zone should now fail
       run: |
-        ! dig +noall @127.0.0.1 -p 4543 example.test AXFR
+        dig @127.0.0.1 -p 4543 example.test SOA | grep NXDOMAIN
 
     - name: Check that Cascade is still running
       run: cascade health
