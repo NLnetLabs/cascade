@@ -68,11 +68,13 @@ runs:
     # Currently there is no NSD or Cascade metric that can be used to check
     # this.
 
-    - name: Query zone
+    - name: Query the zone at the unsigned preview server
       run: |
-        dig @127.0.0.1 -p 4543 example.test AXFR
-        # TODO: Verify that the zone received has the right, large, number of
-        # records.
+        NUM_RRS=$(dig +short +onesoa @127.0.0.1 -p 4541 example.test AXFR | wc -l)
+        if [[ ${NUM_RRS} -ne 506 ]]; then
+          echo "::error:: the unsigned review zone has the wrong number of records"
+          exit 1
+        fi
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
