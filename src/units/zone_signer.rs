@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
+use cascade_zonedata::RegularRecord;
 use cascade_zonedata::{OldRecord, SignedZoneBuilder};
 use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
@@ -26,7 +27,7 @@ use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_
 use domain::new::base::{RType, Serial};
 use domain::new::rdata::RecordData;
 use domain::rdata::dnssec::Timestamp;
-use domain::rdata::{Dnskey, Nsec3param};
+use domain::rdata::{Dnskey, Nsec3param, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
 use domain::zonetree::StoredName;
 use domain_kmip::KeyUrl;
@@ -783,41 +784,66 @@ impl ZoneSigner {
         // be re-implemented here with parallel execution in mind. This also
         // applies to NSEC(3) generation, but it is currently single-threaded.
 
-        // Split the records into segments.
-        let segments = rayon::iter::split(0..unsigned_records.len(), |range| {
-            // Always sign at least 1024 records at a time.
-            if range.len() < 1024 {
-                return (range, None);
-            }
+        // Disable parallel signing for now. This may also split RRsets.
+        let signatures = if false {
+            // Split the records into segments.
+            let segments = rayon::iter::split(0..unsigned_records.len(), |range| {
+                // Always sign at least 1024 records at a time.
+                if range.len() < 1024 {
+                    return (range, None);
+                }
 
-            let midpoint = range.start + range.len() / 2;
-            let left = range.start..midpoint;
-            let right = midpoint..range.end;
-            (left, Some(right))
-        });
+                let midpoint = range.start + range.len() / 2;
+                let left = range.start..midpoint;
+                let right = midpoint..range.end;
+                (left, Some(right))
+            });
 
-        // Generate signatures from each segment.
-        let signatures = segments.map(|range| {
-            sign_sorted_zone_records(
+            // Generate signatures from each segment.
+            let signatures = segments.map(|range| {
+                sign_sorted_zone_records(
+                    &zone.name,
+                    RecordsIter::new_from_owned(&unsigned_records[range]),
+                    &keys,
+                    &rrsig_cfg,
+                )
+            });
+
+            // Convert the signatures into new-base types and collect them together.
+            // If errors occur, one error is arbitrarily chosen and returned.
+            signatures
+                .try_fold(Vec::new, |mut a, b| {
+                    a.extend(b?.into_iter().map(|r| OldRecord::from_record(r).into()));
+                    Ok::<_, SigningError>(a)
+                })
+                .try_reduce(Vec::new, |mut a, mut b| {
+                    a.append(&mut b);
+                    Ok(a)
+                })
+                .map_err(|err| SignerError::SigningError(err.to_string()))?
+        } else {
+            let signatures = sign_sorted_zone_records(
                 &zone.name,
-                RecordsIter::new_from_owned(&unsigned_records[range]),
+                RecordsIter::new_from_owned(&unsigned_records),
                 &keys,
                 &rrsig_cfg,
             )
-        });
-
-        // Convert the signatures into new-base types and collect them together.
-        // If errors occur, one error is arbitrarily chosen and returned.
-        let signatures = signatures
-            .try_fold(Vec::new, |mut a, b| {
-                a.extend(b?.into_iter().map(|r| OldRecord::from_record(r).into()));
-                Ok::<_, SigningError>(a)
-            })
-            .try_reduce(Vec::new, |mut a, mut b| {
-                a.append(&mut b);
-                Ok(a)
-            })
             .map_err(|err| SignerError::SigningError(err.to_string()))?;
+            let signatures: Vec<RegularRecord> = signatures
+                .into_iter()
+                .map(|s| {
+                    let r = Record::new(
+                        s.owner().clone(),
+                        s.class(),
+                        s.ttl(),
+                        ZoneRecordData::Rrsig(s.data().clone()),
+                    );
+                    r.into()
+                })
+                .collect();
+            signatures
+        };
+
         let total_signatures = signatures.len();
 
         new_records.extend(signatures);
