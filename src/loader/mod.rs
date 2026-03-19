@@ -17,7 +17,7 @@ use std::{
 use camino::Utf8Path;
 use cascade_api::ZoneReloadError;
 use cascade_zonedata::LoadedZoneBuilder;
-use domain::{new::base::Serial, tsig, zonetree::StoredName};
+use domain::{new::base::Serial, tsig};
 use tracing::{debug, error, info};
 
 use crate::{
@@ -85,11 +85,10 @@ impl Loader {
         }))
     }
 
-    pub fn on_refresh_zone(&self, center: &Arc<Center>, zone_name: StoredName) {
-        let zone = crate::center::get_zone(center, &zone_name).expect("zone exists");
+    pub fn on_refresh_zone(&self, center: &Arc<Center>, zone: &Arc<Zone>) {
         let mut state = zone.state.lock().expect("lock is not poisoned");
         ZoneHandle {
-            zone: &zone,
+            zone,
             state: &mut state,
             center,
         }
@@ -100,10 +99,8 @@ impl Loader {
     pub fn on_reload_zone(
         &self,
         center: &Arc<Center>,
-        zone_name: StoredName,
+        zone: &Arc<Zone>,
     ) -> Result<(), ZoneReloadError> {
-        let zone =
-            crate::center::get_zone(center, &zone_name).ok_or(ZoneReloadError::ZoneDoesNotExist)?;
         let mut zone_state = zone.state.lock().expect("lock is not poisoned");
         if let Some(reason) = zone_state.halted(true) {
             return Err(ZoneReloadError::ZoneHalted(reason));
@@ -112,7 +109,7 @@ impl Loader {
             return Err(ZoneReloadError::ZoneWithoutSource);
         }
         ZoneHandle {
-            zone: &zone,
+            zone,
             state: &mut zone_state,
             center,
         }
