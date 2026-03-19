@@ -54,7 +54,11 @@ defaults:
   run:
     # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
     shell: bash --noprofile --norc -eo pipefail -x {0}
+<<<<<<< HEAD
   
+=======
+
+>>>>>>> main
 jobs:
   test-release-version:
     name: Example test with prepare environment and cascade --version (release)
@@ -145,7 +149,7 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
-  axfr-in-large:
+  notify-in-for-unknown-zone:
     name: 
     runs-on: ubuntu-latest
     strategy:
@@ -156,6 +160,21 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: release
+      - uses: ./integration-tests/tests/notify-in-for-unknown-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  axfr-in-large:
+    name: 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/axfr-in-large
         with:
           log-level: ${{ inputs.log-level }}

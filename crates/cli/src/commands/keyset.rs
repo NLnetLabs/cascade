@@ -1,8 +1,6 @@
-use futures_util::TryFutureExt;
-
 use crate::api::ZoneName;
 use crate::api::keyset as api;
-use crate::client::{CascadeApiClient, format_http_error};
+use crate::client::CascadeApiClient;
 use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -131,15 +129,15 @@ async fn roll_command(
     variant: api::KeyRollVariant,
 ) -> Result<(), String> {
     let res: Result<(), String> = client
-        .post(&format!("key/{zone}/roll"))
-        .json(&api::KeyRoll {
-            variant,
-            cmd: cmd.into(),
-        })
-        .send()
-        .and_then(|r| r.json())
-        .await
-        .map_err(format_http_error)?;
+        .post_json_with(
+            &format!("key/{zone}/roll"),
+            &api::KeyRoll {
+                variant,
+                cmd: cmd.into(),
+            },
+        )
+        .await?;
+
     match res {
         Ok(_) => {
             println!("Manual key roll for {} successful", zone);
@@ -157,16 +155,16 @@ async fn remove_key_command(
     continue_flag: bool,
 ) -> Result<(), String> {
     let res: Result<(), String> = client
-        .post(&format!("key/{zone}/remove"))
-        .json(&api::KeyRemove {
-            key: key.clone(),
-            force,
-            continue_flag,
-        })
-        .send()
-        .and_then(|r| r.json())
-        .await
-        .map_err(format_http_error)?;
+        .post_json_with(
+            &format!("key/{zone}/remove"),
+            &api::KeyRemove {
+                key: key.clone(),
+                force,
+                continue_flag,
+            },
+        )
+        .await?;
+
     match res {
         Ok(_) => {
             println!("Removed key {} from zone {}", key, zone);

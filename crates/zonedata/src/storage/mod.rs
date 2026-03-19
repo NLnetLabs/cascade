@@ -122,7 +122,31 @@ impl ZoneDataStorage {
     /// `self` is replaced with [`Self::Poisoned`]. After a state transition,
     /// the new state should be written back. If the intermediate poisoned state
     /// can be observed, it is an implementation error.
-    pub fn take(&mut self) -> Self {
+    pub const fn take(&mut self) -> Self {
         core::mem::replace(self, Self::Poisoned)
+    }
+
+    /// Return the current state as a string.
+    ///
+    /// This is intended for logging and debugging.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            ZoneDataStorage::Passive(_) => "Passive",
+            ZoneDataStorage::Loading(_) => "Loading",
+            ZoneDataStorage::Signing(_) => "Signing",
+            ZoneDataStorage::ReviewLoadedPending(_) => "ReviewLoadedPending",
+            ZoneDataStorage::ReviewSignedPending(_) => "ReviewSignedPending",
+            ZoneDataStorage::ReviewingLoaded(_) => "ReviewingLoaded",
+            ZoneDataStorage::ReviewingSigned(_) => "ReviewingSigned",
+            ZoneDataStorage::PersistingLoaded(_) => "PersistingLoaded",
+            ZoneDataStorage::PersistingSigned(_) => "PersistingSigned",
+            ZoneDataStorage::CleanLoadedPending(_) => "CleanLoadedPending",
+            ZoneDataStorage::CleanSignedPending(_) => "CleanSignedPending",
+            ZoneDataStorage::CleanWholePending(_) => "CleanWholePending",
+            ZoneDataStorage::Cleaning(_) => "Cleaning",
+            ZoneDataStorage::CleaningSigned(_) => "CleaningSigned",
+            ZoneDataStorage::Switching(_) => "Switching",
+            ZoneDataStorage::Poisoned => "Poisoned",
+        }
     }
 }

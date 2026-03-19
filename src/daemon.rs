@@ -6,7 +6,6 @@
 //! restricted ports (<1024) and then switch to running as a non-privileged
 //! user once the privileged access is no longer required.
 use std::{
-    backtrace::{Backtrace, BacktraceStatus},
     collections::BTreeMap,
     fmt::Write,
     net::{SocketAddr, TcpListener, UdpSocket},
@@ -162,6 +161,7 @@ fn panic_hook_log_error(info: &std::panic::PanicHookInfo<'_>) {
         // backtrace only contains the panic hook itself.
         #[cfg(panic = "unwind")]
         {
+            use std::backtrace::{Backtrace, BacktraceStatus};
             // Capture and print a backtrace if enabled.
             let backtrace = Backtrace::capture();
             match backtrace.status() {
