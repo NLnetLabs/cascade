@@ -95,8 +95,7 @@ selector._domainkey.all.rr.org.	IN	TXT		"v=DKIM1; n=Use=20DKIM; p=AwEAAZfbYw8Sff
 ; RP
 ; 17 for Responsible Person
 ; [RFC1183]
-; Not supported by Cascade
-; all.rr.org.		IN	RP		rp-mbox.example.com. rp-txtdname.example.com.
+all.rr.org.		IN	RP		rp-mbox.example.com. rp-txtdname.example.com.
 
 ; AFSDB
 ; 18 for AFS Data Base location
