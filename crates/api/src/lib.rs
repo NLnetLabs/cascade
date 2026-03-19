@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 pub use domain::base::Serial;
 
+pub mod dep;
+
 const DEFAULT_AXFR_PORT: u16 = 53;
 
 //----------- ZoneName ---------------------------------------------------------
@@ -374,7 +376,6 @@ pub struct SigningInProgressReport {
     pub rrsig_count: Option<usize>,
     pub rrsig_reused_count: Option<usize>,
     pub rrsig_time: Option<Duration>,
-    pub insertion_time: Option<Duration>,
     pub total_time: Option<Duration>,
     pub threads_used: Option<usize>,
 }
@@ -392,7 +393,6 @@ pub struct SigningFinishedReport {
     pub rrsig_count: usize,
     pub rrsig_reused_count: usize,
     pub rrsig_time: Duration,
-    pub insertion_time: Duration,
     pub total_time: Duration,
     pub threads_used: usize,
     pub finished_at: SystemTime,
@@ -501,12 +501,24 @@ pub enum HistoricalEvent {
     },
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+/// The trigger for a (re-)signing operation.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SigningTrigger {
-    ExternallyModifiedKeySetState,
-    SignatureExpiration,
-    ZoneChangesApproved,
-    KeySetModifiedAfterCron,
+    /// A new instance of a zone has been loaded.
+    Load,
+
+    /// A trigger for re-signing.
+    Resign(ResigningTrigger),
+}
+
+/// The trigger for a re-signing operation.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResigningTrigger {
+    /// Whether zone signing keys have changed.
+    pub keys_changed: bool,
+
+    /// Whether signatures need to be refreshed.
+    pub sigs_need_refresh: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

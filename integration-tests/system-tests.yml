@@ -145,6 +145,21 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
+  notify-in-for-unknown-zone:
+    name: 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: release
+      - uses: ./integration-tests/tests/notify-in-for-unknown-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
   remove-zone:
     name: 
     runs-on: ubuntu-latest
@@ -153,10 +168,9 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
         with:
-          build-profile: release
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/remove-zone
         with:
           log-level: ${{ inputs.log-level }}
