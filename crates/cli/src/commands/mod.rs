@@ -8,7 +8,7 @@ pub mod status;
 pub mod template;
 pub mod zone;
 
-use crate::client::{CascadeApiClient, format_http_error};
+use crate::client::CascadeApiClient;
 use crate::println;
 
 #[allow(clippy::large_enum_variant)]
@@ -65,11 +65,7 @@ impl Command {
         match self {
             Self::Debug(cmd) => cmd.execute(client).await,
             Self::Health => {
-                client
-                    .get("health")
-                    .send()
-                    .await
-                    .map_err(format_http_error)?;
+                client.get_json::<()>("health").await?;
                 println!("Ok");
                 Ok(())
             }
