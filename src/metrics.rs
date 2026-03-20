@@ -302,6 +302,7 @@ pub enum HaltMode {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct XfrLabels {
+    pub zone: StoredName,
     pub xfrtype: XfrType,
     pub transport: XfrTransport,
 }

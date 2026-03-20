@@ -144,6 +144,7 @@ pub async fn ixfr(
     prometheus_metrics
         .xfr_requests_to_upstream_attempted
         .get_or_create(&XfrLabels {
+            zone: zone.name.clone().into(),
             xfrtype: XfrType::IXFR,
             transport: XfrTransport::UDP,
         })
@@ -203,6 +204,7 @@ pub async fn ixfr(
                 .get_or_create(&XfrLabels {
                     // TODO: attempted IXFR, but got AXFR. Should IXFR
                     // metric be increased or AXFR metric?
+                    zone: zone.name.clone().into(),
                     xfrtype: XfrType::IXFR,
                     transport: XfrTransport::UDP,
                 })
@@ -225,6 +227,7 @@ pub async fn ixfr(
             prometheus_metrics
                 .xfr_requests_to_upstream_succeeded
                 .get_or_create(&XfrLabels {
+                    zone: zone.name.clone().into(),
                     xfrtype: XfrType::IXFR,
                     transport: XfrTransport::UDP,
                 })
@@ -244,6 +247,7 @@ pub async fn ixfr(
             prometheus_metrics
                 .xfr_requests_to_upstream_succeeded
                 .get_or_create(&XfrLabels {
+                    zone: zone.name.clone().into(),
                     xfrtype: XfrType::IXFR,
                     transport: XfrTransport::UDP,
                 })
@@ -268,6 +272,7 @@ pub async fn ixfr(
                 prometheus_metrics
                     .xfr_requests_to_upstream_succeeded
                     .get_or_create(&XfrLabels {
+                        zone: zone.name.clone().into(),
                         xfrtype: XfrType::IXFR,
                         transport: XfrTransport::UDP,
                     })
@@ -315,6 +320,7 @@ pub async fn ixfr(
     prometheus_metrics
         .xfr_requests_to_upstream_attempted
         .get_or_create(&XfrLabels {
+            zone: zone.name.clone().into(),
             xfrtype: XfrType::IXFR,
             transport: XfrTransport::TCP,
         })
@@ -376,6 +382,7 @@ pub async fn ixfr(
             prometheus_metrics
                 .xfr_requests_to_upstream_succeeded
                 .get_or_create(&XfrLabels {
+                    zone: zone.name.clone().into(),
                     xfrtype: XfrType::IXFR,
                     transport: XfrTransport::TCP,
                 })
@@ -413,6 +420,7 @@ pub async fn ixfr(
             prometheus_metrics
                 .xfr_requests_to_upstream_succeeded
                 .get_or_create(&XfrLabels {
+                    zone: zone.name.clone().into(),
                     xfrtype: XfrType::IXFR,
                     transport: XfrTransport::TCP,
                 })
@@ -433,6 +441,7 @@ pub async fn ixfr(
                 prometheus_metrics
                     .xfr_requests_to_upstream_succeeded
                     .get_or_create(&XfrLabels {
+                        zone: zone.name.clone().into(),
                         xfrtype: XfrType::IXFR,
                         transport: XfrTransport::TCP,
                     })
@@ -555,6 +564,7 @@ pub async fn axfr(
     prometheus_metrics
         .xfr_requests_to_upstream_attempted
         .get_or_create(&XfrLabels {
+            zone: zone.name.clone().into(),
             xfrtype: XfrType::AXFR,
             transport: XfrTransport::TCP,
         })
@@ -603,6 +613,7 @@ pub async fn axfr(
     prometheus_metrics
         .xfr_requests_to_upstream_succeeded
         .get_or_create(&XfrLabels {
+            zone: zone.name.clone().into(),
             xfrtype: XfrType::AXFR,
             transport: XfrTransport::TCP,
         })
