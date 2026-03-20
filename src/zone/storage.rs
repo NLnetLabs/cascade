@@ -597,7 +597,7 @@ impl StorageZoneHandle<'_> {
             }
 
             // Notify the rest of Cascade that the storage is passive.
-            handle.on_passive();
+            handle.storage().on_passive();
 
             handle.state.storage.background_tasks.finish();
         });
@@ -648,6 +648,32 @@ impl StorageZoneHandle<'_> {
 
             handle.state.storage.background_tasks.finish();
         });
+    }
+
+    /// Respond to the zone storage being passive and ready for new operations.
+    ///
+    /// Only when the zone storage is passive (not just when the state machine
+    /// is waiting) is it possible to start a new loading or signing operation.
+    /// This method checks for enqueued loads or re-sign operations and begins
+    /// them appropriately.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub(crate) fn on_passive(&mut self) {
+        // TODO: Check whether resigning is needed. It has higher priority than
+        // loading a new instance.
+
+        if self.zone().loader().start_pending() {
+            // The zone is no longer passive.
+            return;
+        }
+
+        if self.zone().signer().start_pending() {
+            // The zone is no longer passive.
+            // return;
+        }
     }
 }
 

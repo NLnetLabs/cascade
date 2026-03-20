@@ -95,64 +95,51 @@ impl ZoneStateMachine {
     }
 }
 
-impl<'a> ZoneHandle<'a> {
-    /// Respond to the zone waiting for new operations.
-    ///
-    /// When the state machine is waiting, it is possible to initiate a new load
-    /// or resigning of the zone. This method checks for enqueued loads or re-sign
-    /// operations and begins them appropriately.
-    pub(crate) fn on_passive(&mut self) {
-        // TODO: Check whether resigning is needed. It has higher priority than
-        // loading a new instance.
-
-        if self.loader().start_pending() {
-            // The zone is no longer passive.
-            return;
-        }
-
-        if self.signer().start_pending() {
-            // The zone is no longer passive.
-            // return;
-        }
-    }
-}
-
 /// # Initiating operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
-        let (transition, state) = self.state.machine.transition();
-
-        let ZoneStateMachine::Waiting(waiting) = state else {
+        // It's important that we first check the storage here instead of the
+        // zone state machine. The reason is that while the zone state machine
+        // is in the waiting state, the storage might still be persisting or
+        // cleaning the zone and we shouldn't start a new operation if that's
+        // the case.
+        let Some(builder) = self.storage().start_load() else {
             info!("Could not start load since an operation is in progress on the zone.");
-            transition.move_to(state);
             return None;
         };
 
-        transition.move_to(ZoneStateMachine::Loading(waiting.start_load()));
+        let (transition, state) = self.state.machine.transition();
+        let ZoneStateMachine::Waiting(waiting) = state else {
+            panic!(
+                "The storage was in the passive state but the state machine wasn't in the waiting state"
+            );
+        };
 
-        let builder = self
-            .storage()
-            .start_load()
-            .expect("storage is in sync with state");
+        transition.move_to(ZoneStateMachine::Loading(waiting.start_load()));
 
         Some(builder)
     }
 
     pub(crate) fn try_start_resign(&mut self) -> Option<SignedZoneBuilder> {
-        let (transition, state) = self.state.machine.transition();
-
-        let ZoneStateMachine::Waiting(waiting) = state else {
+        // It's important that we first check the storage here instead of the
+        // zone state machine. The reason is that while the zone state machine
+        // is in the waiting state, the storage might still be persisting or
+        // cleaning the zone and we shouldn't start a new operation if that's
+        // the case.
+        let Some(builder) = self.storage().start_resign() else {
             info!("Could not start resign since an operation is in progress on the zone.");
-            transition.move_to(state);
             return None;
         };
 
-        transition.move_to(ZoneStateMachine::Signing(waiting.start_resign()));
+        let (transition, state) = self.state.machine.transition();
 
-        let builder = self
-            .storage()
-            .start_resign()
-            .expect("storage is in sync with state");
+        let ZoneStateMachine::Waiting(waiting) = state else {
+            panic!(
+                "The storage was in the passive state but the state machine wasn't in the waiting state"
+            );
+        };
+
+        transition.move_to(ZoneStateMachine::Signing(waiting.start_resign()));
 
         Some(builder)
     }
