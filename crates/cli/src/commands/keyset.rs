@@ -61,6 +61,7 @@ enum KeySetCommand {
     },
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Debug)]
 pub enum KeyGetType {
     DS,

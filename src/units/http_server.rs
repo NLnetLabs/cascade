@@ -894,7 +894,6 @@ impl HttpServer {
         Json(res)
     }
 
-
     async fn status_keys(State(state): State<Arc<HttpServer>>) -> Json<KeyStatusResult> {
         #[derive(Deserialize)]
         struct KeySetConfig {
