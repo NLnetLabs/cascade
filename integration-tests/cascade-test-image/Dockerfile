@@ -13,8 +13,19 @@ RUN <<EOF
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
 
-  # For rustup (for common Actions scripts)
-  apt-get install -y build-essential curl
+  # For rustup and dnst
+  apt-get install -y build-essential curl ca-certificates curl gnupg lsb-release
+
+  # Fetch NLnet Labs package key
+  curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | \
+    gpg --dearmor -o /usr/share/keyrings/nlnetlabs-archive-keyring.gpg
+
+  # Setup the nlnetlabs proposed package repo
+  printf "deb [arch=%s signed-by=%s] %s\n" \
+    "$(dpkg --print-architecture)" \
+    "/usr/share/keyrings/nlnetlabs-archive-keyring.gpg" \
+    "https://packages.nlnetlabs.nl/linux/ubuntu $(lsb_release -cs)-proposed main" | \
+      tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
 
   # Node.js (for common Actions scripts)
   apt-get install -y nodejs
