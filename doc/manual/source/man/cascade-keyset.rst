@@ -112,7 +112,8 @@ Arguments for :subcmd:`keyset get`
 
 .. option:: [RR]
 
-   The RRset to print. DS, DNSKEY, or CDS. Defaults to DS when omitted.
+   The RRset to print. DS, DNSKEY, or CDS. This argument is case-insensitive.
+   Defaults to DS when omitted.
 
    .. note:: The DS and CDS RRset is only available during the appropriate
        step of a key roll. So, if the output is empty, check the zone's key
