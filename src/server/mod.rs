@@ -14,6 +14,8 @@ use crate::{
     zone::Zone,
 };
 
+mod request;
+
 //----------- LoadedReviewServer -----------------------------------------------
 
 /// The review server for loaded instances of zones.
