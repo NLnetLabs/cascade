@@ -15,6 +15,7 @@ use crate::{
 };
 
 mod request;
+mod service;
 
 //----------- LoadedReviewServer -----------------------------------------------
 
