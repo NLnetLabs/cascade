@@ -39,6 +39,20 @@ RUN <<EOF
   apt-get install -y file
 EOF
 
+# Provide the dnst version as a variable to make it easy to update the docker
+# image used by the act-wrapper on a new version of dnst. Otherwise, users will
+# have to manually invalidate the cached version of the RUN step below as the
+# RUN step content wouldn't change.
+ARG DNST_VERSION=0.2.0~alpha1-1noble
+
+RUN <<EOF
+  # Install dnst
+  export DEBIAN_FRONTEND=noninteractive
+
+  apt-get update
+  apt-get install -y dnst=$DNST_VERSION
+EOF
+
 RUN <<EOF
   # Install Rust
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
