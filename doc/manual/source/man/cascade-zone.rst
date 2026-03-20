@@ -18,7 +18,11 @@ Synopsis
 
 :program:`cascade zone` ``[OPTIONS]`` :subcmd:`reject` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
 
+:program:`cascade zone` ``[OPTIONS]`` :subcmd:`override` ``<--unsigned|--signed>`` ``<NAME>``
+
 :program:`cascade zone` ``[OPTIONS]`` :subcmd:`status` ``[--detailed]`` ``<NAME>``
+
+:program:`cascade zone` ``[OPTIONS]`` :subcmd:`reset` ``<NAME>``
 
 :program:`cascade zone` ``[OPTIONS]`` :subcmd:`history` ``<NAME>``
 
@@ -61,9 +65,17 @@ Commands
 
    Reject a zone being reviewed.
 
+.. subcmd:: override
+
+   Override a previous rejection of a zone review.
+
 .. subcmd:: status
 
    Get the status of a single zone.
+
+.. subcmd:: reset
+
+   Reset the pipeline for a zone to get it out of a halted state.
 
 .. subcmd:: history
 
@@ -182,6 +194,17 @@ Options for :subcmd:`zone reject`
 
    The serial number of the zone to reject.
 
+Options for :subcmd:`zone override`
+---------------------------------
+
+.. option:: <--unsigned|--signed>
+
+   Whether the zone to override is at the unsigned or signed review stage.
+
+.. option:: <NAME>
+
+   The name of the zone to override.
+
 Options for :subcmd:`zone status`
 ---------------------------------
 
@@ -194,6 +217,13 @@ Options for :subcmd:`zone status`
 .. option:: <NAME>
 
    The name of the zone to report the status of.
+
+Options for :subcmd:`zone reset`
+---------------------------------
+
+.. option:: <NAME>
+
+   The name of the zone to reset the pipeline of.
 
 See Also
 --------
