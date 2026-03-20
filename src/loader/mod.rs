@@ -388,11 +388,19 @@ pub enum Source {
 
 #[derive(Debug, Default)]
 struct LoaderPrometheusMetrics {
+    /// The number of zone transfers attempted by Cascade to the upstream
     xfr_requests_to_upstream_attempted: Family<XfrLabels, Counter>,
+    /// The number of zone transfers succeeded by Cascade to the upstream
     xfr_requests_to_upstream_succeeded: Family<XfrLabels, Counter>,
+    /// The number of records loaded in the last successful load (file or transfer)
     zone_loaded_last_successful_records: Family<ZoneLabel, Gauge>,
+    /// The number of bytes loaded in the last successful load (file or transfer)
     zone_loaded_last_successful_bytes: Family<ZoneLabel, Gauge>,
+    /// The number of records loaded in the last load (file or transfer),
+    /// regardless of wether it was successful or aborted due to failure
     zone_loaded_last_records: Family<ZoneLabel, Gauge>,
+    /// The number of bytes loaded in the last load (file or transfer),
+    /// regardless of wether it was successful or aborted due to failure
     zone_loaded_last_bytes: Family<ZoneLabel, Gauge>,
 }
 
