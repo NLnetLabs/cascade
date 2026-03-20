@@ -4,12 +4,36 @@ use tracing::{info, trace};
 
 use crate::{
     signer::SigningTrigger,
+    units::zone_signer::SignerError,
     zone::{HistoricalEvent, ZoneHandle},
 };
 
 /// State machine for a particular zone
 ///
+/// It contains 5 consecutive "happy path" states:
+///
+/// 1. `Waiting`
+/// 2. `Loading`
+/// 3. `LoaderReview`
+/// 4. `Signing`
+/// 5. `SignerReview`
+///
+/// We can go from `Waiting` to `Loading` when we start a load and from `Waiting`
+/// to `Signing` when starting a resign.
+///
+/// Then there are 3 halting states:
+///
+/// 1. `RejectLoaded`
+/// 2. `SigningFailure`
+/// 3. `RejectSigned`
+///
+/// If the pipeline is ever in one of these states, it can be `reset` to the
+/// `Waiting` state. The `Reject` states are reached on a hard reject of a
+/// loaded or a signed zone. The rejection can then be overridden to continue
+/// the pipeline anyway. `SigningFailure` cannot be overridden but only `reset`.
+///
 /// Here is the diagram for it:
+///
 /// ```text
 /// ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 /// │                                                       Waiting                                                        │
@@ -41,6 +65,14 @@ pub enum ZoneStateMachine {
     SigningFailed(SigningFailed),
     SignedReview(SignedReview),
     HaltSigned(HaltSigned),
+
+    /// A value to leave the state in when we take it by value.
+    ///
+    /// To do transitions, we take ownership of the data in this enum. We do
+    /// this by replacing it with a `Poisoned` value. We then do the transition
+    /// and replace the `Poisoned` value with the new state. Therefore, if we
+    /// ever find the state machine in a poisoned state when we want to do a
+    /// transition, we should just panic because something has gone wrong.
     Poisoned,
 }
 
@@ -52,14 +84,14 @@ impl ZoneStateMachine {
         )
     }
 
-    pub fn halted_reason(&self) -> Option<String> {
+    pub fn display_halted_reason(&self) -> Option<String> {
         let s = match self {
-            Self::HaltLoaded(_) => "loaded zone was rejected",
-            Self::HaltSigned(_) => "signed zone was rejected",
-            Self::SigningFailed(_) => "signing the zone failed",
+            Self::HaltLoaded(_) => "loaded zone was rejected".into(),
+            Self::HaltSigned(_) => "signed zone was rejected".into(),
+            Self::SigningFailed(SigningFailed { err }) => format!("signing the zone failed: {err}"),
             _ => return None,
         };
-        Some(s.into())
+        Some(s)
     }
 }
 
@@ -233,14 +265,14 @@ impl<'a> ZoneHandle<'a> {
         self.storage().finish_sign(built);
     }
 
-    pub(crate) fn signing_failed(&mut self, builder: SignedZoneBuilder) {
+    pub(crate) fn signing_failed(&mut self, builder: SignedZoneBuilder, err: SignerError) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
             panic!("cannot fail signing in this state");
         };
 
-        transition.move_to(ZoneStateMachine::SigningFailed(signing.signing_failed()));
+        transition.move_to(ZoneStateMachine::SigningFailed(signing.signing_failed(err)));
 
         self.storage().abandon_sign(builder);
     }
@@ -468,13 +500,15 @@ impl Signing {
         SignedReview {}
     }
 
-    fn signing_failed(self) -> SigningFailed {
-        SigningFailed {}
+    fn signing_failed(self, err: SignerError) -> SigningFailed {
+        SigningFailed { err }
     }
 }
 
 #[derive(Debug)]
-pub struct SigningFailed {}
+pub struct SigningFailed {
+    err: SignerError,
+}
 
 impl SigningFailed {
     fn reset(self) -> Waiting {

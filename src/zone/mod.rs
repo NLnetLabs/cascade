@@ -146,7 +146,7 @@ pub struct ZoneState {
 
 impl ZoneState {
     pub fn halted_reason(&self) -> Option<String> {
-        self.machine.halted_reason()
+        self.machine.display_halted_reason()
     }
 
     pub fn record_event(&mut self, event: HistoricalEvent, serial: Option<Serial>) {

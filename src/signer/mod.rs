@@ -90,7 +90,7 @@ async fn sign(
         }
         Err(error) => {
             error!("Signing failed: {error}");
-            handle.signing_failed(builder);
+            handle.signing_failed(builder, error.clone());
             status.status.finish(false);
             status.current_action = "Aborted".to_string();
 

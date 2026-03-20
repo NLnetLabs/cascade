@@ -1576,6 +1576,7 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
     bytes
 }
 
+#[derive(Clone, Debug)]
 pub enum SignerError {
     SoaNotFound,
     SignerNotReady,

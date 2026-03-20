@@ -207,7 +207,7 @@ impl HttpServer {
         // Determine which pipelines are halted.
         for zone in center.state.lock().unwrap().zones.iter() {
             if let Ok(zone_state) = zone.0.state.lock()
-                && let Some(err) = zone_state.machine.halted_reason()
+                && let Some(err) = zone_state.machine.display_halted_reason()
             {
                 halted_zones.push((zone.0.name.clone(), err.clone()))
             }
