@@ -118,7 +118,9 @@ Arguments for :subcmd:`keyset get`
    .. note:: The DS and CDS RRset is only available during the appropriate
        step of a key roll. So, if the output is empty, check the zone's key
        roll status to see if it may still be waiting for propagation of e.g.
-       the new DNSKEY.
+       the new DNSKEY. If you need the DS RRset even if cascade is still
+       waiting for propagation, your can use ``cascade keyset <zone> get
+       dnskey | dnst key2ds -n /dev/stdin``.
 
 
 See Also
