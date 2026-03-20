@@ -56,6 +56,7 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
+  # These test jobs can be used to verify which binaries have been used
   test-release-version:
     name: Example test with prepare environment and cascade --version (release)
     runs-on: ubuntu-latest
@@ -68,9 +69,14 @@ jobs:
     - uses: ./.github/actions/set-build-profile
       with:
         build-profile: release
-    - run: cascade --version
-    - run: file $(which cascade)
+    - name: Print cascaden and dnst versions and used binaries
+      run: |
+        cascade --version
+        realpath $(which cascade)
+        dnst --version
+        realpath $(which dnst)
 
+  # These test jobs can be used to verify which binaries have been used
   test-version:
     name: Example test with prepare environment and cascade --version (debug)
     runs-on: ubuntu-latest
@@ -80,8 +86,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
-    - run: cascade --version
-    - run: file $(which cascade)
+    - name: Print cascaden and dnst versions and used binaries
+      run: |
+        cascade --version
+        realpath $(which cascade)
+        dnst --version
+        realpath $(which dnst)
 
   add-zone-query:
     name: Add a zone, query the published zone
