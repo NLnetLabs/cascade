@@ -51,6 +51,43 @@ enum KeySetCommand {
         /// The key to remove.
         key: String,
     },
+
+    /// Get the zones key(s)
+    Get {
+        /// Which key RRset to print. Can be DS (the default), DNSKEY, or CDS.
+        /// This argument is case-insensitive.
+        #[arg(value_parser = parse_getkeytype, default_value = "DS")]
+        rr: KeyGetType,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum KeyGetType {
+    DS,
+    DNSKEY,
+    CDS,
+}
+
+pub fn parse_getkeytype(value: &str) -> Result<KeyGetType, clap::Error> {
+    Ok(match value.to_ascii_lowercase().as_str() {
+        "" | "ds" => KeyGetType::DS,
+        "dnskey" => KeyGetType::DNSKEY,
+        "cds" => KeyGetType::CDS,
+        _ => Err(clap::error::Error::raw(
+            clap::error::ErrorKind::InvalidValue,
+            "Invalid RRtype, allowed values are 'DS', 'DNSKEY', or 'CDS'.",
+        ))?,
+    })
+}
+
+impl From<KeyGetType> for api::KeyGetType {
+    fn from(value: KeyGetType) -> Self {
+        match value {
+            KeyGetType::DS => api::KeyGetType::DS,
+            KeyGetType::DNSKEY => api::KeyGetType::DNSKEY,
+            KeyGetType::CDS => api::KeyGetType::CDS,
+        }
+    }
 }
 
 #[derive(Clone, Debug, clap::Subcommand)]
@@ -117,8 +154,34 @@ impl KeySet {
                 force,
                 continue_flag,
             } => remove_key_command(&client, self.zone, key, force, continue_flag).await,
+
+            KeySetCommand::Get { rr } => get_key_command(&client, self.zone, rr).await,
         }?;
         Ok(())
+    }
+}
+
+async fn get_key_command(
+    client: &CascadeApiClient,
+    zone: ZoneName,
+    key_type: KeyGetType,
+) -> Result<(), String> {
+    let res: Result<String, String> = client
+        .post_json_with(
+            &format!("key/{zone}/get"),
+            &api::KeyGet {
+                key_type: key_type.into(),
+            },
+        )
+        .await?;
+
+    match res {
+        Ok(s) => {
+            // use print because keyset already includes a newline at the end
+            print!("{s}");
+            Ok(())
+        }
+        Err(err) => Err(format!("Failed manual key roll for {zone}: {err}")),
     }
 }
 

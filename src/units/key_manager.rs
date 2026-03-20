@@ -165,6 +165,39 @@ impl KeyManager {
         Ok(())
     }
 
+    pub async fn on_get_key(
+        &self,
+        center: &Arc<Center>,
+        zone: StoredName,
+        key_type: String,
+    ) -> Result<String, String> {
+        let center = center.clone();
+        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+
+        cmd.arg("get").arg(key_type);
+
+        match cmd.output().await {
+            Err(KeySetCommandError { err, output, .. }) => {
+                // The dnst keyset get command failed.
+                error!("key get command failed: {err}");
+                Err(format_cmd_error(&err, output))
+            }
+
+            Ok(output) => {
+                let mut status = String::from_utf8_lossy(&output.stdout).to_string();
+
+                // Include any stderr output under a warning heading
+                // in the status text that we send to the client.
+                if !output.stderr.is_empty() {
+                    status.push_str("Warning:\n");
+                    status.push_str(&String::from_utf8_lossy(&output.stderr));
+                }
+
+                Ok(status)
+            }
+        }
+    }
+
     pub async fn on_status(
         &self,
         center: &Arc<Center>,
