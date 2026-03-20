@@ -70,10 +70,10 @@ impl std::fmt::Display for ZoneReviewError {
 
 //----------- ZoneReset --------------------------------------------------------
 
-/// The result of a [`ZoneReset`] command.
+/// The result of a `zone reset` command.
 pub type ZoneResetResult = Result<ZoneResetOutput, ZoneResetError>;
 
-/// The output of a [`ZoneReview`] command.
+/// The output of a `zone reset` command.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneResetOutput {
     pub zone: ZoneName,
@@ -96,10 +96,10 @@ impl std::fmt::Display for ZoneResetError {
 
 //----------- ZoneOverride -----------------------------------------------------
 
-/// The result of a [`ZoneReset`] command.
+/// The result of a `zone override` command.
 pub type ZoneOverrideResult = Result<ZoneOverrideOutput, ZoneOverrideError>;
 
-/// The output of a [`ZoneReview`] command.
+/// The output of a `zone override` command.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneOverrideOutput {
     pub zone: ZoneName,
