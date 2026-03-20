@@ -86,12 +86,24 @@ impl Spec {
                 source,
                 min_expiration,
                 next_min_expiration,
+                apex_remove,
+                apex_extra,
+                key_tags,
+                key_roll,
+                last_signature_refresh,
+                previous_serial,
                 history,
             }) => {
                 state.policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
                 state.loader.source = source.parse();
                 state.min_expiration = min_expiration;
                 state.next_min_expiration = next_min_expiration;
+                state.apex_remove = apex_remove;
+                state.apex_extra = apex_extra;
+                state.key_tags = key_tags;
+                state.key_roll = key_roll;
+                state.last_signature_refresh = last_signature_refresh;
+                state.previous_serial = previous_serial;
                 state.history = history;
 
                 // This should always be some at this stage...

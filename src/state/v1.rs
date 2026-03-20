@@ -358,6 +358,13 @@ pub struct SignerPolicySpec {
     /// How long before expiration a new signature has to be generated, in seconds.
     pub sig_remain_time: u32,
 
+    /// How often to refresh some amount of signatures to make resigning
+    /// smoother.
+    pub signature_refresh_interval: u32,
+
+    /// How long should it take to resign a zone during a ZSK or CSK roll.
+    pub key_roll_time: u32,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicySpec,
 
@@ -375,6 +382,8 @@ impl SignerPolicySpec {
             sig_inception_offset: self.sig_inception_offset,
             sig_validity_time: self.sig_validity_time,
             sig_remain_time: self.sig_remain_time,
+            signature_refresh_interval: self.signature_refresh_interval,
+            key_roll_time: self.key_roll_time,
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -387,6 +396,8 @@ impl SignerPolicySpec {
             sig_inception_offset: policy.sig_inception_offset,
             sig_validity_time: policy.sig_validity_time,
             sig_remain_time: policy.sig_remain_time,
+            signature_refresh_interval: policy.signature_refresh_interval,
+            key_roll_time: policy.key_roll_time,
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
         }
