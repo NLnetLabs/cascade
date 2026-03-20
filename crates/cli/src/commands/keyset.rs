@@ -182,7 +182,7 @@ async fn get_key_command(
             print!("{s}");
             Ok(())
         }
-        Err(err) => Err(format!("Failed manual key roll for {zone}: {err}")),
+        Err(err) => Err(format!("Failed to get keys for {zone}: {err}")),
     }
 }
 
