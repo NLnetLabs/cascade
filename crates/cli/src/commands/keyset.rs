@@ -165,6 +165,7 @@ async fn get_key_command(
     match res {
         Ok(s) => {
             // use print because keyset already includes a newline at the end
+            #[allow(clippy::disallowed_macros, reason = "we're not printing in color")]
             if s.trim().is_empty() {
                 eprintln!(
                     "NOTE: The DS and CDS RRset is only available during the appropriate step of
