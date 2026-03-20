@@ -112,14 +112,15 @@ Arguments for :subcmd:`keyset get`
 
 .. option:: [RR]
 
-   The RRset to print. DS, DNSKEY, or CDS. This argument is case-insensitive.
-   Defaults to DS when omitted.
+   The RRset to print. ``ds``, ``dnskey``, or ``cds``.
+
+   The CDS RRset includes the CDNSKEY RRset and signatures.
 
    .. note:: The DS and CDS RRset is only available during the appropriate
        step of a key roll. So, if the output is empty, check the zone's key
        roll status to see if it may still be waiting for propagation of e.g.
        the new DNSKEY. If you need the DS RRset even if cascade is still
-       waiting for propagation, your can use ``cascade keyset <zone> get
+       waiting for propagation, you can use ``cascade keyset <zone> get
        dnskey | dnst key2ds -n /dev/stdin``.
 
 

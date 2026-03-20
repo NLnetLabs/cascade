@@ -52,33 +52,19 @@ enum KeySetCommand {
         key: String,
     },
 
-    /// Get the zones key(s)
+    /// Get the zones key(s).
     Get {
-        /// Which key RRset to print. Can be DS (the default), DNSKEY, or CDS.
-        /// This argument is case-insensitive.
-        #[arg(value_parser = parse_getkeytype, default_value = "DS")]
+        /// Which key RRset to print.
         rr: KeyGetType,
     },
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, clap::ValueEnum)]
 pub enum KeyGetType {
     DS,
     DNSKEY,
     CDS,
-}
-
-pub fn parse_getkeytype(value: &str) -> Result<KeyGetType, clap::Error> {
-    Ok(match value.to_ascii_lowercase().as_str() {
-        "" | "ds" => KeyGetType::DS,
-        "dnskey" => KeyGetType::DNSKEY,
-        "cds" => KeyGetType::CDS,
-        _ => Err(clap::error::Error::raw(
-            clap::error::ErrorKind::InvalidValue,
-            "Invalid RRtype, allowed values are 'DS', 'DNSKEY', or 'CDS'.",
-        ))?,
-    })
 }
 
 impl From<KeyGetType> for api::KeyGetType {
