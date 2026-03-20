@@ -97,6 +97,7 @@ impl ZoneHandle<'_> {
 /// The state of a zone.
 #[derive(Debug, Default)]
 pub struct ZoneState {
+    /// The top-level state machine
     pub machine: ZoneStateMachine,
 
     /// The policy (version) used by the zone.

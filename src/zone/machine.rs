@@ -1,6 +1,6 @@
 use cascade_api::ZoneReviewStatus;
 use cascade_zonedata::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder};
-use tracing::trace;
+use tracing::{info, trace};
 
 use crate::{
     signer::SigningTrigger,
@@ -63,34 +63,35 @@ impl ZoneStateMachine {
     }
 }
 
-/// Respond to the zone waiting for new operations.
-///
-/// When the state machine is waiting, it is possible to initiate a new load
-/// or resigning of the zone. This method checks for enqueued loads or re-sign
-/// operations and begins them appropriately.
 impl<'a> ZoneHandle<'a> {
+    /// Respond to the zone waiting for new operations.
+    ///
+    /// When the state machine is waiting, it is possible to initiate a new load
+    /// or resigning of the zone. This method checks for enqueued loads or re-sign
+    /// operations and begins them appropriately.
     pub(crate) fn on_passive(&mut self) {
         // TODO: Check whether resigning is needed. It has higher priority than
         // loading a new instance.
 
         if self.loader().start_pending() {
-            // The zone storage is no longer passive.
+            // The zone is no longer passive.
             return;
         }
 
         if self.signer().start_pending() {
-            // The zone storage is no longer passive.
+            // The zone is no longer passive.
             // return;
         }
     }
 }
 
-/// # Waiting operations
+/// # Initiating operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Waiting(waiting) = state else {
+            info!("Could not start load since an operation is in progress on the zone.");
             transition.move_to(state);
             return None;
         };
@@ -109,6 +110,7 @@ impl<'a> ZoneHandle<'a> {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Waiting(waiting) = state else {
+            info!("Could not start resign since an operation is in progress on the zone.");
             transition.move_to(state);
             return None;
         };
@@ -210,7 +212,7 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Signing operations
 impl<'a> ZoneHandle<'a> {
-    pub(crate) fn start_signed_review(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
+    pub(crate) fn finish_signing(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
         self.state.record_event(
             // TODO: Get the right trigger.
             HistoricalEvent::SigningSucceeded {
@@ -223,10 +225,10 @@ impl<'a> ZoneHandle<'a> {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
-            panic!("cannot start signer review in this state");
+            panic!("cannot start signed review in this state");
         };
 
-        transition.move_to(ZoneStateMachine::SignedReview(signing.review()));
+        transition.move_to(ZoneStateMachine::SignedReview(signing.finish_signing()));
 
         self.storage().finish_sign(built);
     }
@@ -317,7 +319,7 @@ impl<'a> ZoneHandle<'a> {
             return Err(());
         };
 
-        transition.move_to(ZoneStateMachine::Signing(halt.override_reject()));
+        transition.move_to(ZoneStateMachine::Signing(halt.override_rejection()));
 
         self.storage().approve_loaded();
 
@@ -335,7 +337,7 @@ impl<'a> ZoneHandle<'a> {
             return Err(());
         };
 
-        transition.move_to(ZoneStateMachine::Waiting(halt_signed.override_reject()));
+        transition.move_to(ZoneStateMachine::Waiting(halt_signed.override_rejection()));
 
         Ok(())
     }
@@ -449,7 +451,7 @@ impl LoadedReview {
 pub struct HaltLoaded {}
 
 impl HaltLoaded {
-    fn override_reject(self) -> Signing {
+    fn override_rejection(self) -> Signing {
         Signing {}
     }
 
@@ -462,7 +464,7 @@ impl HaltLoaded {
 pub struct Signing {}
 
 impl Signing {
-    fn review(self) -> SignedReview {
+    fn finish_signing(self) -> SignedReview {
         SignedReview {}
     }
 
@@ -501,7 +503,7 @@ impl SignedReview {
 pub struct HaltSigned {}
 
 impl HaltSigned {
-    fn override_reject(self) -> Waiting {
+    fn override_rejection(self) -> Waiting {
         Waiting {}
     }
 

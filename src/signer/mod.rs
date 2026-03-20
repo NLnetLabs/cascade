@@ -84,7 +84,7 @@ async fn sign(
     match result {
         Ok(()) => {
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
-            handle.start_signed_review(built);
+            handle.finish_signing(built);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
         }
@@ -101,8 +101,6 @@ async fn sign(
                 },
                 None, // TODO
             );
-
-            std::mem::drop(state);
         }
     }
 }

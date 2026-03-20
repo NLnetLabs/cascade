@@ -230,7 +230,7 @@ async fn refresh(
                 "The zone is up-to-date"
             );
 
-            // Cancel the load from the perspective of the zone state machine.
+            // Cancel the load
             handle.abandon_load(builder);
         }
 
@@ -258,7 +258,7 @@ async fn refresh(
                 "Could not load the zone: {err}"
             );
 
-            // Cancel the load from the perspective of zone state machine.
+            // Cancel the load
             handle.abandon_load(builder);
         }
     }

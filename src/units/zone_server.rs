@@ -659,7 +659,7 @@ impl ZoneServer {
                         Some(zone_serial),
                     );
 
-                    // TODO: Whether to soft or hard reject should be part of the config
+                    // TODO: Whether to soft or hard reject should be part of the policy
                     let mut state = zone.state.lock().unwrap();
                     ZoneHandle {
                         zone,
@@ -710,7 +710,7 @@ impl ZoneServer {
                         },
                         Some(zone_serial),
                     );
-                    // TODO: Whether to soft or hard reject should be part of the config
+                    // TODO: Whether to soft or hard reject should be part of the policy
                     let mut state = zone.state.lock().unwrap();
                     ZoneHandle {
                         zone,

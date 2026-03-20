@@ -300,7 +300,7 @@ impl StorageZoneHandle<'_> {
         match state {
             ZoneDataStorage::ReviewingLoaded(s) => {
                 // TODO: Specify the instance ID.
-                info!("The loaded instance has been approved; persisting it");
+                info!("The loaded instance has been rejected; cleaning it up");
 
                 let (s, loaded_reviewer) = s.give_up();
                 // TODO: Communicate the new reviewer handle to the zone server.

@@ -185,7 +185,7 @@ impl SignerZoneHandle<'_> {
     ///
     /// ## Panics
     ///
-    /// Panics if the zone state is not in the waiting state.
+    /// Panics if the zone is not in the waiting state.
     pub fn start_pending(&mut self) -> bool {
         // An enqueued or ongoing signing operation holds a 'SignedZoneBuilder',
         // which prevents the zone data storage from being passive. This method
