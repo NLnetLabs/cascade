@@ -165,6 +165,15 @@ async fn get_key_command(
     match res {
         Ok(s) => {
             // use print because keyset already includes a newline at the end
+            if s.trim().is_empty() {
+                eprintln!(
+                    "NOTE: The DS and CDS RRset is only available during the appropriate step of
+a key roll. Check the zone's detailed status to see if the an active key roll
+is waiting for the propagation of e.g. the new DNSKEY. If you need the DS RR
+right now, you can use:
+`cascade keyset {zone} get dnskey | dnst key2ds -n /dev/stdin`"
+                )
+            }
             print!("{s}");
             Ok(())
         }
