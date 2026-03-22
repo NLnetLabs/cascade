@@ -275,10 +275,12 @@ impl StorageZoneHandle<'_> {
 
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
 
-        // Add every record in turn.
+        // Add every record in turn, skipping out-of-zone records.
         for record in reader.records() {
             let record: cascade_zonedata::OldParsedRecord = record.clone().into();
-            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
+            if let Err(err) = force_future(updater.apply(ZoneUpdate::AddRecord(record))) {
+                warn!("Skipping record during zone build: {err}");
+            }
         }
 
         // Commit the update with the SOA record.
@@ -542,10 +544,12 @@ impl StorageZoneHandle<'_> {
 
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
 
-        // Add every record in turn.
+        // Add every record in turn, skipping out-of-zone records.
         for record in signed_reader.records() {
             let record: cascade_zonedata::OldParsedRecord = record.clone().into();
-            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
+            if let Err(err) = force_future(updater.apply(ZoneUpdate::AddRecord(record))) {
+                warn!("Skipping signed record during zone build: {err}");
+            }
         }
 
         // Add every loaded record in turn (excluding SOA).
@@ -553,7 +557,9 @@ impl StorageZoneHandle<'_> {
         // TODO: Which other records to exclude? DNSKEY, RRSIGs?
         for record in loaded_reader.records() {
             let record: cascade_zonedata::OldParsedRecord = record.clone().into();
-            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
+            if let Err(err) = force_future(updater.apply(ZoneUpdate::AddRecord(record))) {
+                warn!("Skipping loaded record during zone build: {err}");
+            }
         }
 
         // Commit the update with the SOA record.
