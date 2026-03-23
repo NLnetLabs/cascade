@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Dummy review hook that just prints to the console and succeeds.
+set -e
+
+export LC_ALL=C
+
+exec >/dev/tty
+case X"$CASCADE_SERIAL" in
+X11111)
+	ref=reference-output/test1.sorted
+;;
+X22222)
+	ref=reference-output/test2.sorted
+;;
+*)
+	exit 1
+;;
+esac
+#dig -p "$CASCADE_SERVER_PORT" @"$CASCADE_SERVER_IP" "$CASCADE_ZONE" axfr >/tmp/dig.out 
+diff -iwu <(dig -p "$CASCADE_SERVER_PORT" @"$CASCADE_SERVER_IP" "$CASCADE_ZONE" axfr |
+	sed '0,/SOA/d;s/[ \t]*;.*//' |
+	egrep -v '^$' | sort) \
+	<(cat "$ref")
+exit 0
