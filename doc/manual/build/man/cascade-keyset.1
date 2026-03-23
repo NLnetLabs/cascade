@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-KEYSET" "1" "Mar 20, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-KEYSET" "1" "Mar 23, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-keyset \- Execute manual key roll or key removal commands
 .SH SYNOPSIS
@@ -134,8 +134,9 @@ Continue when removing the underlying keys fails.
 .INDENT 0.0
 .TP
 .B [RR]
-The RRset to print. DS, DNSKEY, or CDS. This argument is case\-insensitive.
-Defaults to DS when omitted.
+The RRset to print. \fBds\fP, \fBdnskey\fP, or \fBcds\fP\&.
+.sp
+The CDS RRset includes the CDNSKEY RRset and signatures.
 .sp
 \fBNOTE:\fP
 .INDENT 7.0
@@ -144,7 +145,7 @@ The DS and CDS RRset is only available during the appropriate
 step of a key roll. So, if the output is empty, check the zone\(aqs key
 roll status to see if it may still be waiting for propagation of e.g.
 the new DNSKEY. If you need the DS RRset even if cascade is still
-waiting for propagation, your can use \fBcascade keyset <zone> get
+waiting for propagation, you can use \fBcascade keyset <zone> get
 dnskey | dnst key2ds \-n /dev/stdin\fP\&.
 .UNINDENT
 .UNINDENT
