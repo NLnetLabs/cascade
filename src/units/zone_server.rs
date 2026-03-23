@@ -28,8 +28,7 @@ use domain::net::server::service::{CallResult, Service, ServiceResult};
 use domain::net::server::stream::{self, StreamServer};
 use domain::net::server::util::mk_builder_for_target;
 use domain::net::server::util::service_fn;
-use domain::tsig::KeyStore;
-use domain::tsig::{Algorithm, Key};
+use domain::tsig;
 use domain::zonetree::Answer;
 use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::{StoredName, ZoneTree};
@@ -64,7 +63,6 @@ pub enum Source {
 }
 
 fn spawn_servers<Svc>(
-    unit_name: &'static str,
     socket_provider: &mut SocketProvider,
     source: Source,
     svc: Svc,
@@ -77,7 +75,7 @@ where
 
     for sock_cfg in servers {
         if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-            info!("[{unit_name}]: Obtaining UDP socket for address {addr}");
+            info!("Obtaining UDP socket for address {addr}");
             let sock = socket_provider
                 .take_udp(addr)
                 .ok_or(format!("No socket available for UDP {addr}"))?;
@@ -89,7 +87,7 @@ where
         }
 
         if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-            info!("[{unit_name}]: Obtaining TCP listener for address {addr}");
+            info!("Obtaining TCP listener for address {addr}");
             let sock = socket_provider
                 .take_tcp(addr)
                 .ok_or(format!("No socket available for TCP {addr}"))?;
@@ -108,7 +106,7 @@ where
             let addr = sock
                 .local_addr()
                 .map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
-            info!("[{unit_name}]: Receieved additional UDP socket {addr}");
+            info!("Receieved additional UDP socket {addr}");
             handles.push(AbortOnDrop::from(tokio::spawn(serve_on_udp(
                 svc.clone(),
                 VecBufSource,
@@ -119,7 +117,7 @@ where
             let addr = sock
                 .local_addr()
                 .map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
-            info!("[{unit_name}]: Receieved additional TCP listener {addr}");
+            info!("Receieved additional TCP listener {addr}");
             handles.push(AbortOnDrop::from(tokio::spawn(serve_on_tcp(
                 svc.clone(),
                 VecBufSource,
@@ -137,7 +135,6 @@ where
 {
     let config = dgram::Config::new();
     let srv = DgramServer::<_, _, _>::with_config(sock, buf, svc, config);
-    let srv = Arc::new(srv);
     srv.run().await;
 }
 
@@ -150,7 +147,6 @@ where
     let mut config = stream::Config::new();
     config.set_connection_config(conn_config);
     let srv = StreamServer::with_config(sock, buf, svc, config);
-    let srv = Arc::new(srv);
     srv.run().await;
 }
 
@@ -167,7 +163,7 @@ impl ZoneServer {
 
     /// Launch a zone server.
     pub fn run(
-        center: Arc<Center>,
+        center: &Arc<Center>,
         source: Source,
         socket_provider: &mut SocketProvider,
     ) -> Result<Vec<AbortOnDrop>, Terminated> {
@@ -222,7 +218,7 @@ impl ZoneServer {
             Source::Published => &center.config.server.servers,
         };
 
-        let handles = spawn_servers(unit_name, socket_provider, source, svc, servers)
+        let handles = spawn_servers(socket_provider, source, svc, servers)
             .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
             .map_err(|_| Terminated)?;
 
@@ -764,12 +760,12 @@ struct XfrDataProvidingZonesWrapper {
     key_store: TsigKeyStore,
 }
 
-impl XfrDataProvider<Option<<TsigKeyStore as KeyStore>::Key>> for XfrDataProvidingZonesWrapper {
+impl XfrDataProvider<Option<tsig::Key>> for XfrDataProvidingZonesWrapper {
     type Diff = EmptyZoneDiff;
 
     fn request<Octs>(
         &self,
-        req: &Request<Octs, Option<<TsigKeyStore as KeyStore>::Key>>,
+        req: &Request<Octs, Option<tsig::Key>>,
         _diff_from: Option<domain::base::Serial>,
     ) -> Pin<
         Box<
@@ -802,10 +798,10 @@ impl XfrDataProvider<Option<<TsigKeyStore as KeyStore>::Key>> for XfrDataProvidi
     }
 }
 
-impl KeyStore for XfrDataProvidingZonesWrapper {
-    type Key = Key;
+impl tsig::KeyStore for XfrDataProvidingZonesWrapper {
+    type Key = tsig::Key;
 
-    fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Self::Key> {
+    fn get_key<N: ToName>(&self, name: &N, algorithm: tsig::Algorithm) -> Option<Self::Key> {
         self.key_store.get_key(name, algorithm)
     }
 }
@@ -849,7 +845,7 @@ impl Notifiable for LoaderNotifier {
 }
 
 fn zone_server_service(
-    request: Request<Vec<u8>, Option<<TsigKeyStore as KeyStore>::Key>>,
+    request: Request<Vec<u8>, Option<tsig::Key>>,
     zones: XfrDataProvidingZonesWrapper,
 ) -> ServiceResult<Vec<u8>> {
     let question = request.message().sole_question().unwrap();
