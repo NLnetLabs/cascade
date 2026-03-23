@@ -134,6 +134,7 @@ impl HttpServer {
             .route("/kmip/{server_id}", get(Self::hsm_server_get))
             .route("/key/{zone}/roll", post(Self::key_roll))
             .route("/key/{zone}/remove", post(Self::key_remove))
+            .route("/key/{zone}/get", post(Self::key_get))
             .with_state(this.clone())
             .fallback(Self::warn_route_not_found);
 
@@ -874,6 +875,20 @@ impl HttpServer {
         let res = center
             .key_manager
             .on_remove_key(center, zone, key, force, continue_flag)
+            .await;
+
+        Json(res)
+    }
+
+    async fn key_get(
+        State(state): State<Arc<HttpServer>>,
+        Path(zone): Path<Name<Bytes>>,
+        Json(KeyGet { key_type }): Json<KeyGet>,
+    ) -> Json<Result<String, String>> {
+        let center = &state.center;
+        let res = center
+            .key_manager
+            .on_get_key(center, zone, key_type.to_string())
             .await;
 
         Json(res)

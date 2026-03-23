@@ -838,6 +838,28 @@ pub mod keyset {
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyGet {
+        pub key_type: KeyGetType,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub enum KeyGetType {
+        DS,
+        DNSKEY,
+        CDS,
+    }
+
+    impl std::fmt::Display for KeyGetType {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(match self {
+                Self::DS => "ds",
+                Self::DNSKEY => "dnskey",
+                Self::CDS => "cds",
+            })
+        }
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
     pub enum KeyRollVariant {
         /// Apply the subcommand to a KSK roll.
         Ksk,

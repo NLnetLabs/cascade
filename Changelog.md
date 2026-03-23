@@ -19,6 +19,8 @@ Released yyyy-mm-dd.
 Released yyyy-mm-dd.
 
 ### New
+
+- Add a CLI command to get the DS/DNSKEY/CDS RRset for a zone. ([#539])
 - Add prometheus metrics for zone transfers and loaded zone bytes and records. ([#538])
 
 ### Bug fixes
@@ -55,6 +57,7 @@ Released yyyy-mm-dd.
 [#444]: https://github.com/NLnetLabs/cascade/pull/444
 [#468]: https://github.com/NLnetLabs/cascade/pull/468
 [#538]: https://github.com/NLnetLabs/cascade/pull/538
+[#539]: https://github.com/NLnetLabs/cascade/pull/539
 
 ## 0.1.0-alpha5 'Colline de la Croix'
 
