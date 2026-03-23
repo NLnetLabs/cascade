@@ -9,7 +9,11 @@ version = "v1"
 
 [loader.review]
 required = true
-cmd-hook = "hooks/compare-to-input.sh"
+cmd-hook = "hooks/unsigned-review-compare-to-original"
+
+[signer.review]
+required = true
+cmd-hook = "hooks/signed-review-compare-to-original"
 
 # How zones are signed.
 #

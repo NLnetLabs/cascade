@@ -4,7 +4,7 @@ export LC_ALL=C
 CASCADE="cargo run --bin cascade"
 KEY=$PWD/keys/Kexample.+015+02835.key
 
-for test in 2 1
+for test in 1 2
 do
 	cp zones/test${test}.zone example.in
 	$CASCADE zone add --source $PWD/example.in --policy review-test example --import-csk-file $KEY

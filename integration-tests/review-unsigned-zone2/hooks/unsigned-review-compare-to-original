@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Dummy review hook that just prints to the console and succeeds.
 set -e
 
 export LC_ALL=C
 
-exec >/dev/tty
+#exec >/dev/tty
+
 case X"$CASCADE_SERIAL" in
 X11111)
 	ref=reference-output/test1.sorted
