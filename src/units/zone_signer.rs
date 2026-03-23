@@ -440,9 +440,9 @@ impl ZoneSigner {
         let walk_start = Instant::now();
         // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
-            .records()
-            .iter()
-            .map(|r| OldRecord::from(r.clone()))
+            .unsigned_records()
+            .into_iter()
+            .map(OldRecord::from)
             .collect::<Vec<_>>();
         records.push(new_soa.clone().into());
         let walk_time = walk_start.elapsed();

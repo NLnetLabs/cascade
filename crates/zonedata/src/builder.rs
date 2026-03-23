@@ -185,7 +185,7 @@ impl LoadedZoneBuilder {
             self.diff = Some(Box::new(DiffData {
                 removed_soa: Some(reader.soa().clone()),
                 added_soa: None,
-                removed_records: reader.records().to_vec(),
+                removed_records: reader.regular_records().to_vec(),
                 added_records: Vec::new(),
             }));
         } else {

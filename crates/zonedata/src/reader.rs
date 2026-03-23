@@ -41,21 +41,63 @@ impl<'d> LoadedZoneReader<'d> {
     }
 }
 
-impl LoadedZoneReader<'_> {
+impl<'d> LoadedZoneReader<'d> {
     /// The SOA record.
-    pub const fn soa(&self) -> &SoaRecord {
+    pub const fn soa(&self) -> &'d SoaRecord {
         self.instance
             .soa
             .as_ref()
             .expect("checked that 'instance.soa' is 'Some' in 'new()'")
     }
 
-    /// All other records in the zone.
+    /// Regular records in the zone.
     ///
-    /// Records are sorted in DNSSEC canonical order. The SOA record is not
+    /// Records are sorted in DNSSEC canonical order. The SOA record **is not**
     /// included.
-    pub const fn records(&self) -> &[RegularRecord] {
+    pub const fn regular_records(&self) -> &'d [RegularRecord] {
         self.instance.records.as_slice()
+    }
+
+    /// All records in the zone.
+    ///
+    /// Records are sorted in DNSSEC canonical order. The SOA record **is**
+    /// included.
+    pub fn all_records(&self) -> impl IntoIterator<Item = RegularRecord> + use<'d> {
+        let (soa, records) = (self.soa(), self.regular_records());
+        let soa = RegularRecord::from(soa.clone());
+
+        // Find the position to insert the SOA record.
+        let pos = records
+            .iter()
+            .position(|r| soa <= *r)
+            .unwrap_or(records.len());
+
+        records[..pos]
+            .iter()
+            .cloned()
+            .chain([soa])
+            .chain(records[pos..].iter().cloned())
+    }
+
+    /// The unsigned records in the zone.
+    ///
+    /// DNSSEC related records that would be produced by Cascade's signer (e.g.
+    /// RRSIGs, NSEC/NSEC3, etc.) are stripped. The records are sorted in DNSSEC
+    /// canonical order. The SOA record **is not** included.
+    pub fn unsigned_records(&self) -> impl IntoIterator<Item = RegularRecord> + use<'d> {
+        // Filter out records that would be generated during signing.
+        //
+        // TODO: 'RType::{CDS, CDNSKEY, ZONEMD}'.
+        self.instance
+            .records
+            .iter()
+            .filter(|r| {
+                !matches!(
+                    r.rtype,
+                    RType::NSEC | RType::NSEC3 | RType::NSEC3PARAM | RType::DNSKEY | RType::RRSIG
+                ) && !matches!(r.rtype.code.get(), 59 | 60 | 63)
+            })
+            .cloned()
     }
 }
 

@@ -257,7 +257,7 @@ impl StorageZoneHandle<'_> {
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
 
         // Add every record in turn.
-        for record in reader.records() {
+        for record in reader.all_records() {
             let record: cascade_zonedata::OldParsedRecord = record.clone().into();
             force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
@@ -535,7 +535,7 @@ impl StorageZoneHandle<'_> {
         // Add every loaded record in turn (excluding SOA).
         //
         // TODO: Which other records to exclude? DNSKEY, RRSIGs?
-        for record in loaded_reader.records() {
+        for record in loaded_reader.all_records() {
             let record: cascade_zonedata::OldParsedRecord = record.clone().into();
             force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
