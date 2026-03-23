@@ -438,17 +438,14 @@ impl StorageZoneHandle<'_> {
         let center = self.center.clone();
         let span = trace_span!("start_signed_review");
         self.state.storage.background_tasks.spawn_blocking(span, move || {
-            // Read the loaded and signed instances.
-            let loaded_reader = signed_reviewer
-                .read_loaded()
-                .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
-            let signed_reader = signed_reviewer
-                .read_signed()
+            // Read the instance.
+            let reader = signed_reviewer
+                .read()
                 .unwrap_or_else(|| unreachable!("The signer never returns an empty instance"));
-            let serial = signed_reader.soa().rdata.serial;
+            let serial = reader.soa().rdata.serial;
 
             // Build a compatibility shim for the new instance.
-            let zonetree_zone = Self::build_compat_for_signed(&zone, &loaded_reader, &signed_reader);
+            let zonetree_zone = Self::build_compat_for_signed(&zone, &reader);
 
             // Insert the compatibility shim in the global view (possibly
             // replacing a previous one).
@@ -512,11 +509,7 @@ impl StorageZoneHandle<'_> {
     }
 
     /// Build a [`zonetree::Zone`] for a signed instance of a zone.
-    fn build_compat_for_signed(
-        zone: &Arc<Zone>,
-        loaded_reader: &LoadedZoneReader<'_>,
-        signed_reader: &SignedZoneReader<'_>,
-    ) -> zonetree::Zone {
+    fn build_compat_for_signed(zone: &Arc<Zone>, reader: &SignedZoneReader<'_>) -> zonetree::Zone {
         use zonetree::{types::ZoneUpdate, update::ZoneUpdater};
 
         // Use a LightWeightZone as it is able to fix RRSIG TTLs to be the same
@@ -526,22 +519,20 @@ impl StorageZoneHandle<'_> {
 
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
 
-        // Add every record in turn.
-        for record in signed_reader.records() {
+        // Add every generated record (except the SOA) in turn.
+        for record in reader.generated_records() {
             let record: cascade_zonedata::OldParsedRecord = record.clone().into();
             force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
 
-        // Add every loaded record in turn (excluding SOA).
-        //
-        // TODO: Which other records to exclude? DNSKEY, RRSIGs?
-        for record in loaded_reader.all_records() {
-            let record: cascade_zonedata::OldParsedRecord = record.clone().into();
+        // Add every loaded record in turn.
+        for record in reader.loaded_records() {
+            let record: cascade_zonedata::OldParsedRecord = record.into();
             force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
 
         // Commit the update with the SOA record.
-        let soa: cascade_zonedata::OldParsedRecord = signed_reader.soa().clone().into();
+        let soa: cascade_zonedata::OldParsedRecord = reader.soa().clone().into();
         force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
 
         zone

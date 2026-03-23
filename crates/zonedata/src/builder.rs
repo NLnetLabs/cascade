@@ -617,7 +617,7 @@ impl SignedZoneBuilder {
             self.signed_diff = Some(Box::new(DiffData {
                 removed_soa: Some(reader.soa().clone()),
                 added_soa: None,
-                removed_records: reader.records().to_vec(),
+                removed_records: reader.generated_records().to_vec(),
                 added_records: Vec::new(),
             }));
         } else {
@@ -634,13 +634,19 @@ impl SignedZoneBuilder {
         // SAFETY: As per the caller, 'signed[!signed_index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to
         // access immutably.
-        let curr = unsafe { &*self.data.signed[!self.signed_index as usize].get() };
+        let signed = unsafe { &*self.data.signed[!self.signed_index as usize].get() };
 
-        curr.soa.as_ref()?;
+        // SAFETY: As per the caller, 'loaded[!loaded_index]' will not
+        // be modified for the lifetime of 'self', and so is sound to access
+        // immutably.
+        let loaded = unsafe { &*self.data.loaded[!self.loaded_index as usize].get() };
+
+        signed.soa.as_ref()?;
 
         // NOTE:
-        // - 'curr' is complete, as checked above.
-        Some(SignedZoneReader::new(curr))
+        // - 'signed' is complete, as checked above.
+        // - Since 'signed' is complete, 'loaded' must be complete.
+        Some(SignedZoneReader::new(loaded, signed))
     }
 
     /// Whether the (signed) instance has been built.
@@ -661,13 +667,26 @@ impl SignedZoneBuilder {
         // SAFETY: As per the caller, 'signed[signed_index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to
         // access immutably.
-        let next = unsafe { &*self.data.signed[self.signed_index as usize].get() };
+        let signed = unsafe { &*self.data.signed[self.signed_index as usize].get() };
 
-        next.soa.as_ref()?;
+        let loaded = if !self.have_next_loaded() {
+            // SAFETY: As per the caller, 'loaded[!loaded_index]' will not be
+            // accessed elsewhere for the lifetime of 'self', and so is sound to
+            // access immutably.
+            unsafe { &*self.data.loaded[!self.loaded_index as usize].get() }
+        } else {
+            // SAFETY: As per the caller, 'loaded[loaded_index]' will not be
+            // accessed elsewhere for the lifetime of 'self', and so is sound to
+            // access immutably.
+            unsafe { &*self.data.loaded[self.loaded_index as usize].get() }
+        };
+
+        signed.soa.as_ref()?;
 
         // NOTE:
-        // - 'next' is complete, as checked above.
-        Some(SignedZoneReader::new(next))
+        // - 'signed' is complete, as checked above.
+        // - Since 'signed' is complete, 'loaded' must be complete.
+        Some(SignedZoneReader::new(loaded, signed))
     }
 
     /// The diff of the built signed component.
