@@ -130,6 +130,26 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
+  review-unsigned-zone2:
+    name: Test that the review server has the original zone
+    runs-on: ubuntu-latest
+    strategy:
+      #max-parallel: 1
+      matrix:
+        rust: [stable]
+        test_idx: [1, 2]
+        key: ['Kexample.+015+02835.key']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/review-unsigned-zone2
+        with:
+          log-level: ${{ inputs.log-level }}
+          test_idx: ${{ matrix.test_idx }}
+          key: ${{ matrix.key }}
+
   ixfr-in:
     name: Receive a zone via IXFR from the NSD primary.
     runs-on: ubuntu-latest

@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 set -e
 
-export LC_ALL=C
-
 #exec >/dev/tty
+exec >/tmp/hook.out 2>&1
+echo "Unsigned review hook"
+
+TEST_DIR="<INTEGRATION_TEST_DIR>"
+
+export LC_ALL=C
 
 case X"$CASCADE_SERIAL" in
 X11111)
-	ref=reference-output/test1.sorted
+	ref="$TEST_DIR/reference-output/test1.sorted"
 ;;
 X22222)
-	ref=reference-output/test2.sorted
+	ref="$TEST_DIR/reference-output/test2.sorted"
 ;;
 *)
 	exit 1
