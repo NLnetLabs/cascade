@@ -54,7 +54,7 @@ impl Manager {
         // Spawn the unsigned zone review server.
         info!("Starting unit 'RS'");
         handles.extend(ZoneServer::run(
-            center.clone(),
+            &center,
             zone_server::Source::Unsigned,
             &mut socket_provider,
         )?);
@@ -70,7 +70,7 @@ impl Manager {
         // Spawn the signed zone review server.
         info!("Starting unit 'RS2'");
         handles.extend(ZoneServer::run(
-            center.clone(),
+            &center,
             zone_server::Source::Signed,
             &mut socket_provider,
         )?);
@@ -100,7 +100,7 @@ impl Manager {
 
         info!("Starting unit 'PS'");
         handles.extend(ZoneServer::run(
-            center.clone(),
+            &center,
             zone_server::Source::Published,
             &mut socket_provider,
         )?);
