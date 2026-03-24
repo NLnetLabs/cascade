@@ -6,10 +6,10 @@ use crate::center::Center;
 use crate::daemon::SocketProvider;
 use crate::loader::Loader;
 use crate::metrics::MetricsCollection;
+use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::units::http_server::HTTP_UNIT_NAME;
 use crate::units::http_server::HttpServer;
 use crate::units::key_manager::KeyManager;
-use crate::units::zone_server::{self, ZoneServer};
 use crate::units::zone_signer::ZoneSigner;
 use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, Zone};
@@ -53,11 +53,7 @@ impl Manager {
 
         // Spawn the unsigned zone review server.
         info!("Starting unit 'RS'");
-        handles.extend(ZoneServer::run(
-            &center,
-            zone_server::Source::Unsigned,
-            &mut socket_provider,
-        )?);
+        handles.extend(LoadedReviewServer::run(&center, &mut socket_provider)?);
 
         // Spawn the key manager.
         info!("Starting unit 'KM'");
@@ -69,11 +65,7 @@ impl Manager {
 
         // Spawn the signed zone review server.
         info!("Starting unit 'RS2'");
-        handles.extend(ZoneServer::run(
-            &center,
-            zone_server::Source::Signed,
-            &mut socket_provider,
-        )?);
+        handles.extend(SignedReviewServer::run(&center, &mut socket_provider)?);
 
         // Take out HTTP listen sockets before PS takes them all.
         debug!("Pre-fetching listen sockets for 'HS'");
@@ -99,11 +91,7 @@ impl Manager {
         }
 
         info!("Starting unit 'PS'");
-        handles.extend(ZoneServer::run(
-            &center,
-            zone_server::Source::Published,
-            &mut socket_provider,
-        )?);
+        handles.extend(PublicationServer::run(&center, &mut socket_provider)?);
 
         // Register any Manager metrics here, before giving the metrics to the HttpServer
 

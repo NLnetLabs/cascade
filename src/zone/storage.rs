@@ -36,6 +36,7 @@ use tracing::{info, trace, trace_span, warn};
 use crate::{
     center::Center,
     common::light_weight_zone::LightWeightZone,
+    server::{LoadedReviewServer, SignedReviewServer},
     util::{BackgroundTasks, force_future},
     zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState},
 };
@@ -237,7 +238,7 @@ impl StorageZoneHandle<'_> {
             // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
             std::mem::drop(state);
 
-            center.unsigned_review_server.on_seek_approval_for_zone(
+            LoadedReviewServer::start_review(
                 &center,
                 &zone,
                 domain::base::Serial(serial.into()),
@@ -555,7 +556,7 @@ impl StorageZoneHandle<'_> {
             // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
             std::mem::drop(state);
 
-            center.signed_review_server.on_seek_approval_for_zone(
+            SignedReviewServer::start_review(
                 &center,
                 &zone,
                 domain::base::Serial(serial.into()),
