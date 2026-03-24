@@ -39,7 +39,6 @@ runs:
     - name: Add policy
       id: add-policy
       run: |
-        TMP=/tmp
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
         INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-unsigned-zone2"
         # Fix the paths to the reference output specified in the hooks.
