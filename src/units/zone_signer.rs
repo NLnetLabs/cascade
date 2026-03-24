@@ -955,18 +955,22 @@ impl ZoneSigner {
     }
 
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
-        let zone_tree = &center.unsigned_zones;
         let mut min_time = None;
         let now = SystemTime::now();
-        for zone in zone_tree.load().iter_zones() {
-            let zone_name = zone.apex_name();
+
+        #[allow(clippy::mutable_key_type)]
+        let zones = {
+            let state = center.state.lock().unwrap();
+            state.zones.clone()
+        };
+
+        for zone in zones {
+            let zone = &zone.0;
+            let zone_name = &zone.name;
 
             let min_expiration = {
                 // Use a block to make sure that the mutex is clearly dropped.
-                let state = center.state.lock().unwrap();
-                let zone = state.zones.get(zone_name).unwrap();
-                let zone_state = zone.0.state.lock().unwrap();
-
+                let zone_state = zone.state.lock().unwrap();
                 zone_state.min_expiration
             };
 
@@ -993,9 +997,7 @@ impl ZoneSigner {
 
             // Ensure that the Mutexes are locked only in this block;
             let remain_time = {
-                let state = center.state.lock().unwrap();
-                let zone = state.zones.get(zone_name).unwrap();
-                let zone_state = zone.0.state.lock().unwrap();
+                let zone_state = zone.state.lock().unwrap();
                 // TODO: what if there is no policy?
                 zone_state.policy.as_ref().unwrap().signer.sig_remain_time
             };
