@@ -4,7 +4,7 @@
 ; policy to make it easy to check when the zone has been signed.
 example. IN SOA ns.example. hostmaster.example. 11111 3600 3600 86400 3600
 
-; A Zone should have an NS record.
+; A zone should have an NS record.
 @ NS ns1.example.
 
 cname.modify.example.		CNAME	cname-target
