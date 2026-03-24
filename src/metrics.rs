@@ -107,7 +107,6 @@ impl MetricsCollection {
         let mut zones_active: i64 = 0;
         let zones_unsigned: i64;
         let zones_signed: i64;
-        let zones_waiting: i64;
         let zones_published: i64;
 
         // Using Family::clear() to delete all metrics and label sets
@@ -115,7 +114,6 @@ impl MetricsCollection {
         {
             zones_unsigned = center.unsigned_zones.load().as_ref().iter_zones().count() as i64;
             zones_signed = center.signed_zones.load().as_ref().iter_zones().count() as i64;
-            zones_waiting = center.signable_zones.load().as_ref().iter_zones().count() as i64;
             zones_published = center.published_zones.load().as_ref().iter_zones().count() as i64;
             let state = center.state.lock().unwrap();
             // We won't have 2^63 zones in cascade
@@ -151,7 +149,6 @@ impl MetricsCollection {
         metrics.zones_active.set(zones_active);
         metrics.zones_unsigned.set(zones_unsigned);
         metrics.zones_signed.set(zones_signed);
-        metrics.zones_waiting.set(zones_waiting);
         metrics.zones_published.set(zones_published);
 
         // u64::MAX milliseconds is around 585_000_000 years
@@ -280,9 +277,8 @@ struct StateMetrics {
     zones_loaded: Gauge,
     zones_active: Gauge,
     zones_unsigned: Gauge,
+    // TODO: Track how many zones are waiting to be signed.
     zones_signed: Gauge,
-    /// Zones waiting in signing queue
-    zones_waiting: Gauge,
     zones_published: Gauge,
     zones_halted: Family<ZoneHaltMode, Gauge>,
 }
@@ -313,11 +309,6 @@ impl StateMetrics {
             "zones_signed",
             "Number of signed zones",
             self.zones_signed.clone(),
-        );
-        reg.register(
-            "zones_waiting",
-            "Number of zones waiting to be signed",
-            self.zones_waiting.clone(),
         );
         reg.register(
             "zones_published",
