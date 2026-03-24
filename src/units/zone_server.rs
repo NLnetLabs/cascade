@@ -163,11 +163,17 @@ impl ZoneServer {
     }
 
     /// Launch a zone server.
-    pub fn run(
+    pub fn run<S>(
         center: &Arc<Center>,
         source: Source,
         socket_provider: &mut SocketProvider,
-    ) -> Result<Vec<AbortOnDrop>, Terminated> {
+        service: S,
+    ) -> Result<Vec<AbortOnDrop>, Terminated>
+    where
+        S: Service<Vec<u8>, Option<Arc<domain::tsig::Key>>> + Unpin + Clone,
+        S::Future: Unpin + Sync,
+        S::Stream: Sync,
+    {
         let unit_name = match source {
             Source::Unsigned => "RS",
             Source::Signed => "RS2",
@@ -203,7 +209,8 @@ impl ZoneServer {
             center: center.clone(),
         };
 
-        // let svc = ZoneServerService::new(zones.clone());
+        let _ = service;
+        // let svc = service;
         let svc = service_fn(zone_server_service, zones.clone());
         let svc = XfrMiddlewareSvc::new(svc, zones.clone(), max_concurrency);
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
