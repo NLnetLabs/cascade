@@ -303,7 +303,7 @@ impl Zone {
                         zone,
                         review_stage: _,
                     }) => {
-                        println!("Overrode {stage} review for  '{zone}'");
+                        println!("Overridden {stage} review for '{zone}'");
                         Ok(())
                     }
                     Err(err) => Err(format!(

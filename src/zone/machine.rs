@@ -362,7 +362,6 @@ impl<'a> ZoneHandle<'a> {
     }
 }
 
-impl<'a> ZoneHandle<'a> {}
 impl ZoneStateMachine {
     fn transition(&mut self) -> (Transition<'_>, Self) {
         let state = self.take();
