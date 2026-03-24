@@ -529,15 +529,7 @@ impl ZoneServer {
     }
 
     fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
-        record_zone_event(
-            center,
-            zone,
-            HistoricalEvent::SignedZoneReview {
-                status: crate::api::ZoneReviewStatus::Approved,
-            },
-            Some(zone_serial),
-        );
-
+        let _ = zone_serial; // TODO
         {
             let mut state = zone.state.lock().unwrap();
             ZoneHandle {

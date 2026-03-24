@@ -268,6 +268,13 @@ impl<'a> ZoneHandle<'a> {
 /// # Signed Review operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn approve_signed(&mut self) {
+        self.state.record_event(
+            HistoricalEvent::SignedZoneReview {
+                status: ZoneReviewStatus::Approved,
+            },
+            None, // TODO
+        );
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::SignedReview(signed) = state else {
@@ -279,6 +286,13 @@ impl<'a> ZoneHandle<'a> {
 
     #[expect(dead_code)]
     pub(crate) fn soft_reject_signed(&mut self) {
+        self.state.record_event(
+            HistoricalEvent::SignedZoneReview {
+                status: ZoneReviewStatus::Rejected,
+            },
+            None, // TODO
+        );
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::SignedReview(signed) = state else {
@@ -289,6 +303,13 @@ impl<'a> ZoneHandle<'a> {
     }
 
     pub(crate) fn hard_reject_signed(&mut self) {
+        self.state.record_event(
+            HistoricalEvent::SignedZoneReview {
+                status: ZoneReviewStatus::Rejected,
+            },
+            None, // TODO
+        );
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::SignedReview(review) = state else {
