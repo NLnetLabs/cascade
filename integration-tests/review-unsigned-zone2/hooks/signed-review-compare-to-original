@@ -24,9 +24,7 @@ X22222)
 	exit 1
 ;;
 esac
-#dig -p "$CASCADE_SERVER_PORT" @"$CASCADE_SERVER_IP" "$CASCADE_ZONE" axfr >/tmp/dig.out 
-diff -iwu <(dig -p "$CASCADE_SERVER_PORT" @"$CASCADE_SERVER_IP" "$CASCADE_ZONE" axfr |
-	sed '0,/SOA/d;s/[ \t]*;.*//' |
+diff -iwu <(dig +noall +answer +onesoa -p "$CASCADE_SERVER_PORT" @"$CASCADE_SERVER_IP" "$CASCADE_ZONE" axfr |
 	egrep -v '^$' | sort) \
 	<(cat "$ref")
 exit 0
