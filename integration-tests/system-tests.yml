@@ -49,6 +49,7 @@ env:
   # Set this assignment to your choosing to set the cargo build verbosity
   CARGO_TERM_VERBOSE: ${{ github.actor != 'nektos/act' }}
   # CARGO_TERM_VERBOSE: true
+  RUST_BACKTRACE: 1
 
 defaults:
   run:
