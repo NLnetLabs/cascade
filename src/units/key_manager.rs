@@ -12,7 +12,6 @@ use camino::{Utf8Path, Utf8PathBuf};
 use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
 use core::time::Duration;
 use domain::base::Name;
-use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
@@ -296,15 +295,6 @@ impl KeyManager {
 
         let kmip_server_state_dir = &center.config.kmip_server_state_dir;
         let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
-
-        // Check if the zone already exist. If it does we should not be
-        // here and panic. For the moment, assume there is a bug and
-        // return an error.
-        let zone_tree = &center.unsigned_zones.load();
-        let zone = zone_tree.get_zone(&name, Class::IN);
-        if zone.is_some() {
-            return Err(ZoneAddError::Other(format!("zone {name} already exists")));
-        }
 
         let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &name);
 
