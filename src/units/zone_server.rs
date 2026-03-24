@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
-use domain::base::iana::{Class, Opcode, Rcode};
+use domain::base::iana::{Class, Opcode};
 use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
 use domain::net::client::dgram::Connection;
 use domain::net::client::protocol::UdpConnect;
@@ -24,13 +24,9 @@ use domain::net::server::middleware::notify::{Notifiable, NotifyError, NotifyMid
 use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
 use domain::net::server::middleware::xfr::XfrMiddlewareSvc;
 use domain::net::server::middleware::xfr::{XfrData, XfrDataProvider, XfrDataProviderError};
-use domain::net::server::service::{CallResult, Service, ServiceResult};
+use domain::net::server::service::Service;
 use domain::net::server::stream::{self, StreamServer};
-use domain::net::server::util::mk_builder_for_target;
-use domain::net::server::util::service_fn;
-use domain::tsig::Algorithm;
-use domain::tsig::KeyStore;
-use domain::zonetree::Answer;
+use domain::tsig::{Algorithm, KeyStore};
 use domain::zonetree::types::EmptyZoneDiff;
 use domain::zonetree::{StoredName, ZoneTree};
 use tracing::{debug, error, info, trace, warn};
@@ -209,9 +205,7 @@ impl ZoneServer {
             center: center.clone(),
         };
 
-        let _ = service;
-        // let svc = service;
-        let svc = service_fn(zone_server_service, zones.clone());
+        let svc = service;
         let svc = XfrMiddlewareSvc::new(svc, zones.clone(), max_concurrency);
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
         let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
@@ -826,42 +820,6 @@ impl Notifiable for LoaderNotifier {
 
         Box::pin(std::future::ready(Ok(())))
     }
-}
-
-fn zone_server_service(
-    request: Request<Vec<u8>, Option<Arc<domain::tsig::Key>>>,
-    zones: XfrDataProvidingZonesWrapper,
-) -> ServiceResult<Vec<u8>> {
-    let question = request.message().sole_question().unwrap();
-    let zone = zones
-        .zones
-        .load()
-        .find_zone(question.qname(), question.qclass())
-        .map(|zone| zone.read());
-    let answer = match zone {
-        Some(zone) => {
-            let qname = question.qname().to_bytes();
-            let qtype = question.qtype();
-            let mut answer = zone.query(qname, qtype).unwrap();
-
-            // https://github.com/NLnetLabs/cascade/issues/435
-            // Set the AA flag on responses to workaround the scenario where
-            // BIND refuses to fetch the zone via XFR, because after receiving
-            // a NOTIFY from Cascade it issues a SOA query and is not happy
-            // with the SOA response containing an unset AA flag. This is a
-            // temporary "fix", strictly speaking this is incorrect as not all
-            // queries should be responded to with the AA flag set, e.g. we
-            // cannot respond authoritatively for glue records.
-            // TODO: Implement a proper fix.
-            answer.set_authoritative(true);
-            answer
-        }
-        None => Answer::new(Rcode::NXDOMAIN),
-    };
-
-    let builder = mk_builder_for_target();
-    let additional = answer.to_message(request.message(), builder);
-    Ok(CallResult::new(additional))
 }
 
 pub fn send_notify_to_addrs(
