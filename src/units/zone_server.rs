@@ -629,14 +629,6 @@ impl ZoneServer {
                     error!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
                     );
-                    record_zone_event(
-                        center,
-                        zone,
-                        HistoricalEvent::UnsignedZoneReview {
-                            status: crate::api::ZoneReviewStatus::Rejected,
-                        },
-                        Some(zone_serial),
-                    );
 
                     // TODO: Whether to soft or hard reject should be part of the policy
                     let mut state = zone.state.lock().unwrap();
@@ -680,14 +672,6 @@ impl ZoneServer {
                 } else {
                     error!(
                         "Signed zone '{zone_name}' with serial {zone_serial} has been rejected."
-                    );
-                    record_zone_event(
-                        center,
-                        zone,
-                        HistoricalEvent::SignedZoneReview {
-                            status: crate::api::ZoneReviewStatus::Rejected,
-                        },
-                        Some(zone_serial),
                     );
                     // TODO: Whether to soft or hard reject should be part of the policy
                     let mut state = zone.state.lock().unwrap();
