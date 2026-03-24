@@ -64,8 +64,7 @@ runs:
         TEST_DIR="${PWD}/integration-tests/review-unsigned-zone2"
         ZONE_FILE="${TEST_DIR}/zones/test${TEST_IDX}.zone"
         KEY_FILE="${TEST_DIR}/keys/${KEY}"
-        cp "${ZONE_FILE}" example.in
-        cascade zone add --source $PWD/example.in --policy review-test --import-csk-file "${KEY_FILE}" example
+        cascade zone add --source "${ZONE_FILE}" --policy review-test --import-csk-file "${KEY_FILE}" example
 
     - name: Wait for the zone to be signed
       env:
