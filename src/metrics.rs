@@ -132,28 +132,16 @@ impl MetricsCollection {
                     zones_loaded += 1;
                 }
 
-                match zone_state.pipeline_mode {
-                    crate::zone::PipelineMode::Running => {
-                        zones_active += 1;
-                    }
-                    crate::zone::PipelineMode::SoftHalt(_) => {
-                        metrics
-                            .zones_halted
-                            .get_or_create(&ZoneHaltMode {
-                                zone: StoredName(zone.name.clone()),
-                                mode: HaltMode::SoftHalt,
-                            })
-                            .inc();
-                    }
-                    crate::zone::PipelineMode::HardHalt(_) => {
-                        metrics
-                            .zones_halted
-                            .get_or_create(&ZoneHaltMode {
-                                zone: StoredName(zone.name.clone()),
-                                mode: HaltMode::HardHalt,
-                            })
-                            .inc();
-                    }
+                if zone_state.machine.is_halted() {
+                    metrics
+                        .zones_halted
+                        .get_or_create(&ZoneHaltMode {
+                            zone: StoredName(zone.name.clone()),
+                            mode: HaltMode::HardHalt,
+                        })
+                        .inc();
+                } else {
+                    zones_active += 1;
                 }
             }
         }
@@ -280,7 +268,6 @@ struct ZoneHaltMode {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
 enum HaltMode {
-    SoftHalt,
     HardHalt,
 }
 

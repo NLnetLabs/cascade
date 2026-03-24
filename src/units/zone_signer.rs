@@ -76,7 +76,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, Zone, ZoneHandle};
+use crate::zone::{HistoricalEvent, HistoricalEventType, Zone, ZoneHandle};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -347,13 +347,6 @@ impl ZoneSigner {
             // Use a block to make sure that the mutex is clearly dropped.
             let zone_state = zone.state.lock().unwrap();
 
-            // Do NOT sign a zone that is halted.
-            if zone_state.pipeline_mode != PipelineMode::Running {
-                // TODO: This accidentally sets an existing soft-halt to a hard-halt.
-                // return Err(SignerError::PipelineIsHalted);
-                return Ok(());
-            }
-
             let last_signed_serial = zone_state
                 .find_last_event(HistoricalEventType::SigningSucceeded, None)
                 .and_then(|item| item.serial)
@@ -468,9 +461,9 @@ impl ZoneSigner {
         let walk_start = Instant::now();
         // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
-            .records()
-            .iter()
-            .map(|r| OldRecord::from(r.clone()))
+            .unsigned_records()
+            .into_iter()
+            .map(OldRecord::from)
             .collect::<Vec<_>>();
         records.push(new_soa.clone().into());
         let walk_time = walk_start.elapsed();
@@ -881,7 +874,7 @@ impl ZoneSigner {
         let reader = builder.next_signed().unwrap();
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
-        for record in reader.records() {
+        for record in reader.generated_records() {
             let RecordData::RRSig(sig) = record.rdata.get() else {
                 continue;
             };
@@ -949,14 +942,6 @@ impl ZoneSigner {
                 trigger: trigger.into(),
             },
             Some(domain::base::Serial(serial.into())),
-        );
-
-        // Notify the review server that the zone is ready.
-        info!("Instructing review server to publish the signed zone");
-        center.signed_review_server.on_seek_approval_for_zone(
-            center,
-            zone,
-            domain::base::Serial(serial.into()),
         );
 
         Ok(())
@@ -1146,18 +1131,22 @@ impl ZoneSigner {
     }
 
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
-        let zone_tree = &center.unsigned_zones;
         let mut min_time = None;
         let now = SystemTime::now();
-        for zone in zone_tree.load().iter_zones() {
-            let zone_name = zone.apex_name();
+
+        #[allow(clippy::mutable_key_type)]
+        let zones = {
+            let state = center.state.lock().unwrap();
+            state.zones.clone()
+        };
+
+        for zone in zones {
+            let zone = &zone.0;
+            let zone_name = &zone.name;
 
             let min_expiration = {
                 // Use a block to make sure that the mutex is clearly dropped.
-                let state = center.state.lock().unwrap();
-                let zone = state.zones.get(zone_name).unwrap();
-                let zone_state = zone.0.state.lock().unwrap();
-
+                let zone_state = zone.state.lock().unwrap();
                 zone_state.min_expiration
             };
 
@@ -1184,9 +1173,7 @@ impl ZoneSigner {
 
             // Ensure that the Mutexes are locked only in this block;
             let remain_time = {
-                let state = center.state.lock().unwrap();
-                let zone = state.zones.get(zone_name).unwrap();
-                let zone_state = zone.0.state.lock().unwrap();
+                let zone_state = zone.state.lock().unwrap();
                 // TODO: what if there is no policy?
                 zone_state.policy.as_ref().unwrap().signer.sig_remain_time
             };
@@ -3371,7 +3358,7 @@ impl IncrementalSigningState {
 
         records.push(Into::<OldParsedRecord>::into(signed_reader.soa().clone()).flatten_into());
 
-        for entry in signed_reader.records() {
+        for entry in signed_reader.generated_records() {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
 
@@ -3430,7 +3417,7 @@ impl IncrementalSigningState {
                 }
             }
         }
-        for entry in unsigned_reader.records() {
+        for entry in unsigned_reader.regular_records() {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
 
@@ -3519,7 +3506,7 @@ impl IncrementalSigningState {
 
         records.push(Into::<OldParsedRecord>::into(reader.soa().clone()).flatten_into());
 
-        for entry in reader.records() {
+        for entry in reader.regular_records() {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
 
@@ -4959,7 +4946,7 @@ pub fn faketime_or_now() -> UnixTime {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SignerError {
     SoaNotFound,
     SignerNotReady,

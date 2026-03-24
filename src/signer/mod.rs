@@ -26,7 +26,7 @@ use cascade_zonedata::SignedZoneBuilder;
 use tracing::error;
 
 use crate::{
-    center::{Center, halt_zone},
+    center::Center,
     zone::{HistoricalEvent, Zone, ZoneHandle},
 };
 
@@ -84,13 +84,13 @@ async fn sign(
     match result {
         Ok(()) => {
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
-            handle.storage().finish_sign(built);
+            handle.finish_signing(built);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
         }
         Err(error) => {
             error!("Signing failed: {error}");
-            handle.storage().abandon_sign(builder);
+            handle.signing_failed(builder, error.clone());
             status.status.finish(false);
             status.current_action = "Aborted".to_string();
 
@@ -101,11 +101,6 @@ async fn sign(
                 },
                 None, // TODO
             );
-
-            std::mem::drop(state);
-
-            // TODO: Inline.
-            halt_zone(&center, &zone, true, &error.to_string());
         }
     }
 }

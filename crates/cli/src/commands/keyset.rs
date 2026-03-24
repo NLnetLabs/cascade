@@ -51,6 +51,30 @@ enum KeySetCommand {
         /// The key to remove.
         key: String,
     },
+
+    /// Get the zones key(s).
+    Get {
+        /// Which key RRset to print.
+        rr: KeyGetType,
+    },
+}
+
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum KeyGetType {
+    DS,
+    DNSKEY,
+    CDS,
+}
+
+impl From<KeyGetType> for api::KeyGetType {
+    fn from(value: KeyGetType) -> Self {
+        match value {
+            KeyGetType::DS => api::KeyGetType::DS,
+            KeyGetType::DNSKEY => api::KeyGetType::DNSKEY,
+            KeyGetType::CDS => api::KeyGetType::CDS,
+        }
+    }
 }
 
 #[derive(Clone, Debug, clap::Subcommand)]
@@ -117,8 +141,44 @@ impl KeySet {
                 force,
                 continue_flag,
             } => remove_key_command(&client, self.zone, key, force, continue_flag).await,
+
+            KeySetCommand::Get { rr } => get_key_command(&client, self.zone, rr).await,
         }?;
         Ok(())
+    }
+}
+
+async fn get_key_command(
+    client: &CascadeApiClient,
+    zone: ZoneName,
+    key_type: KeyGetType,
+) -> Result<(), String> {
+    let res: Result<String, String> = client
+        .post_json_with(
+            &format!("key/{zone}/get"),
+            &api::KeyGet {
+                key_type: key_type.into(),
+            },
+        )
+        .await?;
+
+    match res {
+        Ok(s) => {
+            // use print because keyset already includes a newline at the end
+            #[allow(clippy::disallowed_macros, reason = "we're not printing in color")]
+            if s.trim().is_empty() {
+                eprintln!(
+                    "NOTE: The DS and CDS RRset is only available during the appropriate step of
+a key roll. Check the zone's detailed status to see if the an active key roll
+is waiting for the propagation of e.g. the new DNSKEY. If you need the DS RR
+right now, you can use:
+`cascade keyset {zone} get dnskey | dnst key2ds -n /dev/stdin`"
+                )
+            }
+            print!("{s}");
+            Ok(())
+        }
+        Err(err) => Err(format!("Failed to get keys for {zone}: {err}")),
     }
 }
 

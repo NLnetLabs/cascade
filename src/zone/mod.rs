@@ -26,6 +26,7 @@ use crate::{
     policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
+    zone::machine::ZoneStateMachine,
 };
 
 /// TODO: this temporary until there is a more permanent solution for fake time.
@@ -34,6 +35,7 @@ use crate::units::zone_signer::faketime_or_now;
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
+pub mod machine;
 pub mod state;
 
 //----------- Zone -------------------------------------------------------------
@@ -100,6 +102,9 @@ impl ZoneHandle<'_> {
 /// The state of a zone.
 #[derive(Debug)]
 pub struct ZoneState {
+    /// The top-level state machine
+    pub machine: ZoneStateMachine,
+
     /// The policy (version) used by the zone.
     pub policy: Option<Arc<PolicyVersion>>,
 
@@ -167,11 +172,6 @@ pub struct ZoneState {
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
 
-    /// Whether or not the pipeline for this zone should be allowed to flow at
-    /// the moment.
-    // TODO: make the pipeline stop accepting new data when hard halted.
-    pub pipeline_mode: PipelineMode,
-
     /// Loading new versions of the zone.
     pub loader: LoaderState,
 
@@ -189,24 +189,8 @@ pub struct ZoneState {
 }
 
 impl ZoneState {
-    pub fn hard_halt(&mut self, reason: String) {
-        self.pipeline_mode = PipelineMode::HardHalt(reason);
-    }
-
-    pub fn soft_halt(&mut self, reason: String) {
-        self.pipeline_mode = PipelineMode::SoftHalt(reason);
-    }
-
-    pub fn resume(&mut self) {
-        self.pipeline_mode = PipelineMode::Running;
-    }
-
-    pub fn halted(&self, hard: bool) -> Option<String> {
-        match &self.pipeline_mode {
-            PipelineMode::SoftHalt(r) if !hard => Some(r.clone()),
-            PipelineMode::HardHalt(r) if hard => Some(r.clone()),
-            _ => None,
-        }
+    pub fn halted_reason(&self) -> Option<String> {
+        self.machine.display_halted_reason()
     }
 
     pub fn record_event(&mut self, event: HistoricalEvent, serial: Option<Serial>) {
@@ -228,6 +212,7 @@ impl ZoneState {
 impl Default for ZoneState {
     fn default() -> Self {
         Self {
+	    machine: Default::default(),
             policy: Default::default(),
             enqueued_save: Default::default(),
             min_expiration: Default::default(),
@@ -241,7 +226,6 @@ impl Default for ZoneState {
             unsigned: Default::default(),
             signed: Default::default(),
             history: Default::default(),
-            pipeline_mode: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
             storage: Default::default(),
@@ -286,33 +270,6 @@ pub enum ZoneVersionReviewState {
     ///
     /// The zone has not yet been approved; it can be approved at any time.
     Rejected,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PipelineMode {
-    /// Newly received zone data will flow through the pipeline.
-    #[default]
-    Running,
-
-    /// The current zone data could not be fully processed through the
-    /// pipeline. When new zone data is received it will flow through the
-    /// pipeline as normal.
-    SoftHalt(String),
-
-    /// The current zone data could not be fully processed through the
-    /// pipeline. The pipeline for this zone will remain halted until manually
-    /// restarted.
-    HardHalt(String),
-}
-
-impl From<PipelineMode> for api::PipelineMode {
-    fn from(value: PipelineMode) -> Self {
-        match value {
-            PipelineMode::Running => Self::Running,
-            PipelineMode::SoftHalt(r) => Self::SoftHalt(r),
-            PipelineMode::HardHalt(r) => Self::HardHalt(r),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

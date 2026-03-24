@@ -537,7 +537,6 @@ impl ZoneServer {
             state: &mut state,
             center,
         }
-        .storage()
         .approve_loaded();
     }
 
@@ -550,6 +549,16 @@ impl ZoneServer {
             },
             Some(zone_serial),
         );
+
+        {
+            let mut state = zone.state.lock().unwrap();
+            ZoneHandle {
+                zone,
+                state: &mut state,
+                center,
+            }
+            .approve_signed();
+        }
 
         // Send a message to the zone signer to trigger a re-scan of
         // when to re-sign next.
@@ -649,6 +658,15 @@ impl ZoneServer {
                         },
                         Some(zone_serial),
                     );
+
+                    // TODO: Whether to soft or hard reject should be part of the policy
+                    let mut state = zone.state.lock().unwrap();
+                    ZoneHandle {
+                        zone,
+                        state: &mut state,
+                        center,
+                    }
+                    .hard_reject_loaded();
                 }
             }
 
@@ -692,6 +710,14 @@ impl ZoneServer {
                         },
                         Some(zone_serial),
                     );
+                    // TODO: Whether to soft or hard reject should be part of the policy
+                    let mut state = zone.state.lock().unwrap();
+                    ZoneHandle {
+                        zone,
+                        state: &mut state,
+                        center,
+                    }
+                    .hard_reject_signed();
                 }
             }
 
