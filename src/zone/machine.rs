@@ -190,7 +190,7 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
 
-        self.storage().approve_loaded();
+        self.storage().accept_loaded();
     }
 
     #[expect(dead_code)]
@@ -282,6 +282,8 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
+
+        self.storage().accept_signed();
     }
 
     #[expect(dead_code)]
@@ -329,11 +331,12 @@ impl<'a> ZoneHandle<'a> {
             ZoneStateMachine::HaltLoaded(halt_loaded) => {
                 let waiting = halt_loaded.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
-                self.storage().reject_loaded();
+                self.storage().abandon_loaded_review();
             }
             ZoneStateMachine::HaltSigned(halt_signed) => {
                 let waiting = halt_signed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
+                self.storage().abandon_signed_review();
             }
             ZoneStateMachine::SigningFailed(signing_failed) => {
                 let waiting = signing_failed.reset();
@@ -361,7 +364,7 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Signing(halt.override_rejection()));
 
-        self.storage().approve_loaded();
+        self.storage().accept_loaded();
 
         Ok(())
     }
@@ -378,6 +381,8 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Waiting(halt_signed.override_rejection()));
+
+        self.storage().accept_signed();
 
         Ok(())
     }
