@@ -43,6 +43,7 @@ use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
+use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneHandle,
@@ -464,6 +465,7 @@ impl ZoneServer {
                     let _: Result<_, _> = Self::process_output(stderr, true).await;
                 });
                 let zone = zone.clone();
+                let source = self.source;
                 tokio::spawn(async move {
                     let status = match child.wait().await {
                         Ok(status) => status,
@@ -480,12 +482,25 @@ impl ZoneServer {
                         false => ZoneReviewDecision::Reject,
                     };
 
-                    let server = match zone_type {
-                        "unsigned" => &center.unsigned_review_server,
-                        "signed" => &center.signed_review_server,
-                        _ => unreachable!(),
+                    match source {
+                        Source::Unsigned => {
+                            let _ = LoadedReviewServer::process_review(
+                                &center,
+                                &zone,
+                                zone_serial,
+                                decision,
+                            );
+                        }
+                        Source::Signed => {
+                            let _ = SignedReviewServer::process_review(
+                                &center,
+                                &zone,
+                                zone_serial,
+                                decision,
+                            );
+                        }
+                        Source::Published => unreachable!(),
                     };
-                    let _ = server.on_zone_review(&center, &zone, zone_serial, decision);
                 });
             }
             Err(err) => {
@@ -545,9 +560,7 @@ impl ZoneServer {
         center.signer.on_publish_signed_zone(center);
 
         info!("[CC]: Instructing publication server to publish the signed zone");
-        center
-            .publication_server
-            .on_publish_signed_zone(center, zone, zone_serial);
+        PublicationServer::publish(center, zone, zone_serial);
     }
 
     async fn process_output(

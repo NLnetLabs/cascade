@@ -20,8 +20,8 @@ use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::manager::record_zone_event;
+use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::units::key_manager::KeyManager;
-use crate::units::zone_server::ZoneServer;
 use crate::units::zone_signer::ZoneSigner;
 use crate::zone::{HistoricalEvent, ZoneHandle};
 use crate::{
@@ -56,14 +56,14 @@ pub struct Center {
     /// The key manager
     pub key_manager: KeyManager,
 
-    /// The review server for unsigned zones.
-    pub unsigned_review_server: ZoneServer,
+    /// The review server for loaded instances of zones.
+    pub loaded_review_server: LoadedReviewServer,
 
-    /// The review server for signed zones.
-    pub signed_review_server: ZoneServer,
+    /// The review server for signed instances of zones.
+    pub signed_review_server: SignedReviewServer,
 
-    /// The zone server.
-    pub publication_server: ZoneServer,
+    /// The server for published instances of zones.
+    pub publication_server: PublicationServer,
 
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
