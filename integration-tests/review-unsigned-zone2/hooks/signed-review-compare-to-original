@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-#exec >/dev/tty
 exec >/tmp/hook.out 2>&1
 echo "Signed review hook"
 
