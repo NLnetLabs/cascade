@@ -42,21 +42,18 @@ runs:
         TMP=/tmp
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
         INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-unsigned-zone2"
-        # Copy the hooks to $TMP to be abled to edit them.
-        mkdir -p ${TMP}/hooks
-        cp ${INTEGRATION_TEST_DIR}/hooks/* $TMP/hooks
         # Fix the paths to the reference output specified in the hooks.
-        for hook in ${TMP}/hooks/*
+        for hook in ${INTEGRATION_TEST_DIR}/hooks/*
         do
             sed -i -e "s|<INTEGRATION_TEST_DIR>|${INTEGRATION_TEST_DIR}|" ${hook}
         done
         # Make sure our test hooks are executable.
-        chmod +x ${TMP}/hooks/*
+        chmod +x ${INTEGRATION_TEST_DIR}/hooks/*
 
         # Copy the new test policy into the Cascade policy directory.
         cp "${INTEGRATION_TEST_DIR}/policies/review-test.toml" "${POLICY_DIR}/"
         # Fix the path to the review hook specified in the new test policy.
-        sed -i -e "s|<INTEGRATION_TEST_DIR>|${TMP}|" ${POLICY_DIR}/review-test.toml
+        sed -i -e "s|<INTEGRATION_TEST_DIR>|${INTEGRATION_TEST_DIR}|" ${POLICY_DIR}/review-test.toml
         cascade policy reload
 
     - name: Load the test zone
