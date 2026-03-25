@@ -212,7 +212,7 @@ impl ZoneState {
 impl Default for ZoneState {
     fn default() -> Self {
         Self {
-	    machine: Default::default(),
+            machine: Default::default(),
             policy: Default::default(),
             enqueued_save: Default::default(),
             min_expiration: Default::default(),

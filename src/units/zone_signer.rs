@@ -1038,8 +1038,7 @@ impl ZoneSigner {
         )?;
 
         let start = Instant::now();
-        iss.load_signed_zone(&ws.patch.curr(), &ws.patch.curr_loaded().unwrap())
-            .unwrap();
+        iss.load_signed_zone(&ws.patch.curr()).unwrap();
         if ws.verbose {
             println!("loading signed zone took {:?}", start.elapsed());
         }
@@ -2218,69 +2217,66 @@ impl WorkSpace<'_> {
         apex_changed
     }
 
-    /*
-        fn resign(&mut self) -> Result<(), Error> {
-            self.sign_incrementally(true)
-        }
-
-        fn faketime_or_now(&self) -> UnixTime {
-            self.config.faketime.clone().unwrap_or(UnixTime::now())
-        }
-
-        fn handle_nsec_nsec3(&self, iss: &mut IncrementalSigningState) -> Result<(), Error> {
-            // Note that we could try to regenerate the NSEC(3). Assume that
-            // switching between NSEC, NSEC3, and NSEC3 opt-out (or other NSEC3
-            // parameter changes) is rare enough that we can just resign the full
-            // zone.
-            let key = (iss.origin.clone(), Rtype::NSEC3PARAM);
-            let opt_nsec3param = iss.old_data.get(&key);
-            if let Some(nsec3param_records) = opt_nsec3param {
-                // Zone was signed with NSEC3.
-                if !self.config.use_nsec3 {
-                    // Zone is signed with NSEC3 but we want NSEC.
-                    let start = Instant::now();
-                    remove_nsec_nsec3(iss);
-                    new_nsec_chain(iss)?;
-                    println!("replacing NSEC3 with NSEC took {:?}", start.elapsed());
-                    return Ok(());
-                }
-                let ZoneRecordData::Nsec3param(nsec3param) = nsec3param_records[0].data() else {
-                    panic!("ZoneRecordData::Nsec3param expected");
-                };
-                if *nsec3param != iss.nsec3param {
-                    // Parameters changed, resign.
-                    let start = Instant::now();
-                    remove_nsec_nsec3(iss);
-                    new_nsec3_chain(iss)?;
-                    if self.verbose {
-                        println!("updating NSEC3 parameters took {:?}", start.elapsed());
-                    }
-                    return Ok(());
-                }
-
-                // Nothing has changed. Insert the old NSEC3PARAM records in the
-                // new zone data.
-                iss.new_data.insert(key, nsec3param_records.to_vec());
-            } else {
-                // Zone was signed with NSEC, check if that is also the target.
-                if self.config.use_nsec3 {
-                    // Resign the full zone with NSEC3.
-                    let start = Instant::now();
-                    remove_nsec_nsec3(iss);
-                    new_nsec3_chain(iss)?;
-                    println!("replacing NSEC with NSEC3 took {:?}", start.elapsed());
-                    return Ok(());
-                }
-                // Stay with NSEC.
-            }
-            Ok(())
-        }
-    */
-
     fn incremental_generate_diffs(
         &mut self,
         iss: &IncrementalSigningState,
     ) -> Result<(), SignerError> {
+        /*
+                // apex records that were deleted.
+                for (k, old_rrs) in &iss.new_apex_saved {
+                    if let Some(new_rrs) = iss.new_apex.get(k) {
+                        if new_rrs == old_rrs {
+                            // No change.
+                            continue;
+                        }
+                        // Add the new records to a hash set and then check the old
+                        // ones against the set to see which ones are removed.
+                        let new_rrs: HashSet<&Zrd> = HashSet::from_iter(new_rrs.iter());
+                        for r in old_rrs {
+                            if new_rrs.contains(r) {
+                                continue;
+                            }
+                            let r: RegularRecord = r.clone().into();
+                            println!("apex patch.remove {r:?}");
+                            self.patch.remove(r).unwrap();
+                        }
+                    } else {
+                        for r in old_rrs {
+                            let r: RegularRecord = r.clone().into();
+                            println!("apex patch.remove {r:?}");
+                            self.patch.remove(r).unwrap();
+                        }
+                    }
+                }
+
+                // apex records that were added.
+                for (k, new_rrs) in &iss.new_apex {
+                    if let Some(old_rrs) = iss.new_apex_saved.get(k) {
+                        if new_rrs == old_rrs {
+                            // No change.
+                            continue;
+                        }
+                        // Add the old records to a hash set and then check the new
+                        // ones against the set to see which ones are added.
+                        let old_rrs: HashSet<&Zrd> = HashSet::from_iter(old_rrs.iter());
+                        for r in new_rrs {
+                            if old_rrs.contains(r) {
+                                continue;
+                            }
+                            let r: RegularRecord = r.clone().into();
+                            println!("apex patch.add {r:?}");
+                            self.patch.add(r).unwrap();
+                        }
+                    } else {
+                        for r in new_rrs {
+                            let r: RegularRecord = r.clone().into();
+                            println!("apex patch.add {r:?}");
+                            self.patch.add(r).unwrap();
+                        }
+                    }
+                }
+        */
+
         // NSEC records that were deleted.
         for (k, old_nsec) in &iss.old_nsecs {
             if let Some(new_nsec) = iss.nsecs.get(k) {
@@ -2887,7 +2883,7 @@ impl WorkSpace<'_> {
 
         for t in curr_apex_remove {
             let key = (iss.origin.clone(), t);
-            iss.new_data.remove(&key);
+            iss.new_apex.remove(&t);
             iss.rrsigs.remove(&key);
         }
 
@@ -2926,15 +2922,27 @@ impl WorkSpace<'_> {
                         iss.rrsigs.insert(key, records);
                     }
                 } else {
-                    let key = (owner, r.rtype());
+                    let key = r.rtype();
                     let mut records = vec![r];
-                    if let Some(v) = iss.new_data.get_mut(&key) {
+                    if let Some(v) = iss.new_apex.get_mut(&key) {
                         v.append(&mut records);
                     } else {
-                        iss.new_data.insert(key, records);
+                        iss.new_apex.insert(key, records);
                     }
                 }
             }
+        }
+
+        if self.use_nsec3 {
+            // Copy the NSEC3PARAM record from the old_apex to the new_apex.
+            // The reason is that the NSEC3PARAM gets lost when the unsigned
+            // zone is loaded.
+            let nsec3param_records = iss
+                .old_apex
+                .get(&Rtype::NSEC3PARAM)
+                .expect("NSEC3PARAM should be present");
+            iss.new_apex
+                .insert(Rtype::NSEC3PARAM, nsec3param_records.to_vec());
         }
 
         if !self.zonemd.is_empty() {
@@ -2956,20 +2964,17 @@ impl WorkSpace<'_> {
         }
 
         // Update the SOA serial.
-        let key = (iss.origin.clone(), Rtype::SOA);
-        let zone_soa_rr = &iss.new_data.get(&key).expect("SOA should exist")[0];
+        let zone_soa_rr = &iss.new_apex.get(&Rtype::SOA).expect("SOA should exist")[0];
         let new_soa = self.update_soa_serial(zone_soa_rr)?;
         let new_rrset = vec![new_soa];
-        iss.new_data.insert(key, new_rrset);
+        iss.new_apex.insert(Rtype::SOA, new_rrset);
 
-        // XXX generate diff for SOA.
-        let key = (iss.origin.clone(), Rtype::SOA);
-        let old_soa = iss.old_data.get(&key).unwrap();
+        let old_soa = iss.old_apex.get(&Rtype::SOA).unwrap();
         for r in old_soa {
             let r: SoaRecord = r.clone().into();
             self.patch.remove_soa(r).unwrap();
         }
-        let new_soa = iss.new_data.get(&key).unwrap();
+        let new_soa = iss.new_apex.get(&Rtype::SOA).unwrap();
         for r in new_soa {
             let r: SoaRecord = r.clone().into();
             self.patch.add_soa(r).unwrap();
@@ -3025,8 +3030,7 @@ impl WorkSpace<'_> {
         // switching between NSEC, NSEC3, and NSEC3 opt-out (or other NSEC3
         // parameter changes) is rare enough that we can just resign the full
         // zone.
-        let key = (iss.origin.clone(), Rtype::NSEC3PARAM);
-        let opt_nsec3param = iss.old_data.get(&key);
+        let opt_nsec3param = iss.old_apex.get(&Rtype::NSEC3PARAM);
         if let Some(nsec3param_records) = opt_nsec3param {
             // Zone was signed with NSEC3.
             if !self.use_nsec3 {
@@ -3050,10 +3054,6 @@ impl WorkSpace<'_> {
                 }
                 return Ok(());
             }
-
-            // Nothing has changed. Insert the old NSEC3PARAM records in the
-            // new zone data.
-            iss.new_data.insert(key, nsec3param_records.to_vec());
         } else {
             // Zone was signed with NSEC, check if that is also the target.
             if self.use_nsec3 {
@@ -3076,6 +3076,9 @@ type ChangesValue = (RtypeSet, RtypeSet); // add set followed by delete set.
 
 struct IncrementalSigningState {
     origin: Name<Bytes>,
+    old_apex: HashMap<Rtype, Vec<Zrd>>,
+    new_apex: HashMap<Rtype, Vec<Zrd>>,
+    new_apex_saved: HashMap<Rtype, Vec<Zrd>>,
     old_data: HashMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
     new_data: BTreeMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
     old_nsecs: BTreeMap<Name<Bytes>, Zrd>,
@@ -3125,6 +3128,9 @@ impl IncrementalSigningState {
         }
         Ok(Self {
             origin,
+            old_apex: HashMap::new(),
+            new_apex: HashMap::new(),
+            new_apex_saved: HashMap::new(),
             old_data: HashMap::new(),
             new_data: BTreeMap::new(),
             old_nsecs: BTreeMap::new(),
@@ -3345,20 +3351,14 @@ impl IncrementalSigningState {
         Ok(signing_keys)
     }
 
-    fn load_signed_zone(
-        &mut self,
-        signed_reader: &SignedZoneReader,
-        unsigned_reader: &LoadedZoneReader,
-    ) -> Result<(), SignerError> {
+    fn load_signed_zone(&mut self, signed_reader: &SignedZoneReader) -> Result<(), SignerError> {
         // Collect records for a
         // name/RRtype and store a complete RRset in a hash table.
         let mut records = Vec::<Record<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>>::new();
         let mut rrsig_records = vec![];
         let mut type_covered = Rtype::RRSIG;
 
-        records.push(Into::<OldParsedRecord>::into(signed_reader.soa().clone()).flatten_into());
-
-        for entry in signed_reader.generated_records() {
+        for entry in signed_reader.all_records() {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
 
@@ -3407,66 +3407,13 @@ impl IncrementalSigningState {
                         continue;
                     }
                     let key = (records[0].owner().clone(), records[0].rtype());
-                    if let Some(v) = self.old_data.get_mut(&key) {
-                        v.append(&mut records);
-                    } else {
-                        self.old_data.insert(key, records);
-                    }
-                    records = vec![];
-                    records.push(record);
-                }
-            }
-        }
-        for entry in unsigned_reader.regular_records() {
-            let record: OldParsedRecord = entry.clone().into();
-            let record: StoredRecord = record.flatten_into();
-
-            match record.data() {
-                ZoneRecordData::Rrsig(rrsig) => {
-                    if rrsig_records.is_empty() {
-                        type_covered = rrsig.type_covered();
-                        rrsig_records.push(record);
-                        continue;
-                    }
-                    if record.owner() == rrsig_records[0].owner()
-                        && rrsig.type_covered() == type_covered
-                    {
-                        rrsig_records.push(record);
-                        continue;
-                    }
-
-                    let key = (rrsig_records[0].owner().clone(), type_covered);
-                    if let Some(v) = self.rrsigs.get_mut(&key) {
-                        v.append(&mut rrsig_records);
-                    } else {
-                        self.rrsigs.insert(key, rrsig_records);
-                    }
-                    type_covered = rrsig.type_covered();
-                    rrsig_records = vec![];
-                    rrsig_records.push(record);
-                }
-                ZoneRecordData::Nsec(_) => {
-                    // Assume (at most) one NSEC record per owner name.
-                    // Directly insert into the btree map.
-                    self.nsecs.insert(record.owner().clone(), record);
-                }
-                ZoneRecordData::Nsec3(_) => {
-                    // Assume (at most) one NSEC3 record per owner name.
-                    // Directly insert into the btree map.
-                    self.nsec3s.insert(record.owner().clone(), record);
-                }
-                _ => {
-                    if records.is_empty() {
-                        records.push(record);
-                        continue;
-                    }
-                    if record.owner() == records[0].owner() && record.rtype() == records[0].rtype()
-                    {
-                        records.push(record);
-                        continue;
-                    }
-                    let key = (records[0].owner().clone(), records[0].rtype());
-                    if let Some(v) = self.old_data.get_mut(&key) {
+                    if key.0 == self.origin {
+                        if let Some(v) = self.old_apex.get_mut(&key.1) {
+                            v.append(&mut records);
+                        } else {
+                            self.old_apex.insert(key.1, records);
+                        }
+                    } else if let Some(v) = self.old_data.get_mut(&key) {
                         v.append(&mut records);
                     } else {
                         self.old_data.insert(key, records);
@@ -3479,7 +3426,13 @@ impl IncrementalSigningState {
 
         if !records.is_empty() {
             let key = (records[0].owner().clone(), records[0].rtype());
-            if let Some(v) = self.old_data.get_mut(&key) {
+            if key.0 == self.origin {
+                if let Some(v) = self.old_apex.get_mut(&key.1) {
+                    v.append(&mut records);
+                } else {
+                    self.old_apex.insert(key.1, records);
+                }
+            } else if let Some(v) = self.old_data.get_mut(&key) {
                 v.append(&mut records);
             } else {
                 self.old_data.insert(key, records);
@@ -3512,42 +3465,54 @@ impl IncrementalSigningState {
 
             let record: StoredRecord = record.flatten_into();
 
-            match record.data() {
-                ZoneRecordData::Rrsig(_)
-                | ZoneRecordData::Nsec(_)
-                | ZoneRecordData::Nsec3(_)
-                | ZoneRecordData::Nsec3param(_)
-                | ZoneRecordData::Zonemd(_) => (), // Ignore.
-                _ => {
-                    if records.is_empty() {
-                        records.push(record);
-                        continue;
-                    }
-                    if record.owner() == records[0].owner() && record.rtype() == records[0].rtype()
-                    {
-                        records.push(record);
-                        continue;
-                    }
-                    let key = (records[0].owner().clone(), records[0].rtype());
-                    if let Some(v) = self.new_data.get_mut(&key) {
-                        v.append(&mut records);
-                    } else {
-                        self.new_data.insert(key, records);
-                    }
-                    records = vec![];
-                    records.push(record);
-                }
+            if records.is_empty() {
+                records.push(record);
+                continue;
             }
+            if record.owner() == records[0].owner() && record.rtype() == records[0].rtype() {
+                records.push(record);
+                continue;
+            }
+            let key = (records[0].owner().clone(), records[0].rtype());
+            if key.0 == self.origin {
+                if let Some(v) = self.new_apex.get_mut(&key.1) {
+                    v.append(&mut records);
+                } else {
+                    self.new_apex.insert(key.1, records);
+                }
+            } else if let Some(v) = self.new_data.get_mut(&key) {
+                v.append(&mut records);
+            } else {
+                self.new_data.insert(key, records);
+            }
+            records = vec![];
+            records.push(record);
         }
 
         if !records.is_empty() {
             let key = (records[0].owner().clone(), records[0].rtype());
-            if let Some(v) = self.new_data.get_mut(&key) {
+            if key.0 == self.origin {
+                if let Some(v) = self.new_apex.get_mut(&key.1) {
+                    v.append(&mut records);
+                } else {
+                    self.new_apex.insert(key.1, records);
+                }
+            } else if let Some(v) = self.new_data.get_mut(&key) {
                 v.append(&mut records);
             } else {
                 self.new_data.insert(key, records);
             }
         }
+
+        // Save a copy of the loaded new_apex to createa diff later.
+        for (k, v) in &self.new_apex {
+            self.new_apex_saved.insert(*k, v.clone());
+        }
+
+        // Remove an NSEC3PARAM and ZONEMD that we got from the unsigned
+        // zone.
+        self.new_apex.remove(&Rtype::NSEC3PARAM);
+        self.new_apex.remove(&Rtype::ZONEMD);
         Ok(())
     }
 
@@ -3556,6 +3521,10 @@ impl IncrementalSigningState {
 
         for (k, v) in &self.old_data {
             self.new_data.insert(k.clone(), v.clone());
+        }
+        for (k, v) in &self.old_apex {
+            self.new_apex.insert(*k, v.clone());
+            self.new_apex_saved.insert(*k, v.clone());
         }
     }
 
@@ -3594,11 +3563,60 @@ impl IncrementalSigningState {
                 self.changes.insert(key.0, (added, removed));
             }
         }
+        for (_, new_rrset) in self.new_apex.iter_mut() {
+            let key = (new_rrset[0].owner().clone(), new_rrset[0].rtype());
+            if let Some(mut old_rrset) = self.old_apex.remove(&key.1) {
+                let rtype = new_rrset[0].rtype();
+                if (rtype == Rtype::DNSKEY || rtype == Rtype::CDS || rtype == Rtype::CDNSKEY)
+                    && *new_rrset[0].owner() == self.origin
+                {
+                    // At apex, these types are signed by the key manager. No
+                    // need to check for changes.
+                    continue;
+                }
+                old_rrset.sort_by(|a, b| a.as_ref().data().canonical_cmp(b.as_ref().data()));
+                new_rrset.sort_by(|a, b| a.as_ref().data().canonical_cmp(b.as_ref().data()));
+
+                if *old_rrset != *new_rrset && self.rrsigs.remove(&key).is_some() {
+                    sign_records(
+                        &self.origin,
+                        new_rrset,
+                        &self.keys,
+                        self.inception,
+                        self.expiration,
+                        &mut new_sigs,
+                    )?;
+                }
+            } else if let Some((added, _)) = self.changes.get_mut(&key.0) {
+                added.insert(new_rrset[0].rtype());
+            } else {
+                let mut added = HashSet::new();
+                let removed = HashSet::new();
+                added.insert(new_rrset[0].rtype());
+                self.changes.insert(key.0, (added, removed));
+            }
+        }
         for (sig, rtype) in new_sigs {
             let key = (sig[0].owner().clone(), rtype);
             self.rrsigs.insert(key, sig);
         }
         for old_rrset in self.old_data.values() {
+            // What is left in old_data is removed.
+            let rtype = old_rrset[0].rtype();
+            let key = (old_rrset[0].owner().clone(), rtype);
+
+            self.rrsigs.remove(&key);
+
+            if let Some((_, removed)) = self.changes.get_mut(&key.0) {
+                removed.insert(rtype);
+            } else {
+                let added = HashSet::new();
+                let mut removed = HashSet::new();
+                removed.insert(rtype);
+                self.changes.insert(key.0, (added, removed));
+            }
+        }
+        for old_rrset in self.old_apex.values() {
             // What is left in old_data is removed.
             let rtype = old_rrset[0].rtype();
             let key = (old_rrset[0].owner().clone(), rtype);
@@ -4015,7 +4033,7 @@ impl IncrementalSigningState {
         let records_iter = RecordsIter::new_from_refs(&records);
         let config = GenerateNsecConfig::new();
         let nsec_records = generate_nsecs(&self.origin, records_iter, &config)
-            .map_err(|e| SignerError::SigningError(format!("generate_nsec3s failed: {e}")))?;
+            .map_err(|e| SignerError::SigningError(format!("new_nsec_chain failed: {e}")))?;
 
         // Collect signatures here.
         let mut new_sigs = vec![];
@@ -4105,7 +4123,9 @@ impl IncrementalSigningState {
         // Create a Vec with all unsigned records to be able to sort them in
         // canonical order.
 
+        let mut apex: Vec<_> = self.old_apex.values().flatten().collect();
         let mut data: Vec<_> = self.old_data.values().flatten().collect();
+        data.append(&mut apex);
         data.par_sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
 
         data
@@ -4150,7 +4170,11 @@ fn sign_rtype_set(
     let mut new_sigs = vec![];
     for rtype in set {
         let key = (name.clone(), *rtype);
-        let Some(records) = iss.new_data.get(&key) else {
+        let Some(records) = (if *name == iss.origin {
+            iss.new_apex.get(&key.1)
+        } else {
+            iss.new_data.get(&key)
+        }) else {
             panic!("Expected something for {name}/{rtype}");
         };
         sign_records(
