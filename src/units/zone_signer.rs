@@ -441,7 +441,6 @@ impl ZoneSigner {
         // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
             .unsigned_records()
-            .into_iter()
             .map(OldRecord::from)
             .collect::<Vec<_>>();
         records.push(new_soa.clone().into());
