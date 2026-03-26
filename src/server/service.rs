@@ -2,7 +2,9 @@
 
 use std::sync::{Arc, RwLock};
 
-use cascade_zonedata::{LoadedZoneReviewer, SignedZoneReviewer, SoaRecord, ZoneViewer};
+use cascade_zonedata::{
+    LoadedZoneReviewer, RegularRecord, SignedZoneReviewer, SoaRecord, ZoneViewer,
+};
 use domain::{
     new::base::{
         name::{RevName, RevNameBuf},
@@ -84,7 +86,7 @@ mod compat {
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
 
-    use super::{Viewer, ZoneService};
+    use super::{ServedZone, Viewer, ZoneService};
 
     impl<V> Service<Vec<u8>, Option<Arc<tsig::Key>>> for ZoneService<V>
     where
@@ -135,7 +137,15 @@ mod compat {
                             }
                         }) as Response,
 
-                        _ => todo!(),
+                        ZoneRequestKind::Axfr => {
+                            Box::pin(axfr(old_request, zone.clone())) as Response
+                        }
+
+                        // TODO: Support IXFR.
+                        ZoneRequestKind::Ixfr { .. } => Box::pin(std::future::ready(error(
+                            old_request.message(),
+                            Rcode::NOTIMP,
+                        ))),
                     }
                 }
             }
@@ -159,6 +169,89 @@ mod compat {
         Box::new(futures::stream::once(std::future::ready(result))) as _
     }
 
+    async fn axfr<V: Viewer + Send + Sync + 'static>(
+        request: Request<Vec<u8>, Option<Arc<tsig::Key>>>,
+        zone: ServedZone<V>,
+    ) -> ResponseStream {
+        // Refuse AXFR requests over UDP.
+        if request.transport_ctx().is_udp() {
+            return error(request.message(), Rcode::NOTIMP);
+        }
+
+        // Obtain a read lock to read the zone for an extended duration.
+        let viewer = zone.viewer.read_owned().await;
+
+        if viewer.is_empty() {
+            // The zone is known to exist, but we don't have any data for it.
+            return error(request.message(), Rcode::NOTAUTH);
+        }
+
+        // NOTE: The following code is a bit tricky. Ideally, we would elide
+        // the channel and return the `messages` iterator as an async `Stream`;
+        // but the iterator borrows from `viewer` via `.non_soa_records()`, and
+        // this prevents the iterator from satisfying `'static`. Rust actually
+        // _does_ have machinery to work around this, in async functions, so we
+        // prepare the messages in an async function (as a Tokio task) and send
+        // them over a channel from there.
+        //
+        // In the future, AXFRs could be implemented by spawning an OS thread
+        // and doing all the work there. This is incompatible with the API of
+        // `domain::net::server`, as the underlying TCP connection cannot be
+        // extracted, but we plan to stop using that API anyway.
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
+
+        tokio::task::spawn(async move {
+            // Extract the records to serve.
+            let soa = viewer.soa().clone();
+            let mut records = [soa.clone().into()]
+                .into_iter()
+                .chain(viewer.non_soa_records())
+                .chain([soa.into()])
+                .peekable();
+
+            // Divide the records into DNS messages.
+            let mut max_message_size = u16::MAX; // TCP
+            max_message_size -= request.num_reserved_bytes();
+            let messages = std::iter::from_fn(move || {
+                records.peek()?;
+
+                let mut builder = MessageBuilder::new_stream_vec();
+                builder.set_push_limit(max_message_size as usize);
+                let mut builder = builder
+                    .start_answer(request.message(), Rcode::NOERROR)
+                    .unwrap();
+                builder.header_mut().set_aa(true);
+
+                while let Some(record) = records.peek() {
+                    match builder.push(OldRecord::from(record.clone())) {
+                        // On success, consume the record.
+                        Ok(()) => {
+                            let _ = records.next();
+                        }
+
+                        // Once the message runs out of space, stop.
+                        Err(_) => break,
+                    }
+                }
+
+                let response = builder.additional();
+                Some(CallResult::new(response))
+            });
+
+            for message in messages {
+                if tx.send(message).await.is_err() {
+                    // The channel has closed; stop.
+                    break;
+                }
+            }
+        });
+
+        let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
+
+        Box::new(stream) as _
+    }
+
     fn error(request: &Message<Vec<u8>>, rcode: Rcode) -> ResponseStream {
         let response = MessageBuilder::new_stream_vec()
             .start_error(request, rcode)
@@ -180,6 +273,9 @@ trait Viewer {
 
     /// Return the SOA record.
     fn soa(&self) -> &SoaRecord;
+
+    /// Return all records in the zone (excluding SOA).
+    fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send;
 }
 
 impl Viewer for LoadedZoneReviewer {
@@ -189,6 +285,14 @@ impl Viewer for LoadedZoneReviewer {
 
     fn soa(&self) -> &SoaRecord {
         self.read_loaded().unwrap().soa()
+    }
+
+    fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send {
+        self.read_loaded()
+            .unwrap()
+            .regular_records()
+            .iter()
+            .cloned()
     }
 }
 
@@ -200,6 +304,13 @@ impl Viewer for SignedZoneReviewer {
     fn soa(&self) -> &SoaRecord {
         self.read().unwrap().soa()
     }
+
+    fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send {
+        let reader = self.read().unwrap();
+        reader
+            .loaded_records()
+            .chain(reader.generated_records().iter().cloned())
+    }
 }
 
 impl Viewer for ZoneViewer {
@@ -209,6 +320,13 @@ impl Viewer for ZoneViewer {
 
     fn soa(&self) -> &SoaRecord {
         self.read().unwrap().soa()
+    }
+
+    fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send {
+        let reader = self.read().unwrap();
+        reader
+            .loaded_records()
+            .chain(reader.generated_records().iter().cloned())
     }
 }
 

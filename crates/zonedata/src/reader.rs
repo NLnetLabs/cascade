@@ -64,7 +64,7 @@ impl<'d> LoadedZoneReader<'d> {
     ///
     /// Records are sorted in DNSSEC canonical order. The SOA record **is**
     /// included.
-    pub fn all_records(&self) -> impl IntoIterator<Item = RegularRecord> + use<'d> {
+    pub fn all_records(&self) -> impl Iterator<Item = RegularRecord> + Send + use<'d> {
         let (soa, records) = (self.soa(), self.regular_records());
         let soa = RegularRecord::from(soa.clone());
 
@@ -86,7 +86,7 @@ impl<'d> LoadedZoneReader<'d> {
     /// DNSSEC related records that would be produced by Cascade's signer (e.g.
     /// RRSIGs, NSEC/NSEC3, etc.) are stripped. The records are sorted in DNSSEC
     /// canonical order. The SOA record **is not** included.
-    pub fn unsigned_records(&self) -> impl IntoIterator<Item = RegularRecord> + use<'d> {
+    pub fn unsigned_records(&self) -> impl Iterator<Item = RegularRecord> + Send + use<'d> {
         // Filter out records that would be generated during signing.
         //
         // TODO: 'RType::{CDS, CDNSKEY, ZONEMD}'.
@@ -177,7 +177,7 @@ impl<'d> SignedZoneReader<'d> {
     /// Records are sorted in DNSSEC canonical order. Only records also present
     /// in the signed instance are included (the loaded SOA record, and loaded
     /// DNSKEY, RRSIG, CDS, CDNSKEY, ZONEMD records are excluded).
-    pub fn loaded_records(&self) -> impl IntoIterator<Item = RegularRecord> + use<'d> {
+    pub fn loaded_records(&self) -> impl Iterator<Item = RegularRecord> + Send + use<'d> {
         LoadedZoneReader::new(self.loaded_instance).unsigned_records()
     }
 
@@ -185,7 +185,7 @@ impl<'d> SignedZoneReader<'d> {
     ///
     /// Records are **unsorted**. The SOA record and records from the loaded
     /// instance **are** included.
-    pub fn all_records(&self) -> impl IntoIterator<Item = RegularRecord> + use<'d> {
+    pub fn all_records(&self) -> impl Iterator<Item = RegularRecord> + Send + use<'d> {
         [self.soa().clone().into()]
             .into_iter()
             .chain(self.loaded_records())
