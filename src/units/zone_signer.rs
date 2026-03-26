@@ -2221,68 +2221,77 @@ impl WorkSpace<'_> {
         &mut self,
         iss: &IncrementalSigningState,
     ) -> Result<(), SignerError> {
+        // apex records that were deleted.
+        for (k, old_rrs) in &iss.old_apex_saved {
+            if *k == Rtype::SOA {
+                // Just remove the old SOA record. There should be only one,
+                // just remove all if there is more than one.
+                for r in old_rrs {
+                    let r: SoaRecord = r.clone().into();
+                    self.patch.remove_soa(r).unwrap();
+                }
+                continue;
+            }
+            if let Some(new_rrs) = iss.new_apex.get(k) {
+                if new_rrs == old_rrs {
+                    // No change.
+                    continue;
+                }
+                // Add the new records to a hash set and then check the old
+                // ones against the set to see which ones are removed.
+                let new_rrs: HashSet<&Zrd> = HashSet::from_iter(new_rrs.iter());
+                for r in old_rrs {
+                    if new_rrs.contains(r) {
+                        continue;
+                    }
+                    let r: RegularRecord = r.clone().into();
+                    println!("apex patch.remove {r:?}");
+                    self.patch.remove(r).unwrap();
+                }
+            } else {
+                for r in old_rrs {
+                    let r: RegularRecord = r.clone().into();
+                    println!("apex patch.remove {r:?}");
+                    self.patch.remove(r).unwrap();
+                }
+            }
+        }
 
-	// apex records that were deleted.
-	for (k, old_rrs) in &iss.old_apex_saved {
-	    if *k == Rtype::SOA {
-		println!("incremental_generate_diffs: handle SOA here?");
-		continue;
-	    }
-	    if let Some(new_rrs) = iss.new_apex.get(k) {
-		if new_rrs == old_rrs {
-		    // No change.
-		    continue;
-		}
-		// Add the new records to a hash set and then check the old
-		// ones against the set to see which ones are removed.
-		let new_rrs: HashSet<&Zrd> = HashSet::from_iter(new_rrs.iter());
-		for r in old_rrs {
-		    if new_rrs.contains(r) {
-			continue;
-		    }
-		    let r: RegularRecord = r.clone().into();
-		    println!("apex patch.remove {r:?}");
-		    self.patch.remove(r).unwrap();
-		}
-	    } else {
-		for r in old_rrs {
-		    let r: RegularRecord = r.clone().into();
-		    println!("apex patch.remove {r:?}");
-		    self.patch.remove(r).unwrap();
-		}
-	    }
-	}
-
-	// apex records that were added.
-	for (k, new_rrs) in &iss.new_apex {
-	    if *k == Rtype::SOA {
-		println!("incremental_generate_diffs: handle SOA here?");
-		continue;
-	    }
-	    if let Some(old_rrs) = iss.old_apex_saved.get(k) {
-		if new_rrs == old_rrs {
-		    // No change.
-		    continue;
-		}
-		// Add the old records to a hash set and then check the new
-		// ones against the set to see which ones are added.
-		let old_rrs: HashSet<&Zrd> = HashSet::from_iter(old_rrs.iter());
-		for r in new_rrs {
-		    if old_rrs.contains(r) {
-			continue;
-		    }
-		    let r: RegularRecord = r.clone().into();
-		    println!("apex patch.add {r:?}");
-		    self.patch.add(r).unwrap();
-		}
-	    } else {
-		for r in new_rrs {
-		    let r: RegularRecord = r.clone().into();
-		    println!("apex patch.add {r:?}");
-		    self.patch.add(r).unwrap();
-		}
-	    }
-	}
+        // apex records that were added.
+        for (k, new_rrs) in &iss.new_apex {
+            if *k == Rtype::SOA {
+                // Just add the new SOA record. There should be only one,
+                // just add all if there is more than one.
+                for r in new_rrs {
+                    let r: SoaRecord = r.clone().into();
+                    self.patch.add_soa(r).unwrap();
+                }
+                continue;
+            }
+            if let Some(old_rrs) = iss.old_apex_saved.get(k) {
+                if new_rrs == old_rrs {
+                    // No change.
+                    continue;
+                }
+                // Add the old records to a hash set and then check the new
+                // ones against the set to see which ones are added.
+                let old_rrs: HashSet<&Zrd> = HashSet::from_iter(old_rrs.iter());
+                for r in new_rrs {
+                    if old_rrs.contains(r) {
+                        continue;
+                    }
+                    let r: RegularRecord = r.clone().into();
+                    println!("apex patch.add {r:?}");
+                    self.patch.add(r).unwrap();
+                }
+            } else {
+                for r in new_rrs {
+                    let r: RegularRecord = r.clone().into();
+                    println!("apex patch.add {r:?}");
+                    self.patch.add(r).unwrap();
+                }
+            }
+        }
 
         // NSEC records that were deleted.
         for (k, old_nsec) in &iss.old_nsecs {
@@ -2933,17 +2942,6 @@ impl WorkSpace<'_> {
         let new_rrset = vec![new_soa];
         iss.new_apex.insert(Rtype::SOA, new_rrset);
 
-        let old_soa = iss.old_apex.get(&Rtype::SOA).unwrap();
-        for r in old_soa {
-            let r: SoaRecord = r.clone().into();
-            self.patch.remove_soa(r).unwrap();
-        }
-        let new_soa = iss.new_apex.get(&Rtype::SOA).unwrap();
-        for r in new_soa {
-            let r: SoaRecord = r.clone().into();
-            self.patch.add_soa(r).unwrap();
-        }
-
         Ok(())
     }
 
@@ -3412,7 +3410,7 @@ impl IncrementalSigningState {
                 self.rrsigs.insert(key, rrsig_records);
             }
         }
-	self.old_apex_saved = self.old_apex.clone();
+        self.old_apex_saved = self.old_apex.clone();
         self.old_nsecs = self.nsecs.clone();
         self.old_nsec3s = self.nsec3s.clone();
         self.old_rrsigs = self.rrsigs.clone();
