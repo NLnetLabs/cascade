@@ -1,0 +1,8 @@
+; Apex TXT change -- Check if apex TXT changes are handled properly.
+
+@ IN SOA ns hostmaster 12345 3600 3600 86400 3600
+
+; A Zone should have an NS record.
+@ NS ns1
+
+	TXT	"Version 1 of the TXT record"

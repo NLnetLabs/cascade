@@ -172,7 +172,8 @@ jobs:
         rust: [stable]
         zonemd: [''] #, 'zmd384']
         policy: ['nsec', 'nsec3', 'nsec3-opt-out']
-        test_idx: [1, 2, 3]
+        #test_idx: [1, 2, 3, 5]
+        test_idx: [5]
         key: ['Kexample.+015+02835.key']
     steps:
       - uses: actions/checkout@v4

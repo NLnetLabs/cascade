@@ -5,7 +5,7 @@ CASCADE="cargo run --bin cascade"
 KEY=$PWD/keys/Kexample.+015+02835.key
 for zonemd in '' # zmd384
 do
-	for m in nsec nsec3 nsec3-opt-out
+	for m in nsec3 nsec3-opt-out nsec 
 	do
 		case "$zonemd" in
 		'')
@@ -16,8 +16,9 @@ do
 		;;
 		esac
 
-		for test in 1 2 3
+		for test in 5 1 2 3
 		do
+			echo test $test denial $m $zonemd
 			cp zones/incremental-signing-test${test}-input1.zone example.in
 			$CASCADE zone add --source $PWD/example.in --policy $policy example --import-csk-file $KEY
 
