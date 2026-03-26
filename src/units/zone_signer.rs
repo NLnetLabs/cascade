@@ -2221,61 +2221,68 @@ impl WorkSpace<'_> {
         &mut self,
         iss: &IncrementalSigningState,
     ) -> Result<(), SignerError> {
-        /*
-                // apex records that were deleted.
-                for (k, old_rrs) in &iss.new_apex_saved {
-                    if let Some(new_rrs) = iss.new_apex.get(k) {
-                        if new_rrs == old_rrs {
-                            // No change.
-                            continue;
-                        }
-                        // Add the new records to a hash set and then check the old
-                        // ones against the set to see which ones are removed.
-                        let new_rrs: HashSet<&Zrd> = HashSet::from_iter(new_rrs.iter());
-                        for r in old_rrs {
-                            if new_rrs.contains(r) {
-                                continue;
-                            }
-                            let r: RegularRecord = r.clone().into();
-                            println!("apex patch.remove {r:?}");
-                            self.patch.remove(r).unwrap();
-                        }
-                    } else {
-                        for r in old_rrs {
-                            let r: RegularRecord = r.clone().into();
-                            println!("apex patch.remove {r:?}");
-                            self.patch.remove(r).unwrap();
-                        }
-                    }
-                }
 
-                // apex records that were added.
-                for (k, new_rrs) in &iss.new_apex {
-                    if let Some(old_rrs) = iss.new_apex_saved.get(k) {
-                        if new_rrs == old_rrs {
-                            // No change.
-                            continue;
-                        }
-                        // Add the old records to a hash set and then check the new
-                        // ones against the set to see which ones are added.
-                        let old_rrs: HashSet<&Zrd> = HashSet::from_iter(old_rrs.iter());
-                        for r in new_rrs {
-                            if old_rrs.contains(r) {
-                                continue;
-                            }
-                            let r: RegularRecord = r.clone().into();
-                            println!("apex patch.add {r:?}");
-                            self.patch.add(r).unwrap();
-                        }
-                    } else {
-                        for r in new_rrs {
-                            let r: RegularRecord = r.clone().into();
-                            println!("apex patch.add {r:?}");
-                            self.patch.add(r).unwrap();
-                        }
-                    }
-                }
-        */
+	// apex records that were deleted.
+	for (k, old_rrs) in &iss.old_apex_saved {
+	    if *k == Rtype::SOA {
+		println!("incremental_generate_diffs: handle SOA here?");
+		continue;
+	    }
+	    if let Some(new_rrs) = iss.new_apex.get(k) {
+		if new_rrs == old_rrs {
+		    // No change.
+		    continue;
+		}
+		// Add the new records to a hash set and then check the old
+		// ones against the set to see which ones are removed.
+		let new_rrs: HashSet<&Zrd> = HashSet::from_iter(new_rrs.iter());
+		for r in old_rrs {
+		    if new_rrs.contains(r) {
+			continue;
+		    }
+		    let r: RegularRecord = r.clone().into();
+		    println!("apex patch.remove {r:?}");
+		    self.patch.remove(r).unwrap();
+		}
+	    } else {
+		for r in old_rrs {
+		    let r: RegularRecord = r.clone().into();
+		    println!("apex patch.remove {r:?}");
+		    self.patch.remove(r).unwrap();
+		}
+	    }
+	}
+
+	// apex records that were added.
+	for (k, new_rrs) in &iss.new_apex {
+	    if *k == Rtype::SOA {
+		println!("incremental_generate_diffs: handle SOA here?");
+		continue;
+	    }
+	    if let Some(old_rrs) = iss.old_apex_saved.get(k) {
+		if new_rrs == old_rrs {
+		    // No change.
+		    continue;
+		}
+		// Add the old records to a hash set and then check the new
+		// ones against the set to see which ones are added.
+		let old_rrs: HashSet<&Zrd> = HashSet::from_iter(old_rrs.iter());
+		for r in new_rrs {
+		    if old_rrs.contains(r) {
+			continue;
+		    }
+		    let r: RegularRecord = r.clone().into();
+		    println!("apex patch.add {r:?}");
+		    self.patch.add(r).unwrap();
+		}
+	    } else {
+		for r in new_rrs {
+		    let r: RegularRecord = r.clone().into();
+		    println!("apex patch.add {r:?}");
+		    self.patch.add(r).unwrap();
+		}
+	    }
+	}
 
         // NSEC records that were deleted.
         for (k, old_nsec) in &iss.old_nsecs {
@@ -2392,49 +2399,6 @@ impl WorkSpace<'_> {
         }
 
         Ok(())
-        /*
-                let start = Instant::now();
-                let mut writer = {
-                    let filename = &self.config.zonefile_out;
-                    let file = File::create(filename)
-                        .map_err(|e| format!("unable to create file {}: {e}", filename.display()))?;
-                    BufWriter::new(file)
-                    // FileOrStdout::File(file)
-                };
-
-                for data in iss.new_data.values() {
-                    for rr in data {
-                        writer
-                            .write_fmt(format_args!("{}\n", rr.display_zonefile(DISPLAY_KIND)))
-                            .map_err(|e| format!("unable write signed zone: {e}"))?;
-                    }
-                }
-                for rr in iss.nsecs.values() {
-                    writer
-                        .write_fmt(format_args!("{}\n", rr.display_zonefile(DISPLAY_KIND)))
-                        .map_err(|e| format!("unable write signed zone: {e}"))?;
-                }
-                for rr in iss.nsec3s.values() {
-                    writer
-                        .write_fmt(format_args!("{}\n", rr.display_zonefile(DISPLAY_KIND)))
-                        .map_err(|e| format!("unable write signed zone: {e}"))?;
-                }
-                for data in iss.rrsigs.values() {
-                    for rr in data {
-                        let ZoneRecordData::Rrsig(rrsig) = rr.data() else {
-                            panic!("RRSIG expected");
-                        };
-                        let rr = Record::new(rr.owner(), rr.class(), rr.ttl(), YyyyMmDdHhMMSsRrsig(rrsig));
-                        writer
-                            .write_fmt(format_args!("{}\n", rr.display_zonefile(DISPLAY_KIND)))
-                            .map_err(|e| format!("unable write signed zone: {e}"))?;
-                    }
-                }
-                if self.verbose {
-                    println!("writing output took {:?}", start.elapsed());
-                }
-                Ok(())
-        */
     }
 
     /*
@@ -3077,6 +3041,7 @@ type ChangesValue = (RtypeSet, RtypeSet); // add set followed by delete set.
 struct IncrementalSigningState {
     origin: Name<Bytes>,
     old_apex: HashMap<Rtype, Vec<Zrd>>,
+    old_apex_saved: HashMap<Rtype, Vec<Zrd>>,
     new_apex: HashMap<Rtype, Vec<Zrd>>,
     new_apex_saved: HashMap<Rtype, Vec<Zrd>>,
     old_data: HashMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
@@ -3129,6 +3094,7 @@ impl IncrementalSigningState {
         Ok(Self {
             origin,
             old_apex: HashMap::new(),
+            old_apex_saved: HashMap::new(),
             new_apex: HashMap::new(),
             new_apex_saved: HashMap::new(),
             old_data: HashMap::new(),
@@ -3446,6 +3412,7 @@ impl IncrementalSigningState {
                 self.rrsigs.insert(key, rrsig_records);
             }
         }
+	self.old_apex_saved = self.old_apex.clone();
         self.old_nsecs = self.nsecs.clone();
         self.old_nsec3s = self.nsec3s.clone();
         self.old_rrsigs = self.rrsigs.clone();
@@ -4080,7 +4047,6 @@ impl IncrementalSigningState {
             r.ttl(),
             ZoneRecordData::Nsec3param(r.data().clone()),
         );
-        let key = (record.owner().clone(), Rtype::NSEC3PARAM);
         let records = vec![record.clone()];
 
         // Insert in both old and new data.
@@ -4092,8 +4058,8 @@ impl IncrementalSigningState {
             self.expiration,
             &mut new_sigs,
         )?;
-        self.old_data.insert(key.clone(), records.clone());
-        self.new_data.insert(key, records);
+        self.old_apex.insert(Rtype::NSEC3PARAM, records.clone());
+        self.new_apex.insert(Rtype::NSEC3PARAM, records);
 
         for r in nsec3_records.nsec3s {
             let record = Record::new(
