@@ -25,11 +25,10 @@
 
 use std::{fmt, sync::Arc};
 
-use cascade_api::ZoneReviewStatus;
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReader, LoadedZoneReviewer,
-    SignedZoneBuilder, SignedZoneBuilt, SignedZoneReader, SignedZoneReviewer, ZoneCleaner,
-    ZoneDataStorage, ZoneViewer,
+    SignedZoneBuilder, SignedZoneBuilt, SignedZonePersister, SignedZoneReader, SignedZoneReviewer,
+    ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::zonetree;
 use tracing::{info, trace, trace_span, warn};
@@ -37,9 +36,8 @@ use tracing::{info, trace, trace_span, warn};
 use crate::{
     center::Center,
     common::light_weight_zone::LightWeightZone,
-    signer::SigningTrigger,
     util::{BackgroundTasks, force_future},
-    zone::{HistoricalEvent, PipelineMode, Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -214,21 +212,6 @@ impl StorageZoneHandle<'_> {
 
             let mut state = zone.state.lock().unwrap();
 
-            // Resume the pipeline if needed.
-            let review = match state.pipeline_mode.clone() {
-                PipelineMode::Running => true,
-                PipelineMode::SoftHalt(message) => {
-                    info!("Resuming soft-halted pipeline (halt message: {message})");
-                    state.resume();
-                    true
-                }
-                PipelineMode::HardHalt(_) => {
-                    // TODO: Is this the right behavior?
-                    warn!("Not reviewing newly-loaded instance because pipeline is hard-halted");
-                    false
-                }
-            };
-
             // TODO: Pass on the reviewer to the zone server.
             let old_loaded_reviewer =
                 std::mem::replace(&mut state.storage.loaded_reviewer, loaded_reviewer);
@@ -246,20 +229,18 @@ impl StorageZoneHandle<'_> {
                 ),
             }
 
-            if review {
-                info!("Initiating review of newly-loaded instance");
+            info!("Initiating review of newly-loaded instance");
 
-                // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
-                std::mem::drop(state);
+            // TODO: 'on_seek_approval_for_zone' tries to lock zone state.
+            std::mem::drop(state);
 
-                center.unsigned_review_server.on_seek_approval_for_zone(
-                    &center,
-                    &zone,
-                    domain::base::Serial(serial.into()),
-                );
+            center.unsigned_review_server.on_seek_approval_for_zone(
+                &center,
+                &zone,
+                domain::base::Serial(serial.into()),
+            );
 
-                state = zone.state.lock().unwrap();
-            }
+            state = zone.state.lock().unwrap();
 
             state.storage.background_tasks.finish();
         });
@@ -276,7 +257,7 @@ impl StorageZoneHandle<'_> {
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
 
         // Add every record in turn.
-        for record in reader.records() {
+        for record in reader.all_records() {
             let record: cascade_zonedata::OldParsedRecord = record.clone().into();
             force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
@@ -288,20 +269,13 @@ impl StorageZoneHandle<'_> {
         zone
     }
 
-    /// Approve a loaded instance of a zone.
+    /// Accept a loaded instance of a zone.
     #[tracing::instrument(
         level = "trace",
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn approve_loaded(&mut self) {
-        self.state.record_event(
-            HistoricalEvent::UnsignedZoneReview {
-                status: ZoneReviewStatus::Approved,
-            },
-            None, // TODO
-        );
-
+    pub fn accept_loaded(&mut self) {
         // Examine the current state.
         let (transition, state) = transition(&mut self.state.storage.machine);
         match state {
@@ -312,6 +286,33 @@ impl StorageZoneHandle<'_> {
                 let (s, persister) = s.mark_approved();
                 transition.move_to(ZoneDataStorage::PersistingLoaded(s));
                 self.start_loaded_persistence(persister);
+            }
+
+            _ => panic!("The zone is not undergoing loader review"),
+        }
+    }
+
+    /// Give up on a loaded instance undergoing review.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn abandon_loaded_review(&mut self) {
+        // Examine the current state.
+        let (transition, state) = transition(&mut self.state.storage.machine);
+        match state {
+            ZoneDataStorage::ReviewingLoaded(s) => {
+                // TODO: Specify the instance ID.
+                info!("The loaded instance has been rejected; cleaning it up");
+
+                let (s, loaded_reviewer) = s.give_up();
+                // TODO: Communicate the new reviewer handle to the zone server.
+                let old_loaded_reviewer =
+                    std::mem::replace(&mut self.state.storage.loaded_reviewer, loaded_reviewer);
+                let (s, cleaner) = s.stop_review(old_loaded_reviewer);
+                transition.move_to(ZoneDataStorage::Cleaning(s));
+                self.start_cleanup(cleaner);
             }
 
             _ => panic!("The zone is not undergoing loader review"),
@@ -382,17 +383,6 @@ impl StorageZoneHandle<'_> {
                 let (s, signed_reviewer) = s.finish(built);
                 transition.move_to(ZoneDataStorage::ReviewSignedPending(s));
 
-                // TODO: Use the instance ID here, which will not require
-                // examining the zone contents.
-                let serial = signed_reviewer.read_signed().unwrap().soa().rdata.serial;
-                self.state.record_event(
-                    // TODO: Get the right trigger.
-                    HistoricalEvent::SigningSucceeded {
-                        trigger: SigningTrigger::Load.into(),
-                    },
-                    Some(domain::base::Serial(serial.into())),
-                );
-
                 self.start_signed_review(signed_reviewer);
             }
 
@@ -437,6 +427,63 @@ impl StorageZoneHandle<'_> {
             ),
         }
     }
+
+    /// Accept a signed instance of a zone.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn accept_signed(&mut self) {
+        // Examine the current state.
+        let (transition, state) = transition(&mut self.state.storage.machine);
+        match state {
+            ZoneDataStorage::ReviewingSigned(s) => {
+                // TODO: Specify the instance ID.
+                info!("The signed instance has been approved; persisting it");
+
+                let (s, persister) = s.mark_approved();
+                transition.move_to(ZoneDataStorage::PersistingSigned(s));
+                self.start_signed_persistence(persister);
+            }
+
+            _ => panic!("The zone is not undergoing signer review"),
+        }
+    }
+
+    /// Give up on a signed instance undergoing review.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn abandon_signed_review(&mut self) {
+        // Examine the current state.
+        let (transition, state) = transition(&mut self.state.storage.machine);
+        match state {
+            ZoneDataStorage::ReviewingSigned(s) => {
+                // TODO: Specify the instance ID.
+                info!("The signed instance has been rejected; cleaning it up");
+
+                let (s, loaded_reviewer, signed_reviewer) = s.give_up();
+
+                // TODO: Communicate the new reviewer handle to the zone server.
+                let old_signed_reviewer =
+                    std::mem::replace(&mut self.state.storage.signed_reviewer, signed_reviewer);
+                let s = s.stop_review(old_signed_reviewer);
+
+                // TODO: Communicate the new reviewer handle to the zone server.
+                let old_loaded_reviewer =
+                    std::mem::replace(&mut self.state.storage.loaded_reviewer, loaded_reviewer);
+                let (s, cleaner) = s.stop_review(old_loaded_reviewer);
+
+                transition.move_to(ZoneDataStorage::Cleaning(s));
+                self.start_cleanup(cleaner);
+            }
+
+            _ => panic!("The zone is not undergoing signer review"),
+        }
+    }
 }
 
 /// # Signer Review Operations
@@ -454,17 +501,14 @@ impl StorageZoneHandle<'_> {
         let center = self.center.clone();
         let span = trace_span!("start_signed_review");
         self.state.storage.background_tasks.spawn_blocking(span, move || {
-            // Read the loaded and signed instances.
-            let loaded_reader = signed_reviewer
-                .read_loaded()
-                .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
-            let signed_reader = signed_reviewer
-                .read_signed()
+            // Read the instance.
+            let reader = signed_reviewer
+                .read()
                 .unwrap_or_else(|| unreachable!("The signer never returns an empty instance"));
-            let serial = signed_reader.soa().rdata.serial;
+            let serial = reader.soa().rdata.serial;
 
             // Build a compatibility shim for the new instance.
-            let zonetree_zone = Self::build_compat_for_signed(&zone, &loaded_reader, &signed_reader);
+            let zonetree_zone = Self::build_compat_for_signed(&zone, &reader);
 
             // Insert the compatibility shim in the global view (possibly
             // replacing a previous one).
@@ -482,33 +526,16 @@ impl StorageZoneHandle<'_> {
                 std::mem::replace(&mut state.storage.signed_reviewer, signed_reviewer);
 
             // Transition into the reviewing state.
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
-            let cleaner = match transition(&mut handle.state.storage.machine) {
+            match transition(&mut state.storage.machine) {
                 (transition, ZoneDataStorage::ReviewSignedPending(s)) => {
-                    // TODO: Once the zone server is integrated, it will handle
-                    // review. For now, transition the state machine back to the
-                    // passive state (asynchronously through 'Cleaning').
                     let s = s.start(old_signed_reviewer);
-                    let (s, persister) = s.mark_approved();
-                    let persisted = persister.persist();
-                    let (s, viewer) = s.mark_complete(persisted);
-                    let old_viewer = std::mem::replace(&mut handle.state.storage.viewer, viewer);
-                    let (s, cleaner) = s.switch(old_viewer);
-                    transition.move_to(ZoneDataStorage::Cleaning(s));
-                    cleaner
+                    transition.move_to(ZoneDataStorage::ReviewingSigned(s));
                 }
 
                 _ => unreachable!(
                     "'ZoneDataStorage::ReviewSignedPending' is the only state where a 'SignedZoneReviewer' is available"
                 ),
-            };
-            handle
-                .storage()
-                .start_cleanup(cleaner);
+            }
 
             info!("Initiating review of newly-signed instance");
 
@@ -528,11 +555,7 @@ impl StorageZoneHandle<'_> {
     }
 
     /// Build a [`zonetree::Zone`] for a signed instance of a zone.
-    fn build_compat_for_signed(
-        zone: &Arc<Zone>,
-        loaded_reader: &LoadedZoneReader<'_>,
-        signed_reader: &SignedZoneReader<'_>,
-    ) -> zonetree::Zone {
+    fn build_compat_for_signed(zone: &Arc<Zone>, reader: &SignedZoneReader<'_>) -> zonetree::Zone {
         use zonetree::{types::ZoneUpdate, update::ZoneUpdater};
 
         // Use a LightWeightZone as it is able to fix RRSIG TTLs to be the same
@@ -542,22 +565,20 @@ impl StorageZoneHandle<'_> {
 
         let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
 
-        // Add every record in turn.
-        for record in signed_reader.records() {
+        // Add every generated record (except the SOA) in turn.
+        for record in reader.generated_records() {
             let record: cascade_zonedata::OldParsedRecord = record.clone().into();
             force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
 
-        // Add every loaded record in turn (excluding SOA).
-        //
-        // TODO: Which other records to exclude? DNSKEY, RRSIGs?
-        for record in loaded_reader.records() {
-            let record: cascade_zonedata::OldParsedRecord = record.clone().into();
+        // Add every loaded record in turn.
+        for record in reader.loaded_records() {
+            let record: cascade_zonedata::OldParsedRecord = record.into();
             force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
         }
 
         // Commit the update with the SOA record.
-        let soa: cascade_zonedata::OldParsedRecord = signed_reader.soa().clone().into();
+        let soa: cascade_zonedata::OldParsedRecord = reader.soa().clone().into();
         force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
 
         zone
@@ -664,30 +685,79 @@ impl StorageZoneHandle<'_> {
         });
     }
 
-    /// Respond to the data storage idling.
+    /// Begin persisting a signed zone instance.
     ///
-    /// When the data storage is passive, it is possible to initiate a new
-    /// load or resigning of the zone. This method checks for enqueued loads or
-    /// re-sign operations and begins them appropriately.
+    /// A background task will be spawned to perform the provided zone
+    /// persistence and transition to the next state.
     #[tracing::instrument(
         level = "trace",
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    fn on_passive(&mut self) {
+    fn start_signed_persistence(&mut self, persister: SignedZonePersister) {
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        let span = trace_span!("persist_signed");
+        self.state.storage.background_tasks.spawn_blocking(span, move || {
+            trace!("Persisting the signed instance");
+
+            // Perform the persisting.
+            let persisted = persister.persist();
+
+            // NOTE: The outer function, which is spawning the background task,
+            // has a lock of the zone state. Thus, the following lock cannot be
+            // taken until the outer function terminates.
+            let mut state = zone.state.lock().unwrap();
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut state,
+                center: &center,
+            };
+
+            // Transition the state machine.
+            let cleaner = match transition(&mut handle.state.storage.machine) {
+                (transition, ZoneDataStorage::PersistingSigned(s)) => {
+                    let (s, viewer) = s.mark_complete(persisted);
+                    // TODO: Pass on the viewer to the zone server.
+                    let old_viewer =
+                        std::mem::replace(&mut handle.state.storage.viewer, viewer);
+                    let (s, cleaner) = s.switch(old_viewer);
+                    transition.move_to(ZoneDataStorage::Cleaning(s));
+                    cleaner
+                }
+
+                _ => unreachable!(
+                    "'ZoneDataStorage::PersistingSigned' is the only state where a 'SignedZonePersister' is available"
+                ),
+            };
+            handle.storage().start_cleanup(cleaner);
+
+            handle.state.storage.background_tasks.finish();
+        });
+    }
+
+    /// Respond to the zone storage being passive and ready for new operations.
+    ///
+    /// Only when the zone storage is passive (not just when the state machine
+    /// is waiting) is it possible to start a new loading or signing operation.
+    /// This method checks for enqueued loads or re-sign operations and begins
+    /// them appropriately.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub(crate) fn on_passive(&mut self) {
         // TODO: Check whether resigning is needed. It has higher priority than
         // loading a new instance.
-        //
-        // TODO: If we introduce a top-level state machine for a zone, should
-        // this method be implemented there?
 
         if self.zone().loader().start_pending() {
-            // The zone storage is no longer passive.
+            // The zone is no longer passive.
             return;
         }
 
         if self.zone().signer().start_pending() {
-            // The zone storage is no longer passive.
+            // The zone is no longer passive.
             // return;
         }
     }

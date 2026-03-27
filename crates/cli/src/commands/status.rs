@@ -59,17 +59,9 @@ impl Status {
             None => {
                 let response: ServerStatusResult = client.get_json("/status").await?;
 
-                if !response.hard_halted_zones.is_empty() {
-                    eprintln!("The following zones are hard halted due to a serious problem:");
-                    for (zone_name, err) in response.hard_halted_zones {
-                        eprintln!("   {}\u{78}{} {zone_name}: {err}", ansi::RED, ansi::RESET);
-                    }
-                    eprintln!();
-                }
-
-                if !response.soft_halted_zones.is_empty() {
-                    eprintln!("The following zones are halted due to resolvable issues:");
-                    for (zone_name, err) in response.soft_halted_zones {
+                if !response.halted_zones.is_empty() {
+                    eprintln!("The following zones are halted:");
+                    for (zone_name, err) in response.halted_zones {
                         eprintln!("   {}\u{78}{} {zone_name}: {err}", ansi::RED, ansi::RESET);
                     }
                     eprintln!();

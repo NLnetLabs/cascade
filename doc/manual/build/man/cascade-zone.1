@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Feb 25, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "Mar 20, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -46,7 +46,11 @@ cascade-zone \- Manage zones
 .sp
 \fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%override\fP \fB<\-\-unsigned|\-\-signed>\fP \fB<NAME>\fP
+.sp
 \fBcascade zone\fP \fB[OPTIONS]\fP \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
+.sp
+\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reset\fP \fB<NAME>\fP
 .sp
 \fBcascade zone\fP \fB[OPTIONS]\fP \fI\%history\fP \fB<NAME>\fP
 .SH DESCRIPTION
@@ -91,8 +95,18 @@ Reject a zone being reviewed.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B override
+Override a previous rejection of a zone review.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B status
 Get the status of a single zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B reset
+Reset the pipeline for a zone to get it out of a halted state.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -221,6 +235,17 @@ The name of the zone to reject.
 .B <SERIAL>
 The serial number of the zone to reject.
 .UNINDENT
+.SH OPTIONS FOR ZONE OVERRIDE
+.INDENT 0.0
+.TP
+.B <\-\-unsigned|\-\-signed>
+Whether the zone to override is at the unsigned or signed review stage.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to override.
+.UNINDENT
 .SH OPTIONS FOR ZONE STATUS
 .INDENT 0.0
 .TP
@@ -232,6 +257,12 @@ identifiers in use, as well as the new DNSKEY records during key rolls.
 .TP
 .B <NAME>
 The name of the zone to report the status of.
+.UNINDENT
+.SH OPTIONS FOR ZONE RESET
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to reset the pipeline of.
 .UNINDENT
 .SH SEE ALSO
 .INDENT 0.0

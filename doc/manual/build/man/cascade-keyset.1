@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-KEYSET" "1" "Feb 25, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-KEYSET" "1" "Mar 23, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-keyset \- Execute manual key roll or key removal commands
 .SH SYNOPSIS
@@ -35,6 +35,8 @@ cascade-keyset \- Execute manual key roll or key removal commands
 \fBcascade keyset\fP \fB[OPTIONS]\fP \fB<ZONE>\fP \fBksk|zsk|csk|algorithm\fP \fB<ROLL COMMAND>\fP \fB[OPTIONS]\fP
 .sp
 \fBcascade keyset\fP \fB[OPTIONS]\fP \fB<ZONE>\fP \fI\%remove\-key\fP \fB[OPTIONS]\fP \fB<KEY>\fP
+.sp
+\fBcascade keyset\fP \fB[OPTIONS]\fP \fB<ZONE>\fP \fI\%get\fP \fB[RR]\fP
 .SH DESCRIPTION
 .sp
 Execute manual key roll or key removal commands.
@@ -69,6 +71,11 @@ Command for algorithm rolls.
 .TP
 .B remove\-key
 Remove a key from the key set.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B get
+Get the key or keys for a zone as DS, DNSKEY, or CDS RRsets.
 .UNINDENT
 .SH KEY ROLL COMMANDS FOR KSK|ZSK|CSK|ALGORITHM
 .INDENT 0.0
@@ -123,10 +130,30 @@ Force a key to be removed even if the key is not stale.
 .B \-\-continue
 Continue when removing the underlying keys fails.
 .UNINDENT
+.SH ARGUMENTS FOR KEYSET GET
+.INDENT 0.0
+.TP
+.B [RR]
+The RRset to print. \fBds\fP, \fBdnskey\fP, or \fBcds\fP\&.
+.sp
+The CDS RRset includes the CDNSKEY RRset and signatures.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+The DS and CDS RRset is only available during the appropriate
+step of a key roll. So, if the output is empty, check the zone\(aqs key
+roll status to see if it may still be waiting for propagation of e.g.
+the new DNSKEY. If you need the DS RRset even if cascade is still
+waiting for propagation, you can use \fBcascade keyset <zone> get
+dnskey | dnst key2ds \-n /dev/stdin\fP\&.
+.UNINDENT
+.UNINDENT
+.UNINDENT
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
+.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
 Cascade online documentation
 .TP
 \fBcascade\fP(1)

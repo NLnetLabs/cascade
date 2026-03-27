@@ -1,0 +1,86 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Test unsigned review server'
+description: 'Test unsigned review server.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+  test_idx:
+    required: true
+    type: integer
+  key:
+    required: true
+    type: string
+runs:
+  using: "composite"
+  steps:
+    # Don't prepare the system test environment as that sets up NSD, BIND and
+    # Unbound which we don't need and takes a long time compared to the rest
+    # of the test.
+    # - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+        fake-time: 1600000000
+
+    - name: Add policy
+      id: add-policy
+      run: |
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-unsigned-zone2"
+        # Fix the paths to the reference output specified in the hooks.
+        for hook in ${INTEGRATION_TEST_DIR}/hooks/*
+        do
+            sed -i -e "s|<INTEGRATION_TEST_DIR>|${INTEGRATION_TEST_DIR}|" ${hook}
+        done
+        # Make sure our test hooks are executable.
+        chmod +x ${INTEGRATION_TEST_DIR}/hooks/*
+
+        # Copy the new test policy into the Cascade policy directory.
+        cp "${INTEGRATION_TEST_DIR}/policies/review-test.toml" "${POLICY_DIR}/"
+        # Fix the path to the review hook specified in the new test policy.
+        sed -i -e "s|<INTEGRATION_TEST_DIR>|${INTEGRATION_TEST_DIR}|" ${POLICY_DIR}/review-test.toml
+        cascade policy reload
+
+    - name: Load the test zone
+      env:
+        TEST_IDX: "${{ inputs.test_idx }}"
+        KEY: "${{ inputs.key }}"
+      run: |
+        TEST_DIR="${PWD}/integration-tests/review-unsigned-zone2"
+        ZONE_FILE="${TEST_DIR}/zones/test${TEST_IDX}.zone"
+        KEY_FILE="${TEST_DIR}/keys/${KEY}"
+        cascade zone add --source "${ZONE_FILE}" --policy review-test --import-csk-file "${KEY_FILE}" example
+
+    - name: Wait for the zone to be signed
+      env:
+        TEST_IDX: "${{ inputs.test_idx }}"
+      run: |
+        serial="${TEST_IDX}${TEST_IDX}${TEST_IDX}${TEST_IDX}${TEST_IDX}"
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 4543 example SOA | grep $serial; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: published SOA does not contain $serial"
+            cat /tmp/hook.out
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

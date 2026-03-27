@@ -86,38 +86,27 @@ impl ZoneViewer {
 }
 
 impl ZoneViewer {
-    /// Read the loaded component, if there is one.
-    pub fn read_loaded(&self) -> Option<LoadedZoneReader<'_>> {
-        let instance = &self.data.loaded[self.loaded_index as usize];
+    /// Read the instance, if there is one.
+    pub fn read(&self) -> Option<SignedZoneReader<'_>> {
+        let loaded = &self.data.loaded[self.loaded_index as usize];
+        let signed = &self.data.signed[self.signed_index as usize];
 
-        // SAFETY: As per invariant 'loaded-access', 'instance' will not be
+        // SAFETY: As per invariant 'loaded-access', 'loaded' will not be
         // modified for the lifetime of 'self', and thus it is sound to access
         // by shared reference.
-        let instance = unsafe { &*instance.get() };
+        let loaded = unsafe { &*loaded.get() };
 
-        instance.soa.as_ref()?;
-
-        // NOTE: As checked above, 'instance' is complete (i.e. has a SOA
-        // record), so 'LoadedZoneReader::new()' will not panic.
-        Some(LoadedZoneReader::new(instance))
-    }
-
-    /// Read the signed component, if there is one.
-    ///
-    /// If a signed component exists, a loaded component will also exist.
-    pub fn read_signed(&self) -> Option<SignedZoneReader<'_>> {
-        let instance = &self.data.signed[self.signed_index as usize];
-
-        // SAFETY: As per invariant 'signed-access', 'instance' will not be
+        // SAFETY: As per invariant 'signed-access', 'signed' will not be
         // modified for the lifetime of 'self', and thus it is sound to access
         // by shared reference.
-        let instance = unsafe { &*instance.get() };
+        let signed = unsafe { &*signed.get() };
 
-        instance.soa.as_ref()?;
+        signed.soa.as_ref()?;
 
-        // NOTE: As checked above, 'instance' is complete (i.e. has a SOA
-        // record), so 'SignedZoneReader::new()' will not panic.
-        Some(SignedZoneReader::new(instance))
+        // NOTE: As checked above, 'signed' is complete (i.e. has a SOA record),
+        // and thus 'loaded' must also be complete, so 'SignedZoneReader::new()'
+        // will not panic.
+        Some(SignedZoneReader::new(loaded, signed))
     }
 }
 
@@ -295,43 +284,32 @@ impl SignedZoneReviewer {
 }
 
 impl SignedZoneReviewer {
-    /// Read the loaded component, if there is one.
-    pub fn read_loaded(&self) -> Option<LoadedZoneReader<'_>> {
-        let instance = &self.data.loaded[self.loaded_index as usize];
+    /// Read the instance, if there is one.
+    pub fn read(&self) -> Option<SignedZoneReader<'_>> {
+        let loaded = &self.data.loaded[self.loaded_index as usize];
+        let signed = &self.data.signed[self.signed_index as usize];
 
-        // SAFETY: As per invariant 'loaded-access', 'instance' will not be
+        // SAFETY: As per invariant 'loaded-access', 'loaded' will not be
         // modified for the lifetime of 'self', and thus it is sound to access
         // by shared reference.
-        let instance = unsafe { &*instance.get() };
+        let loaded = unsafe { &*loaded.get() };
 
-        instance.soa.as_ref()?;
+        // SAFETY: As per invariant 'signed-access', 'signed' will not be
+        // modified for the lifetime of 'self', and thus it is sound to access
+        // by shared reference.
+        let signed = unsafe { &*signed.get() };
 
-        // NOTE: As checked above, 'instance' is complete (i.e. has a SOA
-        // record), so 'LoadedZoneReader::new()' will not panic.
-        Some(LoadedZoneReader::new(instance))
+        signed.soa.as_ref()?;
+
+        // NOTE: As checked above, 'signed' is complete (i.e. has a SOA record),
+        // and thus 'loaded' must also be complete, so 'SignedZoneReader::new()'
+        // will not panic.
+        Some(SignedZoneReader::new(loaded, signed))
     }
 
     /// The diff of the loaded component from the preceding instance.
     pub fn loaded_diff(&self) -> Option<&Arc<DiffData>> {
         self.loaded_diff.as_ref()
-    }
-
-    /// Read the signed component, if there is one.
-    ///
-    /// If a signed component exists, a loaded component will also exist.
-    pub fn read_signed(&self) -> Option<SignedZoneReader<'_>> {
-        let instance = &self.data.signed[self.signed_index as usize];
-
-        // SAFETY: As per invariant 'signed-access', 'instance' will not be
-        // modified for the lifetime of 'self', and thus it is sound to access
-        // by shared reference.
-        let instance = unsafe { &*instance.get() };
-
-        instance.soa.as_ref()?;
-
-        // NOTE: As checked above, 'instance' is complete (i.e. has a SOA
-        // record), so 'SignedZoneReader::new()' will not panic.
-        Some(SignedZoneReader::new(instance))
     }
 
     /// The diff of the signed component from the preceding instance.

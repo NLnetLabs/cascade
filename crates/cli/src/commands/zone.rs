@@ -80,6 +80,24 @@ pub enum ZoneCommand {
         serial: u32,
     },
 
+    /// Override a previous rejection
+    #[command(name = "override")]
+    Override {
+        /// Whether to approve an unsigned or signed version of the zone.
+        #[command(flatten)]
+        review_stage: ZoneReviewStage,
+
+        /// The name of the zone.
+        name: ZoneName,
+    },
+
+    /// Reset the pipeline for a halted zone
+    #[command(name = "reset")]
+    Reset {
+        /// The name  of the zone
+        zone: ZoneName,
+    },
+
     /// Reject a zone being reviewed.
     #[command(name = "reject")]
     Reject {
@@ -108,7 +126,7 @@ pub enum ZoneCommand {
     /// Get the history of a single zone
     #[command(name = "history")]
     History {
-        /// The zone toe report the history of.
+        /// The zone to report the history of.
         zone: ZoneName,
     },
 }
@@ -250,6 +268,47 @@ impl Zone {
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to reload zone: {e}")),
+                }
+            }
+            ZoneCommand::Reset { zone } => {
+                let url = format!("zone/{zone}/reset");
+                let result: ZoneResetResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(ZoneResetOutput { zone }) => {
+                        println!("Reset the pipeline for zone '{zone}'");
+                        Ok(())
+                    }
+                    Err(err) => Err(format!("Could not reset zone '{zone}': {err}")),
+                }
+            }
+            ZoneCommand::Override { name, review_stage } => {
+                let stage = match review_stage {
+                    ZoneReviewStage {
+                        unsigned: true,
+                        signed: false,
+                    } => "unsigned",
+                    ZoneReviewStage {
+                        unsigned: false,
+                        signed: true,
+                    } => "signed",
+                    _ => unreachable!(),
+                };
+
+                let url = format!("zone/{name}/{stage}/override");
+                let result: ZoneOverrideResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(ZoneOverrideOutput {
+                        zone,
+                        review_stage: _,
+                    }) => {
+                        println!("Overridden {stage} review for '{zone}'");
+                        Ok(())
+                    }
+                    Err(err) => Err(format!(
+                        "Could not override review for zone '{name}': {err}"
+                    )),
                 }
             }
             ZoneCommand::Approve {
@@ -480,24 +539,13 @@ impl Zone {
         progress.print(&zone, &policy);
 
         // If the pipeline is halted, show that.
-        match zone.pipeline_mode {
-            PipelineMode::Running => { /* Nothing to do */ }
-            PipelineMode::SoftHalt(err) => {
-                println!(
-                    "{}\u{78} An error occurred that prevents further processing of this zone version:{}",
-                    ansi::RED,
-                    ansi::RESET
-                );
-                println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
-            }
-            PipelineMode::HardHalt(err) => {
-                println!(
-                    "{}\u{78} The pipeline for this zone is hard halted due to a serious error:{}",
-                    ansi::RED,
-                    ansi::RESET
-                );
-                println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
-            }
+        if let Some(reason) = zone.halted_reason {
+            println!(
+                "{}\u{78} The pipeline for this zone is halted due to an error:{}",
+                ansi::RED,
+                ansi::RESET
+            );
+            println!("{}\u{78} {reason}{}", ansi::RED, ansi::RESET);
         }
 
         if detailed {

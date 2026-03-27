@@ -103,7 +103,7 @@ impl LoaderZoneHandle<'_> {
         }
 
         // Initiate the load immediately, if the data storage is not busy.
-        if let Some(builder) = self.zone().storage().start_load() {
+        if let Some(builder) = self.zone().try_start_load() {
             self.start(refresh, builder);
         } else {
             // Enqueue the load so it can be executed later.
@@ -129,9 +129,8 @@ impl LoaderZoneHandle<'_> {
 
         let builder = self
             .zone()
-            .storage()
-            .start_load()
-            .expect("the zone data storage is passive");
+            .try_start_load()
+            .expect("the zone state is waiting");
         self.start(refresh, builder);
         true
     }

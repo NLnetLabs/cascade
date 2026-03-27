@@ -63,7 +63,6 @@ pub enum Source {
 }
 
 fn spawn_servers<Svc>(
-    unit_name: &'static str,
     socket_provider: &mut SocketProvider,
     source: Source,
     svc: Svc,
@@ -76,7 +75,7 @@ where
 
     for sock_cfg in servers {
         if let SocketConfig::UDP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-            info!("[{unit_name}]: Obtaining UDP socket for address {addr}");
+            info!("Obtaining UDP socket for address {addr}");
             let sock = socket_provider
                 .take_udp(addr)
                 .ok_or(format!("No socket available for UDP {addr}"))?;
@@ -88,7 +87,7 @@ where
         }
 
         if let SocketConfig::TCP { addr } | SocketConfig::TCPUDP { addr } = sock_cfg {
-            info!("[{unit_name}]: Obtaining TCP listener for address {addr}");
+            info!("Obtaining TCP listener for address {addr}");
             let sock = socket_provider
                 .take_tcp(addr)
                 .ok_or(format!("No socket available for TCP {addr}"))?;
@@ -107,7 +106,7 @@ where
             let addr = sock
                 .local_addr()
                 .map_err(|err| format!("Provided UDP socket lacks address: {err}"))?;
-            info!("[{unit_name}]: Receieved additional UDP socket {addr}");
+            info!("Receieved additional UDP socket {addr}");
             handles.push(AbortOnDrop::from(tokio::spawn(serve_on_udp(
                 svc.clone(),
                 VecBufSource,
@@ -118,7 +117,7 @@ where
             let addr = sock
                 .local_addr()
                 .map_err(|err| format!("Provided TCP listener lacks address: {err}"))?;
-            info!("[{unit_name}]: Receieved additional TCP listener {addr}");
+            info!("Receieved additional TCP listener {addr}");
             handles.push(AbortOnDrop::from(tokio::spawn(serve_on_tcp(
                 svc.clone(),
                 VecBufSource,
@@ -136,7 +135,6 @@ where
 {
     let config = dgram::Config::new();
     let srv = DgramServer::<_, _, _>::with_config(sock, buf, svc, config);
-    let srv = Arc::new(srv);
     srv.run().await;
 }
 
@@ -149,7 +147,6 @@ where
     let mut config = stream::Config::new();
     config.set_connection_config(conn_config);
     let srv = StreamServer::with_config(sock, buf, svc, config);
-    let srv = Arc::new(srv);
     srv.run().await;
 }
 
@@ -166,7 +163,7 @@ impl ZoneServer {
 
     /// Launch a zone server.
     pub fn run(
-        center: Arc<Center>,
+        center: &Arc<Center>,
         source: Source,
         socket_provider: &mut SocketProvider,
     ) -> Result<Vec<AbortOnDrop>, Terminated> {
@@ -221,7 +218,7 @@ impl ZoneServer {
             Source::Published => &center.config.server.servers,
         };
 
-        let handles = spawn_servers(unit_name, socket_provider, source, svc, servers)
+        let handles = spawn_servers(socket_provider, source, svc, servers)
             .inspect_err(|err| error!("[{unit_name}]: Spawning nameservers failed: {err}"))
             .map_err(|_| Terminated)?;
 
@@ -359,15 +356,7 @@ impl ZoneServer {
             match self.source {
                 Source::Unsigned => {
                     info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
-                    if let Err(err) =
-                        ZoneServer::promote_zone_to_signable(center.clone(), zone_name)
-                    {
-                        error!(
-                            "[{unit_name}]: Cannot promote unsigned zone '{zone_name}' to the signable set of zones: {err}"
-                        );
-                    } else {
-                        self.on_unsigned_zone_approved(center, zone, zone_serial);
-                    }
+                    self.on_unsigned_zone_approved(center, zone, zone_serial);
                 }
                 Source::Signed => {
                     self.on_signed_zone_approved(center, zone, zone_serial);
@@ -536,19 +525,20 @@ impl ZoneServer {
             state: &mut state,
             center,
         }
-        .storage()
         .approve_loaded();
     }
 
     fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
-        record_zone_event(
-            center,
-            zone,
-            HistoricalEvent::SignedZoneReview {
-                status: crate::api::ZoneReviewStatus::Approved,
-            },
-            Some(zone_serial),
-        );
+        let _ = zone_serial; // TODO
+        {
+            let mut state = zone.state.lock().unwrap();
+            ZoneHandle {
+                zone,
+                state: &mut state,
+                center,
+            }
+            .approve_signed();
+        }
 
         // Send a message to the zone signer to trigger a re-scan of
         // when to re-sign next.
@@ -626,28 +616,20 @@ impl ZoneServer {
                     info!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been approved."
                     );
-                    match Self::promote_zone_to_signable(center.clone(), zone_name) {
-                        Ok(()) => {
-                            self.on_unsigned_zone_approved(center, zone, zone_serial);
-                        }
-                        Err(err) => {
-                            error!(
-                                "Ignoring approval for '{zone_name}': zone could not be promoted to signable: {err}"
-                            );
-                        }
-                    }
+                    self.on_unsigned_zone_approved(center, zone, zone_serial);
                 } else {
                     error!(
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
                     );
-                    record_zone_event(
-                        center,
+
+                    // TODO: Whether to soft or hard reject should be part of the policy
+                    let mut state = zone.state.lock().unwrap();
+                    ZoneHandle {
                         zone,
-                        HistoricalEvent::UnsignedZoneReview {
-                            status: crate::api::ZoneReviewStatus::Rejected,
-                        },
-                        Some(zone_serial),
-                    );
+                        state: &mut state,
+                        center,
+                    }
+                    .hard_reject_loaded();
                 }
             }
 
@@ -683,14 +665,14 @@ impl ZoneServer {
                     error!(
                         "Signed zone '{zone_name}' with serial {zone_serial} has been rejected."
                     );
-                    record_zone_event(
-                        center,
+                    // TODO: Whether to soft or hard reject should be part of the policy
+                    let mut state = zone.state.lock().unwrap();
+                    ZoneHandle {
                         zone,
-                        HistoricalEvent::SignedZoneReview {
-                            status: crate::api::ZoneReviewStatus::Rejected,
-                        },
-                        Some(zone_serial),
-                    );
+                        state: &mut state,
+                        center,
+                    }
+                    .hard_reject_signed();
                 }
             }
 
@@ -698,30 +680,6 @@ impl ZoneServer {
         };
 
         Ok(ZoneReviewOutput {})
-    }
-
-    fn promote_zone_to_signable(
-        center: Arc<Center>,
-        zone_name: &StoredName,
-    ) -> Result<(), ZoneReviewError> {
-        let unsigned_zones = center.unsigned_zones.load();
-        let Some(zone) = unsigned_zones.get_zone(&zone_name, Class::IN) else {
-            debug!("Cannot promote zone '{zone_name}' to signable: zone not found'");
-            return Err(ZoneReviewError::NoSuchZone);
-        };
-
-        // Create a deep copy of the set of signable zones. We will add
-        // the new zone to that copied set and then replace the original
-        // set with the new set.
-        debug!("Promoting '{zone_name}' to signable");
-        center.signable_zones.rcu(|zones| {
-            let mut new_signable_zones = Arc::unwrap_or_clone(zones.clone());
-            let _ = new_signable_zones.remove_zone(zone_name, Class::IN);
-            new_signable_zones.insert_zone(zone.clone()).unwrap();
-            new_signable_zones
-        });
-
-        Ok(())
     }
 }
 

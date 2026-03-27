@@ -102,7 +102,7 @@ impl Loader {
         zone: &Arc<Zone>,
     ) -> Result<(), ZoneReloadError> {
         let mut zone_state = zone.state.lock().expect("lock is not poisoned");
-        if let Some(reason) = zone_state.halted(true) {
+        if let Some(reason) = zone_state.halted_reason() {
             return Err(ZoneReloadError::ZoneHalted(reason));
         }
         if let Source::None = zone_state.loader.source {
@@ -230,8 +230,8 @@ async fn refresh(
                 "The zone is up-to-date"
             );
 
-            // Cancel the load from the perspective of zone storage.
-            handle.storage().abandon_load(builder);
+            // Cancel the load
+            handle.abandon_load(builder);
         }
 
         Ok(true) => {
@@ -249,7 +249,7 @@ async fn refresh(
                 unreachable!("source-specific loading succeeded and must have filled 'builder'")
             });
 
-            handle.storage().finish_load(built);
+            handle.finish_load(built);
         }
 
         Err(err) => {
@@ -258,8 +258,8 @@ async fn refresh(
                 "Could not load the zone: {err}"
             );
 
-            // Cancel the load from the perspective of zone storage.
-            handle.storage().abandon_load(builder);
+            // Cancel the load
+            handle.abandon_load(builder);
         }
     }
 }
