@@ -172,7 +172,7 @@ jobs:
         rust: [stable]
         zonemd: [''] #, 'zmd384']
         policy: ['nsec', 'nsec3', 'nsec3-opt-out']
-        test_idx: [1, 2, 3]
+        test_idx: [1, 2, 3, 5]
         key: ['Kexample.+015+02835.key']
     steps:
       - uses: actions/checkout@v4
@@ -180,6 +180,32 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/incremental-signing
+        with:
+          log-level: ${{ inputs.log-level }}
+          zonemd: ${{ matrix.zonemd }}
+          policy: ${{ matrix.policy }}
+          test_idx: ${{ matrix.test_idx }}
+          key: ${{ matrix.key }}
+
+  incremental-signing-nsec-nsec3:
+    name: Test switching between NSEC and NSEC3
+    runs-on: ubuntu-latest
+    strategy:
+      #max-parallel: 1
+      matrix:
+        rust: [stable]
+        zonemd: [''] #, 'zmd384']
+        policy: ['nsec3/nsec', 'nsec3-opt-out/nsec', 'nsec/nsec3',
+                 'nsec3-opt-out/nsec3', 'nsec/nsec3-opt-out',
+                 'nsec3/nsec3-opt-out']
+        test_idx: [1, 2, 3]
+        key: ['Kexample.+015+02835.key']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/incremental-signing-nsec-nsec3
         with:
           log-level: ${{ inputs.log-level }}
           zonemd: ${{ matrix.zonemd }}
