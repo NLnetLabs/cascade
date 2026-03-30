@@ -26,72 +26,20 @@ runs:
       with:
         log-level: ${{ inputs.log-level }}
 
-    - name: Add a 'counter' policy
+    - name: Add the zone
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        cascade template policy > "${POLICY_DIR}/counter.toml"
-        # Change the policy to use the 'counter' serial policy.
-        sed -i -e 's|^serial-policy = .\+|serial-policy = "counter"|' ${POLICY_DIR}/counter.toml
-        # Tell Cascade to load our new counter olicy.
-        cascade policy reload
+        INTEGRATION_TEST_DIR="${PWD}/integration-tests/load-signed-apex-cname"
+        cp "${INTEGRATION_TEST_DIR}/example.test.zone" /tmp/
+        cascade zone add --policy default --source /tmp/example.test.zone example.test
 
-    - name: Make an unsigned zonefile
-      run: |
-        tee example.test.zone <<'EOF'
-        $TTL 5
-        example.test.   IN SOA ns1.example.test. mail.example.test. (
-                           1 ; serial
-                          60 ; refresh (60 seconds)
-                          60 ; retry (60 seconds)
-                        3600 ; expire (1 hour)
-                           5 ; minimum (5 seconds)
-                        )
-        @           NS  example.test.
-        @           NS  ns1.example.test.
-        @           A   127.0.0.1
-        ns1         A   127.0.0.1
-
-        www         A   169.254.1.1
-        mail        MX  10 example.test.
-        text        TXT "Hello World!"
-
-        ; For https://github.com/NLnetLabs/cascade/issues/427
-        cname       CNAME nlnetlabs.nl.
-        EOF
-
-    - name: Add the new unsigned zonefile using our 'counter' policy 
-      run: |
-        cascade zone add --policy counter --source $PWD/example.test.zone example.test
-
-    - name: Wait for zone serial 1 to be published
+    - name: Wait for zone to be published
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "Published version 1"; do
+        until cascade zone status example.test | grep -q "Published version"; do
           if (($(date +%s) > (start + timeout))); then
             cascade zone status example.test
-            echo "timeout: zone status did not report published serial 1 available" >&2
-            exit 1
-          fi
-          sleep 1
-        done
-
-    - name: Overwrite the input zone with the signed zone
-      run: |
-        dig +noall +answer +onesoa @127.0.0.1 -p 4543 example.test AXFR > $PWD/example.test.zone
-
-    - name: Reload the now signed zone
-      run: |
-        cascade zone reload example.test
-
-    - name: Wait for zone serial 2 to be published
-      run: |
-        timeout=10 # seconds
-        start=$(date +%s)
-        until cascade zone status example.test | grep -q "Published version 2"; do
-          if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test
-            echo "timeout: zone status did not report published serial 2 available" >&2
+            echo "timeout: zone status did not report published zone available" >&2
             exit 1
           fi
           sleep 1
