@@ -335,7 +335,7 @@ impl<'d> SignedZoneReplacer<'d> {
             return None;
         }
 
-        Some(SignedZoneReader::new(self.curr))
+        Some(SignedZoneReader::new(self.curr_loaded, self.curr))
     }
 
     /// Set the SOA record.
@@ -486,7 +486,7 @@ impl<'d> SignedZonePatcher<'d> {
 
     /// Read the current authoritative instance data.
     pub const fn curr(&self) -> SignedZoneReader<'d> {
-        SignedZoneReader::new(self.curr)
+        SignedZoneReader::new(self.curr_loaded, self.curr)
     }
 
     /// Remove the previous SOA record.

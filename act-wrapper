@@ -160,7 +160,7 @@ if [[ "$docker_stats" == true ]]; then
 fi
 
 echo "Running tests"
-act "${act_args[@]}" --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -W integration-tests/system-tests.yml "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
+act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -W integration-tests/system-tests.yml "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
 
 # Stop the docker stats collection process, if needed.
 if [[ "$docker_stats" == true ]]; then

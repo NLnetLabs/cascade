@@ -1,0 +1,34 @@
+# The policy file version.
+#
+# This is the only required option.  All other settings, and their defaults, are
+# associated with this version number.  More versions may be added in the future
+# and Cascade may drop support for older versions over time.
+#
+# - 'v1': This format.
+version = "v1"
+
+[loader.review]
+required = true
+cmd-hook = "<INTEGRATION_TEST_DIR>/hooks/unsigned-review-compare-to-original"
+
+[signer.review]
+required = true
+cmd-hook = "<INTEGRATION_TEST_DIR>/hooks/signed-review-compare-to-original"
+
+# How zones are signed.
+#
+# Note that certain records (e.g. DNSKEY and CDS records at the apex of the
+# zone) are signed by the key manager, rather than the zone signer; see the
+# `[key-manager.records]` section for configuring the signing of those records.
+[signer]
+
+# How SOA serial numbers are generated for signed zones.
+#
+# Supported options:
+# - 'keep': use the same serial number as the unsigned zone.
+# - 'counter': increment the serial number every time.
+# - 'unixtime': use the current Unix time, in seconds.
+# - 'date-counter': format the number as '<YYYY><MM><DD><xx>' in decimal.
+#     '<xx>' is a simple counter to allow up to 100 versions per day.
+serial-policy = "keep"
+

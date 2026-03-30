@@ -1,11 +1,12 @@
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
+use std::env::{VarError, var};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 
 use bytes::Bytes;
-use cascade_zonedata::{OldRecord, SignedZoneBuilder};
+use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
 use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
 use domain::base::{CanonicalOrd, Record};
@@ -25,7 +26,7 @@ use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_
 use domain::new::base::{RType, Serial};
 use domain::new::rdata::RecordData;
 use domain::rdata::dnssec::Timestamp;
-use domain::rdata::{Dnskey, Nsec3param};
+use domain::rdata::{Dnskey, Nsec3param, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
 use domain::zonetree::StoredName;
 use domain_kmip::KeyUrl;
@@ -59,7 +60,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, HistoricalEventType, PipelineMode, Zone, ZoneHandle};
+use crate::zone::{HistoricalEvent, HistoricalEventType, Zone, ZoneHandle};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -325,13 +326,6 @@ impl ZoneSigner {
             // Use a block to make sure that the mutex is clearly dropped.
             let zone_state = zone.state.lock().unwrap();
 
-            // Do NOT sign a zone that is halted.
-            if zone_state.pipeline_mode != PipelineMode::Running {
-                // TODO: This accidentally sets an existing soft-halt to a hard-halt.
-                // return Err(SignerError::PipelineIsHalted);
-                return Ok(());
-            }
-
             let last_signed_serial = zone_state
                 .find_last_event(HistoricalEventType::SigningSucceeded, None)
                 .and_then(|item| item.serial)
@@ -358,7 +352,10 @@ impl ZoneSigner {
                 if let Some(previous_serial) = last_signed_serial
                     && loaded_serial <= previous_serial
                 {
-                    return Err(SignerError::KeepSerialPolicyViolated);
+                    // TODO Ignore this error until we can figure out how to
+                    // return a soft error. Waits for new pipeline to
+                    // land.
+                    // return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
                 loaded_serial
@@ -431,7 +428,7 @@ impl ZoneSigner {
         //
         // Create a signing configuration.
         //
-        let signing_config = self.signing_config(&policy);
+        let signing_config = self.signing_config(&policy)?;
         let rrsig_cfg =
             GenerateRrsigConfig::new(signing_config.inception, signing_config.expiration);
 
@@ -443,9 +440,9 @@ impl ZoneSigner {
         let walk_start = Instant::now();
         // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
-            .records()
-            .iter()
-            .map(|r| OldRecord::from(r.clone()))
+            .unsigned_records()
+            .into_iter()
+            .map(OldRecord::from)
             .collect::<Vec<_>>();
         records.push(new_soa.clone().into());
         let walk_time = walk_start.elapsed();
@@ -779,41 +776,66 @@ impl ZoneSigner {
         // be re-implemented here with parallel execution in mind. This also
         // applies to NSEC(3) generation, but it is currently single-threaded.
 
-        // Split the records into segments.
-        let segments = rayon::iter::split(0..unsigned_records.len(), |range| {
-            // Always sign at least 1024 records at a time.
-            if range.len() < 1024 {
-                return (range, None);
-            }
+        // Disable parallel signing for now. This may also split RRsets.
+        let signatures = if false {
+            // Split the records into segments.
+            let segments = rayon::iter::split(0..unsigned_records.len(), |range| {
+                // Always sign at least 1024 records at a time.
+                if range.len() < 1024 {
+                    return (range, None);
+                }
 
-            let midpoint = range.start + range.len() / 2;
-            let left = range.start..midpoint;
-            let right = midpoint..range.end;
-            (left, Some(right))
-        });
+                let midpoint = range.start + range.len() / 2;
+                let left = range.start..midpoint;
+                let right = midpoint..range.end;
+                (left, Some(right))
+            });
 
-        // Generate signatures from each segment.
-        let signatures = segments.map(|range| {
-            sign_sorted_zone_records(
+            // Generate signatures from each segment.
+            let signatures = segments.map(|range| {
+                sign_sorted_zone_records(
+                    &zone.name,
+                    RecordsIter::new_from_owned(&unsigned_records[range]),
+                    &keys,
+                    &rrsig_cfg,
+                )
+            });
+
+            // Convert the signatures into new-base types and collect them together.
+            // If errors occur, one error is arbitrarily chosen and returned.
+            signatures
+                .try_fold(Vec::new, |mut a, b| {
+                    a.extend(b?.into_iter().map(|r| OldRecord::from_record(r).into()));
+                    Ok::<_, SigningError>(a)
+                })
+                .try_reduce(Vec::new, |mut a, mut b| {
+                    a.append(&mut b);
+                    Ok(a)
+                })
+                .map_err(|err| SignerError::SigningError(err.to_string()))?
+        } else {
+            let signatures = sign_sorted_zone_records(
                 &zone.name,
-                RecordsIter::new_from_owned(&unsigned_records[range]),
+                RecordsIter::new_from_owned(&unsigned_records),
                 &keys,
                 &rrsig_cfg,
             )
-        });
-
-        // Convert the signatures into new-base types and collect them together.
-        // If errors occur, one error is arbitrarily chosen and returned.
-        let signatures = signatures
-            .try_fold(Vec::new, |mut a, b| {
-                a.extend(b?.into_iter().map(|r| OldRecord::from_record(r).into()));
-                Ok::<_, SigningError>(a)
-            })
-            .try_reduce(Vec::new, |mut a, mut b| {
-                a.append(&mut b);
-                Ok(a)
-            })
             .map_err(|err| SignerError::SigningError(err.to_string()))?;
+            let signatures: Vec<RegularRecord> = signatures
+                .into_iter()
+                .map(|s| {
+                    let r = Record::new(
+                        s.owner().clone(),
+                        s.class(),
+                        s.ttl(),
+                        ZoneRecordData::Rrsig(s.data().clone()),
+                    );
+                    r.into()
+                })
+                .collect();
+            signatures
+        };
+
         let total_signatures = signatures.len();
 
         new_records.extend(signatures);
@@ -831,7 +853,7 @@ impl ZoneSigner {
         let reader = builder.next_signed().unwrap();
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
-        for record in reader.records() {
+        for record in reader.generated_records() {
             let RecordData::RRSig(sig) = record.rdata.get() else {
                 continue;
             };
@@ -901,18 +923,13 @@ impl ZoneSigner {
             Some(domain::base::Serial(serial.into())),
         );
 
-        // Notify the review server that the zone is ready.
-        info!("Instructing review server to publish the signed zone");
-        center.signed_review_server.on_seek_approval_for_zone(
-            center,
-            zone,
-            domain::base::Serial(serial.into()),
-        );
-
         Ok(())
     }
 
-    fn signing_config(&self, policy: &PolicyVersion) -> SigningConfig<Bytes, MultiThreadedSorter> {
+    fn signing_config(
+        &self,
+        policy: &PolicyVersion,
+    ) -> Result<SigningConfig<Bytes, MultiThreadedSorter>, SignerError> {
         let denial = match &policy.signer.denial {
             SignerDenialPolicy::NSec => DenialConfig::Nsec(Default::default()),
             SignerDenialPolicy::NSec3 { opt_out } => {
@@ -921,25 +938,39 @@ impl ZoneSigner {
             }
         };
 
-        let now = Timestamp::now().into_int();
+        let now = match var("CASCADE_FAKETIME") {
+            Ok(val) => val
+                .parse::<u32>()
+                .map_err(|e| SignerError::InternalError(format!("cannot parse {e} as u32")))?,
+            Err(VarError::NotPresent) => Timestamp::now().into_int(),
+            Err(e) => return Err(SignerError::InternalError(e.to_string())),
+        };
         let inception = now.wrapping_sub(policy.signer.sig_inception_offset);
         let expiration = now.wrapping_add(policy.signer.sig_validity_time);
-        SigningConfig::new(denial, inception.into(), expiration.into())
+        Ok(SigningConfig::new(
+            denial,
+            inception.into(),
+            expiration.into(),
+        ))
     }
 
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
-        let zone_tree = &center.unsigned_zones;
         let mut min_time = None;
         let now = SystemTime::now();
-        for zone in zone_tree.load().iter_zones() {
-            let zone_name = zone.apex_name();
+
+        #[allow(clippy::mutable_key_type)]
+        let zones = {
+            let state = center.state.lock().unwrap();
+            state.zones.clone()
+        };
+
+        for zone in zones {
+            let zone = &zone.0;
+            let zone_name = &zone.name;
 
             let min_expiration = {
                 // Use a block to make sure that the mutex is clearly dropped.
-                let state = center.state.lock().unwrap();
-                let zone = state.zones.get(zone_name).unwrap();
-                let zone_state = zone.0.state.lock().unwrap();
-
+                let zone_state = zone.state.lock().unwrap();
                 zone_state.min_expiration
             };
 
@@ -966,9 +997,7 @@ impl ZoneSigner {
 
             // Ensure that the Mutexes are locked only in this block;
             let remain_time = {
-                let state = center.state.lock().unwrap();
-                let zone = state.zones.get(zone_name).unwrap();
-                let zone_state = zone.0.state.lock().unwrap();
+                let zone_state = zone.state.lock().unwrap();
                 // TODO: what if there is no policy?
                 zone_state.policy.as_ref().unwrap().signer.sig_remain_time
             };
@@ -1591,6 +1620,7 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
     bytes
 }
 
+#[derive(Clone, Debug)]
 pub enum SignerError {
     SoaNotFound,
     SignerNotReady,

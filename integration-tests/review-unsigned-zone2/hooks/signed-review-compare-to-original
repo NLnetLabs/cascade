@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -e
+
+exec >/tmp/hook.out 2>&1
+echo "Signed review hook"
+
+TEST_DIR="<INTEGRATION_TEST_DIR>"
+
+export LC_ALL=C
+
+# Set the port for the unsigned review server manually until it gets passed
+# by Cascade.
+unsigned_review_port=4541
+
+case X"$CASCADE_SERIAL" in
+X11111)
+	ref="$TEST_DIR/reference-output/test1.sorted"
+;;
+X22222)
+	ref="$TEST_DIR/reference-output/test2.sorted"
+;;
+*)
+	exit 1
+;;
+esac
+diff -iwu <(dig +noall +answer +onesoa -p "$unsigned_review_port" @"$CASCADE_SERVER_IP" "$CASCADE_ZONE" axfr |
+	egrep -v '^$' | sort) \
+	<(cat "$ref")
+exit 0

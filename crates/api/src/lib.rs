@@ -68,6 +68,59 @@ impl std::fmt::Display for ZoneReviewError {
     }
 }
 
+//----------- ZoneReset --------------------------------------------------------
+
+/// The result of a `zone reset` command.
+pub type ZoneResetResult = Result<ZoneResetOutput, ZoneResetError>;
+
+/// The output of a `zone reset` command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneResetOutput {
+    pub zone: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneResetError {
+    NoSuchZone,
+    NotHalted,
+}
+
+impl std::fmt::Display for ZoneResetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoSuchZone => f.write_str("No such zone"),
+            Self::NotHalted => f.write_str("Zone is not halted"),
+        }
+    }
+}
+
+//----------- ZoneOverride -----------------------------------------------------
+
+/// The result of a `zone override` command.
+pub type ZoneOverrideResult = Result<ZoneOverrideOutput, ZoneOverrideError>;
+
+/// The output of a `zone override` command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneOverrideOutput {
+    pub zone: ZoneName,
+    pub review_stage: ZoneReviewStage,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneOverrideError {
+    NoSuchZone,
+    NotRejected,
+}
+
+impl std::fmt::Display for ZoneOverrideError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoSuchZone => f.write_str("No such zone"),
+            Self::NotRejected => f.write_str("Zone has not been rejected"),
+        }
+    }
+}
+
 //----------- ChangeLogging ----------------------------------------------------
 
 /// Change how Cascade logs information.
@@ -309,7 +362,7 @@ pub struct ZoneStatus {
     pub signing_report: Option<SigningReport>,
     pub published_serial: Option<Serial>,
     pub publish_addr: SocketAddr,
-    pub pipeline_mode: PipelineMode,
+    pub halted_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -552,8 +605,7 @@ impl fmt::Display for ZoneReloadError {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
-    pub soft_halted_zones: Vec<(ZoneName, String)>,
-    pub hard_halted_zones: Vec<(ZoneName, String)>,
+    pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
 }
 
@@ -835,6 +887,28 @@ pub mod keyset {
         pub key: String,
         pub force: bool,
         pub continue_flag: bool,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub struct KeyGet {
+        pub key_type: KeyGetType,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone)]
+    pub enum KeyGetType {
+        DS,
+        DNSKEY,
+        CDS,
+    }
+
+    impl std::fmt::Display for KeyGetType {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(match self {
+                Self::DS => "ds",
+                Self::DNSKEY => "dnskey",
+                Self::CDS => "cds",
+            })
+        }
     }
 
     #[derive(Deserialize, Serialize, Debug, Clone)]

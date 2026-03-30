@@ -18,6 +18,10 @@ Released yyyy-mm-dd.
 
 Released yyyy-mm-dd.
 
+### New
+
+- Add a CLI command to get the DS/DNSKEY/CDS RRset for a zone. ([#539])
+
 ### Bug fixes
 
 - A zone configured for unsigned review no longer fails to sign. ([#398] by
@@ -51,6 +55,7 @@ Released yyyy-mm-dd.
 [#428]: https://github.com/NLnetLabs/cascade/pull/428
 [#444]: https://github.com/NLnetLabs/cascade/pull/444
 [#468]: https://github.com/NLnetLabs/cascade/pull/468
+[#539]: https://github.com/NLnetLabs/cascade/pull/539
 
 ## 0.1.0-alpha5 'Colline de la Croix'
 
