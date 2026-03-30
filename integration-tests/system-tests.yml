@@ -216,3 +216,13 @@ jobs:
       - uses: ./integration-tests/tests/remove-zone
         with:
           log-level: ${{ inputs.log-level }}
+
+  load-signed-apex-cname:
+    name: 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/load-signed-apex-cname
