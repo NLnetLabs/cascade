@@ -97,7 +97,6 @@ impl HttpServer {
         });
 
         let app = Router::new()
-            .route("/", get(|| async { "Hello, World!" }))
             .route("/health", get(Self::health))
             .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
