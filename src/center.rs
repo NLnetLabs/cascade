@@ -10,6 +10,7 @@ use std::{
 use arc_swap::ArcSwap;
 use bytes::Bytes;
 use domain::base::iana::Class;
+use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use domain::{base::Name, zonetree::ZoneTree};
@@ -79,6 +80,9 @@ pub struct Center {
 
     /// Zones currently being re-signed.
     pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
+
+    /// Zones currently being re-signed. Refresh for incremental signing.
+    pub resign_busy2: Mutex<HashMap<Name<Bytes>, UnixTime>>,
 
     /// The old TSIG key store.
     pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,

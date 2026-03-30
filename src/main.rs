@@ -210,6 +210,7 @@ fn main() -> ExitCode {
         published_zones: Default::default(),
         old_tsig_key_store: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
+        resign_busy2: Mutex::new(HashMap::new()),
     });
 
     // Set up the rayon threadpool
