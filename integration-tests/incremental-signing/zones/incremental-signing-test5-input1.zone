@@ -2,7 +2,7 @@
 
 @ IN SOA ns hostmaster 12345 3600 3600 86400 3600
 
-; A Zone should have an NS record.
+; A zone should have an NS record.
 @ NS ns1
 
 ; Two TXT records, one of them changes.
