@@ -77,7 +77,7 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until dig +short @127.0.0.1 -p 4543 example SOA | grep 12345; do
+        until dig +short @127.0.0.1 -p 4542 example SOA | grep 12345; do
           if (($(date +%s) > (start + timeout))); then
             echo "::error:: timeout: published SOA does not contain 12345"
             exit 1
@@ -98,7 +98,7 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until dig +short @127.0.0.1 -p 4543 example SOA | grep 23456; do
+        until dig +short @127.0.0.1 -p 4542 example SOA | grep 23456; do
           if (($(date +%s) > (start + timeout))); then
             echo "::error:: timeout: published SOA does not contain 23456"
             exit 1
@@ -113,7 +113,7 @@ runs:
       run: |
         TEST_DIR="${PWD}/integration-tests/incremental-signing"
         cp "${TEST_DIR}/reference-output/incremental-signing-test${TEST_IDX}-input2.zone.${POLICY}.signed.sorted" reference.output.sorted
-        dig @127.0.0.1 -p 4543 example AXFR | egrep -v '^;|^$' | sort -u > output.sorted
+        dig @127.0.0.1 -p 4542 example AXFR | egrep -v '^;|^$' | sort -u > output.sorted
         diff -w -u output.sorted reference.output.sorted
 
     - name: Print log files on any failure in this job

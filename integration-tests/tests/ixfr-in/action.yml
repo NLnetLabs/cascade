@@ -68,7 +68,7 @@ runs:
 
     - name: Query SOA serial at Cascade unsigned review server
       run: |
-        SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
+        SOA_RR=$(dig +short @127.0.0.1 -p 4540 example.test SOA)
         if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 1 60 60 3600 5" ]]; then
           echo "::error:: Expected SOA serial '1' but dig reports '${SOA_RR}'"
           exit 1
@@ -108,7 +108,7 @@ runs:
 
     - name: Query changed SOA at Cascade unsigned review server
       run: |
-        SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
+        SOA_RR=$(dig +short @127.0.0.1 -p 4540 example.test SOA)
         if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 2 60 60 3600 5" ]]; then
           echo "::error:: Expected SOA serial '2' but dig reports '${SOA_RR}'"
           exit 1
@@ -161,7 +161,7 @@ runs:
 
     - name: Query changed SOA at Cascade unsigned review server
       run: |
-        SOA_RR=$(dig +short @127.0.0.1 -p 4541 example.test SOA)
+        SOA_RR=$(dig +short @127.0.0.1 -p 4540 example.test SOA)
         if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 3 60 60 3600 5" ]]; then
           echo "::error:: Expected SOA serial '3' but dig reports '${SOA_RR}'"
           exit 1
@@ -194,12 +194,12 @@ runs:
 
     - name: Query changed RRs at Cascade publication server
       run: |
-        WWW_A_RR=$(dig +short @127.0.0.1 -p 4543 www.example.test A)
+        WWW_A_RR=$(dig +short @127.0.0.1 -p 4542 www.example.test A)
         if [[ "${WWW_A_RR}" != "192.168.0.1" ]]; then
           echo "::error:: Expected modified RR but dig reports '${WWW_A_RR}'"
           exit 1
         fi
-        MAIL_MX_RR=$(dig +short @127.0.0.1 -p 4543 mail.example.test MX)
+        MAIL_MX_RR=$(dig +short @127.0.0.1 -p 4542 mail.example.test MX)
         if [[ "${MAIL_MX_RR}" != "20 example.test." ]]; then
           echo "::error:: Expected modified RR but dig reports '${MAIL_MX_RR}'"
           exit 1

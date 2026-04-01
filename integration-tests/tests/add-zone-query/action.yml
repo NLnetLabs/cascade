@@ -43,7 +43,7 @@ runs:
         done
     - name: Query zone
       run: |
-        dig @127.0.0.1 -p 4543 example.test AXFR
+        dig @127.0.0.1 -p 4542 example.test AXFR
     - name: Tell the NSD secondary that the zone is now available
       # Only necessary if NOTIFY is not setup for cascade
       run: |
