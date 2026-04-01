@@ -71,6 +71,7 @@ runs:
         SOA_RR=$(dig +short @127.0.0.1 -p 4540 example.test SOA)
         if [[ "${SOA_RR}" != "ns1.example.test. mail.example.test. 1 60 60 3600 5" ]]; then
           echo "::error:: Expected SOA serial '1' but dig reports '${SOA_RR}'"
+          dig @127.0.0.1 -p 4540 example.test AXFR
           exit 1
         fi
 
@@ -194,16 +195,10 @@ runs:
 
     - name: Query changed RRs at Cascade publication server
       run: |
-        WWW_A_RR=$(dig +short @127.0.0.1 -p 4542 www.example.test A)
-        if [[ "${WWW_A_RR}" != "192.168.0.1" ]]; then
-          echo "::error:: Expected modified RR but dig reports '${WWW_A_RR}'"
-          exit 1
-        fi
-        MAIL_MX_RR=$(dig +short @127.0.0.1 -p 4542 mail.example.test MX)
-        if [[ "${MAIL_MX_RR}" != "20 example.test." ]]; then
-          echo "::error:: Expected modified RR but dig reports '${MAIL_MX_RR}'"
-          exit 1
-        fi
+        # https://askubuntu.com/a/1232402
+        dig @127.0.0.1 -p 4542 example.test AXFR | tr -s '[:blank:]' ',' > dig-query.log
+        grep -qF "www.example.test.,5,IN,A,192.168.0.1" dig-query.log
+        grep -qF "mail.example.test.,5,IN,MX,20,example.test." dig-query.log
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
