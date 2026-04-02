@@ -1,6 +1,7 @@
 //! Cascade's central command.
 
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::{
     fmt, io,
     sync::{Arc, Mutex},
@@ -9,6 +10,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
+use cascade_api::{TsigAddError, TsigAddResult};
 use domain::base::iana::Class;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
@@ -20,6 +22,7 @@ use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::manager::record_zone_event;
+use crate::tsig::ImportError;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::ZoneServer;
 use crate::units::zone_signer::ZoneSigner;
@@ -90,7 +93,7 @@ pub async fn add_zone(
 ) -> Result<(), ZoneAddError> {
     let zone = Arc::new(Zone::new(name.clone()));
 
-    {
+    let source = {
         let mut state = center.state.lock().unwrap();
 
         // We check whether the state contains this zone, because
@@ -122,7 +125,38 @@ pub async fn add_zone(
         if !state.zones.insert(zone_by_name.clone()) {
             return Err(ZoneAddError::AlreadyExists);
         }
-    }
+
+        match source {
+            cascade_api::ZoneSource::None => crate::loader::Source::None,
+            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
+            cascade_api::ZoneSource::Server {
+                addr,
+                tsig_key,
+                xfr_status: _,
+            } => {
+                let tsig_key = if let Some(key_name) = tsig_key {
+                    // Verify that the key name is syntactically valid.
+                    let key_name = Name::from_str(&key_name)
+                        .map_err(|err| ZoneAddError::InvalidTsigKeyName(err.to_string()))?;
+
+                    // Lookup the key in the TSIG key store.
+                    let key = state
+                        .tsig_store
+                        .get(&key_name)
+                        .ok_or(ZoneAddError::NoSuchTsigKey)?
+                        .inner
+                        .clone();
+
+                    // Use the found key.
+                    Some(key)
+                } else {
+                    None
+                };
+
+                crate::loader::Source::Server { addr, tsig_key }
+            }
+        }
+    };
 
     // Send out a registration command so that prerequisites for zone setup
     // (such as invoking dnst keyset create, ..., init) can be done _before_
@@ -144,23 +178,6 @@ pub async fn add_zone(
 
     {
         let mut state = zone.state.lock().unwrap();
-
-        let source = match source {
-            cascade_api::ZoneSource::None => crate::loader::Source::None,
-            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
-            cascade_api::ZoneSource::Server {
-                addr,
-                tsig_key,
-                xfr_status: _,
-            } => {
-                // TODO: TSIG.
-                let _ = tsig_key;
-                crate::loader::Source::Server {
-                    addr,
-                    tsig_key: None,
-                }
-            }
-        };
 
         // Set the source of the zone, and begin loading it.
         LoaderZoneHandle {
@@ -252,6 +269,20 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 pub fn get_zone(center: &Arc<Center>, name: &StoredName) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
+}
+
+pub async fn add_tsig_key(
+    center: &Arc<Center>,
+    name: Name<octseq::Array<255>>,
+    alg: domain::tsig::Algorithm,
+    secret: &[u8],
+) -> Result<TsigAddResult, TsigAddError> {
+    crate::tsig::import_key(center, name.clone(), alg, secret, false)
+        .map_err(|ImportError::AlreadyExists| TsigAddError::AlreadyExists)?;
+
+    info!("Added TSIG key '{name}'");
+
+    Ok(TsigAddResult)
 }
 
 //----------- State ------------------------------------------------------------
@@ -362,6 +393,10 @@ pub enum ZoneAddError {
     NoSuchPolicy,
     /// The specified policy is being deleted.
     PolicyMidDeletion,
+    /// The specified TSIG key name is invalid.
+    InvalidTsigKeyName(String),
+    /// No TSIG key with that name exists.
+    NoSuchTsigKey,
     /// Some other error occurred.
     Other(String),
 }
@@ -374,6 +409,8 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::InvalidTsigKeyName(reason) => reason,
+            Self::NoSuchTsigKey => "no TSIG key with that name exists",
             Self::Other(reason) => reason,
         })
     }
@@ -385,6 +422,8 @@ impl From<ZoneAddError> for api::ZoneAddError {
             ZoneAddError::AlreadyExists => Self::AlreadyExists,
             ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
             ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
+            ZoneAddError::InvalidTsigKeyName(reason) => Self::InvalidTsigKeyName(reason),
+            ZoneAddError::NoSuchTsigKey => Self::NoSuchTsigKey,
             ZoneAddError::Other(reason) => Self::Other(reason),
         }
     }

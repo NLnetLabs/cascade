@@ -81,6 +81,10 @@ impl TsigStore {
         });
         self.enqueued_save = Some(task);
     }
+
+    pub fn get(&self, key_name: &tsig::KeyName) -> Option<&TsigKey> {
+        self.map.get(key_name)
+    }
 }
 
 //----------- Actions ----------------------------------------------------------

@@ -188,6 +188,35 @@ pub struct KmipKeyImport {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigAdd {
+    pub name: String,
+    pub alg: TsigAlgorithm,
+    pub secret: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigAddResult;
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum TsigAddError {
+    InvalidKeyName,
+    AlreadyExists,
+    InvalidAlgorithmName,
+    InvalidBase64Secret,
+}
+
+impl Display for TsigAddError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TsigAddError::InvalidKeyName => write!(f, "invalid TSIG key name"),
+            TsigAddError::AlreadyExists => write!(f, "TSIG key already exists"),
+            TsigAddError::InvalidAlgorithmName => write!(f, "invalid TSIG algorithm name"),
+            TsigAddError::InvalidBase64Secret => write!(f, "invalid TSIG base64 encoded secret"),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAdd {
     pub name: ZoneName,
     pub source: ZoneSource,
@@ -206,6 +235,8 @@ pub enum ZoneAddError {
     AlreadyExists,
     NoSuchPolicy,
     PolicyMidDeletion,
+    InvalidTsigKeyName(String),
+    NoSuchTsigKey,
     Other(String),
 }
 
@@ -215,6 +246,8 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::InvalidTsigKeyName(reason) => reason,
+            Self::NoSuchTsigKey => "no TSIG key with that name exists",
             Self::Other(reason) => reason,
         })
     }
@@ -291,17 +324,22 @@ impl Display for ZoneSource {
 }
 
 impl From<&str> for ZoneSource {
-    fn from(s: &str) -> Self {
+    fn from(mut s: &str) -> Self {
+        let tsig_key = s.split_once('!').map(|(new_s, k)| {
+            s = new_s;
+            k.to_string()
+        });
+
         if let Ok(addr) = s.parse::<SocketAddr>() {
             ZoneSource::Server {
                 addr,
-                tsig_key: None,
+                tsig_key,
                 xfr_status: Default::default(),
             }
         } else if let Ok(addr) = s.parse::<IpAddr>() {
             ZoneSource::Server {
                 addr: SocketAddr::new(addr, DEFAULT_AXFR_PORT),
-                tsig_key: None,
+                tsig_key,
                 xfr_status: Default::default(),
             }
         } else {
@@ -473,6 +511,26 @@ impl Display for KeyType {
             KeyType::Ksk => "ksk",
             KeyType::Csk => "csk",
             KeyType::Zsk => "zsk",
+        }
+        .fmt(f)
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum TsigAlgorithm {
+    Sha1,
+    Sha256,
+    Sha384,
+    Sha512,
+}
+
+impl Display for TsigAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TsigAlgorithm::Sha1 => "hmac-sha1",
+            TsigAlgorithm::Sha256 => "hmac-sha256",
+            TsigAlgorithm::Sha384 => "hmac-sha384",
+            TsigAlgorithm::Sha512 => "hmac-sha512",
         }
         .fmt(f)
     }

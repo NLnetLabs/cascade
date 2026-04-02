@@ -1,4 +1,5 @@
 use std::future::IntoFuture;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
@@ -21,6 +22,8 @@ use domain::base::Ttl;
 use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::rdata::Soa;
+use domain::tsig::Algorithm;
+use domain::utils::base64;
 use domain::zonetree::ReadableZone;
 use domain::zonetree::error::OutOfZone;
 use domain_kmip::ConnectionSettings;
@@ -102,6 +105,10 @@ impl HttpServer {
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
             .route("/debug/change-logging", post(Self::change_logging))
+            // .route("/tsig/", get(Self::tsig_keys_list))
+            .route("/tsig/add", post(Self::tsig_key_add))
+            // .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
+            // .route("/tsig/{name}/status", get(Self::tsig_key_status))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
@@ -1094,6 +1101,33 @@ impl HttpServer {
         zones.sort_by(|a, b| a.zone.cmp(&b.zone));
 
         Json(KeyStatusResult { expirations, zones })
+    }
+
+    async fn tsig_key_add(
+        State(state): State<Arc<HttpServer>>,
+        Json(tsig_add): Json<TsigAdd>,
+    ) -> Json<Result<TsigAddResult, TsigAddError>> {
+        let Ok(secret) = base64::decode::<Vec<u8>>(&tsig_add.secret) else {
+            return Json(Err(TsigAddError::InvalidBase64Secret));
+        };
+
+        let res = match Name::<octseq::Array<255>>::from_str(&tsig_add.name) {
+            Ok(tsig_key_name) => {
+                let alg = match tsig_add.alg {
+                    TsigAlgorithm::Sha1 => Algorithm::Sha1,
+                    TsigAlgorithm::Sha256 => Algorithm::Sha256,
+                    TsigAlgorithm::Sha384 => Algorithm::Sha384,
+                    TsigAlgorithm::Sha512 => Algorithm::Sha512,
+                };
+                center::add_tsig_key(&state.center, tsig_key_name, alg, &secret).await
+            }
+            Err(_err) => return Json(Err(TsigAddError::InvalidKeyName)),
+        };
+
+        match res {
+            Ok(TsigAddResult) => Json(Ok(TsigAddResult)),
+            Err(err) => Json(Err(err)),
+        }
     }
 }
 
