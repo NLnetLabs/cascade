@@ -50,20 +50,20 @@ pub enum TsigCommand {
     Add {
         /// The name of the TSIG key to add.
         ///
-        /// Can also be in the form [algorithm]:keyname:secret.
+        /// Can also be in the form `[algorithm]:keyname:secret`.
         name: String,
 
         /// The TSIG algorithm to use.
         ///
         /// Can be omitted if provided as part of the name.
-        /// Required if [SECRET] is provided.
+        /// Required if `[SECRET]` is provided.
         #[arg(requires = "secret")]
         alg: Option<TsigAlgorithm>,
 
         /// Base64 encoded secret key bytes.
         ///
         /// Can be omitted if provided as part of the name.
-        /// Required if [ALG] is provided.
+        /// Required if `[ALG]` is provided.
         #[arg(requires = "alg")]
         secret: Option<String>,
     },
