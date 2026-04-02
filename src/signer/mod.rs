@@ -30,6 +30,7 @@ use crate::{
     zone::{HistoricalEvent, Zone, ZoneHandle},
 };
 
+pub mod incremental;
 pub mod zone;
 
 //----------- sign() -----------------------------------------------------------
