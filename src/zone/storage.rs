@@ -28,7 +28,7 @@ use std::{fmt, sync::Arc};
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReader, LoadedZoneReviewer,
     SignedZoneBuilder, SignedZoneBuilt, SignedZonePersister, SignedZoneReader, SignedZoneReviewer,
-    ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::zonetree;
 use tracing::{info, trace, trace_span, warn};
@@ -804,6 +804,21 @@ impl StorageState {
             viewer,
             background_tasks: Default::default(),
         }
+    }
+
+    pub fn loaded_soa(&self) -> Option<&SoaRecord> {
+        let loaded = self.loaded_reviewer.read_loaded()?;
+        Some(loaded.soa())
+    }
+
+    pub fn signed_soa(&self) -> Option<&SoaRecord> {
+        let signed = self.signed_reviewer.read()?;
+        Some(signed.soa())
+    }
+
+    pub fn published_soa(&self) -> Option<&SoaRecord> {
+        let published = self.viewer.read()?;
+        Some(published.soa())
     }
 }
 
