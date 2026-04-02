@@ -1,4 +1,3 @@
-use std::ops::ControlFlow;
 use std::time::{Duration, SystemTime};
 
 use camino::Utf8PathBuf;
@@ -531,24 +530,28 @@ impl Zone {
             )
         })?;
 
-        // Determine progress
-        let progress = &zone.progress;
+        println!("zone: {}", zone.name);
+        println!("policy: {}", zone.policy);
+        println!("source: {}", zone.source);
+        println!("");
+
+        println!("last published:");
+        if let Some(last) = &zone.last_published {
+            println!("  loaded serial: <TODO>");
+            println!("  signed serial: {}", last.signed_serial);
+            println!("  timestamp: <TODO>");
+            println!("  size: <TODO> records (<TODO>B)");
+        } else {
+            println!("  <no versions published yet>");
+        }
+        println!("");
 
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
-        print_timeline(progress, &zone, &policy);
-
-        // If the pipeline is halted, show that.
-        if let Some(reason) = zone.halted_reason {
-            println!(
-                "{}\u{78} The pipeline for this zone is halted due to an error:{}",
-                ansi::RED,
-                ansi::RESET
-            );
-            println!("{}\u{78} {reason}{}", ansi::RED, ansi::RESET);
-        }
+        print_timeline(zone.progress, &zone, &policy);
 
         if detailed {
+            println!("");
             println!("DNSSEC keys:");
             for key in zone.keys {
                 match key.key_type {
@@ -572,355 +575,195 @@ impl Zone {
     }
 }
 
-pub fn print_timeline(max: &Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
-    println!(
-        "Status report for zone '{}' using policy '{}'",
-        zone.name, policy.name
+pub fn print_timeline(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
+    println!("current operation:");
+    print_load_phase(current, zone.unsigned_serial, &zone.receipt_report);
+    print_loaded_review_phase(&zone.name, zone.unsigned_serial, policy, current);
+    print_sign_phase(
+        current,
+        zone.unsigned_serial,
+        zone.signed_serial,
+        &zone.signing_report,
     );
-
-    let mut p = Progress::WaitingForChanges;
-    loop {
-        match p {
-            Progress::WaitingForChanges => print_waiting_for_changes(max, zone),
-            Progress::ChangesReceived => print_zone_received(zone),
-            Progress::AtUnsignedReview => print_pending_unsigned_review(max, zone, policy),
-            Progress::WaitingToSign => print_waiting_to_sign(max, zone),
-            Progress::Signing => print_signing(max, zone),
-            Progress::Signed => print_signed(max, zone, true),
-            Progress::SigningFailed => print_signed(max, zone, false),
-            Progress::AtSignedReview => print_pending_signed_review(max, zone, policy),
-            Progress::Published => print_published(max, zone),
-        }
-        match next_progress(&p, max) {
-            ControlFlow::Continue(next_p) => p = next_p,
-            ControlFlow::Break(()) => break,
-        }
-    }
+    print_signed_review_phase(&zone.name, zone.signed_serial, policy, current);
+    print_publish_phase(current);
 }
 
-fn next_progress(this: &Progress, max: &Progress) -> ControlFlow<(), Progress> {
-    let next = match this {
-        Progress::WaitingForChanges => Progress::ChangesReceived,
-        Progress::ChangesReceived => Progress::AtUnsignedReview,
-        Progress::AtUnsignedReview => Progress::WaitingToSign,
-        Progress::WaitingToSign => Progress::Signing,
-        Progress::Signing => Progress::Signed,
-        Progress::Signed => Progress::AtSignedReview,
-        Progress::SigningFailed => return ControlFlow::Break(()),
-        Progress::AtSignedReview => Progress::Published,
-        Progress::Published => return ControlFlow::Break(()),
-    };
-
-    if next > *max {
-        return ControlFlow::Break(());
-    }
-
-    ControlFlow::Continue(next)
-}
-
-fn print_waiting_for_changes(max: &Progress, zone: &ZoneStatus) {
-    let done = *max > Progress::WaitingForChanges;
-    let waiting_waited = match done {
-        true => "Waited",
-        false => "Waiting",
-    };
-    println!(
-        "{} {} for a new version of the {} zone",
-        status_icon(done),
-        waiting_waited,
-        zone.name
-    );
-
-    // TODO: When complete, show how long we waited.
-}
-
-fn print_zone_received(zone: &ZoneStatus) {
-    // TODO: we have no indication of whether a zone is currently being
-    // received or not, we can only say if it was received after the fact.
-    // Print how receival of the zone went.
-    let Some(report) = &zone.receipt_report else {
-        // This shouldn't happen.
-        println!(
-            "{}\u{78} The receipt report for this zone is unavailable.{}",
-            ansi::RED,
-            ansi::RESET
-        );
-        return;
-    };
-
-    let (loading_fetching, loaded_fetched, filesystem_network) = match zone.source {
-        ZoneSource::None => unreachable!(),
-        ZoneSource::Zonefile { .. } => ("Loading", "Loaded", "filesystem"),
-        ZoneSource::Server { .. } => ("Fetching", "Fetched", "network"),
-    };
-
-    match report.finished_at {
-        None => {
-            println!("{} {loading_fetching} ..", status_icon(false),);
-
-            println!(
-                "  {loaded_fetched} {} and parsed {} in {} seconds",
-                format_size(report.byte_count, " ", "B"),
-                format_size(report.record_count, "", " records"),
-                SystemTime::now()
-                    .duration_since(report.started_at)
-                    .unwrap()
-                    .as_secs()
-            );
-        }
-        Some(finished_at) => {
-            println!(
-                "{} Loaded {}",
-                status_icon(true),
-                serial_to_string(zone.unsigned_serial),
-            );
-
-            println!("  Loaded at {}", to_rfc3339_ago(report.finished_at));
-
-            println!(
-                "  {loaded_fetched} {} and {} from the {filesystem_network} in {} seconds",
-                format_size(report.byte_count, " ", "B"),
-                format_size(report.record_count, "", " records"),
-                finished_at
-                    .duration_since(report.started_at)
-                    .unwrap()
-                    .as_secs()
-            );
-        }
-    }
-}
-
-fn print_pending_unsigned_review(max: &Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
-    if !policy.loader.review.required {
-        println!(
-            "{} Auto approving signing of {}, no checks enabled in policy.",
-            status_icon(true),
-            serial_to_string(zone.unsigned_serial),
-        );
+fn print_load_phase(
+    current: Progress,
+    unsigned_serial: Option<Serial>,
+    receipt_report: &Option<ZoneLoaderReport>,
+) {
+    if current < Progress::Loading {
+        println!("  {Pending} load");
+    } else if current > Progress::Loading {
+        let unsigned_serial = serial_to_string(unsigned_serial);
+        println!("  {Done} load (serial: {unsigned_serial})");
     } else {
-        let done = *max > Progress::AtUnsignedReview;
-        let waiting_waited = match done {
-            true => "Waited",
-            false => "Waiting",
+        let short_serial = if let Some(unsigned_serial) = unsigned_serial {
+            format!(" (serial: {unsigned_serial})")
+        } else {
+            "".into()
         };
-        println!(
-            "{} {} for approval to sign {}",
-            status_icon(done),
-            waiting_waited,
-            serial_to_string(zone.unsigned_serial),
+        let unsigned_serial = serial_to_string(unsigned_serial);
+        let start_time = to_rfc3339_ago(
+            receipt_report.as_ref().map(|r| r.started_at),
+            "<not started yet>",
         );
-        if !done {
-            print_review_hook(done, &policy.loader.review.cmd_hook, zone, true);
+        println!("  {Ongoing} load{short_serial}");
+        println!("  |   serial: {unsigned_serial}");
+        println!("  |   start time: {start_time}");
+        println!("  |");
+    }
+}
+
+fn print_loaded_review_phase(
+    zone: &ZoneName,
+    serial: Option<Serial>,
+    policy: &PolicyInfo,
+    current: Progress,
+) {
+    use ansi::{BLUE, RED, RESET, YELLOW};
+    if current < Progress::LoadedReview {
+        println!("  {Pending} review loaded zone");
+    } else if current == Progress::LoadedReview {
+        if let Some(hook) = &policy.loader.review.cmd_hook {
+            println!("  {Ongoing} review loaded zone");
+            println!("  |   {BLUE}automatic zone review in progress{RESET}");
+            println!("  |   review hook: \"{hook}\"",);
+            println!("  |");
+        } else {
+            let serial = serial.unwrap();
+            println!("  {Stopped} review loaded zone");
+            println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            println!("  |   possible actions:");
+            println!("  |     {BLUE}cascade zone approve --unsigned {zone} {serial}{RESET}");
+            println!("  |     {BLUE}cascade zone reject --unsigned {zone} {serial}{RESET}");
+            println!("  |");
         }
-        // TODO: When complete, show how long we waited.
-    }
-}
-
-fn print_waiting_to_sign(max: &Progress, zone: &ZoneStatus) {
-    println!(
-        "{} Approval received to sign {}, signing requested",
-        status_icon(*max > Progress::WaitingToSign),
-        serial_to_string(zone.unsigned_serial)
-    );
-}
-
-fn print_signing(max: &Progress, zone: &ZoneStatus) {
-    if *max >= Progress::Signed {
-        return;
-    }
-
-    println!(
-        "{} Signing {}",
-        status_icon(*max > Progress::Signing),
-        serial_to_string(zone.unsigned_serial)
-    );
-    print_signing_progress(zone);
-}
-
-fn print_signed(max: &Progress, zone: &ZoneStatus, succeeded: bool) {
-    let (signed_failed, icon) = match succeeded {
-        true => ("Signed", status_icon(true)),
-        false => (
-            "Signing failed",
-            format!("{}\u{78}{}", ansi::RED, ansi::RESET),
-        ),
-    };
-    println!(
-        "{icon} {signed_failed} {} as {}",
-        serial_to_string(zone.unsigned_serial),
-        serial_to_string(zone.signed_serial)
-    );
-
-    print_signing_progress(zone);
-
-    if *max == Progress::Signed
-        && let Some(addr) = zone.signed_review_addr
-    {
-        println!("  Signed zone available on {addr}");
-    }
-}
-
-fn print_pending_signed_review(max: &Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
-    if !policy.signer.review.required {
-        println!(
-            "{} Auto approving publication of {}, no checks enabled in policy.",
-            status_icon(true),
-            serial_to_string(zone.signed_serial)
-        );
+    } else if current == Progress::HaltLoaded {
+        println!("  {Error} review loaded zone");
+        println!("  |   {RED}ERROR: zone was rejected{RESET}");
+        println!("  |   possible actions:");
+        println!("  |     {BLUE}cascade zone override {zone}{RESET}",);
+        println!("  |     {BLUE}cascade zone reset {zone}{RESET}",);
+        println!("  |");
     } else {
-        let done = *max > Progress::AtSignedReview;
-        let waiting_waited = match done {
-            true => "Waited",
-            false => "Waiting",
+        println!("  {Done} review loaded zone");
+    }
+}
+
+fn print_sign_phase(
+    current: Progress,
+    unsigned_serial: Option<Serial>,
+    signed_serial: Option<Serial>,
+    signing_report: &Option<SigningReport>,
+) {
+    if current < Progress::Signing {
+        println!("  {Pending} sign");
+    } else if current > Progress::Signing {
+        let signed_serial = serial_to_string(signed_serial);
+        println!("  {Done} sign (serial: {signed_serial})");
+    } else {
+        let start_time = match &signing_report.as_ref().map(|r| &r.stage_report) {
+            None => None,
+            Some(SigningStageReport::InProgress(r)) => Some(r.started_at),
+            Some(SigningStageReport::Requested(_)) => None,
+            Some(SigningStageReport::Finished(r)) => Some(r.started_at),
         };
+        let unsigned_serial = serial_to_string(unsigned_serial);
+
+        let short_signed_serial = if let Some(signed_serial) = signed_serial {
+            format!(" (serial: {signed_serial})")
+        } else {
+            "".into()
+        };
+        let signed_serial = serial_to_string(signed_serial);
+        println!("  {Ongoing} sign{short_signed_serial}");
+        println!("  |   loaded serial: {unsigned_serial}");
+        println!("  |   signed serial: {signed_serial}");
         println!(
-            "{} {} for approval to publish {}",
-            status_icon(*max > Progress::AtSignedReview),
-            waiting_waited,
-            serial_to_string(zone.signed_serial),
+            "  |   start time: {}",
+            to_rfc3339_ago(start_time, "<not started yet>")
         );
-        if !done {
-            print_review_hook(done, &policy.signer.review.cmd_hook, zone, false);
+        println!("  |");
+    }
+}
+
+fn print_signed_review_phase(
+    zone: &ZoneName,
+    signed_serial: Option<Serial>,
+    policy: &PolicyInfo,
+    current: Progress,
+) {
+    use ansi::{BLUE, RED, RESET, YELLOW};
+    if current < Progress::SignedReview {
+        println!("  {Pending} review signed zone");
+    } else if current == Progress::SignedReview {
+        if let Some(hook) = &policy.signer.review.cmd_hook {
+            println!("  {Ongoing} review signed zone");
+            println!("  |   {YELLOW}automatic zone review in progress{RESET}");
+            println!("  |   review hook: \"{hook}\"",);
+        } else {
+            let serial = signed_serial.unwrap();
+            println!("  {Stopped} review signed zone");
+            println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            println!("  |   possible actions:");
+            println!("  |     {BLUE}cascade zone approve --signed {zone} {serial}{RESET}");
+            println!("  |     {BLUE}cascade zone reject --signed {zone} {serial}{RESET}");
+            println!("  |");
         }
+    } else if current == Progress::HaltSigned {
+        println!("  {Error} review signed zone");
+        println!("  |   {RED}ERROR: zone was rejected{RESET}");
+        println!("  |   possible actions:");
+        println!("  |     {BLUE}cascade zone override {zone}{RESET}");
+        println!("  |     {BLUE}cascade zone reset {zone}{RESET}");
+        println!("  |");
+    } else {
+        println!("  {Done} review signed zone");
     }
 }
 
-fn print_published(max: &Progress, zone: &ZoneStatus) {
-    println!(
-        "{} Published {}",
-        status_icon(true),
-        serial_to_string(zone.published_serial),
-    );
-    if *max == Progress::Published {
-        println!("  Published zone available on {}", zone.publish_addr);
+fn print_publish_phase(current: Progress) {
+    if current < Progress::Published {
+        println!("  {Pending} publish");
+    } else {
+        println!("  {Done} publish");
     }
 }
 
-fn print_review_hook(done: bool, cmd_hook: &Option<String>, zone: &ZoneStatus, unsigned: bool) {
-    match cmd_hook {
-        Some(path) => println!("  Configured to invoke {path}"),
-        None => {
-            if !done {
-                let zone_name = &zone.name;
-                let (zone_type, zone_serial) = match unsigned {
-                    true => ("unsigned", zone.unsigned_serial),
-                    false => ("signed", zone.signed_serial),
-                };
-                println!("\u{0021} Zone will be held until manually approved");
-                if let Some(zone_serial) = zone_serial {
-                    println!(
-                        "  Approve with: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
-                    );
-                    println!(
-                        "  Reject with:  cascade zone reject --{zone_type} {zone_name} {zone_serial}"
-                    );
-                }
-            } else {
-                println!("  Zone was held until manually approved");
-            }
-        }
+enum Icon {
+    /// Operation had not yet been started
+    Pending,
+    /// Operation is ongoing
+    Ongoing,
+    /// Operation is waiting for user input
+    Stopped,
+    /// Operation has succeeded
+    Done,
+    /// Operation has errored
+    Error,
+}
+
+use Icon::{Done, Error, Ongoing, Pending, Stopped};
+
+impl std::fmt::Display for Icon {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ansi::{BLUE, GRAY, GREEN, RED, RESET, YELLOW};
+        let (color, character) = match self {
+            Self::Done => (GREEN, '\u{2714}'),     // tick ✔
+            Self::Ongoing => (BLUE, '\u{25CF}'),   // black circle ●
+            Self::Stopped => (YELLOW, '\u{25A0}'), // black square ■
+            Self::Pending => (GRAY, '\u{25CB}'),   // white circle ○
+            Self::Error => (RED, '\u{2A2F}'),      // cross ⨯
+        };
+        let s = format!("{color}{character}{RESET}");
+        f.write_str(&s)
     }
 }
 
-fn print_signing_progress(zone: &ZoneStatus) {
-    if let Some(report) = &zone.signing_report {
-        match &report.stage_report {
-            SigningStageReport::Requested(r) => {
-                println!(
-                    "  Signing requested at {}",
-                    to_rfc3339_ago(Some(r.requested_at))
-                );
-            }
-            SigningStageReport::InProgress(r) => {
-                println!(
-                    "  Signing requested at {}",
-                    to_rfc3339_ago(Some(r.requested_at))
-                );
-                println!(
-                    "  Signing started at {}",
-                    to_rfc3339_ago(Some(r.started_at))
-                );
-                if let (Some(unsigned_rr_count), Some(walk_time), Some(sort_time)) =
-                    (r.unsigned_rr_count, r.walk_time, r.sort_time)
-                {
-                    println!(
-                        "  Collected {} in {}, sorted in {}",
-                        format_size(unsigned_rr_count, "", " records"),
-                        format_duration(walk_time),
-                        format_duration(sort_time)
-                    );
-                }
-                if let (Some(denial_rr_count), Some(denial_time)) =
-                    (r.denial_rr_count, r.denial_time)
-                {
-                    println!(
-                        "  Generated {} in {}",
-                        format_size(denial_rr_count, "", " NSEC(3) records"),
-                        format_duration(denial_time)
-                    );
-                }
-                if let (Some(rrsig_count), Some(rrsig_time)) = (r.rrsig_count, r.rrsig_time) {
-                    println!(
-                        "  Generated {} in {} ({} sig/s)",
-                        format_size(rrsig_count, "", " signatures"),
-                        format_duration(rrsig_time),
-                        rrsig_count / (rrsig_time.as_secs() as usize)
-                    );
-                }
-                if let Some(threads_used) = r.threads_used {
-                    println!("  Using {threads_used} threads to generate signatures");
-                }
-            }
-            SigningStageReport::Finished(r) => {
-                println!(
-                    "  Signing requested at {}",
-                    to_rfc3339_ago(Some(r.requested_at))
-                );
-                println!(
-                    "  Signing started at {}",
-                    to_rfc3339_ago(Some(r.started_at))
-                );
-                println!(
-                    "  Signing finished at {}",
-                    to_rfc3339_ago(Some(r.finished_at))
-                );
-                println!(
-                    "  Collected {} in {}, sorted in {}",
-                    format_size(r.unsigned_rr_count, "", " records"),
-                    format_duration(r.walk_time),
-                    format_duration(r.sort_time)
-                );
-                println!(
-                    "  Generated {} in {}",
-                    format_size(r.denial_rr_count, "", " NSEC(3) records"),
-                    format_duration(r.denial_time)
-                );
-                println!(
-                    "  Generated {} in {} ({} sig/s)",
-                    format_size(r.rrsig_count, "", " signatures"),
-                    format_duration(r.rrsig_time),
-                    r.rrsig_count
-                        .checked_div(r.rrsig_time.as_secs() as usize)
-                        .unwrap_or(r.rrsig_count),
-                );
-                println!(
-                    "  Took {} in total, using {} threads",
-                    format_duration(r.total_time),
-                    r.threads_used
-                );
-            }
-        }
-        println!("  Current action: {}", report.current_action);
-    }
-}
-
-fn status_icon(done: bool) -> String {
-    match done {
-        true => format!("{}\u{2714}{}", ansi::GREEN, ansi::RESET), // tick ✔
-        false => format!("{}\u{2022}{}", ansi::YELLOW, ansi::RESET), // bullet •
-    }
-}
-
+#[expect(dead_code)]
 fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
     match v {
         n if n > 1_000_000 => format!("{}{spacer}M{suffix}", n / 1_000_000),
@@ -931,12 +774,12 @@ fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
 
 fn serial_to_string(serial: Option<Serial>) -> String {
     match serial {
-        Some(serial) => format!("version {serial}"),
-        None => "<serial number not yet known>".to_string(),
+        Some(serial) => format!("{serial}"),
+        None => "<not yet known>".to_string(),
     }
 }
 
-fn to_rfc3339_ago(v: Option<SystemTime>) -> String {
+fn to_rfc3339_ago(v: Option<SystemTime>, default: &str) -> String {
     match v {
         Some(v) => {
             let now = jiff::Zoned::now().round(jiff::Unit::Second).unwrap();
@@ -953,7 +796,7 @@ fn to_rfc3339_ago(v: Option<SystemTime>) -> String {
                 .unwrap();
             format!("{} ({span:#} ago)", now.datetime())
         }
-        None => "Not yet finished".to_string(),
+        None => default.to_string(),
     }
 }
 
@@ -965,6 +808,7 @@ fn to_rfc3339(v: SystemTime) -> String {
         .to_string()
 }
 
+#[expect(dead_code)]
 fn format_duration(duration: Duration) -> String {
     format!(
         "{:#}",

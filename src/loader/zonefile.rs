@@ -4,6 +4,7 @@ use std::{
     fmt,
     fs::File,
     sync::{Arc, atomic::Ordering::Relaxed},
+    time::Duration,
 };
 
 use bytes::BufMut;
@@ -41,6 +42,7 @@ pub fn load(
     // Parse all the records, extracting the SOA. We always read the whole zone.
     while let Some(record) = parse_record(&mut buf, zone, &mut reader)? {
         metrics.num_loaded_records.fetch_add(1, Relaxed);
+        std::thread::sleep(Duration::from_secs(3));
         match record {
             Parsed::Soa(soa) => {
                 writer.set_soa(soa)?;

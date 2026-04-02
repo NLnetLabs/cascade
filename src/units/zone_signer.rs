@@ -864,6 +864,7 @@ impl ZoneSigner {
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
         for record in reader.generated_records() {
+            std::thread::sleep(Duration::from_secs(3));
             let RecordData::RRSig(sig) = record.rdata.get() else {
                 continue;
             };
