@@ -106,8 +106,7 @@ mod tsig_base64 {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let data = base64::decode::<Vec<u8>>(&s)
-            .map_err(serde::de::Error::custom)?;
+        let data = base64::decode::<Vec<u8>>(&s).map_err(serde::de::Error::custom)?;
         Ok(data.into())
     }
 }
