@@ -112,8 +112,16 @@ Examples of things we're interested in:
 .. toctree::
    :maxdepth: 2
    :hidden:
-   :caption: Integrations
-   :name: toc-integrations
+   :caption: Nameserver Integrations
+   :name: toc-nameserver-integrations
+
+   nsd
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: HSM Integrations
+   :name: toc-hsm-integrations
 
    softhsm
    thales
