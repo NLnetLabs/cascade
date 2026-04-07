@@ -243,7 +243,9 @@ impl WorkSpace<'_> {
             <UnixTime as Into<Duration>>::into(now.clone())
                 - <UnixTime as Into<Duration>>::into(curr_last_signature_refresh.clone())
         } else {
-            Duration::ZERO
+            // Use 60 seconds when times are weird. This should get things
+            // back in sync.
+            Duration::from_secs(60)
         };
 
         // Limit to effective_lifetime in case of weird values.
@@ -256,6 +258,8 @@ impl WorkSpace<'_> {
         let to_sign = since_last_time.as_secs_f64() * (total_signatures as f64)
             / effective_lifetime.as_secs_f64();
         let to_sign = to_sign.ceil() as usize;
+
+        dbg!(to_sign);
 
         // Collect expiration times, owner names, and types to figure out what
         // to sign.
@@ -284,6 +288,7 @@ impl WorkSpace<'_> {
             }
 
             let key = ((*owner).clone(), **rtype);
+            dbg!(&key);
             if **rtype == Rtype::NSEC {
                 let record = iss.nsecs.get(&key.0).expect("NSEC record should exist");
                 let records = [record.clone()];
@@ -307,7 +312,12 @@ impl WorkSpace<'_> {
                     &mut new_sigs,
                 )?;
             } else {
-                let records = iss.new_data.get(&key).expect("records should exist");
+                let records = if key.0 == iss.origin {
+                    iss.new_apex.get(&key.1)
+                } else {
+                    iss.new_data.get(&key)
+                }
+                .expect("records should exist");
                 sign_records(
                     &iss.origin,
                     records,
@@ -495,7 +505,12 @@ impl WorkSpace<'_> {
                     &mut new_sigs,
                 )?;
             } else {
-                let records = iss.new_data.get(&key).expect("records should exist");
+                let records = if key.0 == iss.origin {
+                    iss.new_apex.get(&key.1)
+                } else {
+                    iss.new_data.get(&key)
+                }
+                .expect("records should exist");
                 sign_records(
                     &iss.origin,
                     records,

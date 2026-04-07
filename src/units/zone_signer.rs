@@ -1,6 +1,7 @@
 // Allow println! for now.
 #![allow(clippy::disallowed_macros)]
 
+use std::time::UNIX_EPOCH;
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
 use std::env::{VarError, var};
@@ -805,7 +806,9 @@ impl ZoneSigner {
             state.zones.clone()
         };
 
-        for zone in zones {
+        // This the old expiration time based on the signature that
+        // expires first. It should be removed.
+        for zone in &zones {
             let zone = &zone.0;
             let zone_name = &zone.name;
 
@@ -852,6 +855,63 @@ impl ZoneSigner {
                 Some(exp_time)
             };
         }
+
+        // Compute when to incrementally sign a zone again to refresh
+        // signatures.
+        for zone in zones {
+            let zone = &zone.0;
+            let zone_name = &zone.name;
+
+            let last_signature_refresh = {
+                // Use a block to make sure that the mutex is clearly dropped.
+                let zone_state = zone.state.lock().unwrap();
+                zone_state.last_signature_refresh.clone()
+            };
+
+            // Ensure that the Mutexes are locked only in this block;
+            let signature_refresh_interval = {
+                let zone_state = zone.state.lock().unwrap();
+                // TODO: what if there is no policy?
+                zone_state
+                    .policy
+                    .as_ref()
+                    .unwrap()
+                    .signer
+                    .signature_refresh_interval
+            };
+
+            println!(
+                "Got last_signature_refresh {last_signature_refresh:?} and signature_refresh_interval {signature_refresh_interval} for zone {zone_name}"
+            );
+
+            let curr_refresh_time = last_signature_refresh.clone()
+                + Duration::from_secs(signature_refresh_interval as u64);
+
+            // Start a new block to make sure the mutex is released.
+            {
+                let mut resign_busy2 = center.resign_busy2.lock().expect("should not fail");
+                let opt_refresh_time = resign_busy2.get(zone_name);
+                if let Some(saved_refresh_time) = opt_refresh_time {
+                    if *saved_refresh_time == curr_refresh_time {
+                        // This zone is busy.
+                        trace!("[ZS]: resign: zone {zone_name} is busy");
+                        continue;
+                    }
+
+                    // Zone has been resigned. Remove this entry.
+                    resign_busy2.remove(zone_name);
+                }
+            }
+
+            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
+
+            println!("min_time {min_time:?} and refresh_time {refresh_time:?}");
+            min_time = if let Some(time) = min_time {
+                Some(min(time, refresh_time))
+            } else {
+                Some(refresh_time)
+            };
+        }
         min_time.map(|t| {
             // We need to go from SystemTime to Tokio Instant, is there a
             // better way?
@@ -875,7 +935,8 @@ impl ZoneSigner {
             state.zones.clone()
         };
 
-        for zone in zones {
+        // Note: should be removed.
+        for zone in &zones {
             let zone = &zone.0;
             let zone_name = &zone.name;
 
@@ -918,6 +979,63 @@ impl ZoneSigner {
                 {
                     let mut resign_busy = center.resign_busy.lock().expect("should not fail");
                     resign_busy.insert(zone_name.clone(), min_expiration);
+                }
+                let mut state = zone.state.lock().unwrap();
+                ZoneHandle {
+                    zone,
+                    state: &mut state,
+                    center,
+                }
+                .signer()
+                .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
+            }
+        }
+        for zone in zones {
+            let zone = &zone.0;
+            let zone_name = &zone.name;
+
+            let last_signature_refresh = {
+                // Use a block to make sure that the mutex is clearly dropped.
+                let zone_state = zone.state.lock().unwrap();
+                zone_state.last_signature_refresh.clone()
+            };
+
+            // Ensure that the Mutexes are locked only in this block;
+            let signature_refresh_interval = {
+                let zone_state = zone.state.lock().unwrap();
+                // What if there is no policy?
+                zone_state
+                    .policy
+                    .as_ref()
+                    .unwrap()
+                    .signer
+                    .signature_refresh_interval
+            };
+
+            let curr_refresh_time = last_signature_refresh.clone()
+                + Duration::from_secs(signature_refresh_interval as u64);
+
+            // Start a new block to make sure the mutex is released.
+            {
+                let resign_busy2 = center.resign_busy2.lock().expect("should not fail");
+                let opt_refresh_time = resign_busy2.get(zone_name);
+                if let Some(saved_refresh_time) = opt_refresh_time
+                    && *saved_refresh_time == curr_refresh_time
+                {
+                    // This zone is busy.
+                    continue;
+                }
+            }
+
+            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time.clone());
+
+            if refresh_time < now {
+                trace!("[ZS]: re-signing: request signing of zone {zone_name}");
+
+                // Start a new block to make sure the mutex is released.
+                {
+                    let mut resign_busy2 = center.resign_busy2.lock().expect("should not fail");
+                    resign_busy2.insert(zone_name.clone(), curr_refresh_time);
                 }
                 let mut state = zone.state.lock().unwrap();
                 ZoneHandle {
