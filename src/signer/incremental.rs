@@ -64,6 +64,7 @@ pub fn sign_incrementally(
     // signatures need to be updated.
     // Resign using the unsigned zonefile when load_unsigned is true.
 
+        status.write().unwrap().current_action = "Start incremental signing".to_string();
     let load_unsigned = patch.next_loaded().is_some();
 
     let origin = &zone.name;
@@ -195,7 +196,9 @@ pub fn sign_incrementally(
         println!("incremental signing took {:?}", start.elapsed());
     }
 
+	let start = Instant::now();
     ws.incremental_generate_diffs(&iss)?;
+	println!("generating diffs took {:?}", start.elapsed());
 
     ws.patch.apply().unwrap();
     Ok(())
@@ -630,8 +633,18 @@ impl WorkSpace<'_> {
         &mut self,
         iss: &IncrementalSigningState,
     ) -> Result<(), SignerError> {
+        let signing_rtypes = HashSet::from([Rtype::DNSKEY]);
+
+        // For signing_rtypes diff against old_apex_saved. For all other
+        // types diff against new_apex_saved. Ignore the diff against
+        // new_apex_saved; that is currently not supported in the zone store.
+
         // apex records that were deleted.
         for (k, old_rrs) in &iss.old_apex_saved {
+            if !signing_rtypes.contains(k) {
+                // Ignore. Should diff againt new_apex_saved.
+            }
+
             if *k == Rtype::SOA {
                 // Just remove the old SOA record. There should be only one,
                 // just remove all if there is more than one.
@@ -677,6 +690,11 @@ impl WorkSpace<'_> {
                 }
                 continue;
             }
+
+            if !signing_rtypes.contains(k) {
+                // Ignore. Should diff againt new_apex_saved.
+            }
+
             if let Some(old_rrs) = iss.old_apex_saved.get(k) {
                 if new_rrs == old_rrs {
                     // No change.
