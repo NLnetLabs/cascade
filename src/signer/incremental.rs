@@ -4,6 +4,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
 
+use tracing::info;
+use tracing::debug;
 use bytes::{Bytes, BytesMut};
 use cascade_zonedata::{
     LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
@@ -85,7 +87,6 @@ pub fn sign_incrementally(
     let mut ws = WorkSpace {
         keyset_state,
         use_nsec3,
-        verbose: true,
         policy: policy.clone(),
         zone: zone.clone(),
         center: center.clone(),
@@ -111,12 +112,10 @@ pub fn sign_incrementally(
         > curr_last_signature_refresh.clone()
             + Duration::from_secs(ws.policy.signer.signature_refresh_interval.into())
     {
-        if ws.verbose {
-            println!(
+	debug!(
                 "refresh signatures: {now} > {curr_last_signature_refresh} + {:?}",
                 ws.policy.signer.signature_refresh_interval
             );
-        }
         refresh_signatures = true;
     }
 
@@ -136,18 +135,14 @@ pub fn sign_incrementally(
 
     let start = Instant::now();
     iss.load_signed_zone(&ws.patch.curr())?;
-    if ws.verbose {
-        println!("loading signed zone took {:?}", start.elapsed());
-    }
+    info!("loading signed zone took {:?}", start.elapsed());
 
     ws.handle_nsec_nsec3(&mut iss)?;
 
     if load_unsigned {
         let start = Instant::now();
         iss.load_unsigned_zone(&ws.patch.next_loaded().expect("should be there"))?;
-        if ws.verbose {
-            println!("loading new unsigned zone took {:?}", start.elapsed());
-        }
+            info!("loading new unsigned zone took {:?}", start.elapsed());
     } else {
         // Re-use the signed data.
         iss.load_signed_only();
@@ -168,9 +163,7 @@ pub fn sign_incrementally(
     if !ws.zonemd.is_empty() {
         let start = Instant::now();
         ws.add_zonemd(&mut iss)?;
-        if ws.verbose {
-            println!("ZONEMD took {:?}", start.elapsed());
-        }
+            info!("ZONEMD took {:?}", start.elapsed());
     }
 
     if refresh_signatures {
@@ -180,13 +173,11 @@ pub fn sign_incrementally(
             ws.key_roll_signatures(&mut iss)?;
         }
     }
-    if ws.verbose {
-        println!("incremental signing took {:?}", start.elapsed());
-    }
+        info!("incremental signing took {:?}", start.elapsed());
 
 	let start = Instant::now();
     ws.incremental_generate_diffs(&iss)?;
-	println!("generating diffs took {:?}", start.elapsed());
+	info!("generating diffs took {:?}", start.elapsed());
 
     ws.patch.apply()
 	.map_err(|e| SignerError::PatchFailed(format!("apply failed: {e}")))?;
@@ -203,7 +194,6 @@ type ChangesValue = (RtypeSet, RtypeSet); // add set followed by delete set.
 struct WorkSpace<'a> {
     pub keyset_state: KeySetState,
     pub use_nsec3: bool,
-    pub verbose: bool,
     pub policy: Arc<PolicyVersion>,
     pub zone: Arc<Zone>,
     pub center: Arc<Center>,
@@ -511,7 +501,7 @@ impl WorkSpace<'_> {
 
         let curr_apex_remove = &self.local_state.apex_remove;
         if apex_remove != *curr_apex_remove {
-            println!("apex remove RRtypes changed: from {curr_apex_remove:?} to {apex_remove:?}",);
+            info!("apex remove RRtypes changed: from {curr_apex_remove:?} to {apex_remove:?}",);
 	    self.local_state.apex_remove = apex_remove;
             apex_changed = true;
         }
@@ -524,7 +514,7 @@ impl WorkSpace<'_> {
 
         let curr_apex_extra = &self.local_state.apex_extra;
         if apex_extra != *curr_apex_extra {
-            println!("apex extra changed: from {curr_apex_extra:?} to {apex_extra:?}",);
+            info!("apex extra changed: from {curr_apex_extra:?} to {apex_extra:?}",);
 	    self.local_state.apex_extra = apex_extra;
             apex_changed = true;
         }
@@ -548,7 +538,7 @@ impl WorkSpace<'_> {
 
         let curr_key_tags = &self.local_state.key_tags;
         if key_tags != *curr_key_tags {
-            println!("key tags changed: from {curr_key_tags:?} to {key_tags:?}",);
+            info!("key tags changed: from {curr_key_tags:?} to {key_tags:?}",);
 	    self.local_state.key_tags = key_tags;
 	    self.local_state.key_roll = Some(faketime_or_now());
             apex_changed = true;
@@ -646,14 +636,12 @@ impl WorkSpace<'_> {
                         continue;
                     }
                     let r: RegularRecord = r.clone().into();
-                    println!("apex patch.add {r:?}");
                     self.patch.add(r.clone())
 			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
                 }
             } else {
                 for r in new_rrs {
                     let r: RegularRecord = r.clone().into();
-                    println!("apex patch.add {r:?}");
                     self.patch.add(r.clone())
 			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
                 }
@@ -929,9 +917,7 @@ impl WorkSpace<'_> {
                 //all.sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
                 all.par_sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
 
-                if self.verbose {
-                    println!("ZONEMD prepare and sort took {:?}", start.elapsed());
-                }
+                    info!("ZONEMD prepare and sort took {:?}", start.elapsed());
 
                 let start = Instant::now();
 
@@ -967,9 +953,7 @@ impl WorkSpace<'_> {
                     zonemd_records.push(record);
                 }
 
-                if self.verbose {
-                    println!("ZONEMD hash took {:?}", start.elapsed());
-                }
+                    info!("ZONEMD hash took {:?}", start.elapsed());
 
                 let key = (iss.origin.clone(), Rtype::ZONEMD);
                 let mut new_sigs = vec![];
@@ -1120,34 +1104,6 @@ impl WorkSpace<'_> {
         }
     }
 
-    /*
-        fn run_notify_command(&self) -> Result<(), Error> {
-            if self.config.notify_command.is_empty() {
-                return Ok(()); // Nothing to do.
-            }
-
-            let output = Command::new(&self.config.notify_command[0])
-                .args(&self.config.notify_command[1..])
-                .output()
-                .map_err(|e| {
-                    format!(
-                        "unable to create new Command for {}: {e}",
-                        self.config.notify_command[0]
-                    )
-                })?;
-            if !output.status.success() {
-                println!("notify command failed with: {}", output.status);
-                io::stdout()
-                    .write_all(&output.stdout)
-                    .map_err(|e| format!("unable to write to stdout: {e}"))?;
-                io::stderr()
-                    .write_all(&output.stderr)
-                    .map_err(|e| format!("unable to write to stderr: {e}"))?;
-            }
-            Ok(())
-        }
-    */
-
     pub fn sign_pass_through(&mut self) -> Result<(), SignerError> {
         todo!();
         /*
@@ -1169,9 +1125,7 @@ impl WorkSpace<'_> {
 
                 let start = Instant::now();
                 load_signed_zone(&mut iss, &self.config.zonefile_in)?;
-                if self.verbose {
-                    println!("loading signed zone took {:?}", start.elapsed());
-                }
+                    info!("loading signed zone took {:?}", start.elapsed());
 
                 // Re-use the signed data.
                 load_signed_only(&mut iss);
@@ -1330,7 +1284,7 @@ impl WorkSpace<'_> {
                 let start = Instant::now();
                 iss.remove_nsec_nsec3();
                 iss.new_nsec_chain()?;
-                println!("replacing NSEC3 with NSEC took {:?}", start.elapsed());
+                info!("replacing NSEC3 with NSEC took {:?}", start.elapsed());
                 return Ok(());
             }
             let ZoneRecordData::Nsec3param(nsec3param) = nsec3param_records[0].data() else {
@@ -1341,9 +1295,7 @@ impl WorkSpace<'_> {
                 let start = Instant::now();
                 iss.remove_nsec_nsec3();
                 iss.new_nsec3_chain()?;
-                if self.verbose {
-                    println!("updating NSEC3 parameters took {:?}", start.elapsed());
-                }
+                    info!("updating NSEC3 parameters took {:?}", start.elapsed());
                 return Ok(());
             }
         } else {
@@ -1353,7 +1305,7 @@ impl WorkSpace<'_> {
                 let start = Instant::now();
                 iss.remove_nsec_nsec3();
                 iss.new_nsec3_chain()?;
-                println!("replacing NSEC with NSEC3 took {:?}", start.elapsed());
+                info!("replacing NSEC with NSEC3 took {:?}", start.elapsed());
                 return Ok(());
             }
             // Stay with NSEC.

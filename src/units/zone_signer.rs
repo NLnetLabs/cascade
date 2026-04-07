@@ -877,10 +877,6 @@ impl ZoneSigner {
                         .signature_refresh_interval
                 };
 
-                println!(
-                    "Got last_signature_refresh {last_signature_refresh:?} and signature_refresh_interval {signature_refresh_interval} for zone {zone_name}"
-                );
-
                 let curr_refresh_time = last_signature_refresh.clone()
                     + Duration::from_secs(signature_refresh_interval as u64);
 
@@ -902,7 +898,6 @@ impl ZoneSigner {
 
                 let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
 
-                println!("min_time {min_time:?} and refresh_time {refresh_time:?}");
                 min_time = if let Some(time) = min_time {
                     Some(min(time, refresh_time))
                 } else {
