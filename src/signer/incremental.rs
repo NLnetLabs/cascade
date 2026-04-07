@@ -73,9 +73,12 @@ pub fn sign_incrementally(
         .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
     let keyset_state: KeySetState = serde_json::from_str(&state).unwrap();
 
-    let policy = {
+    let (policy, curr_last_signature_refresh, curr_key_roll);
+    {
         let zone_state = zone.state.lock().unwrap();
-        zone_state.policy.clone().unwrap()
+        policy = zone_state.policy.clone().unwrap();
+        curr_last_signature_refresh = zone_state.last_signature_refresh.clone();
+	curr_key_roll = zone_state.key_roll.clone();
     };
 
     let use_nsec3 = match &policy.signer.denial {
@@ -104,13 +107,6 @@ pub fn sign_incrementally(
 
     let mut refresh_signatures = false;
     let now = faketime_or_now();
-    let curr_last_signature_refresh = {
-        // Use a block to make sure that the mutex is clearly dropped.
-        let zone_state = ws.zone.state.lock().unwrap();
-
-        zone_state.last_signature_refresh.clone()
-    };
-
     if now
         > curr_last_signature_refresh.clone()
             + Duration::from_secs(ws.policy.signer.signature_refresh_interval.into())
@@ -180,13 +176,6 @@ pub fn sign_incrementally(
 
     if refresh_signatures {
         ws.refresh_some_signatures(&mut iss)?;
-
-        let curr_key_roll = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = ws.zone.state.lock().unwrap();
-
-            zone_state.key_roll.clone()
-        };
 
         if curr_key_roll.is_some() {
             ws.key_roll_signatures(&mut iss)?;
