@@ -69,9 +69,6 @@ pub struct Center {
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
 
-    /// The latest ready-to-sign contents of all zones.
-    pub signable_zones: Arc<ArcSwap<ZoneTree>>,
-
     /// The latest signed contents of all zones.
     pub signed_zones: Arc<ArcSwap<ZoneTree>>,
 
@@ -83,9 +80,6 @@ pub struct Center {
 
     /// Zones currently being re-signed. Refresh for incremental signing.
     pub resign_busy2: Mutex<HashMap<Name<Bytes>, UnixTime>>,
-
-    /// The old TSIG key store.
-    pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
 }
 
 //--- Actions
@@ -311,11 +305,10 @@ pub struct State {
 
 impl State {
     /// Attempt to load the global state file.
-    pub fn init_from_file(&mut self, config: &Config) -> io::Result<()> {
+    pub fn init_from_file(config: &Config) -> io::Result<Self> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        spec.parse_into(self);
-        Ok(())
+        Ok(spec.parse())
     }
 
     /// Mark the global state as dirty.

@@ -19,16 +19,16 @@ runs:
   steps:
   - name: Print all the nameserver log files
     run: |
-      for i in ${{ inputs.nameserver-dir }}/*.log; do
+      for i in ${{ github.workspace }}/*.log ${{ inputs.nameserver-dir }}/*.log; do
         echo ">>> Logfile $i:" >&2
         cat "$i" >&2 || true
       done
       echo ">>> Logfile cascade-startup.log:" >&2
       cat "${{ inputs.cascade-dir }}/cascade-startup.log" >&2 || true
       echo ">>> Logfile cascade.log:" >&2
-      cat "${{ inputs.cascade-dir }}//cascade.log" >&2 || true
+      cat "${{ inputs.cascade-dir }}/cascade.log" >&2 || true
       echo ">>> Config cascade:" >&2
-      cat "${{ inputs.cascade-dir }}//config.toml" >&2 || true
+      cat "${{ inputs.cascade-dir }}/config.toml" >&2 || true
       echo ">>> Logfile manage-test-environment.log:" >&2
       cat "manage-test-environment.log" >&2 || true
       echo ">>> Config resolv.conf:" >&2

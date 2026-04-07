@@ -60,7 +60,7 @@ runs:
 
     - name: Querying the zone should succeed
       run: |
-        dig +noall @127.0.0.1 -p 4543 example.test AXFR
+        dig +noall @127.0.0.1 -p 4542 example.test AXFR
 
     - name: Remove the zone
       run: cascade zone remove example.test
@@ -80,7 +80,7 @@ runs:
 
     - name: Querying the zone should now fail
       run: |
-        dig @127.0.0.1 -p 4543 example.test SOA | grep NXDOMAIN
+        dig @127.0.0.1 -p 4542 example.test SOA | grep NXDOMAIN
 
     - name: Check that Cascade is still running
       run: cascade health

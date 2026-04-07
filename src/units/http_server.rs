@@ -18,7 +18,6 @@ use domain::base::Name;
 use domain::base::Rtype;
 use domain::base::Serial;
 use domain::base::Ttl;
-use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::rdata::Soa;
 use domain::zonetree::ReadableZone;
@@ -52,6 +51,7 @@ use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::ZoneHandle;
+use crate::zone::machine::ZoneStateMachine;
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -97,7 +97,6 @@ impl HttpServer {
         });
 
         let app = Router::new()
-            .route("/", get(|| async { "Hello, World!" }))
             .route("/health", get(Self::health))
             .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
@@ -352,6 +351,10 @@ impl HttpServer {
         let signed_review_status;
         let zone;
         let halted_reason;
+        let progress;
+        let unsigned_serial;
+        let signed_serial;
+        let published_serial;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -428,24 +431,38 @@ impl HttpServer {
                         when: item.when,
                     }
                 });
+
+            unsigned_serial = zone_state
+                .storage
+                .loaded_soa()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+            signed_serial = zone_state
+                .storage
+                .signed_soa()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+            published_serial = zone_state
+                .storage
+                .published_soa()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+
+            progress = match zone_state.machine {
+                ZoneStateMachine::Waiting(..) => {
+                    if published_serial.is_some() {
+                        Progress::Published
+                    } else {
+                        Progress::WaitingForChanges
+                    }
+                }
+                ZoneStateMachine::Loading(..) => Progress::ChangesReceived,
+                ZoneStateMachine::LoadedReview(..) => Progress::AtUnsignedReview,
+                ZoneStateMachine::HaltLoaded(..) => Progress::AtUnsignedReview,
+                ZoneStateMachine::Signing(..) => Progress::Signing,
+                ZoneStateMachine::SigningFailed(..) => Progress::SigningFailed,
+                ZoneStateMachine::SignedReview(..) => Progress::AtSignedReview,
+                ZoneStateMachine::HaltSigned(..) => Progress::AtSignedReview,
+                ZoneStateMachine::Poisoned => unreachable!(),
+            };
         }
-
-        // TODO: We need to show multiple versions here
-        let unsigned_zones = state.center.unsigned_zones.load();
-        let signed_zones = state.center.signed_zones.load();
-        let published_zones = state.center.published_zones.load();
-        let unsigned_zone = unsigned_zones.get_zone(&name, Class::IN);
-        let signed_zone = signed_zones.get_zone(&name, Class::IN);
-        let published_zone = published_zones.get_zone(&name, Class::IN);
-
-        // Determine the highest stage the zone has progressed to.
-        let stage = if published_zone.is_some() {
-            ZoneStage::Published
-        } else if signed_zone.is_some() {
-            ZoneStage::Signed
-        } else {
-            ZoneStage::Unsigned
-        };
 
         // Query key status
         let key_status = {
@@ -518,7 +535,7 @@ impl HttpServer {
         }
 
         // Query signing status
-        let signing_report = if stage >= ZoneStage::Signed {
+        let signing_report = if progress >= Progress::Signed {
             let center = &state.center;
             center.signer.on_signing_report(&zone)
         } else {
@@ -547,38 +564,11 @@ impl HttpServer {
                 })
         };
 
-        // Query zone serials
-        let mut unsigned_serial = None;
-        if let Some(zone) = unsigned_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            unsigned_serial = Some(soa.serial());
-        }
-        let mut signed_serial = None;
-        if let Some(zone) = signed_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            signed_serial = Some(soa.serial());
-        }
-        let mut published_serial = None;
-        if let Some(zone) = published_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            published_serial = Some(soa.serial());
-        }
-
-        // If the timing were unlucky we may have a published serial but not
-        // signed serial as the signed zone may have just been removed. Use
-        // the published serial as the signed serial in this case.
-        if signed_serial.is_none() && published_serial.is_some() {
-            signed_serial = published_serial;
-        }
-
         Ok(ZoneStatus {
             name,
             source,
             policy,
-            stage,
+            progress,
             keys,
             key_status,
             receipt_report,

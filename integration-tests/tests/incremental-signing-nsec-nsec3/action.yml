@@ -1,7 +1,7 @@
 # Making reusable composite actions documented at
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
-name: 'Test incremental signing'
-description: 'Test incremental signing.'
+name: 'Test incremental signing, switch between NSEC and NSEC3'
+description: 'Test incremental signing, switch between NSEC and NSEC3.'
 defaults:
   # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
   run:
@@ -42,21 +42,22 @@ runs:
         log-level: ${{ inputs.log-level }}
         fake-time: 1600000000
 
-    - name: Add policy
+    - name: Add frst policy
       id: add-policy
       env:
         POLICY: "${{ inputs.policy }}"
         ZONEMD: "${{ inputs.zonemd }}"
       run: |
+        first_policy=${POLICY%%/*}
         if [[ "${ZONEMD}" == "" ]]; then
-          policy="${POLICY}"
+          policy="${first_policy}"
         else
-          policy="${POLICY}-${ZONEMD}"
+          policy="${first_policy}-${ZONEMD}"
         fi
 
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
         TEST_DIR="${PWD}/integration-tests/incremental-signing"
-        cp "${TEST_DIR}/policies/${policy}.toml" "${POLICY_DIR}/"
+        cp "${TEST_DIR}/policies/${policy}.toml" "${POLICY_DIR}/test.toml"
         cascade policy reload
 
         echo "POLICY=$policy" >> "$GITHUB_OUTPUT"
@@ -71,7 +72,7 @@ runs:
         ZONE_FILE="${TEST_DIR}/zones/incremental-signing-test${TEST_IDX}-input1.zone"
         KEY_FILE="${TEST_DIR}/keys/${KEY}"
         cp "${ZONE_FILE}" example.in
-        cascade zone add --source $PWD/example.in --policy "${POLICY}" --import-csk-file "${KEY_FILE}" example
+        cascade zone add --source $PWD/example.in --policy "test" --import-csk-file "${KEY_FILE}" example
 
     - name: Wait for the first version to be signed
       run: |
@@ -84,6 +85,26 @@ runs:
           fi
           sleep 1
         done
+
+    - name: Add second policy
+      id: add-policy
+      env:
+        POLICY: "${{ inputs.policy }}"
+        ZONEMD: "${{ inputs.zonemd }}"
+      run: |
+        second_policy=${POLICY##*/}
+        if [[ "${ZONEMD}" == "" ]]; then
+          policy="${second_policy}"
+        else
+          policy="${second_policy}-${ZONEMD}"
+        fi
+
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/integration-tests/incremental-signing"
+        cp "${TEST_DIR}/policies/${policy}.toml" "${POLICY_DIR}/test.toml"
+        cascade policy reload
+
+        echo "POLICY=$policy" >> "$GITHUB_OUTPUT"
 
     - name: Load second version of the zone
       env:
@@ -111,8 +132,9 @@ runs:
         POLICY: "${{ inputs.policy }}"
         TEST_IDX: "${{ inputs.test_idx }}"
       run: |
+        second_policy=${POLICY##*/}
         TEST_DIR="${PWD}/integration-tests/incremental-signing"
-        cp "${TEST_DIR}/reference-output/incremental-signing-test${TEST_IDX}-input2.zone.${POLICY}.signed.sorted" reference.output.sorted
+        cp "${TEST_DIR}/reference-output/incremental-signing-test${TEST_IDX}-input2.zone.${second_policy}.signed.sorted" reference.output.sorted
         dig @127.0.0.1 -p 4542 example AXFR | egrep -v '^;|^$' | sort -u > output.sorted
         diff -w -u output.sorted reference.output.sorted
 

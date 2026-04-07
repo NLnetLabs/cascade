@@ -74,88 +74,95 @@ fn main() -> ExitCode {
     }
 
     // Load the global state file or build one from scratch.
-    let mut state = center::State::default();
-    if let Err(err) = state.init_from_file(&config) {
-        if err.kind() != io::ErrorKind::NotFound {
-            error!("Could not load the state file: {err}");
-            return ExitCode::FAILURE;
-        }
-
-        info!("State file not found; starting from scratch");
-
-        // Create required subdirectories (and their parents) if they don't
-        // exist. This is only needed for directories to which we write files
-        // without using util::write_file() as that function creates the
-        // directory (and parent directories) if missing. However, do it for
-        // all state directories now so that we don't discover only later that
-        // we can't create the directory.
-        // TODO: Once we implement live config reloading, this should move
-        // somewhere else to also create the directories as specified in a the
-        // reloaded config.
-        for dir in [
-            &*config.keys_dir,
-            config.kmip_credentials_store_path.parent().unwrap(),
-            &*config.kmip_server_state_dir,
-            &*config.policy_dir,
-            &*config.zone_state_dir,
-        ] {
-            if let Err(e) = create_dir_all(dir) {
-                error!("Unable to create directory '{dir}': {e}",);
+    let mut state = match center::State::init_from_file(&config) {
+        Err(err) => {
+            if err.kind() != io::ErrorKind::NotFound {
+                error!("Could not load the state file: {err}");
                 return ExitCode::FAILURE;
-            };
-        }
-
-        // Load all policies.
-        let mut updates = Vec::new();
-        let res = policy::reload_all(&mut state.policies, &config, |name, _| {
-            updates.push(name.clone());
-        });
-
-        if let Err(err) = res {
-            error!("Cascade couldn't load all policies: {err}");
-            return ExitCode::FAILURE;
-        }
-
-        for name in updates {
-            let pol = state
-                .policies
-                .get(&name)
-                .expect("we just reloaded these policies");
-
-            for zone_name in &pol.zones {
-                let zone = state
-                    .zones
-                    .get(zone_name)
-                    .expect("zones and policies are consistent");
-
-                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
-                state.policy = Some(pol.latest.clone());
             }
-        }
 
-        // TODO: Fail if any zone state files exist.
-    } else {
-        info!("Successfully loaded the global state file");
+            info!("State file not found; starting from scratch");
 
-        let zone_state_dir = &config.zone_state_dir;
-        let policies = &mut state.policies;
-        for zone in &state.zones {
-            let name = &zone.0.name;
-            let path = zone_state_dir.join(format!("{name}.db"));
-            let spec = match cascaded::zone::state::Spec::load(&path) {
-                Ok(spec) => {
-                    debug!("Loaded state of zone '{name}' (from {path})");
-                    spec
-                }
-                Err(err) => {
-                    error!("Failed to load zone state '{name}' from '{path}': {err}");
+            // Create required subdirectories (and their parents) if they don't
+            // exist. This is only needed for directories to which we write files
+            // without using util::write_file() as that function creates the
+            // directory (and parent directories) if missing. However, do it for
+            // all state directories now so that we don't discover only later that
+            // we can't create the directory.
+            // TODO: Once we implement live config reloading, this should move
+            // somewhere else to also create the directories as specified in a the
+            // reloaded config.
+            for dir in [
+                &*config.keys_dir,
+                config.kmip_credentials_store_path.parent().unwrap(),
+                &*config.kmip_server_state_dir,
+                &*config.policy_dir,
+                &*config.zone_state_dir,
+            ] {
+                if let Err(e) = create_dir_all(dir) {
+                    error!("Unable to create directory '{dir}': {e}",);
                     return ExitCode::FAILURE;
+                };
+            }
+
+            let mut state = center::State::default();
+
+            // Load all policies.
+            let mut updates = Vec::new();
+            let res = policy::reload_all(&mut state.policies, &config, |name, _| {
+                updates.push(name.clone());
+            });
+
+            if let Err(err) = res {
+                error!("Cascade couldn't load all policies: {err}");
+                return ExitCode::FAILURE;
+            }
+
+            for name in updates {
+                let pol = state
+                    .policies
+                    .get(&name)
+                    .expect("we just reloaded these policies");
+
+                for zone_name in &pol.zones {
+                    let zone = state
+                        .zones
+                        .get(zone_name)
+                        .expect("zones and policies are consistent");
+
+                    let mut state = zone.0.state.lock().expect("lock isn't poisoned");
+                    state.policy = Some(pol.latest.clone());
                 }
-            };
-            let mut state = zone.0.state.lock().unwrap();
-            spec.parse_into(&zone.0, &mut state, policies);
+            }
+
+            // TODO: Fail if any zone state files exist.
+            state
         }
-    }
+        Ok(mut state) => {
+            info!("Successfully loaded the global state file");
+
+            let zone_state_dir = &config.zone_state_dir;
+            let policies = &mut state.policies;
+            for zone in &state.zones {
+                let name = &zone.0.name;
+                let path = zone_state_dir.join(format!("{name}.db"));
+                let spec = match cascaded::zone::state::Spec::load(&path) {
+                    Ok(spec) => {
+                        debug!("Loaded state of zone '{name}' (from {path})");
+                        spec
+                    }
+                    Err(err) => {
+                        error!("Failed to load zone state '{name}' from '{path}': {err}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+                let mut state = zone.0.state.lock().unwrap();
+                *state = spec.parse(&zone.0, policies);
+            }
+
+            state
+        }
+    };
 
     if config.loader.review.servers.is_empty() {
         warn!(
@@ -205,10 +212,8 @@ fn main() -> ExitCode {
         publication_server: ZoneServer::new(Source::Published),
         signer: ZoneSigner::new(),
         unsigned_zones: Default::default(),
-        signable_zones: Default::default(),
         signed_zones: Default::default(),
         published_zones: Default::default(),
-        old_tsig_key_store: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
         resign_busy2: Mutex::new(HashMap::new()),
     });
@@ -298,7 +303,6 @@ fn bind_to_listen_sockets_as_needed(config: &Config) -> Result<SocketProvider, (
         .review
         .servers
         .iter()
-        .chain(config.loader.notify_listeners.iter())
         .chain(config.signer.review.servers.iter())
         .chain(config.server.servers.iter())
         .chain(remote_control_servers.iter());

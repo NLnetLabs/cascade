@@ -186,9 +186,15 @@ pub async fn ixfr(
             return Ok(true);
         }
 
-        Some(Ok(ZoneUpdate::BeginBatchDelete(_))) => {
+        Some(Ok(ZoneUpdate::BeginBatchDelete(soa))) => {
             // This is an IXFR.
             let mut writer = builder.patch().unwrap();
+
+            // Work-around for #493: pre-process the current SOA as
+            // process_ixfr() assumes it will receive it when fetching the
+            // next record but it has already been consumed.
+            writer.remove_soa(soa.into())?;
+
             process_ixfr(&mut writer, updates, metrics)?;
             if !interpreter.is_finished() {
                 // Fail: UDP-based IXFR returned a partial IXFR
@@ -315,9 +321,14 @@ pub async fn ixfr(
             Ok(true)
         }
 
-        Ok(ZoneUpdate::BeginBatchDelete(_)) => {
+        Ok(ZoneUpdate::BeginBatchDelete(soa)) => {
             // This is an IXFR.
             let mut writer = builder.patch().unwrap();
+
+            // Work-around for #493: pre-process the current SOA as
+            // process_ixfr() assumes it will receive it when fetching the
+            // next record but it has already been consumed.
+            writer.remove_soa(soa.into())?;
 
             // Process the response messages.
             loop {

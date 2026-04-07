@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::{
+    loader::zone::LoaderState,
     policy::{Policy, PolicyVersion},
     zone::{Zone, ZoneState},
 };
@@ -32,12 +33,11 @@ pub enum Spec {
 
 impl Spec {
     /// Merge this specification with an existing zone state.
-    pub fn parse_into(
+    pub fn parse(
         self,
         zone: &Arc<Zone>,
-        state: &mut ZoneState,
         policies: &mut foldhash::HashMap<Box<str>, Policy>,
-    ) {
+    ) -> ZoneState {
         /// Synchronize a loaded policy with global state.
         fn sync_policy(
             policy: PolicyVersion,
@@ -94,24 +94,27 @@ impl Spec {
                 previous_serial,
                 history,
             }) => {
-                state.policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
-                state.loader.source = source.parse();
-                state.min_expiration = min_expiration;
-                state.next_min_expiration = next_min_expiration;
-                state.apex_remove = apex_remove;
-                state.apex_extra = apex_extra;
-                state.key_tags = key_tags;
-                state.key_roll = key_roll;
-                state.last_signature_refresh = last_signature_refresh;
-                state.previous_serial = previous_serial;
-                state.history = history;
+                let loader = LoaderState {
+                    source: source.parse(),
+                    ..Default::default()
+                };
 
                 // This should always be some at this stage...
-                if let Some(ref policy) = state.policy {
+                let policy = policy.map(|policy| sync_policy(policy.parse(), zone, policies));
+                if let Some(policy) = &policy {
                     let p = policies
                         .get_mut(&*policy.name)
                         .expect("zone policy references should not be kept around");
                     p.zones.insert(zone.name.clone());
+                }
+
+                ZoneState {
+                    policy,
+                    min_expiration,
+                    next_min_expiration,
+                    loader,
+                    history,
+                    ..Default::default()
                 }
             }
         }
