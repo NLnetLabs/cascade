@@ -633,7 +633,13 @@ impl WorkSpace<'_> {
         &mut self,
         iss: &IncrementalSigningState,
     ) -> Result<(), SignerError> {
-        let signing_rtypes = HashSet::from([Rtype::DNSKEY]);
+        let signing_rtypes = HashSet::from([
+            Rtype::DNSKEY,
+            Rtype::CDS,
+            Rtype::CDNSKEY,
+            Rtype::NSEC3PARAM,
+            Rtype::ZONEMD,
+        ]);
 
         // For signing_rtypes diff against old_apex_saved. For all other
         // types diff against new_apex_saved. Ignore the diff against
@@ -641,10 +647,6 @@ impl WorkSpace<'_> {
 
         // apex records that were deleted.
         for (k, old_rrs) in &iss.old_apex_saved {
-            if !signing_rtypes.contains(k) {
-                // Ignore. Should diff againt new_apex_saved.
-            }
-
             if *k == Rtype::SOA {
                 // Just remove the old SOA record. There should be only one,
                 // just remove all if there is more than one.
@@ -654,6 +656,12 @@ impl WorkSpace<'_> {
                 }
                 continue;
             }
+
+            if !signing_rtypes.contains(k) {
+                // Ignore. Should diff againt new_apex_saved.
+                continue;
+            }
+
             if let Some(new_rrs) = iss.new_apex.get(k) {
                 if new_rrs == old_rrs {
                     // No change.
@@ -693,6 +701,7 @@ impl WorkSpace<'_> {
 
             if !signing_rtypes.contains(k) {
                 // Ignore. Should diff againt new_apex_saved.
+                continue;
             }
 
             if let Some(old_rrs) = iss.old_apex_saved.get(k) {
