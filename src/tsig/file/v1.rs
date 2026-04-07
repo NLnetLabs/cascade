@@ -151,19 +151,26 @@ impl KeySpec {
 //----------- AlgSpec ----------------------------------------------------------
 
 /// A TSIG key algorithm specification.
+///
+/// A subset of the [IANA TSIG algorithm name registry].
+///
+/// [IANA TSIG algorithm name registry]: https://www.iana.org/assignments/tsig-algorithm-names/tsig-algorithm-names.xhtml
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum AlgSpec {
-    /// SHA-1.
+    /// hmac-sha1.
+    #[serde(rename = "hmac-sha1")]
     HmacSha1,
 
-    /// SHA-256.
+    /// hmac-sha256.
+    #[serde(rename = "hmac-sha256")]
     HmacSha256,
 
-    /// SHA-384,
+    /// hmac-sha384,
+    #[serde(rename = "hmac-sha384")]
     HmacSha384,
 
-    /// SHA-512.
+    /// hmac-sha512.
+    #[serde(rename = "hmac-sha512")]
     HmacSha512,
 }
 
