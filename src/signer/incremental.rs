@@ -1224,19 +1224,11 @@ impl WorkSpace<'_> {
                     };
                     let key = (owner, rrsig.type_covered());
                     let mut records = vec![r];
-                    if let Some(v) = iss.rrsigs.get_mut(&key) {
-                        v.append(&mut records);
-                    } else {
-                        iss.rrsigs.insert(key, records);
-                    }
+                    iss.rrsigs.entry(key).or_default().append(&mut records);
                 } else {
                     let key = r.rtype();
                     let mut records = vec![r];
-                    if let Some(v) = iss.new_apex.get_mut(&key) {
-                        v.append(&mut records);
-                    } else {
-                        iss.new_apex.insert(key, records);
-                    }
+                    iss.new_apex.entry(key).or_default().append(&mut records);
                 }
             }
         }
@@ -1480,11 +1472,7 @@ impl IncrementalSigningState {
                     }
 
                     let key = (rrsig_records[0].owner().clone(), type_covered);
-                    if let Some(v) = self.rrsigs.get_mut(&key) {
-                        v.append(&mut rrsig_records);
-                    } else {
-                        self.rrsigs.insert(key, rrsig_records);
-                    }
+                    self.rrsigs.entry(key).or_default().append(&mut rrsig_records);
                     type_covered = rrsig.type_covered();
                     rrsig_records = vec![];
                     rrsig_records.push(record);
@@ -1511,15 +1499,9 @@ impl IncrementalSigningState {
                     }
                     let key = (records[0].owner().clone(), records[0].rtype());
                     if key.0 == self.origin {
-                        if let Some(v) = self.old_apex.get_mut(&key.1) {
-                            v.append(&mut records);
-                        } else {
-                            self.old_apex.insert(key.1, records);
-                        }
-                    } else if let Some(v) = self.old_data.get_mut(&key) {
-                        v.append(&mut records);
+                        self.old_apex.entry(key.1).or_default().append(&mut records);
                     } else {
-                        self.old_data.insert(key, records);
+			self.old_data.entry(key).or_default().append(&mut records);
                     }
                     records = vec![];
                     records.push(record);
@@ -1530,24 +1512,14 @@ impl IncrementalSigningState {
         if !records.is_empty() {
             let key = (records[0].owner().clone(), records[0].rtype());
             if key.0 == self.origin {
-                if let Some(v) = self.old_apex.get_mut(&key.1) {
-                    v.append(&mut records);
-                } else {
-                    self.old_apex.insert(key.1, records);
-                }
-            } else if let Some(v) = self.old_data.get_mut(&key) {
-                v.append(&mut records);
+                self.old_apex.entry(key.1).or_default().append(&mut records);
             } else {
-                self.old_data.insert(key, records);
+		self.old_data.entry(key).or_default().append(&mut records);
             }
         }
         if !rrsig_records.is_empty() {
             let key = (rrsig_records[0].owner().clone(), type_covered);
-            if let Some(v) = self.rrsigs.get_mut(&key) {
-                v.append(&mut rrsig_records);
-            } else {
-                self.rrsigs.insert(key, rrsig_records);
-            }
+            self.rrsigs.entry(key).or_default().append(&mut rrsig_records);
         }
         self.old_apex_saved = self.old_apex.clone();
         self.old_nsecs = self.nsecs.clone();
@@ -1577,15 +1549,9 @@ impl IncrementalSigningState {
             }
             let key = (records[0].owner().clone(), records[0].rtype());
             if key.0 == self.origin {
-                if let Some(v) = self.new_apex.get_mut(&key.1) {
-                    v.append(&mut records);
-                } else {
-                    self.new_apex.insert(key.1, records);
-                }
-            } else if let Some(v) = self.new_data.get_mut(&key) {
-                v.append(&mut records);
+                self.new_apex.entry(key.1).or_default().append(&mut records);
             } else {
-                self.new_data.insert(key, records);
+		self.new_data.entry(key).or_default().append(&mut records);
             }
             records = vec![];
             records.push(record);
@@ -1594,15 +1560,9 @@ impl IncrementalSigningState {
         if !records.is_empty() {
             let key = (records[0].owner().clone(), records[0].rtype());
             if key.0 == self.origin {
-                if let Some(v) = self.new_apex.get_mut(&key.1) {
-                    v.append(&mut records);
-                } else {
-                    self.new_apex.insert(key.1, records);
-                }
-            } else if let Some(v) = self.new_data.get_mut(&key) {
-                v.append(&mut records);
+                self.new_apex.entry(key.1).or_default().append(&mut records);
             } else {
-                self.new_data.insert(key, records);
+		self.new_data.entry(key).or_default().append(&mut records);
             }
         }
 
