@@ -1,4 +1,4 @@
-use std::future::{Future, ready};
+use std::future::Future;
 use std::marker::Sync;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
@@ -6,7 +6,6 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use arc_swap::ArcSwap;
 use bytes::Bytes;
 use domain::base::iana::{Class, Opcode};
 use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
@@ -16,19 +15,15 @@ use domain::net::client::request::{RequestMessage, SendRequest};
 use domain::net::server::ConnectionConfig;
 use domain::net::server::buf::VecBufSource;
 use domain::net::server::dgram::{self, DgramServer};
-use domain::net::server::message::Request;
 use domain::net::server::middleware::cookies::CookiesMiddlewareSvc;
 use domain::net::server::middleware::edns::EdnsMiddlewareSvc;
 use domain::net::server::middleware::mandatory::MandatoryMiddlewareSvc;
 use domain::net::server::middleware::notify::{Notifiable, NotifyError, NotifyMiddlewareSvc};
 use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
-use domain::net::server::middleware::xfr::XfrMiddlewareSvc;
-use domain::net::server::middleware::xfr::{XfrData, XfrDataProvider, XfrDataProviderError};
 use domain::net::server::service::Service;
 use domain::net::server::stream::{self, StreamServer};
 use domain::tsig::{Algorithm, KeyStore};
-use domain::zonetree::types::EmptyZoneDiff;
-use domain::zonetree::{StoredName, ZoneTree};
+use domain::zonetree::StoredName;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{
@@ -178,27 +173,6 @@ impl ZoneServer {
 
         // TODO: metrics and status reporting
 
-        // TODO: This will just choose all current zones to be served. For signed and published
-        // zones this doesn't matter so much as they only exist while being and once approved.
-        // But for unsigned zones the zone could be updated whilst being reviewed and we only
-        // serve the latest version of the zone, not the specific serial being reviewed!
-        let zones = match source {
-            Source::Unsigned => center.unsigned_zones.clone(),
-            Source::Signed => center.signed_zones.clone(),
-            Source::Published => center.published_zones.clone(),
-        };
-
-        let max_concurrency = std::thread::available_parallelism()
-            .unwrap()
-            .get()
-            .div_ceil(2);
-
-        // TODO: Pass xfr_out to XfrDataProvidingZonesWrapper for enforcement.
-        let zones = XfrDataProvidingZonesWrapper {
-            zones,
-            center: center.clone(),
-        };
-
         // Propagate NOTIFY messages if this is the publication server.
         let notifier = LoaderNotifier {
             enabled: matches!(source, Source::Published),
@@ -206,7 +180,6 @@ impl ZoneServer {
         };
 
         let svc = service;
-        let svc = XfrMiddlewareSvc::new(svc, zones.clone(), max_concurrency);
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
         let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = CookiesMiddlewareSvc::with_random_secret(svc);
@@ -713,68 +686,6 @@ impl KeyStore for CenterKeyStore {
 
     fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Self::Key> {
         let tsig_store = &self.0.state.lock().unwrap().tsig_store;
-        let key_name: domain::tsig::KeyName = name.try_to_name().ok()?;
-        tsig_store
-            .map
-            .get(&key_name)
-            .map(|k| k.inner.clone())
-            .filter(|k| k.algorithm() == algorithm)
-    }
-}
-
-//----------- XfrDataProvidingZonesWrapper -----------------------------------
-
-#[derive(Clone)]
-struct XfrDataProvidingZonesWrapper {
-    zones: Arc<ArcSwap<ZoneTree>>,
-
-    /// Access to Center for TSIG key lookup.
-    center: Arc<Center>,
-}
-
-impl XfrDataProvider<Option<Arc<domain::tsig::Key>>> for XfrDataProvidingZonesWrapper {
-    type Diff = EmptyZoneDiff;
-
-    fn request<Octs>(
-        &self,
-        req: &Request<Octs, Option<Arc<domain::tsig::Key>>>,
-        _diff_from: Option<domain::base::Serial>,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<
-                        domain::net::server::middleware::xfr::XfrData<Self::Diff>,
-                        domain::net::server::middleware::xfr::XfrDataProviderError,
-                    >,
-                > + Sync
-                + Send
-                + '_,
-        >,
-    >
-    where
-        Octs: octseq::Octets + Send + Sync,
-    {
-        let res = req
-            .message()
-            .sole_question()
-            .map_err(XfrDataProviderError::ParseError)
-            .and_then(|q| {
-                if let Some(zone) = self.zones.load().find_zone(q.qname(), q.qclass()) {
-                    Ok(XfrData::new(zone.clone(), vec![], false))
-                } else {
-                    Err(XfrDataProviderError::UnknownZone)
-                }
-            });
-
-        Box::pin(ready(res))
-    }
-}
-
-impl KeyStore for XfrDataProvidingZonesWrapper {
-    type Key = Arc<domain::tsig::Key>;
-
-    fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Arc<domain::tsig::Key>> {
-        let tsig_store = &self.center.state.lock().unwrap().tsig_store;
         let key_name: domain::tsig::KeyName = name.try_to_name().ok()?;
         tsig_store
             .map
