@@ -40,17 +40,172 @@ use tokio::time::Instant;
 
 use crate::center::Center;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
     KeyPair, KeySetState, PassThroughMode, SignerError, SigningStatusPerZone, ZoneSigner,
     faketime_or_now, load_keys,
 };
 use crate::zone::Zone;
 
+pub fn sign_incrementally(
+    zone_signer: &ZoneSigner,
+    patch: SignedZonePatcher,
+    zone: &Arc<Zone>,
+    center: &Arc<Center>,
+    status: Arc<RwLock<SigningStatusPerZone>>,
+) -> Result<(), SignerError> {
+    // Check what work needs to be done. If the keyset state
+    // changed then check if the APEX records change or if a
+    // CSK or ZSK roll require resigning the zone.
+    // If enough time has passed since the last time
+    // signatures have been updated, then update signatures
+    // and during a key roll, sign with the new key(s).
+    // Ignore signer configuration changes, they will get picked up when
+    // signatures need to be updated.
+    // Resign using the unsigned zonefile when load_unsigned is true.
+
+    let load_unsigned = patch.next_loaded().is_some();
+
+    let origin = &zone.name;
+    let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, origin);
+    let state = std::fs::read_to_string(&state_path)
+        .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
+    let keyset_state: KeySetState = serde_json::from_str(&state).unwrap();
+
+    let policy = {
+        let zone_state = zone.state.lock().unwrap();
+        zone_state.policy.clone().unwrap()
+    };
+
+    let use_nsec3 = match &policy.signer.denial {
+        SignerDenialPolicy::NSec => false,
+        SignerDenialPolicy::NSec3 { .. } => true,
+    };
+
+    let mut ws = WorkSpace {
+        keyset_state,
+        use_nsec3,
+        verbose: true,
+        policy: policy.clone(),
+        zone: zone.clone(),
+        center: center.clone(),
+        patch,
+        zonemd: HashSet::new(),
+        pass_through_mode: PassThroughMode::Off,
+    };
+
+    let apex_changed = ws.handle_keyset_changed();
+
+    if !matches!(ws.pass_through_mode, PassThroughMode::Off) {
+        ws.sign_pass_through()?;
+        return Ok(());
+    }
+
+    let mut refresh_signatures = false;
+    let now = faketime_or_now();
+    let curr_last_signature_refresh = {
+        // Use a block to make sure that the mutex is clearly dropped.
+        let zone_state = ws.zone.state.lock().unwrap();
+
+        zone_state.last_signature_refresh.clone()
+    };
+
+    if now
+        > curr_last_signature_refresh.clone()
+            + Duration::from_secs(ws.policy.signer.signature_refresh_interval.into())
+    {
+        if ws.verbose {
+            println!(
+                "refresh signatures: {now} > {curr_last_signature_refresh} + {:?}",
+                ws.policy.signer.signature_refresh_interval
+            );
+        }
+        refresh_signatures = true;
+    }
+
+    if !load_unsigned && !apex_changed && !refresh_signatures {
+        // Nothing to do.
+        return Ok(());
+    }
+
+    let mut iss = IncrementalSigningState::new(
+        origin.clone(),
+        &policy,
+        zone_signer,
+        center,
+        &ws.keyset_state,
+        status,
+    )?;
+
+    let start = Instant::now();
+    iss.load_signed_zone(&ws.patch.curr()).unwrap();
+    if ws.verbose {
+        println!("loading signed zone took {:?}", start.elapsed());
+    }
+
+    ws.handle_nsec_nsec3(&mut iss)?;
+
+    if load_unsigned {
+        let start = Instant::now();
+        iss.load_unsigned_zone(&ws.patch.next_loaded().unwrap())
+            .unwrap();
+        if ws.verbose {
+            println!("loading new unsigned zone took {:?}", start.elapsed());
+        }
+    } else {
+        // Re-use the signed data.
+        iss.load_signed_only();
+    }
+
+    let start = Instant::now();
+    ws.load_apex_records(&mut iss)?;
+
+    iss.initial_diffs()?;
+
+    match policy.signer.denial {
+        SignerDenialPolicy::NSec3 { .. } => iss.incremental_nsec3()?,
+        SignerDenialPolicy::NSec => iss.incremental_nsec()?,
+    }
+
+    ws.new_nsec_nsec3_sigs(&mut iss)?;
+
+    if !ws.zonemd.is_empty() {
+        let start = Instant::now();
+        ws.add_zonemd(&mut iss)?;
+        if ws.verbose {
+            println!("ZONEMD took {:?}", start.elapsed());
+        }
+    }
+
+    if refresh_signatures {
+        ws.refresh_some_signatures(&mut iss)?;
+
+        let curr_key_roll = {
+            // Use a block to make sure that the mutex is clearly dropped.
+            let zone_state = ws.zone.state.lock().unwrap();
+
+            zone_state.key_roll.clone()
+        };
+
+        if curr_key_roll.is_some() {
+            ws.key_roll_signatures(&mut iss)?;
+        }
+    }
+    if ws.verbose {
+        println!("incremental signing took {:?}", start.elapsed());
+    }
+
+    ws.incremental_generate_diffs(&iss)?;
+
+    ws.patch.apply().unwrap();
+    Ok(())
+}
+
 type Zrd = Record<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>;
 type RtypeSet = HashSet<Rtype>;
 type ChangesValue = (RtypeSet, RtypeSet); // add set followed by delete set.
 
-pub struct WorkSpace<'a> {
+struct WorkSpace<'a> {
     pub keyset_state: KeySetState,
     pub use_nsec3: bool,
     pub verbose: bool,
@@ -1318,7 +1473,7 @@ impl WorkSpace<'_> {
     }
 }
 
-pub struct IncrementalSigningState {
+struct IncrementalSigningState {
     origin: Name<Bytes>,
     old_apex: HashMap<Rtype, Vec<Zrd>>,
     new_apex: HashMap<Rtype, Vec<Zrd>>,
