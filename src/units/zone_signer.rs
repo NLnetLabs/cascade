@@ -1,6 +1,3 @@
-// Allow println! for now.
-#![allow(clippy::disallowed_macros)]
-
 use std::time::UNIX_EPOCH;
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
@@ -797,9 +794,6 @@ impl ZoneSigner {
     }
 
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
-        println!("next_resign_time: disabled");
-        None
-        /*
             let mut min_time = None;
             let now = SystemTime::now();
 
@@ -927,7 +921,6 @@ impl ZoneSigner {
 
                 Instant::now() + since_now
             })
-        */
     }
 
     fn resign_zones(&self, center: &Arc<Center>) {
@@ -1821,6 +1814,7 @@ pub enum SignerError {
     KmipServerCredentialsNeeded(String),
     CannotCreateKmipConnectionPool(String, KmipConnError),
     PatchFailed(String),
+    NothingToDo,
     SigningError(String),
 }
 
@@ -1863,7 +1857,8 @@ impl std::fmt::Display for SignerError {
                     "Cannot create connection pool for KMIP server '{server_id}': {err}"
                 )
             }
-            SignerError::PatchFailed(err) => write!(f, "patch failed: {err}"),
+            SignerError::PatchFailed(err) => write!(f, "Patch failed: {err}"),
+            SignerError::NothingToDo => write!(f, "Nothing To Do"),
             SignerError::SigningError(err) => write!(f, "Signing error: {err}"),
         }
     }

@@ -1,8 +1,5 @@
 #! /// Incremental signing.
 
-// Allow println! for now.
-#![allow(clippy::disallowed_macros)]
-
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
@@ -125,7 +122,7 @@ pub fn sign_incrementally(
 
     if !load_unsigned && !apex_changed && !refresh_signatures {
         // Nothing to do.
-        return Ok(());
+        return Err(SignerError::NothingToDo);
     }
 
     let mut iss = IncrementalSigningState::new(
@@ -1705,8 +1702,6 @@ impl IncrementalSigningState {
         // However, we removing a delegation, the situation is reversed. For now
         // assuming that sorting is not necessary.
 
-        let set_nsec_rrsig: HashSet<_> = [Rtype::NSEC, Rtype::RRSIG].into();
-
         let changes = self.changes.clone();
         for (key, (add, delete)) in &changes {
             // The intersection between add and delete is empty.
@@ -1763,7 +1758,6 @@ impl IncrementalSigningState {
                         &curr,
                         &add,
                         delete,
-                        &set_nsec_rrsig,
                         self,
                     );
 
@@ -1800,7 +1794,6 @@ impl IncrementalSigningState {
                         &curr,
                         add,
                         delete,
-                        &set_nsec_rrsig,
                         self,
                     );
 
@@ -1828,7 +1821,6 @@ impl IncrementalSigningState {
                         &curr,
                         add,
                         delete,
-                        &set_nsec_rrsig,
                         self,
                     );
                     continue;
@@ -1843,7 +1835,6 @@ impl IncrementalSigningState {
                     &curr,
                     add,
                     delete,
-                    &set_nsec_rrsig,
                     self,
                 );
             } else {
@@ -2366,15 +2357,16 @@ fn nsec_update_bitmap(
     curr: &HashSet<Rtype>,
     add: &HashSet<Rtype>,
     delete: &HashSet<Rtype>,
-    set_nsec_rrsig: &HashSet<Rtype>,
     iss: &mut IncrementalSigningState,
 ) -> HashSet<Rtype> {
+    let set_nsec_rrsig: HashSet<_> = [Rtype::NSEC, Rtype::RRSIG].into();
+
     // Update curr.
     let curr: HashSet<_> = curr.union(add).copied().collect();
     let curr = curr.difference(delete).copied().collect();
 
     let owner = record.owner();
-    if curr == *set_nsec_rrsig {
+    if curr == set_nsec_rrsig {
         nsec_remove(owner, nsec.next_name(), iss);
         return curr;
     }

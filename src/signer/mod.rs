@@ -29,6 +29,7 @@ use crate::{
     center::Center,
     zone::{HistoricalEvent, Zone, ZoneHandle},
 };
+use crate::units::zone_signer::SignerError;
 
 pub mod incremental;
 pub mod zone;
@@ -88,6 +89,10 @@ async fn sign(
             handle.finish_signing(built);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
+        }
+        Err(SignerError::NothingToDo) => {
+            status.status.finish(true);
+            status.current_action = "Nothing to do".to_string();
         }
         Err(error) => {
             error!("Signing failed: {error}");
