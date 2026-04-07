@@ -4,8 +4,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
 
-use tracing::info;
-use tracing::debug;
 use bytes::{Bytes, BytesMut};
 use cascade_zonedata::{
     LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
@@ -37,6 +35,7 @@ use jiff::{Timestamp as JiffTimestamp, Zoned};
 use octseq::OctetsFrom;
 use rayon::slice::ParallelSliceMut;
 use tokio::time::Instant;
+use tracing::{debug, info};
 
 use crate::center::Center;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
@@ -64,7 +63,8 @@ pub fn sign_incrementally(
     // signatures need to be updated.
     // Resign using the unsigned zonefile when load_unsigned is true.
 
-        status.write().expect("should not fail").current_action = "Start incremental signing".to_string();
+    status.write().expect("should not fail").current_action =
+        "Start incremental signing".to_string();
     let load_unsigned = patch.next_loaded().is_some();
 
     let origin = &zone.name;
@@ -72,12 +72,14 @@ pub fn sign_incrementally(
     let state = std::fs::read_to_string(&state_path)
         .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
     let keyset_state: KeySetState = serde_json::from_str(&state)
-	.map_err(|e| SignerError::SigningError(format!("loading keyset state failed: {e}")))?;
+        .map_err(|e| SignerError::SigningError(format!("loading keyset state failed: {e}")))?;
 
     let policy;
     {
-        let zone_state = zone.state.lock()
-	    .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
+        let zone_state = zone
+            .state
+            .lock()
+            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
         policy = zone_state.policy.clone().expect("should be there");
     };
 
@@ -93,12 +95,12 @@ pub fn sign_incrementally(
         patch,
         zonemd: HashSet::new(),
         pass_through_mode: PassThroughMode::Off,
-	local_state,
+        local_state,
     };
 
     let curr_last_signature_refresh = ws.local_state.last_signature_refresh.clone();
     let curr_key_roll = ws.local_state.key_roll.clone();
-	
+
     let apex_changed = ws.handle_keyset_changed();
 
     if !matches!(ws.pass_through_mode, PassThroughMode::Off) {
@@ -112,10 +114,10 @@ pub fn sign_incrementally(
         > curr_last_signature_refresh.clone()
             + Duration::from_secs(ws.policy.signer.signature_refresh_interval.into())
     {
-	debug!(
-                "refresh signatures: {now} > {curr_last_signature_refresh} + {:?}",
-                ws.policy.signer.signature_refresh_interval
-            );
+        debug!(
+            "refresh signatures: {now} > {curr_last_signature_refresh} + {:?}",
+            ws.policy.signer.signature_refresh_interval
+        );
         refresh_signatures = true;
     }
 
@@ -142,7 +144,7 @@ pub fn sign_incrementally(
     if load_unsigned {
         let start = Instant::now();
         iss.load_unsigned_zone(&ws.patch.next_loaded().expect("should be there"))?;
-            info!("loading new unsigned zone took {:?}", start.elapsed());
+        info!("loading new unsigned zone took {:?}", start.elapsed());
     } else {
         // Re-use the signed data.
         iss.load_signed_only();
@@ -163,7 +165,7 @@ pub fn sign_incrementally(
     if !ws.zonemd.is_empty() {
         let start = Instant::now();
         ws.add_zonemd(&mut iss)?;
-            info!("ZONEMD took {:?}", start.elapsed());
+        info!("ZONEMD took {:?}", start.elapsed());
     }
 
     if refresh_signatures {
@@ -173,14 +175,15 @@ pub fn sign_incrementally(
             ws.key_roll_signatures(&mut iss)?;
         }
     }
-        info!("incremental signing took {:?}", start.elapsed());
+    info!("incremental signing took {:?}", start.elapsed());
 
-	let start = Instant::now();
+    let start = Instant::now();
     ws.incremental_generate_diffs(&iss)?;
-	info!("generating diffs took {:?}", start.elapsed());
+    info!("generating diffs took {:?}", start.elapsed());
 
-    ws.patch.apply()
-	.map_err(|e| SignerError::PatchFailed(format!("apply failed: {e}")))?;
+    ws.patch
+        .apply()
+        .map_err(|e| SignerError::PatchFailed(format!("apply failed: {e}")))?;
 
     ws.local_state.save(&ws.center, &ws.zone)?;
 
@@ -220,8 +223,7 @@ impl WorkSpace<'_> {
         let min_expire =
             now_system_time + Duration::from_secs(self.policy.signer.sig_remain_time as u64);
 
-        let curr_last_signature_refresh =
-	    &self.local_state.last_signature_refresh;
+        let curr_last_signature_refresh = &self.local_state.last_signature_refresh;
 
         let mut since_last_time: Duration = if now >= *curr_last_signature_refresh {
             <UnixTime as Into<Duration>>::into(now.clone())
@@ -318,10 +320,10 @@ impl WorkSpace<'_> {
             iss.rrsigs.insert(key, sigs);
         }
 
-	// Assume we signed at least one record. If we don't then something is 
-	// off, but we will eventually resign RRsets with signature that are
-	// close to expiring.
-	self.local_state.last_signature_refresh = now;
+        // Assume we signed at least one record. If we don't then something is
+        // off, but we will eventually resign RRsets with signature that are
+        // close to expiring.
+        self.local_state.last_signature_refresh = now;
 
         Ok(())
     }
@@ -332,7 +334,7 @@ impl WorkSpace<'_> {
     ) -> Result<(), SignerError> {
         let key_roll_time = Duration::from_secs(self.policy.signer.key_roll_time as u64);
 
-        let curr_key_roll = &self.local_state.key_roll; 
+        let curr_key_roll = &self.local_state.key_roll;
         let key_roll_start = curr_key_roll.as_ref().expect("should be there");
 
         let now = faketime_or_now();
@@ -404,7 +406,7 @@ impl WorkSpace<'_> {
             }
 
             // Clear key_roll.
-	    self.local_state.key_roll = None;
+            self.local_state.key_roll = None;
             return Ok(());
         }
 
@@ -502,7 +504,7 @@ impl WorkSpace<'_> {
         let curr_apex_remove = &self.local_state.apex_remove;
         if apex_remove != *curr_apex_remove {
             info!("apex remove RRtypes changed: from {curr_apex_remove:?} to {apex_remove:?}",);
-	    self.local_state.apex_remove = apex_remove;
+            self.local_state.apex_remove = apex_remove;
             apex_changed = true;
         }
 
@@ -515,7 +517,7 @@ impl WorkSpace<'_> {
         let curr_apex_extra = &self.local_state.apex_extra;
         if apex_extra != *curr_apex_extra {
             info!("apex extra changed: from {curr_apex_extra:?} to {apex_extra:?}",);
-	    self.local_state.apex_extra = apex_extra;
+            self.local_state.apex_extra = apex_extra;
             apex_changed = true;
         }
 
@@ -539,8 +541,8 @@ impl WorkSpace<'_> {
         let curr_key_tags = &self.local_state.key_tags;
         if key_tags != *curr_key_tags {
             info!("key tags changed: from {curr_key_tags:?} to {key_tags:?}",);
-	    self.local_state.key_tags = key_tags;
-	    self.local_state.key_roll = Some(faketime_or_now());
+            self.local_state.key_tags = key_tags;
+            self.local_state.key_roll = Some(faketime_or_now());
             apex_changed = true;
         }
         apex_changed
@@ -569,8 +571,9 @@ impl WorkSpace<'_> {
                 // just remove all if there is more than one.
                 for r in old_rrs {
                     let r: SoaRecord = r.clone().into();
-                    self.patch.remove_soa(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove soa {r:?}: {e}")))?;
+                    self.patch.remove_soa(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to remove soa {r:?}: {e}"))
+                    })?;
                 }
                 continue;
             }
@@ -593,14 +596,16 @@ impl WorkSpace<'_> {
                         continue;
                     }
                     let r: RegularRecord = r.clone().into();
-                    self.patch.remove(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {r:?}: {e}")))?;
+                    self.patch.remove(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to remove {r:?}: {e}"))
+                    })?;
                 }
             } else {
                 for r in old_rrs {
                     let r: RegularRecord = r.clone().into();
-                    self.patch.remove(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {r:?}: {e}")))?;
+                    self.patch.remove(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to remove {r:?}: {e}"))
+                    })?;
                 }
             }
         }
@@ -612,8 +617,9 @@ impl WorkSpace<'_> {
                 // just add all if there is more than one.
                 for r in new_rrs {
                     let r: SoaRecord = r.clone().into();
-                    self.patch.add_soa(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add soa {r:?}: {e}")))?;
+                    self.patch.add_soa(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to add soa {r:?}: {e}"))
+                    })?;
                 }
                 continue;
             }
@@ -636,14 +642,16 @@ impl WorkSpace<'_> {
                         continue;
                     }
                     let r: RegularRecord = r.clone().into();
-                    self.patch.add(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
+                    self.patch.add(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to add {r:?}: {e}"))
+                    })?;
                 }
             } else {
                 for r in new_rrs {
                     let r: RegularRecord = r.clone().into();
-                    self.patch.add(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
+                    self.patch.add(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to add {r:?}: {e}"))
+                    })?;
                 }
             }
         }
@@ -656,12 +664,14 @@ impl WorkSpace<'_> {
                     continue;
                 }
                 let old_nsec: RegularRecord = old_nsec.clone().into();
-                self.patch.remove(old_nsec.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}")))?;
+                self.patch.remove(old_nsec.clone()).map_err(|e| {
+                    SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}"))
+                })?;
             } else {
                 let old_nsec: RegularRecord = old_nsec.clone().into();
-                self.patch.remove(old_nsec.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}")))?;
+                self.patch.remove(old_nsec.clone()).map_err(|e| {
+                    SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}"))
+                })?;
             }
         }
 
@@ -673,12 +683,14 @@ impl WorkSpace<'_> {
                     continue;
                 }
                 let new_nsec: RegularRecord = new_nsec.clone().into();
-                self.patch.add(new_nsec.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}")))?;
+                self.patch.add(new_nsec.clone()).map_err(|e| {
+                    SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}"))
+                })?;
             } else {
                 let new_nsec: RegularRecord = new_nsec.clone().into();
-                self.patch.add(new_nsec.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}")))?;
+                self.patch.add(new_nsec.clone()).map_err(|e| {
+                    SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}"))
+                })?;
             }
         }
 
@@ -690,12 +702,14 @@ impl WorkSpace<'_> {
                     continue;
                 }
                 let old_nsec3: RegularRecord = old_nsec3.clone().into();
-                self.patch.remove(old_nsec3.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {old_nsec3:?}: {e}")))?;
+                self.patch.remove(old_nsec3.clone()).map_err(|e| {
+                    SignerError::PatchFailed(format!("unable to remove {old_nsec3:?}: {e}"))
+                })?;
             } else {
                 let old_nsec3: RegularRecord = old_nsec3.clone().into();
-                self.patch.remove(old_nsec3.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {old_nsec3:?}: {e}")))?;
+                self.patch.remove(old_nsec3.clone()).map_err(|e| {
+                    SignerError::PatchFailed(format!("unable to remove {old_nsec3:?}: {e}"))
+                })?;
             }
         }
 
@@ -707,12 +721,14 @@ impl WorkSpace<'_> {
                     continue;
                 }
                 let new_nsec3: RegularRecord = new_nsec3.clone().into();
-                self.patch.add(new_nsec3.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add {new_nsec3:?}: {e}")))?;
+                self.patch.add(new_nsec3.clone()).map_err(|e| {
+                    SignerError::PatchFailed(format!("unable to add {new_nsec3:?}: {e}"))
+                })?;
             } else {
                 let new_nsec3: RegularRecord = new_nsec3.clone().into();
-                self.patch.add(new_nsec3.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add {new_nsec3:?}: {e}")))?;
+                self.patch.add(new_nsec3.clone()).map_err(|e| {
+                    SignerError::PatchFailed(format!("unable to add {new_nsec3:?}: {e}"))
+                })?;
             }
         }
 
@@ -731,14 +747,16 @@ impl WorkSpace<'_> {
                         continue;
                     }
                     let r: RegularRecord = r.clone().into();
-                    self.patch.remove(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {r:?}: {e}")))?;
+                    self.patch.remove(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to remove {r:?}: {e}"))
+                    })?;
                 }
             } else {
                 for r in old_rrsigs {
                     let r: RegularRecord = r.clone().into();
-                    self.patch.remove(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {r:?}: {e}")))?;
+                    self.patch.remove(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to remove {r:?}: {e}"))
+                    })?;
                 }
             }
         }
@@ -758,14 +776,16 @@ impl WorkSpace<'_> {
                         continue;
                     }
                     let r: RegularRecord = r.clone().into();
-                    self.patch.add(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
+                    self.patch.add(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to add {r:?}: {e}"))
+                    })?;
                 }
             } else {
                 for r in new_rrsigs {
                     let r: RegularRecord = r.clone().into();
-                    self.patch.add(r.clone())
-			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
+                    self.patch.add(r.clone()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to add {r:?}: {e}"))
+                    })?;
                 }
             }
         }
@@ -1000,7 +1020,7 @@ impl WorkSpace<'_> {
                 }
 
                 // Save the new SOA serial.
-		self.local_state.previous_serial = Some(zone_soa.serial());
+                self.local_state.previous_serial = Some(zone_soa.serial());
                 Ok(old_soa.clone())
             }
             SignerSerialPolicy::Counter => {
@@ -1015,7 +1035,7 @@ impl WorkSpace<'_> {
                 let serial = previous_serial.add(1);
 
                 // Save the new SOA serial.
-		self.local_state.previous_serial = Some(serial);
+                self.local_state.previous_serial = Some(serial);
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1044,7 +1064,7 @@ impl WorkSpace<'_> {
                 }
 
                 // Save the new SOA serial.
-		self.local_state.previous_serial = Some(serial);
+                self.local_state.previous_serial = Some(serial);
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1080,7 +1100,7 @@ impl WorkSpace<'_> {
                 }
 
                 // Save the new SOA serial.
-		self.local_state.previous_serial = Some(serial);
+                self.local_state.previous_serial = Some(serial);
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1145,7 +1165,7 @@ impl WorkSpace<'_> {
         // state. Now update the apex in new_data.
 
         // Delete all types in apex_remove.
-        let curr_apex_remove = &self.local_state.apex_remove; 
+        let curr_apex_remove = &self.local_state.apex_remove;
         for t in curr_apex_remove {
             let key = (iss.origin.clone(), *t);
             iss.new_apex.remove(t);
@@ -1166,7 +1186,11 @@ impl WorkSpace<'_> {
                 };
 
                 let owner = record.owner().to_name::<Bytes>();
-                let data = record.data().clone().try_flatten_into().expect("should not fail");
+                let data = record
+                    .data()
+                    .clone()
+                    .try_flatten_into()
+                    .expect("should not fail");
                 let r = Record::new(owner.clone(), record.class(), record.ttl(), data);
 
                 if r.rtype() == Rtype::RRSIG {
@@ -1295,7 +1319,7 @@ impl WorkSpace<'_> {
                 let start = Instant::now();
                 iss.remove_nsec_nsec3();
                 iss.new_nsec3_chain()?;
-                    info!("updating NSEC3 parameters took {:?}", start.elapsed());
+                info!("updating NSEC3 parameters took {:?}", start.elapsed());
                 return Ok(());
             }
         } else {
@@ -1400,8 +1424,8 @@ impl IncrementalSigningState {
         let mut rrsig_records = vec![];
         let mut type_covered = Rtype::RRSIG;
 
-	// Loop over all records. Records do not have to be sorted though
-	// performance may improve if records are grouped in RRsets.
+        // Loop over all records. Records do not have to be sorted though
+        // performance may improve if records are grouped in RRsets.
         for entry in signed_reader.all_records() {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
@@ -1421,7 +1445,10 @@ impl IncrementalSigningState {
                     }
 
                     let key = (rrsig_records[0].owner().clone(), type_covered);
-                    self.rrsigs.entry(key).or_default().append(&mut rrsig_records);
+                    self.rrsigs
+                        .entry(key)
+                        .or_default()
+                        .append(&mut rrsig_records);
                     type_covered = rrsig.type_covered();
                     rrsig_records = vec![];
                     rrsig_records.push(record);
@@ -1450,7 +1477,7 @@ impl IncrementalSigningState {
                     if key.0 == self.origin {
                         self.old_apex.entry(key.1).or_default().append(&mut records);
                     } else {
-			self.old_data.entry(key).or_default().append(&mut records);
+                        self.old_data.entry(key).or_default().append(&mut records);
                     }
                     records = vec![];
                     records.push(record);
@@ -1463,12 +1490,15 @@ impl IncrementalSigningState {
             if key.0 == self.origin {
                 self.old_apex.entry(key.1).or_default().append(&mut records);
             } else {
-		self.old_data.entry(key).or_default().append(&mut records);
+                self.old_data.entry(key).or_default().append(&mut records);
             }
         }
         if !rrsig_records.is_empty() {
             let key = (rrsig_records[0].owner().clone(), type_covered);
-            self.rrsigs.entry(key).or_default().append(&mut rrsig_records);
+            self.rrsigs
+                .entry(key)
+                .or_default()
+                .append(&mut rrsig_records);
         }
         self.old_apex_saved = self.old_apex.clone();
         self.old_nsecs = self.nsecs.clone();
@@ -1500,7 +1530,7 @@ impl IncrementalSigningState {
             if key.0 == self.origin {
                 self.new_apex.entry(key.1).or_default().append(&mut records);
             } else {
-		self.new_data.entry(key).or_default().append(&mut records);
+                self.new_data.entry(key).or_default().append(&mut records);
             }
             records = vec![];
             records.push(record);
@@ -1511,7 +1541,7 @@ impl IncrementalSigningState {
             if key.0 == self.origin {
                 self.new_apex.entry(key.1).or_default().append(&mut records);
             } else {
-		self.new_data.entry(key).or_default().append(&mut records);
+                self.new_data.entry(key).or_default().append(&mut records);
             }
         }
 
@@ -1704,14 +1734,7 @@ impl IncrementalSigningState {
                     let add = add.intersection(&mask).copied().collect();
 
                     // Update the NSEC record.
-                    nsec_update_bitmap(
-                        &record_nsec,
-                        nsec,
-                        &curr,
-                        &add,
-                        delete,
-                        self,
-                    );
+                    nsec_update_bitmap(&record_nsec, nsec, &curr, &add, delete, self);
 
                     // Mark descendents as occluded after updating the bitmap.
                     // The reason is that nsec_update_bitmap uses the current
@@ -1740,14 +1763,7 @@ impl IncrementalSigningState {
                         curr.insert(*r_type);
                     }
 
-                    let mut new = nsec_update_bitmap(
-                        &record_nsec,
-                        nsec,
-                        &curr,
-                        add,
-                        delete,
-                        self,
-                    );
+                    let mut new = nsec_update_bitmap(&record_nsec, nsec, &curr, add, delete, self);
 
                     // Sign the types at this name except for NSEC, and RRSIG.
                     new.remove(&Rtype::NSEC);
@@ -1767,28 +1783,14 @@ impl IncrementalSigningState {
                         let ds_set: HashSet<_> = [Rtype::DS].into();
                         sign_rtype_set(key, &ds_set, self)?;
                     }
-                    nsec_update_bitmap(
-                        &record_nsec,
-                        nsec,
-                        &curr,
-                        add,
-                        delete,
-                        self,
-                    );
+                    nsec_update_bitmap(&record_nsec, nsec, &curr, add, delete, self);
                     continue;
                 }
 
                 // The add types need to be signed.
                 sign_rtype_set(key, add, self)?;
 
-                nsec_update_bitmap(
-                    &record_nsec,
-                    nsec,
-                    &curr,
-                    add,
-                    delete,
-                    self,
-                );
+                nsec_update_bitmap(&record_nsec, nsec, &curr, add, delete, self);
             } else {
                 if add.is_empty() {
                     assert!(!delete.is_empty());
@@ -2148,54 +2150,58 @@ struct LocalState {
 
 impl LocalState {
     fn new(zone: &Arc<Zone>) -> Result<Self, SignerError> {
-	let zone_state = zone.state.lock()
-	    .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
+        let zone_state = zone
+            .state
+            .lock()
+            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
 
-	Ok(Self {
-	    apex_remove: zone_state.apex_remove.clone(),
-	    apex_extra: zone_state.apex_extra.clone(),
-	    last_signature_refresh: zone_state.last_signature_refresh.clone(),
-	    key_tags: zone_state.key_tags.clone(),
-	    key_roll: zone_state.key_roll.clone(),
-	    previous_serial: zone_state.previous_serial,
-	})
+        Ok(Self {
+            apex_remove: zone_state.apex_remove.clone(),
+            apex_extra: zone_state.apex_extra.clone(),
+            last_signature_refresh: zone_state.last_signature_refresh.clone(),
+            key_tags: zone_state.key_tags.clone(),
+            key_roll: zone_state.key_roll.clone(),
+            previous_serial: zone_state.previous_serial,
+        })
     }
 
     fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) -> Result<(), SignerError> {
-	let mut modified = false;
+        let mut modified = false;
 
-	let mut zone_state = zone.state.lock()
-	    .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
-	
-	if self.apex_remove != zone_state.apex_remove {
-	    zone_state.apex_remove = self.apex_remove;
-	    modified = true;
-	}
-	if self.apex_extra != zone_state.apex_extra {
-	    zone_state.apex_extra = self.apex_extra;
-	    modified = true;
-	}
-	if self.last_signature_refresh != zone_state.last_signature_refresh {
-	    zone_state.last_signature_refresh = self.last_signature_refresh;
-	    modified = true;
-	}
-	if self.key_tags != zone_state.key_tags {
-	    zone_state.key_tags = self.key_tags;
-	    modified = true;
-	}
-	if self.key_roll != zone_state.key_roll {
-	    zone_state.key_roll = self.key_roll;
-	    modified = true;
-	}
-	if self.previous_serial != zone_state.previous_serial {
-	    zone_state.previous_serial = self.previous_serial;
-	    modified = true;
-	}
+        let mut zone_state = zone
+            .state
+            .lock()
+            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
 
-	if modified {
-	    zone.mark_dirty(&mut zone_state, center);
-	}
-	Ok(())
+        if self.apex_remove != zone_state.apex_remove {
+            zone_state.apex_remove = self.apex_remove;
+            modified = true;
+        }
+        if self.apex_extra != zone_state.apex_extra {
+            zone_state.apex_extra = self.apex_extra;
+            modified = true;
+        }
+        if self.last_signature_refresh != zone_state.last_signature_refresh {
+            zone_state.last_signature_refresh = self.last_signature_refresh;
+            modified = true;
+        }
+        if self.key_tags != zone_state.key_tags {
+            zone_state.key_tags = self.key_tags;
+            modified = true;
+        }
+        if self.key_roll != zone_state.key_roll {
+            zone_state.key_roll = self.key_roll;
+            modified = true;
+        }
+        if self.previous_serial != zone_state.previous_serial {
+            zone_state.previous_serial = self.previous_serial;
+            modified = true;
+        }
+
+        if modified {
+            zone.mark_dirty(&mut zone_state, center);
+        }
+        Ok(())
     }
 }
 

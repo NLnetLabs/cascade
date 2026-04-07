@@ -1,10 +1,9 @@
-use std::time::UNIX_EPOCH;
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
 use std::env::{VarError, var};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
@@ -794,128 +793,128 @@ impl ZoneSigner {
     }
 
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
-            let mut min_time = None;
-            let now = SystemTime::now();
+        let mut min_time = None;
+        let now = SystemTime::now();
 
-            #[allow(clippy::mutable_key_type)]
-            let zones = {
-                let state = center.state.lock().unwrap();
-                state.zones.clone()
+        #[allow(clippy::mutable_key_type)]
+        let zones = {
+            let state = center.state.lock().unwrap();
+            state.zones.clone()
+        };
+
+        // This the old expiration time based on the signature that
+        // expires first. It should be removed.
+        for zone in &zones {
+            let zone = &zone.0;
+            let zone_name = &zone.name;
+
+            let min_expiration = {
+                // Use a block to make sure that the mutex is clearly dropped.
+                let zone_state = zone.state.lock().unwrap();
+                zone_state.min_expiration
             };
 
-            // This the old expiration time based on the signature that
-            // expires first. It should be removed.
-            for zone in &zones {
-                let zone = &zone.0;
-                let zone_name = &zone.name;
+            let Some(min_expiration) = min_expiration else {
+                trace!("[ZS] resign: no min-expiration for zone {zone_name}");
+                continue;
+            };
 
-                let min_expiration = {
-                    // Use a block to make sure that the mutex is clearly dropped.
-                    let zone_state = zone.state.lock().unwrap();
-                    zone_state.min_expiration
-                };
-
-                let Some(min_expiration) = min_expiration else {
-                    trace!("[ZS] resign: no min-expiration for zone {zone_name}");
-                    continue;
-                };
-
-                // Start a new block to make sure the mutex is released.
-                {
-                    let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                    let opt_expiration = resign_busy.get(zone_name);
-                    if let Some(expiration) = opt_expiration {
-                        if *expiration == min_expiration {
-                            // This zone is busy.
-                            trace!("[ZS]: resign: zone {zone_name} is busy");
-                            continue;
-                        }
-
-                        // Zone has been resigned. Remove this entry.
-                        resign_busy.remove(zone_name);
+            // Start a new block to make sure the mutex is released.
+            {
+                let mut resign_busy = center.resign_busy.lock().expect("should not fail");
+                let opt_expiration = resign_busy.get(zone_name);
+                if let Some(expiration) = opt_expiration {
+                    if *expiration == min_expiration {
+                        // This zone is busy.
+                        trace!("[ZS]: resign: zone {zone_name} is busy");
+                        continue;
                     }
+
+                    // Zone has been resigned. Remove this entry.
+                    resign_busy.remove(zone_name);
                 }
-
-                // Ensure that the Mutexes are locked only in this block;
-                let remain_time = {
-                    let zone_state = zone.state.lock().unwrap();
-                    // TODO: what if there is no policy?
-                    zone_state.policy.as_ref().unwrap().signer.sig_remain_time
-                };
-
-                let exp_time = min_expiration.to_system_time(now);
-                let exp_time = exp_time - Duration::from_secs(remain_time as u64);
-
-                min_time = if let Some(time) = min_time {
-                    Some(min(time, exp_time))
-                } else {
-                    Some(exp_time)
-                };
             }
 
-            // Compute when to incrementally sign a zone again to refresh
-            // signatures.
-            for zone in zones {
-                let zone = &zone.0;
-                let zone_name = &zone.name;
+            // Ensure that the Mutexes are locked only in this block;
+            let remain_time = {
+                let zone_state = zone.state.lock().unwrap();
+                // TODO: what if there is no policy?
+                zone_state.policy.as_ref().unwrap().signer.sig_remain_time
+            };
 
-                let last_signature_refresh = {
-                    // Use a block to make sure that the mutex is clearly dropped.
-                    let zone_state = zone.state.lock().unwrap();
-                    zone_state.last_signature_refresh.clone()
-                };
+            let exp_time = min_expiration.to_system_time(now);
+            let exp_time = exp_time - Duration::from_secs(remain_time as u64);
 
-                // Ensure that the Mutexes are locked only in this block;
-                let signature_refresh_interval = {
-                    let zone_state = zone.state.lock().unwrap();
-                    // TODO: what if there is no policy?
-                    zone_state
-                        .policy
-                        .as_ref()
-                        .unwrap()
-                        .signer
-                        .signature_refresh_interval
-                };
+            min_time = if let Some(time) = min_time {
+                Some(min(time, exp_time))
+            } else {
+                Some(exp_time)
+            };
+        }
 
-                let curr_refresh_time = last_signature_refresh.clone()
-                    + Duration::from_secs(signature_refresh_interval as u64);
+        // Compute when to incrementally sign a zone again to refresh
+        // signatures.
+        for zone in zones {
+            let zone = &zone.0;
+            let zone_name = &zone.name;
 
-                // Start a new block to make sure the mutex is released.
-                {
-                    let mut resign_busy2 = center.resign_busy2.lock().expect("should not fail");
-                    let opt_refresh_time = resign_busy2.get(zone_name);
-                    if let Some(saved_refresh_time) = opt_refresh_time {
-                        if *saved_refresh_time == curr_refresh_time {
-                            // This zone is busy.
-                            trace!("[ZS]: resign: zone {zone_name} is busy");
-                            continue;
-                        }
+            let last_signature_refresh = {
+                // Use a block to make sure that the mutex is clearly dropped.
+                let zone_state = zone.state.lock().unwrap();
+                zone_state.last_signature_refresh.clone()
+            };
 
-                        // Zone has been resigned. Remove this entry.
-                        resign_busy2.remove(zone_name);
+            // Ensure that the Mutexes are locked only in this block;
+            let signature_refresh_interval = {
+                let zone_state = zone.state.lock().unwrap();
+                // TODO: what if there is no policy?
+                zone_state
+                    .policy
+                    .as_ref()
+                    .unwrap()
+                    .signer
+                    .signature_refresh_interval
+            };
+
+            let curr_refresh_time = last_signature_refresh.clone()
+                + Duration::from_secs(signature_refresh_interval as u64);
+
+            // Start a new block to make sure the mutex is released.
+            {
+                let mut resign_busy2 = center.resign_busy2.lock().expect("should not fail");
+                let opt_refresh_time = resign_busy2.get(zone_name);
+                if let Some(saved_refresh_time) = opt_refresh_time {
+                    if *saved_refresh_time == curr_refresh_time {
+                        // This zone is busy.
+                        trace!("[ZS]: resign: zone {zone_name} is busy");
+                        continue;
                     }
+
+                    // Zone has been resigned. Remove this entry.
+                    resign_busy2.remove(zone_name);
                 }
-
-                let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
-
-                min_time = if let Some(time) = min_time {
-                    Some(min(time, refresh_time))
-                } else {
-                    Some(refresh_time)
-                };
             }
-            min_time.map(|t| {
-                // We need to go from SystemTime to Tokio Instant, is there a
-                // better way?
 
-                // We are computing a timeout value. If the timeout is in the
-                // past then we can just as well use zero.
-                let since_now = t
-                    .duration_since(SystemTime::now())
-                    .unwrap_or(Duration::ZERO);
+            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
 
-                Instant::now() + since_now
-            })
+            min_time = if let Some(time) = min_time {
+                Some(min(time, refresh_time))
+            } else {
+                Some(refresh_time)
+            };
+        }
+        min_time.map(|t| {
+            // We need to go from SystemTime to Tokio Instant, is there a
+            // better way?
+
+            // We are computing a timeout value. If the timeout is in the
+            // past then we can just as well use zero.
+            let since_now = t
+                .duration_since(SystemTime::now())
+                .unwrap_or(Duration::ZERO);
+
+            Instant::now() + since_now
+        })
     }
 
     fn resign_zones(&self, center: &Arc<Center>) {

@@ -368,7 +368,9 @@ impl SignerPolicySpec {
             sig_inception_offset: Duration::from_secs(policy.sig_inception_offset.into()),
             sig_validity_time: Duration::from_secs(policy.sig_validity_time.into()),
             sig_remain_time: Duration::from_secs(policy.sig_remain_time.into()),
-            signature_refresh_interval: Duration::from_secs(policy.signature_refresh_interval.into()),
+            signature_refresh_interval: Duration::from_secs(
+                policy.signature_refresh_interval.into(),
+            ),
             key_roll_time: Duration::from_secs(policy.key_roll_time.into()),
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
