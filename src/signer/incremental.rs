@@ -12,6 +12,7 @@ use cascade_zonedata::{
     LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
     SoaRecord,
 };
+use domain::base::Serial;
 use domain::base::iana::{Class, ZonemdAlgorithm, ZonemdScheme};
 use domain::base::name::FlattenInto;
 use domain::base::{
@@ -55,7 +56,7 @@ pub fn sign_incrementally(
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) -> Result<(), SignerError> {
     // Check what work needs to be done. If the keyset state
-    // changed then check if the APEX records change or if a
+    // changed then check if the apex records change or if a
     // CSK or ZSK roll require resigning the zone.
     // If enough time has passed since the last time
     // signatures have been updated, then update signatures
@@ -93,6 +94,7 @@ pub fn sign_incrementally(
         patch,
         zonemd: HashSet::new(),
         pass_through_mode: PassThroughMode::Off,
+	modified_state: ModifiedState::new(),
     };
 
     let apex_changed = ws.handle_keyset_changed();
@@ -187,6 +189,9 @@ pub fn sign_incrementally(
 	println!("generating diffs took {:?}", start.elapsed());
 
     ws.patch.apply().unwrap();
+
+    ws.modified_state.save(&ws.center, ws.zone);
+
     Ok(())
 }
 
@@ -206,7 +211,9 @@ struct WorkSpace<'a> {
     // Extra fields that should go to policy.
     pub zonemd: HashSet<()>,
     pub pass_through_mode: PassThroughMode,
-    // Extra fields that should go to state.
+
+    // Place to collect changes to state.
+    modified_state: ModifiedState,
 }
 
 impl WorkSpace<'_> {
@@ -323,17 +330,11 @@ impl WorkSpace<'_> {
             iss.rrsigs.insert(key, sigs);
         }
 
-        if to_sign != 0 {
-            // Only update last_signature_refresh when enough time has passed
-            // that at least one record got signed.
-            {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let mut zone_state = self.zone.state.lock().unwrap();
+	// Assume we signed at least one record. If we don't then something is 
+	// off, but we will eventually resign RRsets with signature that are
+	// close to expiring.
+	self.modified_state.last_signature_refresh = Some(now);
 
-                zone_state.last_signature_refresh = now;
-                self.zone.mark_dirty(&mut zone_state, &self.center);
-            }
-        }
         Ok(())
     }
 
@@ -425,13 +426,7 @@ impl WorkSpace<'_> {
             }
 
             // Clear key_roll.
-            {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let mut zone_state = self.zone.state.lock().unwrap();
-
-                zone_state.key_roll = None;
-                self.zone.mark_dirty(&mut zone_state, &self.center);
-            }
+	    self.modified_state.key_roll = Some(None);
             return Ok(());
         }
 
@@ -521,7 +516,7 @@ impl WorkSpace<'_> {
     pub fn handle_keyset_changed(&mut self) -> bool {
         let mut apex_changed = false;
 
-        // Check the APEX RRtypes that need to be removed. We
+        // Check the apex RRtypes that need to be removed. We
         // should get that from keyset, but currently we don't.
         // Just have a fixed list.
         let apex_remove: HashSet<Rtype> = [Rtype::DNSKEY, Rtype::CDS, Rtype::CDNSKEY].into();
@@ -534,20 +529,12 @@ impl WorkSpace<'_> {
         };
 
         if apex_remove != curr_apex_remove {
-            println!("APEX remove RRtypes changed: from {curr_apex_remove:?} to {apex_remove:?}",);
-
-            // Save the new apex_remove set.
-            {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let mut zone_state = self.zone.state.lock().unwrap();
-
-                zone_state.apex_remove = apex_remove;
-                self.zone.mark_dirty(&mut zone_state, &self.center);
-            }
+            println!("apex remove RRtypes changed: from {curr_apex_remove:?} to {apex_remove:?}",);
+	    self.modified_state.apex_remove = Some(apex_remove);
             apex_changed = true;
         }
 
-        // Check records that need to be added to the APEX.
+        // Check records that need to be added to the apex.
         let mut apex_extra = vec![];
         apex_extra.extend_from_slice(&self.keyset_state.dnskey_rrset);
         apex_extra.extend_from_slice(&self.keyset_state.cds_rrset);
@@ -561,16 +548,8 @@ impl WorkSpace<'_> {
         };
 
         if apex_extra != curr_apex_extra {
-            println!("APEX extra changed: from {curr_apex_extra:?} to {apex_extra:?}",);
-
-            // Save the new apex_extra list.
-            {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let mut zone_state = self.zone.state.lock().unwrap();
-
-                zone_state.apex_extra = apex_extra;
-                self.zone.mark_dirty(&mut zone_state, &self.center);
-            }
+            println!("apex extra changed: from {curr_apex_extra:?} to {apex_extra:?}",);
+	    self.modified_state.apex_extra = Some(apex_extra);
             apex_changed = true;
         }
 
@@ -600,16 +579,8 @@ impl WorkSpace<'_> {
 
         if key_tags != curr_key_tags {
             println!("key tags changed: from {curr_key_tags:?} to {key_tags:?}",);
-
-            // Save the new key tags set and key roll start time.
-            {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let mut zone_state = self.zone.state.lock().unwrap();
-
-                zone_state.key_tags = key_tags;
-                zone_state.key_roll = Some(faketime_or_now());
-                self.zone.mark_dirty(&mut zone_state, &self.center);
-            }
+	    self.modified_state.key_tags = Some(key_tags);
+	    self.modified_state.key_roll = Some(Some(faketime_or_now()));
             apex_changed = true;
         }
         apex_changed
@@ -834,8 +805,8 @@ impl WorkSpace<'_> {
 
     /*
         fn load_pass_through_dnskey(&mut self, iss: &mut IncrementalSigningState) -> Result<(), Error> {
-            // Assume that the APEX records have been copied from KeySetState to
-            // SignerState. Now update the APEX in new_data.
+            // Assume that the apex records have been copied from KeySetState to
+            // SignerState. Now update the apex in new_data.
 
             let mut dnskey_records = vec![];
             let mut rrsig_records = vec![];
@@ -1069,14 +1040,7 @@ impl WorkSpace<'_> {
                 }
 
                 // Save the new SOA serial.
-                {
-                    // Use a block to make sure that the mutex is clearly
-                    // dropped.
-                    let mut zone_state = self.zone.state.lock().unwrap();
-
-                    zone_state.previous_serial = Some(zone_soa.serial());
-                    self.zone.mark_dirty(&mut zone_state, &self.center);
-                }
+		self.modified_state.previous_serial = Some(Some(zone_soa.serial()));
                 Ok(old_soa.clone())
             }
             SignerSerialPolicy::Counter => {
@@ -1091,14 +1055,7 @@ impl WorkSpace<'_> {
                 let serial = previous_serial.add(1);
 
                 // Save the new SOA serial.
-                {
-                    // Use a block to make sure that the mutex is clearly
-                    // dropped.
-                    let mut zone_state = self.zone.state.lock().unwrap();
-
-                    zone_state.previous_serial = Some(serial);
-                    self.zone.mark_dirty(&mut zone_state, &self.center);
-                }
+		self.modified_state.previous_serial = Some(Some(serial));
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1127,14 +1084,7 @@ impl WorkSpace<'_> {
                 }
 
                 // Save the new SOA serial.
-                {
-                    // Use a block to make sure that the mutex is clearly
-                    // dropped.
-                    let mut zone_state = self.zone.state.lock().unwrap();
-
-                    zone_state.previous_serial = Some(serial);
-                    self.zone.mark_dirty(&mut zone_state, &self.center);
-                }
+		self.modified_state.previous_serial = Some(Some(serial));
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1170,14 +1120,7 @@ impl WorkSpace<'_> {
                 }
 
                 // Save the new SOA serial.
-                {
-                    // Use a block to make sure that the mutex is clearly
-                    // dropped.
-                    let mut zone_state = self.zone.state.lock().unwrap();
-
-                    zone_state.previous_serial = Some(serial);
-                    self.zone.mark_dirty(&mut zone_state, &self.center);
-                }
+		self.modified_state.previous_serial = Some(Some(serial));
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1268,8 +1211,8 @@ impl WorkSpace<'_> {
         &mut self,
         iss: &mut IncrementalSigningState,
     ) -> Result<(), SignerError> {
-        // Assume that the APEX records have been copied from KeySetState to
-        // state. Now update the APEX in new_data.
+        // Assume that the apex records have been copied from KeySetState to
+        // state. Now update the apex in new_data.
 
         // Delete all types in apex_remove.
         let curr_apex_remove = {
@@ -1549,6 +1492,8 @@ impl IncrementalSigningState {
         let mut rrsig_records = vec![];
         let mut type_covered = Rtype::RRSIG;
 
+	// Loop over all records. Records do not have to be sorted though
+	// performance may improve if records are grouped in RRsets.
         for entry in signed_reader.all_records() {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
@@ -1653,8 +1598,6 @@ impl IncrementalSigningState {
 
         for entry in reader.regular_records() {
             let record: OldParsedRecord = entry.clone().into();
-            let record: StoredRecord = record.flatten_into();
-
             let record: StoredRecord = record.flatten_into();
 
             if records.is_empty() {
@@ -2158,7 +2101,7 @@ impl IncrementalSigningState {
                 if opt_out_flag {
                     // We have a new record and no NSEC3 record exists. But in the
                     // case of opt-out there may already be an NS record.
-                    // We are not at APEX because APEX always has an NSEC3
+                    // We are not at apex because apex always has an NSEC3
                     // record.
                     let tmpkey = (key.clone(), Rtype::NS);
                     if self.new_data.contains_key(&tmpkey) {
@@ -2323,6 +2266,64 @@ impl IncrementalSigningState {
     }
 }
 
+/// Collect changes to state and then update state at the end.
+struct ModifiedState {
+    apex_remove: Option<HashSet<Rtype>>,
+    apex_extra: Option<Vec<String>>,
+    last_signature_refresh: Option<UnixTime>,
+    key_tags: Option<HashSet<u16>>,
+    key_roll: Option<Option<UnixTime>>,
+    previous_serial: Option<Option<Serial>>,
+}
+
+impl ModifiedState {
+    fn new() -> Self {
+	Self {
+	    apex_remove: None,
+	    apex_extra: None,
+	    last_signature_refresh: None,
+	    key_tags: None,
+	    key_roll: None,
+	    previous_serial: None,
+	}
+    }
+
+    fn save(self, center: &Arc<Center>, zone: Arc<Zone>) {
+	let mut modified = false;
+
+	let mut zone_state = zone.state.lock().unwrap();
+	
+	if let Some(apex_remove) = self.apex_remove {
+	    zone_state.apex_remove = apex_remove;
+	    modified = true;
+	}
+	if let Some(apex_extra) = self.apex_extra {
+	    zone_state.apex_extra = apex_extra;
+	    modified = true;
+	}
+	if let Some(last_signature_refresh) = self.last_signature_refresh {
+	    zone_state.last_signature_refresh = last_signature_refresh;
+	    modified = true;
+	}
+	if let Some(key_tags) = self.key_tags {
+	    zone_state.key_tags = key_tags;
+	    modified = true;
+	}
+	if let Some(key_roll) = self.key_roll {
+	    zone_state.key_roll = key_roll;
+	    modified = true;
+	}
+	if let Some(previous_serial) = self.previous_serial {
+	    zone_state.previous_serial = previous_serial;
+	    modified = true;
+	}
+
+	if modified {
+	    zone.mark_dirty(&mut zone_state, &center);
+	}
+    }
+}
+
 fn sign_records(
     origin: &Name<Bytes>,
     records: &[Zrd],
@@ -2364,7 +2365,7 @@ fn nsec_insert(
     iss: &mut IncrementalSigningState,
 ) {
     // Try to find the NSEC record that comes before the one we are trying
-    // to insert. Assume that the APEX NSEC will always exist can sort
+    // to insert. Assume that the apex NSEC will always exist can sort
     // before anything else.
     let mut range = iss.nsecs.range::<Name<_>, _>(..name);
     let (previous_name, previous_record) = range
@@ -2399,7 +2400,7 @@ fn nsec_insert(
 
 fn nsec_remove(name: &Name<Bytes>, next_name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
     // Try to find the NSEC record that comes before the one we are trying
-    // to remove. Assume that the APEX NSEC will always exist can sort
+    // to remove. Assume that the apex NSEC will always exist can sort
     // before anything else.
     let mut range = iss.nsecs.range::<Name<_>, _>(..name);
     let (previous_name, previous_record) = range
@@ -2620,7 +2621,7 @@ fn nsec3_remove_full(
 ) {
     nsec3_remove_one(nsec3_name, nsec3_next, iss);
 
-    // Assume that we never remove the APEX. So the parent always exists.
+    // Assume that we never remove the apex. So the parent always exists.
     let name = name.parent().expect("should exist");
     nsec3_remove_et(&name, iss);
 }
@@ -2636,12 +2637,12 @@ fn nsec3_remove_et(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
     let mut name = name.clone();
     loop {
         if !name.ends_with(&iss.origin) {
-            // This is weird, we should never be able to get beyond APEX.
+            // This is weird, we should never be able to get beyond apex.
             // Just ignore this.
             return;
         }
         if name == iss.origin {
-            // Never remove the NSEC3 record for APEX.
+            // Never remove the NSEC3 record for apex.
             return;
         }
 
@@ -2700,7 +2701,7 @@ fn nsec3_remove_et(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
         nsec3_remove_one(&nsec3_name, &next_owner, iss);
 
         // We remove the NSEC3 record for the name. Get the parent. We should
-        // be below APEX, so the parent has to exist.
+        // be below apex, so the parent has to exist.
         name = name.parent().expect("parent should exist");
     }
 }
@@ -2899,7 +2900,7 @@ fn nsec3_insert_full(
 ) {
     nsec3_insert_one(nsec3_hash, nsec3_name, rtypebitmap, iss);
 
-    // Assume that we never insert the APEX. So the parent always exists.
+    // Assume that we never insert the apex. So the parent always exists.
     let name = name.parent().expect("should exist");
     nsec3_insert_ent(&name, iss);
 }
@@ -2910,12 +2911,12 @@ fn nsec3_insert_ent(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
     let mut name = name.clone();
     loop {
         if !name.ends_with(&iss.origin) {
-            // This is weird, we should never be able to get beyond APEX.
+            // This is weird, we should never be able to get beyond apex.
             // Just ignore this.
             return;
         }
         if name == iss.origin {
-            // APEX exists by definition.
+            // apex exists by definition.
             return;
         }
 
@@ -2930,7 +2931,7 @@ fn nsec3_insert_ent(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
         let rtypebitmap = rtypebitmap.finalize();
         nsec3_insert_one(nsec3_hash_octets, &nsec3_name, rtypebitmap, iss);
 
-        // Get the parent. We should be below APEX, so the parent has to exist.
+        // Get the parent. We should be below apex, so the parent has to exist.
         name = name.parent().expect("parent should exist");
     }
 }
