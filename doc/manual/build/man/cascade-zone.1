@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Mar 20, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "Apr 07, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -116,9 +116,34 @@ Get the history of a single zone.
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0
 .TP
-.B \-\-source <SOURCE>
+.B \-\-source <IP_ADDRESS[:<PORT>][^<TSIG_KEY_NAME]>
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-source <PATH/TO/ZONE/FILE>
 The zone source can be an IP address (with or without port, defaults to port
 53) or a file path.
+.sp
+When providing an IP address (with or without port) you may also optionally
+suffix it with \fB^<TSIG_KEY_NAME>\fP to indicate that the specified RFC 8945
+TSIG key should be used to sign the zone transfer request.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+When providing the path to a zone file to load, if \fBzone
+add\fP is executed on a different host than where the \fBcascaded\fP
+daemon is running the path must be valid on the \fBdaemon\fP host.
+.UNINDENT
+.UNINDENT
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+Note: In order to use a TSIG key you MUST also supply the key to
+Cascade via \fBtsig add\fP\&.
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP

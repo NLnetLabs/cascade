@@ -161,6 +161,7 @@ Examples of things we're interested in:
    man/cascade-policy
    man/cascade-status
    man/cascade-template
+   man/cascade-tsig
    man/cascade-zone
    cascade-hsm-bridge Daemon <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge.html>
    cascade-hsm-bridge Configuration File Format <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge-config.toml.html>
