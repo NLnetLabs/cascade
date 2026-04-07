@@ -65,25 +65,26 @@ pub fn sign_incrementally(
     // signatures need to be updated.
     // Resign using the unsigned zonefile when load_unsigned is true.
 
-        status.write().unwrap().current_action = "Start incremental signing".to_string();
+        status.write().expect("should not fail").current_action = "Start incremental signing".to_string();
     let load_unsigned = patch.next_loaded().is_some();
 
     let origin = &zone.name;
     let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, origin);
     let state = std::fs::read_to_string(&state_path)
         .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
-    let keyset_state: KeySetState = serde_json::from_str(&state).unwrap();
+    let keyset_state: KeySetState = serde_json::from_str(&state)
+	.map_err(|e| SignerError::SigningError(format!("loading keyset state failed: {e}")))?;
 
-    let (policy, curr_last_signature_refresh, curr_key_roll);
+    let policy;
     {
-        let zone_state = zone.state.lock().unwrap();
-        policy = zone_state.policy.clone().unwrap();
-        curr_last_signature_refresh = zone_state.last_signature_refresh.clone();
-	curr_key_roll = zone_state.key_roll.clone();
+        let zone_state = zone.state.lock()
+	    .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
+        policy = zone_state.policy.clone().expect("should be there");
     };
 
     let use_nsec3 = matches!(policy.signer.denial, SignerDenialPolicy::NSec3 { .. });
 
+    let local_state = LocalState::new(zone)?;
     let mut ws = WorkSpace {
         keyset_state,
         use_nsec3,
@@ -94,9 +95,12 @@ pub fn sign_incrementally(
         patch,
         zonemd: HashSet::new(),
         pass_through_mode: PassThroughMode::Off,
-	modified_state: ModifiedState::new(),
+	local_state,
     };
 
+    let curr_last_signature_refresh = ws.local_state.last_signature_refresh.clone();
+    let curr_key_roll = ws.local_state.key_roll.clone();
+	
     let apex_changed = ws.handle_keyset_changed();
 
     if !matches!(ws.pass_through_mode, PassThroughMode::Off) {
@@ -134,7 +138,7 @@ pub fn sign_incrementally(
     )?;
 
     let start = Instant::now();
-    iss.load_signed_zone(&ws.patch.curr()).unwrap();
+    iss.load_signed_zone(&ws.patch.curr())?;
     if ws.verbose {
         println!("loading signed zone took {:?}", start.elapsed());
     }
@@ -143,8 +147,7 @@ pub fn sign_incrementally(
 
     if load_unsigned {
         let start = Instant::now();
-        iss.load_unsigned_zone(&ws.patch.next_loaded().unwrap())
-            .unwrap();
+        iss.load_unsigned_zone(&ws.patch.next_loaded().expect("should be there"))?;
         if ws.verbose {
             println!("loading new unsigned zone took {:?}", start.elapsed());
         }
@@ -188,9 +191,10 @@ pub fn sign_incrementally(
     ws.incremental_generate_diffs(&iss)?;
 	println!("generating diffs took {:?}", start.elapsed());
 
-    ws.patch.apply().unwrap();
+    ws.patch.apply()
+	.map_err(|e| SignerError::PatchFailed(format!("apply failed: {e}")))?;
 
-    ws.modified_state.save(&ws.center, ws.zone);
+    ws.local_state.save(&ws.center, &ws.zone)?;
 
     Ok(())
 }
@@ -212,8 +216,8 @@ struct WorkSpace<'a> {
     pub zonemd: HashSet<()>,
     pub pass_through_mode: PassThroughMode,
 
-    // Place to collect changes to state.
-    modified_state: ModifiedState,
+    // Local copy of state variables we need.
+    local_state: LocalState,
 }
 
 impl WorkSpace<'_> {
@@ -229,13 +233,10 @@ impl WorkSpace<'_> {
         let min_expire =
             now_system_time + Duration::from_secs(self.policy.signer.sig_remain_time as u64);
 
-        let curr_last_signature_refresh = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
+        let curr_last_signature_refresh =
+	    &self.local_state.last_signature_refresh;
 
-            zone_state.last_signature_refresh.clone()
-        };
-        let mut since_last_time: Duration = if now >= curr_last_signature_refresh {
+        let mut since_last_time: Duration = if now >= *curr_last_signature_refresh {
             <UnixTime as Into<Duration>>::into(now.clone())
                 - <UnixTime as Into<Duration>>::into(curr_last_signature_refresh.clone())
         } else {
@@ -333,7 +334,7 @@ impl WorkSpace<'_> {
 	// Assume we signed at least one record. If we don't then something is 
 	// off, but we will eventually resign RRsets with signature that are
 	// close to expiring.
-	self.modified_state.last_signature_refresh = Some(now);
+	self.local_state.last_signature_refresh = now;
 
         Ok(())
     }
@@ -344,12 +345,7 @@ impl WorkSpace<'_> {
     ) -> Result<(), SignerError> {
         let key_roll_time = Duration::from_secs(self.policy.signer.key_roll_time as u64);
 
-        let curr_key_roll = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
-
-            zone_state.key_roll.clone()
-        };
+        let curr_key_roll = &self.local_state.key_roll; 
         let key_roll_start = curr_key_roll.as_ref().expect("should be there");
 
         let now = faketime_or_now();
@@ -357,12 +353,7 @@ impl WorkSpace<'_> {
         let since_start: Duration = <UnixTime as Into<Duration>>::into(now.clone())
             - <UnixTime as Into<Duration>>::into(key_roll_start.clone());
 
-        let curr_key_tags = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
-
-            zone_state.key_tags.clone()
-        };
+        let curr_key_tags = &self.local_state.key_tags;
 
         if since_start > key_roll_time {
             // Full roll. Make sure all signatures are made using the new keys.
@@ -379,7 +370,7 @@ impl WorkSpace<'_> {
                         rrsig.key_tag()
                     })
                     .collect();
-                if key_tags == curr_key_tags {
+                if key_tags == *curr_key_tags {
                     // Nothing to do.
                     continue;
                 }
@@ -426,7 +417,7 @@ impl WorkSpace<'_> {
             }
 
             // Clear key_roll.
-	    self.modified_state.key_roll = Some(None);
+	    self.local_state.key_roll = None;
             return Ok(());
         }
 
@@ -460,7 +451,7 @@ impl WorkSpace<'_> {
                 break;
             }
 
-            if HashSet::<u16>::from_iter(key_tags.iter().copied()) == curr_key_tags {
+            if HashSet::<u16>::from_iter(key_tags.iter().copied()) == *curr_key_tags {
                 // Nothing to do.
                 continue;
             }
@@ -521,16 +512,10 @@ impl WorkSpace<'_> {
         // Just have a fixed list.
         let apex_remove: HashSet<Rtype> = [Rtype::DNSKEY, Rtype::CDS, Rtype::CDNSKEY].into();
 
-        let curr_apex_remove = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
-
-            zone_state.apex_remove.clone()
-        };
-
-        if apex_remove != curr_apex_remove {
+        let curr_apex_remove = &self.local_state.apex_remove;
+        if apex_remove != *curr_apex_remove {
             println!("apex remove RRtypes changed: from {curr_apex_remove:?} to {apex_remove:?}",);
-	    self.modified_state.apex_remove = Some(apex_remove);
+	    self.local_state.apex_remove = apex_remove;
             apex_changed = true;
         }
 
@@ -540,16 +525,10 @@ impl WorkSpace<'_> {
         apex_extra.extend_from_slice(&self.keyset_state.cds_rrset);
         apex_extra.sort();
 
-        let curr_apex_extra = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
-
-            zone_state.apex_extra.clone()
-        };
-
-        if apex_extra != curr_apex_extra {
+        let curr_apex_extra = &self.local_state.apex_extra;
+        if apex_extra != *curr_apex_extra {
             println!("apex extra changed: from {curr_apex_extra:?} to {apex_extra:?}",);
-	    self.modified_state.apex_extra = Some(apex_extra);
+	    self.local_state.apex_extra = apex_extra;
             apex_changed = true;
         }
 
@@ -570,17 +549,11 @@ impl WorkSpace<'_> {
             key_tags.insert(v.key_tag());
         }
 
-        let curr_key_tags = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
-
-            zone_state.key_tags.clone()
-        };
-
-        if key_tags != curr_key_tags {
+        let curr_key_tags = &self.local_state.key_tags;
+        if key_tags != *curr_key_tags {
             println!("key tags changed: from {curr_key_tags:?} to {key_tags:?}",);
-	    self.modified_state.key_tags = Some(key_tags);
-	    self.modified_state.key_roll = Some(Some(faketime_or_now()));
+	    self.local_state.key_tags = key_tags;
+	    self.local_state.key_roll = Some(faketime_or_now());
             apex_changed = true;
         }
         apex_changed
@@ -609,7 +582,8 @@ impl WorkSpace<'_> {
                 // just remove all if there is more than one.
                 for r in old_rrs {
                     let r: SoaRecord = r.clone().into();
-                    self.patch.remove_soa(r).unwrap();
+                    self.patch.remove_soa(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove soa {r:?}: {e}")))?;
                 }
                 continue;
             }
@@ -632,14 +606,14 @@ impl WorkSpace<'_> {
                         continue;
                     }
                     let r: RegularRecord = r.clone().into();
-                    println!("apex patch.remove {r:?}");
-                    self.patch.remove(r).unwrap();
+                    self.patch.remove(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {r:?}: {e}")))?;
                 }
             } else {
                 for r in old_rrs {
                     let r: RegularRecord = r.clone().into();
-                    println!("apex patch.remove {r:?}");
-                    self.patch.remove(r).unwrap();
+                    self.patch.remove(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {r:?}: {e}")))?;
                 }
             }
         }
@@ -651,7 +625,8 @@ impl WorkSpace<'_> {
                 // just add all if there is more than one.
                 for r in new_rrs {
                     let r: SoaRecord = r.clone().into();
-                    self.patch.add_soa(r).unwrap();
+                    self.patch.add_soa(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add soa {r:?}: {e}")))?;
                 }
                 continue;
             }
@@ -675,13 +650,15 @@ impl WorkSpace<'_> {
                     }
                     let r: RegularRecord = r.clone().into();
                     println!("apex patch.add {r:?}");
-                    self.patch.add(r).unwrap();
+                    self.patch.add(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
                 }
             } else {
                 for r in new_rrs {
                     let r: RegularRecord = r.clone().into();
                     println!("apex patch.add {r:?}");
-                    self.patch.add(r).unwrap();
+                    self.patch.add(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
                 }
             }
         }
@@ -694,10 +671,12 @@ impl WorkSpace<'_> {
                     continue;
                 }
                 let old_nsec: RegularRecord = old_nsec.clone().into();
-                self.patch.remove(old_nsec).unwrap();
+                self.patch.remove(old_nsec.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}")))?;
             } else {
                 let old_nsec: RegularRecord = old_nsec.clone().into();
-                self.patch.remove(old_nsec).unwrap();
+                self.patch.remove(old_nsec.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}")))?;
             }
         }
 
@@ -709,10 +688,12 @@ impl WorkSpace<'_> {
                     continue;
                 }
                 let new_nsec: RegularRecord = new_nsec.clone().into();
-                self.patch.add(new_nsec).unwrap();
+                self.patch.add(new_nsec.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}")))?;
             } else {
                 let new_nsec: RegularRecord = new_nsec.clone().into();
-                self.patch.add(new_nsec).unwrap();
+                self.patch.add(new_nsec.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}")))?;
             }
         }
 
@@ -724,10 +705,12 @@ impl WorkSpace<'_> {
                     continue;
                 }
                 let old_nsec3: RegularRecord = old_nsec3.clone().into();
-                self.patch.remove(old_nsec3).unwrap();
+                self.patch.remove(old_nsec3.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {old_nsec3:?}: {e}")))?;
             } else {
                 let old_nsec3: RegularRecord = old_nsec3.clone().into();
-                self.patch.remove(old_nsec3).unwrap();
+                self.patch.remove(old_nsec3.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {old_nsec3:?}: {e}")))?;
             }
         }
 
@@ -739,10 +722,12 @@ impl WorkSpace<'_> {
                     continue;
                 }
                 let new_nsec3: RegularRecord = new_nsec3.clone().into();
-                self.patch.add(new_nsec3).unwrap();
+                self.patch.add(new_nsec3.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add {new_nsec3:?}: {e}")))?;
             } else {
                 let new_nsec3: RegularRecord = new_nsec3.clone().into();
-                self.patch.add(new_nsec3).unwrap();
+                self.patch.add(new_nsec3.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add {new_nsec3:?}: {e}")))?;
             }
         }
 
@@ -761,14 +746,14 @@ impl WorkSpace<'_> {
                         continue;
                     }
                     let r: RegularRecord = r.clone().into();
-                    //println!("patch.remove {r:?}");
-                    self.patch.remove(r).unwrap();
+                    self.patch.remove(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {r:?}: {e}")))?;
                 }
             } else {
                 for r in old_rrsigs {
                     let r: RegularRecord = r.clone().into();
-                    //println!("patch.remove {r:?}");
-                    self.patch.remove(r).unwrap();
+                    self.patch.remove(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to remove {r:?}: {e}")))?;
                 }
             }
         }
@@ -788,14 +773,14 @@ impl WorkSpace<'_> {
                         continue;
                     }
                     let r: RegularRecord = r.clone().into();
-                    //println!("patch.add {r:?}");
-                    self.patch.add(r).unwrap();
+                    self.patch.add(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
                 }
             } else {
                 for r in new_rrsigs {
                     let r: RegularRecord = r.clone().into();
-                    //println!("patch.add {r:?}");
-                    self.patch.add(r).unwrap();
+                    self.patch.add(r.clone())
+			.map_err(|e| SignerError::PatchFailed(format!("unable to add {r:?}: {e}")))?;
                 }
             }
         }
@@ -827,7 +812,7 @@ impl WorkSpace<'_> {
                     }
 
                     let owner = record.owner().to_name::<Bytes>();
-                    let data = record.data().clone().try_flatten_into().unwrap();
+                    let data = record.data().clone().try_flatten_into().expect("should not fail");
                     let r = Record::new(owner.clone(), record.class(), record.ttl(), data);
 
                     if r.rtype() == Rtype::RRSIG {
@@ -1022,17 +1007,11 @@ impl WorkSpace<'_> {
             unreachable!();
         };
 
-        let curr_previous_serial = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
-
-            zone_state.previous_serial
-        };
-
+        let curr_previous_serial = &self.local_state.previous_serial;
         match self.policy.signer.serial_policy {
             SignerSerialPolicy::Keep => {
                 if let Some(previous_serial) = curr_previous_serial
-                    && zone_soa.serial() <= previous_serial
+                    && zone_soa.serial() <= *previous_serial
                 {
                     return Err(SignerError::SigningError(
                         "Serial policy is Keep but upstream serial did not increase".to_string(),
@@ -1040,14 +1019,14 @@ impl WorkSpace<'_> {
                 }
 
                 // Save the new SOA serial.
-		self.modified_state.previous_serial = Some(Some(zone_soa.serial()));
+		self.local_state.previous_serial = Some(zone_soa.serial());
                 Ok(old_soa.clone())
             }
             SignerSerialPolicy::Counter => {
                 // Always increment the serial number, ignore the serial
                 // number in the unsigned zone.
                 let previous_serial = if let Some(serial) = curr_previous_serial {
-                    serial
+                    *serial
                 } else {
                     DomainSerial::from(0)
                 };
@@ -1055,7 +1034,7 @@ impl WorkSpace<'_> {
                 let serial = previous_serial.add(1);
 
                 // Save the new SOA serial.
-		self.modified_state.previous_serial = Some(Some(serial));
+		self.local_state.previous_serial = Some(serial);
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1078,13 +1057,13 @@ impl WorkSpace<'_> {
             SignerSerialPolicy::UnixTime => {
                 let mut serial = DomainSerial::now();
                 if let Some(previous_serial) = curr_previous_serial
-                    && serial <= previous_serial
+                    && serial <= *previous_serial
                 {
                     serial = previous_serial.add(1);
                 }
 
                 // Save the new SOA serial.
-		self.modified_state.previous_serial = Some(Some(serial));
+		self.local_state.previous_serial = Some(serial);
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1114,13 +1093,13 @@ impl WorkSpace<'_> {
                 let mut serial: DomainSerial = serial.into();
 
                 if let Some(previous_serial) = curr_previous_serial
-                    && serial <= previous_serial
+                    && serial <= *previous_serial
                 {
                     serial = previous_serial.add(1);
                 }
 
                 // Save the new SOA serial.
-		self.modified_state.previous_serial = Some(Some(serial));
+		self.local_state.previous_serial = Some(serial);
 
                 let new_soa = ZoneRecordData::Soa(Soa::new(
                     zone_soa.mname().clone(),
@@ -1192,7 +1171,7 @@ impl WorkSpace<'_> {
                 let mut iss = IncrementalSigningState::new(self)?;
 
                 let start = Instant::now();
-                load_signed_zone(&mut iss, &self.config.zonefile_in).unwrap();
+                load_signed_zone(&mut iss, &self.config.zonefile_in)?;
                 if self.verbose {
                     println!("loading signed zone took {:?}", start.elapsed());
                 }
@@ -1215,26 +1194,14 @@ impl WorkSpace<'_> {
         // state. Now update the apex in new_data.
 
         // Delete all types in apex_remove.
-        let curr_apex_remove = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
-
-            zone_state.apex_remove.clone()
-        };
-
+        let curr_apex_remove = &self.local_state.apex_remove; 
         for t in curr_apex_remove {
-            let key = (iss.origin.clone(), t);
-            iss.new_apex.remove(&t);
+            let key = (iss.origin.clone(), *t);
+            iss.new_apex.remove(t);
             iss.rrsigs.remove(&key);
         }
 
-        let curr_apex_extra = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = self.zone.state.lock().unwrap();
-
-            zone_state.apex_extra.clone()
-        };
-
+        let curr_apex_extra = &self.local_state.apex_extra;
         for r in curr_apex_extra {
             let zonefile =
                 domain::zonefile::inplace::Zonefile::from((r.to_string() + "\n").as_ref() as &str);
@@ -1248,7 +1215,7 @@ impl WorkSpace<'_> {
                 };
 
                 let owner = record.owner().to_name::<Bytes>();
-                let data = record.data().clone().try_flatten_into().unwrap();
+                let data = record.data().clone().try_flatten_into().expect("should not fail");
                 let r = Record::new(owner.clone(), record.class(), record.ttl(), data);
 
                 if r.rtype() == Rtype::RRSIG {
@@ -2266,61 +2233,66 @@ impl IncrementalSigningState {
     }
 }
 
-/// Collect changes to state and then update state at the end.
-struct ModifiedState {
-    apex_remove: Option<HashSet<Rtype>>,
-    apex_extra: Option<Vec<String>>,
-    last_signature_refresh: Option<UnixTime>,
-    key_tags: Option<HashSet<u16>>,
-    key_roll: Option<Option<UnixTime>>,
-    previous_serial: Option<Option<Serial>>,
+/// Load the state varibles we need at the start and then update state at the end.
+struct LocalState {
+    apex_remove: HashSet<Rtype>,
+    apex_extra: Vec<String>,
+    last_signature_refresh: UnixTime,
+    key_tags: HashSet<u16>,
+    key_roll: Option<UnixTime>,
+    previous_serial: Option<Serial>,
 }
 
-impl ModifiedState {
-    fn new() -> Self {
-	Self {
-	    apex_remove: None,
-	    apex_extra: None,
-	    last_signature_refresh: None,
-	    key_tags: None,
-	    key_roll: None,
-	    previous_serial: None,
-	}
+impl LocalState {
+    fn new(zone: &Arc<Zone>) -> Result<Self, SignerError> {
+	let zone_state = zone.state.lock()
+	    .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
+
+	Ok(Self {
+	    apex_remove: zone_state.apex_remove.clone(),
+	    apex_extra: zone_state.apex_extra.clone(),
+	    last_signature_refresh: zone_state.last_signature_refresh.clone(),
+	    key_tags: zone_state.key_tags.clone(),
+	    key_roll: zone_state.key_roll.clone(),
+	    previous_serial: zone_state.previous_serial,
+	})
     }
 
-    fn save(self, center: &Arc<Center>, zone: Arc<Zone>) {
+    fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) -> Result<(), SignerError> {
 	let mut modified = false;
 
-	let mut zone_state = zone.state.lock().unwrap();
+	let mut zone_state = zone.state.lock()
+	    .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
 	
-	if let Some(apex_remove) = self.apex_remove {
-	    zone_state.apex_remove = apex_remove;
+	if self.apex_remove != zone_state.apex_remove {
+	    zone_state.apex_remove = self.apex_remove;
 	    modified = true;
 	}
-	if let Some(apex_extra) = self.apex_extra {
-	    zone_state.apex_extra = apex_extra;
+	if self.apex_extra != zone_state.apex_extra {
+	    zone_state.apex_extra = self.apex_extra;
 	    modified = true;
 	}
-	if let Some(last_signature_refresh) = self.last_signature_refresh {
-	    zone_state.last_signature_refresh = last_signature_refresh;
+	if self.last_signature_refresh != zone_state.last_signature_refresh {
+	    zone_state.last_signature_refresh = self.last_signature_refresh;
 	    modified = true;
 	}
-	if let Some(key_tags) = self.key_tags {
-	    zone_state.key_tags = key_tags;
+	if self.key_tags != zone_state.key_tags {
+	    zone_state.key_tags = self.key_tags;
 	    modified = true;
 	}
-	if let Some(key_roll) = self.key_roll {
-	    zone_state.key_roll = key_roll;
+	if self.key_roll != zone_state.key_roll {
+	    zone_state.key_roll = self.key_roll;
 	    modified = true;
 	}
-	if let Some(previous_serial) = self.previous_serial {
-	    zone_state.previous_serial = previous_serial;
+	if self.previous_serial != zone_state.previous_serial {
+	    zone_state.previous_serial = self.previous_serial;
 	    modified = true;
 	}
 
 	if modified {
-	    zone.mark_dirty(&mut zone_state, &center);
+	    zone.mark_dirty(&mut zone_state, center);
 	}
+	Ok(())
     }
 }
 

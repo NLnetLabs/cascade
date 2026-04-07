@@ -1820,6 +1820,7 @@ pub enum SignerError {
     InvalidPrivateKeyUrl(String),
     KmipServerCredentialsNeeded(String),
     CannotCreateKmipConnectionPool(String, KmipConnError),
+    PatchFailed(String),
     SigningError(String),
 }
 
@@ -1862,6 +1863,7 @@ impl std::fmt::Display for SignerError {
                     "Cannot create connection pool for KMIP server '{server_id}': {err}"
                 )
             }
+            SignerError::PatchFailed(err) => write!(f, "patch failed: {err}"),
             SignerError::SigningError(err) => write!(f, "Signing error: {err}"),
         }
     }
