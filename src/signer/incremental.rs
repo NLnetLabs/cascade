@@ -81,10 +81,7 @@ pub fn sign_incrementally(
 	curr_key_roll = zone_state.key_roll.clone();
     };
 
-    let use_nsec3 = match &policy.signer.denial {
-        SignerDenialPolicy::NSec => false,
-        SignerDenialPolicy::NSec3 { .. } => true,
-    };
+    let use_nsec3 = matches!(policy.signer.denial, SignerDenialPolicy::NSec3 { .. });
 
     let mut ws = WorkSpace {
         keyset_state,
