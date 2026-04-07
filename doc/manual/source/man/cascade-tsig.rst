@@ -39,7 +39,7 @@ Options for :subcmd:`tsig add`
    Alternatively this argument also supports dig syntax for specifying all of
    the TSIG properties at once in colon separated form. The colon separated
    syntax cannot be used in combination with the ``--alg`` and ``--secret``
-   options.
+   options. If ``<ALGORITHM>`` is not specified it defaults to SHA256.
 
 .. option:: --alg <ALGORITHM>
 

@@ -85,7 +85,7 @@ Options for :subcmd:`zone add`
 ------------------------------
 
 .. option:: --source <IP_ADDRESS[:<PORT>][^<TSIG_KEY_NAME]>
-.. option:: --source </PATH/TO/ZONE/FILE>
+.. option:: --source <PATH/TO/ZONE/FILE>
 
    The zone source can be an IP address (with or without port, defaults to port
    53) or a file path.
@@ -94,12 +94,12 @@ Options for :subcmd:`zone add`
    suffix it with ``^<TSIG_KEY_NAME>`` to indicate that the specified RFC 8945
    TSIG key should be used to sign the zone transfer request.
 
-   Note: When providing a file path to a zone file to load, if :subcmd:`zone
-   add` is executed on a different host than where the ``cascaded`` daemon is
-   running the path must be valid on the **daemon** host.
+   .. note:: When providing the path to a zone file to load, if :subcmd:`zone
+             add` is executed on a different host than where the ``cascaded``
+             daemon is running the path must be valid on the **daemon** host.
 
-   Note: In order to use a TSIG key you MUST also supply the key to Cascade
-   via :subcmd:`tsig add`.
+   .. note:: Note: In order to use a TSIG key you MUST also supply the key to
+             Cascade via :subcmd:`tsig add`.
 
 .. option:: --policy <POLICY>
 
