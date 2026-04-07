@@ -550,6 +550,11 @@ impl Zone {
         // in-progress/aborted step or show all steps if all have completed.
         print_timeline(zone.progress, &zone, &policy);
 
+        if zone.last_published.is_some() {
+            println!("");
+            println!("Published zone available at {}", zone.publish_addr);
+        }
+
         if detailed {
             println!("");
             println!("DNSSEC keys:");
