@@ -10,9 +10,11 @@ do
 		case "$zonemd" in
 		'')
 			policy="$m"
+			ref_part=''
 		;;
 		zmd384)
 			policy="$m-$zonemd"
+			ref_part=".$zonemd"
 		;;
 		esac
 
@@ -51,7 +53,7 @@ do
 				    exit 1
 				}
 
-			cp reference-output/incremental-signing-test${test}-input2.zone.${m}.signed.sorted reference.output.sorted
+			cp reference-output/incremental-signing-test${test}-input2.zone.${m}${ref_part}.signed.sorted reference.output.sorted
 			dig @127.0.0.1 -p 8053 example axfr |
 			    egrep -v '^;|^$' | sort -u > output.sorted
 			diff -w -u output.sorted reference.output.sorted
