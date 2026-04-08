@@ -357,10 +357,7 @@ impl ZoneSigner {
                 if let Some(previous_serial) = last_signed_serial
                     && loaded_serial <= previous_serial
                 {
-                    // TODO Ignore this error until we can figure out how to
-                    // return a soft error. Waits for new pipeline to
-                    // land.
-                    // return Err(SignerError::KeepSerialPolicyViolated);
+                    return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
                 loaded_serial
