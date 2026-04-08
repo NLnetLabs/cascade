@@ -243,3 +243,14 @@ jobs:
       - uses: ./integration-tests/tests/remove-zone
         with:
           log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/564
+  upstream-tsig:
+    name: Use TSIG with an upstream nameserver.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./integration-tests/tests/upstream-tsig
