@@ -8,7 +8,7 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` tsig ``<COMMAND>``
 
-:program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`add` ``[OPTIONS]``
+:program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`add` ``<TSIG_KEY_NAME>`` ``<ALGORITHM>`` ``<SECRET>``
 
 Description
 -----------
@@ -33,11 +33,10 @@ Commands
 
    Register a new TSIG key.
 
-Options for :subcmd:`tsig add`
+Arguments for :subcmd:`tsig add`
 ------------------------------
 
-.. option:: --name <TSIG_KEY_NAME>
-.. option:: --name [<ALGORITHM>]:<TSIG_KEY_NAME>:<SECRET>
+.. option:: <TSIG_KEY_NAME>
 
    The name of the TSIG key to add.
 
@@ -46,12 +45,12 @@ Options for :subcmd:`tsig add`
    syntax cannot be used in combination with the ``--alg`` and ``--secret``
    options. If ``<ALGORITHM>`` is not specified it defaults to SHA256.
 
-.. option:: --alg <ALGORITHM>
+.. option:: <ALGORITHM>
 
    The TSIG algorithm of the specified TSIG key. Can be one of: hmac-sha1,
    hmac-sha256, hmac-sha384 or hmac-sha512.
 
-.. option:: --secret <SECRET>
+.. option:: <SECRET>
 
    A base64 encoded string defining the actual TSIG key material bytes.
 
