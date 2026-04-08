@@ -43,6 +43,25 @@ runs:
         echo "::error:: zone status unexpectedly reports TSIG required zone was retrieved and published without using the TSIG key"
         exit 1
 
+    - name: Remove and re-add the zone with the required TSIG key.
+      run: |
+        cascade zone remove example-tsig.test
+        cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+        cascade zone add --policy default --source 127.0.0.1:1055^tsig-key example-tsig.test
+
+    - name: Check zone status
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example-tsig.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status example-tsig.test
+            echo "::error:: timeout: zone status did not report published zone available"
+            exit 1
+          fi
+          sleep 1
+        done
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()
