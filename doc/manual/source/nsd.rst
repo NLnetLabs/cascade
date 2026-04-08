@@ -52,6 +52,9 @@ example\:
 See https://nsd.docs.nlnetlabs.nl/en/latest/running/using-tsig.html for more
 information.
 
+.. tip:: Remember to reload the NSD configuration or restart NSD so that
+         changes to the configuration take effect.
+
 Adding the TSIG key to Cascade is done using the ``cascade tsig add`` CLI
 command, e.g. like so:
 
@@ -59,8 +62,11 @@ command, e.g. like so:
 
    $ cascade tsig add --name sec1_key --alg hmac-sha256 --secret "...=="
 
-And then instructing Cascade to use the TSIG key when adding the zone, assuming
-that the NSD daemon is running on host 192.168.0.1 on port 53:
+To use the new TAIG key it must be specified when adding a zone to
+Cascade. Assuming that NSD is running on host 192.168.0.1 on port 53
+the following command instructs Cascade to add the ``example.com``
+zone sourced from the NSD server using the ``sec1_key`` TSIG key to
+authenticate with NSD:
 
 .. code-block:: bash
 
