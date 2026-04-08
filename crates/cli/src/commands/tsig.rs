@@ -7,10 +7,10 @@ use crate::println;
 
 #[derive(Clone, Debug, clap::ValueEnum)]
 pub enum TsigAlgorithm {
-    Sha1,
-    Sha256,
-    Sha384,
-    Sha512,
+    HmacSha1,
+    HmacSha256,
+    HmacSha384,
+    HmacSha512,
 }
 
 impl FromStr for TsigAlgorithm {
@@ -18,10 +18,10 @@ impl FromStr for TsigAlgorithm {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "hmac-sha1" => Ok(TsigAlgorithm::Sha1),
-            "hmac-sha256" => Ok(TsigAlgorithm::Sha256),
-            "hmac-sha384" => Ok(TsigAlgorithm::Sha384),
-            "hmac-sha512" => Ok(TsigAlgorithm::Sha512),
+            "hmac-sha1" => Ok(TsigAlgorithm::HmacSha1),
+            "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
+            "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
+            "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
             other => Err(format!("'{other}' is not a recognized TSIG algorithm")),
         }
     }
@@ -30,10 +30,10 @@ impl FromStr for TsigAlgorithm {
 impl From<TsigAlgorithm> for crate::api::TsigAlgorithm {
     fn from(alg: TsigAlgorithm) -> Self {
         match alg {
-            TsigAlgorithm::Sha1 => cascade_api::TsigAlgorithm::Sha1,
-            TsigAlgorithm::Sha256 => cascade_api::TsigAlgorithm::Sha256,
-            TsigAlgorithm::Sha384 => cascade_api::TsigAlgorithm::Sha384,
-            TsigAlgorithm::Sha512 => cascade_api::TsigAlgorithm::Sha512,
+            TsigAlgorithm::HmacSha1 => cascade_api::TsigAlgorithm::Sha1,
+            TsigAlgorithm::HmacSha256 => cascade_api::TsigAlgorithm::Sha256,
+            TsigAlgorithm::HmacSha384 => cascade_api::TsigAlgorithm::Sha384,
+            TsigAlgorithm::HmacSha512 => cascade_api::TsigAlgorithm::Sha512,
         }
     }
 }
@@ -85,7 +85,7 @@ impl Tsig {
                             }
 
                             [name_part, secret_part] => {
-                                let alg = TsigAlgorithm::Sha256;
+                                let alg = TsigAlgorithm::HmacSha256;
                                 let name = name_part.to_string();
                                 let secret = secret_part.to_string();
                                 (name, alg, secret)
