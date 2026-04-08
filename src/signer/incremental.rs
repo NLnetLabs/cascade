@@ -33,7 +33,9 @@ use domain::zonetree::StoredRecord;
 use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use octseq::OctetsFrom;
+use octseq::builder::with_infallible;
 use rayon::slice::ParallelSliceMut;
+use ring::digest;
 use tokio::time::Instant;
 use tracing::{debug, info};
 
@@ -94,6 +96,7 @@ pub fn sign_incrementally(
         center: center.clone(),
         patch,
         zonemd: HashSet::new(),
+        //zonemd: [(ZonemdScheme::SIMPLE, ZonemdAlgorithm::SHA384)].into(),
         pass_through_mode: PassThroughMode::Off,
         local_state,
     };
@@ -203,7 +206,7 @@ struct WorkSpace<'a> {
     pub patch: SignedZonePatcher<'a>,
 
     // Extra fields that should go to policy.
-    pub zonemd: HashSet<()>,
+    pub zonemd: HashSet<(ZonemdScheme, ZonemdAlgorithm)>,
     pub pass_through_mode: PassThroughMode,
 
     // Local copy of state variables we need.
@@ -880,115 +883,113 @@ impl WorkSpace<'_> {
         }
     */
 
-    pub fn add_zonemd(&self, _iss: &mut IncrementalSigningState) -> Result<(), SignerError> {
-        todo!();
-        /*
-                // Get the SOA record. We need that for the Serial and for the
-                // TTL.
-                let key = (iss.origin.clone(), Rtype::SOA);
-                let soa_records = iss
-                    .new_data
-                    .get(&key)
-                    .expect("SOA record should be present");
-                let ZoneRecordData::Soa(soa) = soa_records[0].data() else {
-                    panic!("SOA record expected");
-                };
+    pub fn add_zonemd(&self, iss: &mut IncrementalSigningState) -> Result<(), SignerError> {
+        // Get the SOA record. We need that for the Serial and for the
+        // TTL.
+        let soa_records = iss
+            .new_apex
+            .get(&Rtype::SOA)
+            .expect("SOA record should be present");
+        let ZoneRecordData::Soa(soa) = soa_records[0].data() else {
+            panic!("SOA record expected");
+        };
 
-                let start = Instant::now();
+        let start = Instant::now();
 
-                // Create a Vec with all records to be able to sort them in canonical
-                // order. Ignore ZONEMD and RRSIGs of ZONEMD records.
-                let mut all = vec![];
+        // Create a Vec with all records to be able to sort them in canonical
+        // order. Ignore ZONEMD and RRSIGs of ZONEMD records.
+        let mut all = vec![];
 
-                let mut data: Vec<_> = iss
-                    .new_data
-                    .iter()
-                    .filter_map(|((o, t), r)| {
-                        if *o != iss.origin || *t != Rtype::ZONEMD {
-                            Some(r)
-                        } else {
-                            None
-                        }
-                    })
-                    .flatten()
-                    .collect();
-                all.append(&mut data);
-
-                let mut data: Vec<_> = iss.nsecs.values().collect();
-                all.append(&mut data);
-
-                let mut data: Vec<_> = iss.nsec3s.values().collect();
-                all.append(&mut data);
-
-                let mut data: Vec<_> = iss
-                    .rrsigs
-                    .iter()
-                    .filter_map(|((o, t), r)| {
-                        if *o != iss.origin || *t != Rtype::ZONEMD {
-                            Some(r)
-                        } else {
-                            None
-                        }
-                    })
-                    .flatten()
-                    .collect();
-                all.append(&mut data);
-
-                //all.sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
-                all.par_sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
-
-                    info!("ZONEMD prepare and sort took {:?}", start.elapsed());
-
-                let start = Instant::now();
-
-                let mut zonemd_records = vec![];
-                for z in &self.config.zonemd {
-                    if z.0 != ZonemdScheme::SIMPLE {
-                        return Err("unsupported zonemd scheme (only SIMPLE is supported)".into());
-                    }
-                    let mut buf: Vec<u8> = Vec::new();
-                    let mut ctx = match z.1 {
-                        ZonemdAlgorithm::SHA384 => digest::Context::new(&digest::SHA384),
-                        ZonemdAlgorithm::SHA512 => digest::Context::new(&digest::SHA512),
-                        _ => unreachable!(),
-                    };
-                    for r in &all {
-                        buf.clear();
-                        with_infallible(|| r.compose_canonical(&mut buf));
-                        ctx.update(&buf);
-                    }
-                    let digest = ctx.finish();
-                    let zonemd = Zonemd::new(
-                        soa.serial(),
-                        z.0,
-                        z.1,
-                        Bytes::copy_from_slice(digest.as_ref()),
-                    );
-                    let record = Record::new(
-                        iss.origin.clone(),
-                        soa_records[0].class(),
-                        soa_records[0].ttl(),
-                        ZoneRecordData::Zonemd(zonemd),
-                    );
-                    zonemd_records.push(record);
+        let mut data: Vec<_> = iss
+            .new_data
+            .iter()
+            .filter_map(|((o, t), r)| {
+                if *o != iss.origin || *t != Rtype::ZONEMD {
+                    Some(r)
+                } else {
+                    None
                 }
+            })
+            .flatten()
+            .collect();
+        all.append(&mut data);
 
-                    info!("ZONEMD hash took {:?}", start.elapsed());
+        let mut data: Vec<_> = iss.nsecs.values().collect();
+        all.append(&mut data);
 
-                let key = (iss.origin.clone(), Rtype::ZONEMD);
-                let mut new_sigs = vec![];
-                sign_records(
-                    &iss.origin,
-                    &zonemd_records,
-                    &iss.keys,
-                    iss.inception,
-                    iss.expiration,
-                    &mut new_sigs,
-                )?;
-                iss.new_data.insert(key.clone(), zonemd_records);
-                iss.rrsigs.insert(key, new_sigs[0].0.clone());
-                Ok(())
-        */
+        let mut data: Vec<_> = iss.nsec3s.values().collect();
+        all.append(&mut data);
+
+        let mut data: Vec<_> = iss
+            .rrsigs
+            .iter()
+            .filter_map(|((o, t), r)| {
+                if *o != iss.origin || *t != Rtype::ZONEMD {
+                    Some(r)
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+        all.append(&mut data);
+
+        //all.sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
+        all.par_sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
+
+        info!("ZONEMD prepare and sort took {:?}", start.elapsed());
+
+        let start = Instant::now();
+
+        let mut zonemd_records = vec![];
+        for z in &self.zonemd {
+            if z.0 != ZonemdScheme::SIMPLE {
+                return Err(SignerError::SigningError(
+                    "unsupported zonemd scheme (only SIMPLE is supported)".into(),
+                ));
+            }
+            let mut buf: Vec<u8> = Vec::new();
+            let mut ctx = match z.1 {
+                ZonemdAlgorithm::SHA384 => digest::Context::new(&digest::SHA384),
+                ZonemdAlgorithm::SHA512 => digest::Context::new(&digest::SHA512),
+                _ => unreachable!(),
+            };
+            for r in &all {
+                buf.clear();
+                with_infallible(|| r.compose_canonical(&mut buf));
+                ctx.update(&buf);
+            }
+            let digest = ctx.finish();
+            let zonemd = Zonemd::new(
+                soa.serial(),
+                z.0,
+                z.1,
+                Bytes::copy_from_slice(digest.as_ref()),
+            );
+            let record = Record::new(
+                iss.origin.clone(),
+                soa_records[0].class(),
+                soa_records[0].ttl(),
+                ZoneRecordData::Zonemd(zonemd),
+            );
+            zonemd_records.push(record);
+        }
+
+        info!("ZONEMD hash took {:?}", start.elapsed());
+
+        let key = (iss.origin.clone(), Rtype::ZONEMD);
+        let mut new_sigs = vec![];
+        sign_records(
+            &iss.origin,
+            &zonemd_records,
+            &iss.keys,
+            iss.inception,
+            iss.expiration,
+            &mut new_sigs,
+        )?;
+        iss.new_apex.insert(key.1, zonemd_records);
+        iss.rrsigs.insert(key, new_sigs[0].0.clone());
+        Ok(())
     }
 
     fn update_soa_serial(&mut self, old_soa: &Zrd) -> Result<Zrd, SignerError> {
@@ -1234,8 +1235,7 @@ impl WorkSpace<'_> {
                 ZoneRecordData::Zonemd(zonemd),
             );
             let records = vec![record];
-            let key = (iss.origin.clone(), Rtype::ZONEMD);
-            iss.new_data.insert(key, records);
+            iss.new_apex.insert(Rtype::ZONEMD, records);
         }
 
         // Update the SOA serial.
@@ -1339,27 +1339,72 @@ impl WorkSpace<'_> {
 }
 
 struct IncrementalSigningState {
+    /// DNS name of the zone we are signing.
     origin: Name<Bytes>,
+
+    /// Apex RRsets of the previously signed zone. With the execption of
+    /// NSEC, NSEC3 and RRSIG records. Old_apex and old_data are used
+    /// destructively to create a list of changes. This should be replaced
+    /// by the diff that the zone store provides.
     old_apex: HashMap<Rtype, Vec<Zrd>>,
-    old_apex_saved: HashMap<Rtype, Vec<Zrd>>,
-    new_apex: HashMap<Rtype, Vec<Zrd>>,
-    new_apex_saved: HashMap<Rtype, Vec<Zrd>>,
+
+    /// Non-apex RRsets of the previously signed zone. With the exeception of
+    /// NSEC, NSEC3 and RRSIG records.
     old_data: HashMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
+
+    /// Saved copy of old_apex for generating diffs for the zone store.
+    old_apex_saved: HashMap<Rtype, Vec<Zrd>>,
+
+    /// After incremental signing, this contains the apex RRsets (with the
+    /// exception of NSEC, NSEC3, and RRSIG records) of the newly signed
+    /// zone.
+    new_apex: HashMap<Rtype, Vec<Zrd>>,
+
+    /// After incremental signing, this contains the non-apex RRsets
+    /// (with the exeception of NSEC, NSEC3, and RRSIG records) of the newly
+    /// signed zone.
     new_data: BTreeMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
+
+    /// The apex of the new version of the unsigned zone.
+    new_apex_saved: HashMap<Rtype, Vec<Zrd>>,
+
+    /// NSEC records of the previously signed zone.
     old_nsecs: BTreeMap<Name<Bytes>, Zrd>,
+
+    /// NSEC records of the newly signed zone.
     nsecs: BTreeMap<Name<Bytes>, Zrd>,
+
+    /// NSEC3 records of the previously signed zone.
     old_nsec3s: BTreeMap<Name<Bytes>, Zrd>,
+
+    /// NSEC3 records of the newly signed zone.
     nsec3s: BTreeMap<Name<Bytes>, Zrd>,
+
+    /// RRSIG records of the previously signed zone (grouped by
+    /// type covered).
     old_rrsigs: HashMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
+
+    /// RRSIG records of the newly signed zone (grouped by
+    /// type covered).
     rrsigs: HashMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
 
+    /// List of RRsets that are added or deleted.
     changes: HashMap<Name<Bytes>, ChangesValue>,
+
+    /// List of NSEC or NSEC3 records that have been modified and needs to
+    /// be signed.
     modified_nsecs: HashSet<Name<Bytes>>,
+
+    /// Signing keys.
     keys: Vec<SigningKey<Bytes, KeyPair>>,
+
+    /// Inception time to use for signatures.
     inception: Timestamp,
+
+    /// Expiration time to use for signatures.
     expiration: Timestamp,
 
-    // NSEC3 paramters.
+    // NSEC3 parameters.
     nsec3param: Nsec3param<Bytes>,
 }
 
@@ -1545,7 +1590,7 @@ impl IncrementalSigningState {
             }
         }
 
-        // Save a copy of the loaded new_apex to createa diff later.
+        // Save a copy of the loaded new_apex to create a diff later.
         for (k, v) in &self.new_apex {
             self.new_apex_saved.insert(*k, v.clone());
         }
