@@ -15,6 +15,11 @@ Description
 
 Manage RFC 8945 TSIG keys for authenticating zone transfers.
 
+.. tip:: Cascade isn't currently able to generate TSIG keys itself.
+         One way to generate a TSIG key is to use the `tsig-keygen
+         <https://bind9.readthedocs.io/en/latest/manpages.html#tsig-keygen-tsi
+         g-key-generation-tool>`_ tool from the ISC BIND project.
+
 Global Options
 --------------
 

@@ -207,7 +207,7 @@ Options for :subcmd:`zone reject`
    The serial number of the zone to reject.
 
 Options for :subcmd:`zone override`
----------------------------------
+-----------------------------------
 
 .. option:: <--unsigned|--signed>
 
