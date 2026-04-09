@@ -4,35 +4,38 @@ cascade zone
 Synopsis
 --------
 
-:program:`cascade zone` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone ``<COMMAND>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`add` ``[OPTIONS]`` ``--source <SOURCE>`` ``--policy <POLICY>`` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`add` ``[OPTIONS]`` ``--source <SOURCE>`` ``--policy <POLICY>`` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`remove` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`remove` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`list`
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`list`
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`reload` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`reload` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`approve` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`approve` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`reject` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`reject` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`status` ``[--detailed]`` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`override` ``<--unsigned|--signed>`` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`history` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`status` ``[--detailed]`` ``<NAME>``
+
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`reset` ``<NAME>``
+
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`history` ``<NAME>``
 
 Description
 -----------
 
 Manage Cascade's zones.
 
-Options
--------
+Global Options
+--------------
 
-.. option:: -h, --help
-
-   Print the help text (short summary with ``-h``, long help with ``--help``).
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 Commands
 --------
@@ -61,9 +64,17 @@ Commands
 
    Reject a zone being reviewed.
 
+.. subcmd:: override
+
+   Override a previous rejection of a zone review.
+
 .. subcmd:: status
 
    Get the status of a single zone.
+
+.. subcmd:: reset
+
+   Reset the pipeline for a zone to get it out of a halted state.
 
 .. subcmd:: history
 
@@ -182,6 +193,17 @@ Options for :subcmd:`zone reject`
 
    The serial number of the zone to reject.
 
+Options for :subcmd:`zone override`
+---------------------------------
+
+.. option:: <--unsigned|--signed>
+
+   Whether the zone to override is at the unsigned or signed review stage.
+
+.. option:: <NAME>
+
+   The name of the zone to override.
+
 Options for :subcmd:`zone status`
 ---------------------------------
 
@@ -194,6 +216,13 @@ Options for :subcmd:`zone status`
 .. option:: <NAME>
 
    The name of the zone to report the status of.
+
+Options for :subcmd:`zone reset`
+---------------------------------
+
+.. option:: <NAME>
+
+   The name of the zone to reset the pipeline of.
 
 See Also
 --------

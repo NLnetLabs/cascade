@@ -1,0 +1,90 @@
+# The policy file version.
+#
+# This is the only required option.  All other settings, and their defaults, are
+# associated with this version number.  More versions may be added in the future
+# and Cascade may drop support for older versions over time.
+#
+# - 'v1': This format.
+version = "v1"
+
+
+# How denial-of-existence records are generated.
+[signer.denial]
+
+# The type of denial-of-existence records to generate.
+#
+# Supported options:
+# - 'nsec': Use NSEC records (RFC 4034).
+# - 'nsec3': Use NSEC3 records (RFC 5155).
+type = "nsec3"
+opt-out = true
+
+# How zones are signed.
+#
+# Note that certain records (e.g. DNSKEY and CDS records at the apex of the
+# zone) are signed by the key manager, rather than the zone signer; see the
+# `[key-manager.records]` section for configuring the signing of those records.
+[signer]
+
+# How SOA serial numbers are generated for signed zones.
+#
+# Supported options:
+# - 'keep': use the same serial number as the unsigned zone.
+# - 'counter': increment the serial number every time.
+# - 'unixtime': use the current Unix time, in seconds.
+# - 'date-counter': format the number as '<YYYY><MM><DD><xx>' in decimal.
+#     '<xx>' is a simple counter to allow up to 100 versions per day.
+serial-policy = "keep"
+
+# The offset for generated signature inceptions.
+#
+# Record signatures have a fixed inception time, from when they are considered
+# valid.  An imprecise computer clock could cause signatures to be considered
+# invalid, because their inception point appears to be some time in the future.
+# To prevent such cases, this setting allows the inception time to be offset
+# into the past.
+#
+# An integer value is interpreted as seconds; inception times will be calculated
+# as 'now - offset' at the time of signing.
+signature-inception-offset = 0
+
+# The lifetime of generated signatures.
+#
+# Record signatures have a fixed lifetime, after which they are considered
+# invalid.  To keep the zone valid, the signatures should be regenerated before
+# they expire; see 'signature-remain-time' to control regeneration time.
+#
+# An integer value is interpreted as seconds.
+signature-lifetime = 100000000
+
+# The management of DNS records by the key manager.
+# 
+# The key manager generates and signs several records (DNSKEY and CDS).  This
+# section controls its behaviour towards them.
+[key-manager.records]
+
+# The offset for generated signature inceptions.
+#
+# Record signatures have a fixed inception time, from when they are considered
+# valid.  An imprecise computer clock could cause signatures to be considered
+# invalid, because their inception point appears to be some time in the future.
+# To prevent such cases, this setting allows the inception time to be offset
+# into the past.
+#
+# Independent offsets can be set for each type of record.  An integer value is
+# intepreted as seconds; inception times will be calculated as 'now - offset'
+# at the time of signing.
+dnskey.signature-inception-offset = 0
+cds.signature-inception-offset = 0
+
+# The lifetime of generated signatures.
+#
+# Record signatures have a fixed lifetime, after which they are considered
+# invalid.  To keep the zone valid, the signatures should be regenerated before
+# they expire; see 'signature-remain-time' to control regeneration time.
+#
+# Independent lifetimes can be set for each type of record.  An integer value is
+# interpreted as seconds.
+dnskey.signature-lifetime = 100000000
+cds.signature-lifetime = 100000000
+

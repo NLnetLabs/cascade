@@ -1,0 +1,48 @@
+; Test 1 -- Check loading a weird unsigned zone.
+
+; Set the serial number of the zone to 11111. Use the 'keep' serial
+; policy to make it easy to check when the zone has been signed.
+example. IN SOA ns.example. hostmaster.example. 11111 3600 3600 86400 3600
+
+; A zone should have an NS record.
+@ NS ns1.example.
+
+cname.modify.example.		CNAME	cname-target
+dname.modify.example.		DNAME	dname-target
+a.modify.example.		A	192.0.2.0
+aaaa.modify.example.		AAAA	2001:db8::
+txt.modify.example.		TXT	"Original zone"
+
+; A delegation to be able to create RRsets that are not authoritative in this
+; zone.
+not-auth.example.		NS	ns
+
+cname.modify.not-auth.example.	CNAME	cname-target
+dname.modify.not-auth.example.	DNAME	dname-target
+a.modify.not-auth.example.	A	192.0.2.0
+aaaa.modify.not-auth.example.	AAAA	2001:db8::
+txt.modify.not-auth.example.	TXT	"Original zone"
+
+delegation1.example.		NS	ns
+
+txt.ent2nt.example.		TXT	"ENT to become NT"
+txt.ent2nt.not-auth.example.	TXT	"ENT to become NT"
+
+txt.nt2ent.example.		TXT	"NT to become ENT"
+nt2ent.example.			TXT	"to be removed to become ENT"
+txt.nt2ent.not-auth.example.	TXT	"NT to become ENT"
+nt2ent.not-auth.example.		TXT	"to be removed to become ENT"
+
+one.delete.example.		A	192.0.2.1
+two.delete.example.		A	192.0.2.2
+two.delete.example.		AAAA	2001:db8::2
+one.delete.not-auth.example.	A	192.0.2.1
+two.delete.not-auth.example.	A	192.0.2.2
+two.delete.not-auth.example.	AAAA	2001:db8::2
+delegation1.delete.example.	NS	ns
+delegation2.delete.example.	NS	ns
+non-auth.delegation2.delete.example. A	192.0.2.3
+
+example.		        IN      NSEC3PARAM      1 2 3 4567
+
+example.			IN	ZONEMD		1 2 3 11 22 33 44 55 66 77 88 99 aa bb cc

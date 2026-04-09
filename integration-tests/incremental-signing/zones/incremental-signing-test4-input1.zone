@@ -1,0 +1,23 @@
+; This is taken from a bug report on the opendnssec mailing list.
+; https://lists.opendnssec.org/pipermail/opendnssec-user/2025-June/004782.html
+; [Opendnssec-user] opendnssec / ldns-verify-zone - A has signature(s), but is occluded (or glue)
+;
+; Examples are slightly modified.
+
+@   IN  SOA     ns1 hostmaster (
+                  2025062628 ; serial
+                  7200       ; refresh (2 hours)
+                  3600       ; retry (1 hour)
+                  1209600    ; expire (2 weeks)
+                  3600       ; minimum (1 hour)
+                  )
+@      3600    IN      NS      ns1.dnsp.com.
+@      3600    IN      NS      ns2.dnsp.com.
+;child zones
+site1      IN      NS      ns1.site1
+site1      IN      NS      ns2.site1
+site2      IN      NS      ns1.site1
+site2      IN      NS      ns2.site1
+ns1.site1  IN      A       192.168.0.1
+ns2.site1  IN      A       192.168.0.2
+
