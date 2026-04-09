@@ -4,19 +4,18 @@ cascade template
 Synopsis
 --------
 
-:program:`cascade template` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` template ``<COMMAND>``
 
 Description
 -----------
 
 Print example config or policy files.
 
-Options
--------
+Global Options
+--------------
 
-.. option:: -h, --help
-
-   Print the help text (short summary with ``-h``, long help with ``--help``).
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 Commands
 --------
