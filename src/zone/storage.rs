@@ -442,91 +442,6 @@ impl StorageZoneHandle<'_> {
         // Stop serving the abandoned instance.
         self.start_rewinding_loaded_review(loaded_reviewer);
     }
-
-    /// Accept a signed instance of a zone.
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(zone = %self.zone.name),
-    )]
-    pub fn accept_signed(&mut self) {
-        // Examine the current state.
-        let (transition, state) = transition(&mut self.state.storage.machine);
-        match state {
-            ZoneDataStorage::ReviewingSigned(s) => {
-                // TODO: Specify the instance ID.
-                info!("The signed instance has been approved; persisting it");
-
-                let (s, persister) = s.mark_approved();
-                transition.move_to(ZoneDataStorage::PersistingSigned(s));
-                self.start_signed_persistence(persister);
-            }
-
-            _ => panic!("The zone is not undergoing signer review"),
-        }
-    }
-
-    /// Give up on a signed instance undergoing review.
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(zone = %self.zone.name),
-    )]
-    pub fn abandon_signed_review(&mut self) {
-        // Examine the current state.
-        let viewers = match transition(&mut self.state.storage.machine) {
-            (transition, ZoneDataStorage::ReviewingSigned(s)) => {
-                // TODO: Specify the instance ID.
-                info!("The signed instance has been rejected; cleaning it up");
-
-                let (s, loaded_reviewer, signed_reviewer) = s.give_up();
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read_loaded().map(|r| r.soa().clone());
-                self.state.storage.signed_review_soa =
-                    signed_reviewer.read().map(|r| r.soa().clone());
-                transition.move_to(ZoneDataStorage::CleanWholePending(s));
-                (loaded_reviewer, signed_reviewer)
-            }
-
-            _ => panic!("The zone is not undergoing signer review"),
-        };
-
-        let span = trace_span!("reset_review_servers");
-        let zone = self.zone.clone();
-        let center = self.center.clone();
-        self.state.storage.background_tasks.spawn(span, async move {
-            trace!("Resetting the loaded review server");
-            let old_loaded_reviewer =
-                LoadedReviewServer::update_viewer(&center, &zone, viewers.0).await;
-
-            trace!("Resetting the signed review server");
-            let old_signed_reviewer =
-                SignedReviewServer::update_viewer(&center, &zone, viewers.1).await;
-
-            // Examine the current state.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
-            let cleaner = match transition(&mut handle.state.storage.machine) {
-                (transition, ZoneDataStorage::CleanWholePending(s)) => {
-                    let (s, cleaner) = s
-                        .stop_review(old_signed_reviewer)
-                        .stop_review(old_loaded_reviewer);
-                    transition.move_to(ZoneDataStorage::Cleaning(s));
-                    cleaner
-                }
-
-                _ => panic!("The zone was left in 'CleanWholePending' state"),
-            };
-
-            handle.storage().start_cleanup(cleaner);
-
-            handle.state.storage.background_tasks.finish();
-        });
-    }
 }
 
 /// # Signer Review Operations
@@ -643,7 +558,91 @@ impl StorageZoneHandle<'_> {
         zone
     }
 
-    // TODO: approve_signed()
+    /// Accept a signed instance of a zone.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn accept_signed(&mut self) {
+        // Examine the current state.
+        let (transition, state) = transition(&mut self.state.storage.machine);
+        match state {
+            ZoneDataStorage::ReviewingSigned(s) => {
+                // TODO: Specify the instance ID.
+                info!("The signed instance has been approved; persisting it");
+
+                let (s, persister) = s.mark_approved();
+                transition.move_to(ZoneDataStorage::PersistingSigned(s));
+                self.start_signed_persistence(persister);
+            }
+
+            _ => panic!("The zone is not undergoing signer review"),
+        }
+    }
+
+    /// Give up on a signed instance undergoing review.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn abandon_signed_review(&mut self) {
+        // Examine the current state.
+        let (loaded_reviewer, signed_reviewer);
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::ReviewingSigned(s)) => {
+                // TODO: Specify the instance ID.
+                info!("The signed instance has been rejected; cleaning it up");
+
+                let new_s;
+                (new_s, loaded_reviewer, signed_reviewer) = s.give_up();
+                transition.move_to(ZoneDataStorage::CleanWholePending(new_s));
+                self.state.storage.loaded_review_soa =
+                    loaded_reviewer.read_loaded().map(|r| r.soa().clone());
+                self.state.storage.signed_review_soa =
+                    signed_reviewer.read().map(|r| r.soa().clone());
+            }
+
+            _ => panic!("The zone is not undergoing signer review"),
+        };
+
+        let span = trace_span!("reset_review_servers");
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        self.state.storage.background_tasks.spawn(span, async move {
+            trace!("Resetting the signed review server");
+            let old_signed_reviewer =
+                SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
+
+            trace!("Resetting the loaded review server");
+            let old_loaded_reviewer =
+                LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
+
+            // Examine the current state.
+            let mut state = zone.state.lock().unwrap();
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut state,
+                center: &center,
+            };
+            let cleaner = match transition(&mut handle.state.storage.machine) {
+                (transition, ZoneDataStorage::CleanWholePending(s)) => {
+                    let (s, cleaner) = s
+                        .stop_review(old_signed_reviewer)
+                        .stop_review(old_loaded_reviewer);
+                    transition.move_to(ZoneDataStorage::Cleaning(s));
+                    cleaner
+                }
+
+                _ => unreachable!("The zone was left in 'CleanWholePending' state"),
+            };
+
+            handle.storage().start_cleanup(cleaner);
+
+            handle.state.storage.background_tasks.finish();
+        });
+    }
 }
 
 /// # Background Tasks
