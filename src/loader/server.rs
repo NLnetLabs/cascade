@@ -11,7 +11,7 @@ use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZonePatcher, LoadedZoneReplacer, PatchError, ReplaceError, SoaRecord,
 };
 use domain::{
-    base::iana::Rcode,
+    base::{iana::Rcode, wire::FormError},
     net::{
         client::{
             self,
@@ -32,7 +32,7 @@ use domain::{
         },
         rdata::RecordData,
     },
-    rdata::ZoneRecordData,
+    rdata::AllRecordData,
     tsig,
     utils::dst::UnsizedCopy,
     zonetree::types::ZoneUpdate,
@@ -182,6 +182,38 @@ pub async fn ixfr(
         }
     }
 
+    // Check for common short-circuit cases.
+    //
+    // 'domain::net::server' does not properly account for a single-SOA IXFR
+    // response over TCP, and resolving it would require changing the interface.
+    // So we manually parse that case here.
+    if initial.header_counts().ancount() == 1 {
+        let record = initial
+            .answer()
+            .map_err(|err| IxfrError::XfrIter(xfr::protocol::IterationError::ParseError(err)))?
+            .into_records()
+            .next()
+            .unwrap()
+            .map_err(|err| IxfrError::XfrIter(xfr::protocol::IterationError::ParseError(err)))?;
+        let AllRecordData::Soa(soa) = record.data() else {
+            // Valid single-answer IXFR responses only provide a SOA.
+            return Err(IxfrError::XfrIter(
+                xfr::protocol::IterationError::ParseError(domain::base::wire::ParseError::Form(
+                    FormError::new("a single-answer IXFR response should have a SOA record"),
+                )),
+            ));
+        };
+
+        let serial = Serial::from(soa.serial().into_int());
+        if local_soa.rdata.serial == serial {
+            // The local copy is up-to-date.
+            return Ok(false);
+        } else {
+            // The server says the local copy is up-to-date, but it's not.
+            return Err(IxfrError::InconsistentUpToDate);
+        }
+    }
+
     let mut bytes = initial.as_slice().len();
     let mut updates = interpreter.interpret_response(initial)?;
 
@@ -243,21 +275,6 @@ pub async fn ixfr(
 
             writer.apply()?;
             Ok(true)
-        }
-
-        ZoneUpdate::Finished(record) => {
-            let ZoneRecordData::Soa(soa) = record.data() else {
-                unreachable!("'ZoneUpdate::Finished' must hold a SOA");
-            };
-
-            let serial = Serial::from(soa.serial().into_int());
-            if local_soa.rdata.serial == serial {
-                // The local copy is up-to-date.
-                Ok(false)
-            } else {
-                // The server says the local copy is up-to-date, but it's not.
-                Err(IxfrError::InconsistentUpToDate)
-            }
         }
 
         _ => unreachable!(),
