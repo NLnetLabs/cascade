@@ -1,0 +1,31 @@
+a.modify.example.	3600	IN	A	192.0.2.0
+a.modify.not-auth.example.	3600	IN	A	192.0.2.0
+aaaa.modify.example.	3600	IN	AAAA	2001:db8::
+aaaa.modify.not-auth.example.	3600	IN	AAAA	2001:db8::
+cname.modify.example.	3600	IN	CNAME	cname-target.example.
+cname.modify.not-auth.example.	3600	IN	CNAME	cname-target.example.
+delegation1.delete.example.	3600	IN	NS	ns.example.
+delegation1.example.	3600	IN	NS	ns.example.
+delegation2.delete.example.	3600	IN	NS	ns.example.
+dname.modify.example.	3600	IN	DNAME	dname-target.example.
+dname.modify.not-auth.example.	3600	IN	DNAME	dname-target.example.
+example.	3600	IN	NS	ns1.example.
+example.	3600	IN	NSEC3PARAM	1 2 3 4567 
+example.	3600	IN	SOA	ns.example. hostmaster.example. 11111 3600 3600 86400 3600
+example.	3600	IN	ZONEMD	1 2 3 112233445566778899aabbcc
+non-auth.delegation2.delete.example.	3600	IN	A	192.0.2.3
+not-auth.example.	3600	IN	NS	ns.example.
+nt2ent.example.	3600	IN	TXT	"to be removed to become ENT"
+nt2ent.not-auth.example.	3600	IN	TXT	"to be removed to become ENT"
+one.delete.example.	3600	IN	A	192.0.2.1
+one.delete.not-auth.example.	3600	IN	A	192.0.2.1
+two.delete.example.	3600	IN	A	192.0.2.2
+two.delete.example.	3600	IN	AAAA	2001:db8::2
+two.delete.not-auth.example.	3600	IN	A	192.0.2.2
+two.delete.not-auth.example.	3600	IN	AAAA	2001:db8::2
+txt.ent2nt.example.	3600	IN	TXT	"ENT to become NT"
+txt.ent2nt.not-auth.example.	3600	IN	TXT	"ENT to become NT"
+txt.modify.example.	3600	IN	TXT	"Original zone"
+txt.modify.not-auth.example.	3600	IN	TXT	"Original zone"
+txt.nt2ent.example.	3600	IN	TXT	"NT to become ENT"
+txt.nt2ent.not-auth.example.	3600	IN	TXT	"NT to become ENT"

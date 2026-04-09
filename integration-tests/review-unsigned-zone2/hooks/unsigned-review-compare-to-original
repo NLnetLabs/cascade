@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -e
+
+exec >/tmp/hook.out 2>&1
+echo "Unsigned review hook"
+
+TEST_DIR="<INTEGRATION_TEST_DIR>"
+
+export LC_ALL=C
+
+case X"$CASCADE_SERIAL" in
+X11111)
+	ref="$TEST_DIR/reference-output/test1.sorted"
+;;
+X22222)
+	ref="$TEST_DIR/reference-output/test2.sorted"
+;;
+*)
+	exit 1
+;;
+esac
+diff -iwu <(dig +noall +answer +onesoa -p "$CASCADE_SERVER_PORT" @"$CASCADE_SERVER_IP" "$CASCADE_ZONE" axfr |
+	egrep -v '^$' | sort) \
+	<(cat "$ref")
+exit 0

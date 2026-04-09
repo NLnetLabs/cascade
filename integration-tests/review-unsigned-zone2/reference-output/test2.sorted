@@ -1,0 +1,76 @@
+a.modify.example.	3600	IN	A	192.0.2.0
+a.modify.example.	3600	IN	NSEC	aaaa.modify.example. A RRSIG NSEC 
+a.modify.example.	3600	IN	RRSIG	A 15 3 3600 20260420142300 20260323142300 2835 example. kQgeZfsXtYxkxIavWZmWxhmdpqiLu3RVsgDpwIQX3Y52p4h3iiH6a+VYeEtjIqbYISR426AQ+S2h3T6CAYQcDQ==
+a.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. H22auwXjFlde8lXUyVJts/7D+vjlw8Rg00dFxMNfD8LRuyOw+3A2Ji8cHGUJheGwQlKgrflCNA+fWqDBWa7xAQ==
+a.modify.not-auth.example.	3600	IN	A	192.0.2.0
+aaaa.modify.example.	3600	IN	AAAA	2001:db8::
+aaaa.modify.example.	3600	IN	NSEC	cname.modify.example. AAAA RRSIG NSEC 
+aaaa.modify.example.	3600	IN	RRSIG	AAAA 15 3 3600 20260420142300 20260323142300 2835 example. fMtUUIUCV0pEvpSq0zd/FXijRH7whAUZ0Kn0Yuca2gNmPmbJxQoCnaVpbIaAzOENK3i+0BSQ0GVHK9U/UEIsAg==
+aaaa.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. VImaf3PtiXe8SGp2L5WnUs2FC3tzAI+LesO2dpC3tzOVqHbvqgFCzr123RWhZgIMSKLRYFm2QP6jgCYnwhGWBQ==
+aaaa.modify.not-auth.example.	3600	IN	AAAA	2001:db8::
+cname.modify.example.	3600	IN	CNAME	cname-target.example.
+cname.modify.example.	3600	IN	NSEC	dname.modify.example. CNAME RRSIG NSEC 
+cname.modify.example.	3600	IN	RRSIG	CNAME 15 3 3600 20260420142300 20260323142300 2835 example. M14bGx06bFizqf3CLeINOVwpKXK5l60+/gJHyj61SC9y10MnPaX9xKMrhmD+xZHkhf/LxECGiysKu6G8UKVVAw==
+cname.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. ys1W5JZNFWB0M0MUnb0YM1NeyctbUI8/qlhJaxzaz7hXNr/CIQ33M9MCAflQehbEAxr1olBq3n1l65bwCXseCg==
+cname.modify.not-auth.example.	3600	IN	CNAME	cname-target.example.
+delegation1.delete.example.	3600	IN	NS	ns.example.
+delegation1.delete.example.	3600	IN	NSEC	delegation2.delete.example. NS RRSIG NSEC 
+delegation1.delete.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. 6U5parkaW5lBFMeszJrxGcODZy6J1l40vMEpCTKXwWkkAMUKOjy11l8AaqgLU7uyLwvzDNNdzDV5ej0B/XN1Dw==
+delegation1.example.	3600	IN	NS	ns.example.
+delegation1.example.	3600	IN	NSEC	delegation1.delete.example. NS RRSIG NSEC 
+delegation1.example.	3600	IN	RRSIG	NSEC 15 2 3600 20260420142300 20260323142300 2835 example. C0F9LNMIAp4CvIGKkFVUHDuWl2oez+W7jEN4D8lmSGKg2xBtDI+USW0PxK2XT9CHuW8hywbn4XVJTvx9CyWUCA==
+delegation2.delete.example.	3600	IN	NS	ns.example.
+delegation2.delete.example.	3600	IN	NSEC	one.delete.example. NS RRSIG NSEC 
+delegation2.delete.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. 9dOmo65RQqdUv1VwXZZjhWGRR1PVD0QN67ePCqWLJU1QYAal32ClJmqayS1EsydYPnSueXdYOKOSL9los64eBw==
+dname.modify.example.	3600	IN	DNAME	dname-target.example.
+dname.modify.example.	3600	IN	NSEC	txt.modify.example. DNAME RRSIG NSEC 
+dname.modify.example.	3600	IN	RRSIG	DNAME 15 3 3600 20260420142300 20260323142300 2835 example. wVRiCJB/0Z5ZsBs2avJjOQk1Ta4Ic3dfMhFkB5gTPKpKbgv+g7x9SYkhciWY+pjQbWcc8dpMlJxEd8vPZVouCA==
+dname.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. wIYY4ZbbASmLpQYpN6wXLUXaww3PKB7A9T+4DjSk0z+bMl38QLZjxj0WyzXQ+XCKQlAOmCKcbVv5cwhlF7SGAg==
+dname.modify.not-auth.example.	3600	IN	DNAME	dname-target.example.
+example.	3600	IN	DNSKEY	256 3 15 BnnbKMXdvQp2v+tzyvO/HxQGY8iYcJsWD4MN6fnr84Q=
+example.	3600	IN	NS	ns1.example.
+example.	3600	IN	NSEC	delegation1.example. NS SOA RRSIG NSEC DNSKEY ZONEMD 
+example.	3600	IN	RRSIG	DNSKEY 15 1 3600 20260420142300 20260323142300 2835 example. VOTDOY4UkvgjvwWlrOpzcuW9Twlsv7PpcH6DzpdtphWwFSj4bQCTCK3b96jAd2tnu38Oo7j7sXsbxm2mUmtDAg==
+example.	3600	IN	RRSIG	NS 15 1 3600 20260420142300 20260323142300 2835 example. NXkW4KPu2Im/oPypM4O0mBJORURlOyip6EjhNH8oPoAbXQKRgKs+GprWfSFHk9EkETK4W04n+yJOdBIkFNzZBg==
+example.	3600	IN	RRSIG	NSEC 15 1 3600 20260420142300 20260323142300 2835 example. A5tNjDEUUe9hT0irjhUke23n5RwOSNvaRY72IUMPDnn4Znphf1Hb2pYsVJWiEEU+OBo0Wa1fO7pij9VRwafhCQ==
+example.	3600	IN	RRSIG	SOA 15 1 3600 20260420142300 20260323142300 2835 example. 9X91dgV6QP2p3g437i3jTsRIGgblnQBe4ffUo8j/imUXB0vCDQmzjzWnneSFGVZvucsljnEw7NQTH2PgJHZnCg==
+example.	3600	IN	RRSIG	ZONEMD 15 1 3600 20260420142300 20260323142300 2835 example. uqKA4WBEGKOAvutNSfld4o8z3NLxif+wx2T2TFyGmMI2E2pUce9uJMPwcYv2a9Th/sOJKgIv6QknONzj5YI8Bw==
+example.	3600	IN	SOA	ns.example. hostmaster.example. 22222 3600 3600 86400 3600
+example.	3600	IN	ZONEMD	1 2 3 112233445566778899aabbcc
+non-auth.delegation2.delete.example.	3600	IN	A	192.0.2.3
+not-auth.example.	3600	IN	NS	ns.example.
+not-auth.example.	3600	IN	NSEC	nt2ent.example. NS RRSIG NSEC 
+not-auth.example.	3600	IN	RRSIG	NSEC 15 2 3600 20260420142300 20260323142300 2835 example. m56qBIGy6RWZQ8So5GvOFLvwkNTI4sfH7J8JjP6DpHQbfjhnH19KW0bWHFaL0Yb7lOvfcuIrmVQSrczTIg4cBQ==
+nt2ent.example.	3600	IN	NSEC	txt.nt2ent.example. TXT RRSIG NSEC 
+nt2ent.example.	3600	IN	RRSIG	NSEC 15 2 3600 20260420142300 20260323142300 2835 example. mMUaoWlSksQ176vL9Wu/Q+ksWjy0dfdH4zPybl581TMloP+8lQhb/iXNhgBp6gDJbb/zdcIRHnbHboP/w+LTCg==
+nt2ent.example.	3600	IN	RRSIG	TXT 15 2 3600 20260420142300 20260323142300 2835 example. ha4NkLxo4VR9UtzdflXrLl7K5mxeoLZGAsW9PwxJbZcjoxXP57Q1nY1Krch938WJ3CAc7uDJww+waAZyvT1GDw==
+nt2ent.example.	3600	IN	TXT	"to be removed to become ENT"
+nt2ent.not-auth.example.	3600	IN	TXT	"to be removed to become ENT"
+one.delete.example.	3600	IN	A	192.0.2.1
+one.delete.example.	3600	IN	NSEC	two.delete.example. A RRSIG NSEC 
+one.delete.example.	3600	IN	RRSIG	A 15 3 3600 20260420142300 20260323142300 2835 example. 5WACo/KHDD98uJM98K84IjH8Gf9rLpsu+EkSwjA7kgHzIO6XgveLGJ6AlX0JgysI7ZpZoz6iZ7Z5sQk7iviRDw==
+one.delete.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. iCo1+TrE9KNuFFyYCE7SIQ4LvS+5UucIdBWvSKAas4vahSei7ax5GS8PrjGBHVVgUtguVN/f4Rq7+eGuZ91RAg==
+one.delete.not-auth.example.	3600	IN	A	192.0.2.1
+two.delete.example.	3600	IN	A	192.0.2.2
+two.delete.example.	3600	IN	AAAA	2001:db8::2
+two.delete.example.	3600	IN	NSEC	txt.ent2nt.example. A AAAA RRSIG NSEC 
+two.delete.example.	3600	IN	RRSIG	A 15 3 3600 20260420142300 20260323142300 2835 example. I7yP0Kts/4PX5Hki/K9rR2m2N2mOoptzgKoPcnE+nquOGrzY2scjMeuNZwht6O8IfRHQ6ksMCsIzxzMTvLZsBQ==
+two.delete.example.	3600	IN	RRSIG	AAAA 15 3 3600 20260420142300 20260323142300 2835 example. XlDzZxryINFzKUbnm1Erv5/6JtHK11FaCqPpimQX+WKfFJtEbMyprY3G8DIp2q9XI4m3Pnl55j8GPTSCbYGyAA==
+two.delete.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. pMWQIdJgGE/UcybsjXtiKrH3NRRGOIULXH4AgxGg1q6gXYzlKlrhiUlc7hlkD15SyJVKqDROu13E/Sf6U3X2DA==
+two.delete.not-auth.example.	3600	IN	A	192.0.2.2
+two.delete.not-auth.example.	3600	IN	AAAA	2001:db8::2
+txt.ent2nt.example.	3600	IN	NSEC	a.modify.example. TXT RRSIG NSEC 
+txt.ent2nt.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. Vk/FeZU+J7wSfqmKhrjsDMEGeZVNczAjYI27JRpFsuDNfVvTSGbdAVlcJBD2Rj+Jjsg9ss5byqjOrMHxj5FbAA==
+txt.ent2nt.example.	3600	IN	RRSIG	TXT 15 3 3600 20260420142300 20260323142300 2835 example. OCC9VCvuV25CLUtZiHjnAhq8EedZjDjmrOcR2xzOCZbm0SAEri76gECMGUT5H1CKXOdDCRYgqOp4PE8In0ZXDg==
+txt.ent2nt.example.	3600	IN	TXT	"ENT to become NT"
+txt.ent2nt.not-auth.example.	3600	IN	TXT	"ENT to become NT"
+txt.modify.example.	3600	IN	NSEC	not-auth.example. TXT RRSIG NSEC 
+txt.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. KGOvDAr3VuoxMJZZZMvmnCtAqNciaO1QZ8Cprbj/bkUVaLtD30SLBhYu91RchHkqtLJ97M3XqjsqyKKi99eVCA==
+txt.modify.example.	3600	IN	RRSIG	TXT 15 3 3600 20260420142300 20260323142300 2835 example. f1ETtE89QnqWrNBRF+Rb6vny92kptbflU+SMXpkNT2sfTWmR3wheih/ceKDegcUvSlBN5A9MJ+MgzZUSPdkaAA==
+txt.modify.example.	3600	IN	TXT	"Original zone"
+txt.modify.not-auth.example.	3600	IN	TXT	"Original zone"
+txt.nt2ent.example.	3600	IN	NSEC	example. TXT RRSIG NSEC 
+txt.nt2ent.example.	3600	IN	RRSIG	NSEC 15 3 3600 20260420142300 20260323142300 2835 example. ovl7FoZtXWpAXzudMeKyXPxqZThahhbM33RG7tFNqZhuY4Fd/sUopzDW94r2ceprsuUVR+IMQz3zIozCYXIYBw==
+txt.nt2ent.example.	3600	IN	RRSIG	TXT 15 3 3600 20260420142300 20260323142300 2835 example. TAxufP3ycu/sx/C8UkWDZE0GXq9rtjXduphHQC/TyCjQjo/cf0izpqI0GAb+3dcKYQU8+T/0oz39MtJxORLvDQ==
+txt.nt2ent.example.	3600	IN	TXT	"NT to become ENT"
+txt.nt2ent.not-auth.example.	3600	IN	TXT	"NT to become ENT"

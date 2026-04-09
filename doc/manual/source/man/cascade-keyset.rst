@@ -4,25 +4,22 @@ cascade keyset
 Synopsis
 --------
 
-.. :program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` ``<ROLL TYPE>`` ``<ROLL COMMAND>`` ``[OPTIONS]``
+:program:`cascade` ``[GLOBAL OPTIONS]`` keyset ``<ZONE>`` :subcmd:`ksk|zsk|csk|algorithm` ``[OPTIONS]`` ``<COMMAND>``
 
-:program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` :subcmd:`ksk|zsk|csk|algorithm` ``<ROLL COMMAND>`` ``[OPTIONS]``
+:program:`cascade` ``[GLOBAL OPTIONS]`` keyset ``<ZONE>`` :subcmd:`remove-key` ``[OPTIONS]`` ``<KEY>``
 
-.. :program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` ``<COMMAND>`` ``[OPTIONS]``
-
-:program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` :subcmd:`remove-key` ``[OPTIONS]`` ``<KEY>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` keyset ``<ZONE>`` :subcmd:`get` ``[RR]``
 
 Description
 -----------
 
 Execute manual key roll or key removal commands.
 
-Options
--------
+Global Options
+--------------
 
-.. option:: -h, --help
-
-   Print the help text (short summary with ``-h``, long help with ``--help``).
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 Commands
 --------
@@ -46,6 +43,10 @@ Commands
 .. subcmd:: remove-key
 
    Remove a key from the key set.
+
+.. subcmd:: get
+
+   Get the key or keys for a zone as DS, DNSKEY, or CDS RRsets.
 
 
 Key roll commands for :subcmd:`ksk|zsk|csk|algorithm`
@@ -99,6 +100,23 @@ Options for :subcmd:`keyset remove-key`
 .. option:: --continue
 
     Continue when removing the underlying keys fails.
+
+
+Arguments for :subcmd:`keyset get`
+-----------------------------------------
+
+.. option:: [RR]
+
+   The RRset to print. ``ds``, ``dnskey``, or ``cds``.
+
+   The CDS RRset includes the CDNSKEY RRset and signatures.
+
+   .. note:: The DS and CDS RRset is only available during the appropriate
+       step of a key roll. So, if the output is empty, check the zone's key
+       roll status to see if it may still be waiting for propagation of e.g.
+       the new DNSKEY. If you need the DS RRset even if cascade is still
+       waiting for propagation, you can use ``cascade keyset <zone> get
+       dnskey | dnst key2ds -n /dev/stdin``.
 
 
 See Also

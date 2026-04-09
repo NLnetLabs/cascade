@@ -6,10 +6,6 @@ defaults:
   run:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 inputs:
-  cascade-dir:
-    description: 'The name of the directory to store cascade configuration in'
-    required: false
-    default: ${{ github.workspace }}/cascade-dir
   log-level:
     description: The level of logging that Cascade should output.
     required: false
@@ -21,6 +17,15 @@ inputs:
       - info
       - debug
       - trace
+  cascade-dir:
+    description: 'The name of the directory to store cascade configuration in'
+    required: false
+    default: ${{ github.workspace }}/cascade-dir
+  fake-time:
+    description: 'The epoch timestamp to use instead of the real time'
+    required: false
+    default: 0
+    type: number
 runs:
   using: "composite"
   steps:
@@ -28,6 +33,11 @@ runs:
     run: |
       CASCADE_DIR="${{ inputs.cascade-dir }}"
       LOG_LEVEL="${{ inputs.log-level }}"
+
+      if [[ "${{ inputs.fake-time }}" != "0" ]]; then
+        echo "::info:: Setting CASCADE_FAKETIME to ${{ inputs.fake-time }}"
+        export CASCADE_FAKETIME=${{ inputs.fake-time }}
+      fi
 
       mkdir -p "${CASCADE_DIR}/policies"
       # We need to create a custom config for cascade because the default paths are not available/permitted in this environment

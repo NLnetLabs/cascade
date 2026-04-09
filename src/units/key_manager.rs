@@ -12,11 +12,12 @@ use camino::{Utf8Path, Utf8PathBuf};
 use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
 use core::time::Duration;
 use domain::base::Name;
-use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
+use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env::{VarError, var};
 use std::ffi::OsStr;
 use std::fmt::Formatter;
 use std::fs::{File, OpenOptions, metadata};
@@ -46,6 +47,18 @@ impl KeyManager {
 
     /// Launch the key manager.
     pub fn run(center: Arc<Center>) -> AbortOnDrop {
+        let faketime = match var("CASCADE_FAKETIME") {
+            Ok(val) => {
+                let timestamp = val
+                    .parse::<Timestamp>()
+                    .map_err(|e| panic!("cannot parse {e} as u32"))
+                    .expect("should not fail");
+                Some(timestamp.into())
+            }
+            Err(VarError::NotPresent) => None,
+            Err(e) => panic!("unable to look up CASCADE_FAKETIME: {e}"),
+        };
+
         // Perform periodic ticks in the background.
         AbortOnDrop::from(tokio::task::spawn({
             async move {
@@ -53,7 +66,7 @@ impl KeyManager {
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     interval.tick().await;
-                    center.key_manager.tick(&center).await;
+                    center.key_manager.tick(&center, faketime.clone()).await;
                 }
             }
         }))
@@ -149,6 +162,39 @@ impl KeyManager {
         }
 
         Ok(())
+    }
+
+    pub async fn on_get_key(
+        &self,
+        center: &Arc<Center>,
+        zone: StoredName,
+        key_type: String,
+    ) -> Result<String, String> {
+        let center = center.clone();
+        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+
+        cmd.arg("get").arg(key_type);
+
+        match cmd.output().await {
+            Err(KeySetCommandError { err, output, .. }) => {
+                // The dnst keyset get command failed.
+                error!("key get command failed: {err}");
+                Err(format_cmd_error(&err, output))
+            }
+
+            Ok(output) => {
+                let mut status = String::from_utf8_lossy(&output.stdout).to_string();
+
+                // Include any stderr output under a warning heading
+                // in the status text that we send to the client.
+                if !output.stderr.is_empty() {
+                    status.push_str("Warning:\n");
+                    status.push_str(&String::from_utf8_lossy(&output.stderr));
+                }
+
+                Ok(status)
+            }
+        }
     }
 
     pub async fn on_status(
@@ -250,15 +296,6 @@ impl KeyManager {
         let kmip_server_state_dir = &center.config.kmip_server_state_dir;
         let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
 
-        // Check if the zone already exist. If it does we should not be
-        // here and panic. For the moment, assume there is a bug and
-        // return an error.
-        let zone_tree = &center.unsigned_zones.load();
-        let zone = zone_tree.get_zone(&name, Class::IN);
-        if zone.is_some() {
-            return Err(ZoneAddError::Other(format!("zone {name} already exists")));
-        }
-
         let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &name);
 
         let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
@@ -344,11 +381,24 @@ impl KeyManager {
 
         // Pass `set` and `import` commands to `dnst keyset`.
         let config_commands = imports_to_commands(key_imports).into_iter().chain(
-            policy_to_commands(&policy.latest).into_iter().map(|v| {
-                let mut final_cmd = vec!["set".into()];
-                final_cmd.extend(v);
-                final_cmd
-            }),
+            policy_to_commands(&policy.latest)
+                .into_iter()
+                .chain({
+                    match var("CASCADE_FAKETIME") {
+                        Ok(val) => vec![vec!["fake-time".to_string(), val]],
+                        Err(VarError::NotPresent) => vec![],
+                        Err(e) => {
+                            return Err(ZoneAddError::Other(format!(
+                                "unable to lookup CASCADE_FAKETIME: {e}"
+                            )));
+                        }
+                    }
+                })
+                .map(|v| {
+                    let mut final_cmd = vec!["set".into()];
+                    final_cmd.extend(v);
+                    final_cmd
+                }),
         );
 
         for c in config_commands {
@@ -391,7 +441,7 @@ impl KeyManager {
         )
     }
 
-    async fn tick(&self, center: &Arc<Center>) {
+    async fn tick(&self, center: &Arc<Center>, faketime: Option<UnixTime>) {
         let Ok(mut ks_info) = self.ks_info.try_lock() else {
             // An existing call to tick() is still busy, don't do anything.
             return;
@@ -457,7 +507,7 @@ impl KeyManager {
                 continue;
             };
 
-            if *cron_next < UnixTime::now() {
+            if *cron_next < faketime.clone().unwrap_or(UnixTime::now()) {
                 // Note: The call to keyset cron can take a long time if
                 // keyset times out trying to contact nameservers. This will
                 // block the loop so we won't check the keyset state for the

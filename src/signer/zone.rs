@@ -130,7 +130,7 @@ impl SignerZoneHandle<'_> {
         }
 
         // Try to obtain a 'SignedZoneBuilder' so building can begin.
-        let builder = self.zone().storage().start_resign();
+        let builder = self.zone().try_start_resign();
 
         // TODO: Keep state for a queue of pending (re-)signing operations, so
         // that the number of simultaneous operations can be limited. At the
@@ -174,18 +174,18 @@ impl SignerZoneHandle<'_> {
 
     /// Start a pending enqueued re-sign.
     ///
-    /// This should be called when the zone data storage is in the passive
+    /// This should be called when the zone state machine is in the waiting
     /// state. If a re-sign has been enqueued, it will be initiated (making the
     /// data storage busy), and `true` will be returned.
     ///
     /// This method cannot initiate enqueued new-signing operations (see
     /// [`Self::enqueue_new_sign()`]); when a new-signing operation is enqueued,
-    /// it includes a [`SignedZoneBuilder`], which prevents the data storage
-    /// from being passive.
+    /// it includes a [`SignedZoneBuilder`], which prevents the zone state
+    /// from being waiting.
     ///
     /// ## Panics
     ///
-    /// Panics if the data storage is not in the passive state.
+    /// Panics if the zone is not in the waiting state.
     pub fn start_pending(&mut self) -> bool {
         // An enqueued or ongoing signing operation holds a 'SignedZoneBuilder',
         // which prevents the zone data storage from being passive. This method
@@ -209,8 +209,7 @@ impl SignerZoneHandle<'_> {
 
         let builder = self
             .zone()
-            .storage()
-            .start_resign()
+            .try_start_resign()
             .expect("the zone data storage is passive");
 
         // TODO: Once an explicit queue of signing operations has been

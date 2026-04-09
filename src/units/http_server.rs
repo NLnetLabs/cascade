@@ -18,7 +18,6 @@ use domain::base::Name;
 use domain::base::Rtype;
 use domain::base::Serial;
 use domain::base::Ttl;
-use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::rdata::Soa;
 use domain::zonetree::ReadableZone;
@@ -51,7 +50,8 @@ use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
-use crate::zone::PipelineMode;
+use crate::zone::ZoneHandle;
+use crate::zone::machine::ZoneStateMachine;
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -97,7 +97,6 @@ impl HttpServer {
         });
 
         let app = Router::new()
-            .route("/", get(|| async { "Hello, World!" }))
             .route("/health", get(Self::health))
             .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
@@ -107,6 +106,7 @@ impl HttpServer {
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
             .route("/zone/{name}/remove", post(Self::zone_remove))
+            .route("/zone/{name}/reset", post(Self::zone_reset))
             .route("/zone/{name}/status", get(Self::zone_status))
             .route("/zone/{name}/history", get(Self::zone_history))
             .route("/zone/{name}/reload", post(Self::zone_reload))
@@ -119,6 +119,10 @@ impl HttpServer {
                 post(Self::reject_unsigned),
             )
             .route(
+                "/zone/{name}/unsigned/override",
+                post(Self::override_unsigned),
+            )
+            .route(
                 "/zone/{name}/signed/{serial}/approve",
                 post(Self::approve_signed),
             )
@@ -126,6 +130,7 @@ impl HttpServer {
                 "/zone/{name}/signed/{serial}/reject",
                 post(Self::reject_signed),
             )
+            .route("/zone/{name}/signed/override", post(Self::override_signed))
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/{name}", get(Self::policy_show))
@@ -134,6 +139,7 @@ impl HttpServer {
             .route("/kmip/{server_id}", get(Self::hsm_server_get))
             .route("/key/{zone}/roll", post(Self::key_roll))
             .route("/key/{zone}/remove", post(Self::key_remove))
+            .route("/key/{zone}/get", post(Self::key_get))
             .with_state(this.clone())
             .fallback(Self::warn_route_not_found);
 
@@ -194,23 +200,16 @@ impl HttpServer {
     }
 
     async fn status(State(state): State<Arc<HttpServer>>) -> Json<ServerStatusResult> {
-        let mut soft_halted_zones = vec![];
-        let mut hard_halted_zones = vec![];
+        let mut halted_zones = vec![];
 
         let center = &state.center;
 
         // Determine which pipelines are halted.
         for zone in center.state.lock().unwrap().zones.iter() {
-            if let Ok(zone_state) = zone.0.state.lock() {
-                match &zone_state.pipeline_mode {
-                    PipelineMode::Running => { /* Nothing to do */ }
-                    PipelineMode::SoftHalt(err) => {
-                        soft_halted_zones.push((zone.0.name.clone(), err.clone()))
-                    }
-                    PipelineMode::HardHalt(err) => {
-                        hard_halted_zones.push((zone.0.name.clone(), err.clone()))
-                    }
-                }
+            if let Ok(zone_state) = zone.0.state.lock()
+                && let Some(err) = zone_state.machine.display_halted_reason()
+            {
+                halted_zones.push((zone.0.name.clone(), err.clone()))
             }
         }
 
@@ -218,8 +217,7 @@ impl HttpServer {
         let signing_queue = center.signer.on_queue_report(center);
 
         Json(ServerStatusResult {
-            soft_halted_zones,
-            hard_halted_zones,
+            halted_zones,
             signing_queue,
         })
     }
@@ -295,6 +293,33 @@ impl HttpServer {
         )
     }
 
+    async fn zone_reset(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneResetResult> {
+        // Poor man's try block
+        let do_zone_reset = || {
+            let zone = center::get_zone(&state.center, &name).ok_or(ZoneResetError::NoSuchZone)?;
+
+            let mut zone_state = zone.state.lock().unwrap();
+
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center: &state.center,
+            };
+
+            match handle.try_reset() {
+                Ok(_) => Ok(ZoneResetOutput {
+                    zone: zone.name.clone(),
+                }),
+                Err(_) => Err(ZoneResetError::NotHalted),
+            }
+        };
+
+        Json(do_zone_reset())
+    }
+
     async fn zones_list(State(http_state): State<Arc<HttpServer>>) -> Json<ZonesListResult> {
         let state = http_state.center.state.lock().unwrap();
         let zones = state
@@ -324,8 +349,12 @@ impl HttpServer {
         let publish_addr;
         let unsigned_review_status;
         let signed_review_status;
-        let pipeline_mode;
         let zone;
+        let halted_reason;
+        let progress;
+        let unsigned_serial;
+        let signed_serial;
+        let published_serial;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -338,7 +367,8 @@ impl HttpServer {
                 .clone();
 
             let zone_state = zone.state.lock().unwrap();
-            pipeline_mode = zone_state.pipeline_mode.clone();
+            halted_reason = zone_state.halted_reason();
+
             policy = zone_state
                 .policy
                 .as_ref()
@@ -401,24 +431,41 @@ impl HttpServer {
                         when: item.when,
                     }
                 });
+
+            unsigned_serial = zone_state
+                .storage
+                .loaded_review_soa
+                .as_ref()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+            signed_serial = zone_state
+                .storage
+                .signed_review_soa
+                .as_ref()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+            published_serial = zone_state
+                .storage
+                .published_soa
+                .as_ref()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+
+            progress = match zone_state.machine {
+                ZoneStateMachine::Waiting(..) => {
+                    if published_serial.is_some() {
+                        Progress::Published
+                    } else {
+                        Progress::WaitingForChanges
+                    }
+                }
+                ZoneStateMachine::Loading(..) => Progress::ChangesReceived,
+                ZoneStateMachine::LoadedReview(..) => Progress::AtUnsignedReview,
+                ZoneStateMachine::HaltLoaded(..) => Progress::AtUnsignedReview,
+                ZoneStateMachine::Signing(..) => Progress::Signing,
+                ZoneStateMachine::SigningFailed(..) => Progress::SigningFailed,
+                ZoneStateMachine::SignedReview(..) => Progress::AtSignedReview,
+                ZoneStateMachine::HaltSigned(..) => Progress::AtSignedReview,
+                ZoneStateMachine::Poisoned => unreachable!(),
+            };
         }
-
-        // TODO: We need to show multiple versions here
-        let unsigned_zones = state.center.unsigned_zones.load();
-        let signed_zones = state.center.signed_zones.load();
-        let published_zones = state.center.published_zones.load();
-        let unsigned_zone = unsigned_zones.get_zone(&name, Class::IN);
-        let signed_zone = signed_zones.get_zone(&name, Class::IN);
-        let published_zone = published_zones.get_zone(&name, Class::IN);
-
-        // Determine the highest stage the zone has progressed to.
-        let stage = if published_zone.is_some() {
-            ZoneStage::Published
-        } else if signed_zone.is_some() {
-            ZoneStage::Signed
-        } else {
-            ZoneStage::Unsigned
-        };
 
         // Query key status
         let key_status = {
@@ -491,7 +538,7 @@ impl HttpServer {
         }
 
         // Query signing status
-        let signing_report = if stage >= ZoneStage::Signed {
+        let signing_report = if progress >= Progress::Signed {
             let center = &state.center;
             center.signer.on_signing_report(&zone)
         } else {
@@ -520,38 +567,11 @@ impl HttpServer {
                 })
         };
 
-        // Query zone serials
-        let mut unsigned_serial = None;
-        if let Some(zone) = unsigned_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            unsigned_serial = Some(soa.serial());
-        }
-        let mut signed_serial = None;
-        if let Some(zone) = signed_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            signed_serial = Some(soa.serial());
-        }
-        let mut published_serial = None;
-        if let Some(zone) = published_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            published_serial = Some(soa.serial());
-        }
-
-        // If the timing were unlucky we may have a published serial but not
-        // signed serial as the signed zone may have just been removed. Use
-        // the published serial as the signed serial in this case.
-        if signed_serial.is_none() && published_serial.is_some() {
-            signed_serial = published_serial;
-        }
-
         Ok(ZoneStatus {
             name,
             source,
             policy,
-            stage,
+            progress,
             keys,
             key_status,
             receipt_report,
@@ -564,7 +584,7 @@ impl HttpServer {
             signing_report,
             published_serial,
             publish_addr,
-            pipeline_mode: pipeline_mode.into(),
+            halted_reason,
         })
     }
 
@@ -648,6 +668,35 @@ impl HttpServer {
         Json(result)
     }
 
+    async fn override_unsigned(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneOverrideResult> {
+        // Poor man's try block
+        let do_override = || {
+            let zone =
+                center::get_zone(&state.center, &name).ok_or(ZoneOverrideError::NoSuchZone)?;
+
+            let mut zone_state = zone.state.lock().unwrap();
+
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center: &state.center,
+            };
+
+            match handle.try_override_loaded_reject() {
+                Ok(_) => Ok(ZoneOverrideOutput {
+                    review_stage: ZoneReviewStage::Unsigned,
+                    zone: zone.name.clone(),
+                }),
+                Err(_) => Err(ZoneOverrideError::NotRejected),
+            }
+        };
+
+        Json(do_override())
+    }
+
     /// Approve a signed version of a zone.
     async fn approve_signed(
         State(state): State<Arc<HttpServer>>,
@@ -690,6 +739,35 @@ impl HttpServer {
         );
 
         Json(result)
+    }
+
+    async fn override_signed(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneOverrideResult> {
+        // Poor man's try block
+        let do_override = || {
+            let zone =
+                center::get_zone(&state.center, &name).ok_or(ZoneOverrideError::NoSuchZone)?;
+
+            let mut zone_state = zone.state.lock().unwrap();
+
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center: &state.center,
+            };
+
+            match handle.try_override_signed_reject() {
+                Ok(_) => Ok(ZoneOverrideOutput {
+                    review_stage: ZoneReviewStage::Signed,
+                    zone: zone.name.clone(),
+                }),
+                Err(_) => Err(ZoneOverrideError::NotRejected),
+            }
+        };
+
+        Json(do_override())
     }
 
     async fn policy_list(State(state): State<Arc<HttpServer>>) -> Json<PolicyListResult> {
@@ -874,6 +952,20 @@ impl HttpServer {
         let res = center
             .key_manager
             .on_remove_key(center, zone, key, force, continue_flag)
+            .await;
+
+        Json(res)
+    }
+
+    async fn key_get(
+        State(state): State<Arc<HttpServer>>,
+        Path(zone): Path<Name<Bytes>>,
+        Json(KeyGet { key_type }): Json<KeyGet>,
+    ) -> Json<Result<String, String>> {
+        let center = &state.center;
+        let res = center
+            .key_manager
+            .on_get_key(center, zone, key_type.to_string())
             .await;
 
         Json(res)

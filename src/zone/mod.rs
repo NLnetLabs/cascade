@@ -5,7 +5,6 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
-    io,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
@@ -19,16 +18,17 @@ use tracing::{debug, error, trace};
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
-    config::Config,
     loader::zone::{LoaderState, LoaderZoneHandle},
-    policy::{Policy, PolicyVersion},
+    policy::PolicyVersion,
     signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
+    zone::machine::ZoneStateMachine,
 };
 
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
+pub mod machine;
 pub mod state;
 
 //----------- Zone -------------------------------------------------------------
@@ -95,6 +95,9 @@ impl ZoneHandle<'_> {
 /// The state of a zone.
 #[derive(Debug, Default)]
 pub struct ZoneState {
+    /// The top-level state machine
+    pub machine: ZoneStateMachine,
+
     /// The policy (version) used by the zone.
     pub policy: Option<Arc<PolicyVersion>>,
 
@@ -123,11 +126,6 @@ pub struct ZoneState {
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
 
-    /// Whether or not the pipeline for this zone should be allowed to flow at
-    /// the moment.
-    // TODO: make the pipeline stop accepting new data when hard halted.
-    pub pipeline_mode: PipelineMode,
-
     /// Loading new versions of the zone.
     pub loader: LoaderState,
 
@@ -145,24 +143,8 @@ pub struct ZoneState {
 }
 
 impl ZoneState {
-    pub fn hard_halt(&mut self, reason: String) {
-        self.pipeline_mode = PipelineMode::HardHalt(reason);
-    }
-
-    pub fn soft_halt(&mut self, reason: String) {
-        self.pipeline_mode = PipelineMode::SoftHalt(reason);
-    }
-
-    pub fn resume(&mut self) {
-        self.pipeline_mode = PipelineMode::Running;
-    }
-
-    pub fn halted(&self, hard: bool) -> Option<String> {
-        match &self.pipeline_mode {
-            PipelineMode::SoftHalt(r) if !hard => Some(r.clone()),
-            PipelineMode::HardHalt(r) if hard => Some(r.clone()),
-            _ => None,
-        }
+    pub fn halted_reason(&self) -> Option<String> {
+        self.machine.display_halted_reason()
     }
 
     pub fn record_event(&mut self, event: HistoricalEvent, serial: Option<Serial>) {
@@ -218,33 +200,6 @@ pub enum ZoneVersionReviewState {
     ///
     /// The zone has not yet been approved; it can be approved at any time.
     Rejected,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PipelineMode {
-    /// Newly received zone data will flow through the pipeline.
-    #[default]
-    Running,
-
-    /// The current zone data could not be fully processed through the
-    /// pipeline. When new zone data is received it will flow through the
-    /// pipeline as normal.
-    SoftHalt(String),
-
-    /// The current zone data could not be fully processed through the
-    /// pipeline. The pipeline for this zone will remain halted until manually
-    /// restarted.
-    HardHalt(String),
-}
-
-impl From<PipelineMode> for api::PipelineMode {
-    fn from(value: PipelineMode) -> Self {
-        match value {
-            PipelineMode::Running => Self::Running,
-            PipelineMode::SoftHalt(r) => Self::SoftHalt(r),
-            PipelineMode::HardHalt(r) => Self::HardHalt(r),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -403,23 +358,6 @@ impl Zone {
 //--- Loading / Saving
 
 impl Zone {
-    /// Reload the state of this zone.
-    pub fn reload_state(
-        self: &Arc<Self>,
-        policies: &mut foldhash::HashMap<Box<str>, Policy>,
-        config: &Config,
-    ) -> io::Result<()> {
-        // Load and parse the state file.
-        let path = config.zone_state_dir.join(format!("{}.db", self.name));
-        let spec = state::Spec::load(&path)?;
-
-        // Merge the parsed data.
-        let mut state = self.state.lock().unwrap();
-        spec.parse_into(self, &mut state, policies);
-
-        Ok(())
-    }
-
     /// Mark the zone as dirty.
     ///
     /// A persistence operation for the zone will be enqueued (unless one

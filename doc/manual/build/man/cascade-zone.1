@@ -27,37 +27,39 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Feb 25, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "Apr 07, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fB<COMMAND>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%remove\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%remove\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%list\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%list\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reload\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reload\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%override\fP \fB<\-\-unsigned|\-\-signed>\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%history\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reset\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%history\fP \fB<NAME>\fP
 .SH DESCRIPTION
 .sp
 Manage Cascade\(aqs zones.
-.SH OPTIONS
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
-.UNINDENT
+.SH GLOBAL OPTIONS
+.sp
+See \fI\%Cascade CLI\fP for information about global options supported by every CLI
+command.
 .SH COMMANDS
 .INDENT 0.0
 .TP
@@ -91,8 +93,18 @@ Reject a zone being reviewed.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B override
+Override a previous rejection of a zone review.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B status
 Get the status of a single zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B reset
+Reset the pipeline for a zone to get it out of a halted state.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -221,6 +233,17 @@ The name of the zone to reject.
 .B <SERIAL>
 The serial number of the zone to reject.
 .UNINDENT
+.SH OPTIONS FOR ZONE OVERRIDE
+.INDENT 0.0
+.TP
+.B <\-\-unsigned|\-\-signed>
+Whether the zone to override is at the unsigned or signed review stage.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to override.
+.UNINDENT
 .SH OPTIONS FOR ZONE STATUS
 .INDENT 0.0
 .TP
@@ -232,6 +255,12 @@ identifiers in use, as well as the new DNSKEY records during key rolls.
 .TP
 .B <NAME>
 The name of the zone to report the status of.
+.UNINDENT
+.SH OPTIONS FOR ZONE RESET
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to reset the pipeline of.
 .UNINDENT
 .SH SEE ALSO
 .INDENT 0.0

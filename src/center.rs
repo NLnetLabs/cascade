@@ -23,7 +23,7 @@ use crate::manager::record_zone_event;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_server::ZoneServer;
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, PipelineMode, ZoneHandle};
+use crate::zone::{HistoricalEvent, ZoneHandle};
 use crate::{
     api,
     config::Config,
@@ -68,9 +68,6 @@ pub struct Center {
     /// The latest unsigned contents of all zones.
     pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
 
-    /// The latest ready-to-sign contents of all zones.
-    pub signable_zones: Arc<ArcSwap<ZoneTree>>,
-
     /// The latest signed contents of all zones.
     pub signed_zones: Arc<ArcSwap<ZoneTree>>,
 
@@ -79,9 +76,6 @@ pub struct Center {
 
     /// Zones currently being re-signed.
     pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
-
-    /// The old TSIG key store.
-    pub old_tsig_key_store: crate::common::tsig::TsigKeyStore,
 }
 
 //--- Actions
@@ -260,22 +254,6 @@ pub fn get_zone(center: &Arc<Center>, name: &StoredName) -> Option<Arc<Zone>> {
     state.zones.get(name).map(|zone| zone.0.clone())
 }
 
-pub fn halt_zone(center: &Arc<Center>, zone: &Arc<Zone>, hard: bool, reason: &str) {
-    let mut state = center.state.lock().unwrap();
-    let mut zone_state = zone.state.lock().unwrap();
-    if hard {
-        if !matches!(zone_state.pipeline_mode, PipelineMode::HardHalt(_)) {
-            zone_state.hard_halt(reason.to_string());
-        }
-    } else if !matches!(
-        zone_state.pipeline_mode,
-        PipelineMode::SoftHalt(_) | PipelineMode::HardHalt(_)
-    ) {
-        zone_state.soft_halt(reason.to_string());
-    }
-    state.mark_dirty(center);
-}
-
 //----------- State ------------------------------------------------------------
 
 /// Global state for Cascade.
@@ -323,11 +301,10 @@ pub struct State {
 
 impl State {
     /// Attempt to load the global state file.
-    pub fn init_from_file(&mut self, config: &Config) -> io::Result<()> {
+    pub fn init_from_file(config: &Config) -> io::Result<Self> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        spec.parse_into(self);
-        Ok(())
+        Ok(spec.parse())
     }
 
     /// Mark the global state as dirty.
