@@ -215,7 +215,7 @@ jobs:
           key: ${{ matrix.key }}
 
   notify-in-for-unknown-zone:
-    name: 
+    name: Receive a NOTIFY for a zone that is unknown to Cascade.
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -230,7 +230,7 @@ jobs:
           log-level: ${{ inputs.log-level }}
 
   remove-zone:
-    name: 
+    name: Add, sign and remove a zone.
     runs-on: ubuntu-latest
     strategy:
       matrix:
