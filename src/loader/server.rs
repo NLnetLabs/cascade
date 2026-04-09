@@ -68,14 +68,22 @@ pub async fn refresh(
 ) -> Result<bool, RefreshError> {
     debug!("Refreshing {:?} from server {addr:?}", zone.name);
 
+    if let Some(curr) = builder.curr() {
+        // Check the SOA record upfront.
+        let new_soa = query_soa(zone, addr, tsig_key.clone()).await?;
+
+        if *curr.soa() == new_soa {
+            // The local copy of the zone appears to be up-to-date.
+            return Ok(false);
+        }
+    }
+
     if builder.curr().is_none() {
         // Fetch the whole zone.
         axfr(zone, addr, tsig_key, builder, metrics).await?;
 
         return Ok(true);
     };
-
-    trace!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
 
     // Fetch the zone relative to the latest local copy.
     Ok(ixfr(zone, addr, tsig_key, builder, metrics).await?)
@@ -103,7 +111,7 @@ pub async fn ixfr(
     builder: &mut LoadedZoneBuilder,
     metrics: &ActiveLoadMetrics,
 ) -> Result<bool, IxfrError> {
-    debug!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
+    debug!("Attempting an IXFR");
 
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
     let local_soa = builder.curr().unwrap().soa().clone();
@@ -165,21 +173,10 @@ pub async fn ixfr(
 
     // If the server does not support IXFR, fall back to an AXFR.
     if initial.header().rcode() == Rcode::NOTIMP {
-        // Query the server for its SOA record only.
-        let remote_soa = query_soa(zone, addr, tsig_key.clone()).await?;
+        trace!("The server does not support IXFR, falling back to AXFR");
 
-        if local_soa.rdata.serial == remote_soa.rdata.serial {
-            // The zone has not changed.
-            return Ok(false);
-        } else {
-            // If the remote serial is ahead of the local serial, the new zone
-            // needs to be fetched. If the remote serial is behind, we treat it
-            // as a new instance of the zone anyway.
-
-            // Perform a full AXFR.
-            axfr(zone, addr, tsig_key, builder, metrics).await?;
-            return Ok(true);
-        }
+        axfr(zone, addr, tsig_key, builder, metrics).await?;
+        return Ok(true);
     }
 
     // Check for common short-circuit cases.
@@ -337,7 +334,7 @@ pub async fn axfr(
     builder: &mut LoadedZoneBuilder,
     metrics: &ActiveLoadMetrics,
 ) -> Result<(), AxfrError> {
-    debug!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
+    debug!("Attempting an AXFR");
 
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
 
@@ -538,9 +535,6 @@ pub async fn query_soa(
     if rname != zone_name {
         return Err(QuerySoaError::MismatchedResponse);
     }
-    let None = parser.next() else {
-        return Err(QuerySoaError::MismatchedResponse);
-    };
 
     Ok(SoaRecord(Record {
         rname: zone_name.unsized_copy_into(),
