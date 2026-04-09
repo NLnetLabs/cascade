@@ -55,7 +55,7 @@ runs:
 
     - name: Query zone
       run: |
-        dig +noall @127.0.0.1 -p 4543 example.test AXFR
+        dig +noall @127.0.0.1 -p 4542 example.test AXFR
 
     - name: Stop Cascade
       run: |
