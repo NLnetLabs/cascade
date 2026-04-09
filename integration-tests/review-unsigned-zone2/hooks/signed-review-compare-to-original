@@ -10,7 +10,7 @@ export LC_ALL=C
 
 # Set the port for the unsigned review server manually until it gets passed
 # by Cascade.
-unsigned_review_port=4541
+unsigned_review_port=4540
 
 case X"$CASCADE_SERIAL" in
 X11111)
