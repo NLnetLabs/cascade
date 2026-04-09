@@ -61,7 +61,7 @@ To work with an HSM using its PKCS#11 interface, Cascade requires our
 
 Several HSMs have been tested with Cascade. Our testing was limited to normal
 usage only, not attempting to deliberately cause problems, and not attempting
-to stress or performance test the interface. The tested HSMs are:
+to stress or performance test the interface. The tested HSMs are\:
 
 .. table:: Supported HSMs
    :widths: auto

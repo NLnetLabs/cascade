@@ -20,7 +20,7 @@ source "$(dirname "$0")/common.sh"
 _scriptname=$0
 _ignore_no_ubuntu=false
 _nameserver_base_dir=$NAMESERVER_BASE_DIR
-_cascade_port=4543
+_cascade_port=4542
 _bind_port=1053
 _nsd_port=1054
 _nsd_primary_port=1055

@@ -434,9 +434,6 @@ impl GroupIdSpec {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct LoaderSpec {
-    /// Where to listen for zone update notifications.
-    pub notify_listeners: Vec<SocketSpec>,
-
     /// Configuring whether and how loaded zones are reviewed.
     pub review: ReviewSpec,
 }
@@ -446,10 +443,6 @@ pub struct LoaderSpec {
 impl LoaderSpec {
     /// Parse from this specification.
     pub fn parse_into(self, config: &mut LoaderConfig) {
-        config.notify_listeners.clear();
-        config
-            .notify_listeners
-            .extend(self.notify_listeners.into_iter().map(|v| v.parse()));
         self.review.parse_into(&mut config.review);
     }
 }

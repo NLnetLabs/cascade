@@ -72,7 +72,7 @@ runs:
         serial="${TEST_IDX}${TEST_IDX}${TEST_IDX}${TEST_IDX}${TEST_IDX}"
         timeout=10 # seconds
         start=$(date +%s)
-        until dig +short @127.0.0.1 -p 4543 example SOA | grep $serial; do
+        until dig +short @127.0.0.1 -p 4542 example SOA | grep $serial; do
           if (($(date +%s) > (start + timeout))); then
             echo "::error:: timeout: published SOA does not contain $serial"
             cat /tmp/hook.out

@@ -203,14 +203,14 @@ For example:
       Signed 3 records in 0s
     ✔ Auto approving publication of version 2025093001, no checks enabled in policy.
     ✔ Published version 2025093001
-      Published zone available on 127.0.0.1:4543
+      Published zone available on 127.0.0.1:4542
 
 From the above you can see that the signed zone can be retrieved from
-``127.0.0.1:4543`` using a DNS client, e.g.:
+``127.0.0.1:4542`` using a DNS client, e.g.:
 
 .. code-block:: bash
 
-    dig @127.0.0.1 -p 4543 AXFR example.com
+    dig @127.0.0.1 -p 4542 AXFR example.com
 
 If you have the BIND `dnssec-verify
 <https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_
@@ -218,7 +218,7 @@ tool installed, you can check that the zone is correctly DNSSEC signed:
 
 .. code-block:: bash
 
-   $ dig @127.0.0.1 -p 4543 example.com AXFR | dnssec-verify -o example.com /dev/stdin
+   $ dig @127.0.0.1 -p 4542 example.com AXFR | dnssec-verify -o example.com /dev/stdin
    Loading zone 'example.com' from file '/dev/stdin'
 
    Verifying the zone using the following algorithms:

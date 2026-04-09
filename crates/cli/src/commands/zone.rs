@@ -532,11 +532,11 @@ impl Zone {
         })?;
 
         // Determine progress
-        let progress = determine_progress(&zone, &policy);
+        let progress = &zone.progress;
 
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
-        progress.print(&zone, &policy);
+        print_timeline(progress, &zone, &policy);
 
         // If the pipeline is halted, show that.
         if let Some(reason) = zone.halted_reason {
@@ -572,425 +572,345 @@ impl Zone {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Progress {
-    WaitingForChanges,
-    ChangesReceived,
-    AtUnsignedReview,
-    WaitingToSign,
-    Signing,
-    Signed,
-    SigningFailed,
-    AtSignedReview,
-    Published,
-}
+pub fn print_timeline(max: &Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
+    println!(
+        "Status report for zone '{}' using policy '{}'",
+        zone.name, policy.name
+    );
 
-fn determine_progress(zone: &ZoneStatus, policy: &PolicyInfo) -> Progress {
-    match zone.stage {
-        ZoneStage::Unsigned => match (&zone.receipt_report, zone.unsigned_review_status) {
-            (None, _) => Progress::WaitingForChanges,
-            (Some(_), None) => Progress::ChangesReceived,
-            (Some(_), Some(TimestampedZoneReviewStatus { status, .. })) => {
-                match status {
-                    ZoneReviewStatus::Pending | ZoneReviewStatus::Rejected => {
-                        Progress::AtUnsignedReview
-                    }
-                    ZoneReviewStatus::Approved => {
-                        // After reviewing comes signing, and if we're not stuck at
-                        // reviewing then we must be somewhere in signing.
-                        let Some(signing_report) = &zone.signing_report else {
-                            return Progress::WaitingToSign;
-                        };
-                        match &signing_report.stage_report {
-                            SigningStageReport::Requested(_) => Progress::WaitingToSign,
-                            SigningStageReport::InProgress(_) => Progress::Signing,
-                            SigningStageReport::Finished(s) => match s.succeeded {
-                                true => Progress::Signed,
-                                false => Progress::SigningFailed,
-                            },
-                        }
-                    }
-                }
-            }
-        },
-        ZoneStage::Signed => {
-            if !policy.signer.review.required {
-                let Some(signing_report) = &zone.signing_report else {
-                    return Progress::WaitingToSign;
-                };
-                match &signing_report.stage_report {
-                    SigningStageReport::Requested(_) => Progress::WaitingToSign,
-                    SigningStageReport::InProgress(_) => Progress::Signing,
-                    SigningStageReport::Finished(_) => Progress::Signed,
-                }
-            } else {
-                // After reviewing comes publication, and if we're not at the
-                // published stage then with review enabled we must still be
-                // at the review stage.
-                Progress::AtSignedReview
-            }
+    let mut p = Progress::WaitingForChanges;
+    loop {
+        match p {
+            Progress::WaitingForChanges => print_waiting_for_changes(max, zone),
+            Progress::ChangesReceived => print_zone_received(zone),
+            Progress::AtUnsignedReview => print_pending_unsigned_review(max, zone, policy),
+            Progress::WaitingToSign => print_waiting_to_sign(max, zone),
+            Progress::Signing => print_signing(max, zone),
+            Progress::Signed => print_signed(max, zone, true),
+            Progress::SigningFailed => print_signed(max, zone, false),
+            Progress::AtSignedReview => print_pending_signed_review(max, zone, policy),
+            Progress::Published => print_published(max, zone),
         }
-        ZoneStage::Published => Progress::Published,
-    }
-}
-
-impl std::fmt::Display for Progress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Progress::WaitingForChanges => f.write_str("Waiting for changes"),
-            Progress::ChangesReceived => f.write_str("Changes received"),
-            Progress::AtUnsignedReview => f.write_str("At unsigned review"),
-            Progress::WaitingToSign => f.write_str("Waiting to sign"),
-            Progress::Signing => f.write_str("Signing"),
-            Progress::Signed => f.write_str("Signed"),
-            Progress::SigningFailed => f.write_str("Signing failed"),
-            Progress::AtSignedReview => f.write_str("At signed review"),
-            Progress::Published => f.write_str("Published"),
+        match next_progress(&p, max) {
+            ControlFlow::Continue(next_p) => p = next_p,
+            ControlFlow::Break(()) => break,
         }
     }
 }
 
-impl Progress {
-    pub fn print(&self, zone: &ZoneStatus, policy: &PolicyInfo) {
+fn next_progress(this: &Progress, max: &Progress) -> ControlFlow<(), Progress> {
+    let next = match this {
+        Progress::WaitingForChanges => Progress::ChangesReceived,
+        Progress::ChangesReceived => Progress::AtUnsignedReview,
+        Progress::AtUnsignedReview => Progress::WaitingToSign,
+        Progress::WaitingToSign => Progress::Signing,
+        Progress::Signing => Progress::Signed,
+        Progress::Signed => Progress::AtSignedReview,
+        Progress::SigningFailed => return ControlFlow::Break(()),
+        Progress::AtSignedReview => Progress::Published,
+        Progress::Published => return ControlFlow::Break(()),
+    };
+
+    if next > *max {
+        return ControlFlow::Break(());
+    }
+
+    ControlFlow::Continue(next)
+}
+
+fn print_waiting_for_changes(max: &Progress, zone: &ZoneStatus) {
+    let done = *max > Progress::WaitingForChanges;
+    let waiting_waited = match done {
+        true => "Waited",
+        false => "Waiting",
+    };
+    println!(
+        "{} {} for a new version of the {} zone",
+        status_icon(done),
+        waiting_waited,
+        zone.name
+    );
+
+    // TODO: When complete, show how long we waited.
+}
+
+fn print_zone_received(zone: &ZoneStatus) {
+    // TODO: we have no indication of whether a zone is currently being
+    // received or not, we can only say if it was received after the fact.
+    // Print how receival of the zone went.
+    let Some(report) = &zone.receipt_report else {
+        // This shouldn't happen.
         println!(
-            "Status report for zone '{}' using policy '{}'",
-            zone.name, policy.name
+            "{}\u{78} The receipt report for this zone is unavailable.{}",
+            ansi::RED,
+            ansi::RESET
         );
+        return;
+    };
 
-        let mut p = Progress::WaitingForChanges;
-        loop {
-            match p {
-                Progress::WaitingForChanges => self.print_waiting_for_changes(zone),
-                Progress::ChangesReceived => self.print_zone_received(zone),
-                Progress::AtUnsignedReview => self.print_pending_unsigned_review(zone, policy),
-                Progress::WaitingToSign => self.print_waiting_to_sign(zone),
-                Progress::Signing => self.print_signing(zone),
-                Progress::Signed => self.print_signed(zone, true),
-                Progress::SigningFailed => self.print_signed(zone, false),
-                Progress::AtSignedReview => self.print_pending_signed_review(zone, policy),
-                Progress::Published => self.print_published(zone),
-            }
-            match p.next(*self) {
-                ControlFlow::Continue(next_p) => p = next_p,
-                ControlFlow::Break(()) => break,
-            }
+    let (loading_fetching, loaded_fetched, filesystem_network) = match zone.source {
+        ZoneSource::None => unreachable!(),
+        ZoneSource::Zonefile { .. } => ("Loading", "Loaded", "filesystem"),
+        ZoneSource::Server { .. } => ("Fetching", "Fetched", "network"),
+    };
+
+    match report.finished_at {
+        None => {
+            println!("{} {loading_fetching} ..", status_icon(false),);
+
+            println!(
+                "  {loaded_fetched} {} and parsed {} in {} seconds",
+                format_size(report.byte_count, " ", "B"),
+                format_size(report.record_count, "", " records"),
+                SystemTime::now()
+                    .duration_since(report.started_at)
+                    .unwrap()
+                    .as_secs()
+            );
+        }
+        Some(finished_at) => {
+            println!(
+                "{} Loaded {}",
+                status_icon(true),
+                serial_to_string(zone.unsigned_serial),
+            );
+
+            println!("  Loaded at {}", to_rfc3339_ago(report.finished_at));
+
+            println!(
+                "  {loaded_fetched} {} and {} from the {filesystem_network} in {} seconds",
+                format_size(report.byte_count, " ", "B"),
+                format_size(report.record_count, "", " records"),
+                finished_at
+                    .duration_since(report.started_at)
+                    .unwrap()
+                    .as_secs()
+            );
         }
     }
+}
 
-    fn next(&self, max: Progress) -> ControlFlow<(), Progress> {
-        let next = match self {
-            Progress::WaitingForChanges => Progress::ChangesReceived,
-            Progress::ChangesReceived => Progress::AtUnsignedReview,
-            Progress::AtUnsignedReview => Progress::WaitingToSign,
-            Progress::WaitingToSign => Progress::Signing,
-            Progress::Signing => Progress::Signed,
-            Progress::Signed => Progress::AtSignedReview,
-            Progress::SigningFailed => return ControlFlow::Break(()),
-            Progress::AtSignedReview => Progress::Published,
-            Progress::Published => return ControlFlow::Break(()),
-        };
-
-        if next > max {
-            return ControlFlow::Break(());
-        }
-
-        ControlFlow::Continue(next)
-    }
-
-    fn print_waiting_for_changes(&self, zone: &ZoneStatus) {
-        let done = *self > Progress::WaitingForChanges;
+fn print_pending_unsigned_review(max: &Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
+    if !policy.loader.review.required {
+        println!(
+            "{} Auto approving signing of {}, no checks enabled in policy.",
+            status_icon(true),
+            serial_to_string(zone.unsigned_serial),
+        );
+    } else {
+        let done = *max > Progress::AtUnsignedReview;
         let waiting_waited = match done {
             true => "Waited",
             false => "Waiting",
         };
         println!(
-            "{} {} for a new version of the {} zone",
+            "{} {} for approval to sign {}",
             status_icon(done),
             waiting_waited,
-            zone.name
+            serial_to_string(zone.unsigned_serial),
         );
-
+        if !done {
+            print_review_hook(done, &policy.loader.review.cmd_hook, zone, true);
+        }
         // TODO: When complete, show how long we waited.
     }
+}
 
-    fn print_zone_received(&self, zone: &ZoneStatus) {
-        // TODO: we have no indication of whether a zone is currently being
-        // received or not, we can only say if it was received after the fact.
-        // Print how receival of the zone went.
-        let Some(report) = &zone.receipt_report else {
-            // This shouldn't happen.
-            println!(
-                "{}\u{78} The receipt report for this zone is unavailable.{}",
-                ansi::RED,
-                ansi::RESET
-            );
-            return;
-        };
+fn print_waiting_to_sign(max: &Progress, zone: &ZoneStatus) {
+    println!(
+        "{} Approval received to sign {}, signing requested",
+        status_icon(*max > Progress::WaitingToSign),
+        serial_to_string(zone.unsigned_serial)
+    );
+}
 
-        let (loading_fetching, loaded_fetched, filesystem_network) = match zone.source {
-            ZoneSource::None => unreachable!(),
-            ZoneSource::Zonefile { .. } => ("Loading", "Loaded", "filesystem"),
-            ZoneSource::Server { .. } => ("Fetching", "Fetched", "network"),
-        };
-
-        match report.finished_at {
-            None => {
-                println!("{} {loading_fetching} ..", status_icon(false),);
-
-                println!(
-                    "  {loaded_fetched} {} and parsed {} in {} seconds",
-                    format_size(report.byte_count, " ", "B"),
-                    format_size(report.record_count, "", " records"),
-                    SystemTime::now()
-                        .duration_since(report.started_at)
-                        .unwrap()
-                        .as_secs()
-                );
-            }
-            Some(finished_at) => {
-                println!(
-                    "{} Loaded {}",
-                    status_icon(true),
-                    serial_to_string(zone.unsigned_serial),
-                );
-
-                println!("  Loaded at {}", to_rfc3339_ago(report.finished_at));
-
-                println!(
-                    "  {loaded_fetched} {} and {} from the {filesystem_network} in {} seconds",
-                    format_size(report.byte_count, " ", "B"),
-                    format_size(report.record_count, "", " records"),
-                    finished_at
-                        .duration_since(report.started_at)
-                        .unwrap()
-                        .as_secs()
-                );
-            }
-        }
+fn print_signing(max: &Progress, zone: &ZoneStatus) {
+    if *max >= Progress::Signed {
+        return;
     }
 
-    fn print_pending_unsigned_review(&self, zone: &ZoneStatus, policy: &PolicyInfo) {
-        if !policy.loader.review.required {
-            println!(
-                "{} Auto approving signing of {}, no checks enabled in policy.",
-                status_icon(true),
-                serial_to_string(zone.unsigned_serial),
-            );
-        } else {
-            let done = *self > Progress::AtUnsignedReview;
-            let waiting_waited = match done {
-                true => "Waited",
-                false => "Waiting",
-            };
-            println!(
-                "{} {} for approval to sign {}",
-                status_icon(done),
-                waiting_waited,
-                serial_to_string(zone.unsigned_serial),
-            );
-            if !done {
-                Self::print_review_hook(done, &policy.loader.review.cmd_hook, zone, true);
-            }
-            // TODO: When complete, show how long we waited.
-        }
-    }
+    println!(
+        "{} Signing {}",
+        status_icon(*max > Progress::Signing),
+        serial_to_string(zone.unsigned_serial)
+    );
+    print_signing_progress(zone);
+}
 
-    fn print_waiting_to_sign(&self, zone: &ZoneStatus) {
+fn print_signed(max: &Progress, zone: &ZoneStatus, succeeded: bool) {
+    let (signed_failed, icon) = match succeeded {
+        true => ("Signed", status_icon(true)),
+        false => (
+            "Signing failed",
+            format!("{}\u{78}{}", ansi::RED, ansi::RESET),
+        ),
+    };
+    println!(
+        "{icon} {signed_failed} {} as {}",
+        serial_to_string(zone.unsigned_serial),
+        serial_to_string(zone.signed_serial)
+    );
+
+    print_signing_progress(zone);
+
+    if *max == Progress::Signed
+        && let Some(addr) = zone.signed_review_addr
+    {
+        println!("  Signed zone available on {addr}");
+    }
+}
+
+fn print_pending_signed_review(max: &Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
+    if !policy.signer.review.required {
         println!(
-            "{} Approval received to sign {}, signing requested",
-            status_icon(*self > Progress::WaitingToSign),
-            serial_to_string(zone.unsigned_serial)
-        );
-    }
-
-    fn print_signing(&self, zone: &ZoneStatus) {
-        if *self >= Progress::Signed {
-            return;
-        }
-
-        println!(
-            "{} Signing {}",
-            status_icon(*self > Progress::Signing),
-            serial_to_string(zone.unsigned_serial)
-        );
-        Self::print_signing_progress(zone);
-    }
-
-    fn print_signed(&self, zone: &ZoneStatus, succeeded: bool) {
-        let (signed_failed, icon) = match succeeded {
-            true => ("Signed", status_icon(true)),
-            false => (
-                "Signing failed",
-                format!("{}\u{78}{}", ansi::RED, ansi::RESET),
-            ),
-        };
-        println!(
-            "{icon} {signed_failed} {} as {}",
-            serial_to_string(zone.unsigned_serial),
+            "{} Auto approving publication of {}, no checks enabled in policy.",
+            status_icon(true),
             serial_to_string(zone.signed_serial)
         );
-
-        Self::print_signing_progress(zone);
-
-        if *self == Progress::Signed
-            && let Some(addr) = zone.signed_review_addr
-        {
-            println!("  Signed zone available on {addr}");
-        }
-    }
-
-    fn print_pending_signed_review(&self, zone: &ZoneStatus, policy: &PolicyInfo) {
-        if !policy.signer.review.required {
-            println!(
-                "{} Auto approving publication of {}, no checks enabled in policy.",
-                status_icon(true),
-                serial_to_string(zone.signed_serial)
-            );
-        } else {
-            let done = *self > Progress::AtSignedReview;
-            let waiting_waited = match done {
-                true => "Waited",
-                false => "Waiting",
-            };
-            println!(
-                "{} {} for approval to publish {}",
-                status_icon(*self > Progress::AtSignedReview),
-                waiting_waited,
-                serial_to_string(zone.signed_serial),
-            );
-            if !done {
-                Self::print_review_hook(done, &policy.signer.review.cmd_hook, zone, false);
-            }
-        }
-    }
-
-    fn print_published(&self, zone: &ZoneStatus) {
+    } else {
+        let done = *max > Progress::AtSignedReview;
+        let waiting_waited = match done {
+            true => "Waited",
+            false => "Waiting",
+        };
         println!(
-            "{} Published {}",
-            status_icon(true),
-            serial_to_string(zone.published_serial),
+            "{} {} for approval to publish {}",
+            status_icon(*max > Progress::AtSignedReview),
+            waiting_waited,
+            serial_to_string(zone.signed_serial),
         );
-        if *self == Progress::Published {
-            println!("  Published zone available on {}", zone.publish_addr);
+        if !done {
+            print_review_hook(done, &policy.signer.review.cmd_hook, zone, false);
         }
     }
+}
 
-    fn print_review_hook(done: bool, cmd_hook: &Option<String>, zone: &ZoneStatus, unsigned: bool) {
-        match cmd_hook {
-            Some(path) => println!("  Configured to invoke {path}"),
-            None => {
-                if !done {
-                    let zone_name = &zone.name;
-                    let (zone_type, zone_serial) = match unsigned {
-                        true => ("unsigned", zone.unsigned_serial),
-                        false => ("signed", zone.signed_serial),
-                    };
-                    println!("\u{0021} Zone will be held until manually approved");
-                    if let Some(zone_serial) = zone_serial {
-                        println!(
-                            "  Approve with: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
-                        );
-                        println!(
-                            "  Reject with:  cascade zone reject --{zone_type} {zone_name} {zone_serial}"
-                        );
-                    }
-                } else {
-                    println!("  Zone was held until manually approved");
+fn print_published(max: &Progress, zone: &ZoneStatus) {
+    println!(
+        "{} Published {}",
+        status_icon(true),
+        serial_to_string(zone.published_serial),
+    );
+    if *max == Progress::Published {
+        println!("  Published zone available on {}", zone.publish_addr);
+    }
+}
+
+fn print_review_hook(done: bool, cmd_hook: &Option<String>, zone: &ZoneStatus, unsigned: bool) {
+    match cmd_hook {
+        Some(path) => println!("  Configured to invoke {path}"),
+        None => {
+            if !done {
+                let zone_name = &zone.name;
+                let (zone_type, zone_serial) = match unsigned {
+                    true => ("unsigned", zone.unsigned_serial),
+                    false => ("signed", zone.signed_serial),
+                };
+                println!("\u{0021} Zone will be held until manually approved");
+                if let Some(zone_serial) = zone_serial {
+                    println!(
+                        "  Approve with: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
+                    );
+                    println!(
+                        "  Reject with:  cascade zone reject --{zone_type} {zone_name} {zone_serial}"
+                    );
                 }
+            } else {
+                println!("  Zone was held until manually approved");
             }
         }
     }
+}
 
-    fn print_signing_progress(zone: &ZoneStatus) {
-        if let Some(report) = &zone.signing_report {
-            match &report.stage_report {
-                SigningStageReport::Requested(r) => {
-                    println!(
-                        "  Signing requested at {}",
-                        to_rfc3339_ago(Some(r.requested_at))
-                    );
-                }
-                SigningStageReport::InProgress(r) => {
-                    println!(
-                        "  Signing requested at {}",
-                        to_rfc3339_ago(Some(r.requested_at))
-                    );
-                    println!(
-                        "  Signing started at {}",
-                        to_rfc3339_ago(Some(r.started_at))
-                    );
-                    if let (Some(unsigned_rr_count), Some(walk_time), Some(sort_time)) =
-                        (r.unsigned_rr_count, r.walk_time, r.sort_time)
-                    {
-                        println!(
-                            "  Collected {} in {}, sorted in {}",
-                            format_size(unsigned_rr_count, "", " records"),
-                            format_duration(walk_time),
-                            format_duration(sort_time)
-                        );
-                    }
-                    if let (Some(denial_rr_count), Some(denial_time)) =
-                        (r.denial_rr_count, r.denial_time)
-                    {
-                        println!(
-                            "  Generated {} in {}",
-                            format_size(denial_rr_count, "", " NSEC(3) records"),
-                            format_duration(denial_time)
-                        );
-                    }
-                    if let (Some(rrsig_count), Some(rrsig_time)) = (r.rrsig_count, r.rrsig_time) {
-                        println!(
-                            "  Generated {} in {} ({} sig/s)",
-                            format_size(rrsig_count, "", " signatures"),
-                            format_duration(rrsig_time),
-                            rrsig_count / (rrsig_time.as_secs() as usize)
-                        );
-                    }
-                    if let Some(threads_used) = r.threads_used {
-                        println!("  Using {threads_used} threads to generate signatures");
-                    }
-                }
-                SigningStageReport::Finished(r) => {
-                    println!(
-                        "  Signing requested at {}",
-                        to_rfc3339_ago(Some(r.requested_at))
-                    );
-                    println!(
-                        "  Signing started at {}",
-                        to_rfc3339_ago(Some(r.started_at))
-                    );
-                    println!(
-                        "  Signing finished at {}",
-                        to_rfc3339_ago(Some(r.finished_at))
-                    );
+fn print_signing_progress(zone: &ZoneStatus) {
+    if let Some(report) = &zone.signing_report {
+        match &report.stage_report {
+            SigningStageReport::Requested(r) => {
+                println!(
+                    "  Signing requested at {}",
+                    to_rfc3339_ago(Some(r.requested_at))
+                );
+            }
+            SigningStageReport::InProgress(r) => {
+                println!(
+                    "  Signing requested at {}",
+                    to_rfc3339_ago(Some(r.requested_at))
+                );
+                println!(
+                    "  Signing started at {}",
+                    to_rfc3339_ago(Some(r.started_at))
+                );
+                if let (Some(unsigned_rr_count), Some(walk_time), Some(sort_time)) =
+                    (r.unsigned_rr_count, r.walk_time, r.sort_time)
+                {
                     println!(
                         "  Collected {} in {}, sorted in {}",
-                        format_size(r.unsigned_rr_count, "", " records"),
-                        format_duration(r.walk_time),
-                        format_duration(r.sort_time)
-                    );
-                    println!(
-                        "  Generated {} in {}",
-                        format_size(r.denial_rr_count, "", " NSEC(3) records"),
-                        format_duration(r.denial_time)
-                    );
-                    println!(
-                        "  Generated {} in {} ({} sig/s)",
-                        format_size(r.rrsig_count, "", " signatures"),
-                        format_duration(r.rrsig_time),
-                        r.rrsig_count
-                            .checked_div(r.rrsig_time.as_secs() as usize)
-                            .unwrap_or(r.rrsig_count),
-                    );
-                    println!(
-                        "  Took {} in total, using {} threads",
-                        format_duration(r.total_time),
-                        r.threads_used
+                        format_size(unsigned_rr_count, "", " records"),
+                        format_duration(walk_time),
+                        format_duration(sort_time)
                     );
                 }
+                if let (Some(denial_rr_count), Some(denial_time)) =
+                    (r.denial_rr_count, r.denial_time)
+                {
+                    println!(
+                        "  Generated {} in {}",
+                        format_size(denial_rr_count, "", " NSEC(3) records"),
+                        format_duration(denial_time)
+                    );
+                }
+                if let (Some(rrsig_count), Some(rrsig_time)) = (r.rrsig_count, r.rrsig_time) {
+                    println!(
+                        "  Generated {} in {} ({} sig/s)",
+                        format_size(rrsig_count, "", " signatures"),
+                        format_duration(rrsig_time),
+                        rrsig_count / (rrsig_time.as_secs() as usize)
+                    );
+                }
+                if let Some(threads_used) = r.threads_used {
+                    println!("  Using {threads_used} threads to generate signatures");
+                }
             }
-            println!("  Current action: {}", report.current_action);
+            SigningStageReport::Finished(r) => {
+                println!(
+                    "  Signing requested at {}",
+                    to_rfc3339_ago(Some(r.requested_at))
+                );
+                println!(
+                    "  Signing started at {}",
+                    to_rfc3339_ago(Some(r.started_at))
+                );
+                println!(
+                    "  Signing finished at {}",
+                    to_rfc3339_ago(Some(r.finished_at))
+                );
+                println!(
+                    "  Collected {} in {}, sorted in {}",
+                    format_size(r.unsigned_rr_count, "", " records"),
+                    format_duration(r.walk_time),
+                    format_duration(r.sort_time)
+                );
+                println!(
+                    "  Generated {} in {}",
+                    format_size(r.denial_rr_count, "", " NSEC(3) records"),
+                    format_duration(r.denial_time)
+                );
+                println!(
+                    "  Generated {} in {} ({} sig/s)",
+                    format_size(r.rrsig_count, "", " signatures"),
+                    format_duration(r.rrsig_time),
+                    r.rrsig_count
+                        .checked_div(r.rrsig_time.as_secs() as usize)
+                        .unwrap_or(r.rrsig_count),
+                );
+                println!(
+                    "  Took {} in total, using {} threads",
+                    format_duration(r.total_time),
+                    r.threads_used
+                );
+            }
         }
+        println!("  Current action: {}", report.current_action);
     }
 }
 
