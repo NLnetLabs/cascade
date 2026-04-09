@@ -205,36 +205,22 @@ pub async fn ixfr(
             return Ok(true);
         }
 
-        // NOTE: 'domain' currently reports 'None' for a single-SOA IXFR,
-        // apparently assuming it means the local copy is up-to-date. But
-        // this misses two other possibilities:
-        // - The remote copy is older than the local copy.
-        // - The IXFR was too big for UDP.
+        Some(Ok(_)) => unreachable!(),
+
         None => {
             // Assume the remote copy is identical to to the local copy.
             return Ok(false);
         }
 
-        // NOTE: The XFR response interpreter will not return this right
-        // now; it needs to be modified to report single-SOA IXFRs here.
-        Some(Ok(ZoneUpdate::Finished(record))) => {
-            let ZoneRecordData::Soa(soa) = record.data() else {
-                unreachable!("'ZoneUpdate::Finished' must hold a SOA");
-            };
+        Some(Err(xfr::protocol::IterationError::SingleSoaIxfrTcpRetrySignal)) => {
+            // TODO: The IXFR response included a SOA record which we can check
+            // to see whether the zone is already up-to-date. But the protocol
+            // iterator does not expose it.
 
-            metrics.num_loaded_records.fetch_add(1, Relaxed);
-
-            let serial = Serial::from(soa.serial().into_int());
-            if local_soa.rdata.serial == serial {
-                // The local copy is up-to-date.
-                return Ok(false);
-            }
-
-            // The transfer may have been too big for UDP; fall back to a
-            // TCP-based IXFR.
+            // Fall back to a TCP-based IXFR.
         }
 
-        _ => unreachable!(),
+        Some(Err(error)) => return Err(error.into()),
     }
 
     // UDP didn't pan out; attempt a TCP-based IXFR.
@@ -294,8 +280,8 @@ pub async fn ixfr(
     let mut bytes = initial.as_slice().len();
     let mut updates = interpreter.interpret_response(initial)?;
 
-    match updates.next().unwrap() {
-        Ok(ZoneUpdate::DeleteAllRecords) => {
+    match updates.next().unwrap()? {
+        ZoneUpdate::DeleteAllRecords => {
             // This is an AXFR.
             let mut writer = builder.replace().unwrap();
 
@@ -321,7 +307,7 @@ pub async fn ixfr(
             Ok(true)
         }
 
-        Ok(ZoneUpdate::BeginBatchDelete(soa)) => {
+        ZoneUpdate::BeginBatchDelete(soa) => {
             // This is an IXFR.
             let mut writer = builder.patch().unwrap();
 
@@ -354,7 +340,7 @@ pub async fn ixfr(
             Ok(true)
         }
 
-        Ok(ZoneUpdate::Finished(record)) => {
+        ZoneUpdate::Finished(record) => {
             let ZoneRecordData::Soa(soa) = record.data() else {
                 unreachable!("'ZoneUpdate::Finished' must hold a SOA");
             };
