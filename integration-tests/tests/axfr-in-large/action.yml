@@ -70,9 +70,10 @@ runs:
 
     - name: Query the zone at the unsigned preview server
       run: |
-        NUM_RRS=$(dig +short +onesoa @127.0.0.1 -p 4541 example.test AXFR | wc -l)
-        if [[ ${NUM_RRS} -ne 506 ]]; then
-          echo "::error:: the unsigned review zone has the wrong number of records"
+        NUM_RRS=$(dig +noall +onesoa +answer @127.0.0.1 -p 4542 example.test AXFR | wc -l)
+        if [[ ${NUM_RRS} -ne 2016 ]]; then
+          echo "::error:: the unsigned review zone has the wrong number of records: ${NUM_RRS} != 2016"
+          dig +short +noall +onesoa +answer @127.0.0.1 -p 4542 example.test AXFR > axfr.log
           exit 1
         fi
 
