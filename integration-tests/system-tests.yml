@@ -246,8 +246,6 @@ jobs:
 
   persist-zone:
     name: Added zone should still exist after restart.
-  remove-zone:
-    name: 
     runs-on: ubuntu-latest
     strategy:
       matrix:
