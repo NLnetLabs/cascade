@@ -901,6 +901,13 @@ impl WorkSpace<'_> {
         let mut all = vec![];
 
         let mut data: Vec<_> = iss
+            .new_apex
+            .iter()
+            .filter_map(|(t, r)| if *t != Rtype::ZONEMD { Some(r) } else { None })
+            .flatten()
+            .collect();
+        all.append(&mut data);
+        let mut data: Vec<_> = iss
             .new_data
             .iter()
             .filter_map(|((o, t), r)| {
