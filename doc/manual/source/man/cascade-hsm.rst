@@ -15,7 +15,7 @@ Synopsis
 Description
 -----------
 
-Manage Hardware Security Modules (HSMs) configuration in Cascade.
+Manage the configuration of Hardware Security Modules (HSMs) in Cascade
 
 Global Options
 --------------
@@ -62,7 +62,7 @@ Arguments for :subcmd:`hsm add`
       An identifier to refer to the KMIP server by.
 
       This identifier is used with other ``cascade` commands and Cascade
-hsm       policy files. The identifier serves several purposes:
+      policy files. The identifier serves several purposes:
 
       1. To make it easy at a glance to recognize which KMIP server a given key
       was created on, by allowing operators to assign a meaningful name to the
