@@ -38,6 +38,8 @@ Added in version 0.1.0\-beta1.
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fB<COMMAND>\fP
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fI\%add\fP \fB<TSIG_KEY_NAME>\fP \fB<ALGORITHM>\fP \fB<SECRET>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fI\%list\fP
 .SH DESCRIPTION
 .sp
 Manage RFC 8945 TSIG keys for authenticating zone transfers.
@@ -58,6 +60,11 @@ command.
 .TP
 .B add
 Register a new TSIG key.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B list
+List registered TSIG keys and the zones that use them.
 .UNINDENT
 .SH ARGUMENTS FOR TSIG ADD
 .INDENT 0.0
