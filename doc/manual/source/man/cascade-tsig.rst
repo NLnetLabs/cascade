@@ -34,7 +34,7 @@ Commands
    Register a new TSIG key.
 
 Arguments for :subcmd:`tsig add`
-------------------------------
+--------------------------------
 
 .. option:: <TSIG_KEY_NAME>
 
