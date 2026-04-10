@@ -42,11 +42,14 @@ Commands
 
 .. subcmd:: add
 
-   Register a new zone.
+   Register a new zone. The zone will be loaded, signed and published.
 
 .. subcmd:: remove
 
    Remove a zone.
+
+   .. note:: Once removed downstream servers will no longer be able to fetech
+             the zone!
 
 .. subcmd:: list
 
@@ -83,15 +86,25 @@ Commands
 Options for :subcmd:`zone add`
 ------------------------------
 
-.. option:: --source <IP_ADDRESS[:<PORT>][^<TSIG_KEY_NAME]>
-.. option:: --source <PATH/TO/ZONE/FILE>
+.. option:: --source <SOURCE>
 
-   The zone source can be an IP address (with or without port, defaults to port
-   53) or a file path.
+   The zone source can be the IP address of an upstream nameserver (with
+   or without port, defaults to port 53) or the path to a zone file locally
+   available to the ``cascaded`` daemon.`
 
-   When providing an IP address (with or without port) you may also optionally
-   suffix it with ``^<TSIG_KEY_NAME>`` to indicate that the specified RFC 8945
-   TSIG key should be used to sign the zone transfer request.
+   When specifying an upstream nameserver you may also optionally suffix it
+   with ``^<TSIG_KEY_NAME>`` to indicate that the specified RFC 8945 TSIG key
+   should be used to sign any SOA, AXFR and IXFR queries that will be sent to
+   the upstream source.
+
+   Zones sourced from an upstream nameserver will be automatically updated if
+   a new version is detected. This can happen if the upstream nameserver sends
+   an RFC 1996 NOTIFY message to Cascade, or if an IXFR or SOA query (if the
+   upstream responds with NOTIMP to an IXFR request) sent by Cascade (due to a
+   SOA timer expiring) discovers that a newer SOA SERIAL is available, or due
+   to an operator issuing a `zone reload` command. For zones that have already
+   been retrieved at least once via AXFR, subsequent refreshes will attempt to
+   use IXFR and fallback to AXFR if IXFR is not available.
 
    .. note:: When providing the path to a zone file to load, if :subcmd:`zone
              add` is executed on a different host than where the ``cascaded``
