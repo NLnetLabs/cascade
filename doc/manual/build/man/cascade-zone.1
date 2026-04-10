@@ -64,12 +64,20 @@ command.
 .INDENT 0.0
 .TP
 .B add
-Register a new zone.
+Register a new zone. The zone will be loaded, signed and published.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B remove
 Remove a zone.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+Once removed downstream servers will no longer be able to fetech
+the zone!
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -114,17 +122,24 @@ Get the history of a single zone.
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0
 .TP
-.B \-\-source <IP_ADDRESS[:<PORT>][^<TSIG_KEY_NAME]>
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-source <PATH/TO/ZONE/FILE>
-The zone source can be an IP address (with or without port, defaults to port
-53) or a file path.
+.B \-\-source <SOURCE>
+The zone source can be the IP address of an upstream nameserver (with
+or without port, defaults to port 53) or the path to a zone file locally
+available to the \fBcascaded\fP daemon.\(ga
 .sp
-When providing an IP address (with or without port) you may also optionally
-suffix it with \fB^<TSIG_KEY_NAME>\fP to indicate that the specified RFC 8945
-TSIG key should be used to sign the zone transfer request.
+When specifying an upstream nameserver you may also optionally suffix it
+with \fB^<TSIG_KEY_NAME>\fP to indicate that the specified RFC 8945 TSIG key
+should be used to sign any SOA, AXFR and IXFR queries that will be sent to
+the upstream source.
+.sp
+Zones sourced from an upstream nameserver will be automatically updated if
+a new version is detected. This can happen if the upstream nameserver sends
+an RFC 1996 NOTIFY message to Cascade, or if an IXFR or SOA query (if the
+upstream responds with NOTIMP to an IXFR request) sent by Cascade (due to a
+SOA timer expiring) discovers that a newer SOA SERIAL is available, or due
+to an operator issuing a \fIzone reload\fP command. For zones that have already
+been retrieved at least once via AXFR, subsequent refreshes will attempt to
+use IXFR and fallback to AXFR if IXFR is not available.
 .sp
 \fBNOTE:\fP
 .INDENT 7.0
