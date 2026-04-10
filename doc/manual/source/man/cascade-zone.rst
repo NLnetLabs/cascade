@@ -4,39 +4,38 @@ cascade zone
 Synopsis
 --------
 
-:program:`cascade zone` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone ``<COMMAND>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`add` ``[OPTIONS]`` ``--source <SOURCE>`` ``--policy <POLICY>`` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`add` ``[OPTIONS]`` ``--source <SOURCE>`` ``--policy <POLICY>`` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`remove` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`remove` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`list`
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`list`
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`reload` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`reload` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`approve` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`approve` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`reject` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`reject` ``<--unsigned|--signed>``  ``<NAME>`` ``<SERIAL>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`override` ``<--unsigned|--signed>`` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`override` ``<--unsigned|--signed>`` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`status` ``[--detailed]`` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`status` ``[--detailed]`` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`reset` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`reset` ``<NAME>``
 
-:program:`cascade zone` ``[OPTIONS]`` :subcmd:`history` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`history` ``<NAME>``
 
 Description
 -----------
 
 Manage Cascade's zones.
 
-Options
--------
+Global Options
+--------------
 
-.. option:: -h, --help
-
-   Print the help text (short summary with ``-h``, long help with ``--help``).
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 Commands
 --------

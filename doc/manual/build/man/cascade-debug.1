@@ -27,25 +27,23 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-DEBUG" "1" "Apr 08, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-DEBUG" "1" "Apr 10, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-debug \- Debug / troubleshoot Cascade
 .SH SYNOPSIS
 .sp
-\fBcascade debug\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP debug \fB<COMMAND>\fP
 .sp
-\fBcascade debug\fP \fB[OPTIONS]\fP \fI\%change\-logging\fP \fB[OPTIONS]\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP debug \fI\%change\-logging\fP \fB[OPTIONS]\fP
 .SH DESCRIPTION
 .sp
 Debug / troubleshoot Cascade.  The sub\-commands here are tools for analyzing
 Cascade when lower\-level problems occur.  It should be combined with analysis of
 Cascade\(aqs log files.
-.SH OPTIONS
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
-.UNINDENT
+.SH GLOBAL OPTIONS
+.sp
+See \fI\%Cascade CLI\fP for information about global options supported by every CLI
+command.
 .SH COMMANDS
 .INDENT 0.0
 .TP

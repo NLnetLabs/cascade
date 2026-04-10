@@ -186,6 +186,9 @@ impl StorageZoneHandle<'_> {
     fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
         // NOTE: This function provides compatibility with 'zonetree's.
 
+        self.state.storage.loaded_review_soa =
+            loaded_reviewer.read_loaded().map(|r| r.soa().clone());
+
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("start_loaded_review");
@@ -307,6 +310,8 @@ impl StorageZoneHandle<'_> {
                 info!("The loaded instance has been rejected; cleaning it up");
 
                 let (s, loaded_reviewer) = s.give_up();
+                self.state.storage.loaded_review_soa =
+                    loaded_reviewer.read_loaded().map(|r| r.soa().clone());
                 // TODO: Communicate the new reviewer handle to the zone server.
                 let old_loaded_reviewer =
                     std::mem::replace(&mut self.state.storage.loaded_reviewer, loaded_reviewer);
@@ -414,6 +419,8 @@ impl StorageZoneHandle<'_> {
                 trace!("Abandoning the ongoing sign operation");
 
                 let (s, loaded_reviewer) = s.give_up(builder);
+                self.state.storage.loaded_review_soa =
+                    loaded_reviewer.read_loaded().map(|r| r.soa().clone());
                 // TODO: Communicate the new reviewer handle to the zone server.
                 let old_loaded_reviewer =
                     std::mem::replace(&mut self.state.storage.loaded_reviewer, loaded_reviewer);
@@ -466,6 +473,10 @@ impl StorageZoneHandle<'_> {
                 info!("The signed instance has been rejected; cleaning it up");
 
                 let (s, loaded_reviewer, signed_reviewer) = s.give_up();
+                self.state.storage.loaded_review_soa =
+                    loaded_reviewer.read_loaded().map(|r| r.soa().clone());
+                self.state.storage.signed_review_soa =
+                    signed_reviewer.read().map(|r| r.soa().clone());
 
                 // TODO: Communicate the new reviewer handle to the zone server.
                 let old_signed_reviewer =
@@ -496,6 +507,8 @@ impl StorageZoneHandle<'_> {
     )]
     fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer) {
         // NOTE: This function provides compatibility with 'zonetree's.
+
+        self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
 
         let zone = self.zone.clone();
         let center = self.center.clone();
@@ -718,6 +731,7 @@ impl StorageZoneHandle<'_> {
             let cleaner = match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::PersistingSigned(s)) => {
                     let (s, viewer) = s.mark_complete(persisted);
+                    handle.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
                     // TODO: Pass on the viewer to the zone server.
                     let old_viewer =
                         std::mem::replace(&mut handle.state.storage.viewer, viewer);
@@ -785,6 +799,26 @@ pub struct StorageState {
     // TODO: Move into the zone server unit.
     viewer: ZoneViewer,
 
+    /// The SOA record of the loaded instance of the zone being reviewed, if
+    /// any.
+    //
+    // TODO: This should move into a component of 'ZoneState' tracking the
+    // upcoming zone instance.
+    pub loaded_review_soa: Option<SoaRecord>,
+
+    /// The SOA record of the signed instance of the zone being reviewed, if
+    /// any.
+    //
+    // TODO: This should move into a component of 'ZoneState' tracking the
+    // upcoming zone instance.
+    pub signed_review_soa: Option<SoaRecord>,
+
+    /// The SOA record of the published instance of the zone, if any.
+    //
+    // TODO: This should move into a component of 'ZoneState' tracking the
+    // current i.e. published zone instance.
+    pub published_soa: Option<SoaRecord>,
+
     /// Ongoing background tasks.
     ///
     /// When the zone data needs to be cleaned or persisted, a background task
@@ -802,23 +836,11 @@ impl StorageState {
             loaded_reviewer,
             signed_reviewer,
             viewer,
+            loaded_review_soa: None,
+            signed_review_soa: None,
+            published_soa: None,
             background_tasks: Default::default(),
         }
-    }
-
-    pub fn loaded_soa(&self) -> Option<&SoaRecord> {
-        let loaded = self.loaded_reviewer.read_loaded()?;
-        Some(loaded.soa())
-    }
-
-    pub fn signed_soa(&self) -> Option<&SoaRecord> {
-        let signed = self.signed_reviewer.read()?;
-        Some(signed.soa())
-    }
-
-    pub fn published_soa(&self) -> Option<&SoaRecord> {
-        let published = self.viewer.read()?;
-        Some(published.soa())
     }
 }
 

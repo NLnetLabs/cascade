@@ -4,15 +4,15 @@ Cascade CLI
 Synopsis
 --------
 
-:program:`cascade` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` ``<COMMAND>``
 
 Description
 -----------
 
 **cascade** is the CLI to the :doc:`cascaded`.
 
-Options
--------
+Global Options
+--------------
 
 .. option:: -s, --server <IP:PORT>
 

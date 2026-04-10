@@ -441,15 +441,18 @@ impl HttpServer {
 
             unsigned_serial = zone_state
                 .storage
-                .loaded_soa()
+                .loaded_review_soa
+                .as_ref()
                 .map(|r| Serial::from(u32::from(r.rdata.serial)));
             signed_serial = zone_state
                 .storage
-                .signed_soa()
+                .signed_review_soa
+                .as_ref()
                 .map(|r| Serial::from(u32::from(r.rdata.serial)));
             published_serial = zone_state
                 .storage
-                .published_soa()
+                .published_soa
+                .as_ref()
                 .map(|r| Serial::from(u32::from(r.rdata.serial)));
 
             progress = match zone_state.machine {

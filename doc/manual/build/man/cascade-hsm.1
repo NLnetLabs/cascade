@@ -27,27 +27,25 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-HSM" "1" "Apr 08, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-HSM" "1" "Apr 10, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-hsm \- Manage HSMs
 .SH SYNOPSIS
 .sp
-\fBcascade hsm\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP hsm \fB<COMMAND>\fP
 .sp
-\fBcascade hsm\fP \fB[OPTIONS]\fP \fI\%add\fP \fB<SERVER_ID>\fP \fB<IP_HOST_OR_FQDN>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP hsm \fI\%add\fP \fB<SERVER_ID>\fP \fB<IP_HOST_OR_FQDN>\fP
 .sp
-\fBcascade hsm\fP \fB[OPTIONS]\fP \fI\%show\fP \fB<SERVER_ID>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP hsm \fI\%show\fP \fB<SERVER_ID>\fP
 .sp
-\fBcascade hsm\fP \fB[OPTIONS]\fP \fI\%list\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP hsm \fI\%list\fP
 .SH DESCRIPTION
 .sp
-Manage HSM\(aqs.
-.SH OPTIONS
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
-.UNINDENT
+Manage the configuration of Hardware Security Modules (HSMs) in Cascade
+.SH GLOBAL OPTIONS
+.sp
+See \fI\%Cascade CLI\fP for information about global options supported by every CLI
+command.
 .SH COMMANDS
 .INDENT 0.0
 .TP
@@ -82,7 +80,7 @@ Ring/OpenSSL based key generation.
 .B <SERVER_ID>
 An identifier to refer to the KMIP server by.
 .sp
-This identifier is used with other \fBcascade hsm\fP commands and Cascade
+This identifier is used with other \fBcascade\fP commands and Cascade
 policy files. The identifier serves several purposes:
 .sp
 1. To make it easy at a glance to recognize which KMIP server a given key
