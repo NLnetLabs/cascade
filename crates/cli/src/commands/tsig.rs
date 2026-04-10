@@ -1,6 +1,8 @@
 use std::str::FromStr;
 
-use cascade_api::{TsigAddError, TsigAddResult};
+use cascade_api::{
+    TsigAddError, TsigAddResult, TsigKeyName, TsigListResult, TsigRemoveError, TsigRemoveResult,
+};
 
 use crate::client::CascadeApiClient;
 use crate::println;
@@ -45,6 +47,7 @@ pub struct Tsig {
 }
 
 #[derive(Clone, Debug, clap::Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum TsigCommand {
     #[command(name = "add")]
     Add {
@@ -67,6 +70,12 @@ pub enum TsigCommand {
         #[arg(requires = "alg")]
         secret: Option<String>,
     },
+
+    #[command(name = "remove")]
+    Remove { name: TsigKeyName },
+
+    #[command(name = "list")]
+    List,
 }
 
 impl Tsig {
@@ -105,11 +114,14 @@ impl Tsig {
                     _ => unreachable!("Excluded via Clap 'requires' rules"),
                 };
 
+                let tsig_key_name = TsigKeyName::from_str(&name)
+                    .map_err(|err| format!("Invalid TSIG key name: {err}"))?;
+
                 let res: Result<TsigAddResult, TsigAddError> = client
                     .post_json_with(
                         "tsig/add",
                         &crate::api::TsigAdd {
-                            name: name.clone(),
+                            name: tsig_key_name,
                             alg: alg.into(),
                             secret,
                         },
@@ -123,6 +135,38 @@ impl Tsig {
                     }
                     Err(err) => Err(format!("Failed to add TSIG key '{name}': {err}")),
                 }
+            }
+            TsigCommand::Remove { name } => {
+                let res: Result<TsigRemoveResult, TsigRemoveError> =
+                    client.post_json(&format!("tsig/{name}/remove")).await?;
+
+                match res {
+                    Ok(TsigRemoveResult) => {
+                        println!("Removed TSIG key {name}");
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to remove TSIG key: {e}")),
+                }
+            }
+            TsigCommand::List => {
+                let response: TsigListResult = client.get_json("tsig/").await?;
+
+                for (tsig_key_name, key_info) in response.tsig_keys {
+                    let zones = key_info
+                        .zones
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<String>>()
+                        .join(", ");
+
+                    print!("{tsig_key_name}: used by zones: ");
+                    if !zones.is_empty() {
+                        println!("{zones}");
+                    } else {
+                        println!("none");
+                    }
+                }
+                Ok(())
             }
         }
     }

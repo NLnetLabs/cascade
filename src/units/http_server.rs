@@ -1,5 +1,5 @@
+use std::collections::HashMap;
 use std::future::IntoFuture;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
@@ -105,9 +105,9 @@ impl HttpServer {
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
             .route("/debug/change-logging", post(Self::change_logging))
-            // .route("/tsig/", get(Self::tsig_keys_list))
+            .route("/tsig/", get(Self::tsig_key_list))
             .route("/tsig/add", post(Self::tsig_key_add))
-            // .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
+            .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
             // .route("/tsig/{name}/status", get(Self::tsig_key_status))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
@@ -1105,23 +1105,47 @@ impl HttpServer {
             return Json(Err(TsigAddError::InvalidBase64Secret));
         };
 
-        let res = match Name::<octseq::Array<255>>::from_str(&tsig_add.name) {
-            Ok(tsig_key_name) => {
-                let alg = match tsig_add.alg {
-                    TsigAlgorithm::Sha1 => Algorithm::Sha1,
-                    TsigAlgorithm::Sha256 => Algorithm::Sha256,
-                    TsigAlgorithm::Sha384 => Algorithm::Sha384,
-                    TsigAlgorithm::Sha512 => Algorithm::Sha512,
-                };
-                center::add_tsig_key(&state.center, tsig_key_name, alg, &secret).await
-            }
-            Err(_err) => return Json(Err(TsigAddError::InvalidKeyName)),
+        let alg = match tsig_add.alg {
+            TsigAlgorithm::Sha1 => Algorithm::Sha1,
+            TsigAlgorithm::Sha256 => Algorithm::Sha256,
+            TsigAlgorithm::Sha384 => Algorithm::Sha384,
+            TsigAlgorithm::Sha512 => Algorithm::Sha512,
         };
 
-        match res {
+        match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {
             Ok(TsigAddResult) => Json(Ok(TsigAddResult)),
             Err(err) => Json(Err(err)),
         }
+    }
+
+    async fn tsig_key_remove(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
+        todo!()
+    }
+
+    async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {
+        let state = http_state.center.state.lock().unwrap();
+        let mut tsig_keys = HashMap::new();
+        for tsig_key_name in state.tsig_store.map.keys() {
+            let zones = state
+                .zones
+                .iter()
+                .filter_map(|zone| {
+                    let zone_state = zone.0.state.lock().unwrap();
+                    match &zone_state.loader.source {
+                        loader::Source::Server {
+                            tsig_key: Some(tsig_key),
+                            ..
+                        } if tsig_key.name() == tsig_key_name => Some(zone.0.name.clone()),
+                        _ => None,
+                    }
+                })
+                .collect::<Vec<ZoneName>>();
+            tsig_keys.insert(tsig_key_name.clone(), TsigListResultItem { zones });
+        }
+        Json(TsigListResult { tsig_keys })
     }
 }
 

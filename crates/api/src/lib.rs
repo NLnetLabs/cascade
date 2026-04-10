@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, SystemTime};
@@ -187,9 +188,14 @@ pub struct KmipKeyImport {
     pub flags: String,
 }
 
+//----------- TsigKeyName -----------------------------------------------------
+
+/// The name of a TSIG key.
+pub type TsigKeyName = domain::tsig::KeyName;
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigAdd {
-    pub name: String,
+    pub name: TsigKeyName,
     pub alg: TsigAlgorithm,
     pub secret: String,
 }
@@ -214,6 +220,34 @@ impl Display for TsigAddError {
             TsigAddError::InvalidBase64Secret => write!(f, "invalid TSIG base64 encoded secret"),
         }
     }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigRemoveResult;
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum TsigRemoveError {
+    NotFound,
+    InUse,
+}
+
+impl fmt::Display for TsigRemoveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            TsigRemoveError::NotFound => "no such TSIG key was found",
+            TsigRemoveError::InUse => "the TSIG key cannot be removed as it is in use",
+        })
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigListResult {
+    pub tsig_keys: HashMap<TsigKeyName, TsigListResultItem>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigListResultItem {
+    pub zones: Vec<ZoneName>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
