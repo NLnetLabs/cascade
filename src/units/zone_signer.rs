@@ -476,6 +476,18 @@ impl ZoneSigner {
             }
         }
 
+        // Also add CDS and CDNSKEY records plus their signatures.
+        for cds_rr in state.cds_rrset {
+            let mut zonefile = Zonefile::new();
+            zonefile.extend_from_slice(cds_rr.as_bytes());
+            zonefile.extend_from_slice(b"\n");
+            if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
+                let record: OldRecord = rec.flatten_into();
+                new_records.push(record.clone().into());
+                records.push(record);
+            }
+        }
+
         debug!("Loading dnst keyset signing keys");
         status.write().unwrap().current_action = "Loading signing keys".to_string();
         // Load the signing keys indicated by the keyset state.
