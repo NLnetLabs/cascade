@@ -44,6 +44,11 @@ on:
           - info
           - debug
           - trace
+      concurrent-tests:
+        description: The number of tests job system tests to run concurrently.
+        required: false
+        default: 8
+        type: number
 
 env:
   # Set this assignment to your choosing to set the cargo build verbosity
@@ -84,6 +89,7 @@ jobs:
     strategy:
       matrix:
         test: [add-zone-query, load-zonefile, review-unsigned-zone, review-unsigned-zone2, ixfr-in, notify-in-for-unknown-zone, remove-zone, all-rr-types]
+      max-parallel: ${{ inputs.concurrent-tests }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile

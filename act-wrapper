@@ -34,6 +34,7 @@ function usage {
 	echo "Inputs that can be provided via --input:"
 	echo "	--input build-profile=debug|release"
 	echo "	--input log-level=error|warn|info|debug|trace"
+	echo "  --input concurrent-tests=1"
 	echo ""
 	echo "Use --matrix test:<TEST NAME TO RUN> to limit which jobs the 'tests' job runs."
 }
