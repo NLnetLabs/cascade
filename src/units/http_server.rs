@@ -1122,6 +1122,26 @@ impl HttpServer {
         State(state): State<Arc<HttpServer>>,
         Path(name): Path<Name<Bytes>>,
     ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
+        // TODO: Don't remove a TSIG key which is currently in use.
+        //
+        // Currently if a zone was added with `--source
+        // ip[:port]^<TSIG_KEY_NAME>` that would cause the TSIG key to be used
+        // by the loader when refreshing the zone.
+        //
+        // In future policies may refer to TSIG keys in a couple of places:
+        //
+        // 1. In server outbound settings for signing NOTIFY, SOA and XFR messages
+        //    to downstream nameservers.
+        // 2. In key manager settings for instructing dnst keyset which nameserver
+        //    to query to sanity check the signed zone contents, with a TSIG key if
+        //    one is needed to authenticate to the specified nameserver in order to
+        //    do XFR.
+        //
+        // So we need to check all of these places to see if a key is in use.
+        //
+        // Alternatively we would need to update the TSIG key store to track
+        // if (and where?) a key is being used and check with the TSIG key
+        // store.
         todo!()
     }
 
