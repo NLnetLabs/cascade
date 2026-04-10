@@ -79,7 +79,7 @@ jobs:
     - run: file $(which cascade)
 
   tests:
-    name: Run the system tests
+    name: Run ${{ join(matrix.test, ' - ') }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
