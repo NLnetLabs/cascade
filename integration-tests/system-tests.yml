@@ -60,9 +60,6 @@ jobs:
   test-release-version:
     name: Example test with prepare environment and cascade --version (release)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
@@ -75,94 +72,28 @@ jobs:
   test-version:
     name: Example test with prepare environment and cascade --version (debug)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
     - run: cascade --version
     - run: file $(which cascade)
 
-  add-zone-query:
-    name: Add a zone, query the published zone
+  tests:
+    name: Run the system tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        test: [add-zone-query, load-zonefile, review-unsigned-zone, review-unsigned-zone2, ixfr-in, notify-in-for-unknown-zone, remove-zone, all-rr-types]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/add-zone-query
+      - uses: jenseng/dynamic-uses@v1
         with:
-          log-level: ${{ inputs.log-level }}
-
-  # Added for https://github.com/NLnetLabs/cascade/pull/402
-  load-zonefile:
-    name: Load a zone from a file, query the published zone
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/set-build-profile
-        with:
-          build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/load-zonefile
-        with:
-          log-level: ${{ inputs.log-level }}
-
-  # Added for https://github.com/NLnetLabs/cascade/pull/398
-  review-unsigned-zone:
-    name: Add a zone, approve the unsigned zone, query the published zone
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/set-build-profile
-        with:
-          build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/review-unsigned-zone
-        with:
-          log-level: ${{ inputs.log-level }}
-
-  review-unsigned-zone2:
-    name: Test that the review server has the original zone
-    runs-on: ubuntu-latest
-    strategy:
-      #max-parallel: 1
-      matrix:
-        rust: [stable]
-        test_idx: [1, 2]
-        key: ['Kexample.+015+02835.key']
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/set-build-profile
-        with:
-          build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/review-unsigned-zone2
-        with:
-          log-level: ${{ inputs.log-level }}
-          test_idx: ${{ matrix.test_idx }}
-          key: ${{ matrix.key }}
-
-  ixfr-in:
-    name: Receive a zone via IXFR from the NSD primary.
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/set-build-profile
-        with:
-          build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/ixfr-in
+          uses: ./integration-tests/tests/${{ matrix.test }}
+          # with:
+          #   log-level: ${{ inputs.log-level }}
 
   incremental-signing:
     name: Test incremental signing.
@@ -213,48 +144,3 @@ jobs:
           policy: ${{ matrix.policy }}
           test_idx: ${{ matrix.test_idx }}
           key: ${{ matrix.key }}
-
-  notify-in-for-unknown-zone:
-    name: Receive a NOTIFY for a zone that is unknown to Cascade.
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/set-build-profile
-        with:
-          build-profile: release
-      - uses: ./integration-tests/tests/notify-in-for-unknown-zone
-        with:
-          log-level: ${{ inputs.log-level }}
-
-  remove-zone:
-    name: Add, sign and remove a zone.
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/set-build-profile
-        with:
-          build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/remove-zone
-        with:
-          log-level: ${{ inputs.log-level }}
-
-  all-rr-types:
-    name: Tests loading of all supported RR types.
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/set-build-profile
-        with:
-          build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/all-rr-types
-        with:
-          log-level: ${{ inputs.log-level }}
