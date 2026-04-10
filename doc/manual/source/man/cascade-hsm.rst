@@ -61,7 +61,7 @@ Arguments for :subcmd:`hsm add`
 
       An identifier to refer to the KMIP server by.
 
-      This identifier is used with other ``cascade` commands and Cascade
+      This identifier is used with other ``cascade`` commands and Cascade
       policy files. The identifier serves several purposes:
 
       1. To make it easy at a glance to recognize which KMIP server a given key

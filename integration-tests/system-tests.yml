@@ -215,7 +215,7 @@ jobs:
           key: ${{ matrix.key }}
 
   notify-in-for-unknown-zone:
-    name: 
+    name: Receive a NOTIFY for a zone that is unknown to Cascade.
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -230,7 +230,7 @@ jobs:
           log-level: ${{ inputs.log-level }}
 
   remove-zone:
-    name: 
+    name: Add, sign and remove a zone.
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -244,12 +244,32 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
-  load-signed-apex-cname:
-    name: 
+  all-rr-types:
+    name: Tests loading of all supported RR types.
     runs-on: ubuntu-latest
     strategy:
       matrix:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/all-rr-types
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  load-signed-apex-cname:
+    name: Load a zonefile containing a signed apex CNAME
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/load-signed-apex-cname
+        with:
+          log-level: ${{ inputs.log-level }}
