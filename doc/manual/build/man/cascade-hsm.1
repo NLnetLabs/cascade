@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-HSM" "1" "Apr 07, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-HSM" "1" "Apr 10, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-hsm \- Manage HSMs
 .SH SYNOPSIS
@@ -41,7 +41,7 @@ cascade-hsm \- Manage HSMs
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP hsm \fI\%list\fP
 .SH DESCRIPTION
 .sp
-Manage Hardware Security Modules (HSMs) configuration in Cascade.
+Manage the configuration of Hardware Security Modules (HSMs) in Cascade
 .SH GLOBAL OPTIONS
 .sp
 See \fI\%Cascade CLI\fP for information about global options supported by every CLI
@@ -80,16 +80,9 @@ Ring/OpenSSL based key generation.
 .B <SERVER_ID>
 An identifier to refer to the KMIP server by.
 .sp
-This identifier is used with other 
-.nf
-\(ga\(ga
-.fi
-cascade\(ga commands and Cascade
-.UNINDENT
+This identifier is used with other \fBcascade\fP commands and Cascade
+policy files. The identifier serves several purposes:
 .sp
-hsm       policy files. The identifier serves several purposes:
-.INDENT 0.0
-.INDENT 3.5
 1. To make it easy at a glance to recognize which KMIP server a given key
 was created on, by allowing operators to assign a meaningful name to the
 server instead of whatever identity strings the server associates with
@@ -103,7 +96,6 @@ would be repeated in every key created on the same server.
 3. To allow the actual location of the server and/or its access
 credentials to be rotated without affecting key idenifiers, e.g. if
 a server is assigned a new IP address or if access credentials change.
-.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP
