@@ -34,6 +34,9 @@ function usage {
 	echo "Inputs that can be provided via --input:"
 	echo "	--input build-profile=debug|release"
 	echo "	--input log-level=error|warn|info|debug|trace"
+	echo "  --input concurrent-tests=1"
+	echo ""
+	echo "Use --matrix test:<TEST NAME TO RUN> to limit which jobs the 'tests' job runs."
 }
 
 if [[ "$1" =~ ^-h|--help$ ]]; then
@@ -160,7 +163,7 @@ if [[ "$docker_stats" == true ]]; then
 fi
 
 echo "Running tests"
-act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -W integration-tests/system-tests.yml "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
+act "${act_args[@]}" --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -W integration-tests/system-tests.yml "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
 
 # Stop the docker stats collection process, if needed.
 if [[ "$docker_stats" == true ]]; then
