@@ -530,18 +530,7 @@ impl Zone {
             )
         })?;
 
-        let progress = match zone.progress {
-            Progress::Waiting => "idle",
-            Progress::Loading => "loading",
-            Progress::LoadedReview => "waiting for loaded review",
-            Progress::HaltLoaded => "halted after loaded review",
-            Progress::Signing => "signing",
-            Progress::SigningFailed => "signing failed",
-            Progress::SignedReview => "waiting for siged review",
-            Progress::HaltSigned => "halted after signed review",
-        };
         println!("zone: {}", zone.name);
-        println!("status: {progress}",);
         println!("policy: {}", zone.policy);
         println!("source: {}", zone.source);
 
@@ -578,10 +567,8 @@ impl Zone {
 
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
-        if zone.progress != Progress::Waiting {
-            println!("");
-            print_timeline(zone.progress, &zone, &policy);
-        }
+        println!("");
+        print_status(zone.progress, &zone, &policy);
 
         if zone.last_published.is_some() {
             println!("");
@@ -613,8 +600,24 @@ impl Zone {
     }
 }
 
-pub fn print_timeline(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
-    println!("current operation:");
+pub fn print_status(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
+    let progress = match zone.progress {
+        Progress::Waiting => "idle",
+        Progress::Loading => "loading",
+        Progress::LoadedReview => "waiting for loaded review",
+        Progress::HaltLoaded => "halted after loaded review",
+        Progress::Signing => "signing",
+        Progress::SigningFailed => "signing failed",
+        Progress::SignedReview => "waiting for siged review",
+        Progress::HaltSigned => "halted after signed review",
+    };
+
+    println!("status: {}{progress}{}", ansi::BLUE, ansi::RESET);
+
+    if current == Progress::Waiting {
+        return;
+    }
+
     print_load_phase(current, zone.unsigned_serial, &zone.receipt_report);
     print_loaded_review_phase(&zone.name, zone.unsigned_serial, policy, current);
     print_sign_phase(
