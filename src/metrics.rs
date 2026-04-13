@@ -21,6 +21,8 @@ use prometheus_client::metrics::info::Info;
 use prometheus_client::registry::{Metric, Registry, Unit};
 
 use crate::center::Center;
+use crate::zone::ZoneByName;
+use crate::zone::machine::ZoneStateMachine;
 
 // Further metrics to track?:
 // - last time batching operation for zone signing succeeded (push to central metrics collection)
@@ -105,29 +107,49 @@ impl MetricsCollection {
         let zones_configured: i64;
         let mut zones_loaded: i64 = 0;
         let mut zones_active: i64 = 0;
-        let zones_unsigned: i64;
-        let zones_signed: i64;
-        let zones_published: i64;
+        let mut zones_unsigned: i64 = 0;
+        let mut zones_signed: i64 = 0;
+        let mut zones_published: i64 = 0;
 
         // Using Family::clear() to delete all metrics and label sets
         metrics.zones_halted.clear();
         {
-            zones_unsigned = center.unsigned_zones.load().as_ref().iter_zones().count() as i64;
-            zones_signed = center.signed_zones.load().as_ref().iter_zones().count() as i64;
-            zones_published = center.published_zones.load().as_ref().iter_zones().count() as i64;
             let state = center.state.lock().unwrap();
             // We won't have 2^63 zones in cascade
             zones_configured = state.zones.len() as i64;
 
-            for zone in &state.zones {
-                let zone = zone.0.clone();
+            for ZoneByName(zone) in &state.zones {
                 let zone_state = zone.state.lock().unwrap();
 
-                // Don't count a zone that doesn't have a source
-                if matches!(zone_state.loader.source, crate::loader::Source::None) {
-                    continue;
-                } else {
+                if !matches!(zone_state.loader.source, crate::loader::Source::None) {
                     zones_loaded += 1;
+                }
+
+                // Check whether an instance has been published.
+                // TODO: Use a more appropriate check.
+                if zone_state.min_expiration.is_some() {
+                    zones_published += 1;
+                    zones_signed += 1;
+                    zones_unsigned += 1;
+                } else {
+                    match zone_state.machine {
+                        ZoneStateMachine::Waiting(_) | ZoneStateMachine::Loading(_) => {}
+
+                        ZoneStateMachine::LoadedReview(_)
+                        | ZoneStateMachine::HaltLoaded(_)
+                        | ZoneStateMachine::Signing(_) => {
+                            zones_unsigned += 1;
+                        }
+
+                        ZoneStateMachine::SigningFailed(_)
+                        | ZoneStateMachine::SignedReview(_)
+                        | ZoneStateMachine::HaltSigned(_) => {
+                            zones_signed += 1;
+                            zones_unsigned += 1;
+                        }
+
+                        ZoneStateMachine::Poisoned => unreachable!(),
+                    }
                 }
 
                 if zone_state.machine.is_halted() {
