@@ -1,7 +1,7 @@
 # Making reusable composite actions documented at
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
-name: 'Add a zone, approve the unsigned zone, query the published zone'
-description: 'Add a zone, approve the unsigned zone, query the published zone'
+name: 'Tests loading of all supported RR types.'
+description: 'Tests loading of all supported RR types.'
 defaults:
   # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
   run:
@@ -21,36 +21,28 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: ./.github/actions/prepare-systest-env
     - uses: ./.github/actions/setup-and-start-cascade
       with:
         log-level: ${{ inputs.log-level }}
 
-    - name: Add a zone served by the NSD primary
+    - name: Load a zone containing all supported RR types
       run: |
-        cascade zone add --policy default --source 127.0.0.1:1055 example.test
+        INTEGRATION_TEST_DIR="${PWD}/integration-tests/all-rr-types"
+        cascade zone add --source "${INTEGRATION_TEST_DIR}/all.rr.org" --policy default all.rr.org
+
     - name: Check zone status
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status all.rr.org | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test
+            cascade zone status all.rr.org
             echo "::error:: timeout: zone status did not report published zone available"
             exit 1
           fi
           sleep 1
         done
-    - name: Query zone
-      run: |
-        dig @127.0.0.1 -p 4542 example.test AXFR > dig-query.log
-    - name: Tell the NSD secondary that the zone is now available
-      # Only necessary if NOTIFY is not setup for cascade
-      run: |
-        ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer example.test
-    - name: The new zone should now be available via the resolver
-      run: |
-        dig text.example.test TXT | grep "Hello World"
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()

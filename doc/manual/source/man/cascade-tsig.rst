@@ -10,6 +10,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`add` ``<TSIG_KEY_NAME>`` ``<ALGORITHM>`` ``<SECRET>``
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`list`
+
 Description
 -----------
 
@@ -33,8 +35,12 @@ Commands
 
    Register a new TSIG key.
 
+.. subcmd:: list
+
+   List registered TSIG keys and the zones that use them.
+
 Arguments for :subcmd:`tsig add`
-------------------------------
+--------------------------------
 
 .. option:: <TSIG_KEY_NAME>
 

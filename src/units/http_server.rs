@@ -1,5 +1,5 @@
+use std::collections::HashMap;
 use std::future::IntoFuture;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
@@ -19,7 +19,6 @@ use domain::base::Name;
 use domain::base::Rtype;
 use domain::base::Serial;
 use domain::base::Ttl;
-use domain::base::iana::Class;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::rdata::Soa;
 use domain::tsig::Algorithm;
@@ -55,6 +54,7 @@ use crate::units::zone_signer::KeySetState;
 use crate::zone::HistoricalEvent;
 use crate::zone::HistoricalEventType;
 use crate::zone::ZoneHandle;
+use crate::zone::machine::ZoneStateMachine;
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -105,9 +105,9 @@ impl HttpServer {
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
             .route("/debug/change-logging", post(Self::change_logging))
-            // .route("/tsig/", get(Self::tsig_keys_list))
+            .route("/tsig/", get(Self::tsig_key_list))
             .route("/tsig/add", post(Self::tsig_key_add))
-            // .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
+            .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
             // .route("/tsig/{name}/status", get(Self::tsig_key_status))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
@@ -358,6 +358,10 @@ impl HttpServer {
         let signed_review_status;
         let zone;
         let halted_reason;
+        let progress;
+        let unsigned_serial;
+        let signed_serial;
+        let published_serial;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -434,24 +438,41 @@ impl HttpServer {
                         when: item.when,
                     }
                 });
+
+            unsigned_serial = zone_state
+                .storage
+                .loaded_review_soa
+                .as_ref()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+            signed_serial = zone_state
+                .storage
+                .signed_review_soa
+                .as_ref()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+            published_serial = zone_state
+                .storage
+                .published_soa
+                .as_ref()
+                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+
+            progress = match zone_state.machine {
+                ZoneStateMachine::Waiting(..) => {
+                    if published_serial.is_some() {
+                        Progress::Published
+                    } else {
+                        Progress::WaitingForChanges
+                    }
+                }
+                ZoneStateMachine::Loading(..) => Progress::ChangesReceived,
+                ZoneStateMachine::LoadedReview(..) => Progress::AtUnsignedReview,
+                ZoneStateMachine::HaltLoaded(..) => Progress::AtUnsignedReview,
+                ZoneStateMachine::Signing(..) => Progress::Signing,
+                ZoneStateMachine::SigningFailed(..) => Progress::SigningFailed,
+                ZoneStateMachine::SignedReview(..) => Progress::AtSignedReview,
+                ZoneStateMachine::HaltSigned(..) => Progress::AtSignedReview,
+                ZoneStateMachine::Poisoned => unreachable!(),
+            };
         }
-
-        // TODO: We need to show multiple versions here
-        let unsigned_zones = state.center.unsigned_zones.load();
-        let signed_zones = state.center.signed_zones.load();
-        let published_zones = state.center.published_zones.load();
-        let unsigned_zone = unsigned_zones.get_zone(&name, Class::IN);
-        let signed_zone = signed_zones.get_zone(&name, Class::IN);
-        let published_zone = published_zones.get_zone(&name, Class::IN);
-
-        // Determine the highest stage the zone has progressed to.
-        let stage = if published_zone.is_some() {
-            ZoneStage::Published
-        } else if signed_zone.is_some() {
-            ZoneStage::Signed
-        } else {
-            ZoneStage::Unsigned
-        };
 
         // Query key status
         let key_status = {
@@ -524,7 +545,7 @@ impl HttpServer {
         }
 
         // Query signing status
-        let signing_report = if stage >= ZoneStage::Signed {
+        let signing_report = if progress >= Progress::Signed {
             let center = &state.center;
             center.signer.on_signing_report(&zone)
         } else {
@@ -553,38 +574,11 @@ impl HttpServer {
                 })
         };
 
-        // Query zone serials
-        let mut unsigned_serial = None;
-        if let Some(zone) = unsigned_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            unsigned_serial = Some(soa.serial());
-        }
-        let mut signed_serial = None;
-        if let Some(zone) = signed_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            signed_serial = Some(soa.serial());
-        }
-        let mut published_serial = None;
-        if let Some(zone) = published_zone
-            && let Ok(Some((soa, _ttl))) = read_soa(&*zone.read(), name.clone()).await
-        {
-            published_serial = Some(soa.serial());
-        }
-
-        // If the timing were unlucky we may have a published serial but not
-        // signed serial as the signed zone may have just been removed. Use
-        // the published serial as the signed serial in this case.
-        if signed_serial.is_none() && published_serial.is_some() {
-            signed_serial = published_serial;
-        }
-
         Ok(ZoneStatus {
             name,
             source,
             policy,
-            stage,
+            progress,
             keys,
             key_status,
             receipt_report,
@@ -1116,23 +1110,67 @@ impl HttpServer {
             return Json(Err(TsigAddError::InvalidBase64Secret));
         };
 
-        let res = match Name::<octseq::Array<255>>::from_str(&tsig_add.name) {
-            Ok(tsig_key_name) => {
-                let alg = match tsig_add.alg {
-                    TsigAlgorithm::Sha1 => Algorithm::Sha1,
-                    TsigAlgorithm::Sha256 => Algorithm::Sha256,
-                    TsigAlgorithm::Sha384 => Algorithm::Sha384,
-                    TsigAlgorithm::Sha512 => Algorithm::Sha512,
-                };
-                center::add_tsig_key(&state.center, tsig_key_name, alg, &secret).await
-            }
-            Err(_err) => return Json(Err(TsigAddError::InvalidKeyName)),
+        let alg = match tsig_add.alg {
+            TsigAlgorithm::Sha1 => Algorithm::Sha1,
+            TsigAlgorithm::Sha256 => Algorithm::Sha256,
+            TsigAlgorithm::Sha384 => Algorithm::Sha384,
+            TsigAlgorithm::Sha512 => Algorithm::Sha512,
         };
 
-        match res {
+        match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {
             Ok(TsigAddResult) => Json(Ok(TsigAddResult)),
             Err(err) => Json(Err(err)),
         }
+    }
+
+    async fn tsig_key_remove(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
+        // TODO: Don't remove a TSIG key which is currently in use.
+        //
+        // Currently if a zone was added with `--source
+        // ip[:port]^<TSIG_KEY_NAME>` that would cause the TSIG key to be used
+        // by the loader when refreshing the zone.
+        //
+        // In future policies may refer to TSIG keys in a couple of places:
+        //
+        // 1. In server outbound settings for signing NOTIFY, SOA and XFR messages
+        //    to downstream nameservers.
+        // 2. In key manager settings for instructing dnst keyset which nameserver
+        //    to query to sanity check the signed zone contents, with a TSIG key if
+        //    one is needed to authenticate to the specified nameserver in order to
+        //    do XFR.
+        //
+        // So we need to check all of these places to see if a key is in use.
+        //
+        // Alternatively we would need to update the TSIG key store to track
+        // if (and where?) a key is being used and check with the TSIG key
+        // store.
+        todo!()
+    }
+
+    async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {
+        let state = http_state.center.state.lock().unwrap();
+        let mut tsig_keys = HashMap::new();
+        for tsig_key_name in state.tsig_store.map.keys() {
+            let zones = state
+                .zones
+                .iter()
+                .filter_map(|zone| {
+                    let zone_state = zone.0.state.lock().unwrap();
+                    match &zone_state.loader.source {
+                        loader::Source::Server {
+                            tsig_key: Some(tsig_key),
+                            ..
+                        } if tsig_key.name() == tsig_key_name => Some(zone.0.name.clone()),
+                        _ => None,
+                    }
+                })
+                .collect::<Vec<ZoneName>>();
+            tsig_keys.insert(tsig_key_name.clone(), TsigListResultItem { zones });
+        }
+        Json(TsigListResult { tsig_keys })
     }
 }
 
