@@ -812,20 +812,25 @@ impl HttpServer {
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
         let mut updates = Vec::new();
-        let res = crate::policy::reload_all(&mut state.policies, &center.config, |name, change| {
-            changed = true;
+        let res = crate::policy::reload_all(
+            &mut state.policies,
+            &center.config,
+            &state.tsig_store,
+            |name, change| {
+                changed = true;
 
-            changes.insert(
-                name.clone(),
-                match change {
-                    crate::policy::PolicyChange::Removed { .. } => PolicyChange::Removed,
-                    crate::policy::PolicyChange::Updated { .. } => PolicyChange::Updated,
-                    crate::policy::PolicyChange::Added { .. } => PolicyChange::Added,
-                },
-            );
+                changes.insert(
+                    name.clone(),
+                    match change {
+                        crate::policy::PolicyChange::Removed { .. } => PolicyChange::Removed,
+                        crate::policy::PolicyChange::Updated { .. } => PolicyChange::Updated,
+                        crate::policy::PolicyChange::Added { .. } => PolicyChange::Added,
+                    },
+                );
 
-            updates.push((name.clone(), change));
-        });
+                updates.push((name.clone(), change));
+            },
+        );
 
         if let Err(err) = res {
             return Json(Err(err));

@@ -144,6 +144,13 @@ pub struct KeyManagerSpec {
 
     /// How keys are generated.
     pub generation: KeyManagerGenerationSpec,
+
+    /// The upstream nameservers to use when checking for RRSIG propagation
+    /// during a key roll. The value is a list of strings. Current each string
+    /// has the following syntax: <IP-address>:<port>[^<tsig-key-name>].
+    /// The port is mandatory. The TSIG key name is option and the name
+    /// of the key is preceeded by a caret character (^).
+    pub publication_nameservers: Vec<String>,
 }
 
 //--- Conversion
@@ -239,6 +246,7 @@ impl KeyManagerSpec {
             default_ttl: self.records.ttl.as_ttl(),
             ds_algorithm: self.ds_algorithm,
             auto_remove: self.auto_remove,
+            publication_nameservers: self.publication_nameservers,
         }
     }
 
@@ -270,6 +278,7 @@ impl KeyManagerSpec {
 
             ds_algorithm: policy.ds_algorithm.clone(),
             auto_remove: policy.auto_remove,
+            publication_nameservers: policy.publication_nameservers.clone(),
 
             records: KeyManagerRecordsSpec {
                 ttl: TimeSpan::from_ttl(policy.default_ttl),
@@ -318,6 +327,7 @@ impl Default for KeyManagerSpec {
             algorithm: Default::default(),
             ds_algorithm: DsAlgorithm::Sha256,
             auto_remove: true,
+            publication_nameservers: Default::default(),
             records: Default::default(),
             generation: Default::default(),
         }

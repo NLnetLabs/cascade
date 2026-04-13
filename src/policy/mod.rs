@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
@@ -11,6 +12,7 @@ use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
+use crate::tsig::TsigStore;
 use crate::{api::PolicyReloadError, config::Config};
 
 pub mod file;
@@ -51,9 +53,10 @@ pub enum PolicyChange {
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
+    tsig_store: &TsigStore,
     mut on_change: impl FnMut(&Box<str>, PolicyChange),
 ) -> Result<(), PolicyReloadError> {
-    let new_versions = load_all(policies, config)?;
+    let new_versions = load_all(policies, config, tsig_store)?;
 
     let mut new_policies = foldhash::HashMap::default();
 
@@ -117,6 +120,7 @@ pub fn reload_all(
 pub fn load_all(
     policies: &foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
+    tsig_store: &TsigStore,
 ) -> Result<foldhash::HashMap<Box<str>, PolicyVersion>, PolicyReloadError> {
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
@@ -177,6 +181,8 @@ pub fn load_all(
             .expect("this path points to a readable file, so it must have a file name");
 
         let policy = spec.parse(name);
+
+        check_policy(&policy, tsig_store)?;
         if policies.contains_key(name) {
             info!("Reloaded policy '{name}'");
         } else {
@@ -189,6 +195,36 @@ pub fn load_all(
     }
 
     Ok(new_policies)
+}
+
+/// Perform a semantic check on the loaded policy.
+fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
+    // Check the publication nameservers for the key manager. Any TSIG key
+    // that is part of those nameservers has to exist in the TSIG key store.
+    for n in &policy.key_manager.publication_nameservers {
+        let mut iter = n.split('^');
+
+        // Skip address:port
+        let Some(_addr) = iter.next() else {
+            continue;
+        };
+
+        // Get TSIG key name.
+        let Some(tsig_name) = iter.next() else {
+            continue;
+        };
+        let tsig_name = Name::from_str(tsig_name).map_err(|e| {
+            PolicyReloadError::Check(format!(
+                "unable to convert TSIG key name {tsig_name} to DNS name: {e}"
+            ))
+        })?;
+        tsig_store
+            .get(&tsig_name)
+            .ok_or(PolicyReloadError::Check(format!(
+                "TSIG key {tsig_name} not found in TSIG store"
+            )))?;
+    }
+    Ok(())
 }
 
 //----------- PolicyVersion ----------------------------------------------------
@@ -278,6 +314,9 @@ pub struct KeyManagerPolicy {
 
     /// Automatically remove keys that are no long in use.
     pub auto_remove: bool,
+
+    /// Nameservers to check for RRSIG propagation during a key roll.
+    pub publication_nameservers: Vec<String>,
 }
 
 //----------- SignerPolicy -----------------------------------------------------
