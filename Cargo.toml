@@ -113,7 +113,6 @@ version = "0.3.20"
 
 
 [dependencies]
-arc-swap           = "1.7.0"
 bytes              = "1.0"
 daemonbase         = "0.1.4"
 futures            = "0.3.17"
