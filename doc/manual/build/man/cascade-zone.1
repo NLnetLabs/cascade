@@ -27,41 +27,39 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Mar 20, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "Apr 10, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fB<COMMAND>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%remove\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%remove\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%list\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%list\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reload\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reload\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%override\fP \fB<\-\-unsigned|\-\-signed>\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%override\fP \fB<\-\-unsigned|\-\-signed>\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reset\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reset\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%history\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%history\fP \fB<NAME>\fP
 .SH DESCRIPTION
 .sp
 Manage Cascade\(aqs zones.
-.SH OPTIONS
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
-.UNINDENT
+.SH GLOBAL OPTIONS
+.sp
+See \fI\%Cascade CLI\fP for information about global options supported by every CLI
+command.
 .SH COMMANDS
 .INDENT 0.0
 .TP

@@ -6,7 +6,7 @@ cascade health
 Synopsis
 --------
 
-:program:`cascade health`
+:program:`cascade` ``[GLOBAL OPTIONS]`` health
 
 Description
 -----------
@@ -14,6 +14,12 @@ Description
 Check the health of Cascade.
 
 Exits with code zero if Cascade is healthy, non-zero otherwise.
+
+Global Options
+--------------
+
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 See Also
 --------

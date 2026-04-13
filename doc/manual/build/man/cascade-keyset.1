@@ -27,25 +27,23 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-KEYSET" "1" "Mar 23, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-KEYSET" "1" "Apr 10, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-keyset \- Execute manual key roll or key removal commands
 .SH SYNOPSIS
 .sp
-\fBcascade keyset\fP \fB[OPTIONS]\fP \fB<ZONE>\fP \fBksk|zsk|csk|algorithm\fP \fB<ROLL COMMAND>\fP \fB[OPTIONS]\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP keyset \fB<ZONE>\fP \fBksk|zsk|csk|algorithm\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
 .sp
-\fBcascade keyset\fP \fB[OPTIONS]\fP \fB<ZONE>\fP \fI\%remove\-key\fP \fB[OPTIONS]\fP \fB<KEY>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP keyset \fB<ZONE>\fP \fI\%remove\-key\fP \fB[OPTIONS]\fP \fB<KEY>\fP
 .sp
-\fBcascade keyset\fP \fB[OPTIONS]\fP \fB<ZONE>\fP \fI\%get\fP \fB[RR]\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP keyset \fB<ZONE>\fP \fI\%get\fP \fB[RR]\fP
 .SH DESCRIPTION
 .sp
 Execute manual key roll or key removal commands.
-.SH OPTIONS
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
-.UNINDENT
+.SH GLOBAL OPTIONS
+.sp
+See \fI\%Cascade CLI\fP for information about global options supported by every CLI
+command.
 .SH COMMANDS
 .INDENT 0.0
 .TP
@@ -153,7 +151,7 @@ dnskey | dnst key2ds \-n /dev/stdin\fP\&.
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
+.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
 Cascade online documentation
 .TP
 \fBcascade\fP(1)

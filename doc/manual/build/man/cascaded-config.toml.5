@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-CONFIG.TOML" "5" "Feb 25, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADED-CONFIG.TOML" "5" "Apr 10, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascaded-config.toml \- Cascade configuration file
 .sp
@@ -68,19 +68,18 @@ identity = \(dqcascade:cascade\(dq
 servers = [\(dq127.0.0.1:4539\(dq, \(dq[::1]:4539\(dq]
 
 [loader]
-notify\-listeners = [\(dq127.0.0.1:4540\(dq, \(dq[::1]:4540\(dq]
 
 [loader.review]
-servers = [\(dq127.0.0.1:4541\(dq, \(dq[::1]:4541\(dq]
+servers = [\(dq127.0.0.1:4540\(dq, \(dq[::1]:4540\(dq]
 
 [signer]
 [signer.review]
-servers = [\(dq127.0.0.1:4542\(dq, \(dq[::1]:4542\(dq]
+servers = [\(dq127.0.0.1:4541\(dq, \(dq[::1]:4541\(dq]
 
 [key\-manager]
 
 [server]
-servers = [\(dq127.0.0.1:4543\(dq, \(dq[::1]:4543\(dq]
+servers = [\(dq127.0.0.1:4542\(dq, \(dq[::1]:4542\(dq]
 .EE
 .UNINDENT
 .UNINDENT
@@ -274,7 +273,9 @@ optional).
 If this option is set to \fBtrue\fP, the server changes its
 working directory to the root directory and as such influences
 where files are looked for. Use absolute path names in configuration
-to avoid ambiguities.
+to avoid ambiguities. Additionally, it will redirect stdout and stderr to
+\fB/dev/null\fP and you need to choose \fBsyslog\fP or \fBfile\fP as the
+\fI\%log\-target\fP\&.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -324,35 +325,21 @@ dropping privileges, if that is enabled).
 .UNINDENT
 .SS How zones are loaded.
 .sp
-The \fB[loader]\fP section.
-.INDENT 0.0
-.TP
-.B notify\-listeners = [\(dq127.0.0.1:4540\(dq, \(dq[::1]:4540\(dq]
-Where to listen for zone change notifications.
-.sp
-A DNS server will be bound to these addresses.  If a DNS NOTIFY message for
-a known zone is received there, the zone will be reloaded appropriately.
-.sp
-Unless explicitly specified (e.g. \fBudp://localhost:4540\fP), each address will
-be served over UDP and TCP.  An empty array will disable listening entirely.
-.sp
-These sockets may be bound by systemd and passed into Cascade.  If systemd
-does not provide them, Cascade will bind them itself (and will do so before
-dropping privileges, if that is enabled).
-.UNINDENT
+The \fB[loader]\fP section. (This only includes the \fB[loader.review]\fP section
+below, for now).
 .SS How loaded zones are reviewed.
 .sp
 The \fB[loader.review]\fP section.
 .INDENT 0.0
 .TP
-.B servers = [\(dq127.0.0.1:4541\(dq, \(dq[::1]:4541\(dq]
+.B servers = [\(dq127.0.0.1:4540\(dq, \(dq[::1]:4540\(dq]
 Where to serve loaded zones for review.
 .sp
 A DNS server will be bound to these addresses, and will serve the contents
 of all loaded zones.  This can be used to verify the consistency of these
 zones.
 .sp
-Unless explicitly specified (e.g. \fBudp://localhost:4541\fP), each address will
+Unless explicitly specified (e.g. \fBudp://localhost:4540\fP), each address will
 be served over UDP and TCP.  An empty array will disable serving entirely.
 .sp
 These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -368,14 +355,14 @@ below, for now).
 The \fB[signer.review]\fP section.
 .INDENT 0.0
 .TP
-.B servers = [\(dq127.0.0.1:4542\(dq, \(dq[::1]:4542\(dq]
+.B servers = [\(dq127.0.0.1:4541\(dq, \(dq[::1]:4541\(dq]
 Where to serve signed zones for review.
 .sp
 A DNS server will be bound to these addresses, and will serve the contents
 of all signed (but not necessarily published) zones.  This can be used to
 check the correctness of the signer.
 .sp
-Unless explicitly specified (e.g. \fBudp://localhost:4542\fP), each address will
+Unless explicitly specified (e.g. \fBudp://localhost:4541\fP), each address will
 be served over UDP and TCP.  An empty array will disable serving entirely.
 .sp
 These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -390,13 +377,13 @@ The \fB[key\-manager]\fP section. (Currently without options)
 The \fB[server]\fP section.
 .INDENT 0.0
 .TP
-.B servers = [\(dq127.0.0.1:4543\(dq, \(dq[::1]:4543\(dq]
+.B servers = [\(dq127.0.0.1:4542\(dq, \(dq[::1]:4542\(dq]
 Where to serve published zones.
 .sp
 A DNS server will be bound to these addresses, and will serve the contents
 of all published zones.  This is the final output from Cascade.
 .sp
-Unless explicitly specified (e.g. \fBudp://localhost:4543\fP), each address will
+Unless explicitly specified (e.g. \fBudp://localhost:4542\fP), each address will
 be served over UDP and TCP.  At least one address must be specified.
 .sp
 These sockets may be bound by systemd and passed into Cascade.  If systemd
