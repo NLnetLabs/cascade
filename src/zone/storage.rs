@@ -26,18 +26,16 @@
 use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
-    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReader, LoadedZoneReviewer,
-    SignedZoneBuilder, SignedZoneBuilt, SignedZonePersister, SignedZoneReader, SignedZoneReviewer,
-    SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReviewer, SignedZoneBuilder,
+    SignedZoneBuilt, SignedZonePersister, SignedZoneReviewer, SoaRecord, ZoneCleaner,
+    ZoneDataStorage, ZoneViewer,
 };
-use domain::zonetree;
 use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
-    common::light_weight_zone::LightWeightZone,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
-    util::{BackgroundTasks, force_future},
+    util::BackgroundTasks,
     zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState},
 };
 
@@ -202,31 +200,6 @@ impl StorageZoneHandle<'_> {
                 .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
             let serial = reader.soa().rdata.serial;
 
-            let loaded_reviewer = tokio::task::spawn_blocking({
-                let zone = zone.clone();
-                let center = center.clone();
-                move || {
-                    // Read the loaded instance.
-                    let reader = loaded_reviewer
-                        .read_loaded()
-                        .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
-
-                    // Build a compatibility shim for the new instance.
-                    let zonetree_zone = Self::build_compat_for_loaded(&zone, &reader);
-
-                    // Insert the compatibility shim in the global view (possibly
-                    // replacing a previous one).
-                    center.unsigned_zones.rcu(|tree| {
-                        let mut tree = Arc::unwrap_or_clone(tree.clone());
-                        let _ = tree.remove_zone(&zone.name, domain::base::iana::Class::IN);
-                        tree.insert_zone(zonetree_zone.clone()).unwrap();
-                        tree
-                    });
-
-                    loaded_reviewer
-                }
-            }).await.unwrap();
-
             trace!("Updating the viewer in 'LoadedReviewServer'");
             let old_loaded_reviewer = LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
 
@@ -259,29 +232,6 @@ impl StorageZoneHandle<'_> {
 
             state.storage.background_tasks.finish();
         });
-    }
-
-    /// Build a [`zonetree::Zone`] for a loaded instance of a zone, for
-    /// compatibility with the rest of Cascade.
-    fn build_compat_for_loaded(zone: &Arc<Zone>, reader: &LoadedZoneReader<'_>) -> zonetree::Zone {
-        use zonetree::{types::ZoneUpdate, update::ZoneUpdater};
-
-        let zone =
-            zonetree::ZoneBuilder::new(zone.name.clone(), domain::base::iana::Class::IN).build();
-
-        let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
-
-        // Add every record in turn.
-        for record in reader.all_records() {
-            let record: cascade_zonedata::OldParsedRecord = record.clone().into();
-            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
-        }
-
-        // Commit the update with the SOA record.
-        let soa: cascade_zonedata::OldParsedRecord = reader.soa().clone().into();
-        force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
-
-        zone
     }
 
     /// Accept a loaded instance of a zone.
@@ -469,31 +419,6 @@ impl StorageZoneHandle<'_> {
                 .unwrap_or_else(|| unreachable!("The signer never returns an empty instance"));
             let serial = reader.soa().rdata.serial;
 
-            let signed_reviewer = tokio::task::spawn_blocking({
-                let zone = zone.clone();
-                let center = center.clone();
-                move || {
-                    // Read the loaded instance.
-                    let reader = signed_reviewer
-                        .read()
-                        .unwrap_or_else(|| unreachable!("The signer never returns an empty instance"));
-
-                    // Build a compatibility shim for the new instance.
-                    let zonetree_zone = Self::build_compat_for_signed(&zone, &reader);
-
-                    // Insert the compatibility shim in the global view (possibly
-                    // replacing a previous one).
-                    center.signed_zones.rcu(|tree| {
-                        let mut tree = Arc::unwrap_or_clone(tree.clone());
-                        let _ = tree.remove_zone(&zone.name, domain::base::iana::Class::IN);
-                        tree.insert_zone(zonetree_zone.clone()).unwrap();
-                        tree
-                    });
-
-                    signed_reviewer
-                }
-            }).await.unwrap();
-
             trace!("Updating the viewer in 'SignedReviewServer'");
             let old_signed_reviewer = SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
 
@@ -526,36 +451,6 @@ impl StorageZoneHandle<'_> {
 
             state.storage.background_tasks.finish()
         });
-    }
-
-    /// Build a [`zonetree::Zone`] for a signed instance of a zone.
-    fn build_compat_for_signed(zone: &Arc<Zone>, reader: &SignedZoneReader<'_>) -> zonetree::Zone {
-        use zonetree::{types::ZoneUpdate, update::ZoneUpdater};
-
-        // Use a LightWeightZone as it is able to fix RRSIG TTLs to be the same
-        // when walked as the record they sign, rather than being forced into a
-        // common RRSET with a common TTL.
-        let zone = domain::zonetree::Zone::new(LightWeightZone::new(zone.name.clone(), false));
-
-        let mut updater = force_future(ZoneUpdater::new(zone.clone())).unwrap();
-
-        // Add every generated record (except the SOA) in turn.
-        for record in reader.generated_records() {
-            let record: cascade_zonedata::OldParsedRecord = record.clone().into();
-            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
-        }
-
-        // Add every loaded record in turn.
-        for record in reader.loaded_records() {
-            let record: cascade_zonedata::OldParsedRecord = record.into();
-            force_future(updater.apply(ZoneUpdate::AddRecord(record))).unwrap();
-        }
-
-        // Commit the update with the SOA record.
-        let soa: cascade_zonedata::OldParsedRecord = reader.soa().clone().into();
-        force_future(updater.apply(ZoneUpdate::Finished(soa))).unwrap();
-
-        zone
     }
 
     /// Accept a signed instance of a zone.

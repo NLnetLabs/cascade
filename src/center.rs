@@ -7,12 +7,10 @@ use std::{
     time::Duration,
 };
 
-use arc_swap::ArcSwap;
 use bytes::Bytes;
-use domain::base::iana::Class;
+use domain::base::Name;
 use domain::rdata::dnssec::Timestamp;
 use domain::zonetree::StoredName;
-use domain::{base::Name, zonetree::ZoneTree};
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
@@ -63,15 +61,6 @@ pub struct Center {
 
     /// The server for published instances of zones.
     pub publication_server: PublicationServer,
-
-    /// The latest unsigned contents of all zones.
-    pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
-
-    /// The latest signed contents of all zones.
-    pub signed_zones: Arc<ArcSwap<ZoneTree>>,
-
-    /// The latest published contents of all zones.
-    pub published_zones: Arc<ArcSwap<ZoneTree>>,
 
     /// Zones currently being re-signed.
     pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
@@ -207,24 +196,6 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     // Remove the zone from all the places it might be stored.
     // The zone might not have made it to these places, but that's not an issue
     // so we just ignore any errors.
-
-    center.unsigned_zones.rcu(|z| {
-        let mut z = Arc::unwrap_or_clone(z.clone());
-        let _ = z.remove_zone(&name, Class::IN);
-        z
-    });
-
-    center.signed_zones.rcu(|z| {
-        let mut z = Arc::unwrap_or_clone(z.clone());
-        let _ = z.remove_zone(&name, Class::IN);
-        z
-    });
-
-    center.published_zones.rcu(|z| {
-        let mut z = Arc::unwrap_or_clone(z.clone());
-        let _ = z.remove_zone(&name, Class::IN);
-        z
-    });
 
     LoadedReviewServer::remove_zone(center, &zone);
     SignedReviewServer::remove_zone(center, &zone);
