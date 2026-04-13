@@ -79,41 +79,7 @@ fn main() -> ExitCode {
             if err.kind() != io::ErrorKind::NotFound {
                 error!("Could not load the state file: {err}");
                 return ExitCode::FAILURE;
-            };
-        }
-
-        // Load all policies.
-        let mut updates = Vec::new();
-        let res = policy::reload_all(
-            &mut state.policies,
-            &config,
-            &state.tsig_store,
-            |name, _| {
-                updates.push(name.clone());
-            },
-        );
-
-
-        if let Err(err) = res {
-            error!("Cascade couldn't load all policies: {err}");
-            return ExitCode::FAILURE;
-        }
-
-        for name in updates {
-            let pol = state
-                .policies
-                .get(&name)
-                .expect("we just reloaded these policies");
-
-            for zone_name in &pol.zones {
-                let zone = state
-                    .zones
-                    .get(zone_name)
-                    .expect("zones and policies are consistent");
-
-                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
-                state.policy = Some(pol.latest.clone());
-            }
+	    }
 
             info!("State file not found; starting from scratch");
 
