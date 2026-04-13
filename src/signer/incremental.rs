@@ -1022,9 +1022,7 @@ impl WorkSpace<'_> {
                 if let Some(previous_serial) = curr_previous_serial
                     && zone_soa.serial() <= *previous_serial
                 {
-                    return Err(SignerError::SigningError(
-                        "Serial policy is Keep but upstream serial did not increase".to_string(),
-                    ));
+                    return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
                 // Save the new SOA serial.

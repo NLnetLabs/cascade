@@ -479,7 +479,7 @@ impl ZoneSigner {
         }
 
         // Also add CDS and CDNSKEY records plus their signatures.
-        for cds_rr in state.cds_rrset {
+        for cds_rr in &state.cds_rrset {
             let mut zonefile = Zonefile::new();
             zonefile.extend_from_slice(cds_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
