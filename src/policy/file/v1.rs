@@ -146,10 +146,10 @@ pub struct KeyManagerSpec {
     pub generation: KeyManagerGenerationSpec,
 
     /// The upstream nameservers to use when checking for RRSIG propagation
-    /// during a key roll. The value is a list of strings. Current each string
-    /// has the following syntax: <IP-address>:<port>[^<tsig-key-name>].
-    /// The port is mandatory. The TSIG key name is option and the name
-    /// of the key is preceeded by a caret character (^).
+    /// during a key roll. The value is a list of strings. Each string has the following
+    /// syntax: `<IP-address>:<port>[^<tsig-key-name>].`
+    /// The port is mandatory. The TSIG key name is optional and the name
+    /// of the key is preceded by a caret character (`^`).
     pub publication_nameservers: Vec<String>,
 }
 
