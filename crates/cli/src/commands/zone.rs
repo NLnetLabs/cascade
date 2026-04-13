@@ -530,7 +530,7 @@ impl Zone {
             )
         })?;
 
-        println!("zone: {}", zone.name);
+        println!("zone:   {}", zone.name);
         println!("policy: {}", zone.policy);
         println!("source: {}", zone.source);
 
@@ -550,17 +550,18 @@ impl Zone {
             "manual"
         };
 
-        println!("review hooks:");
+        println!("");
+        println!("review hooks");
         println!("  loaded: {loader_review}");
         println!("  signed: {signer_review}");
         println!("");
 
-        println!("last published:");
+        println!("last published");
         if let Some(last) = &zone.last_published {
             println!("  loaded serial: <TODO>");
             println!("  signed serial: {}", last.signed_serial);
-            println!("  timestamp: <TODO>");
-            println!("  size: <TODO> records (<TODO>B)");
+            println!("  timestamp:     <TODO>");
+            println!("  size:          <TODO> records (<TODO>B)");
         } else {
             println!("  <no versions published yet>");
         }
@@ -674,7 +675,7 @@ fn print_loaded_review_phase(
             println!("  |   review hook: \"{hook}\"",);
             println!("  |");
         } else {
-            let serial = serial.unwrap();
+            let serial = serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
             println!("  {Stopped} review loaded zone");
             println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
             println!("  |   possible actions:");
@@ -746,7 +747,7 @@ fn print_signed_review_phase(
             println!("  |   {YELLOW}automatic zone review in progress{RESET}");
             println!("  |   review hook: \"{hook}\"",);
         } else {
-            let serial = signed_serial.unwrap();
+            let serial = signed_serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
             println!("  {Stopped} review signed zone");
             println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
             println!("  |   possible actions:");
