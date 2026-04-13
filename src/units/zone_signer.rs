@@ -1063,13 +1063,13 @@ pub struct KeySetState {
     pub ns_rrset: Vec<String>,
 }
 
-struct MinTimestamp(Mutex<Option<Timestamp>>);
+pub struct MinTimestamp(Mutex<Option<Timestamp>>);
 
 impl MinTimestamp {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self(Mutex::new(None))
     }
-    fn add(&self, ts: Timestamp) {
+    pub fn add(&self, ts: Timestamp) {
         let mut min_ts = self.0.lock().expect("should not fail");
         if let Some(curr_min) = *min_ts {
             if ts < curr_min {
@@ -1079,9 +1079,15 @@ impl MinTimestamp {
             *min_ts = Some(ts);
         }
     }
-    fn get(&self) -> Option<Timestamp> {
+    pub fn get(&self) -> Option<Timestamp> {
         let min_ts = self.0.lock().expect("should not fail");
         *min_ts
+    }
+}
+
+impl Default for MinTimestamp {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
