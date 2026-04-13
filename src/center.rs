@@ -10,7 +10,6 @@ use std::{
 use bytes::Bytes;
 use domain::base::Name;
 use domain::rdata::dnssec::Timestamp;
-use domain::zonetree::StoredName;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
@@ -228,7 +227,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     Ok(())
 }
 
-pub fn get_zone(center: &Arc<Center>, name: &StoredName) -> Option<Arc<Zone>> {
+pub fn get_zone(center: &Arc<Center>, name: &Name<Bytes>) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
 }

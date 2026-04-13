@@ -9,7 +9,7 @@ use bytes::Bytes;
 use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
 use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
-use domain::base::{CanonicalOrd, Record};
+use domain::base::{CanonicalOrd, Name, Record};
 use domain::crypto::sign::{SecretKeyBytes, SignRaw};
 use domain::dnssec::common::parse_from_bind;
 use domain::dnssec::sign::SigningConfig;
@@ -28,7 +28,6 @@ use domain::new::rdata::RecordData;
 use domain::rdata::dnssec::Timestamp;
 use domain::rdata::{Dnskey, Nsec3param, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
-use domain::zonetree::StoredName;
 use domain_kmip::KeyUrl;
 use domain_kmip::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
 use domain_kmip::{self, ClientCertificate, ConnectionSettings};
@@ -167,7 +166,7 @@ impl ZoneSigner {
         Ok(secret_key)
     }
 
-    fn load_public_key(key_path: &Path) -> Result<Record<StoredName, Dnskey<Bytes>>, Terminated> {
+    fn load_public_key(key_path: &Path) -> Result<Record<Name<Bytes>, Dnskey<Bytes>>, Terminated> {
         let public_data = std::fs::read_to_string(key_path).map_err(|_| {
             error!("loading public key from file '{}'", key_path.display(),);
             Terminated
@@ -1335,7 +1334,7 @@ struct ZoneSignerStatus {
     zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<SigningStatusPerZone>>>>>,
 
     // Sign each zone only once at a time.
-    zone_semaphores: Arc<RwLock<HashMap<StoredName, Arc<Semaphore>>>>,
+    zone_semaphores: Arc<RwLock<HashMap<Name<Bytes>, Arc<Semaphore>>>>,
 
     queue_semaphore: Arc<Semaphore>,
 }
