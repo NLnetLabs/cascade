@@ -204,7 +204,8 @@ pub fn import_key(
             });
         }
     }
-    state.tsig_store.mark_dirty(center);
+    drop(state);
+    save_now(center);
     Ok(())
 }
 
