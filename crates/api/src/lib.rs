@@ -386,7 +386,6 @@ pub enum Progress {
     SigningFailed,
     SignedReview,
     HaltSigned,
-    Published,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

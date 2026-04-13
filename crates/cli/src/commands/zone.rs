@@ -530,9 +530,40 @@ impl Zone {
             )
         })?;
 
+        let progress = match zone.progress {
+            Progress::Waiting => "idle",
+            Progress::Loading => "loading",
+            Progress::LoadedReview => "waiting for loaded review",
+            Progress::HaltLoaded => "halted after loaded review",
+            Progress::Signing => "signing",
+            Progress::SigningFailed => "signing failed",
+            Progress::SignedReview => "waiting for siged review",
+            Progress::HaltSigned => "halted after signed review",
+        };
         println!("zone: {}", zone.name);
+        println!("status: {progress}",);
         println!("policy: {}", zone.policy);
         println!("source: {}", zone.source);
+
+        let loader_review = if !policy.loader.review.required {
+            "none"
+        } else if let Some(hook) = &policy.loader.review.cmd_hook {
+            hook
+        } else {
+            "manual"
+        };
+
+        let signer_review = if !policy.signer.review.required {
+            "none"
+        } else if let Some(hook) = &policy.signer.review.cmd_hook {
+            hook
+        } else {
+            "manual"
+        };
+
+        println!("review hooks:");
+        println!("  loaded: {loader_review}");
+        println!("  signed: {signer_review}");
         println!("");
 
         println!("last published:");
@@ -544,11 +575,13 @@ impl Zone {
         } else {
             println!("  <no versions published yet>");
         }
-        println!("");
 
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
-        print_timeline(zone.progress, &zone, &policy);
+        if zone.progress != Progress::Waiting {
+            println!("");
+            print_timeline(zone.progress, &zone, &policy);
+        }
 
         if zone.last_published.is_some() {
             println!("");
@@ -591,7 +624,7 @@ pub fn print_timeline(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo)
         &zone.signing_report,
     );
     print_signed_review_phase(&zone.name, zone.signed_serial, policy, current);
-    print_publish_phase(current);
+    print_publish_phase();
 }
 
 fn print_load_phase(
@@ -730,12 +763,8 @@ fn print_signed_review_phase(
     }
 }
 
-fn print_publish_phase(current: Progress) {
-    if current < Progress::Published {
-        println!("  {Pending} publish");
-    } else {
-        println!("  {Done} publish");
-    }
+fn print_publish_phase() {
+    println!("  {Pending} publish");
 }
 
 enum Icon {
