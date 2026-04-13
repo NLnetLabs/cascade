@@ -202,27 +202,18 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     // Check the publication nameservers for the key manager. Any TSIG key
     // that is part of those nameservers has to exist in the TSIG key store.
     for n in &policy.key_manager.publication_nameservers {
-        let mut iter = n.split('^');
-
-        // Skip address:port
-        let Some(_addr) = iter.next() else {
-            continue;
-        };
-
-        // Get TSIG key name.
-        let Some(tsig_name) = iter.next() else {
-            continue;
-        };
-        let tsig_name = Name::from_str(tsig_name).map_err(|e| {
-            PolicyReloadError::Check(format!(
-                "unable to convert TSIG key name {tsig_name} to DNS name: {e}"
-            ))
-        })?;
-        tsig_store
-            .get(&tsig_name)
-            .ok_or(PolicyReloadError::Check(format!(
-                "TSIG key {tsig_name} not found in TSIG store"
-            )))?;
+        if let Some((_, tsig_name)) = n.split_once('^') {                                                                                                                                                                                                                                                              
+            let tsig_name = Name::from_str(tsig_name).map_err(|e| {                                                                                                                                                                                                                                                    
+                PolicyReloadError::Check(format!(                                                                                                                                                                                                                                                                      
+                     "unable to convert TSIG key name {tsig_name} to DNS name: {e}"                                                                                                                                                                                                                                     
+                ))                                                                                                                                                                                                                                                                                                     
+            })?;                                                                                                                                                                                                                                                                                                       
+            tsig_store                                                                                                                                                                                                                                                                                                 
+                .get(&tsig_name)                                                                                                                                                                                                                                                                                       
+                .ok_or(PolicyReloadError::Check(format!(                                                                                                                                                                                                                                                               
+                    "TSIG key {tsig_name} not found in TSIG store"                                                                                                                                                                                                                                                     
+                )))?;                                                                                                                                                                                                                                                                                                  
+            }                                
     }
     Ok(())
 }
