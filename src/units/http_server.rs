@@ -1124,8 +1124,8 @@ impl HttpServer {
     }
 
     async fn tsig_key_remove(
-        State(state): State<Arc<HttpServer>>,
-        Path(name): Path<Name<Bytes>>,
+        State(http_server_state): State<Arc<HttpServer>>,
+        Path(tsig_key_name): Path<TsigKeyName>,
     ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
         // TODO: Don't remove a TSIG key which is currently in use.
         //
@@ -1147,7 +1147,22 @@ impl HttpServer {
         // Alternatively we would need to update the TSIG key store to track
         // if (and where?) a key is being used and check with the TSIG key
         // store.
-        todo!()
+        let mut state = http_server_state.center.state.lock().unwrap();
+
+        if !state.tsig_store.map.contains_key(&tsig_key_name) {
+            return Json(Err(TsigRemoveError::NotFound));
+        }
+
+        if state.zones.iter().any(|z| {
+            let zone_state = z.0.state.lock().unwrap();
+            matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if tsig_key_name == key.name())
+        }) {
+            return Json(Err(TsigRemoveError::InUse));
+        }
+
+        let _ = state.tsig_store.map.remove(&tsig_key_name);
+        state.tsig_store.mark_dirty(&http_server_state.center);
+        Json(Ok(TsigRemoveResult))
     }
 
     async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {

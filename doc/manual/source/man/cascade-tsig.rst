@@ -12,6 +12,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`list`
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`remove` ``<TSIG_KEY_NAME>``
+
 Description
 -----------
 
@@ -38,6 +40,14 @@ Commands
 .. subcmd:: list
 
    List registered TSIG keys and the zones that use them.
+
+.. subcmd:: remove
+
+   Remove a registered TSIG key.
+
+   .. note:: Returns an error if the key does not exist in the TSIG key store
+             or if any zone exists that is configured to authenticate with an
+			 upstream source using the specified TSIG key.
 
 Arguments for :subcmd:`tsig add`
 --------------------------------
