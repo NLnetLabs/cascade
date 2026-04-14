@@ -163,6 +163,8 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/ixfr-in
+        with:
+          log-level: ${{ inputs.log-level }}
 
   incremental-signing:
     name: Test incremental signing.

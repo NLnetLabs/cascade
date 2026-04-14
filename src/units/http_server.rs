@@ -45,6 +45,8 @@ use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::server::LoadedReviewServer;
+use crate::server::SignedReviewServer;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -643,7 +645,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.unsigned_review_server.on_zone_review(
+        let result = LoadedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -665,7 +667,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.unsigned_review_server.on_zone_review(
+        let result = LoadedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -716,7 +718,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.signed_review_server.on_zone_review(
+        let result = SignedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -738,7 +740,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.signed_review_server.on_zone_review(
+        let result = SignedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -912,12 +914,18 @@ impl HttpServer {
                 accept_xfr_requests_from: p_outbound
                     .accept_xfr_requests_from
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .map(|v| NameserverCommsPolicyInfo {
+                        addr: v.addr,
+                        tsig_key_name: v.tsig_key_name.clone(),
+                    })
                     .collect(),
                 send_notify_to: p_outbound
                     .send_notify_to
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .map(|v| NameserverCommsPolicyInfo {
+                        addr: v.addr,
+                        tsig_key_name: v.tsig_key_name.clone(),
+                    })
                     .collect(),
             },
         };
