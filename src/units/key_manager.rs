@@ -14,7 +14,6 @@ use core::time::Duration;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::rdata::dnssec::Timestamp;
-use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::{VarError, var};
@@ -138,7 +137,7 @@ impl KeyManager {
     pub async fn on_remove_key(
         &self,
         center: &Arc<Center>,
-        zone: StoredName,
+        zone: Name<Bytes>,
         key: String,
         force: bool,
         continue_flag: bool,
@@ -167,7 +166,7 @@ impl KeyManager {
     pub async fn on_get_key(
         &self,
         center: &Arc<Center>,
-        zone: StoredName,
+        zone: Name<Bytes>,
         key_type: String,
     ) -> Result<String, String> {
         let center = center.clone();
@@ -200,7 +199,7 @@ impl KeyManager {
     pub async fn on_status(
         &self,
         center: &Arc<Center>,
-        zone: StoredName,
+        zone: Name<Bytes>,
     ) -> Result<String, String> {
         let center = center.clone();
         let res = Self::keyset_cmd(&center, zone, RecordingMode::RecordOnlyOnWarningOrError)
@@ -233,7 +232,7 @@ impl KeyManager {
     pub fn on_zone_policy_changed(
         &self,
         center: &Arc<Center>,
-        name: StoredName,
+        name: Name<Bytes>,
         old: Option<Arc<PolicyVersion>>,
         new: Arc<PolicyVersion>,
     ) {
@@ -429,7 +428,7 @@ impl KeyManager {
     /// Create a keyset command with the config file for the given zone.
     fn keyset_cmd(
         center: &Arc<Center>,
-        name: StoredName,
+        name: Name<Bytes>,
         recording_mode: RecordingMode,
     ) -> KeySetCommand {
         KeySetCommand::new(
@@ -1093,7 +1092,7 @@ pub enum RecordingMode {
 
 pub struct KeySetCommand {
     cmd: Option<AsyncHistoricalCommand>,
-    name: StoredName,
+    name: Name<Bytes>,
     center: Arc<Center>,
     recording_mode: RecordingMode,
 }
@@ -1118,7 +1117,7 @@ impl From<KeySetCommandError> for String {
 
 impl KeySetCommand {
     pub fn new(
-        name: StoredName,
+        name: Name<Bytes>,
         center: Arc<Center>,
         #[allow(clippy::boxed_local)] keys_dir: Box<Utf8Path>,
         #[allow(clippy::boxed_local)] dnst_binary_path: Box<Utf8Path>,
