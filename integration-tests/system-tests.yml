@@ -275,12 +275,12 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
-  outbound-tsig:
+  downstream-tsig:
     name: Using TSIG with downstream nameservers.
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        send-notify-to: [ '' ] #, '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
+        send-notify-to: [ '', '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
         accept-xfr-from: [ '' ] #, '127.0.0.1:1054', '127.0.0.1:1054^tsig-key', '^tsig-key' ]
         zone-name: ['notify-tsig.test.'] #['example.test.' ], 'notify-tsig.test.', 'xfr-tsig.test.', 'notify-and-xfr-tsig.test.']
     steps:
@@ -288,7 +288,7 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/outbound-tsig
+      - uses: ./integration-tests/tests/downstream-tsig
         with:
           log-level: ${{ inputs.log-level }}
           send-notify-to: ${{ matrix.send-notify-to }}

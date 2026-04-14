@@ -101,9 +101,9 @@ runs:
       run: |
         ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer ${{ inputs.zone-name }}
 
-    - name: The ${{ inputs.zone-name }} zone should now be available via the resolver
+    - name: The ${{ inputs.zone-name }} zone should now be available via the secondary
       run: |
-        dig text.${{ inputs.zone-name }} TXT | grep "Hello World"
+        dig @127.0.0.1 -p 1054 text.${{ inputs.zone-name }} TXT | grep "Hello World"
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
