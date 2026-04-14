@@ -129,7 +129,7 @@ impl StorageZoneHandle<'_> {
 
                 // TODO: Use the instance ID here, which will not require
                 // examining the zone contents.
-                let serial = loaded_reviewer.read_loaded().unwrap().soa().rdata.serial;
+                let serial = loaded_reviewer.read().unwrap().soa().rdata.serial;
                 self.state.record_event(
                     HistoricalEvent::NewVersionReceived,
                     Some(domain::base::Serial(serial.into())),
@@ -184,8 +184,7 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
-        self.state.storage.loaded_review_soa =
-            loaded_reviewer.read_loaded().map(|r| r.soa().clone());
+        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
 
         let zone = self.zone.clone();
         let center = self.center.clone();
@@ -193,7 +192,7 @@ impl StorageZoneHandle<'_> {
         self.state.storage.background_tasks.spawn(span, async move {
             // Read the loaded instance.
             let reader = loaded_reviewer
-                .read_loaded()
+                .read()
                 .unwrap_or_else(|| unreachable!("The loader never returns an empty instance"));
             let serial = reader.soa().rdata.serial;
 
@@ -269,7 +268,7 @@ impl StorageZoneHandle<'_> {
 
                 let (s, loaded_reviewer) = s.give_up();
                 self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read_loaded().map(|r| r.soa().clone());
+                    loaded_reviewer.read().map(|r| r.soa().clone());
                 transition.move_to(ZoneDataStorage::CleanLoadedPending(s));
                 loaded_reviewer
             }
@@ -376,7 +375,7 @@ impl StorageZoneHandle<'_> {
 
                 let (s, loaded_reviewer) = s.give_up(builder);
                 self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read_loaded().map(|r| r.soa().clone());
+                    loaded_reviewer.read().map(|r| r.soa().clone());
                 transition.move_to(ZoneDataStorage::CleanLoadedPending(s));
                 loaded_reviewer
             }
@@ -487,7 +486,7 @@ impl StorageZoneHandle<'_> {
                 (new_s, loaded_reviewer, signed_reviewer) = s.give_up();
                 transition.move_to(ZoneDataStorage::CleanWholePending(new_s));
                 self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read_loaded().map(|r| r.soa().clone());
+                    loaded_reviewer.read().map(|r| r.soa().clone());
                 self.state.storage.signed_review_soa =
                     signed_reviewer.read().map(|r| r.soa().clone());
             }
