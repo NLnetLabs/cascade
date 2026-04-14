@@ -1,0 +1,110 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Using TSIG with downstream nameservers'
+description: 'Using TSIG with downstream namservers'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+  send-notify-to:
+    description: The IP address, port and name of the TSIG key to use when sending NOTIFY messages to downstream nameservers.
+    required: false
+    default: ''
+    type: string
+  accept-xfr-from:
+    description: The IP address, port and name of the TSIG key to permit when replying to SOA and XFR requests from downstream nameservers.
+    required: false
+    default: ''
+    type: string
+  # Note: Changing the zone name can be used to select the TSIG configuration used by the downstream NSD.
+  zone-name:
+    description: The name of the zone to serve to the downstream. Should end with a period.
+    required: true
+    type: string
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Make a zonefile for zone ${{ inputs.zone-name }}
+      run: |
+        tee test.zone <<'EOF'
+        $TTL 5 ; use a very short TTL for sped up keyset rolls
+        ${{ inputs.zone-name }}   IN SOA ns1.${{ inputs.zone-name }} mail.${{ inputs.zone-name }} (
+                           1          ; serial
+                          60          ; refresh (60 seconds)
+                          60          ; retry (60 seconds)
+                        3600          ; expire (1 hour)
+                           5          ; minimum (5 seconds)
+                        )
+        @           NS  ${{ inputs.zone-name }}
+        @           NS  ns1.${{ inputs.zone-name }}
+        @           A   127.0.0.1
+        ns1         A   127.0.0.1
+
+        www         A   169.254.1.1
+        mail        MX  10 ${{ inputs.zone-name }}
+        text        TXT "Hello World!"
+        EOF
+
+    - name: Add a custom policy
+      run: |
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        cascade template policy | grep -Ev '(send-notify-to|accept-xfr-requests-from)' > "${POLICY_DIR}/restricted.toml"
+        if [ "${{ inputs.accept-xfr-from }}" != "" ]; then
+          echo 'accept-xfr-requests-from = ["${{ inputs.accept-xfr-from }}"]' >> "${POLICY_DIR}/restricted.toml"
+        fi
+        if [ "${{ inputs.send-notify-to }}" != "" ]; then
+          echo 'send-notify-to = ["${{ inputs.send-notify-to }}"]' >> "${POLICY_DIR}/restricted.toml"
+        fi
+        cascade policy reload
+
+    - name: Add zone ${{ inputs.zone-name }} using the custom policy
+      run: |
+        cascade zone add --policy restricted --source $PWD/test.zone ${{ inputs.zone-name }}
+
+    - name: Wait for zone ${{ inputs.zone-name }} to be signed and published
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status ${{ inputs.zone-name }}| grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status ${{ inputs.zone-name }}
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Verify that the ${{ inputs.zone-name }} zone is being served
+      run: |
+        dig @127.0.0.1 -p 4542 ${{ inputs.zone-name }} SOA
+
+    - name: Tell NSD that zone ${{ inputs.zone-name }} is now available
+      # Only necessary if NOTIFY is not setup for cascade
+      if: ${{ inputs.send-notify-to == '' }}
+      run: |
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer ${{ inputs.zone-name }}
+
+    - name: The ${{ inputs.zone-name }} zone should now be available via the resolver
+      run: |
+        dig text.${{ inputs.zone-name }} TXT | grep "Hello World"
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

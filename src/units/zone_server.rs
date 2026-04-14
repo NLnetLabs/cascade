@@ -299,13 +299,7 @@ impl ZoneServer {
                     .outbound
                     .send_notify_to
                     .iter()
-                    .filter_map(|s| {
-                        if s.addr.port() != 0 {
-                            Some(s.addr)
-                        } else {
-                            None
-                        }
-                    });
+                    .filter_map(|s| s.addr.filter(|addr| addr.port() != 0));
 
                 send_notify_to_addrs(zone_name.clone(), addrs, center);
             }
