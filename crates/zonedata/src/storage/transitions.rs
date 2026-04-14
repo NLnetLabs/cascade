@@ -294,7 +294,9 @@ impl ReviewingSignedStorage {
         let persister = unsafe {
             SignedZonePersister::new(
                 self.data.clone(),
+                self.curr_loaded_index ^ self.loaded_diff.is_some(),
                 !self.curr_signed_index,
+                self.loaded_diff.clone(),
                 self.signed_diff.clone(),
             )
         };

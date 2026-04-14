@@ -77,6 +77,14 @@ pub struct SignedZonePersister {
     /// The underlying data.
     data: Arc<Data>,
 
+    /// The index of the associated loaded instance, if any.
+    ///
+    /// ## Invariants
+    ///
+    /// - `loaded-access`: `data.loaded[loaded_index]` is sound to access
+    ///   immutably for the lifetime of `self`. It will not be modified.
+    loaded_index: bool,
+
     /// The index of the signed instance to persist, if any.
     ///
     /// ## Invariants
@@ -84,6 +92,9 @@ pub struct SignedZonePersister {
     /// - `signed-access`: `data.signed[signed_index]` is sound to access
     ///   immutably for the lifetime of `self`. It will not be modified.
     signed_index: bool,
+
+    /// The diff of the loaded component from the prior instance, if any.
+    loaded_diff: Option<Arc<DiffData>>,
 
     /// The diff of the signed component from the preceding instance.
     signed_diff: Arc<DiffData>,
@@ -101,14 +112,18 @@ impl SignedZonePersister {
     ///   of `persister` (starting from this function call).
     pub(crate) unsafe fn new(
         data: Arc<Data>,
+        loaded_index: bool,
         signed_index: bool,
+        loaded_diff: Option<Arc<DiffData>>,
         signed_diff: Arc<DiffData>,
     ) -> Self {
         // Invariants:
         // - 'signed-access' is guaranteed by the caller.
         Self {
             data,
+            loaded_index,
             signed_index,
+            loaded_diff,
             signed_diff,
         }
     }
@@ -119,12 +134,14 @@ impl SignedZonePersister {
     pub fn persist(self) -> SignedZonePersisted {
         let SignedZonePersister {
             data,
+            loaded_index,
             signed_index,
+            loaded_diff,
             signed_diff,
         } = self;
 
         // TODO
-        let _ = (signed_index, signed_diff);
+        let _ = (loaded_index, signed_index, loaded_diff, signed_diff);
 
         SignedZonePersisted { data }
     }
