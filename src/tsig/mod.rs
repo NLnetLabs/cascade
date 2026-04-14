@@ -1,7 +1,9 @@
 //! Managing TSIG keys.
 
+use std::str::FromStr;
 use std::{collections::hash_map, fmt, io, sync::Arc, time::Duration};
 
+use domain::base::Name;
 use domain::tsig;
 use tracing::{debug, error, trace};
 
@@ -255,6 +257,56 @@ pub fn generate_key(
 pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), RemoveError> {
     // Lock the global state and try to remove the key.
     let mut state = center.state.lock().unwrap();
+
+    // Currently if a zone was added with `--source
+    // ip[:port]^<TSIG_KEY_NAME>` that would cause the TSIG key to be used
+    // by the loader when refreshing the zone.
+    //
+    // In future policies may refer to TSIG keys in a couple of places:
+    //
+    // 1. In server outbound settings for signing NOTIFY, SOA and XFR messages
+    //    to downstream nameservers.
+    // 2. In key manager settings for instructing dnst keyset which nameserver
+    //    to query to sanity check the signed zone contents, with a TSIG key if
+    //    one is needed to authenticate to the specified nameserver in order to
+    //    do XFR.
+    //
+    // So we need to check all of these places to see if a key is in use.
+    //
+    // Alternatively we would need to update the TSIG key store to track
+    // if (and where?) a key is being used and check with the TSIG key
+    // store.
+
+    if !state.tsig_store.map.contains_key(name) {
+        return Err(RemoveError::NotFound);
+    }
+
+    if state.zones.iter().any(|z| {
+            let zone_state = z.0.state.lock().unwrap();
+            matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
+        }) {
+            return Err(RemoveError::Used);
+        }
+
+    if state
+        .policies
+        .values()
+        .flat_map(|p| &p.latest.key_manager.publication_nameservers)
+        .filter_map(|n| n.split_once("^").map(|v| v.1))
+        .any(|k| {
+            let nk = Name::<Vec<u8>>::from_str(k);
+            if let Ok(n) = nk {
+                n == name
+            } else {
+                // Just ignore tSIG key names that cannot be parsed as a
+                // DNS name.
+                false
+            }
+        })
+    {
+        return Err(RemoveError::Used);
+    }
+
     match state.tsig_store.map.entry(name.clone()) {
         hash_map::Entry::Occupied(entry) => {
             if !entry.get().zones.is_empty() {
