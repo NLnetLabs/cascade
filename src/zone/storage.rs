@@ -183,8 +183,6 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
-        // NOTE: This function provides compatibility with 'zonetree's.
-
         self.state.storage.loaded_review_soa =
             loaded_reviewer.read_loaded().map(|r| r.soa().clone());
 
@@ -192,8 +190,6 @@ impl StorageZoneHandle<'_> {
         let center = self.center.clone();
         let span = trace_span!("start_loaded_review");
         self.state.storage.background_tasks.spawn(span, async move {
-            trace!("Converting the loaded instance to 'zonetree'");
-
             // Read the loaded instance.
             let reader = loaded_reviewer
                 .read_loaded()
@@ -403,16 +399,12 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer) {
-        // NOTE: This function provides compatibility with 'zonetree's.
-
         self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
 
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("start_signed_review");
         self.state.storage.background_tasks.spawn(span, async move {
-            trace!("Converting the signed instance to 'zonetree'");
-
             // Read the instance.
             let reader = signed_reviewer
                 .read()

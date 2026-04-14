@@ -23,7 +23,6 @@ use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
 use domain::net::server::service::Service;
 use domain::net::server::stream::{self, StreamServer};
 use domain::tsig::{Algorithm, KeyStore};
-use domain::zonetree::StoredName;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{
@@ -704,7 +703,7 @@ impl Notifiable for LoaderNotifier {
 }
 
 pub fn send_notify_to_addrs(
-    apex_name: StoredName,
+    apex_name: Name<Bytes>,
     notify_set: impl Iterator<Item = SocketAddr>,
     _center: &Arc<Center>,
 ) {
