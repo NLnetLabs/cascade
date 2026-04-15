@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::{Data, DiffData};
+use crate::{Data, DiffData, LoadedZoneReader, SignedZoneReader};
 
 //----------- LoadedZonePersister ----------------------------------------------
 
@@ -52,18 +52,33 @@ impl LoadedZonePersister {
 }
 
 impl LoadedZonePersister {
-    /// Perform the actual persisting.
-    pub fn persist(self) -> LoadedZonePersisted {
-        let LoadedZonePersister {
-            data,
-            loaded_index,
-            loaded_diff,
-        } = self;
+    /// Read the instance needing persistence (if it is non-empty).
+    pub fn read(&self) -> Option<LoadedZoneReader<'_>> {
+        let loaded = &self.data.loaded[self.loaded_index as usize];
 
-        // TODO
-        let _ = (loaded_index, loaded_diff);
+        // SAFETY: As per invariant 'loaded-access', 'loaded' will not be
+        // modified for the lifetime of 'self', and thus it is sound to access
+        // by shared reference.
+        let loaded = unsafe { &*loaded.get() };
 
-        LoadedZonePersisted { data }
+        loaded.soa.as_ref()?;
+
+        // NOTE: As checked above, 'loaded' is complete (i.e. has a SOA record),
+        // so 'LoadedZoneReader::new()' will not panic.
+        Some(LoadedZoneReader::new(loaded))
+    }
+
+    /// The diff from the preceding instance to the current one.
+    pub fn loaded_diff(&self) -> &Arc<DiffData> {
+        &self.loaded_diff
+    }
+
+    /// Mark persistence as complete.
+    ///
+    /// This should be called once the instance has been read and persisted to
+    /// disk.
+    pub fn mark_complete(self) -> LoadedZonePersisted {
+        LoadedZonePersisted { data: self.data }
     }
 }
 
@@ -130,20 +145,47 @@ impl SignedZonePersister {
 }
 
 impl SignedZonePersister {
-    /// Perform the actual persisting.
-    pub fn persist(self) -> SignedZonePersisted {
-        let SignedZonePersister {
-            data,
-            loaded_index,
-            signed_index,
-            loaded_diff,
-            signed_diff,
-        } = self;
+    /// Read the instance needing persistence (if it is non-empty).
+    pub fn read(&self) -> Option<SignedZoneReader<'_>> {
+        let loaded = &self.data.loaded[self.loaded_index as usize];
+        let signed = &self.data.signed[self.signed_index as usize];
 
-        // TODO
-        let _ = (loaded_index, signed_index, loaded_diff, signed_diff);
+        // SAFETY: As per invariant 'loaded-access', 'loaded' will not be
+        // modified for the lifetime of 'self', and thus it is sound to access
+        // by shared reference.
+        let loaded = unsafe { &*loaded.get() };
 
-        SignedZonePersisted { data }
+        // SAFETY: As per invariant 'signed-access', 'signed' will not be
+        // modified for the lifetime of 'self', and thus it is sound to access
+        // by shared reference.
+        let signed = unsafe { &*signed.get() };
+
+        signed.soa.as_ref()?;
+
+        // NOTE: As checked above, 'signed' is complete (i.e. has a SOA record),
+        // and thus 'loaded' must also be complete, so 'SignedZoneReader::new()'
+        // will not panic.
+        Some(SignedZoneReader::new(loaded, signed))
+    }
+
+    /// The diff from the preceding loaded instance to the current one.
+    ///
+    /// This is `None` iff a re-signing occurred.
+    pub fn loaded_diff(&self) -> Option<&Arc<DiffData>> {
+        self.loaded_diff.as_ref()
+    }
+
+    /// The diff from the preceding signed instance to the current one.
+    pub fn signed_diff(&self) -> &Arc<DiffData> {
+        &self.signed_diff
+    }
+
+    /// Mark persistence as complete.
+    ///
+    /// This should be called once the instance has been read and persisted to
+    /// disk.
+    pub fn mark_complete(self) -> SignedZonePersisted {
+        SignedZonePersisted { data: self.data }
     }
 }
 

@@ -599,8 +599,8 @@ impl StorageZoneHandle<'_> {
         self.state.storage.background_tasks.spawn_blocking(span, move || {
             trace!("Persisting the loaded instance");
 
-            // Perform the persisting.
-            let persisted = persister.persist();
+            // TODO: Perform the persisting.
+            let persisted = persister.mark_complete();
 
             // NOTE: The outer function, which is spawning the background task,
             // has a lock of the zone state. Thus, the following lock cannot be
@@ -646,8 +646,8 @@ impl StorageZoneHandle<'_> {
         self.state.storage.background_tasks.spawn(span, async move {
             trace!("Persisting the signed instance");
 
-            // Perform the persisting.
-            let persisted = tokio::task::spawn_blocking(move || persister.persist()).await.unwrap();
+            // TODO: Perform the persisting.
+            let persisted = persister.mark_complete();
 
             // Mark persistence as completed.
             let viewer = {
