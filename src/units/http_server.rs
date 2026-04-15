@@ -45,6 +45,8 @@ use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::server::LoadedReviewServer;
+use crate::server::SignedReviewServer;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -643,7 +645,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.unsigned_review_server.on_zone_review(
+        let result = LoadedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -665,7 +667,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.unsigned_review_server.on_zone_review(
+        let result = LoadedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -716,7 +718,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.signed_review_server.on_zone_review(
+        let result = SignedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -738,7 +740,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.signed_review_server.on_zone_review(
+        let result = SignedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -917,12 +919,18 @@ impl HttpServer {
                 accept_xfr_requests_from: p_outbound
                     .accept_xfr_requests_from
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .map(|v| NameserverCommsPolicyInfo {
+                        addr: v.addr,
+                        tsig_key_name: v.tsig_key_name.clone(),
+                    })
                     .collect(),
                 send_notify_to: p_outbound
                     .send_notify_to
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .map(|v| NameserverCommsPolicyInfo {
+                        addr: v.addr,
+                        tsig_key_name: v.tsig_key_name.clone(),
+                    })
                     .collect(),
             },
         };
@@ -1124,8 +1132,8 @@ impl HttpServer {
     }
 
     async fn tsig_key_remove(
-        State(state): State<Arc<HttpServer>>,
-        Path(name): Path<Name<Bytes>>,
+        State(http_server_state): State<Arc<HttpServer>>,
+        Path(tsig_key_name): Path<TsigKeyName>,
     ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
         // TODO: Don't remove a TSIG key which is currently in use.
         //
@@ -1147,7 +1155,22 @@ impl HttpServer {
         // Alternatively we would need to update the TSIG key store to track
         // if (and where?) a key is being used and check with the TSIG key
         // store.
-        todo!()
+        let mut state = http_server_state.center.state.lock().unwrap();
+
+        if !state.tsig_store.map.contains_key(&tsig_key_name) {
+            return Json(Err(TsigRemoveError::NotFound));
+        }
+
+        if state.zones.iter().any(|z| {
+            let zone_state = z.0.state.lock().unwrap();
+            matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if tsig_key_name == key.name())
+        }) {
+            return Json(Err(TsigRemoveError::InUse));
+        }
+
+        let _ = state.tsig_store.map.remove(&tsig_key_name);
+        state.tsig_store.mark_dirty(&http_server_state.center);
+        Json(Ok(TsigRemoveResult))
     }
 
     async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {

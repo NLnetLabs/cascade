@@ -441,7 +441,6 @@ impl ZoneSigner {
         // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
             .unsigned_records()
-            .into_iter()
             .map(OldRecord::from)
             .collect::<Vec<_>>();
         records.push(new_soa.clone().into());
@@ -468,6 +467,18 @@ impl ZoneSigner {
         for dnskey_rr in state.dnskey_rrset {
             let mut zonefile = Zonefile::new();
             zonefile.extend_from_slice(dnskey_rr.as_bytes());
+            zonefile.extend_from_slice(b"\n");
+            if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
+                let record: OldRecord = rec.flatten_into();
+                new_records.push(record.clone().into());
+                records.push(record);
+            }
+        }
+
+        // Also add CDS and CDNSKEY records plus their signatures.
+        for cds_rr in state.cds_rrset {
+            let mut zonefile = Zonefile::new();
+            zonefile.extend_from_slice(cds_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
             if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
                 let record: OldRecord = rec.flatten_into();

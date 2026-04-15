@@ -33,6 +33,9 @@ use crate::{
 /// the pipeline anyway. `SigningFailure` cannot be overridden but only `reset`.
 ///
 /// Here is the diagram for it:
+//
+// TODO: There is an additional transition from 'Signing' to 'Waiting', in case
+// signing is abandoned (e.g. incremental signing turns out to be a no-op).
 ///
 /// ```text
 /// ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -250,6 +253,22 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::SignedReview(signing.finish_signing()));
 
         self.storage().finish_sign(built);
+    }
+
+    // Abandon the ongoing signing operation (but not due to failure).
+    #[expect(dead_code)]
+    pub(crate) fn abandon_signing(&mut self, builder: SignedZoneBuilder) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::Signing(signing) = state else {
+            unreachable!(
+                "'ZoneStateMachine::Signing' is the only state where a 'SignedZoneBuilder' is available"
+            );
+        };
+
+        transition.move_to(ZoneStateMachine::Waiting(signing.abandon()));
+
+        self.storage().abandon_sign(builder);
     }
 
     pub(crate) fn signing_failed(&mut self, builder: SignedZoneBuilder, err: SignerError) {
@@ -510,6 +529,11 @@ pub struct Signing {}
 impl Signing {
     fn finish_signing(self) -> SignedReview {
         SignedReview {}
+    }
+
+    /// Abandon the signing operation (but not due to failure).
+    fn abandon(self) -> Waiting {
+        Waiting {}
     }
 
     fn signing_failed(self, err: SignerError) -> SigningFailed {
