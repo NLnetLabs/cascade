@@ -106,9 +106,14 @@ fn main() -> ExitCode {
 
             // Load all policies.
             let mut updates = Vec::new();
-            let res = policy::reload_all(&mut state.policies, &config, |name, _| {
-                updates.push(name.clone());
-            });
+            let res = policy::reload_all(
+                &mut state.policies,
+                &config,
+                &state.tsig_store,
+                |name, _| {
+                    updates.push(name.clone());
+                },
+            );
 
             if let Err(err) = res {
                 error!("Cascade couldn't load all policies: {err}");

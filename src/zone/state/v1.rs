@@ -197,6 +197,9 @@ pub struct KeyManagerPolicySpec {
 
     /// Automatically remove keys that are no long in use.
     auto_remove: bool,
+
+    /// Nameservers to check for RRSIG propagation during a key roll.
+    publication_nameservers: Vec<String>,
 }
 
 //--- Conversion
@@ -224,6 +227,7 @@ impl KeyManagerPolicySpec {
             ds_algorithm: self.ds_algorithm,
             default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
+            publication_nameservers: self.publication_nameservers,
         }
     }
 
@@ -249,6 +253,7 @@ impl KeyManagerPolicySpec {
             ds_algorithm: policy.ds_algorithm.clone(),
             default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
+            publication_nameservers: policy.publication_nameservers.clone(),
         }
     }
 }
