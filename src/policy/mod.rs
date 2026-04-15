@@ -470,11 +470,27 @@ pub struct InboundPolicy {
 //----------- NameserverCommsPolicy -------------------------------------------
 
 /// Policy for communicating with another namesever.
+///
+/// This type serves a dual purpose:
+///   - For outbound communication it specifies the address and port of the
+///     nameserver to contact, and optionally a TSIG key that should be used
+///     to sign outbound requests. When used for this purpose the address and
+///     port are mandatory.
+///   - For inbound communication this type is intended to support the access
+///     control use case, acting as a white list entry. When used for this
+///     purpose all fields are optional and typically a port is not specified
+///     as the sending port is not known in advance. If neither an address
+///     nor TSIG key are specified the meaning is to allow all inbound
+///     communication. If a TSIG key is specified a user of this type could
+///     for example use it to reject incoming requests that are not signed
+///     with that key, either in combination with a sender address check or
+///     to allow requests from any sender address as long as the request is
+///     signed using the correct TSIG key. How multiple instances of this type
+///     are combined is not defined here, e.g. whether all rules must be
+///     satisfied or only one or whether order of rules matters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NameserverCommsPolicy {
     /// The address to send to/receive from.
-    ///
-    /// For sending the port MUST NOT be zero.
     ///
     /// TODO: Support IP prefixes?
     pub addr: Option<SocketAddr>,
