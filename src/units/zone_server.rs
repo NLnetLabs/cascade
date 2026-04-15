@@ -23,7 +23,6 @@ use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
 use domain::net::server::service::Service;
 use domain::net::server::stream::{self, StreamServer};
 use domain::tsig::{Algorithm, KeyStore};
-use domain::zonetree::StoredName;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{
@@ -231,36 +230,6 @@ impl ZoneServer {
 
             zone_state.policy.clone()
         };
-
-        // Move the zone from the signed collection to the published collection.
-        // TODO: Bump the zone serial?
-        let signed_zones = center.signed_zones.load();
-
-        if let Some(zone) = signed_zones.get_zone(&zone.name, Class::IN) {
-            // Create a deep copy of the set of
-            // published zones. We will add the
-            // new zone to that copied set and
-            // then replace the original set with
-            // the new set.
-            info!("[{unit_name}]: Adding '{zone_name}' to the set of published zones.");
-            center.published_zones.rcu(|zones| {
-                let mut new_published_zones = Arc::unwrap_or_clone(zones.clone());
-                let _ = new_published_zones.remove_zone(zone.apex_name(), zone.class());
-                new_published_zones.insert_zone(zone.clone()).unwrap();
-                new_published_zones
-            });
-
-            // Create a deep copy of the set of
-            // signed zones. We will remove the
-            // zone from the copied set and then
-            // replace the original set with the
-            // new set.
-            center.signed_zones.rcu(|zones| {
-                let mut new_signed_zones = Arc::unwrap_or_clone(zones.clone());
-                new_signed_zones.remove_zone(&zone_name, Class::IN).unwrap();
-                new_signed_zones
-            });
-        }
 
         // Send NOTIFY if configured to do so.
         if let Some(policy) = policy {
@@ -728,7 +697,7 @@ impl Notifiable for LoaderNotifier {
 }
 
 pub fn send_notify_to_addrs(
-    apex_name: StoredName,
+    apex_name: Name<Bytes>,
     notify_set: impl Iterator<Item = SocketAddr>,
     _center: &Arc<Center>,
 ) {
