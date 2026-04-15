@@ -180,6 +180,11 @@ pub use persister::{
     LoadedZonePersisted, LoadedZonePersister, SignedZonePersisted, SignedZonePersister,
 };
 
+mod restorer;
+pub use restorer::{
+    LoadedZoneRestored, LoadedZoneRestorer, SignedZoneRestored, SignedZoneRestorer,
+};
+
 mod data;
 use data::{Data, InstanceData};
 
