@@ -749,12 +749,15 @@ pub struct KeyMsg {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum PolicyReloadError {
     Io(Utf8PathBuf, String),
+    Check(String),
 }
 
 impl Display for PolicyReloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let PolicyReloadError::Io(p, e) = self;
-        format!("{p}: {e}").fmt(f)
+        match self {
+            PolicyReloadError::Io(p, e) => format!("{p}: {e}").fmt(f),
+            PolicyReloadError::Check(e) => e.to_string().fmt(f),
+        }
     }
 }
 

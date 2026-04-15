@@ -249,7 +249,7 @@ impl KeyManager {
         tokio::spawn(async move {
             // Keep it simple, just send all config items to keyset even
             // if they didn't change.
-            let config_commands = policy_to_commands(&new);
+            let config_commands = policy_to_commands(&center, &new);
             for c in config_commands {
                 let mut cmd = Self::keyset_cmd(&center, name.clone(), RecordingMode::Record);
                 cmd.arg("set");
@@ -381,7 +381,7 @@ impl KeyManager {
 
         // Pass `set` and `import` commands to `dnst keyset`.
         let config_commands = imports_to_commands(key_imports).into_iter().chain(
-            policy_to_commands(&policy.latest)
+            policy_to_commands(center, &policy.latest)
                 .into_iter()
                 .chain({
                     match var("CASCADE_FAKETIME") {
@@ -687,7 +687,7 @@ macro_rules! strs {
     };
 }
 
-fn policy_to_commands(policy: &PolicyVersion) -> Vec<Vec<String>> {
+fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<String>> {
     let km = &policy.key_manager;
 
     let mut algorithm_cmd = vec!["algorithm".to_string()];
@@ -711,7 +711,20 @@ fn policy_to_commands(policy: &PolicyVersion) -> Vec<Vec<String>> {
 
     let seconds = |x| format!("{x}s");
 
-    vec![
+    let mut cmds = vec![];
+
+    if km.publication_nameservers.iter().any(|n| n.contains("^")) {
+        let tsig_store_cmd = vec![
+            "tsig-store-path".to_string(),
+            center.config.tsig_store_path.as_str().to_string(),
+        ];
+        cmds.push(tsig_store_cmd);
+    }
+
+    let mut publication_nameservers_cmd = vec!["publication-nameservers".to_string()];
+    publication_nameservers_cmd.append(&mut km.publication_nameservers.clone());
+
+    cmds.append(&mut vec![
         strs!["use-csk", km.use_csk],
         algorithm_cmd,
         strs!["ksk-validity", validity(km.ksk_validity)],
@@ -757,7 +770,9 @@ fn policy_to_commands(policy: &PolicyVersion) -> Vec<Vec<String>> {
         strs!["ds-algorithm", km.ds_algorithm],
         strs!["default-ttl".to_string(), km.default_ttl.as_secs(),],
         strs!["autoremove", km.auto_remove],
-    ]
+        publication_nameservers_cmd,
+    ]);
+    cmds
 }
 
 //============ KMIP Credential Management ====================================
