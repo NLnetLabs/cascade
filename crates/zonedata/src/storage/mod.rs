@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use crate::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data};
+use crate::{LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data};
 
 mod states;
 pub use states::{
@@ -91,36 +91,14 @@ pub enum ZoneDataStorage {
 
 impl ZoneDataStorage {
     /// Construct a new [`ZoneDataStorage`].
-    pub fn new() -> (Self, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer) {
-        // TODO: When Cascade starts up, it should check for existing instances
-        // on disk. This might require a separate initialization function.
-
+    pub fn new() -> (LoadedZoneRestorer, Self) {
         let data = Arc::new(Data::new());
-        let curr_unsigned_index = false;
-        let curr_signed_index = false;
 
-        let ureviewer = unsafe { LoadedZoneReviewer::new(data.clone(), curr_unsigned_index, None) };
+        let restorer = unsafe { LoadedZoneRestorer::new(data.clone()) };
 
-        let reviewer = unsafe {
-            SignedZoneReviewer::new(
-                data.clone(),
-                curr_unsigned_index,
-                curr_signed_index,
-                None,
-                None,
-            )
-        };
+        let storage = RestoringLoadedStorage { data };
 
-        let viewer =
-            unsafe { ZoneViewer::new(data.clone(), curr_unsigned_index, curr_signed_index) };
-
-        let storage = Self::Passive(PassiveStorage {
-            data,
-            curr_loaded_index: false,
-            curr_signed_index: false,
-        });
-
-        (storage, ureviewer, reviewer, viewer)
+        (restorer, Self::RestoringLoaded(storage))
     }
 
     /// Extract the current state of the [`ZoneDataStorage`].

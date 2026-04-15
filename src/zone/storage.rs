@@ -845,10 +845,15 @@ pub struct StorageState {
 impl StorageState {
     /// Construct a new [`StorageState`].
     pub fn new() -> Self {
-        let (machine, loaded_reviewer, signed_reviewer, viewer) = ZoneDataStorage::new();
+        // TODO: Use 'restorer' to attempt restoring the zone.
+        let (restorer, machine) = ZoneDataStorage::new();
+        let ZoneDataStorage::RestoringLoaded(s) = machine else {
+            unreachable!()
+        };
+        let (loaded_reviewer, signed_reviewer, viewer, s) = s.abandon(restorer);
 
         Self {
-            machine,
+            machine: ZoneDataStorage::Passive(s),
             loaded_reviewer: Some(loaded_reviewer),
             signed_reviewer: Some(signed_reviewer),
             viewer: Some(viewer),
