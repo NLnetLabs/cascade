@@ -13,9 +13,9 @@ mod states;
 pub use states::{
     CleanLoadedPendingStorage, CleanSignedPendingStorage, CleanWholePendingStorage,
     CleaningSignedStorage, CleaningStorage, LoadingStorage, PassiveStorage,
-    PersistingLoadedStorage, PersistingSignedStorage, ReviewLoadedPendingStorage,
-    ReviewSignedPendingStorage, ReviewingLoadedStorage, ReviewingSignedStorage, SigningStorage,
-    SwitchingStorage,
+    PersistingLoadedStorage, PersistingSignedStorage, RestoringLoadedStorage,
+    RestoringSignedStorage, ReviewLoadedPendingStorage, ReviewSignedPendingStorage,
+    ReviewingLoadedStorage, ReviewingSignedStorage, SigningStorage, SwitchingStorage,
 };
 
 mod transitions;
@@ -30,6 +30,12 @@ mod transitions;
 /// it is designed to live in a (synchronous) mutex -- expensive operations on
 /// the zone are always achievable without `&mut` access.
 pub enum ZoneDataStorage {
+    /// The loaded instance of the zone is being restored.
+    RestoringLoaded(RestoringLoadedStorage),
+
+    /// The signed instance of the zone is being restored.
+    RestoringSigned(RestoringSignedStorage),
+
     /// The zone is passive.
     Passive(PassiveStorage),
 
@@ -131,6 +137,8 @@ impl ZoneDataStorage {
     /// This is intended for logging and debugging.
     pub const fn as_str(&self) -> &'static str {
         match self {
+            ZoneDataStorage::RestoringLoaded(_) => "RestoringLoaded",
+            ZoneDataStorage::RestoringSigned(_) => "RestoringSigned",
             ZoneDataStorage::Passive(_) => "Passive",
             ZoneDataStorage::Loading(_) => "Loading",
             ZoneDataStorage::Signing(_) => "Signing",

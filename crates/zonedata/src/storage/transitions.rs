@@ -4,17 +4,135 @@ use std::sync::Arc;
 
 use crate::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
-    SignedZoneBuilder, SignedZoneBuilt, SignedZoneCleaned, SignedZoneCleaner, SignedZonePersisted,
-    SignedZonePersister, ZoneCleaned, ZoneCleaner,
+    LoadedZoneRestored, LoadedZoneRestorer, SignedZoneBuilder, SignedZoneBuilt, SignedZoneCleaned,
+    SignedZoneCleaner, SignedZonePersisted, SignedZonePersister, SignedZoneRestored,
+    SignedZoneRestorer, ZoneCleaned, ZoneCleaner,
 };
 
 use super::{
     CleanLoadedPendingStorage, CleanSignedPendingStorage, CleanWholePendingStorage,
     CleaningSignedStorage, CleaningStorage, LoadedZoneReviewer, LoadingStorage, PassiveStorage,
-    PersistingLoadedStorage, PersistingSignedStorage, ReviewLoadedPendingStorage,
-    ReviewSignedPendingStorage, ReviewingLoadedStorage, ReviewingSignedStorage, SignedZoneReviewer,
-    SigningStorage, SwitchingStorage, ZoneViewer,
+    PersistingLoadedStorage, PersistingSignedStorage, RestoringLoadedStorage,
+    RestoringSignedStorage, ReviewLoadedPendingStorage, ReviewSignedPendingStorage,
+    ReviewingLoadedStorage, ReviewingSignedStorage, SignedZoneReviewer, SigningStorage,
+    SwitchingStorage, ZoneViewer,
 };
+
+//----------- RestoringLoadedStorage -------------------------------------------
+
+impl RestoringLoadedStorage {
+    /// Finish restoring the loaded instance.
+    pub fn finish(
+        self,
+        restored: LoadedZoneRestored,
+    ) -> (SignedZoneRestorer, RestoringSignedStorage) {
+        assert!(
+            Arc::ptr_eq(&restored.data, &self.data),
+            "'restored' is for a different zone"
+        );
+
+        let restorer = unsafe { SignedZoneRestorer::new(self.data.clone(), restored.index) };
+
+        let storage = RestoringSignedStorage {
+            data: self.data,
+            curr_loaded_index: restored.index,
+        };
+
+        (restorer, storage)
+    }
+
+    /// Abandon the restore operation.
+    pub fn abandon(
+        self,
+        mut restorer: LoadedZoneRestorer,
+    ) -> (
+        LoadedZoneReviewer,
+        SignedZoneReviewer,
+        ZoneViewer,
+        PassiveStorage,
+    ) {
+        assert!(
+            Arc::ptr_eq(restorer.data(), &self.data),
+            "'restorer' is for a different zone"
+        );
+
+        restorer.clear();
+        let restored = restorer
+            .finish()
+            .unwrap_or_else(|_| unreachable!("'LoadedZoneRestorer::clear()' finishes restoring"));
+        let (restorer, storage) = self.finish(restored);
+        storage.abandon(restorer)
+    }
+}
+
+//----------- RestoringSignedStorage -------------------------------------------
+
+impl RestoringSignedStorage {
+    /// Finish restoring the signed instance.
+    pub fn finish(
+        self,
+        restored: SignedZoneRestored,
+    ) -> (
+        LoadedZoneReviewer,
+        SignedZoneReviewer,
+        ZoneViewer,
+        PassiveStorage,
+    ) {
+        assert!(
+            Arc::ptr_eq(&restored.data, &self.data),
+            "'restored' is for a different zone"
+        );
+
+        let Self {
+            data,
+            curr_loaded_index,
+        } = self;
+        let curr_signed_index = restored.index;
+
+        let loaded_reviewer =
+            unsafe { LoadedZoneReviewer::new(data.clone(), curr_loaded_index, None) };
+        let signed_reviewer = unsafe {
+            SignedZoneReviewer::new(
+                data.clone(),
+                curr_loaded_index,
+                curr_signed_index,
+                None,
+                None,
+            )
+        };
+        let viewer = unsafe { ZoneViewer::new(data.clone(), curr_loaded_index, curr_signed_index) };
+
+        let storage = PassiveStorage {
+            data,
+            curr_loaded_index,
+            curr_signed_index,
+        };
+
+        (loaded_reviewer, signed_reviewer, viewer, storage)
+    }
+
+    /// Abandon the restore operation.
+    pub fn abandon(
+        self,
+        mut restorer: SignedZoneRestorer,
+    ) -> (
+        LoadedZoneReviewer,
+        SignedZoneReviewer,
+        ZoneViewer,
+        PassiveStorage,
+    ) {
+        assert!(
+            Arc::ptr_eq(restorer.data(), &self.data),
+            "'restorer' is for a different zone"
+        );
+
+        restorer.clear();
+        let restored = restorer
+            .finish()
+            .unwrap_or_else(|_| unreachable!("'SignedZoneRestorer::clear()' finishes restoring"));
+        self.finish(restored)
+    }
+}
 
 //----------- PassiveStorage ---------------------------------------------------
 
