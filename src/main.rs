@@ -213,9 +213,6 @@ fn main() -> ExitCode {
         signed_review_server: SignedReviewServer::new(),
         publication_server: PublicationServer::new(),
         signer: ZoneSigner::new(),
-        unsigned_zones: Default::default(),
-        signed_zones: Default::default(),
-        published_zones: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
     });
 

@@ -16,15 +16,10 @@ use axum::routing::get;
 use axum::routing::post;
 use bytes::Bytes;
 use domain::base::Name;
-use domain::base::Rtype;
 use domain::base::Serial;
-use domain::base::Ttl;
 use domain::dnssec::sign::keys::keyset::KeyType;
-use domain::rdata::Soa;
 use domain::tsig::Algorithm;
 use domain::utils::base64;
-use domain::zonetree::ReadableZone;
-use domain::zonetree::error::OutOfZone;
 use domain_kmip::ConnectionSettings;
 use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
@@ -47,8 +42,7 @@ use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
 use crate::server::SignedReviewServer;
-use crate::tsig;
-use crate::tsig::RemoveError;
+use crate::tsig::{self, RemoveError};
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -1137,14 +1131,13 @@ impl HttpServer {
         State(http_server_state): State<Arc<HttpServer>>,
         Path(tsig_key_name): Path<TsigKeyName>,
     ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
-        Json(
-            tsig::remove_key(&http_server_state.center, &tsig_key_name)
-                .map_err(|e| match e {
-                    RemoveError::NotFound => TsigRemoveError::NotFound,
-                    RemoveError::Used => TsigRemoveError::InUse,
-                })
-                .map(|_| TsigRemoveResult),
-        )
+        let res = tsig::remove_key(&http_server_state.center, &tsig_key_name)
+            .map(|_| TsigRemoveResult)
+            .map_err(|e| match e {
+                RemoveError::NotFound => TsigRemoveError::NotFound,
+                RemoveError::Used => TsigRemoveError::InUse,
+            });
+        Json(res)
     }
 
     async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {
@@ -1413,25 +1406,4 @@ impl HttpServer {
 
         Json(Err(()))
     }
-}
-
-pub async fn read_soa(
-    read: &dyn ReadableZone,
-    qname: Name<Bytes>,
-) -> Result<Option<(Soa<Name<Bytes>>, Ttl)>, OutOfZone> {
-    use domain::rdata::ZoneRecordData;
-    use domain::zonetree::AnswerContent;
-
-    let answer = match read.is_async() {
-        true => read.query_async(qname, Rtype::SOA).await,
-        false => read.query(qname, Rtype::SOA),
-    }?;
-
-    if let AnswerContent::Data(rrset) = answer.content()
-        && let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data()
-    {
-        return Ok(Some((soa.clone(), rrset.ttl())));
-    }
-
-    Ok(None)
 }

@@ -208,7 +208,8 @@ pub fn import_key(
             });
         }
     }
-    state.tsig_store.mark_dirty(center);
+    drop(state);
+    save_now(center);
     Ok(())
 }
 
@@ -258,6 +259,7 @@ pub fn generate_key(
 pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), RemoveError> {
     // Lock the global state and try to remove the key.
     let mut state = center.state.lock().unwrap();
+
     match state.tsig_store.map.entry(name.clone()) {
         hash_map::Entry::Occupied(entry) => {
             if !entry.get().zones.is_empty() {
@@ -267,7 +269,9 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
         }
         hash_map::Entry::Vacant(_) => return Err(RemoveError::NotFound),
     }
+
     state.tsig_store.mark_dirty(center);
+
     Ok(())
 }
 
