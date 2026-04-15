@@ -45,6 +45,8 @@ use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::server::LoadedReviewServer;
+use crate::server::SignedReviewServer;
 use crate::tsig;
 use crate::tsig::RemoveError;
 use crate::units::key_manager::KmipClientCredentials;
@@ -645,7 +647,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.unsigned_review_server.on_zone_review(
+        let result = LoadedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -667,7 +669,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.unsigned_review_server.on_zone_review(
+        let result = LoadedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -718,7 +720,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.signed_review_server.on_zone_review(
+        let result = SignedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -740,7 +742,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.signed_review_server.on_zone_review(
+        let result = SignedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -1135,37 +1137,21 @@ impl HttpServer {
         State(http_server_state): State<Arc<HttpServer>>,
         Path(tsig_key_name): Path<TsigKeyName>,
     ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
-        let result = tsig::remove_key(&http_server_state.center, &tsig_key_name)
-            .map_err(|e| match e {
-                RemoveError::NotFound => TsigRemoveError::NotFound,
-                RemoveError::Used => TsigRemoveError::InUse,
-            })
-            // Map Ok value that we don't use.
-            .map(|_| TsigRemoveResult);
-        if result.is_err() {
-            return Json(result);
-        }
-        Json(Ok(TsigRemoveResult))
+        Json(
+            tsig::remove_key(&http_server_state.center, &tsig_key_name)
+                .map_err(|e| match e {
+                    RemoveError::NotFound => TsigRemoveError::NotFound,
+                    RemoveError::Used => TsigRemoveError::InUse,
+                })
+                .map(|_| TsigRemoveResult),
+        )
     }
 
     async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {
         let state = http_state.center.state.lock().unwrap();
         let mut tsig_keys = HashMap::new();
-        for tsig_key_name in state.tsig_store.map.keys() {
-            let zones = state
-                .zones
-                .iter()
-                .filter_map(|zone| {
-                    let zone_state = zone.0.state.lock().unwrap();
-                    match &zone_state.loader.source {
-                        loader::Source::Server {
-                            tsig_key: Some(tsig_key),
-                            ..
-                        } if tsig_key.name() == tsig_key_name => Some(zone.0.name.clone()),
-                        _ => None,
-                    }
-                })
-                .collect::<Vec<ZoneName>>();
+        for (tsig_key_name, key) in state.tsig_store.map.iter() {
+            let zones = key.zones.iter().map(|item| item.0.name.clone()).collect();
             tsig_keys.insert(tsig_key_name.clone(), TsigListResultItem { zones });
         }
         Json(TsigListResult { tsig_keys })

@@ -85,6 +85,10 @@ impl TsigStore {
     pub fn get(&self, key_name: &tsig::KeyName) -> Option<&TsigKey> {
         self.map.get(key_name)
     }
+
+    pub fn get_mut(&mut self, key_name: &tsig::KeyName) -> Option<&mut TsigKey> {
+        self.map.get_mut(key_name)
+    }
 }
 
 //----------- Actions ----------------------------------------------------------

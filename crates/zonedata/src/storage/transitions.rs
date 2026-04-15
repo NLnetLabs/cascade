@@ -443,11 +443,11 @@ impl CleanLoadedPendingStorage {
             Arc::ptr_eq(old_reviewer.data(), &self.data),
             "'old_reviewer' is for a different zone"
         );
-        assert!(
-            old_reviewer.loaded_index != self.curr_loaded_index,
-            "'old_reviewer' does not point to the new instance",
-        );
+        // TODO: Verify that 'old_reviewer' is the right reviewer.
 
+        // NOTE: We clean '!curr_loaded_index', *even if that was not the one
+        // being reviewed*. 'curr_loaded_index' is in use and thus must not be
+        // cleaned.
         let cleaner = unsafe {
             ZoneCleaner::new(
                 self.data.clone(),

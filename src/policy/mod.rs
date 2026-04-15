@@ -479,7 +479,7 @@ pub struct NameserverCommsPolicy {
     /// TODO: Support IP prefixes?
     pub addr: Option<SocketAddr>,
 
-    /// An optional TSIG key to sign messages with.
+    /// An optional TSIG key to sign and authenticate messages with.
     pub tsig_key_name: Option<KeyName>,
 }
 
