@@ -279,10 +279,12 @@ jobs:
     name: Using TSIG with downstream nameservers.
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: true
       matrix:
-        send-notify-to: [ '', '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
-        accept-xfr-from: [ '' ] #, '127.0.0.1:1054', '127.0.0.1:1054^tsig-key', '^tsig-key' ]
-        zone-name: ['notify-tsig.test.'] #['example.test.' ], 'notify-tsig.test.', 'xfr-tsig.test.', 'notify-and-xfr-tsig.test.']
+        send-notify-to: [ '',  '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
+        accept-xfr-from: [ '', '127.0.0.1:1054', '127.0.0.1:1054^tsig-key', '^tsig-key' ]
+        downstream-expects-tsig: [ 0, 1 ]
+        downstream-uses-tsig: [ 0, 1 ]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
@@ -293,4 +295,5 @@ jobs:
           log-level: ${{ inputs.log-level }}
           send-notify-to: ${{ matrix.send-notify-to }}
           accept-xfr-from: ${{ matrix.accept-xfr-from }}
-          zone-name: ${{ matrix.zone-name }}
+          downstream-expects-tsig: ${{ matrix.downstream-expects-tsig }}
+          downstream-uses-tsig: ${{ matrix.downstream-uses-tsig }}

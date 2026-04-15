@@ -151,7 +151,7 @@ pub struct KeyManagerSpec {
     /// has the following syntax: <IP-address>:<port>[^<tsig-key-name>].
     /// The port is mandatory. The TSIG key name is option and the name
     /// of the key is preceeded by a caret character (^).
-    pub publication_nameservers: Vec<String>,
+    pub publication_nameservers: Vec<NameserverCommsSpec>,
 }
 
 //--- Conversion
@@ -247,7 +247,11 @@ impl KeyManagerSpec {
             default_ttl: self.records.ttl.as_ttl(),
             ds_algorithm: self.ds_algorithm,
             auto_remove: self.auto_remove,
-            publication_nameservers: self.publication_nameservers,
+            publication_nameservers: self
+                .publication_nameservers
+                .into_iter()
+                .map(|v| v.parse())
+                .collect(),
         }
     }
 
@@ -279,7 +283,11 @@ impl KeyManagerSpec {
 
             ds_algorithm: policy.ds_algorithm.clone(),
             auto_remove: policy.auto_remove,
-            publication_nameservers: policy.publication_nameservers.clone(),
+            publication_nameservers: policy
+                .publication_nameservers
+                .iter()
+                .map(NameserverCommsSpec::build)
+                .collect(),
 
             records: KeyManagerRecordsSpec {
                 ttl: TimeSpan::from_ttl(policy.default_ttl),

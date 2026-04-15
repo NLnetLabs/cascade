@@ -2,7 +2,6 @@
 
 use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
-use std::str::FromStr;
 use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
@@ -202,29 +201,22 @@ pub fn load_all(
 fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
     // Check the publication nameservers for the key manager. Any TSIG key
     // that is part of those nameservers has to exist in the TSIG key store.
-    for n in &policy.key_manager.publication_nameservers {
-        let mut iter = n.split('^');
+    let tsig_names = policy
+        .key_manager
+        .publication_nameservers
+        .iter()
+        .chain(policy.server.outbound.accept_xfr_requests_from.iter())
+        .chain(policy.server.outbound.send_notify_to.iter())
+        .filter_map(|ns| ns.tsig_key_name.as_ref());
 
-        // Skip address:port
-        let Some(_addr) = iter.next() else {
-            continue;
-        };
-
-        // Get TSIG key name.
-        let Some(tsig_name) = iter.next() else {
-            continue;
-        };
-        let tsig_name = Name::from_str(tsig_name).map_err(|e| {
-            PolicyReloadError::Check(format!(
-                "unable to convert TSIG key name {tsig_name} to DNS name: {e}"
-            ))
-        })?;
+    for tsig_name in tsig_names {
         tsig_store
             .get(&tsig_name)
             .ok_or(PolicyReloadError::Check(format!(
-                "TSIG key {tsig_name} not found in TSIG store"
+                "unknown TSIG key '{tsig_name}'"
             )))?;
     }
+
     Ok(())
 }
 
@@ -317,7 +309,7 @@ pub struct KeyManagerPolicy {
     pub auto_remove: bool,
 
     /// Nameservers to check for RRSIG propagation during a key roll.
-    pub publication_nameservers: Vec<String>,
+    pub publication_nameservers: Vec<NameserverCommsPolicy>,
 }
 
 //----------- SignerPolicy -----------------------------------------------------
@@ -489,6 +481,18 @@ pub struct NameserverCommsPolicy {
 
     /// An optional TSIG key to sign messages with.
     pub tsig_key_name: Option<KeyName>,
+}
+
+impl Display for NameserverCommsPolicy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(addr) = self.addr {
+            write!(f, "{addr}")?;
+        }
+        if let Some(tsig_key_name) = &self.tsig_key_name {
+            write!(f, "^{tsig_key_name}")?;
+        }
+        Ok(())
+    }
 }
 
 //----------- KeyParameters ---------------------------------------------------

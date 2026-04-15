@@ -45,6 +45,8 @@ use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::tsig;
+use crate::tsig::RemoveError;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -1130,30 +1132,20 @@ impl HttpServer {
     }
 
     async fn tsig_key_remove(
-        State(state): State<Arc<HttpServer>>,
-        Path(name): Path<Name<Bytes>>,
+        State(http_server_state): State<Arc<HttpServer>>,
+        Path(tsig_key_name): Path<TsigKeyName>,
     ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
-        // TODO: Don't remove a TSIG key which is currently in use.
-        //
-        // Currently if a zone was added with `--source
-        // ip[:port]^<TSIG_KEY_NAME>` that would cause the TSIG key to be used
-        // by the loader when refreshing the zone.
-        //
-        // In future policies may refer to TSIG keys in a couple of places:
-        //
-        // 1. In server outbound settings for signing NOTIFY, SOA and XFR messages
-        //    to downstream nameservers.
-        // 2. In key manager settings for instructing dnst keyset which nameserver
-        //    to query to sanity check the signed zone contents, with a TSIG key if
-        //    one is needed to authenticate to the specified nameserver in order to
-        //    do XFR.
-        //
-        // So we need to check all of these places to see if a key is in use.
-        //
-        // Alternatively we would need to update the TSIG key store to track
-        // if (and where?) a key is being used and check with the TSIG key
-        // store.
-        todo!()
+        let result = tsig::remove_key(&http_server_state.center, &tsig_key_name)
+            .map_err(|e| match e {
+                RemoveError::NotFound => TsigRemoveError::NotFound,
+                RemoveError::Used => TsigRemoveError::InUse,
+            })
+            // Map Ok value that we don't use.
+            .map(|_| TsigRemoveResult);
+        if result.is_err() {
+            return Json(result);
+        }
+        Json(Ok(TsigRemoveResult))
     }
 
     async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {
