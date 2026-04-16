@@ -71,7 +71,7 @@ fn main() -> ExitCode {
     }
 
     // Load the global state file or build one from scratch.
-    let mut state = match center::State::init_from_file(&config) {
+    let state = match center::State::init_from_file(&config) {
         Err(err) => {
             if err.kind() != io::ErrorKind::NotFound {
                 error!("Could not load the state file: {err}");
@@ -143,6 +143,23 @@ fn main() -> ExitCode {
         Ok(mut state) => {
             info!("Successfully loaded the global state file");
 
+            // Load the TSIG store file. Do this before restoring zones
+            // because zones may contain references to TSIG keys which can
+            // only be reconstituted if the key material has already been
+            // loaded into the store.
+            //
+            // TODO: Track which TSIG keys are in use by zones.
+            match state.tsig_store.init_from_file(&config) {
+                Ok(()) => debug!("Loaded the TSIG store"),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    debug!("No TSIG store found; will create one");
+                }
+                Err(err) => {
+                    error!("Failed to load the TSIG store: {err}");
+                    return ExitCode::FAILURE;
+                }
+            }
+
             let zone_state_dir = &config.zone_state_dir;
             let policies = &mut state.policies;
             for zone in &state.zones {
@@ -154,12 +171,23 @@ fn main() -> ExitCode {
                         spec
                     }
                     Err(err) => {
-                        error!("Failed to load zone state '{name}' from '{path}': {err}");
+                        error!("Failed to load state of zone '{name}' from '{path}': {err}");
                         return ExitCode::FAILURE;
                     }
                 };
+                let tsig_store = &state.tsig_store;
                 let mut state = zone.0.state.lock().unwrap();
-                *state = spec.parse(&zone.0, policies);
+                match spec.parse(&zone.0, policies, tsig_store) {
+                    Ok(restored_state) => *state = restored_state,
+                    Err(err) => {
+                        // We have no way to register a zone in a broken
+                        // state, so even if all other zones and state are
+                        // fine we can't load those and show just this one to
+                        // the user as broken, we can only abort.
+                        error!("Failed to parse state of zone '{name}': {err}");
+                        return ExitCode::FAILURE;
+                    }
+                };
             }
 
             state
@@ -176,20 +204,6 @@ fn main() -> ExitCode {
         warn!(
             "No review server configured for [signer.review], therefore no signed zone transfer available for review."
         );
-    }
-
-    // Load the TSIG store file.
-    //
-    // TODO: Track which TSIG keys are in use by zones.
-    match state.tsig_store.init_from_file(&config) {
-        Ok(()) => debug!("Loaded the TSIG store"),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            debug!("No TSIG store found; will create one");
-        }
-        Err(err) => {
-            error!("Failed to load the TSIG store: {err}");
-            return ExitCode::FAILURE;
-        }
     }
 
     // Bind to listen addresses before daemonizing.

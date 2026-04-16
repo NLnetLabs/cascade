@@ -1,16 +1,19 @@
 //! Version 1 of the zone state file.
 
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 use bytes::Bytes;
 use camino::Utf8Path;
-use domain::base::Ttl;
+use domain::base::{ToName, Ttl};
+use domain::tsig::KeyName;
 use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
 use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
+use crate::tsig::TsigStore;
 use crate::zone::HistoryItem;
 use crate::{
     policy::{
@@ -497,16 +500,33 @@ pub enum ZoneLoadSourceSpec {
 
 impl ZoneLoadSourceSpec {
     /// Parse from this specification.
-    pub fn parse(self) -> Source {
-        match self {
+    pub fn parse(self, tsig_store: &TsigStore) -> Result<Source, ZoneLoadSourceSpecParseError> {
+        Ok(match self {
             Self::None => Source::None,
             Self::Zonefile { path } => Source::Zonefile { path },
-            // TODO: Look up the TSIG key in the key store.
-            Self::Server { addr, tsig_key: _ } => Source::Server {
+            Self::Server {
+                addr,
+                tsig_key: Some(tsig_key),
+            } => {
+                let key_name = KeyName::from_str(&tsig_key.to_string()).map_err(|_| {
+                    ZoneLoadSourceSpecParseError::InvalidTsigKeyName(tsig_key.clone())
+                })?;
+                let Some(tsig_key) = tsig_store.get(&key_name).map(|k| k.inner.clone()) else {
+                    return Err(ZoneLoadSourceSpecParseError::UnknownTsigKey(tsig_key));
+                };
+                Source::Server {
+                    addr,
+                    tsig_key: Some(tsig_key),
+                }
+            }
+            Self::Server {
+                addr,
+                tsig_key: None,
+            } => Source::Server {
                 addr,
                 tsig_key: None,
             },
-        }
+        })
     }
 
     /// Build into this specification.
@@ -514,14 +534,15 @@ impl ZoneLoadSourceSpec {
         match source.clone() {
             Source::None => Self::None,
             Source::Zonefile { path } => Self::Zonefile { path },
-            Source::Server { addr, tsig_key } => Self::Server {
-                addr,
-                tsig_key: tsig_key.map(|key| {
-                    let bytes = key.name().as_slice();
-                    let bytes = Bytes::copy_from_slice(bytes);
-                    Name::from_octets(bytes).unwrap()
-                }),
-            },
+            Source::Server { addr, tsig_key } => {
+                let tsig_key = tsig_key.map(|key| key.name().to_bytes());
+                Self::Server { addr, tsig_key }
+            }
         }
     }
+}
+
+pub enum ZoneLoadSourceSpecParseError {
+    InvalidTsigKeyName(Name<Bytes>),
+    UnknownTsigKey(Name<Bytes>),
 }

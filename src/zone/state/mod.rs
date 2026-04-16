@@ -7,14 +7,17 @@ use std::{
     sync::Arc,
 };
 
+use bytes::Bytes;
 use camino::Utf8Path;
+use domain::base::Name;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::{
     loader::zone::LoaderState,
     policy::{Policy, PolicyVersion},
-    zone::{Zone, ZoneState},
+    tsig::TsigStore,
+    zone::{Zone, ZoneState, state::v1::ZoneLoadSourceSpecParseError},
 };
 
 pub mod v1;
@@ -37,7 +40,8 @@ impl Spec {
         self,
         zone: &Arc<Zone>,
         policies: &mut foldhash::HashMap<Box<str>, Policy>,
-    ) -> ZoneState {
+        tsig_store: &TsigStore,
+    ) -> Result<ZoneState, ZoneStateParseError> {
         /// Synchronize a loaded policy with global state.
         fn sync_policy(
             policy: PolicyVersion,
@@ -89,7 +93,7 @@ impl Spec {
                 history,
             }) => {
                 let loader = LoaderState {
-                    source: source.parse(),
+                    source: source.parse(tsig_store)?,
                     ..Default::default()
                 };
 
@@ -102,14 +106,14 @@ impl Spec {
                     p.zones.insert(zone.name.clone());
                 }
 
-                ZoneState {
+                Ok(ZoneState {
                     policy,
                     min_expiration,
                     next_min_expiration,
                     loader,
                     history,
                     ..Default::default()
-                }
+                })
             }
         }
     }
@@ -134,5 +138,32 @@ impl Spec {
     pub fn save(&self, path: &Utf8Path) -> io::Result<()> {
         let text = serde_json::to_string(self)?;
         crate::util::write_file(path, text.as_bytes())
+    }
+}
+
+pub enum ZoneStateParseError {
+    InvalidTsigKeyName(Name<Bytes>),
+    UnknownTsigKey(Name<Bytes>),
+}
+
+impl From<ZoneLoadSourceSpecParseError> for ZoneStateParseError {
+    fn from(err: ZoneLoadSourceSpecParseError) -> Self {
+        match err {
+            ZoneLoadSourceSpecParseError::InvalidTsigKeyName(name) => {
+                Self::InvalidTsigKeyName(name)
+            }
+            ZoneLoadSourceSpecParseError::UnknownTsigKey(name) => Self::UnknownTsigKey(name),
+        }
+    }
+}
+
+impl std::fmt::Display for ZoneStateParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZoneStateParseError::InvalidTsigKeyName(name) => {
+                write!(f, "Invalid TSIG key name '{name}'")
+            }
+            ZoneStateParseError::UnknownTsigKey(name) => write!(f, "Unknown TSIG key '{name}'"),
+        }
     }
 }
