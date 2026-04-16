@@ -44,6 +44,7 @@ EOF
 # have to manually invalidate the cached version of the RUN step below as the
 # RUN step content wouldn't change.
 ARG DNST_VERSION=0.2.0~alpha1-1noble
+ARG DNST_VERSION_CARGO=v0.2.0-alpha1
 
 RUN <<EOF
   # Install dnst
@@ -73,7 +74,7 @@ EOF
 
 RUN <<EOF
   # Install the debug build of dnst.
-  cargo install --debug --git https://github.com/nlnetlabs/dnst --rev 5b46353 --root /root/cargo-debug --locked --bin=dnst dnst
+  cargo install --debug --git https://github.com/nlnetlabs/dnst --tag $DNST_VERSION_CARGO --root /root/cargo-debug --locked --bin=dnst dnst
   # Link the installed dnst installed by apt to the cargo-release directory so
   # that we don't have to modify the build profile selection action.
   mkdir -p /root/cargo-release/bin
