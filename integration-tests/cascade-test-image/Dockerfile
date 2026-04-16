@@ -40,7 +40,7 @@ RUN <<EOF
 EOF
 
 # Provide the dnst version as a variable to make it easy to update the docker
-# image used by the act-wrapper on a new version of dnst. Otherwise, users will
+# image used by the act-wrapper to a new version of dnst. Otherwise, users will
 # have to manually invalidate the cached version of the RUN step below as the
 # RUN step content wouldn't change.
 ARG DNST_VERSION=0.2.0~alpha1-1noble
