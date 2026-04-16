@@ -17,6 +17,7 @@ use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
+use crate::state::PolicySpec;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_signer::ZoneSigner;
 use crate::zone::{HistoricalEvent, ZoneHandle};
@@ -279,10 +280,21 @@ pub struct State {
 
 impl State {
     /// Attempt to load the global state file.
-    pub fn init_from_file(config: &Config) -> io::Result<Self> {
+    ///
+    /// `zones` will be set to the names of zones that need to be loaded.
+    /// `policies` will be set to the set of policies from the global state
+    /// file, that need to be parsed and inserted in the state.
+    pub fn init_from_file(
+        config: &Config,
+        zones: &mut foldhash::HashSet<Name<Bytes>>,
+        policies: &mut foldhash::HashMap<Box<str>, PolicySpec>,
+    ) -> io::Result<Self> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        Ok(spec.parse())
+
+        info!("Loaded the global state file (from '{path}')");
+
+        Ok(spec.parse(zones, policies))
     }
 
     /// Mark the global state as dirty.

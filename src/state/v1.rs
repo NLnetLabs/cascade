@@ -7,18 +7,15 @@ use bytes::Bytes;
 use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 use crate::policy::file::v1::OutboundSpec;
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
-use crate::tsig::TsigStore;
 use crate::{
     center::State,
     policy::{
         KeyManagerPolicy, LoaderPolicy, Policy, PolicyVersion, ReviewPolicy, ServerPolicy,
         SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
     },
-    zone::{Zone, ZoneByName},
 };
 
 //----------- Spec -------------------------------------------------------------
@@ -41,31 +38,19 @@ pub struct Spec {
 
 impl Spec {
     /// Parse from this specification.
+    ///
+    /// [`Self::zones`] and [`Self::policies`] are ignored; these should be
+    /// extracted from `self` before calling this function.
     pub fn parse(self) -> State {
-        let mut policies = foldhash::HashMap::default();
-        for (name, spec) in self.policies {
-            info!("Adding policy '{name}' from global state");
-            let policy = spec.parse(&name);
-            policies.insert(name, policy);
-        }
+        let Self {
+            // The caller will extract 'zones' and 'policies' beforehand.
+            zones: _,
+            policies: _,
+            // TODO: More fields.
+        };
 
-        #[allow(clippy::mutable_key_type)]
-        let zones = self
-            .zones
-            .into_iter()
-            .map(|name| {
-                info!("Adding zone '{name}' from global state");
-                ZoneByName(Arc::new(Zone::new(name.clone())))
-            })
-            .collect();
-
-        State {
-            zones,
-            policies,
-            rt_config: cascade_cfg::RuntimeConfig::default(),
-            tsig_store: TsigStore::default(),
-            enqueued_save: None,
-        }
+        // TODO: Initialize fields from 'Spec'.
+        State::default()
     }
 
     /// Build this state specification.
