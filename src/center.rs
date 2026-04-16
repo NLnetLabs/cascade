@@ -16,6 +16,7 @@ use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::persistence::{Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::state::PolicySpec;
 use crate::units::key_manager::KeyManager;
@@ -47,11 +48,17 @@ pub struct Center {
     /// The zone loader.
     pub loader: Loader,
 
-    /// The zone signer
+    /// The zone signer.
     pub signer: ZoneSigner,
 
-    /// The key manager
+    /// The key manager.
     pub key_manager: KeyManager,
+
+    /// The zone data persister.
+    pub persister: Persister,
+
+    /// The zone data restorer.
+    pub restorer: Restorer,
 
     /// The review server for loaded instances of zones.
     pub loaded_review_server: LoadedReviewServer,

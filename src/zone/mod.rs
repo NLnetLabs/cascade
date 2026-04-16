@@ -82,6 +82,10 @@ impl Zone {
     /// `policies` should contain the set of policies loaded from the global
     /// state file. If the zone uses a policy that is not present in the global
     /// state file, it will restore the last seen version of that policy.
+    ///
+    /// Persisted zone data will not be restored in this function, as it may
+    /// take a while (and should not block Cascade's initialization as a whole);
+    /// it will be handled by [`crate::persistence::Restorer::run()`].
     #[tracing::instrument(
         level = "debug",
         skip_all,
