@@ -24,8 +24,8 @@ RUN <<EOF
   printf "deb [arch=%s signed-by=%s] %s\n" \
     "$(dpkg --print-architecture)" \
     "/usr/share/keyrings/nlnetlabs-archive-keyring.gpg" \
-    "https://packages.nlnetlabs.nl/linux/ubuntu $(lsb_release -cs)-proposed main" | \
-      tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
+    "https://packages.nlnetlabs.nl/linux/ubuntu $(lsb_release -cs)-proposed main" \
+      > /etc/apt/sources.list.d/nlnetlabs-proposed.list
 
   # Node.js (for common Actions scripts)
   apt-get install -y nodejs
