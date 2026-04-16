@@ -86,7 +86,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
-    - name: Print cascaden and dnst versions and used binaries
+    - name: Print cascade and dnst versions and used binaries
       run: |
         cascade --version
         realpath $(which cascade)
