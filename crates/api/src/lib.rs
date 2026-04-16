@@ -194,41 +194,59 @@ pub struct KmipKeyImport {
 /// The name of a TSIG key.
 pub type TsigKeyName = domain::tsig::KeyName;
 
+//----------- TsigAdd ---------------------------------------------------------
+
+/// Add a TSIG key to Cascade.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigAdd {
+    /// The name of the TSIG key to add.
     pub name: TsigKeyName,
+
+    /// The algorithm of the TSIG key.
     pub alg: TsigAlgorithm,
+
+    /// The base64 encoded key material bytes.
     pub secret: String,
 }
 
+/// The successful result of adding a TSIG key to Cascade.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigAddResult;
 
+/// An error result indicating why an attempt to add a TSIG key to Cascade
+/// failed.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum TsigAddError {
-    InvalidKeyName,
+    /// A TSIG key by the given name already exists in Cascade.
     AlreadyExists,
-    InvalidAlgorithmName,
+
+    /// The provided TSIG key secret was not correctly base64 encoded.
     InvalidBase64Secret,
 }
 
 impl Display for TsigAddError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TsigAddError::InvalidKeyName => write!(f, "invalid TSIG key name"),
             TsigAddError::AlreadyExists => write!(f, "TSIG key already exists"),
-            TsigAddError::InvalidAlgorithmName => write!(f, "invalid TSIG algorithm name"),
             TsigAddError::InvalidBase64Secret => write!(f, "invalid TSIG base64 encoded secret"),
         }
     }
 }
 
+//------------ TsigRemove ----------------------------------------------------
+
+/// The successful result of removing a TSIG key from Cascade.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigRemoveResult;
 
+/// An error result indicating why an attempt to remove a TSIG key from
+/// Cascade failed.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum TsigRemoveError {
+    /// The specified TSIG key name was not found in Cascade.
     NotFound,
+
+    /// The specified TSIG key cannot be removed as it is in use.
     InUse,
 }
 
@@ -241,15 +259,23 @@ impl fmt::Display for TsigRemoveError {
     }
 }
 
+//------------ TsigListResult ------------------------------------------------
+
+/// The successful result of listing TSIG Cascade keys known to Cascade.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigListResult {
+    /// The set of TSIG keys known to Cascade plus information about each key.
     pub tsig_keys: HashMap<TsigKeyName, TsigListResultItem>,
 }
 
+/// Information about a single listed TSIG key.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigListResultItem {
+    /// The set of zones with which this TSIG key is used.
     pub zones: Vec<ZoneName>,
 }
+
+//----------- ZoneAdd --------------------------------------------------------
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAdd {
