@@ -1596,6 +1596,14 @@ impl IncrementalSigningState {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
 
+            // Skip record types we don't need.
+            if record.rtype() == Rtype::NSEC
+                || record.rtype() == Rtype::NSEC3
+                || record.rtype() == Rtype::RRSIG
+            {
+                continue;
+            }
+
             if records.is_empty() {
                 records.push(record);
                 continue;
