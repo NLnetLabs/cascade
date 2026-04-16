@@ -52,6 +52,11 @@ RUN <<EOF
 
   apt-get update
   apt-get install -y dnst=$DNST_VERSION
+
+  # Link the installed dnst installed by apt to the cargo-release directory so
+  # that we don't have to modify the build profile selection action.
+  mkdir -p /root/cargo-release/bin
+  ln -sf -T /usr/bin/dnst /root/cargo-release/bin/dnst
 EOF
 
 RUN <<EOF
@@ -75,10 +80,6 @@ EOF
 RUN <<EOF
   # Install the debug build of dnst.
   cargo install --debug --git https://github.com/nlnetlabs/dnst --tag $DNST_VERSION_CARGO --root /root/cargo-debug --locked --bin=dnst dnst
-  # Link the installed dnst installed by apt to the cargo-release directory so
-  # that we don't have to modify the build profile selection action.
-  mkdir -p /root/cargo-release/bin
-  ln -sf -T /usr/bin/dnst /root/cargo-release/bin/dnst
 EOF
 
 # Copy source files into container in case we need to build from source
