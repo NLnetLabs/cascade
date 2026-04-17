@@ -11,11 +11,21 @@ Using NSD as a primary to Cascade
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To use NSD as an upstream name server of Cascade you must add a zone to
-NSD that refers to Cascade as a secondary name server so that NSD will send
-a NOTIFY message to Cascade when the zone changes and will allow Cascade to
-make an XFR request to receive the update zone. Optionally NSD and Cascade
-can be configured with the same TSIG key to authenticate the NOTIFY and XFR
-messages.
+NSD that refers to Cascade as a secondary name server. If enabled in NSD it will send
+Cascade a RFC 1996 DNS NOTIFY message to Cascade notifying when changes to the zone occur.
+
+The NOTIFY message will trigger Cascade to perform an AXFR transfer to fetch the full
+zone content from NSD, or, ifalready fetched and IXFR is enabled in NSD, an IXFR transfer
+will be performed to fetch just the incremental changes since the last fetch.
+make an XFR request to receive the update zone.
+
+If NOTIFY is not enabled in NSD, Cascade will periodically check if a newer
+version of the zone is available by sending a SOA query periodically according
+to the number of seconds defined by the REFRESH field of the zone apex SOA
+record.
+
+Optionally NSD and Cascade can be configured with the same TSIG key to
+authenticate the NOTIFY and XFR messages.
 
 For example the following NSD configuration file fragment adds an example.com
 zone to NSD that is to be served as input to a Cascade daemon running on host
