@@ -160,13 +160,15 @@ impl Tsig {
                         .collect::<Vec<String>>()
                         .join(", ");
 
-                    print!("{tsig_key_name}: used by zones: ");
+                    println!("{tsig_key_name}");
+                    print!("  zones: ");
                     if !zones.is_empty() {
                         println!("{zones}");
                     } else {
                         println!("none");
                     }
                 }
+
                 Ok(())
             }
         }
