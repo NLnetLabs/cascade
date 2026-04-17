@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use cascade_zonedata::LoadedZonePersister;
+use cascade_zonedata::{LoadedZonePersister, SignedZonePersister};
 use tracing::{debug, trace_span};
 
 use crate::{
@@ -56,9 +56,9 @@ impl ZonePersistenceHandle<'_> {
 
                 let persisted = super::persist_loaded(&zone, &center, persister);
 
-                // NOTE: The outer function, which is spawning the background task,
-                // has a lock of the zone state. Thus, the following lock cannot be
-                // taken until the outer function terminates.
+                // NOTE: The outer function, which is spawning the background
+                // task, has a lock of the zone state. Thus, the following lock
+                // cannot be taken until the outer function terminates.
                 let mut state = zone.state.lock().unwrap();
                 let mut handle = ZoneHandle {
                     zone: &zone,
@@ -66,7 +66,44 @@ impl ZonePersistenceHandle<'_> {
                     center: &center,
                 };
 
-                handle.begin_signing(persisted);
+                handle.start_new_sign(persisted);
+
+                handle.state.persistence.ongoing.finish();
+            });
+    }
+
+    /// Begin persisting a signed zone instance.
+    ///
+    /// A background task will be spawned to perform the provided zone
+    /// persistence and transition to the next state.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn start_signed_persistence(&mut self, persister: SignedZonePersister) {
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        let span = trace_span!("signed_persistence");
+        self.state
+            .persistence
+            .ongoing
+            .spawn_blocking(span, move || {
+                debug!("Persisting the signed instance");
+
+                let persisted = super::persist_signed(&zone, &center, persister);
+
+                // NOTE: The outer function, which is spawning the background
+                // task, has a lock of the zone state. Thus, the following lock
+                // cannot be taken until the outer function terminates.
+                let mut state = zone.state.lock().unwrap();
+                let mut handle = ZoneHandle {
+                    zone: &zone,
+                    state: &mut state,
+                    center: &center,
+                };
+
+                handle.start_switch(persisted);
 
                 handle.state.persistence.ongoing.finish();
             });

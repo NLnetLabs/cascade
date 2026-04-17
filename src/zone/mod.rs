@@ -309,6 +309,7 @@ impl Default for ZoneState {
             loader: Default::default(),
             signer: Default::default(),
             storage: Default::default(),
+            persistence: Default::default(),
         }
     }
 }

@@ -27,8 +27,8 @@ use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
-    LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt, SignedZonePersister,
-    SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt, SignedZonePersisted,
+    SignedZonePersister, SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
@@ -472,17 +472,14 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn accept_signed(&mut self) {
+    pub fn accept_signed(&mut self) -> SignedZonePersister {
         // Examine the current state.
         let (transition, state) = transition(&mut self.state.storage.machine);
         match state {
             ZoneDataStorage::ReviewingSigned(s) => {
-                // TODO: Specify the instance ID.
-                info!("The signed instance has been approved; persisting it");
-
                 let (s, persister) = s.mark_approved();
                 transition.move_to(ZoneDataStorage::PersistingSigned(s));
-                self.start_signed_persistence(persister);
+                persister
             }
 
             _ => panic!("The zone is not undergoing signer review"),
@@ -604,50 +601,52 @@ impl StorageZoneHandle<'_> {
         });
     }
 
-    /// Begin persisting a signed zone instance.
+    /// Start switching to an approved and persisted signed instance.
     ///
-    /// A background task will be spawned to perform the provided zone
-    /// persistence and transition to the next state.
+    /// A background task will be spawned to switch the publication server to
+    /// the newly persisted instance and transition to the next state.
     #[tracing::instrument(
         level = "trace",
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    fn start_signed_persistence(&mut self, persister: SignedZonePersister) {
+    pub fn start_switch(&mut self, persisted: SignedZonePersisted) {
+        // Examine the current state.
+        let viewer = match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::PersistingSigned(s)) => {
+                let (s, viewer) = s.mark_complete(persisted);
+                transition.move_to(ZoneDataStorage::Switching(s));
+                viewer
+            }
+
+            _ => unreachable!(
+                "'ZoneDataStorage::PersistingSigned' is the only state where a 'SignedZonePersisted' is available"
+            ),
+        };
+
+        self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
+        self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
+
+        // Spawn a background task to update the publication server.
+        let span = trace_span!("switch_publication_server");
         let zone = self.zone.clone();
         let center = self.center.clone();
-        let span = trace_span!("persist_signed");
         self.state.storage.background_tasks.spawn(span, async move {
-            trace!("Persisting the signed instance");
-
-            // TODO: Perform the persisting.
-            let persisted = persister.mark_complete();
-
-            // Mark persistence as completed.
-            let viewer = {
-                let mut state = zone.state.lock().unwrap();
-                let state = &mut *state;
-                match transition(&mut state.storage.machine) {
-                    (transition, ZoneDataStorage::PersistingSigned(s)) => {
-                        let (s, viewer) = s.mark_complete(persisted);
-                        transition.move_to(ZoneDataStorage::Switching(s));
-                        state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
-                        state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
-                        viewer
-                    }
-
-                    _ => unreachable!(
-                        "'ZoneDataStorage::PersistingSigned' is the only state where a 'SignedZonePersister' is available"
-                    ),
-                }
-            };
-
             // Update the publication server.
             let old_viewer = PublicationServer::update_viewer(&center, &zone, viewer).await;
 
-            // Begin cleaning up the old instance.
+            // NOTE: The outer function, which is spawning the background task,
+            // has a lock of the zone state. Thus, the following lock cannot be
+            // taken until the outer function terminates.
             let mut state = zone.state.lock().unwrap();
-            let cleaner = match transition(&mut state.storage.machine) {
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut state,
+                center: &center,
+            };
+
+            // Update the zone data storage state machine.
+            let cleaner = match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::Switching(s)) => {
                     let (s, cleaner) = s.switch(old_viewer);
                     transition.move_to(ZoneDataStorage::Cleaning(s));
@@ -657,12 +656,30 @@ impl StorageZoneHandle<'_> {
                 _ => unreachable!("just transitioned to 'Switching'"),
             };
 
-            state.last_published = Some(LastPublished {
-                loaded_serial: Serial(state.storage.published_loaded_soa.as_ref().unwrap().rdata.serial.into()),
-                signed_serial: Serial(state.storage.published_soa.as_ref().unwrap().rdata.serial.into()),
+            handle.state.last_published = Some(LastPublished {
+                loaded_serial: Serial(
+                    handle
+                        .state
+                        .storage
+                        .published_loaded_soa
+                        .as_ref()
+                        .unwrap()
+                        .rdata
+                        .serial
+                        .into(),
+                ),
+                signed_serial: Serial(
+                    handle
+                        .state
+                        .storage
+                        .published_soa
+                        .as_ref()
+                        .unwrap()
+                        .rdata
+                        .serial
+                        .into(),
+                ),
             });
-
-            let mut handle = ZoneHandle { zone: &zone, state: &mut state, center: &center };
 
             handle.storage().start_cleanup(cleaner);
 
