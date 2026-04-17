@@ -349,6 +349,7 @@ pub struct ZoneStatus {
     pub name: ZoneName,
     pub source: ZoneSource,
     pub policy: String,
+    pub last_published: Option<LastPublishedZone>,
     pub progress: Progress,
     pub keys: Vec<KeyInfo>,
     pub key_status: String,
@@ -365,17 +366,26 @@ pub struct ZoneStatus {
     pub halted_reason: Option<String>,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct LastPublishedZone {
+    pub signed_serial: Serial,
+    // TODO:
+    //  - loaded serial
+    //  - time of publish
+    //  - number of records
+    //  - size in bytes
+}
+
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Progress {
-    WaitingForChanges,
-    ChangesReceived,
-    AtUnsignedReview,
-    WaitingToSign,
+    Waiting,
+    Loading,
+    LoadedReview,
+    HaltLoaded,
     Signing,
-    Signed,
     SigningFailed,
-    AtSignedReview,
-    Published,
+    SignedReview,
+    HaltSigned,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
