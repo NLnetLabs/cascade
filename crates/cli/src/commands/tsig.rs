@@ -195,7 +195,7 @@ impl FromStr for TsigAlgorithm {
             "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
             "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
             "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
-            other => Err(format!("'{other}' is not a recognized TSIG algorithm")),
+            other => Err(format!("'{other}' is not a supported TSIG algorithm")),
         }
     }
 }
