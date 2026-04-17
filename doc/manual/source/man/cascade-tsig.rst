@@ -17,7 +17,8 @@ Synopsis
 Description
 -----------
 
-Manage RFC 8945 TSIG keys for authenticating zone transfers.
+Manage RFC 8945 TSIG keys for authenticating zone transfer (AXFR, IXFR) and
+related messages (SOA and NOTIFY).
 
 .. tip:: Cascade isn't currently able to generate TSIG keys itself.
          One way to generate a TSIG key is to use the `tsig-keygen
