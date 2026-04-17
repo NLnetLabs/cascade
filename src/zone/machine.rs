@@ -177,7 +177,10 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Loaded Review operations
 impl<'a> ZoneHandle<'a> {
+    /// Approve the loaded instance currently under review.
     pub(crate) fn approve_loaded(&mut self) {
+        info!("The loaded instance has been approved");
+
         self.state.record_event(
             HistoricalEvent::UnsignedZoneReview {
                 status: ZoneReviewStatus::Approved,
@@ -185,15 +188,11 @@ impl<'a> ZoneHandle<'a> {
             None, // TODO
         );
 
-        let (transition, state) = self.state.machine.transition();
-
-        let ZoneStateMachine::LoadedReview(loaded) = state else {
-            panic!("cannot approve loaded in this state");
-        };
-
-        transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
-
-        self.storage().accept_loaded();
+        // Persist the loaded instance while remaining in the 'LoadedReview'
+        // state. Once persistence is complete, 'begin_signing()' will be
+        // called, which will transition to the 'Signing' state.
+        let persister = self.storage().accept_loaded();
+        self.persistence().start_loaded_persistence(persister);
     }
 
     #[expect(dead_code)]
@@ -234,6 +233,22 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Signing operations
 impl<'a> ZoneHandle<'a> {
+    /// Begin signing an approved and persisted instance of a zone.
+    pub(crate) fn begin_signing(&mut self, persisted: cascade_zonedata::LoadedZonePersisted) {
+        // NOTE: The underlying state machine does not track persistence, so we
+        // only transition out of 'LoadedReview' once persistence is complete.
+        let (transition, state) = self.state.machine.transition();
+        let ZoneStateMachine::LoadedReview(loaded) = state else {
+            unreachable!(
+                "A 'LoadedZonePersisted' can only exist when the zone is in loader review"
+            );
+        };
+        transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
+
+        let builder = self.storage().start_new_sign(persisted);
+        self.signer().enqueue_new_sign(builder);
+    }
+
     pub(crate) fn finish_signing(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
         self.state.record_event(
             // TODO: Get the right trigger.

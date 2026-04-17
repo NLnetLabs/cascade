@@ -26,9 +26,9 @@
 use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
-    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReviewer, SignedZoneBuilder,
-    SignedZoneBuilt, SignedZonePersister, SignedZoneReviewer, SoaRecord, ZoneCleaner,
-    ZoneDataStorage, ZoneViewer,
+    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
+    LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt, SignedZonePersister,
+    SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
@@ -231,22 +231,23 @@ impl StorageZoneHandle<'_> {
     }
 
     /// Accept a loaded instance of a zone.
+    ///
+    /// A [`LoadedZonePersister`] is returned through which the instance must
+    /// be persisted. Once persistence is complete, the [`LoadedZonePersisted`]
+    /// should be passed to [`Self::start_new_sign()`].
     #[tracing::instrument(
         level = "trace",
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn accept_loaded(&mut self) {
+    pub fn accept_loaded(&mut self) -> LoadedZonePersister {
         // Examine the current state.
         let (transition, state) = transition(&mut self.state.storage.machine);
         match state {
             ZoneDataStorage::ReviewingLoaded(s) => {
-                // TODO: Specify the instance ID.
-                info!("The loaded instance has been approved; persisting it");
-
                 let (s, persister) = s.mark_approved();
                 transition.move_to(ZoneDataStorage::PersistingLoaded(s));
-                self.start_loaded_persistence(persister);
+                persister
             }
 
             _ => panic!("The zone is not undergoing loader review"),
@@ -283,6 +284,26 @@ impl StorageZoneHandle<'_> {
 
 /// # Signer Operations
 impl StorageZoneHandle<'_> {
+    /// Start signing a new approved and persisted loaded instance.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn start_new_sign(&mut self, persisted: LoadedZonePersisted) -> SignedZoneBuilder {
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::PersistingLoaded(s)) => {
+                let (s, builder) = s.mark_complete(persisted);
+                transition.move_to(ZoneDataStorage::Signing(s));
+                builder
+            }
+
+            _ => unreachable!(
+                "'ZoneDataStorage::PersistingLoaded' is the only state where a 'LoadedZonePersisted' is available"
+            ),
+        }
+    }
+
     /// Begin resigning the zone.
     ///
     /// If the zone data storage is not busy, a [`SignedZoneBuilder`] will be
@@ -578,53 +599,6 @@ impl StorageZoneHandle<'_> {
 
             // Notify the rest of Cascade that the storage is passive.
             handle.storage().on_passive();
-
-            handle.state.storage.background_tasks.finish();
-        });
-    }
-
-    /// Begin persisting a loaded zone instance.
-    ///
-    /// A background task will be spawned to perform the provided zone
-    /// persistence and transition to the next state.
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(zone = %self.zone.name),
-    )]
-    fn start_loaded_persistence(&mut self, persister: LoadedZonePersister) {
-        let zone = self.zone.clone();
-        let center = self.center.clone();
-        let span = trace_span!("persist_loaded");
-        self.state.storage.background_tasks.spawn_blocking(span, move || {
-            trace!("Persisting the loaded instance");
-
-            // TODO: Perform the persisting.
-            let persisted = persister.mark_complete();
-
-            // NOTE: The outer function, which is spawning the background task,
-            // has a lock of the zone state. Thus, the following lock cannot be
-            // taken until the outer function terminates.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
-
-            // Transition the state machine.
-            let builder = match transition(&mut handle.state.storage.machine) {
-                (transition, ZoneDataStorage::PersistingLoaded(s)) => {
-                    let (s, builder) = s.mark_complete(persisted);
-                    transition.move_to(ZoneDataStorage::Signing(s));
-                    builder
-                }
-
-                _ => unreachable!(
-                    "'ZoneDataStorage::PersistingLoaded' is the only state where a 'LoadedZonePersister' is available"
-                ),
-            };
-            handle.signer().enqueue_new_sign(builder);
 
             handle.state.storage.background_tasks.finish();
         });

@@ -9,10 +9,10 @@ use std::sync::Arc;
 use crate::{center::Center, util::AbortOnDrop, zone::ZoneByName};
 
 mod persist;
-pub use persist::{persist_loaded, persist_signed};
+use persist::{persist_loaded, persist_signed};
 
 mod restore;
-pub use restore::{restore_loaded, restore_signed};
+use restore::{restore_loaded, restore_signed};
 
 pub mod zone;
 
