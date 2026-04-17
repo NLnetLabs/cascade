@@ -16,10 +16,10 @@ pub struct Tsig {
 #[derive(Clone, Debug, clap::Subcommand)]
 #[allow(clippy::large_enum_variant)]
 pub enum TsigCommand {
-    /// Add a TSIG key to Cascade.
+    /// Register a TSIG key
     #[command(name = "add")]
     Add {
-        /// The name of the TSIG key to add.
+        /// The name of the TSIG key to register.
         ///
         /// Can also be in the form `[algorithm]:keyname:secret`.
         name: String,
@@ -31,7 +31,7 @@ pub enum TsigCommand {
         #[arg(requires = "secret")]
         alg: Option<TsigAlgorithm>,
 
-        /// Base64 encoded secret key bytes.
+        /// The secret key material in base64 encoded form.
         ///
         /// Can be omitted if provided as part of the name.
         /// Required if `[ALG]` is provided.
@@ -39,11 +39,11 @@ pub enum TsigCommand {
         secret: Option<String>,
     },
 
-    /// Remove a TSIG key from Cascade.
+    /// Remove a TSIG key
     #[command(name = "remove")]
     Remove { name: TsigKeyName },
 
-    /// List the TSIG keys known to Cascade.
+    /// List registered TSIG keys
     #[command(name = "list")]
     List,
 }
@@ -126,7 +126,7 @@ impl Tsig {
                 }
             }
 
-            // Remove a TSIG key (if possible).            
+            // Remove a TSIG key (if possible).
             TsigCommand::Remove { name } => {
                 let res: Result<TsigRemoveResult, TsigRemoveError> =
                     client.post_json(&format!("tsig/{name}/remove")).await?;
