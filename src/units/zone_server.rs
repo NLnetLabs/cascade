@@ -36,8 +36,8 @@ use crate::manager::record_zone_event;
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneHandle,
-    ZoneVersionReviewState,
+    HistoricalEvent, LastPublished, SignedZoneVersionState, UnsignedZoneVersionState, Zone,
+    ZoneHandle, ZoneVersionReviewState,
 };
 
 /// The source of a zone server.
@@ -481,7 +481,6 @@ impl ZoneServer {
     }
 
     fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
-        let _ = zone_serial; // TODO
         {
             let mut state = zone.state.lock().unwrap();
             ZoneHandle {
@@ -490,6 +489,10 @@ impl ZoneServer {
                 center,
             }
             .approve_signed();
+
+            state.last_published = Some(LastPublished {
+                signed_serial: zone_serial,
+            })
         }
 
         // Send a message to the zone signer to trigger a re-scan of
