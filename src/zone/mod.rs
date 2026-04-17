@@ -23,6 +23,7 @@ use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
     loader::zone::{LoaderState, LoaderZoneHandle},
+    persistence::zone::{PersistenceState, ZonePersistenceHandle},
     policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
@@ -158,6 +159,15 @@ impl ZoneHandle<'_> {
             center: self.center,
         }
     }
+
+    /// Consider data persistence specific operations.
+    pub const fn persistence(&mut self) -> ZonePersistenceHandle<'_> {
+        ZonePersistenceHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
 }
 
 //----------- ZoneState --------------------------------------------------------
@@ -246,6 +256,9 @@ pub struct ZoneState {
 
     /// Data storage for the zone.
     pub storage: StorageState,
+
+    /// Persisting zone data.
+    pub persistence: PersistenceState,
     //
     // TODO:
     // - A log?

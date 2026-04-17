@@ -14,6 +14,8 @@ pub use persist::{persist_loaded, persist_signed};
 mod restore;
 pub use restore::{restore_loaded, restore_signed};
 
+pub mod zone;
+
 //----------- Persister --------------------------------------------------------
 
 /// The zone data persister.
