@@ -360,6 +360,7 @@ impl HttpServer {
         let unsigned_serial;
         let signed_serial;
         let published_serial;
+        let last_published;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -454,22 +455,23 @@ impl HttpServer {
                 .map(|r| Serial::from(u32::from(r.rdata.serial)));
 
             progress = match zone_state.machine {
-                ZoneStateMachine::Waiting(..) => {
-                    if published_serial.is_some() {
-                        Progress::Published
-                    } else {
-                        Progress::WaitingForChanges
-                    }
-                }
-                ZoneStateMachine::Loading(..) => Progress::ChangesReceived,
-                ZoneStateMachine::LoadedReview(..) => Progress::AtUnsignedReview,
-                ZoneStateMachine::HaltLoaded(..) => Progress::AtUnsignedReview,
+                ZoneStateMachine::Waiting(..) => Progress::Waiting,
+                ZoneStateMachine::Loading(..) => Progress::Loading,
+                ZoneStateMachine::LoadedReview(..) => Progress::LoadedReview,
+                ZoneStateMachine::HaltLoaded(..) => Progress::HaltLoaded,
                 ZoneStateMachine::Signing(..) => Progress::Signing,
                 ZoneStateMachine::SigningFailed(..) => Progress::SigningFailed,
-                ZoneStateMachine::SignedReview(..) => Progress::AtSignedReview,
-                ZoneStateMachine::HaltSigned(..) => Progress::AtSignedReview,
+                ZoneStateMachine::SignedReview(..) => Progress::SignedReview,
+                ZoneStateMachine::HaltSigned(..) => Progress::HaltSigned,
                 ZoneStateMachine::Poisoned => unreachable!(),
             };
+
+            last_published = zone_state
+                .last_published
+                .as_ref()
+                .map(|p| LastPublishedZone {
+                    signed_serial: p.signed_serial,
+                });
         }
 
         // Query key status
@@ -543,7 +545,7 @@ impl HttpServer {
         }
 
         // Query signing status
-        let signing_report = if progress >= Progress::Signed {
+        let signing_report = if progress >= Progress::SignedReview {
             let center = &state.center;
             center.signer.on_signing_report(&zone)
         } else {
@@ -577,6 +579,7 @@ impl HttpServer {
             source,
             policy,
             progress,
+            last_published,
             keys,
             key_status,
             receipt_report,

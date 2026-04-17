@@ -101,6 +101,9 @@ pub struct ZoneState {
     /// The policy (version) used by the zone.
     pub policy: Option<Arc<PolicyVersion>>,
 
+    /// Metadata related to the last published zone version.
+    pub last_published: Option<LastPublished>,
+
     /// An enqueued save of this state.
     ///
     /// The enqueued save operation will persist the current state in a short
@@ -161,6 +164,16 @@ impl ZoneState {
             .rev()
             .find(|item| item.event.is_of_type(typ) && (serial.is_none() || item.serial == serial))
     }
+}
+
+#[derive(Debug)]
+pub struct LastPublished {
+    pub signed_serial: Serial,
+    // TODO:
+    //  - loaded serial
+    //  - time of publish
+    //  - number of records
+    //  - size in bytes
 }
 
 /// The state of an unsigned version of a zone.
