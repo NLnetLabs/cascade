@@ -6,7 +6,11 @@
 
 use std::sync::Arc;
 
-use crate::{center::Center, util::AbortOnDrop, zone::ZoneByName};
+use crate::{
+    center::Center,
+    util::AbortOnDrop,
+    zone::{ZoneByName, ZoneHandle},
+};
 
 mod persist;
 use persist::{persist_loaded, persist_signed};
@@ -75,9 +79,20 @@ impl Restorer {
 
             // Attempt to restore data for every zone.
             for zone in zones {
-                // TODO: Restore the data for 'zone'. Its data storage state
-                // machine is in 'RestoringLoaded' state.
-                let _ = zone;
+                let mut state = zone.state.lock().unwrap();
+                let mut handle = ZoneHandle {
+                    zone: &zone,
+                    state: &mut state,
+                    center: &center,
+                };
+
+                // Zones that are _not_ restored from disk will move out the
+                // 'restorer' field and use it to initialize the zone data to
+                // an empty state. For zones that _are_ restored from disk, the
+                // 'restorer' field is moved out over here.
+                let restorer = handle.state.storage.restorer.take().unwrap();
+
+                handle.persistence().start_restore(restorer);
             }
         }))
     }

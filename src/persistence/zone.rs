@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use cascade_zonedata::{LoadedZonePersister, SignedZonePersister};
-use tracing::{debug, trace_span};
+use cascade_zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister};
+use tracing::{debug, info, trace, trace_span};
 
 use crate::{
     center::Center,
@@ -33,6 +33,91 @@ impl ZonePersistenceHandle<'_> {
             state: self.state,
             center: self.center,
         }
+    }
+
+    /// Begin restoring data for the zone.
+    ///
+    /// A background task will be spawned to restore the zone's data (for both
+    /// the loaded and signed instances).
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn start_restore(&mut self, restorer: LoadedZoneRestorer) {
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        let span = trace_span!("restore");
+        self.state
+            .persistence
+            .ongoing
+            .spawn_blocking(span, move || {
+                debug!("Attempting to restore persisted zone data");
+
+                // Try to restore the loaded instance.
+                let mut restorer = restorer;
+                let restored = match super::restore_loaded(&zone, &center, &mut restorer) {
+                    Ok(()) => restorer.finish().unwrap_or_else(|_| {
+                        unreachable!(
+                            "'restore_loaded()' always completes restoration on successful return"
+                        )
+                    }),
+                    Err(_) => {
+                        trace!("Abandoning loaded restoration");
+                        let mut state = zone.state.lock().unwrap();
+                        let mut handle = ZoneHandle {
+                            zone: &zone,
+                            state: &mut state,
+                            center: &center,
+                        };
+                        handle.storage().abandon_loaded_restoration(restorer);
+                        handle.state.persistence.ongoing.finish();
+                        return;
+                    }
+                };
+
+                // Obtain the signed zone restorer.
+                let mut restorer = {
+                    let mut state = zone.state.lock().unwrap();
+                    let mut handle = ZoneHandle {
+                        zone: &zone,
+                        state: &mut state,
+                        center: &center,
+                    };
+                    handle.storage().finish_loaded_restoration(restored)
+                };
+
+                // Try to restore the signed instance.
+                let restored = match super::restore_signed(&zone, &center, &mut restorer) {
+                    Ok(()) => restorer.finish().unwrap_or_else(|_| {
+                        unreachable!(
+                            "'restore_signed()' always completes restoration on successful return"
+                        )
+                    }),
+                    Err(_) => {
+                        trace!("Abandoning signed restoration");
+                        let mut state = zone.state.lock().unwrap();
+                        let mut handle = ZoneHandle {
+                            zone: &zone,
+                            state: &mut state,
+                            center: &center,
+                        };
+                        handle.storage().abandon_signed_restoration(restorer);
+                        handle.state.persistence.ongoing.finish();
+                        return;
+                    }
+                };
+
+                info!("Restored the zone's persisted data");
+                let mut state = zone.state.lock().unwrap();
+                let mut handle = ZoneHandle {
+                    zone: &zone,
+                    state: &mut state,
+                    center: &center,
+                };
+                handle.storage().finish_signed_restoration(restored);
+                handle.state.persistence.ongoing.finish();
+            });
     }
 
     /// Begin persisting a loaded zone instance.

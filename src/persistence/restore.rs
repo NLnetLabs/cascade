@@ -1,10 +1,8 @@
 //! Restoring persisted zone data.
 
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
-use cascade_zonedata::{
-    LoadedZoneRestored, LoadedZoneRestorer, SignedZoneRestored, SignedZoneRestorer,
-};
+use cascade_zonedata::{LoadedZoneRestorer, SignedZoneRestorer};
 
 use crate::{center::Center, zone::Zone};
 
@@ -17,8 +15,8 @@ use crate::{center::Center, zone::Zone};
 pub fn restore_loaded(
     zone: &Arc<Zone>,
     center: &Arc<Center>,
-    restorer: LoadedZoneRestorer,
-) -> LoadedZoneRestored {
+    restorer: &mut LoadedZoneRestorer,
+) -> io::Result<()> {
     todo!()
 }
 
@@ -31,7 +29,7 @@ pub fn restore_loaded(
 pub fn restore_signed(
     zone: &Arc<Zone>,
     center: &Arc<Center>,
-    restorer: SignedZoneRestorer,
-) -> SignedZoneRestored {
+    restorer: &mut SignedZoneRestorer,
+) -> io::Result<()> {
     todo!()
 }
