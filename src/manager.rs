@@ -44,9 +44,6 @@ impl Manager {
         {
             let mut state = center.state.lock().unwrap();
             Loader::init(&center, &mut state);
-            LoadedReviewServer::init(&center, &mut state);
-            SignedReviewServer::init(&center, &mut state);
-            PublicationServer::init(&center, &mut state);
         }
 
         let mut handles = Vec::new();

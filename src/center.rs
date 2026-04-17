@@ -105,14 +105,23 @@ pub async fn add_zone(
 
         // Create the zone and initialize its state.
         zone = Arc::new(Zone::new(name));
-        let (loaded_reviewer, signed_reviewer, viewer);
         {
             let mut zone_state = zone.state.lock().unwrap();
+            let restorer = zone_state.storage.restorer.take().unwrap();
             zone_state.policy = Some(policy.latest.clone());
             policy.zones.insert(zone.name.clone());
-            loaded_reviewer = zone_state.storage.loaded_reviewer.take().unwrap();
-            signed_reviewer = zone_state.storage.signed_reviewer.take().unwrap();
-            viewer = zone_state.storage.viewer.take().unwrap();
+
+            // Don't try to restore zone data, since it's a completely new zone.
+            //
+            // This will clear the data for the zone and register it against the
+            // zone servers.
+            ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center,
+            }
+            .storage()
+            .abandon_loaded_restoration(restorer);
         }
 
         // Insert the zone in the global set.
@@ -121,11 +130,6 @@ pub async fn add_zone(
             "Already checked that 'state.zones' does not contain 'name'"
         );
         state.mark_dirty(center);
-
-        // Update the zone servers.
-        LoadedReviewServer::add_zone(center, zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(center, zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(center, zone.clone(), viewer);
     }
 
     // Send out a registration command so that prerequisites for zone setup

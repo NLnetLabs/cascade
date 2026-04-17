@@ -27,8 +27,9 @@ use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
-    LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt, SignedZonePersisted,
-    SignedZonePersister, SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
+    SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
+    SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage,
 };
 use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
@@ -550,6 +551,117 @@ impl StorageZoneHandle<'_> {
     }
 }
 
+/// # Persistence Tasks
+impl StorageZoneHandle<'_> {
+    /// Successfully finish loaded-instance restoration.
+    ///
+    /// A [`SignedZoneRestorer`] is returned so the signed instance can be
+    /// restored afterwards.
+    pub fn finish_loaded_restoration(
+        &mut self,
+        restored: LoadedZoneRestored,
+    ) -> SignedZoneRestorer {
+        // Examine the current state.
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::RestoringLoaded(s)) => {
+                let (restorer, s) = s.finish(restored);
+                transition.move_to(ZoneDataStorage::RestoringSigned(s));
+                restorer
+            }
+
+            _ => unreachable!(
+                "A 'LoadedZoneRestored' is only available in the 'RestoringLoaded' state"
+            ),
+        }
+    }
+
+    /// Successfully finish signed-instance restoration.
+    ///
+    /// The zone is moved to the passive state, and it is registered against
+    /// Cascade's zone servers.
+    pub fn finish_signed_restoration(&mut self, restored: SignedZoneRestored) {
+        // Examine the current state.
+        let (loaded_reviewer, signed_reviewer, viewer);
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::RestoringSigned(s)) => {
+                let new_s;
+                (loaded_reviewer, signed_reviewer, viewer, new_s) = s.finish(restored);
+                transition.move_to(ZoneDataStorage::Passive(new_s));
+            }
+
+            _ => unreachable!(
+                "A 'SignedZoneRestored' is only available in the 'RestoringSigned' state"
+            ),
+        }
+
+        // Register the zone against the zone servers.
+        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
+        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
+        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
+
+        // Send a notification that the state machine is now passive.
+        self.on_passive();
+    }
+
+    /// Abandon the ongoing loaded-instance restore.
+    ///
+    /// Any intermediate zone data is cleared and the zone is moved to the
+    /// passive state. It is registered against Cascade's zone servers.
+    pub fn abandon_loaded_restoration(&mut self, restorer: LoadedZoneRestorer) {
+        // Examine the current state.
+        let (loaded_reviewer, signed_reviewer, viewer);
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::RestoringLoaded(s)) => {
+                let new_s;
+                (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
+                transition.move_to(ZoneDataStorage::Passive(new_s));
+            }
+
+            _ => unreachable!(
+                "A 'LoadedZoneRestorer' is only available in the 'RestoringLoaded' state"
+            ),
+        };
+
+        // Update the zone servers.
+        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
+        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
+        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
+
+        // Send a notification that the state machine is now passive.
+        self.on_passive();
+    }
+
+    /// Abandon the ongoing signed-instance restore.
+    ///
+    /// Any intermediate zone data for the signed instance is wiped. The
+    /// restored loaded instance is preserved. The zone is moved to the signing
+    /// state. It is registered against Cascade's zone servers and a signing
+    /// operation is enqueued.
+    pub fn abandon_signed_restoration(&mut self, restorer: SignedZoneRestorer) {
+        // Examine the current state.
+        let (loaded_reviewer, signed_reviewer, viewer, builder);
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::RestoringSigned(s)) => {
+                let new_s;
+                (loaded_reviewer, signed_reviewer, viewer, builder, new_s) = s.abandon(restorer);
+                transition.move_to(ZoneDataStorage::Signing(new_s));
+            }
+
+            _ => unreachable!(
+                "A 'SignedZoneRestorer' is only available in the 'RestoringSigned' state"
+            ),
+        };
+
+        // Update the zone servers.
+        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
+        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
+        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
+
+        // Initiate a new signing operation.
+        self.zone().start_sign_after_restore(builder);
+    }
+}
+
 /// # Background Tasks
 impl StorageZoneHandle<'_> {
     /// Run a cleanup of zone data.
@@ -561,7 +673,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    fn start_cleanup(&mut self, cleaner: ZoneCleaner) {
+    pub fn start_cleanup(&mut self, cleaner: ZoneCleaner) {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("clean");
@@ -681,7 +793,7 @@ impl StorageZoneHandle<'_> {
                 ),
             });
 
-            handle.storage().start_cleanup(cleaner);
+            handle.finish_switch(cleaner);
 
             handle.state.storage.background_tasks.finish();
         });
@@ -778,26 +890,13 @@ pub struct StorageState {
     /// The underlying state machine.
     machine: ZoneDataStorage,
 
-    /// The current loaded zone reviewer.
+    /// A handle to restore the zone data at startup.
     ///
-    /// This is only used during initialization.
-    //
-    // TODO: Output it directly somehow?
-    pub loaded_reviewer: Option<LoadedZoneReviewer>,
-
-    /// The current zone reviewer.
-    ///
-    /// This is only used during initialization.
-    //
-    // TODO: Output it directly somehow?
-    pub signed_reviewer: Option<SignedZoneReviewer>,
-
-    /// The current zone viewer.
-    ///
-    /// This is only used during initialization.
-    //
-    // TODO: Output it directly somehow?
-    pub viewer: Option<ZoneViewer>,
+    /// This is only used during initialization. For zones restored from state
+    /// files at startup, this handle is used to initiate restores of their
+    /// (presumably persisted) data. For newly created zones, this handle is
+    /// passed to [`StorageZoneHandle::abandon_loaded_restoration()`].
+    pub restorer: Option<LoadedZoneRestorer>,
 
     /// The SOA record of the loaded instance of the zone being reviewed, if
     /// any.
@@ -836,18 +935,11 @@ pub struct StorageState {
 impl StorageState {
     /// Construct a new [`StorageState`].
     pub fn new() -> Self {
-        // TODO: Use 'restorer' to attempt restoring the zone.
         let (restorer, machine) = ZoneDataStorage::new();
-        let ZoneDataStorage::RestoringLoaded(s) = machine else {
-            unreachable!()
-        };
-        let (loaded_reviewer, signed_reviewer, viewer, s) = s.abandon(restorer);
 
         Self {
-            machine: ZoneDataStorage::Passive(s),
-            loaded_reviewer: Some(loaded_reviewer),
-            signed_reviewer: Some(signed_reviewer),
-            viewer: Some(viewer),
+            machine,
+            restorer: Some(restorer),
             loaded_review_soa: None,
             signed_review_soa: None,
             published_soa: None,

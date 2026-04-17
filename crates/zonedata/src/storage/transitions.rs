@@ -57,11 +57,30 @@ impl RestoringLoadedStorage {
         );
 
         restorer.clear();
-        let restored = restorer
-            .finish()
-            .unwrap_or_else(|_| unreachable!("'LoadedZoneRestorer::clear()' finishes restoring"));
-        let (restorer, storage) = self.finish(restored);
-        storage.abandon(restorer)
+        let Self { data } = self;
+        let curr_loaded_index = false;
+        let curr_signed_index = false;
+
+        let loaded_reviewer =
+            unsafe { LoadedZoneReviewer::new(data.clone(), curr_loaded_index, None) };
+        let signed_reviewer = unsafe {
+            SignedZoneReviewer::new(
+                data.clone(),
+                curr_loaded_index,
+                curr_signed_index,
+                None,
+                None,
+            )
+        };
+        let viewer = unsafe { ZoneViewer::new(data.clone(), curr_loaded_index, curr_signed_index) };
+
+        let storage = PassiveStorage {
+            data,
+            curr_loaded_index,
+            curr_signed_index,
+        };
+
+        (loaded_reviewer, signed_reviewer, viewer, storage)
     }
 }
 
@@ -119,7 +138,8 @@ impl RestoringSignedStorage {
         LoadedZoneReviewer,
         SignedZoneReviewer,
         ZoneViewer,
-        PassiveStorage,
+        SignedZoneBuilder,
+        SigningStorage,
     ) {
         assert!(
             Arc::ptr_eq(restorer.data(), &self.data),
@@ -127,10 +147,37 @@ impl RestoringSignedStorage {
         );
 
         restorer.clear();
-        let restored = restorer
-            .finish()
-            .unwrap_or_else(|_| unreachable!("'SignedZoneRestorer::clear()' finishes restoring"));
-        self.finish(restored)
+
+        let Self {
+            data,
+            curr_loaded_index,
+        } = self;
+        let curr_signed_index = false;
+
+        let loaded_reviewer =
+            unsafe { LoadedZoneReviewer::new(data.clone(), curr_loaded_index, None) };
+        let signed_reviewer = unsafe {
+            SignedZoneReviewer::new(
+                data.clone(),
+                curr_loaded_index,
+                curr_signed_index,
+                None,
+                None,
+            )
+        };
+        let viewer = unsafe { ZoneViewer::new(data.clone(), curr_loaded_index, curr_signed_index) };
+        let builder = unsafe {
+            SignedZoneBuilder::new(data.clone(), curr_loaded_index, !curr_signed_index, None)
+        };
+
+        let storage = SigningStorage {
+            data,
+            curr_loaded_index,
+            curr_signed_index,
+            loaded_diff: None,
+        };
+
+        (loaded_reviewer, signed_reviewer, viewer, builder, storage)
     }
 }
 
