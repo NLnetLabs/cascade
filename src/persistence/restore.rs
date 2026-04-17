@@ -17,7 +17,9 @@ pub fn restore_loaded(
     center: &Arc<Center>,
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<()> {
-    todo!()
+    // TODO
+    let _ = (zone, center, restorer);
+    Err(io::Error::other("not yet implemented"))
 }
 
 /// Restore the loaded instance data of a zone.
@@ -31,5 +33,7 @@ pub fn restore_signed(
     center: &Arc<Center>,
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<()> {
-    todo!()
+    // TODO
+    let _ = (zone, center, restorer);
+    Err(io::Error::other("not yet implemented"))
 }

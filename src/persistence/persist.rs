@@ -19,7 +19,9 @@ pub fn persist_loaded(
     center: &Arc<Center>,
     persister: LoadedZonePersister,
 ) -> LoadedZonePersisted {
-    todo!()
+    // TODO
+    let _ = (zone, center);
+    persister.mark_complete()
 }
 
 /// Persist the data for a signed instance of a zone.
@@ -33,5 +35,7 @@ pub fn persist_signed(
     center: &Arc<Center>,
     persister: SignedZonePersister,
 ) -> SignedZonePersisted {
-    todo!()
+    // TODO
+    let _ = (zone, center);
+    persister.mark_complete()
 }
