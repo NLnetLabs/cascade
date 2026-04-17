@@ -42,13 +42,13 @@ Commands
 
 .. subcmd:: add
 
-   Register a new zone. The zone will be loaded, signed and published.
+   Register a new zone.
 
 .. subcmd:: remove
 
    Remove a zone.
 
-   .. note:: Once removed downstream servers will no longer be able to fetech
+   .. note:: Once removed downstream servers will no longer be able to fetch
              the zone!
 
 .. subcmd:: list
