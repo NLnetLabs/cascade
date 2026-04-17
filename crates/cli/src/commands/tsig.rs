@@ -28,6 +28,12 @@ pub enum TsigCommand {
         ///
         /// Can be omitted if provided as part of the name.
         /// Required if `[SECRET]` is provided.
+        ///
+        /// Must be one of:
+        ///   hmac-sha1
+        ///   hmac-sha256
+        ///   hmac-sha384
+        ///   hmac-sha512
         #[arg(requires = "secret")]
         alg: Option<TsigAlgorithm>,
 
