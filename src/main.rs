@@ -9,6 +9,7 @@ use cascaded::{
     units::{key_manager::KeyManager, zone_signer::ZoneSigner},
 };
 use clap::{crate_authors, crate_description};
+use daemonbase::process::exit_signalled;
 use std::{collections::HashMap, fs::create_dir_all};
 use std::{
     io,
@@ -241,13 +242,15 @@ fn main() -> ExitCode {
             }
         };
 
-        let res = match tokio::signal::ctrl_c().await {
+        info!("Running");
+        let res = match exit_signalled().await {
             Ok(_) => ExitCode::SUCCESS,
             Err(error) => {
                 error!("Listening for CTRL-C (SIGINT) failed: {error}");
                 ExitCode::FAILURE
             }
         };
+        info!("Shutting down");
 
         // All of Cascade's units have AbortOnDrop's in Manager, so all
         // background tasks will be stopped when Manager is dropped.

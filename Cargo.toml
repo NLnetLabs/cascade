@@ -320,3 +320,6 @@ cascade-dnst = "*"
 
 [package.metadata.generate-rpm.recommends]
 cascade-hsm-bridge = "*"
+
+[patch.crates-io]
+daemonbase = { git = "https://github.com/NLnetLabs/daemonbase", branch = "exit-signalled" }
