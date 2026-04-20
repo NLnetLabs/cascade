@@ -4,6 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, SystemTime};
 
 use camino::{Utf8Path, Utf8PathBuf};
+use domain::tsig::Algorithm;
 use serde::{Deserialize, Serialize};
 
 pub use domain::base::Serial;
@@ -623,6 +624,17 @@ impl Display for TsigAlgorithm {
             TsigAlgorithm::Sha512 => "hmac-sha512",
         }
         .fmt(f)
+    }
+}
+
+impl From<TsigAlgorithm> for Algorithm {
+    fn from(alg: TsigAlgorithm) -> Self {
+        match alg {
+            TsigAlgorithm::Sha1 => Algorithm::Sha1,
+            TsigAlgorithm::Sha256 => Algorithm::Sha256,
+            TsigAlgorithm::Sha384 => Algorithm::Sha384,
+            TsigAlgorithm::Sha512 => Algorithm::Sha512,
+        }
     }
 }
 

@@ -1110,14 +1110,8 @@ impl HttpServer {
             return Json(Err(TsigAddError::InvalidBase64Secret));
         };
 
-        let alg = match tsig_add.alg {
-            TsigAlgorithm::Sha1 => Algorithm::Sha1,
-            TsigAlgorithm::Sha256 => Algorithm::Sha256,
-            TsigAlgorithm::Sha384 => Algorithm::Sha384,
-            TsigAlgorithm::Sha512 => Algorithm::Sha512,
-        };
-
-        match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {
+        match center::add_tsig_key(&state.center, tsig_add.name, tsig_add.alg.into(), &secret).await
+        {
             Ok(TsigAddResult) => Json(Ok(TsigAddResult)),
             Err(err) => Json(Err(err)),
         }
