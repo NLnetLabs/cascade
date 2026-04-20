@@ -168,9 +168,9 @@ impl ZoneState {
 
 #[derive(Debug)]
 pub struct LastPublished {
+    pub loaded_serial: Serial,
     pub signed_serial: Serial,
     // TODO:
-    //  - loaded serial
     //  - time of publish
     //  - number of records
     //  - size in bytes

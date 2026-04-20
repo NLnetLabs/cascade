@@ -558,7 +558,7 @@ impl Zone {
 
         println!("last published");
         if let Some(last) = &zone.last_published {
-            println!("  loaded serial: <TODO>");
+            println!("  loaded serial: {}", last.loaded_serial);
             println!("  signed serial: {}", last.signed_serial);
             println!("  timestamp:     <TODO>");
             println!("  size:          <TODO> records (<TODO>B)");
