@@ -924,7 +924,7 @@ pub enum NameserverCommsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ComplexNameserverCommsSpec {
-    /// The address to send NOTIFYs to or allow XFRs from.
+    /// The address to send NOTIFYs to or receive XFRs from.
     ///
     /// For sending NOTIFY it must not be None.
     ///
@@ -940,7 +940,7 @@ pub struct ComplexNameserverCommsSpec {
 #[derive(Clone, Debug, DeserializeFromStr, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SimpleNameserverCommsSpec {
-    /// The address to send NOTIFYs to or allow XFRs from.
+    /// The address to send NOTIFYs to or receive XFRs from.
     ///
     /// For sending NOTIFY it must not be None.
     ///
@@ -992,15 +992,20 @@ impl ComplexNameserverCommsSpec {
     }
 }
 
-/// Parse`[<IP_ADDRESS>[:<PORT>]][^<TSIG_KEY_NAME>]`
+/// Parse '[<IP>[:<PORT>]][^<TSIG_KEY_NAME>]'.
 impl FromStr for SimpleNameserverCommsSpec {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (s, tsig_key_name) = s
             .split_once('^')
-            .map(|(s, tsig_key_name)| (s, Some(tsig_key_name)))
+            .map(|(s, n)| (s, Some(n)))
             .unwrap_or((s, None));
+
+        let tsig_key_name = tsig_key_name
+            .map(KeyName::from_str)
+            .transpose()
+            .map_err(|err| format!("TSIG key name is invalid: {err}"))?;
 
         let addr = if s.is_empty() {
             None
@@ -1009,16 +1014,9 @@ impl FromStr for SimpleNameserverCommsSpec {
                 IpAddr::from_str(s)
                     .map(|ip| SocketAddr::new(ip, 53))
                     .or_else(|_| SocketAddr::from_str(s))
-                    .map_err(|err| format!("Invalid IP address '{s}': {err}"))?,
+                    .map_err(|err| format!("Nameserver address is invalid: {err}"))?,
             )
         };
-
-        let tsig_key_name = tsig_key_name
-            .map(|name| {
-                KeyName::from_str(name)
-                    .map_err(|err| format!("Invalid TSIG key name '{name}: {err}"))
-            })
-            .transpose()?;
 
         Ok(SimpleNameserverCommsSpec {
             addr,
