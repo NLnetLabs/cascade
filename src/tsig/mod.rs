@@ -296,8 +296,17 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
             if let Ok(n) = nk {
                 n == name
             } else {
-                // Just ignore tSIG key names that cannot be parsed as a
-                // DNS name.
+                // Just ignore TSIG key names that cannot be parsed as a
+                // DNS name. It should not have been possible to add them
+                // into the policy in the first place so this should never
+                // happen.
+                //
+                // TODO: "update" from using a String type for
+                // publication_nameservers to a type that actually uses
+                // TsigKeyName, like NameserverCommsPolicy does, so that at
+                // this point we don't need to care about valid or invalid
+                // TSIG key names? That would also have the benefit of not
+                // having to parse the nameserver string format here again.
                 false
             }
         })
@@ -305,6 +314,13 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
         return Err(RemoveError::Used);
     }
 
+    // Delete the TSIG key. The TSIG key store has a set of zones that
+    // refer to the key to avoid having to lock and inspect zone state,
+    // so we can also find that the TSIG key is still referenced there
+    // if an operation to remove a zone hasn't cleaned up the reference
+    // to the zone in the TSIG store yet (even though its source no
+    // longer refers to it in the check we did above - can this ever
+    // happen?).
     match state.tsig_store.map.entry(name.clone()) {
         hash_map::Entry::Occupied(entry) => {
             if !entry.get().zones.is_empty() {
@@ -314,7 +330,9 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
         }
         hash_map::Entry::Vacant(_) => return Err(RemoveError::NotFound),
     }
+
     state.tsig_store.mark_dirty(center);
+
     Ok(())
 }
 
