@@ -278,11 +278,11 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     }
 
     if state.zones.iter().any(|z| {
-            let zone_state = z.0.state.lock().unwrap();
-            matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
-        }) {
-            return Err(RemoveError::Used);
-        }
+        let zone_state = z.0.state.lock().unwrap();
+        matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
+    }) {
+        return Err(RemoveError::Used);
+    }
 
     // Is the TSIG key referenced by any active (not being deleted) policy?
     if state
