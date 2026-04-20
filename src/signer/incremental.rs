@@ -15,6 +15,8 @@ use domain::base::name::FlattenInto;
 use domain::base::{
     CanonicalOrd, Name, NameBuilder, Record, Rtype, Serial as DomainSerial, ToName, Ttl,
 };
+use domain::dep::octseq::OctetsFrom;
+use domain::dep::octseq::builder::with_infallible;
 use domain::dnssec::common::nsec3_hash;
 use domain::dnssec::sign::denial::nsec::{GenerateNsecConfig, generate_nsecs};
 use domain::dnssec::sign::denial::nsec3::{
@@ -32,8 +34,6 @@ use domain::zonefile::inplace::Entry;
 use domain::zonetree::StoredRecord;
 use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
-use octseq::OctetsFrom;
-use octseq::builder::with_infallible;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
