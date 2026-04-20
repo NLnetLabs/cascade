@@ -1,4 +1,4 @@
-use std::future::{Future, ready};
+use std::future::Future;
 use std::marker::Sync;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
@@ -6,9 +6,8 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use arc_swap::ArcSwap;
 use bytes::Bytes;
-use domain::base::iana::{Class, Opcode, Rcode};
+use domain::base::iana::{Class, Opcode};
 use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
 use domain::net::client::dgram::Connection;
 use domain::net::client::protocol::UdpConnect;
@@ -16,23 +15,14 @@ use domain::net::client::request::{RequestMessage, SendRequest};
 use domain::net::server::ConnectionConfig;
 use domain::net::server::buf::VecBufSource;
 use domain::net::server::dgram::{self, DgramServer};
-use domain::net::server::message::Request;
 use domain::net::server::middleware::cookies::CookiesMiddlewareSvc;
 use domain::net::server::middleware::edns::EdnsMiddlewareSvc;
 use domain::net::server::middleware::mandatory::MandatoryMiddlewareSvc;
 use domain::net::server::middleware::notify::{Notifiable, NotifyError, NotifyMiddlewareSvc};
 use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
-use domain::net::server::middleware::xfr::XfrMiddlewareSvc;
-use domain::net::server::middleware::xfr::{XfrData, XfrDataProvider, XfrDataProviderError};
-use domain::net::server::service::{CallResult, Service, ServiceResult};
+use domain::net::server::service::Service;
 use domain::net::server::stream::{self, StreamServer};
-use domain::net::server::util::mk_builder_for_target;
-use domain::net::server::util::service_fn;
-use domain::tsig::Algorithm;
-use domain::tsig::KeyStore;
-use domain::zonetree::Answer;
-use domain::zonetree::types::EmptyZoneDiff;
-use domain::zonetree::{StoredName, ZoneTree};
+use domain::tsig::{Algorithm, KeyStore};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{
@@ -43,6 +33,7 @@ use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
+use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneHandle,
@@ -162,11 +153,17 @@ impl ZoneServer {
     }
 
     /// Launch a zone server.
-    pub fn run(
+    pub fn run<S>(
         center: &Arc<Center>,
         source: Source,
         socket_provider: &mut SocketProvider,
-    ) -> Result<Vec<AbortOnDrop>, Terminated> {
+        service: S,
+    ) -> Result<Vec<AbortOnDrop>, Terminated>
+    where
+        S: Service<Vec<u8>, Option<Arc<domain::tsig::Key>>> + Unpin + Clone,
+        S::Future: Unpin + Sync,
+        S::Stream: Sync,
+    {
         let unit_name = match source {
             Source::Unsigned => "RS",
             Source::Signed => "RS2",
@@ -175,36 +172,13 @@ impl ZoneServer {
 
         // TODO: metrics and status reporting
 
-        // TODO: This will just choose all current zones to be served. For signed and published
-        // zones this doesn't matter so much as they only exist while being and once approved.
-        // But for unsigned zones the zone could be updated whilst being reviewed and we only
-        // serve the latest version of the zone, not the specific serial being reviewed!
-        let zones = match source {
-            Source::Unsigned => center.unsigned_zones.clone(),
-            Source::Signed => center.signed_zones.clone(),
-            Source::Published => center.published_zones.clone(),
-        };
-
-        let max_concurrency = std::thread::available_parallelism()
-            .unwrap()
-            .get()
-            .div_ceil(2);
-
-        // TODO: Pass xfr_out to XfrDataProvidingZonesWrapper for enforcement.
-        let zones = XfrDataProvidingZonesWrapper {
-            zones,
-            center: center.clone(),
-        };
-
         // Propagate NOTIFY messages if this is the publication server.
         let notifier = LoaderNotifier {
             enabled: matches!(source, Source::Published),
             center: center.clone(),
         };
 
-        // let svc = ZoneServerService::new(zones.clone());
-        let svc = service_fn(zone_server_service, zones.clone());
-        let svc = XfrMiddlewareSvc::new(svc, zones.clone(), max_concurrency);
+        let svc = service;
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
         let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = CookiesMiddlewareSvc::with_random_secret(svc);
@@ -256,36 +230,6 @@ impl ZoneServer {
 
             zone_state.policy.clone()
         };
-
-        // Move the zone from the signed collection to the published collection.
-        // TODO: Bump the zone serial?
-        let signed_zones = center.signed_zones.load();
-
-        if let Some(zone) = signed_zones.get_zone(&zone.name, Class::IN) {
-            // Create a deep copy of the set of
-            // published zones. We will add the
-            // new zone to that copied set and
-            // then replace the original set with
-            // the new set.
-            info!("[{unit_name}]: Adding '{zone_name}' to the set of published zones.");
-            center.published_zones.rcu(|zones| {
-                let mut new_published_zones = Arc::unwrap_or_clone(zones.clone());
-                let _ = new_published_zones.remove_zone(zone.apex_name(), zone.class());
-                new_published_zones.insert_zone(zone.clone()).unwrap();
-                new_published_zones
-            });
-
-            // Create a deep copy of the set of
-            // signed zones. We will remove the
-            // zone from the copied set and then
-            // replace the original set with the
-            // new set.
-            center.signed_zones.rcu(|zones| {
-                let mut new_signed_zones = Arc::unwrap_or_clone(zones.clone());
-                new_signed_zones.remove_zone(&zone_name, Class::IN).unwrap();
-                new_signed_zones
-            });
-        }
 
         // Send NOTIFY if configured to do so.
         if let Some(policy) = policy {
@@ -464,6 +408,7 @@ impl ZoneServer {
                     let _: Result<_, _> = Self::process_output(stderr, true).await;
                 });
                 let zone = zone.clone();
+                let source = self.source;
                 tokio::spawn(async move {
                     let status = match child.wait().await {
                         Ok(status) => status,
@@ -480,12 +425,25 @@ impl ZoneServer {
                         false => ZoneReviewDecision::Reject,
                     };
 
-                    let server = match zone_type {
-                        "unsigned" => &center.unsigned_review_server,
-                        "signed" => &center.signed_review_server,
-                        _ => unreachable!(),
+                    match source {
+                        Source::Unsigned => {
+                            let _ = LoadedReviewServer::process_review(
+                                &center,
+                                &zone,
+                                zone_serial,
+                                decision,
+                            );
+                        }
+                        Source::Signed => {
+                            let _ = SignedReviewServer::process_review(
+                                &center,
+                                &zone,
+                                zone_serial,
+                                decision,
+                            );
+                        }
+                        Source::Published => unreachable!(),
                     };
-                    let _ = server.on_zone_review(&center, &zone, zone_serial, decision);
                 });
             }
             Err(err) => {
@@ -529,7 +487,6 @@ impl ZoneServer {
     }
 
     fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
-        let _ = zone_serial; // TODO
         {
             let mut state = zone.state.lock().unwrap();
             ZoneHandle {
@@ -545,9 +502,7 @@ impl ZoneServer {
         center.signer.on_publish_signed_zone(center);
 
         info!("[CC]: Instructing publication server to publish the signed zone");
-        center
-            .publication_server
-            .on_publish_signed_zone(center, zone, zone_serial);
+        PublicationServer::publish(center, zone, zone_serial);
     }
 
     async fn process_output(
@@ -708,68 +663,6 @@ impl KeyStore for CenterKeyStore {
     }
 }
 
-//----------- XfrDataProvidingZonesWrapper -----------------------------------
-
-#[derive(Clone)]
-struct XfrDataProvidingZonesWrapper {
-    zones: Arc<ArcSwap<ZoneTree>>,
-
-    /// Access to Center for TSIG key lookup.
-    center: Arc<Center>,
-}
-
-impl XfrDataProvider<Option<Arc<domain::tsig::Key>>> for XfrDataProvidingZonesWrapper {
-    type Diff = EmptyZoneDiff;
-
-    fn request<Octs>(
-        &self,
-        req: &Request<Octs, Option<Arc<domain::tsig::Key>>>,
-        _diff_from: Option<domain::base::Serial>,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<
-                        domain::net::server::middleware::xfr::XfrData<Self::Diff>,
-                        domain::net::server::middleware::xfr::XfrDataProviderError,
-                    >,
-                > + Sync
-                + Send
-                + '_,
-        >,
-    >
-    where
-        Octs: octseq::Octets + Send + Sync,
-    {
-        let res = req
-            .message()
-            .sole_question()
-            .map_err(XfrDataProviderError::ParseError)
-            .and_then(|q| {
-                if let Some(zone) = self.zones.load().find_zone(q.qname(), q.qclass()) {
-                    Ok(XfrData::new(zone.clone(), vec![], false))
-                } else {
-                    Err(XfrDataProviderError::UnknownZone)
-                }
-            });
-
-        Box::pin(ready(res))
-    }
-}
-
-impl KeyStore for XfrDataProvidingZonesWrapper {
-    type Key = Arc<domain::tsig::Key>;
-
-    fn get_key<N: ToName>(&self, name: &N, algorithm: Algorithm) -> Option<Arc<domain::tsig::Key>> {
-        let tsig_store = &self.center.state.lock().unwrap().tsig_store;
-        let key_name: domain::tsig::KeyName = name.try_to_name().ok()?;
-        tsig_store
-            .map
-            .get(&key_name)
-            .map(|k| k.inner.clone())
-            .filter(|k| k.algorithm() == algorithm)
-    }
-}
-
 //----------- LoaderNotifier ---------------------------------------------------
 
 /// A forwarder of NOTIFY messages to the zone loader.
@@ -808,44 +701,8 @@ impl Notifiable for LoaderNotifier {
     }
 }
 
-fn zone_server_service(
-    request: Request<Vec<u8>, Option<Arc<domain::tsig::Key>>>,
-    zones: XfrDataProvidingZonesWrapper,
-) -> ServiceResult<Vec<u8>> {
-    let question = request.message().sole_question().unwrap();
-    let zone = zones
-        .zones
-        .load()
-        .find_zone(question.qname(), question.qclass())
-        .map(|zone| zone.read());
-    let answer = match zone {
-        Some(zone) => {
-            let qname = question.qname().to_bytes();
-            let qtype = question.qtype();
-            let mut answer = zone.query(qname, qtype).unwrap();
-
-            // https://github.com/NLnetLabs/cascade/issues/435
-            // Set the AA flag on responses to workaround the scenario where
-            // BIND refuses to fetch the zone via XFR, because after receiving
-            // a NOTIFY from Cascade it issues a SOA query and is not happy
-            // with the SOA response containing an unset AA flag. This is a
-            // temporary "fix", strictly speaking this is incorrect as not all
-            // queries should be responded to with the AA flag set, e.g. we
-            // cannot respond authoritatively for glue records.
-            // TODO: Implement a proper fix.
-            answer.set_authoritative(true);
-            answer
-        }
-        None => Answer::new(Rcode::NXDOMAIN),
-    };
-
-    let builder = mk_builder_for_target();
-    let additional = answer.to_message(request.message(), builder);
-    Ok(CallResult::new(additional))
-}
-
 pub fn send_notify_to_addrs(
-    apex_name: StoredName,
+    apex_name: Name<Bytes>,
     notify_set: impl Iterator<Item = SocketAddr>,
     _center: &Arc<Center>,
 ) {

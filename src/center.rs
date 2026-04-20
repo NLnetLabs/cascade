@@ -7,22 +7,18 @@ use std::{
     time::Duration,
 };
 
-use arc_swap::ArcSwap;
 use bytes::Bytes;
-use domain::base::iana::Class;
+use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::rdata::dnssec::Timestamp;
-use domain::zonetree::StoredName;
-use domain::{base::Name, zonetree::ZoneTree};
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
-use crate::manager::record_zone_event;
+use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::units::key_manager::KeyManager;
-use crate::units::zone_server::ZoneServer;
 use crate::units::zone_signer::ZoneSigner;
 use crate::zone::{HistoricalEvent, ZoneHandle};
 use crate::{
@@ -57,23 +53,14 @@ pub struct Center {
     /// The key manager
     pub key_manager: KeyManager,
 
-    /// The review server for unsigned zones.
-    pub unsigned_review_server: ZoneServer,
+    /// The review server for loaded instances of zones.
+    pub loaded_review_server: LoadedReviewServer,
 
-    /// The review server for signed zones.
-    pub signed_review_server: ZoneServer,
+    /// The review server for signed instances of zones.
+    pub signed_review_server: SignedReviewServer,
 
-    /// The zone server.
-    pub publication_server: ZoneServer,
-
-    /// The latest unsigned contents of all zones.
-    pub unsigned_zones: Arc<ArcSwap<ZoneTree>>,
-
-    /// The latest signed contents of all zones.
-    pub signed_zones: Arc<ArcSwap<ZoneTree>>,
-
-    /// The latest published contents of all zones.
-    pub published_zones: Arc<ArcSwap<ZoneTree>>,
+    /// The server for published instances of zones.
+    pub publication_server: PublicationServer,
 
     /// Zones currently being re-signed.
     pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
@@ -92,40 +79,49 @@ pub async fn add_zone(
     source: api::ZoneSource,
     key_imports: Vec<KeyImport>,
 ) -> Result<(), ZoneAddError> {
-    let zone = Arc::new(Zone::new(name.clone()));
-
+    // Create and insert the zone.
+    let zone;
     {
+        // Lock the global state to check consistency and insert the zone.
         let mut state = center.state.lock().unwrap();
 
-        // We check whether the state contains this zone, because
-        // this is the most useful error to report.
-        let zone_by_name = ZoneByName(zone.clone());
-        if state.zones.contains(&zone_by_name) {
+        // Prioritize 'AlreadyExists' over other kinds of errors.
+        if state.zones.contains(&name) {
             return Err(ZoneAddError::AlreadyExists);
         }
 
-        // Do this inside a block to prevent holding a mutable reference to
-        // state.
-        {
-            let policy = state
-                .policies
-                .get_mut(&policy_name)
-                .ok_or(ZoneAddError::NoSuchPolicy)?;
-            if policy.mid_deletion {
-                return Err(ZoneAddError::PolicyMidDeletion);
-            }
+        // Look up the requested policy.
+        let policy = state
+            .policies
+            .get_mut(&policy_name)
+            .ok_or(ZoneAddError::NoSuchPolicy)?;
+        if policy.mid_deletion {
+            return Err(ZoneAddError::PolicyMidDeletion);
+        }
 
+        // Create the zone and initialize its state.
+        zone = Arc::new(Zone::new(name));
+        let (loaded_reviewer, signed_reviewer, viewer);
+        {
             let mut zone_state = zone.state.lock().unwrap();
             zone_state.policy = Some(policy.latest.clone());
-            policy.zones.insert(name.clone());
+            policy.zones.insert(zone.name.clone());
+            loaded_reviewer = zone_state.storage.loaded_reviewer.take().unwrap();
+            signed_reviewer = zone_state.storage.signed_reviewer.take().unwrap();
+            viewer = zone_state.storage.viewer.take().unwrap();
         }
 
-        // Actually insert the zone now. This shouldn't fail since we've done
-        // the `contains` check above and we hold a lock to the state, but it
-        // doesn't hurt to have proper error handling here just in case.
-        if !state.zones.insert(zone_by_name.clone()) {
-            return Err(ZoneAddError::AlreadyExists);
-        }
+        // Insert the zone in the global set.
+        assert!(
+            state.zones.insert(ZoneByName(zone.clone())),
+            "Already checked that 'state.zones' does not contain 'name'"
+        );
+        state.mark_dirty(center);
+
+        // Update the zone servers.
+        LoadedReviewServer::add_zone(center, zone.clone(), loaded_reviewer);
+        SignedReviewServer::add_zone(center, zone.clone(), signed_reviewer);
+        PublicationServer::add_zone(center, zone.clone(), viewer);
     }
 
     // Send out a registration command so that prerequisites for zone setup
@@ -133,21 +129,22 @@ pub async fn add_zone(
     // the pipeline for the zone starts. We do this _after_ adding the zone
     // because otherwise updating zone history will fail. If registration
     // fails we will have to remove the added zone.
-    if let Err(err) = register_zone(center, name.clone(), policy_name.clone(), key_imports).await {
+    if let Err(err) =
+        register_zone(center, zone.name.clone(), policy_name.clone(), key_imports).await
+    {
         // Remove in reverse order what was added above.
         let mut state = center.state.lock().unwrap();
-        let zone_by_name = ZoneByName(zone);
-        state.zones.remove(&zone_by_name);
+        state.zones.remove(&zone.name);
         if let Some(policy) = state.policies.get_mut(&policy_name) {
-            policy.zones.remove(&name);
+            policy.zones.remove(&zone.name);
         }
         return Err(err);
     }
 
-    record_zone_event(center, &zone, HistoricalEvent::Added, None);
-
     {
         let mut state = zone.state.lock().unwrap();
+
+        state.record_event(HistoricalEvent::Added, None);
 
         let source = match source {
             cascade_api::ZoneSource::None => crate::loader::Source::None,
@@ -177,12 +174,7 @@ pub async fn add_zone(
         // NOTE: The zone is marked as dirty by the above operation.
     }
 
-    {
-        let mut state = center.state.lock().unwrap();
-        state.mark_dirty(center);
-    }
-
-    info!("Added zone '{name}'");
+    info!("Added zone '{}'", zone.name);
     Ok(())
 }
 
@@ -202,34 +194,20 @@ async fn register_zone(
 /// Remove a zone.
 pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
     let mut state = center.state.lock().unwrap();
-    let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?;
+    let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?.0;
 
     // Remove the zone from all the places it might be stored.
     // The zone might not have made it to these places, but that's not an issue
     // so we just ignore any errors.
 
-    center.unsigned_zones.rcu(|z| {
-        let mut z = Arc::unwrap_or_clone(z.clone());
-        let _ = z.remove_zone(&name, Class::IN);
-        z
-    });
+    LoadedReviewServer::remove_zone(center, &zone);
+    SignedReviewServer::remove_zone(center, &zone);
+    PublicationServer::remove_zone(center, &zone);
 
-    center.signed_zones.rcu(|z| {
-        let mut z = Arc::unwrap_or_clone(z.clone());
-        let _ = z.remove_zone(&name, Class::IN);
-        z
-    });
-
-    center.published_zones.rcu(|z| {
-        let mut z = Arc::unwrap_or_clone(z.clone());
-        let _ = z.remove_zone(&name, Class::IN);
-        z
-    });
-
-    let mut zone_state = zone.0.state.lock().unwrap();
+    let mut zone_state = zone.state.lock().unwrap();
 
     ZoneHandle {
-        zone: &zone.0,
+        zone: &zone,
         state: &mut zone_state,
         center,
     }
@@ -249,11 +227,11 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 
     info!("Removed zone '{name}'");
     zone_state.record_event(HistoricalEvent::Removed, None);
-    zone.0.mark_dirty(&mut zone_state, center);
+    zone.mark_dirty(&mut zone_state, center);
     Ok(())
 }
 
-pub fn get_zone(center: &Arc<Center>, name: &StoredName) -> Option<Arc<Zone>> {
+pub fn get_zone(center: &Arc<Center>, name: &Name<Bytes>) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
 }

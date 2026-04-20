@@ -437,6 +437,9 @@ pub enum RefreshError {
         remote_serial: Serial,
     },
 
+    /// A query for a SOA record failed.
+    QuerySoa(server::QuerySoaError),
+
     /// An IXFR from the server failed.
     Ixfr(server::IxfrError),
 
@@ -455,6 +458,7 @@ impl std::error::Error for RefreshError {
         match self {
             Self::OutdatedRemote { .. } => None,
             Self::LocalSerialChanged => None,
+            Self::QuerySoa(error) => Some(error),
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
             Self::Zonefile(error) => Some(error),
@@ -480,6 +484,9 @@ impl fmt::Display for RefreshError {
                     "Local serial changed while processing a refreshed zone. This will be fixed by a retry."
                 )
             }
+            RefreshError::QuerySoa(error) => {
+                write!(f, "could not retrieve the SOA record: {error}")
+            }
             RefreshError::Ixfr(error) => {
                 write!(f, "the IXFR failed: {error}")
             }
@@ -494,6 +501,12 @@ impl fmt::Display for RefreshError {
 }
 
 //--- Conversion
+
+impl From<server::QuerySoaError> for RefreshError {
+    fn from(v: server::QuerySoaError) -> Self {
+        Self::QuerySoa(v)
+    }
+}
 
 impl From<server::IxfrError> for RefreshError {
     fn from(v: server::IxfrError) -> Self {

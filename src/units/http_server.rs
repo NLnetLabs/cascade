@@ -15,13 +15,8 @@ use axum::routing::get;
 use axum::routing::post;
 use bytes::Bytes;
 use domain::base::Name;
-use domain::base::Rtype;
 use domain::base::Serial;
-use domain::base::Ttl;
 use domain::dnssec::sign::keys::keyset::KeyType;
-use domain::rdata::Soa;
-use domain::zonetree::ReadableZone;
-use domain::zonetree::error::OutOfZone;
 use domain_kmip::ConnectionSettings;
 use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
@@ -42,6 +37,8 @@ use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
+use crate::server::LoadedReviewServer;
+use crate::server::SignedReviewServer;
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -355,6 +352,7 @@ impl HttpServer {
         let unsigned_serial;
         let signed_serial;
         let published_serial;
+        let last_published;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -449,22 +447,24 @@ impl HttpServer {
                 .map(|r| Serial::from(u32::from(r.rdata.serial)));
 
             progress = match zone_state.machine {
-                ZoneStateMachine::Waiting(..) => {
-                    if published_serial.is_some() {
-                        Progress::Published
-                    } else {
-                        Progress::WaitingForChanges
-                    }
-                }
-                ZoneStateMachine::Loading(..) => Progress::ChangesReceived,
-                ZoneStateMachine::LoadedReview(..) => Progress::AtUnsignedReview,
-                ZoneStateMachine::HaltLoaded(..) => Progress::AtUnsignedReview,
+                ZoneStateMachine::Waiting(..) => Progress::Waiting,
+                ZoneStateMachine::Loading(..) => Progress::Loading,
+                ZoneStateMachine::LoadedReview(..) => Progress::LoadedReview,
+                ZoneStateMachine::HaltLoaded(..) => Progress::HaltLoaded,
                 ZoneStateMachine::Signing(..) => Progress::Signing,
                 ZoneStateMachine::SigningFailed(..) => Progress::SigningFailed,
-                ZoneStateMachine::SignedReview(..) => Progress::AtSignedReview,
-                ZoneStateMachine::HaltSigned(..) => Progress::AtSignedReview,
+                ZoneStateMachine::SignedReview(..) => Progress::SignedReview,
+                ZoneStateMachine::HaltSigned(..) => Progress::HaltSigned,
                 ZoneStateMachine::Poisoned => unreachable!(),
             };
+
+            last_published = zone_state
+                .last_published
+                .as_ref()
+                .map(|p| LastPublishedZone {
+                    loaded_serial: p.loaded_serial,
+                    signed_serial: p.signed_serial,
+                });
         }
 
         // Query key status
@@ -538,7 +538,7 @@ impl HttpServer {
         }
 
         // Query signing status
-        let signing_report = if progress >= Progress::Signed {
+        let signing_report = if progress >= Progress::SignedReview {
             let center = &state.center;
             center.signer.on_signing_report(&zone)
         } else {
@@ -572,6 +572,7 @@ impl HttpServer {
             source,
             policy,
             progress,
+            last_published,
             keys,
             key_status,
             receipt_report,
@@ -636,7 +637,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.unsigned_review_server.on_zone_review(
+        let result = LoadedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -658,7 +659,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.unsigned_review_server.on_zone_review(
+        let result = LoadedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -709,7 +710,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.signed_review_server.on_zone_review(
+        let result = SignedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -731,7 +732,7 @@ impl HttpServer {
             );
             return Json(Err(ZoneReviewError::NoSuchZone));
         };
-        let result = center.signed_review_server.on_zone_review(
+        let result = SignedReviewServer::process_review(
             center,
             &zone,
             zone_serial,
@@ -1346,25 +1347,4 @@ impl HttpServer {
 
         Json(Err(()))
     }
-}
-
-pub async fn read_soa(
-    read: &dyn ReadableZone,
-    qname: Name<Bytes>,
-) -> Result<Option<(Soa<Name<Bytes>>, Ttl)>, OutOfZone> {
-    use domain::rdata::ZoneRecordData;
-    use domain::zonetree::AnswerContent;
-
-    let answer = match read.is_async() {
-        true => read.query_async(qname, Rtype::SOA).await,
-        false => read.query(qname, Rtype::SOA),
-    }?;
-
-    if let AnswerContent::Data(rrset) = answer.content()
-        && let ZoneRecordData::Soa(soa) = rrset.first().unwrap().data()
-    {
-        return Ok(Some((soa.clone(), rrset.ttl())));
-    }
-
-    Ok(None)
 }

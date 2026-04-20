@@ -28,7 +28,6 @@ use domain::new::rdata::RecordData;
 use domain::rdata::dnssec::Timestamp;
 use domain::rdata::{Dnskey, Nsec3param, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
-use domain::zonetree::StoredName;
 use domain_kmip::KeyUrl;
 use domain_kmip::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
 use domain_kmip::{self, ClientCertificate, ConnectionSettings};
@@ -170,7 +169,7 @@ impl ZoneSigner {
 
     pub fn load_public_key(
         key_path: &Path,
-    ) -> Result<Record<StoredName, Dnskey<Bytes>>, Terminated> {
+    ) -> Result<Record<Name<Bytes>, Dnskey<Bytes>>, Terminated> {
         let public_data = std::fs::read_to_string(key_path).map_err(|_| {
             error!("loading public key from file '{}'", key_path.display(),);
             Terminated
@@ -443,7 +442,6 @@ impl ZoneSigner {
         // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
             .unsigned_records()
-            .into_iter()
             .map(OldRecord::from)
             .collect::<Vec<_>>();
         records.push(new_soa.clone().into());
@@ -1289,7 +1287,7 @@ struct ZoneSignerStatus {
     zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<SigningStatusPerZone>>>>>,
 
     // Sign each zone only once at a time.
-    zone_semaphores: Arc<RwLock<HashMap<StoredName, Arc<Semaphore>>>>,
+    zone_semaphores: Arc<RwLock<HashMap<Name<Bytes>, Arc<Semaphore>>>>,
 
     queue_semaphore: Arc<Semaphore>,
 }

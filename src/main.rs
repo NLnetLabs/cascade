@@ -5,11 +5,8 @@ use cascaded::{
     loader::Loader,
     manager::Manager,
     policy,
-    units::{
-        key_manager::KeyManager,
-        zone_server::{Source, ZoneServer},
-        zone_signer::ZoneSigner,
-    },
+    server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
+    units::{key_manager::KeyManager, zone_signer::ZoneSigner},
 };
 use clap::{crate_authors, crate_description};
 use std::{collections::HashMap, fs::create_dir_all};
@@ -207,13 +204,10 @@ fn main() -> ExitCode {
         logger,
         loader: Loader::new(),
         key_manager: KeyManager::new(),
-        unsigned_review_server: ZoneServer::new(Source::Unsigned),
-        signed_review_server: ZoneServer::new(Source::Signed),
-        publication_server: ZoneServer::new(Source::Published),
+        loaded_review_server: LoadedReviewServer::new(),
+        signed_review_server: SignedReviewServer::new(),
+        publication_server: PublicationServer::new(),
         signer: ZoneSigner::new(),
-        unsigned_zones: Default::default(),
-        signed_zones: Default::default(),
-        published_zones: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
         resign_busy2: Mutex::new(HashMap::new()),
     });
