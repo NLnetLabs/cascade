@@ -168,9 +168,6 @@ mod compat {
     where
         V: Viewer + Send + Sync + 'static,
     {
-        // IP address/CIDR based access control:
-        // TODO
-
         // TSIG access control:
         // If the request was TSIG authenticated it would only be passed to
         // our service if the TsigMiddlewareSvc verified that the key used
