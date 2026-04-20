@@ -462,6 +462,7 @@ impl HttpServer {
                 .last_published
                 .as_ref()
                 .map(|p| LastPublishedZone {
+                    loaded_serial: p.loaded_serial,
                     signed_serial: p.signed_serial,
                 });
         }
