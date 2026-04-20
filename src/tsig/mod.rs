@@ -260,6 +260,70 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     // Lock the global state and try to remove the key.
     let mut state = center.state.lock().unwrap();
 
+    // Currently if a zone was added with `--source
+    // ip[:port]^<TSIG_KEY_NAME>` that would cause the TSIG key to be used
+    // by the loader when refreshing the zone.
+    //
+    // In future policies may refer to TSIG keys in a couple of places:
+    //
+    // 1. In server outbound settings for signing NOTIFY, SOA and XFR messages
+    //    to downstream nameservers.
+    // 2. In key manager settings for instructing dnst keyset which nameserver
+    //    to query to sanity check the signed zone contents, with a TSIG key if
+    //    one is needed to authenticate to the specified nameserver in order to
+    //    do XFR.
+    //
+    // So we need to check all of these places to see if a key is in use.
+
+    if !state.tsig_store.map.contains_key(name) {
+        return Err(RemoveError::NotFound);
+    }
+
+    // Is the TSIG key in use with a zone source?
+    if state.zones.iter().any(|z| {
+        let zone_state = z.0.state.lock().unwrap();
+        matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
+    }) {
+        return Err(RemoveError::Used);
+    }
+
+    // Is the TSIG key referenced by any active (not being deleted) policy?
+    if state
+        .policies
+        .values()
+        .filter(|p| !p.mid_deletion)
+        .flat_map(|p| &p.latest.key_manager.publication_nameservers)
+        .filter_map(|n| n.split_once("^").map(|v| v.1))
+        .any(|k| {
+            let nk = Name::<Vec<u8>>::from_str(k);
+            if let Ok(n) = nk {
+                n == name
+            } else {
+                // Just ignore TSIG key names that cannot be parsed as a
+                // DNS name. It should not have been possible to add them
+                // into the policy in the first place so this should never
+                // happen.
+                //
+                // TODO: "update" from using a String type for
+                // publication_nameservers to a type that actually uses
+                // TsigKeyName, like NameserverCommsPolicy does, so that at
+                // this point we don't need to care about valid or invalid
+                // TSIG key names? That would also have the benefit of not
+                // having to parse the nameserver string format here again.
+                false
+            }
+        })
+    {
+        return Err(RemoveError::Used);
+    }
+
+    // Delete the TSIG key. The TSIG key store has a set of zones that
+    // refer to the key to avoid having to lock and inspect zone state,
+    // so we can also find that the TSIG key is still referenced there
+    // if an operation to remove a zone hasn't cleaned up the reference
+    // to the zone in the TSIG store yet (even though its source no
+    // longer refers to it in the check we did above - can this ever
+    // happen?).
     match state.tsig_store.map.entry(name.clone()) {
         hash_map::Entry::Occupied(entry) => {
             if !entry.get().zones.is_empty() {

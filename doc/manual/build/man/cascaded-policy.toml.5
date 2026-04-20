@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Apr 17, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "Apr 20, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -96,6 +96,7 @@ csk.auto\-done = true
 algorithm.auto\-done = true
 ds\-algorithm = \(dqSHA256\(dq
 auto\-remove = true
+publication\-nameservers = []
 
 [key\-manager.records]
 ttl = \(dq1h\(dq
@@ -337,6 +338,22 @@ Whether to automatically remove expired keys.
 .sp
 If this is set, expired keys will be removed automatically (by deleting the
 files for on\-disk keys or removing it from the HSM).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B publication\-nameservers = []
+A set of nameservers to use when checking for rrsiG propagation during a
+key roll.
+.sp
+Each nameserver is specified as a string with the syntax:
+.INDENT 7.0
+.INDENT 3.5
+\fB<IP\-Address>:<Port>[^[TSIG\-Key\-Name]]\fP
+.UNINDENT
+.UNINDENT
+.sp
+If not specified then the nameserver specified in the zone apex SOA MNAME
+field will be queried.
 .UNINDENT
 .SS The management of DNS records by the key manager.
 .sp

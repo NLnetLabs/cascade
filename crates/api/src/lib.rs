@@ -4,7 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, SystemTime};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use domain::tsig::KeyName;
+use domain::tsig::Algorithm;
 use serde::{Deserialize, Serialize};
 
 pub use domain::base::Serial;
@@ -627,6 +627,17 @@ impl Display for TsigAlgorithm {
     }
 }
 
+impl From<TsigAlgorithm> for Algorithm {
+    fn from(alg: TsigAlgorithm) -> Self {
+        match alg {
+            TsigAlgorithm::Sha1 => Algorithm::Sha1,
+            TsigAlgorithm::Sha256 => Algorithm::Sha256,
+            TsigAlgorithm::Sha384 => Algorithm::Sha384,
+            TsigAlgorithm::Sha512 => Algorithm::Sha512,
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneHistory {
     pub history: Vec<HistoryItem>,
@@ -878,19 +889,12 @@ pub struct OutboundPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct NameserverCommsPolicyInfo {
-    pub addr: Option<SocketAddr>,
-    pub tsig_key_name: Option<KeyName>,
+    pub addr: SocketAddr,
 }
 
 impl std::fmt::Display for NameserverCommsPolicyInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(addr) = self.addr {
-            write!(f, "{addr}")?;
-        }
-        if let Some(tsig_key_name) = &self.tsig_key_name {
-            write!(f, "^{tsig_key_name}")?;
-        }
-        Ok(())
+        write!(f, "{}", self.addr)
     }
 }
 

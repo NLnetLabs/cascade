@@ -46,7 +46,7 @@ impl LoaderZoneHandle<'_> {
     /// A (soft) refresh will be initiated via [`Self::enqueue_refresh()`].
     pub fn set_source(&mut self, source: Source) {
         info!(
-            "Setting source of zone '{}' from '{:?}' to '{source:?}'",
+            "Setting source of zone '{}' from '{}' to '{source}'",
             self.zone.name, self.state.loader.source
         );
 

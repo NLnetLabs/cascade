@@ -258,7 +258,7 @@ pub fn get_zone(center: &Arc<Center>, name: &Name<Bytes>) -> Option<Arc<Zone>> {
 
 pub async fn add_tsig_key(
     center: &Arc<Center>,
-    name: Name<octseq::Array<255>>,
+    name: Name<domain::dep::octseq::Array<255>>,
     alg: domain::tsig::Algorithm,
     secret: &[u8],
 ) -> Result<TsigAddResult, TsigAddError> {

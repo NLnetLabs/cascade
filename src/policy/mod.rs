@@ -8,7 +8,6 @@ use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 use domain::base::Ttl;
-use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 

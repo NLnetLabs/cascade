@@ -2,11 +2,10 @@
 
 use std::{
     fmt::{self, Display},
-    net::{IpAddr, SocketAddr},
+    net::{AddrParseError, IpAddr, SocketAddr},
     str::FromStr,
 };
 
-use domain::tsig::KeyName;
 use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
@@ -965,65 +964,33 @@ impl NameserverCommsSpec {
 
     /// Build into this specification.
     pub fn build(policy: &NameserverCommsPolicy) -> Self {
-        Self::Complex(ComplexNameserverCommsSpec {
-            addr: policy.addr,
-            tsig_key_name: policy.tsig_key_name.clone(),
-        })
+        Self::Complex(ComplexNameserverCommsSpec { addr: policy.addr })
     }
 }
 
 impl SimpleNameserverCommsSpec {
     /// Parse from this specification.
     pub fn parse(self) -> NameserverCommsPolicy {
-        NameserverCommsPolicy {
-            addr: self.addr,
-            tsig_key_name: self.tsig_key_name,
-        }
+        NameserverCommsPolicy { addr: self.addr }
     }
 }
 
 impl ComplexNameserverCommsSpec {
     /// Parse from this specification.
     pub fn parse(self) -> NameserverCommsPolicy {
-        NameserverCommsPolicy {
-            addr: self.addr,
-            tsig_key_name: self.tsig_key_name,
-        }
+        NameserverCommsPolicy { addr: self.addr }
     }
 }
 
-/// Parse`[<IP_ADDRESS>[:<PORT>]][^<TSIG_KEY_NAME>]`
+/// Parse`<IP_ADDRESS>[:<PORT>]`
 impl FromStr for SimpleNameserverCommsSpec {
-    type Err = String;
+    type Err = AddrParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (s, tsig_key_name) = s
-            .split_once('^')
-            .map(|(s, tsig_key_name)| (s, Some(tsig_key_name)))
-            .unwrap_or((s, None));
-
-        let addr = if s.is_empty() {
-            None
-        } else {
-            Some(
-                IpAddr::from_str(s)
-                    .map(|ip| SocketAddr::new(ip, 53))
-                    .or_else(|_| SocketAddr::from_str(s))
-                    .map_err(|err| format!("Invalid IP address '{s}': {err}"))?,
-            )
-        };
-
-        let tsig_key_name = tsig_key_name
-            .map(|name| {
-                KeyName::from_str(name)
-                    .map_err(|err| format!("Invalid TSIG key name '{name}: {err}"))
-            })
-            .transpose()?;
-
-        Ok(SimpleNameserverCommsSpec {
-            addr,
-            tsig_key_name,
-        })
+        let addr = IpAddr::from_str(s)
+            .map(|ip| SocketAddr::new(ip, 53))
+            .or_else(|_| SocketAddr::from_str(s))?;
+        Ok(SimpleNameserverCommsSpec { addr })
     }
 }
 

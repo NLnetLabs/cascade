@@ -18,7 +18,6 @@ use bytes::Bytes;
 use domain::base::Name;
 use domain::base::Serial;
 use domain::dnssec::sign::keys::keyset::KeyType;
-use domain::tsig::Algorithm;
 use domain::utils::base64;
 use domain_kmip::ConnectionSettings;
 use domain_kmip::dep::kmip::client::pool::ConnectionManager;
@@ -106,7 +105,6 @@ impl HttpServer {
             .route("/tsig/", get(Self::tsig_key_list))
             .route("/tsig/add", post(Self::tsig_key_add))
             .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
-            // .route("/tsig/{name}/status", get(Self::tsig_key_status))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
@@ -918,18 +916,12 @@ impl HttpServer {
                 accept_xfr_requests_from: p_outbound
                     .accept_xfr_requests_from
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo {
-                        addr: v.addr,
-                        tsig_key_name: v.tsig_key_name.clone(),
-                    })
+                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
                 send_notify_to: p_outbound
                     .send_notify_to
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo {
-                        addr: v.addr,
-                        tsig_key_name: v.tsig_key_name.clone(),
-                    })
+                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
             },
         };
@@ -1117,14 +1109,8 @@ impl HttpServer {
             return Json(Err(TsigAddError::InvalidBase64Secret));
         };
 
-        let alg = match tsig_add.alg {
-            TsigAlgorithm::Sha1 => Algorithm::Sha1,
-            TsigAlgorithm::Sha256 => Algorithm::Sha256,
-            TsigAlgorithm::Sha384 => Algorithm::Sha384,
-            TsigAlgorithm::Sha512 => Algorithm::Sha512,
-        };
-
-        match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {
+        match center::add_tsig_key(&state.center, tsig_add.name, tsig_add.alg.into(), &secret).await
+        {
             Ok(TsigAddResult) => Json(Ok(TsigAddResult)),
             Err(err) => Json(Err(err)),
         }
