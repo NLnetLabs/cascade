@@ -38,6 +38,9 @@ Commands
 
    Register a new TSIG key.
 
+   Incoming DNS messages that are TSIG signed will be rejected if the key used
+   to sign the message is not registered with Cascade.
+
 .. subcmd:: list
 
    List registered TSIG keys and the zones that use them.
