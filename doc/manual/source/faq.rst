@@ -77,7 +77,7 @@ For bigger zones, this should not be done too often to keep the overhead of the 
 Once a month seems a good compromise.
 
 A KSK roll requires updating the DS RRset in the parent zone.
-For this reason, rolling a KSK once a year is a reasonable.
+For this reason, rolling a KSK once a year is reasonable.
 
 
 .. seealso::

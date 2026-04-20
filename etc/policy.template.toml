@@ -156,6 +156,17 @@ ds-algorithm = "SHA-256"
 # TODO: Perhaps support removing keys after a certain delay?
 auto-remove = true
 
+# The upstream nameservers to use when checking for RRSIG propagation during
+# a key roll.
+# 
+# Each nameserver must be specifeid as a string in the form `"<IP
+# address>:[<port>][^<TSIG key name>]"`.
+#
+# If not specified, the nameserver specified by the SOA MNAME field will be
+# checked.
+# 
+# publication_nameservers = []
+
 # The management of DNS records by the key manager.
 # 
 # The key manager generates and signs several records (DNSKEY and CDS).  This
