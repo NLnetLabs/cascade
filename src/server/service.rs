@@ -84,7 +84,6 @@ mod compat {
     };
 
     use futures::Stream;
-    use tracing::{debug, trace};
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
 
@@ -130,13 +129,6 @@ mod compat {
                         return Box::pin(std::future::ready(error(old_request.message(), rcode)));
                     };
 
-                    if !is_permitted(&old_request, zone) {
-                        return Box::pin(std::future::ready(error(
-                            old_request.message(),
-                            Rcode::REFUSED,
-                        )));
-                    }
-
                     match zone_request.kind {
                         ZoneRequestKind::Soa => Box::pin({
                             let viewer = zone.viewer.clone();
@@ -159,97 +151,6 @@ mod compat {
                 }
             }
         }
-    }
-
-    /// Enforce any defined access controls for the zone being requested.
-    fn is_permitted<V>(
-        request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
-        zone: &ServedZone<V>,
-    ) -> bool
-    where
-        V: Viewer + Send + Sync + 'static,
-    {
-        // IP address/CIDR based access control:
-        // TODO
-
-        // TSIG access control:
-        // If the request was TSIG authenticated it would only be passed to
-        // our service if the TsigMiddlewareSvc verified that the key used
-        // exists in our key store, so that it can sign the response that we
-        // generate.
-        //
-        // However, having used a known TSIG key is not enough, the key used
-        // must also have been permitted by the operator for the zone being
-        // queried.
-        //
-        // The TSIG key(s) permitted to sign a zone are defined in policy
-        // so we have to look that up.
-        let zone_state = zone.handle.state.lock().unwrap();
-
-        let policy = zone_state
-            .policy
-            .as_ref()
-            .expect("A zone must always have an associated policy");
-
-        let outbound_policy = &policy.server.outbound;
-
-        debug!(
-            "Checking access to zone {} from {} with TSIG key {:?} due to policy '{}'",
-            zone.handle.name,
-            request.client_addr(),
-            request.metadata(),
-            policy.name
-        );
-        trace!("Policy: {policy:?}");
-
-        // If no rules are defined, allow the request.
-        if outbound_policy.accept_xfr_requests_from.is_empty() {
-            return true;
-        }
-
-        // At least one access control rule must match in order for the
-        // request to be accepted.
-
-        for rule in &outbound_policy.accept_xfr_requests_from {
-            match (rule.addr, &rule.tsig_key_name, request.metadata()) {
-                // Allow all
-                (None, None, None) => return true,
-
-                // TSIG key match required
-                (None, Some(wanted_key), Some(actual_key)) if wanted_key == actual_key.name() => {
-                    // Allow the request.
-                    return true;
-                }
-
-                // IP address match required
-                (Some(wanted_addr), None, None) if wanted_addr == request.client_addr() => {
-                    // Allow the request.
-                    return true;
-                }
-
-                // IP address *and* TSIG key match required
-                (Some(wanted_addr), Some(wanted_key), Some(actual_key))
-                    if wanted_addr == request.client_addr() && wanted_key == actual_key.name() =>
-                {
-                    // Allow the request.
-                    return true;
-                }
-
-                _ => {
-                    // Rule not matched, see if another rule matches
-                }
-            }
-        }
-
-        // Deny the request.
-        debug!(
-            "Denying request to zone {} from {} with TSIG key {:?} due to policy '{}'",
-            zone.handle.name,
-            request.client_addr(),
-            request.metadata(),
-            policy.name
-        );
-        false
     }
 
     fn soa<V: Viewer>(request: &Message<Vec<u8>>, viewer: &V) -> ResponseStream {
