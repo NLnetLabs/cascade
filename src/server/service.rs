@@ -82,7 +82,6 @@ mod compat {
         new::base::wire::ParseBytesZC,
         tsig,
     };
-
     use futures::Stream;
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
