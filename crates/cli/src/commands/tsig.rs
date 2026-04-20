@@ -16,10 +16,10 @@ pub struct Tsig {
 #[derive(Clone, Debug, clap::Subcommand)]
 #[allow(clippy::large_enum_variant)]
 pub enum TsigCommand {
-    /// Add a TSIG key to Cascade.
+    /// Register a TSIG key
     #[command(name = "add")]
     Add {
-        /// The name of the TSIG key to add.
+        /// The name of the TSIG key to register.
         ///
         /// Can also be in the form `[algorithm]:keyname:secret`.
         name: String,
@@ -28,10 +28,16 @@ pub enum TsigCommand {
         ///
         /// Can be omitted if provided as part of the name.
         /// Required if `[SECRET]` is provided.
+        ///
+        /// Must be one of:
+        ///   hmac-sha1
+        ///   hmac-sha256
+        ///   hmac-sha384
+        ///   hmac-sha512
         #[arg(requires = "secret")]
         alg: Option<TsigAlgorithm>,
 
-        /// Base64 encoded secret key bytes.
+        /// The secret key material in base64 encoded form.
         ///
         /// Can be omitted if provided as part of the name.
         /// Required if `[ALG]` is provided.
@@ -39,11 +45,11 @@ pub enum TsigCommand {
         secret: Option<String>,
     },
 
-    /// Remove a TSIG key from Cascade.
+    /// Remove a TSIG key
     #[command(name = "remove")]
     Remove { name: TsigKeyName },
 
-    /// List the TSIG keys known to Cascade.
+    /// List registered TSIG keys
     #[command(name = "list")]
     List,
 }
@@ -126,7 +132,7 @@ impl Tsig {
                 }
             }
 
-            // Remove a TSIG key (if possible).            
+            // Remove a TSIG key (if possible).
             TsigCommand::Remove { name } => {
                 let res: Result<TsigRemoveResult, TsigRemoveError> =
                     client.post_json(&format!("tsig/{name}/remove")).await?;
@@ -154,13 +160,15 @@ impl Tsig {
                         .collect::<Vec<String>>()
                         .join(", ");
 
-                    print!("{tsig_key_name}: used by zones: ");
+                    println!("{tsig_key_name}");
+                    print!("  zones: ");
                     if !zones.is_empty() {
                         println!("{zones}");
                     } else {
                         println!("none");
                     }
                 }
+
                 Ok(())
             }
         }
@@ -187,7 +195,7 @@ impl FromStr for TsigAlgorithm {
             "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
             "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
             "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
-            other => Err(format!("'{other}' is not a recognized TSIG algorithm")),
+            other => Err(format!("'{other}' is not a supported TSIG algorithm")),
         }
     }
 }

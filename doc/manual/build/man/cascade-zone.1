@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Apr 13, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "Apr 17, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -64,7 +64,7 @@ command.
 .INDENT 0.0
 .TP
 .B add
-Register a new zone. The zone will be loaded, signed and published.
+Register a new zone.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -74,7 +74,7 @@ Remove a zone.
 \fBNOTE:\fP
 .INDENT 7.0
 .INDENT 3.5
-Once removed downstream servers will no longer be able to fetech
+Once removed downstream servers will no longer be able to fetch
 the zone!
 .UNINDENT
 .UNINDENT
@@ -127,19 +127,21 @@ The zone source can be the IP address of an upstream nameserver (with
 or without port, defaults to port 53) or the path to a zone file locally
 available to the \fBcascaded\fP daemon.\(ga
 .sp
-When specifying an upstream nameserver you may also optionally suffix it
-with \fB^<TSIG_KEY_NAME>\fP to indicate that the specified RFC 8945 TSIG key
-should be used to sign any SOA, AXFR and IXFR queries that will be sent to
-the upstream source.
+When specifying an upstream nameserver you may also optionally suffix it with
+\fB^<TSIG_KEY_NAME>\fP to indicate that the specified RFC 8945 TSIG key should
+be used to sign any SOA, AXFR and IXFR queries that will be sent to the
+upstream source.
 .sp
 Zones sourced from an upstream nameserver will be automatically updated if
 a new version is detected. This can happen if the upstream nameserver sends
-an RFC 1996 NOTIFY message to Cascade, or if an IXFR or SOA query (if the
-upstream responds with NOTIMP to an IXFR request) sent by Cascade (due to a
-SOA timer expiring) discovers that a newer SOA SERIAL is available, or due
-to an operator issuing a \fIzone reload\fP command. For zones that have already
-been retrieved at least once via AXFR, subsequent refreshes will attempt to
-use IXFR and fallback to AXFR if IXFR is not available.
+an RFC 1996 NOTIFY message to Cascade, or if a via an IXFR or SOA query it
+is discovered that the SOA SERIAL at the upstream nameserver is \(dqhigher\(dq [1]
+than the last version that Cascade loaded, or due to an operator issuing a
+\fIzone reload\fP command.
+.sp
+For zones that have already been retrieved at least once via AXFR, subsequent
+refreshes will attempt to use IXFR and fallback to AXFR if IXFR is not
+available.
 .sp
 \fBNOTE:\fP
 .INDENT 7.0
@@ -157,6 +159,8 @@ Note: In order to use a TSIG key you MUST also supply the key to
 Cascade via \fBtsig add\fP\&.
 .UNINDENT
 .UNINDENT
+.sp
+[1]: \X'tty: link https://www.rfc-editor.org/rfc/rfc1982#section-3.2'\fI\%https://www.rfc\-editor.org/rfc/rfc1982#section\-3.2\fP\X'tty: link'
 .UNINDENT
 .INDENT 0.0
 .TP

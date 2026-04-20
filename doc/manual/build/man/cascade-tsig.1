@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-TSIG" "1" "Apr 13, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-TSIG" "1" "Apr 17, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-tsig \- Manage TSIG keys
 .sp
@@ -44,7 +44,8 @@ Added in version 0.1.0\-beta1.
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fI\%remove\fP \fB<TSIG_KEY_NAME>\fP
 .SH DESCRIPTION
 .sp
-Manage RFC 8945 TSIG keys for authenticating zone transfers.
+Manage RFC 8945 TSIG keys for authenticating zone transfer (AXFR, IXFR) and
+related messages (SOA and NOTIFY).
 .sp
 \fBTIP:\fP
 .INDENT 0.0
@@ -70,7 +71,7 @@ List registered TSIG keys and the zones that use them.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B add
+.B remove
 Remove a registered TSIG key.
 .sp
 \fBNOTE:\fP
