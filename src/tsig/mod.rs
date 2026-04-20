@@ -272,10 +272,6 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     //    do XFR.
     //
     // So we need to check all of these places to see if a key is in use.
-    //
-    // Alternatively we would need to update the TSIG key store to track
-    // if (and where?) a key is being used and check with the TSIG key
-    // store.
 
     if !state.tsig_store.map.contains_key(name) {
         return Err(RemoveError::NotFound);
