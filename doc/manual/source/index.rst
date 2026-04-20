@@ -100,6 +100,7 @@ Examples of things we're interested in:
    key-management
    hsms
    review-hooks
+   zone-transfers
 
 .. toctree::
    :maxdepth: 2
