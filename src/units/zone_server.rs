@@ -690,7 +690,7 @@ impl Notifiable for LoaderNotifier {
         // Don't do anything if the notifier is disabled.
         if self.enabled && class == Class::IN {
             // Propagate a request for the zone refresh.
-            // 
+            //
             // We ignore the serial because we will just do a SOA query to our
             // configured upstream.
             //
