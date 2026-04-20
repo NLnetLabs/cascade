@@ -277,6 +277,7 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
         return Err(RemoveError::NotFound);
     }
 
+    // Is the TSIG key in use with a zone source?
     if state.zones.iter().any(|z| {
         let zone_state = z.0.state.lock().unwrap();
         matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
