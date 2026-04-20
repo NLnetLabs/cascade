@@ -3070,12 +3070,15 @@ fn nsec3_hash_parts(
 fn is_occluded(name: &Name<Bytes>, iss: &IncrementalSigningState) -> bool {
     // We need to check if the parent of name is a delegation. Stop
     // when we reached origin.
-    let Some(mut curr) = name.parent() else {
-        // We asked for the parent of the root. That is weird. Just
-        // return not occluded.
-        return false;
-    };
+    let mut curr = name.clone();
     loop {
+        let Some(parent) = curr.parent() else {
+            // We asked for the parent of the root. That is weird. Just
+            // return not occluded.
+            return false;
+        };
+        curr = parent;
+
         if curr == iss.origin {
             // We reached apex. The name was not occluded.
             return false;
@@ -3088,12 +3091,6 @@ fn is_occluded(name: &Name<Bytes>, iss: &IncrementalSigningState) -> bool {
             // Name is occluded.
             return true;
         }
-        let Some(parent) = curr.parent() else {
-            // We asked for the parent of the root. That is weird. Just
-            // return not occluded.
-            return false;
-        };
-        curr = parent;
     }
 }
 
