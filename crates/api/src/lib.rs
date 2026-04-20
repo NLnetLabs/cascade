@@ -5,7 +5,6 @@ use std::time::{Duration, SystemTime};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use domain::tsig::Algorithm;
-use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 
 pub use domain::base::Serial;
@@ -890,19 +889,12 @@ pub struct OutboundPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct NameserverCommsPolicyInfo {
-    pub addr: Option<SocketAddr>,
-    pub tsig_key_name: Option<KeyName>,
+    pub addr: SocketAddr,
 }
 
 impl std::fmt::Display for NameserverCommsPolicyInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(addr) = self.addr {
-            write!(f, "{addr}")?;
-        }
-        if let Some(tsig_key_name) = &self.tsig_key_name {
-            write!(f, "^{tsig_key_name}")?;
-        }
-        Ok(())
+        write!(f, "{}", self.addr)
     }
 }
 

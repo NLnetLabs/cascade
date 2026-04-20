@@ -916,18 +916,12 @@ impl HttpServer {
                 accept_xfr_requests_from: p_outbound
                     .accept_xfr_requests_from
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo {
-                        addr: v.addr,
-                        tsig_key_name: v.tsig_key_name.clone(),
-                    })
+                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
                 send_notify_to: p_outbound
                     .send_notify_to
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo {
-                        addr: v.addr,
-                        tsig_key_name: v.tsig_key_name.clone(),
-                    })
+                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
             },
         };

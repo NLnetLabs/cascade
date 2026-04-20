@@ -9,7 +9,6 @@ use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 use domain::base::Ttl;
-use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
@@ -476,10 +475,7 @@ pub struct NameserverCommsPolicy {
     /// For sending the port MUST NOT be zero.
     ///
     /// TODO: Support IP prefixes?
-    pub addr: Option<SocketAddr>,
-
-    /// An optional TSIG key to authenticate messages with.
-    pub tsig_key_name: Option<KeyName>,
+    pub addr: SocketAddr,
 }
 
 //----------- KeyParameters ---------------------------------------------------
