@@ -62,6 +62,7 @@ Example
     algorithm.auto-done = true
     ds-algorithm = "SHA256"
     auto-remove = true
+    publication-nameservers = []
 
     [key-manager.records]
     ttl = "1h"
@@ -257,6 +258,17 @@ The ``[key-manager]`` section.
    If this is set, expired keys will be removed automatically (by deleting the
    files for on-disk keys or removing it from the HSM).
 
+.. option:: publication-nameservers = []
+
+   A set of nameservers to use when checking for rrsiG propagation during a
+   key roll.
+
+   Each nameserver is specified as a string with the syntax:
+
+     ``<IP-Address>:<Port>[^[TSIG-Key-Name]]``
+
+   If not specified then the nameserver specified in the zone apex SOA MNAME
+   field will be queried.
 
 The management of DNS records by the key manager.
 +++++++++++++++++++++++++++++++++++++++++++++++++
