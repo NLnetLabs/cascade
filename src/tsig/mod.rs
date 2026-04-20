@@ -288,9 +288,11 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
             return Err(RemoveError::Used);
         }
 
+    // Is the TSIG key referenced by any active (not being deleted) policy?
     if state
         .policies
         .values()
+        .filter(|p| !p.mid_deletion)
         .flat_map(|p| &p.latest.key_manager.publication_nameservers)
         .filter_map(|n| n.split_once("^").map(|v| v.1))
         .any(|k| {
