@@ -106,7 +106,6 @@ impl HttpServer {
             .route("/tsig/", get(Self::tsig_key_list))
             .route("/tsig/add", post(Self::tsig_key_add))
             .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
-            // .route("/tsig/{name}/status", get(Self::tsig_key_status))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
