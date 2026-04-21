@@ -1,4 +1,4 @@
-#! /// Incremental signing.
+//! Incremental signing.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -37,7 +37,7 @@ use jiff::{Timestamp as JiffTimestamp, Zoned};
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::center::Center;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
@@ -140,14 +140,14 @@ pub fn sign_incrementally(
 
     let start = Instant::now();
     iss.load_signed_zone(&ws.patch.curr())?;
-    info!("loading signed zone took {:?}", start.elapsed());
+    debug!("loading signed zone took {:?}", start.elapsed());
 
     ws.handle_nsec_nsec3(&mut iss)?;
 
     if load_unsigned {
         let start = Instant::now();
         iss.load_unsigned_zone(&ws.patch.next_loaded().expect("should be there"))?;
-        info!("loading new unsigned zone took {:?}", start.elapsed());
+        debug!("loading new unsigned zone took {:?}", start.elapsed());
     } else {
         // Re-use the signed data.
         iss.load_signed_only();
@@ -168,7 +168,7 @@ pub fn sign_incrementally(
     if !ws.zonemd.is_empty() {
         let start = Instant::now();
         ws.add_zonemd(&mut iss)?;
-        info!("ZONEMD took {:?}", start.elapsed());
+        debug!("ZONEMD took {:?}", start.elapsed());
     }
 
     if refresh_signatures {
@@ -178,11 +178,11 @@ pub fn sign_incrementally(
             ws.key_roll_signatures(&mut iss)?;
         }
     }
-    info!("incremental signing took {:?}", start.elapsed());
+    debug!("incremental signing took {:?}", start.elapsed());
 
     let start = Instant::now();
     ws.incremental_generate_diffs(&iss)?;
-    info!("generating diffs took {:?}", start.elapsed());
+    debug!("generating diffs took {:?}", start.elapsed());
 
     ws.patch
         .apply()
@@ -260,6 +260,9 @@ impl WorkSpace<'_> {
             <UnixTime as Into<Duration>>::into(now.clone())
                 - <UnixTime as Into<Duration>>::into(curr_last_signature_refresh.clone())
         } else {
+            debug!(
+                "Weird current time ({now}) is less than last time signatures were refreshed ({curr_last_signature_refresh})"
+            );
             // Use 60 seconds when times are weird. This should get things
             // back in sync.
             Duration::from_secs(60)
@@ -275,8 +278,6 @@ impl WorkSpace<'_> {
         let to_sign = since_last_time.as_secs_f64() * (total_signatures as f64)
             / effective_lifetime.as_secs_f64();
         let to_sign = to_sign.ceil() as usize;
-
-        dbg!(to_sign);
 
         // Collect expiration times, owner names, and types to figure out what
         // to sign.
@@ -305,7 +306,6 @@ impl WorkSpace<'_> {
             }
 
             let key = ((*owner).clone(), **rtype);
-            dbg!(&key);
             if **rtype == Rtype::NSEC {
                 let record = iss.nsecs.get(&key.0).expect("NSEC record should exist");
                 let records = [record.clone()];
@@ -466,11 +466,7 @@ impl WorkSpace<'_> {
         sigs_key_tags.sort();
 
         let mut new_sigs = vec![];
-        for (i, (owner, rtype, key_tags)) in sigs_key_tags.iter().enumerate() {
-            if i >= to_sign {
-                break;
-            }
-
+        for (owner, rtype, key_tags) in sigs_key_tags.iter().take(to_sign) {
             if HashSet::<u16>::from_iter(key_tags.iter().copied()) == *curr_key_tags {
                 // Nothing to do.
                 continue;
@@ -534,7 +530,7 @@ impl WorkSpace<'_> {
 
         let curr_apex_remove = &self.local_state.apex_remove;
         if apex_remove != *curr_apex_remove {
-            info!("apex remove RRtypes changed: from {curr_apex_remove:?} to {apex_remove:?}",);
+            debug!("apex remove RRtypes changed: from {curr_apex_remove:?} to {apex_remove:?}",);
             self.local_state.apex_remove = apex_remove;
             apex_changed = true;
         }
@@ -547,7 +543,7 @@ impl WorkSpace<'_> {
 
         let curr_apex_extra = &self.local_state.apex_extra;
         if apex_extra != *curr_apex_extra {
-            info!("apex extra changed: from {curr_apex_extra:?} to {apex_extra:?}",);
+            debug!("apex extra changed: from {curr_apex_extra:?} to {apex_extra:?}",);
             self.local_state.apex_extra = apex_extra;
             apex_changed = true;
         }
@@ -571,7 +567,7 @@ impl WorkSpace<'_> {
 
         let curr_key_tags = &self.local_state.key_tags;
         if key_tags != *curr_key_tags {
-            info!("key tags changed: from {curr_key_tags:?} to {key_tags:?}",);
+            debug!("key tags changed: from {curr_key_tags:?} to {key_tags:?}",);
             self.local_state.key_tags = key_tags;
             self.local_state.key_roll = Some(faketime_or_now());
             apex_changed = true;
@@ -928,51 +924,47 @@ impl WorkSpace<'_> {
         // order. Ignore ZONEMD and RRSIGs of ZONEMD records.
         let mut all = vec![];
 
-        let mut data: Vec<_> = iss
-            .new_apex
-            .iter()
-            .filter_map(|(t, r)| if *t != Rtype::ZONEMD { Some(r) } else { None })
-            .flatten()
-            .collect();
-        all.append(&mut data);
-        let mut data: Vec<_> = iss
-            .new_data
-            .iter()
-            .filter_map(|((o, t), r)| {
-                if *o != iss.origin || *t != Rtype::ZONEMD {
-                    Some(r)
-                } else {
-                    None
-                }
-            })
-            .flatten()
-            .collect();
-        all.append(&mut data);
+        all.extend(
+            iss.new_apex
+                .iter()
+                .filter_map(|(t, r)| if *t != Rtype::ZONEMD { Some(r) } else { None })
+                .flatten(),
+        );
 
-        let mut data: Vec<_> = iss.nsecs.values().collect();
-        all.append(&mut data);
+        all.extend(
+            iss.new_data
+                .iter()
+                .filter_map(|((o, t), r)| {
+                    if *o != iss.origin || *t != Rtype::ZONEMD {
+                        Some(r)
+                    } else {
+                        None
+                    }
+                })
+                .flatten(),
+        );
 
-        let mut data: Vec<_> = iss.nsec3s.values().collect();
-        all.append(&mut data);
+        all.extend(iss.nsecs.values());
 
-        let mut data: Vec<_> = iss
-            .rrsigs
-            .iter()
-            .filter_map(|((o, t), r)| {
-                if *o != iss.origin || *t != Rtype::ZONEMD {
-                    Some(r)
-                } else {
-                    None
-                }
-            })
-            .flatten()
-            .collect();
-        all.append(&mut data);
+        all.extend(iss.nsec3s.values());
+
+        all.extend(
+            iss.rrsigs
+                .iter()
+                .filter_map(|((o, t), r)| {
+                    if *o != iss.origin || *t != Rtype::ZONEMD {
+                        Some(r)
+                    } else {
+                        None
+                    }
+                })
+                .flatten(),
+        );
 
         //all.sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
         all.par_sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
 
-        info!("ZONEMD prepare and sort took {:?}", start.elapsed());
+        debug!("ZONEMD prepare and sort took {:?}", start.elapsed());
 
         let start = Instant::now();
 
@@ -1010,7 +1002,7 @@ impl WorkSpace<'_> {
             zonemd_records.push(record);
         }
 
-        info!("ZONEMD hash took {:?}", start.elapsed());
+        debug!("ZONEMD hash took {:?}", start.elapsed());
 
         let key = (iss.origin.clone(), Rtype::ZONEMD);
         let mut new_sigs = vec![];
@@ -1179,7 +1171,7 @@ impl WorkSpace<'_> {
 
                 let start = Instant::now();
                 load_signed_zone(&mut iss, &self.config.zonefile_in)?;
-                    info!("loading signed zone took {:?}", start.elapsed());
+                    debug!("loading signed zone took {:?}", start.elapsed());
 
                 // Re-use the signed data.
                 load_signed_only(&mut iss);
@@ -1232,8 +1224,7 @@ impl WorkSpace<'_> {
                         panic!("RRSIG expected");
                     };
                     let key = (owner, rrsig.type_covered());
-                    let mut records = vec![r];
-                    iss.rrsigs.entry(key).or_default().append(&mut records);
+                    iss.rrsigs.entry(key).or_default().push(r);
                 } else {
                     let key = r.rtype();
                     let mut records = vec![r];
@@ -1341,7 +1332,7 @@ impl WorkSpace<'_> {
                 let start = Instant::now();
                 iss.remove_nsec_nsec3();
                 iss.new_nsec_chain()?;
-                info!("replacing NSEC3 with NSEC took {:?}", start.elapsed());
+                debug!("replacing NSEC3 with NSEC took {:?}", start.elapsed());
                 return Ok(());
             }
             let ZoneRecordData::Nsec3param(nsec3param) = nsec3param_records[0].data() else {
@@ -1352,7 +1343,7 @@ impl WorkSpace<'_> {
                 let start = Instant::now();
                 iss.remove_nsec_nsec3();
                 iss.new_nsec3_chain()?;
-                info!("updating NSEC3 parameters took {:?}", start.elapsed());
+                debug!("updating NSEC3 parameters took {:?}", start.elapsed());
                 return Ok(());
             }
         } else {
@@ -1362,7 +1353,7 @@ impl WorkSpace<'_> {
                 let start = Instant::now();
                 iss.remove_nsec_nsec3();
                 iss.new_nsec3_chain()?;
-                info!("replacing NSEC with NSEC3 took {:?}", start.elapsed());
+                debug!("replacing NSEC with NSEC3 took {:?}", start.elapsed());
                 return Ok(());
             }
             // Stay with NSEC.

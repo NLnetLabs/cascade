@@ -10,7 +10,6 @@ use std::{
 use bytes::Bytes;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::UnixTime;
-use domain::rdata::dnssec::Timestamp;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
@@ -63,10 +62,7 @@ pub struct Center {
     pub publication_server: PublicationServer,
 
     /// Zones currently being re-signed.
-    pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
-
-    /// Zones currently being re-signed. Refresh for incremental signing.
-    pub resign_busy2: Mutex<HashMap<Name<Bytes>, UnixTime>>,
+    pub resign_busy: Mutex<HashMap<Name<Bytes>, UnixTime>>,
 }
 
 //--- Actions

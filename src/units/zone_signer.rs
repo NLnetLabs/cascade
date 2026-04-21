@@ -1,6 +1,6 @@
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
-use std::env::{VarError, var};
+use std::env::{self, VarError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -783,7 +783,7 @@ impl ZoneSigner {
             }
         };
 
-        let now = match var("CASCADE_FAKETIME") {
+        let now = match env::var("CASCADE_FAKETIME") {
             Ok(val) => val
                 .parse::<u32>()
                 .map_err(|e| SignerError::InternalError(format!("cannot parse {e} as u32")))?,
@@ -801,63 +801,12 @@ impl ZoneSigner {
 
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
         let mut min_time = None;
-        let now = SystemTime::now();
 
         #[allow(clippy::mutable_key_type)]
         let zones = {
             let state = center.state.lock().unwrap();
             state.zones.clone()
         };
-
-        // This the old expiration time based on the signature that
-        // expires first. It should be removed.
-        for zone in &zones {
-            let zone = &zone.0;
-            let zone_name = &zone.name;
-
-            let min_expiration = {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let zone_state = zone.state.lock().unwrap();
-                zone_state.min_expiration
-            };
-
-            let Some(min_expiration) = min_expiration else {
-                trace!("[ZS] resign: no min-expiration for zone {zone_name}");
-                continue;
-            };
-
-            // Start a new block to make sure the mutex is released.
-            {
-                let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_expiration = resign_busy.get(zone_name);
-                if let Some(expiration) = opt_expiration {
-                    if *expiration == min_expiration {
-                        // This zone is busy.
-                        trace!("[ZS]: resign: zone {zone_name} is busy");
-                        continue;
-                    }
-
-                    // Zone has been resigned. Remove this entry.
-                    resign_busy.remove(zone_name);
-                }
-            }
-
-            // Ensure that the Mutexes are locked only in this block;
-            let remain_time = {
-                let zone_state = zone.state.lock().unwrap();
-                // TODO: what if there is no policy?
-                zone_state.policy.as_ref().unwrap().signer.sig_remain_time
-            };
-
-            let exp_time = min_expiration.to_system_time(now);
-            let exp_time = exp_time - Duration::from_secs(remain_time as u64);
-
-            min_time = if let Some(time) = min_time {
-                Some(min(time, exp_time))
-            } else {
-                Some(exp_time)
-            };
-        }
 
         // Compute when to incrementally sign a zone again to refresh
         // signatures.
@@ -888,8 +837,8 @@ impl ZoneSigner {
 
             // Start a new block to make sure the mutex is released.
             {
-                let mut resign_busy2 = center.resign_busy2.lock().expect("should not fail");
-                let opt_refresh_time = resign_busy2.get(zone_name);
+                let mut resign_busy = center.resign_busy.lock().expect("should not fail");
+                let opt_refresh_time = resign_busy.get(zone_name);
                 if let Some(saved_refresh_time) = opt_refresh_time {
                     if *saved_refresh_time == curr_refresh_time {
                         // This zone is busy.
@@ -898,7 +847,7 @@ impl ZoneSigner {
                     }
 
                     // Zone has been resigned. Remove this entry.
-                    resign_busy2.remove(zone_name);
+                    resign_busy.remove(zone_name);
                 }
             }
 
@@ -933,61 +882,6 @@ impl ZoneSigner {
             state.zones.clone()
         };
 
-        // Note: should be removed.
-        for zone in &zones {
-            let zone = &zone.0;
-            let zone_name = &zone.name;
-
-            let min_expiration = {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let zone_state = zone.state.lock().unwrap();
-                zone_state.min_expiration
-            };
-
-            let Some(min_expiration) = min_expiration else {
-                continue;
-            };
-
-            // Start a new block to make sure the mutex is released.
-            {
-                let resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_expiration = resign_busy.get(zone_name);
-                if let Some(expiration) = opt_expiration
-                    && *expiration == min_expiration
-                {
-                    // This zone is busy.
-                    continue;
-                }
-            }
-
-            // Ensure that the Mutexes are locked only in this block;
-            let remain_time = {
-                let zone_state = zone.state.lock().unwrap();
-                // What if there is no policy?
-                zone_state.policy.as_ref().unwrap().signer.sig_remain_time
-            };
-
-            let exp_time = min_expiration.to_system_time(now);
-            let exp_time = exp_time - Duration::from_secs(remain_time as u64);
-
-            if exp_time < now {
-                trace!("[ZS]: re-signing: request signing of zone {zone_name}");
-
-                // Start a new block to make sure the mutex is released.
-                {
-                    let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                    resign_busy.insert(zone_name.clone(), min_expiration);
-                }
-                let mut state = zone.state.lock().unwrap();
-                ZoneHandle {
-                    zone,
-                    state: &mut state,
-                    center,
-                }
-                .signer()
-                .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
-            }
-        }
         for zone in zones {
             let zone = &zone.0;
             let zone_name = &zone.name;
@@ -1015,8 +909,8 @@ impl ZoneSigner {
 
             // Start a new block to make sure the mutex is released.
             {
-                let resign_busy2 = center.resign_busy2.lock().expect("should not fail");
-                let opt_refresh_time = resign_busy2.get(zone_name);
+                let resign_busy = center.resign_busy.lock().expect("should not fail");
+                let opt_refresh_time = resign_busy.get(zone_name);
                 if let Some(saved_refresh_time) = opt_refresh_time
                     && *saved_refresh_time == curr_refresh_time
                 {
@@ -1032,8 +926,8 @@ impl ZoneSigner {
 
                 // Start a new block to make sure the mutex is released.
                 {
-                    let mut resign_busy2 = center.resign_busy2.lock().expect("should not fail");
-                    resign_busy2.insert(zone_name.clone(), curr_refresh_time);
+                    let mut resign_busy = center.resign_busy.lock().expect("should not fail");
+                    resign_busy.insert(zone_name.clone(), curr_refresh_time);
                 }
                 let mut state = zone.state.lock().unwrap();
                 ZoneHandle {
@@ -1606,7 +1500,8 @@ pub fn load_keys(
     for (pub_key_name, key_info) in keyset_state.keyset.keys() {
         // Only use active ZSKs or CSKs to sign the records in the zone.
         if !matches!(key_info.keytype(),
-	KeyType::Zsk(key_state)|KeyType::Csk(_, key_state) if key_state.signer())
+		KeyType::Zsk(key_state)
+		| KeyType::Csk(_, key_state) if key_state.signer())
         {
             continue;
         }
@@ -1783,14 +1678,14 @@ pub fn load_keys(
 }
 
 pub fn faketime_or_now() -> UnixTime {
-    match var("CASCADE_FAKETIME") {
+    match env::var("CASCADE_FAKETIME") {
         Ok(val) => val.parse::<Timestamp>().unwrap().into(),
         Err(VarError::NotPresent) => UnixTime::now(),
-        Err(_e) => panic!("Cannot parse CASCADE_FAKETIME"),
+        Err(_e) => panic!("Cannot parse environment variable CASCADE_FAKETIME"),
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, clap::ValueEnum)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub enum PassThroughMode {
     /// Pass-through is disabled.
     #[default]

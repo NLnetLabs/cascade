@@ -209,7 +209,6 @@ fn main() -> ExitCode {
         publication_server: PublicationServer::new(),
         signer: ZoneSigner::new(),
         resign_busy: Mutex::new(HashMap::new()),
-        resign_busy2: Mutex::new(HashMap::new()),
     });
 
     // Set up the rayon threadpool

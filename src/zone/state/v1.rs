@@ -320,7 +320,7 @@ pub struct SignerPolicySpec {
 
     /// How often to refresh some amount of signatures to make resigning
     /// smoother.
-    signature_refresh_interval: u32,
+    pub signature_refresh_interval: u32,
 
     /// How long should it take to resign a zone during a ZSK or CSK roll.
     pub key_roll_time: u32,
