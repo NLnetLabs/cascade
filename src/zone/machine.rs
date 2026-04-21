@@ -256,7 +256,6 @@ impl<'a> ZoneHandle<'a> {
     }
 
     // Abandon the ongoing signing operation (but not due to failure).
-    #[expect(dead_code)]
     pub(crate) fn abandon_signing(&mut self, builder: SignedZoneBuilder) {
         let (transition, state) = self.state.machine.transition();
 

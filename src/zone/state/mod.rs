@@ -86,6 +86,12 @@ impl Spec {
                 source,
                 min_expiration,
                 next_min_expiration,
+                apex_remove,
+                apex_extra,
+                key_tags,
+                key_roll,
+                last_signature_refresh,
+                previous_serial,
                 history,
             }) => {
                 let loader = LoaderState {
@@ -106,6 +112,12 @@ impl Spec {
                     policy,
                     min_expiration,
                     next_min_expiration,
+                    apex_remove,
+                    apex_extra,
+                    key_tags,
+                    key_roll,
+                    last_signature_refresh,
+                    previous_serial,
                     loader,
                     history,
                     ..Default::default()

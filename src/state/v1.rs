@@ -1,6 +1,7 @@
 //! Version 1 of the state file.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use domain::base::Name;
@@ -321,13 +322,20 @@ pub struct SignerPolicySpec {
     pub serial_policy: SignerSerialPolicySpec,
 
     /// The offset for record signature inceptions, in seconds.
-    pub sig_inception_offset: u32,
+    pub sig_inception_offset: Duration,
 
     /// How long record signatures will be valid for, in seconds.
-    pub sig_validity_time: u32,
+    pub sig_validity_time: Duration,
 
     /// How long before expiration a new signature has to be generated, in seconds.
-    pub sig_remain_time: u32,
+    pub sig_remain_time: Duration,
+
+    /// How often to refresh some amount of signatures to make resigning
+    /// smoother.
+    pub signature_refresh_interval: Duration,
+
+    /// How long should it take to resign a zone during a ZSK or CSK roll.
+    pub key_roll_time: Duration,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicySpec,
@@ -343,9 +351,11 @@ impl SignerPolicySpec {
     pub fn parse(self) -> SignerPolicy {
         SignerPolicy {
             serial_policy: self.serial_policy.parse(),
-            sig_inception_offset: self.sig_inception_offset,
-            sig_validity_time: self.sig_validity_time,
-            sig_remain_time: self.sig_remain_time,
+            sig_inception_offset: self.sig_inception_offset.as_secs() as u32,
+            sig_validity_time: self.sig_validity_time.as_secs() as u32,
+            sig_remain_time: self.sig_remain_time.as_secs() as u32,
+            signature_refresh_interval: self.signature_refresh_interval.as_secs() as u32,
+            key_roll_time: self.key_roll_time.as_secs() as u32,
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -355,9 +365,13 @@ impl SignerPolicySpec {
     pub fn build(policy: &SignerPolicy) -> Self {
         Self {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
-            sig_inception_offset: policy.sig_inception_offset,
-            sig_validity_time: policy.sig_validity_time,
-            sig_remain_time: policy.sig_remain_time,
+            sig_inception_offset: Duration::from_secs(policy.sig_inception_offset.into()),
+            sig_validity_time: Duration::from_secs(policy.sig_validity_time.into()),
+            sig_remain_time: Duration::from_secs(policy.sig_remain_time.into()),
+            signature_refresh_interval: Duration::from_secs(
+                policy.signature_refresh_interval.into(),
+            ),
+            key_roll_time: Duration::from_secs(policy.key_roll_time.into()),
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
         }
