@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Apr 20, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "Apr 22, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -348,7 +348,7 @@ key roll.
 Each nameserver is specified as a string with the syntax:
 .INDENT 7.0
 .INDENT 3.5
-\fB<IP\-Address>:<Port>[^[TSIG\-Key\-Name]]\fP
+\fB<IP>[:<PORT>][^[TSIG_KEY_NAME]\fP
 .UNINDENT
 .UNINDENT
 .sp
@@ -571,9 +571,9 @@ The type of denial\-of\-existence records to generate.
 Supported options:
 .INDENT 7.0
 .IP \(bu 2
-\fBnsec\fP: Use NSEC records (RFC 4034).
+\fBnsec\fP: Use NSEC records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc4034.html'\fI\%RFC 4034\fP\X'tty: link').
 .IP \(bu 2
-\fBnsec3\fP: Use NSEC3 records (RFC 5155).
+\fBnsec3\fP: Use NSEC3 records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc5155.html'\fI\%RFC 5155\fP\X'tty: link').
 .UNINDENT
 .UNINDENT
 .INDENT 0.0
