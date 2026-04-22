@@ -75,8 +75,7 @@ information.
 .. tip:: Remember to reload the NSD configuration or restart NSD so that
          changes to the configuration take effect.
 
-Adding the TSIG key to Cascade is done using the ``cascade tsig add`` CLI
-command, e.g. like so:
+To add the TSIG key to Cascade use :program:`cascade` :subcmd:`tsig add`:
 
 .. code-block:: bash
 
