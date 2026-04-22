@@ -70,9 +70,9 @@ Arguments for :subcmd:`tsig add`
    Secret key material must be the correct length for the specified algorithm
    and must be encoded using the :RFC:`4648` Base64 encoding.
 
-   .. note:: Secret key material supplied via a command-line argument may be
-             visible to other processes running on the same computer as the
-             Cascade CLI.
+   .. warning:: Secret key material supplied via a command-line argument may
+                be visible to other processes running on the same computer as
+                the Cascade CLI.
 
 .. option:: <ALGORITHM>
 
