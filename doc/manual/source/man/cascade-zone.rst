@@ -86,34 +86,33 @@ Commands
 Options for :subcmd:`zone add`
 ------------------------------
 
-.. option:: --source <SOURCE>
+.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
 
    The zone source can be the IP address of an upstream nameserver (with
    or without port, defaults to port 53) or the path to a zone file locally
    available to the ``cascaded`` daemon.`
 
-   When specifying an upstream nameserver you may also optionally suffix it with
-   ``^<TSIG_KEY_NAME>`` to indicate that the specified RFC 8945 TSIG key should
-   be used to sign any SOA, AXFR and IXFR queries that will be sent to the
-   upstream source.
+   When specifying an upstream nameserver you may also optionally specify
+   the name of an :rfc:8945 TSIG key that should be used to authenticate
+   communication with the upstream.
 
    Zones sourced from an upstream nameserver will be automatically updated if
-   a new version is detected. This can happen if the upstream nameserver sends
-   an RFC 1996 NOTIFY message to Cascade, or if a via an IXFR or SOA query it
-   is discovered that the SOA SERIAL at the upstream nameserver is "higher" [1]
-   than the last version that Cascade loaded, or due to an operator issuing a
-   `zone reload` command.
+   a new version is detected via a SOA query, either based on the zone's SOA
+   record timers, or in response to an :rfc:1996 NOTIFY message from the upstream.
+
+   Zones can also be manualy updated via :program:`cascade` :subcmd:`reload`.
 
    For zones that have already been retrieved at least once via AXFR, subsequent
    refreshes will attempt to use IXFR and fallback to AXFR if IXFR is not
    available.
 
-   .. note:: When providing the path to a zone file to load, if :subcmd:`zone
-             add` is executed on a different host than where the ``cascaded``
-             daemon is running the path must be valid on the **daemon** host.
+   .. note:: When running :program:`cascade` :subcmd:`zone add` from a
+             different host than where the Cascade daemon is running, make
+             sure that the source (whether filesystem path or IP address) is
+             reachable by the Cascade daemon.
 
-   .. note:: Note: In order to use a TSIG key you MUST also supply the key to
-             Cascade via :subcmd:`tsig add`.
+   .. note:: If using a TSIG key the key must first be added to Cascade via
+             :program:`cascade` :subcmd:`tsig add`.
 
    [1]: https://www.rfc-editor.org/rfc/rfc1982#section-3.2
 
