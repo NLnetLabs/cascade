@@ -159,8 +159,13 @@ if [[ "$docker_stats" == true ]]; then
 	echo "Docker stats being collected by PID ${STATS_PID}."
 fi
 
+# Use -C to make the integration-tests the working directory as this makes
+# the startup time of each test much faster due to reducing the amount of data
+# that the invoked `docker cp` command copies. Unfortunately neither act nor
+# `docker cp` respect .gitignore or .dockerignore or have any other way I have
+# found to achieve the same result.
 echo "Running tests"
-act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -W integration-tests/system-tests.yml "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
+act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -C integration-tests -W system-tests.yml "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
 
 # Stop the docker stats collection process, if needed.
 if [[ "$docker_stats" == true ]]; then
