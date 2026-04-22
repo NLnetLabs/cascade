@@ -53,7 +53,7 @@ When adding a zone the TSIG key name can then be referred to like so:
 
 .. code-block:: bash
 
-   $ cascade zone add --source <IP>[:<PORT>]^<TSIG KEY NAME>
+   $ cascade zone add --source <IP>[:<PORT>][^<TSIG KEY NAME>]
 
 Using zone transfers with a downstream server
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
