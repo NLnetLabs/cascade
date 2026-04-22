@@ -90,7 +90,7 @@ Options for :subcmd:`zone add`
 
    The zone source can be the IP address of an upstream nameserver (with
    or without port, defaults to port 53) or the path to a zone file locally
-   available to the ``cascaded`` daemon.`
+   available to the ``cascaded`` daemon.
 
    When specifying an upstream nameserver you may also optionally specify
    the name of an :RFC:`8945` TSIG key that should be used to authenticate
