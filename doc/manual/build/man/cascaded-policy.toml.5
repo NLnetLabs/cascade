@@ -336,8 +336,8 @@ Supported options:
 .B auto\-remove = true
 Whether to automatically remove expired keys.
 .sp
-If this is set, expired keys will be removed automatically (by deleting the
-files for on\-disk keys or removing it from the HSM).
+If this option is set, expired keys will be removed automatically (by
+deleting the files for on\-disk keys or removing it from the HSM).
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -352,8 +352,8 @@ Each nameserver is specified as a string with the syntax:
 .UNINDENT
 .UNINDENT
 .sp
-If not specified then the nameserver specified in the zone apex SOA MNAME
-field will be queried.
+If this option is not set, the nameserver specified in the zone apex SOA
+MNAME field will be queried.
 .UNINDENT
 .SS The management of DNS records by the key manager.
 .sp
