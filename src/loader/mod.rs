@@ -383,6 +383,9 @@ pub struct ActiveLoadMetrics {
     /// See [`LoadMetrics::num_loaded_bytes`].
     pub num_loaded_bytes: AtomicUsize,
 
+    /// The (approximate) number of bytes to load.
+    pub num_total_bytes: AtomicUsize,
+
     /// The (approximate) number of DNS records loaded thus far.
     ///
     /// See [`LoadMetrics::num_loaded_records`].
@@ -396,6 +399,7 @@ impl ActiveLoadMetrics {
             start: (Instant::now(), SystemTime::now()),
             source,
             num_loaded_bytes: AtomicUsize::new(0),
+            num_total_bytes: AtomicUsize::new(0),
             num_loaded_records: AtomicUsize::new(0),
         }
     }

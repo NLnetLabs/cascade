@@ -555,6 +555,7 @@ impl HttpServer {
                     started_at: metrics.start.1,
                     finished_at: None,
                     byte_count: metrics.num_loaded_bytes.load(Relaxed),
+                    total_byte_count: Some(metrics.num_total_bytes.load(Relaxed)),
                     record_count: metrics.num_loaded_records.load(Relaxed),
                 })
                 .or_else(|| {
@@ -562,6 +563,7 @@ impl HttpServer {
                         started_at: metrics.start,
                         finished_at: Some(metrics.end),
                         byte_count: metrics.num_loaded_bytes,
+                        total_byte_count: None,
                         record_count: metrics.num_loaded_records,
                     })
                 })
