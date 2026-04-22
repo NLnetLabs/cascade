@@ -56,22 +56,29 @@ Arguments for :subcmd:`tsig add`
 --------------------------------
 
 .. option:: <TSIG_KEY_NAME>
+.. option:: [<ALGORITHM>]:<TSIG_KEY_NAME>:<SECRET>
 
-   The name of the TSIG key to add.
+   The name of the TSIG key to add, or a complete TSIG key specification.
 
-   Alternatively this argument also supports dig syntax for specifying all of
-   the TSIG properties at once in colon separated form. The colon separated
-   syntax cannot be used in combination with the ``--alg`` and ``--secret``
-   options. If ``<ALGORITHM>`` is not specified it defaults to SHA256.
+   TSIG key names must be valid domain names.
+
+   A complete TSIG key specification consists of an optional algorithm
+   (default ``hmac-sha256``), a key name and the secret key material. When a
+   complete TSIG key specification is supplied, supplying the ``<ALGORITHM>``
+   and ``<SECRET>`` arguments as well will result in an error.
+
+   Secret key material must be the correct length for the specified algorithm
+   and must be encoded using the RFC 4648 Base64 encoding.
 
 .. option:: <ALGORITHM>
 
-   The TSIG algorithm of the specified TSIG key. Can be one of: hmac-sha1,
-   hmac-sha256, hmac-sha384 or hmac-sha512.
+   The TSIG algorithm of the specified TSIG key. Can be one of: ``hmac-sha1``,
+   ``hmac-sha256``, ``hmac-sha384`` or ``hmac-sha512``.
 
 .. option:: <SECRET>
 
-   A base64 encoded string defining the actual TSIG key material bytes.
+   RFC 4648 Base64 encoded secret key material. The number of bytes prior to
+   encoding must be correct for the specified ``<ALGORITHM>``.
 
 See Also
 --------
