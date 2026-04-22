@@ -190,7 +190,7 @@ pub struct KmipKeyImport {
 //----------- TsigKeyName -----------------------------------------------------
 
 /// The name of a TSIG key.
-pub type TsigKeyName = domain::tsig::KeyName;
+pub type TsigKeyName = domain::base::Name<domain::dep::octseq::Array<255>>;
 
 //----------- TsigAdd ---------------------------------------------------------
 
@@ -330,6 +330,10 @@ impl fmt::Display for ZoneRemoveError {
 
 /// How to load the contents of a zone.
 #[derive(Deserialize, Serialize, Debug, Clone)]
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::large_enum_variant)]
 pub enum ZoneSource {
     /// Don't load the zone at all.
     None,

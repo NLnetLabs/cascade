@@ -32,7 +32,7 @@ features = ["serde1"]
 [dependencies.domain]
 workspace = true
 # TODO: Enable and use 'new::base'?
-features = ["bytes", "serde", "tsig"]
+features = ["bytes", "serde"]
 
 # The API uses 'serde' for transforming high-level types to and from the
 # underlying wire format.
