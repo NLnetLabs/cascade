@@ -17,7 +17,7 @@ Synopsis
 Description
 -----------
 
-Manage RFC 8945 TSIG keys for authenticating zone transfer (AXFR, IXFR) and
+Manage :RFC:`8945` (TSIG) keys for authenticating zone transfer (AXFR, IXFR) and
 related messages (SOA and NOTIFY).
 
 .. tip:: Cascade isn't currently able to generate TSIG keys itself.
@@ -68,7 +68,7 @@ Arguments for :subcmd:`tsig add`
    and ``<SECRET>`` arguments as well will result in an error.
 
    Secret key material must be the correct length for the specified algorithm
-   and must be encoded using the RFC 4648 Base64 encoding.
+   and must be encoded using the :RFC:`4648` Base64 encoding.
 
    .. note:: Secret key material supplied via a command-line argument may be
              visible to other processes running on the same computer as the
@@ -81,8 +81,8 @@ Arguments for :subcmd:`tsig add`
 
 .. option:: <SECRET>
 
-   RFC 4648 Base64 encoded secret key material. The number of bytes prior to
-   encoding must be correct for the specified ``<ALGORITHM>``.
+   :RFC:`4648` Base64 encoded secret key material. The number of bytes prior
+   to encoding must be correct for the specified ``<ALGORITHM>``.
 
    .. note:: Secret key material supplied via a command-line argument may be
              visible to other processes running on the same computer as the

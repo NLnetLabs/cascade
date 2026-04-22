@@ -18,7 +18,7 @@ Using NSD as a primary to Cascade
 
 To use NSD as an upstream name server of Cascade you must add a zone to NSD
 that refers to Cascade as a secondary name server. If enabled in NSD, NSD will
-send an RFC 1996 DNS NOTIFY message to Cascade notifying it when changes to
+send an :RFC:`1996` DNS NOTIFY message to Cascade notifying it when changes to
 the zone occur.
 
 The NOTIFY message will trigger Cascade to perform an AXFR transfer to fetch

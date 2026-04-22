@@ -6,15 +6,15 @@ public downstream nameservers. The hidden upstream serves the unsigned zone,
 Cascade signs it, and passes it to the downstream nameservers for publication
 to consumers.
 
-Communication of changed zone records from upstream to downstream should be
-done via the network using the RFC 5936 DNS Zone Transfer Protocol (AXFR) and
-RFC 1995 Incremental Zone Transfer (IXFR) protocols.
+Communication of changed zone records from upstream to downstream should
+be done via the network using the :RFC:`5936` (AXFR) and :RFC:`1995` (IXFR)
+protocols.
 
-Securing the transferred data can be done using RFC 8945 Secret Key
-Authentication for DNS (TSIG) keys, using a shared secret communicated out of
-band to the nameservers sending and receiving the zone records.
+Securing the transferred data can be done using :RFC:`8945` (TSIG) keys,
+using a shared secret communicated out of band to the nameservers sending and
+receiving the zone records.
 
-Cascade supports timely discovery of zone changes via RFC 1996 (DNS NOTIFY).
+Cascade supports timely discovery of zone changes via :RFC:`1996` (NOTIFY).
 If no NOTIFY message is received by Cascade, Cascade will instead discover
 new versions of the zone by sending SOA queries periodically to the upstream,
 the frequency of which is determined by the timers on the zone's SOA record.
@@ -66,9 +66,9 @@ Using zone transfers with a downstream server
 
 Cascade permits zone transfers by default, no configuration is required.
 
-To ensure timely update by secondaries, Cascade can be configured to send RFC
-1996 DNS NOTIFY messages to specified secondaries. This is done via the policy
-setting ``server.outbound.send-notify-to``.
+To ensure timely update by secondaries, Cascade can be configured to send
+:RFC:`1996` (NOTIFY) messages to specified secondaries. This is done via the
+policy setting ``server.outbound.send-notify-to``.
 
 .. note:: The policy file will need to be reloaded via ``cascade policy
           reload`` before adding the zone. Also, when adding the zone you

@@ -456,8 +456,8 @@ The ``[signer.denial]`` section.
 
    Supported options:
 
-   - ``nsec``: Use NSEC records (RFC 4034).
-   - ``nsec3``: Use NSEC3 records (RFC 5155).
+   - ``nsec``: Use NSEC records (:RFC:`4034`).
+   - ``nsec3``: Use NSEC3 records (:RFC:`5155`).
 
 .. option:: opt-out = false
 
