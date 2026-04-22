@@ -70,6 +70,10 @@ Arguments for :subcmd:`tsig add`
    Secret key material must be the correct length for the specified algorithm
    and must be encoded using the RFC 4648 Base64 encoding.
 
+   .. note:: Secret key material supplied via a command-line argument may be
+             visible to other processes running on the same computer as the
+             Cascade CLI.
+
 .. option:: <ALGORITHM>
 
    The TSIG algorithm of the specified TSIG key. Can be one of: ``hmac-sha1``,
@@ -79,6 +83,10 @@ Arguments for :subcmd:`tsig add`
 
    RFC 4648 Base64 encoded secret key material. The number of bytes prior to
    encoding must be correct for the specified ``<ALGORITHM>``.
+
+   .. note:: Secret key material supplied via a command-line argument may be
+             visible to other processes running on the same computer as the
+             Cascade CLI.
 
 See Also
 --------
