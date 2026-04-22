@@ -35,11 +35,8 @@ adding the zone.
 
    $ cascade zone add --source <IP_OR_NAME>[:<PORT>] ...
 
-Cascade will then attempt to fetch the zone from the specified name or IP
-address using AXFR. Subsequent fetches will attempt to use IXFR to transfer
-only the differences, falling back to AXFR when needed. Subsequent fetches
-will be triggered by NOTIFY messages received from the upstream nameserver or
-expiry of the SOA REFRESH or RETRY timers.
+Cascade will then attempt to fetch the zone. Where possible it will fetch
+newer versions of the zone incrementally, as this is more efficient.
 
 Securing zone transfers with an upstream nameserver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
