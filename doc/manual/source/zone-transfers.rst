@@ -14,18 +14,15 @@ Securing the transferred data can be done using :RFC:`8945` (TSIG) keys,
 using a shared secret communicated out of band to the nameservers sending and
 receiving the zone records.
 
-Cascade supports timely discovery of zone changes via :RFC:`1996` (NOTIFY).
-If no NOTIFY message is received by Cascade, Cascade will instead discover
-new versions of the zone by sending SOA queries periodically to the upstream,
-the frequency of which is determined by the timers on the zone's SOA record.
+Cascade supports timely discovery of zone changes by sending SOA queries to
+the upsream nameserver, either in response to an :RFC:`1996` NOTIFY message or
+based on the zone's SOA timers.
 
-.. note:: Cascade also supports loading the zone from a file. However, if only
-          a small fraction of the records in the zone change from one version
-          to the next, loading the entire zone every time the zone changes
-          will require more time, CPU and memory compared to processing
-          only the differences when using IXFR. Additionally, Cascade has no
-          built-in support for writing signed zone files to disk, if needed
-          this could be done by a signed review hook.
+.. note:: Cascade also supports loading the zone from a file. However, if
+          only a small fraction of the records in the zone change from one
+          version to the next, loading the entire file every time the zone
+          file changes will require more time, CPU and memory compared to
+          processing only the differences when using IXFR.
 
 Using zone transfers with an upstream nameserver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
