@@ -712,7 +712,11 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
 
     let mut cmds = vec![];
 
-    if km.publication_nameservers.iter().any(|n| n.contains("^")) {
+    if km
+        .publication_nameservers
+        .iter()
+        .any(|ns| ns.tsig_key_name.is_some())
+    {
         let tsig_store_cmd = vec![
             "tsig-store-path".to_string(),
             center.config.tsig_store_path.as_str().to_string(),
@@ -721,7 +725,13 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
     }
 
     let mut publication_nameservers_cmd = vec!["publication-nameservers".to_string()];
-    publication_nameservers_cmd.append(&mut km.publication_nameservers.clone());
+    publication_nameservers_cmd.append(
+        &mut km
+            .publication_nameservers
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+    );
 
     cmds.append(&mut vec![
         strs!["use-csk", km.use_csk],

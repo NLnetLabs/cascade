@@ -2,13 +2,13 @@
 
 use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
-use std::str::FromStr;
 use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 use domain::base::Ttl;
+use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
@@ -201,19 +201,20 @@ pub fn load_all(
 fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
     // Check the publication nameservers for the key manager. Any TSIG key
     // that is part of those nameservers has to exist in the TSIG key store.
-    for n in &policy.key_manager.publication_nameservers {
-        if let Some((_, tsig_name)) = n.split_once('^') {
-            let tsig_name = Name::from_str(tsig_name).map_err(|e| {
-                PolicyReloadError::Check(format!(
-                    "unable to convert TSIG key name {tsig_name} to DNS name: {e}"
-                ))
-            })?;
-            tsig_store
-                .get(&tsig_name)
-                .ok_or(PolicyReloadError::Check(format!(
-                    "TSIG key {tsig_name} not found in TSIG store"
-                )))?;
-        }
+    let tsig_names = policy
+        .key_manager
+        .publication_nameservers
+        .iter()
+        .chain(policy.server.outbound.accept_xfr_requests_from.iter())
+        .chain(policy.server.outbound.send_notify_to.iter())
+        .filter_map(|ns| ns.tsig_key_name.as_ref());
+
+    for tsig_name in tsig_names {
+        tsig_store
+            .get(tsig_name)
+            .ok_or(PolicyReloadError::Check(format!(
+                "unknown TSIG key '{tsig_name}'"
+            )))?;
     }
     Ok(())
 }
@@ -307,7 +308,7 @@ pub struct KeyManagerPolicy {
     pub auto_remove: bool,
 
     /// Nameservers to check for RRSIG propagation during a key roll.
-    pub publication_nameservers: Vec<String>,
+    pub publication_nameservers: Vec<NameserverCommsPolicy>,
 }
 
 //----------- SignerPolicy -----------------------------------------------------
@@ -476,6 +477,19 @@ pub struct NameserverCommsPolicy {
     ///
     /// TODO: Support IP prefixes?
     pub addr: SocketAddr,
+
+    /// An optional TSIG key to sign and authenticate messages with.
+    pub tsig_key_name: Option<KeyName>,
+}
+
+impl Display for NameserverCommsPolicy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.addr)?;
+        if let Some(tsig_key_name) = &self.tsig_key_name {
+            write!(f, "^{tsig_key_name}")?;
+        }
+        Ok(())
+    }
 }
 
 //----------- KeyParameters ---------------------------------------------------

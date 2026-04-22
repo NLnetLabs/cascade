@@ -1,9 +1,7 @@
 //! Managing TSIG keys.
 
-use std::str::FromStr;
 use std::{collections::hash_map, fmt, io, sync::Arc, time::Duration};
 
-use domain::base::Name;
 use domain::tsig;
 use tracing::{debug, error, trace};
 
@@ -286,32 +284,28 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     }
 
     // Is the TSIG key referenced by any active (not being deleted) policy?
-    if state
+    let tsig_key_found = state
         .policies
         .values()
-        .filter(|p| !p.mid_deletion)
-        .flat_map(|p| &p.latest.key_manager.publication_nameservers)
-        .filter_map(|n| n.split_once("^").map(|v| v.1))
-        .any(|k| {
-            let nk = Name::<Vec<u8>>::from_str(k);
-            if let Ok(n) = nk {
-                n == name
-            } else {
-                // Just ignore TSIG key names that cannot be parsed as a
-                // DNS name. It should not have been possible to add them
-                // into the policy in the first place so this should never
-                // happen.
-                //
-                // TODO: "update" from using a String type for
-                // publication_nameservers to a type that actually uses
-                // TsigKeyName, like NameserverCommsPolicy does, so that at
-                // this point we don't need to care about valid or invalid
-                // TSIG key names? That would also have the benefit of not
-                // having to parse the nameserver string format here again.
-                false
-            }
-        })
-    {
+        .filter_map(|p| (!p.mid_deletion).then_some(&p.latest))
+        .any(|p| {
+            p.key_manager
+                .publication_nameservers
+                .iter()
+                .any(|ns| ns.tsig_key_name.as_ref() == Some(name))
+                || p.server
+                    .outbound
+                    .accept_xfr_requests_from
+                    .iter()
+                    .any(|acl| acl.tsig_key_name.as_ref() == Some(name))
+                || p.server
+                    .outbound
+                    .send_notify_to
+                    .iter()
+                    .any(|acl| acl.tsig_key_name.as_ref() == Some(name))
+        });
+
+    if tsig_key_found {
         return Err(RemoveError::Used);
     }
 
