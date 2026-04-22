@@ -1,5 +1,6 @@
 //! Zone-specific state and management.
 
+use std::collections::HashSet;
 use std::{
     borrow::Borrow,
     cmp::Ordering,
@@ -10,7 +11,8 @@ use std::{
 };
 
 use bytes::Bytes;
-use domain::base::{Name, Serial};
+use domain::base::{Name, Rtype, Serial};
+use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
@@ -24,6 +26,9 @@ use crate::{
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
     zone::machine::ZoneStateMachine,
 };
+
+/// TODO: this temporary until there is a more permanent solution for fake time.
+use crate::units::zone_signer::faketime_or_now;
 
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
@@ -93,7 +98,7 @@ impl ZoneHandle<'_> {
 //----------- ZoneState --------------------------------------------------------
 
 /// The state of a zone.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ZoneState {
     /// The top-level state machine
     pub machine: ZoneStateMachine,
@@ -119,6 +124,45 @@ pub struct ZoneState {
     /// value should be move to min_expiration after the signed zone is
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
+
+    /// We expect this from the key manager. These are the types that
+    /// the key manager takes control over in the apex. Use this to
+    /// determine if the zone needs resigning. If what is stored here is
+    /// different from what we get from the key manager, then update this
+    /// field and resign the zone. Maybe this should be associated with
+    /// a signed instance of a zone to avoid problems when a signed zone
+    /// gets rejected.
+    pub apex_remove: HashSet<Rtype>,
+
+    /// Same comment as for apex_remove. But this is about the records
+    /// that should be added to the apex after removing the apex_remove
+    /// types.
+    pub apex_extra: Vec<String>,
+
+    /// This field is set based on the key tags of the keys that need to
+    /// sign the zone. It doesn't say anything about how the zone is
+    /// currently signed, just what the goal is. This field is used to
+    /// detiermine when a ZSK or CSK key roll has started and the zone
+    /// needs to be resigned with a new key.
+    pub key_tags: HashSet<u16>,
+
+    /// Record when key_tags has changed. We take this as the start of a key
+    /// roll. This start time is used to compute which percentage of
+    /// RRsets that should have signatures from the new key.
+    pub key_roll: Option<UnixTime>,
+
+    /// Record when the last time signtures were refreshed. This is used
+    /// together with the signature_refresh_interval value in policy to
+    /// determine when to refresh signatures next. Maybe this should be
+    /// associated with a signed instance of a zone to avoid problems when
+    /// a signed zone gets rejected.
+    pub last_signature_refresh: UnixTime,
+
+    /// Record the SOA serial of the last signed version of the zone.
+    /// We use a serial only once, even if the signed zone gets rejected.
+    /// It would be good to have a command where the user can set the
+    /// serial for the Increment serial policy.
+    pub previous_serial: Option<Serial>,
 
     /// Unsigned versions of the zone.
     pub unsigned: foldhash::HashMap<Serial, UnsignedZoneVersionState>,
@@ -166,11 +210,36 @@ impl ZoneState {
     }
 }
 
+impl Default for ZoneState {
+    fn default() -> Self {
+        Self {
+            machine: Default::default(),
+            policy: Default::default(),
+            last_published: Default::default(),
+            enqueued_save: Default::default(),
+            min_expiration: Default::default(),
+            next_min_expiration: Default::default(),
+            apex_remove: Default::default(),
+            apex_extra: Default::default(),
+            key_tags: Default::default(),
+            key_roll: Default::default(),
+            last_signature_refresh: faketime_or_now(),
+            previous_serial: Default::default(),
+            unsigned: Default::default(),
+            signed: Default::default(),
+            history: Default::default(),
+            loader: Default::default(),
+            signer: Default::default(),
+            storage: Default::default(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct LastPublished {
+    pub loaded_serial: Serial,
     pub signed_serial: Serial,
     // TODO:
-    //  - loaded serial
     //  - time of publish
     //  - number of records
     //  - size in bytes

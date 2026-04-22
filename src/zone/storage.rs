@@ -30,13 +30,14 @@ use cascade_zonedata::{
     SignedZoneBuilt, SignedZonePersister, SignedZoneReviewer, SoaRecord, ZoneCleaner,
     ZoneDataStorage, ZoneViewer,
 };
+use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, LastPublished, Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -658,6 +659,7 @@ impl StorageZoneHandle<'_> {
                         let (s, viewer) = s.mark_complete(persisted);
                         transition.move_to(ZoneDataStorage::Switching(s));
                         state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
+                        state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
                         viewer
                     }
 
@@ -681,6 +683,11 @@ impl StorageZoneHandle<'_> {
 
                 _ => unreachable!("just transitioned to 'Switching'"),
             };
+
+            state.last_published = Some(LastPublished {
+                loaded_serial: Serial(state.storage.published_loaded_soa.as_ref().unwrap().rdata.serial.into()),
+                signed_serial: Serial(state.storage.published_soa.as_ref().unwrap().rdata.serial.into()),
+            });
 
             let mut handle = ZoneHandle { zone: &zone, state: &mut state, center: &center };
 
@@ -822,6 +829,13 @@ pub struct StorageState {
     // current i.e. published zone instance.
     pub published_soa: Option<SoaRecord>,
 
+    /// The SOA record of the loaded instance underlying the published instance
+    /// of the zone, if any.
+    //
+    // TODO: This should move into a component of 'ZoneState' tracking the
+    // current i.e. published zone instance.
+    pub published_loaded_soa: Option<SoaRecord>,
+
     /// Ongoing background tasks.
     ///
     /// When the zone data needs to be cleaned or persisted, a background task
@@ -842,6 +856,7 @@ impl StorageState {
             loaded_review_soa: None,
             signed_review_soa: None,
             published_soa: None,
+            published_loaded_soa: None,
             background_tasks: Default::default(),
         }
     }

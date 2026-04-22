@@ -44,6 +44,18 @@ const SIGNATURE_REMAIN_TIME: u32 = SIGNATURE_VALIDITY_TIME / 2;
 // security risks. No official reference.
 const SIGNATURE_INCEPTION_OFFSET: u32 = 24 * 3600;
 
+// Try to find the right comprise between zones that hardly ever changes and
+// zones that are changed frequently. This should be a safe default, though
+// big zones that change frequently may set it to around 15 minutes to
+// avoid jitter in signing performance.
+const SIGNATURE_REFRESH_INTERVAL: u32 = 12 * 3600;
+
+// Assume it is fine if resigning a zone takes one day. This could be a lot
+// lower for small zones. For big zones it is balance between the time
+// the DNSKEY RRset contains an extra KSK and how disruptive it is to
+// sign more records.
+const KEY_ROLL_TIME: u32 = 24 * 3600;
+
 //----------- Spec -------------------------------------------------------------
 
 /// A policy file.
@@ -603,6 +615,13 @@ pub struct SignerSpec {
     /// generated, in seconds.
     pub signature_remain_time: TimeSpan,
 
+    /// How often should the signatures in the zone be checked and
+    /// updated. This generates a new version of the signed zone.
+    pub signature_refresh_interval: TimeSpan,
+
+    /// How long should it take to resign a zone during a ZSK or CSK roll.
+    pub key_roll_time: TimeSpan,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialSpec,
 
@@ -623,6 +642,8 @@ impl SignerSpec {
             sig_inception_offset: self.signature_inception_offset.as_secs(),
             sig_validity_time: self.signature_lifetime.as_secs(),
             sig_remain_time: self.signature_remain_time.as_secs(),
+            signature_refresh_interval: self.signature_refresh_interval.as_secs(),
+            key_roll_time: self.key_roll_time.as_secs(),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -635,6 +656,8 @@ impl SignerSpec {
             signature_inception_offset: TimeSpan::from_secs(policy.sig_inception_offset),
             signature_lifetime: TimeSpan::from_secs(policy.sig_validity_time),
             signature_remain_time: TimeSpan::from_secs(policy.sig_remain_time),
+            signature_refresh_interval: TimeSpan::from_secs(policy.signature_refresh_interval),
+            key_roll_time: TimeSpan::from_secs(policy.key_roll_time),
             denial: SignerDenialSpec::build(&policy.denial),
             review: ReviewSpec::build(&policy.review),
         }
@@ -649,6 +672,8 @@ impl Default for SignerSpec {
             signature_inception_offset: TimeSpan::from_secs(SIGNATURE_INCEPTION_OFFSET),
             signature_lifetime: TimeSpan::from_secs(SIGNATURE_VALIDITY_TIME),
             signature_remain_time: TimeSpan::from_secs(SIGNATURE_REMAIN_TIME),
+            signature_refresh_interval: TimeSpan::from_secs(SIGNATURE_REFRESH_INTERVAL),
+            key_roll_time: TimeSpan::from_secs(KEY_ROLL_TIME),
 
             denial: Default::default(),
 

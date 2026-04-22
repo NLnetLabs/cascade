@@ -10,7 +10,7 @@ use std::{
 use bytes::Bytes;
 use cascade_api::{TsigAddError, TsigAddResult};
 use domain::base::Name;
-use domain::rdata::dnssec::Timestamp;
+use domain::dnssec::sign::keys::keyset::UnixTime;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
@@ -64,7 +64,7 @@ pub struct Center {
     pub publication_server: PublicationServer,
 
     /// Zones currently being re-signed.
-    pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
+    pub resign_busy: Mutex<HashMap<Name<Bytes>, UnixTime>>,
 }
 
 //--- Actions

@@ -285,7 +285,6 @@ dependencies = [
  "hostname",
  "jiff",
  "lazy_static",
- "octseq",
  "prometheus-client",
  "rayon",
  "ring",
