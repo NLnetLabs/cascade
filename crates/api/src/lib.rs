@@ -544,6 +544,8 @@ pub enum HistoricalEventType {
     SigningFailed,
     UnsignedZoneReview,
     SignedZoneReview,
+    UnsignedHookFailed,
+    SignedHookFailed,
     KeySetCommand,
     KeySetError,
 }
@@ -570,6 +572,12 @@ pub enum HistoricalEvent {
     SignedZoneReview {
         status: ZoneReviewStatus,
     },
+    UnsignedHookFailed {
+        err: String,
+    },
+    SignedHookFailed {
+        err: String,
+    },
     KeySetCommand {
         cmd: String,
         warning: Option<String>,
@@ -580,7 +588,9 @@ pub enum HistoricalEvent {
         err: String,
         elapsed: Duration,
     },
-    Error(String),
+    LoadingFailed {
+        reason: String,
+    },
 }
 
 /// The trigger for a (re-)signing operation.

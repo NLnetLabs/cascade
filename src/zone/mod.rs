@@ -329,6 +329,8 @@ pub enum HistoricalEventType {
     SigningFailed,
     UnsignedZoneReview,
     SignedZoneReview,
+    UnsignedHookFailed,
+    SignedHookFailed,
     KeySetCommand,
     KeySetError,
     Error,
@@ -343,6 +345,9 @@ pub enum HistoricalEvent {
     PolicyChanged,
     SourceChanged,
     NewVersionReceived,
+    LoadingFailed {
+        reason: String,
+    },
     SigningSucceeded {
         trigger: cascade_api::SigningTrigger,
     },
@@ -355,6 +360,12 @@ pub enum HistoricalEvent {
     },
     SignedZoneReview {
         status: ZoneReviewStatus,
+    },
+    UnsignedHookFailed {
+        err: String,
+    },
+    SignedHookFailed {
+        err: String,
     },
     KeySetCommand {
         cmd: String,
@@ -375,7 +386,6 @@ pub enum HistoricalEvent {
         )]
         elapsed: Duration,
     },
-    Error(String),
 }
 
 impl HistoricalEvent {
@@ -392,9 +402,11 @@ impl HistoricalEvent {
             HistoricalEvent::SigningFailed { .. } => HistoricalEventType::SigningFailed,
             HistoricalEvent::UnsignedZoneReview { .. } => HistoricalEventType::UnsignedZoneReview,
             HistoricalEvent::SignedZoneReview { .. } => HistoricalEventType::SignedZoneReview,
+            HistoricalEvent::UnsignedHookFailed { .. } => HistoricalEventType::UnsignedHookFailed,
+            HistoricalEvent::SignedHookFailed { .. } => HistoricalEventType::SignedHookFailed,
             HistoricalEvent::KeySetCommand { .. } => HistoricalEventType::KeySetCommand,
             HistoricalEvent::KeySetError { .. } => HistoricalEventType::KeySetError,
-            HistoricalEvent::Error { .. } => HistoricalEventType::Error,
+            HistoricalEvent::LoadingFailed { .. } => HistoricalEventType::Error,
         }
     }
 
@@ -419,6 +431,8 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             }
             HistoricalEvent::UnsignedZoneReview { status } => Self::UnsignedZoneReview { status },
             HistoricalEvent::SignedZoneReview { status } => Self::SignedZoneReview { status },
+            HistoricalEvent::UnsignedHookFailed { err } => Self::UnsignedHookFailed { err },
+            HistoricalEvent::SignedHookFailed { err } => Self::SignedHookFailed { err },
             HistoricalEvent::KeySetCommand {
                 cmd,
                 warning,
@@ -431,7 +445,7 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             HistoricalEvent::KeySetError { cmd, err, elapsed } => {
                 Self::KeySetError { cmd, err, elapsed }
             }
-            HistoricalEvent::Error(s) => Self::Error(s),
+            HistoricalEvent::LoadingFailed { reason } => Self::LoadingFailed { reason },
         }
     }
 }

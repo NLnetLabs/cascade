@@ -477,6 +477,12 @@ impl Zone {
                                         ZoneReviewStatus::Rejected => "rejected",
                                     }
                                 ),
+                                HistoricalEvent::UnsignedHookFailed { err, .. } => {
+                                    format!("Could not execute loaded review hook: {err}",)
+                                }
+                                HistoricalEvent::SignedHookFailed { err, .. } => {
+                                    format!("Could not execute signed review hook: {err}",)
+                                }
                                 HistoricalEvent::KeySetCommand {
                                     cmd,
                                     elapsed,
@@ -503,7 +509,7 @@ impl Zone {
                                         elapsed.as_secs()
                                     )
                                 }
-                                HistoricalEvent::Error(s) => s.clone(),
+                                HistoricalEvent::LoadingFailed { reason } => reason.clone(),
                             };
                             println!("{when} {serial:10} {what}");
                         }

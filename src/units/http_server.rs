@@ -475,14 +475,38 @@ impl HttpServer {
                     HistoricalEvent::StartedLoad | HistoricalEvent::StartedResign => {
                         break;
                     }
-                    HistoricalEvent::Error(s) => {
-                        found_error = Some(s);
+                    HistoricalEvent::LoadingFailed { reason } => {
+                        found_error = Some(reason.clone());
+                        break;
+                    }
+                    HistoricalEvent::SigningFailed { trigger: _, reason } => {
+                        found_error = Some(format!("signing failed: {reason}"));
+                        break;
+                    }
+                    HistoricalEvent::UnsignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                    } => {
+                        found_error = Some("loaded zone was rejected".into());
+                        break;
+                    }
+                    HistoricalEvent::SignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                    } => {
+                        found_error = Some("signed zone was rejected".into());
+                        break;
+                    }
+                    HistoricalEvent::UnsignedHookFailed { err } => {
+                        found_error = Some(format!("could not execute loaded review hook: {err}"));
+                        break;
+                    }
+                    HistoricalEvent::SignedHookFailed { err } => {
+                        found_error = Some(format!("could not execute signed review hook: {err}"));
                         break;
                     }
                     _ => {}
                 }
             }
-            error = found_error.cloned();
+            error = found_error;
         }
 
         // Query key status

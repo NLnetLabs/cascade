@@ -261,7 +261,12 @@ async fn refresh(
             // Cancel the load
             handle.abandon_load(builder);
 
-            state.record_event(HistoricalEvent::Error(err.to_string()), None);
+            state.record_event(
+                HistoricalEvent::LoadingFailed {
+                    reason: err.to_string(),
+                },
+                None,
+            );
         }
     }
 }
