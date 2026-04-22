@@ -93,12 +93,13 @@ Options for :subcmd:`zone add`
    available to the ``cascaded`` daemon.`
 
    When specifying an upstream nameserver you may also optionally specify
-   the name of an :rfc:8945 TSIG key that should be used to authenticate
+   the name of an :RFC:`8945` TSIG key that should be used to authenticate
    communication with the upstream.
 
-   Zones sourced from an upstream nameserver will be automatically updated if
-   a new version is detected via a SOA query, either based on the zone's SOA
-   record timers, or in response to an :rfc:1996 NOTIFY message from the upstream.
+   Zones sourced from an upstream nameserver will be automatically updated
+   if a new version is detected via a SOA query, either based on the zone's
+   SOA record timers, or in response to an :RFC:`1996` NOTIFY message from
+   the upstream.
 
    Zones can also be manualy updated via :program:`cascade` :subcmd:`reload`.
 
@@ -113,8 +114,6 @@ Options for :subcmd:`zone add`
 
    .. note:: If using a TSIG key the key must first be added to Cascade via
              :program:`cascade` :subcmd:`tsig add`.
-
-   [1]: https://www.rfc-editor.org/rfc/rfc1982#section-3.2
 
 .. option:: --policy <POLICY>
 
