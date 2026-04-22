@@ -931,14 +931,8 @@ impl From<&str> for ZoneSource {
         };
 
         if let Ok(addr) = s.parse::<SocketAddr>() {
-            eprintln!(
-                "SocketAddr: {addr} (port={}, ipv6={})",
-                addr.port(),
-                addr.is_ipv6()
-            );
             ZoneSource::Server { addr, tsig_key }
         } else if let Ok(addr) = s.parse::<IpAddr>() {
-            eprintln!("IpAddr: {addr} (ipv6={})", addr.is_ipv6());
             ZoneSource::Server {
                 addr: SocketAddr::new(addr, DEFAULT_NS_PORT),
                 tsig_key,
