@@ -758,6 +758,10 @@ pub struct KeyMsg {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::large_enum_variant)]
 pub enum PolicyReloadError {
     Io(Utf8PathBuf, String),
     NoSuchTsigKey(TsigKeyName),

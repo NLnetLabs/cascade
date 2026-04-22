@@ -50,6 +50,10 @@ pub enum PolicyChange {
 /// Reload all policies.
 ///
 /// Any changes are reported via the `on_change` callback.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
@@ -117,6 +121,10 @@ pub fn reload_all(
 ///
 /// The current policies are used for logging purposes so we can log whether
 /// a policy is new, updated, unchanged or removed.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 pub fn load_all(
     policies: &foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
@@ -198,6 +206,10 @@ pub fn load_all(
 }
 
 /// Perform a semantic check on the loaded policy.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
     // Check the publication nameservers for the key manager. Any TSIG key
     // that is part of those nameservers has to exist in the TSIG key store.
