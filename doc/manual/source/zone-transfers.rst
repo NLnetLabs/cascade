@@ -47,18 +47,15 @@ Using zone transfers with a downstream server
 Cascade permits zone transfers by default, no configuration is required.
 
 To ensure timely update by secondaries, Cascade can be configured to send
-:RFC:`1996` (NOTIFY) messages to specified secondaries. This is done via the
-policy setting ``server.outbound.send-notify-to``.
+:RFC:`1996` NOTIFY messages to specified secondaries. This is done via the
+policy setting ``server.outbound.send-notify-to``, optionally specifying an
+:RFC:8945` TSIG key to use to authenticate communication.
 
-.. note:: The policy file will need to be reloaded via ``cascade policy
-          reload`` before adding the zone. Also, when adding the zone you
-          will need to pass the `--policy` argument specifying the relevant
-          policy to apply to the zone.
+.. tip:: Remember to reload the policy file after changing it. See
+         :program:`cascade` :subcmd:`policy reload`.
 
-.. tip:: If a TSIG key has been added to Cascade via ``cascade tsig add``,
-         you can instruct Cascade to authentiate itself to downstreams
-         using a specified TSIG key by adding `^<TSIG_KEY_NAME>` to the
-         ``server.outbound.send-notify-to`` value.
+.. tip:: Use :program:`cascade` :subcmd:`tsig add` to add a TSIG key to
+         Cascade _before_ reloading policy file changes.
 
 Controlling automatic key rollover zone transfer settings
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
