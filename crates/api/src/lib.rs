@@ -760,14 +760,14 @@ pub struct KeyMsg {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum PolicyReloadError {
     Io(Utf8PathBuf, String),
-    Check(String),
+    NoSuchTsigKey(TsigKeyName),
 }
 
 impl Display for PolicyReloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PolicyReloadError::Io(p, e) => format!("{p}: {e}").fmt(f),
-            PolicyReloadError::Check(e) => e.to_string().fmt(f),
+            PolicyReloadError::Io(p, e) => write!(f, "{p}: {e}"),
+            PolicyReloadError::NoSuchTsigKey(k) => write!(f, "no TSIG key with name '{k}' exists"),
         }
     }
 }

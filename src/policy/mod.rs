@@ -212,9 +212,7 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     for tsig_name in tsig_names {
         tsig_store
             .get(tsig_name)
-            .ok_or(PolicyReloadError::Check(format!(
-                "unknown TSIG key '{tsig_name}'"
-            )))?;
+            .ok_or(PolicyReloadError::NoSuchTsigKey(tsig_name.clone()))?;
     }
     Ok(())
 }
