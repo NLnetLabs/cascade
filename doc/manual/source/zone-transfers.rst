@@ -28,12 +28,8 @@ Using zone transfers with an upstream nameserver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To instruct Cascade to transfer a zone via the network instead of loading
-it from a file you must supply an upstream nameserver name or address when
-adding the zone.
-
-.. code-block:: bash
-
-   $ cascade zone add --source <IP_OR_NAME>[:<PORT>] ...
+it from a file you must supply an upstream nameserver IP address when
+adding the zone. See :program:`cascade` :subcmd:`zone add`.
 
 Cascade will then attempt to fetch the zone. Where possible it will fetch
 newer versions of the zone incrementally, as this is more efficient.
@@ -41,19 +37,9 @@ newer versions of the zone incrementally, as this is more efficient.
 Securing zone transfers with an upstream nameserver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Cascade can be instructed to authenticate the upstream nameserver by use of
-a TSIG key. The TSIG key to use must be provided to Cascade _before_ adding
-the zone:
-
-.. code-block:: bash
-
-   $ cascade tsig add <TSIG KEY NAME, ALGORITHM AND SECRET BYTES>
-
-When adding a zone the TSIG key name can then be referred to like so:
-
-.. code-block:: bash
-
-   $ cascade zone add --source <IP>[:<PORT>][^<TSIG KEY NAME>]
+Cascade can be instructed to authenticate the upstream nameserver by use of a
+TSIG key. The TSIG key to use must be provided to Cascade _before_ adding the
+zone. See :program:`cascade` :subcmd:`tsig add`.
 
 Using zone transfers with a downstream server
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
