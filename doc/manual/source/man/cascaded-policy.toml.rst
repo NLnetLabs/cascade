@@ -255,8 +255,8 @@ The ``[key-manager]`` section.
 
    Whether to automatically remove expired keys.
 
-   If this is set, expired keys will be removed automatically (by deleting the
-   files for on-disk keys or removing it from the HSM).
+   If this option is set, expired keys will be removed automatically (by
+   deleting the files for on-disk keys or removing it from the HSM).
 
 .. option:: publication-nameservers = []
 
@@ -267,8 +267,8 @@ The ``[key-manager]`` section.
 
      ``<IP>[:<PORT>][^[TSIG_KEY_NAME]``
 
-   If not specified then the nameserver specified in the zone apex SOA MNAME
-   field will be queried.
+   If this option is not set, the nameserver specified in the zone apex SOA
+   MNAME field will be queried.
 
 The management of DNS records by the key manager.
 +++++++++++++++++++++++++++++++++++++++++++++++++
