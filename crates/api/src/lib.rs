@@ -353,6 +353,7 @@ pub struct ZoneStatus {
     pub progress: Progress,
     pub keys: Vec<KeyInfo>,
     pub key_status: String,
+    pub error: Option<String>,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
@@ -532,6 +533,8 @@ pub struct HistoryItem {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HistoricalEventType {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -547,6 +550,8 @@ pub enum HistoricalEventType {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum HistoricalEvent {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -575,6 +580,7 @@ pub enum HistoricalEvent {
         err: String,
         elapsed: Duration,
     },
+    Error(String),
 }
 
 /// The trigger for a (re-)signing operation.

@@ -402,6 +402,8 @@ impl Zone {
                                 None => "-".to_string(),
                             };
                             let what = match &history_item.event {
+                                HistoricalEvent::StartedLoad => "Started load".to_string(),
+                                HistoricalEvent::StartedResign => "Started resign".to_string(),
                                 HistoricalEvent::Added => "Zone added".to_string(),
                                 HistoricalEvent::Removed => "Zone removed".to_string(),
                                 HistoricalEvent::PolicyChanged => "Policy changed".to_string(),
@@ -501,6 +503,7 @@ impl Zone {
                                         elapsed.as_secs()
                                     )
                                 }
+                                HistoricalEvent::Error(s) => s.clone(),
                             };
                             println!("{when} {serial:10} {what}");
                         }
@@ -574,6 +577,18 @@ impl Zone {
         if zone.last_published.is_some() {
             println!("");
             println!("Published zone available at {}", zone.publish_addr);
+        }
+
+        if let Some(error) = zone.error {
+            println!("");
+            println!("An error occurred during the last operation:");
+            println!("  {}ERROR: {error}{}", ansi::RED, ansi::RESET);
+            println!(
+                "  Run {}`cascade zone history {}`{} for more information.",
+                ansi::BLUE,
+                zone.name,
+                ansi::RESET
+            );
         }
 
         if detailed {

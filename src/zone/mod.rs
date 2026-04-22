@@ -318,6 +318,8 @@ impl HistoryItem {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HistoricalEventType {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -329,10 +331,13 @@ pub enum HistoricalEventType {
     SignedZoneReview,
     KeySetCommand,
     KeySetError,
+    Error,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum HistoricalEvent {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -370,11 +375,14 @@ pub enum HistoricalEvent {
         )]
         elapsed: Duration,
     },
+    Error(String),
 }
 
 impl HistoricalEvent {
     fn get_type(&self) -> HistoricalEventType {
         match self {
+            HistoricalEvent::StartedLoad => HistoricalEventType::StartedLoad,
+            HistoricalEvent::StartedResign => HistoricalEventType::StartedResign,
             HistoricalEvent::Added => HistoricalEventType::Added,
             HistoricalEvent::Removed => HistoricalEventType::Removed,
             HistoricalEvent::PolicyChanged => HistoricalEventType::PolicyChanged,
@@ -386,6 +394,7 @@ impl HistoricalEvent {
             HistoricalEvent::SignedZoneReview { .. } => HistoricalEventType::SignedZoneReview,
             HistoricalEvent::KeySetCommand { .. } => HistoricalEventType::KeySetCommand,
             HistoricalEvent::KeySetError { .. } => HistoricalEventType::KeySetError,
+            HistoricalEvent::Error { .. } => HistoricalEventType::Error,
         }
     }
 
@@ -397,6 +406,8 @@ impl HistoricalEvent {
 impl From<HistoricalEvent> for api::HistoricalEvent {
     fn from(value: HistoricalEvent) -> Self {
         match value {
+            HistoricalEvent::StartedLoad => Self::StartedLoad,
+            HistoricalEvent::StartedResign => Self::StartedResign,
             HistoricalEvent::Added => Self::Added,
             HistoricalEvent::Removed => Self::Removed,
             HistoricalEvent::PolicyChanged => Self::PolicyChanged,
@@ -420,6 +431,7 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             HistoricalEvent::KeySetError { cmd, err, elapsed } => {
                 Self::KeySetError { cmd, err, elapsed }
             }
+            HistoricalEvent::Error(s) => Self::Error(s),
         }
     }
 }
