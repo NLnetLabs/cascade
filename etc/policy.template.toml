@@ -165,7 +165,7 @@ auto-remove = true
 # If not specified, the nameserver specified by the SOA MNAME field will be
 # checked.
 # 
-# publication_nameservers = []
+# publication-nameservers = []
 
 # The management of DNS records by the key manager.
 # 

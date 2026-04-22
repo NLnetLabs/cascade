@@ -1,6 +1,8 @@
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::ansi;
 use crate::api::*;
@@ -219,7 +221,7 @@ impl Zone {
                         "zone/add",
                         &ZoneAdd {
                             name,
-                            source,
+                            source: source.try_into()?,
                             policy,
                             key_imports,
                         },
@@ -883,4 +885,89 @@ fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {
             })
         })
         .collect()
+}
+
+//------------ ZoneSource ----------------------------------------------------
+
+const DEFAULT_NS_PORT: u16 = 53;
+
+/// How to load the contents of a zone.
+#[derive(Debug, Clone)]
+pub enum ZoneSource {
+    /// Don't load the zone at all.
+    None,
+
+    /// From a zonefile on disk.
+    Zonefile {
+        /// The path to the zonefile.
+        path: Box<Utf8Path>,
+    },
+
+    /// From a DNS server via XFR.
+    Server {
+        /// The address of the server.
+        addr: SocketAddr,
+
+        /// The name of a TSIG key, if any.
+        tsig_key: Option<String>,
+    },
+}
+
+/// Support parsing of ``-source`` command line arguments.
+///
+/// Supported forms:
+///   - `<IP>[:<PORT>][^<TSIG_KEY_NAME>]`
+///   - `<PATH/TO/ZONE/FILE/TO/LOAD>`
+impl From<&str> for ZoneSource {
+    fn from(s: &str) -> Self {
+        // Split out any provided TSIG key from the rest of the
+        // source argument.
+        let (s, tsig_key) = s.split_once('^').unwrap_or((s, ""));
+
+        let tsig_key = if !tsig_key.is_empty() {
+            Some(tsig_key.to_string())
+        } else {
+            None
+        };
+
+        if let Ok(addr) = s.parse::<SocketAddr>() {
+            eprintln!(
+                "SocketAddr: {addr} (port={}, ipv6={})",
+                addr.port(),
+                addr.is_ipv6()
+            );
+            ZoneSource::Server { addr, tsig_key }
+        } else if let Ok(addr) = s.parse::<IpAddr>() {
+            eprintln!("IpAddr: {addr} (ipv6={})", addr.is_ipv6());
+            ZoneSource::Server {
+                addr: SocketAddr::new(addr, DEFAULT_NS_PORT),
+                tsig_key,
+            }
+        } else {
+            ZoneSource::Zonefile {
+                path: Utf8PathBuf::from(s).into_boxed_path(),
+            }
+        }
+    }
+}
+
+impl TryFrom<ZoneSource> for cascade_api::ZoneSource {
+    type Error = String;
+
+    fn try_from(source: ZoneSource) -> Result<Self, Self::Error> {
+        Ok(match source {
+            ZoneSource::None => cascade_api::ZoneSource::None,
+            ZoneSource::Zonefile { path } => cascade_api::ZoneSource::Zonefile { path },
+            ZoneSource::Server { addr, tsig_key } => {
+                let tsig_key = if let Some(tsig_key) = tsig_key {
+                    Some(TsigKeyName::from_str(&tsig_key).map_err(|err| {
+                        format!("TSIG key name '{tsig_key}' is not a valid domain name: {err}")
+                    })?)
+                } else {
+                    None
+                };
+                cascade_api::ZoneSource::Server { addr, tsig_key }
+            }
+        })
+    }
 }

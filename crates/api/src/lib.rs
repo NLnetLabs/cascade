@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{self, Display};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::{Duration, SystemTime};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -10,8 +10,6 @@ use serde::{Deserialize, Serialize};
 pub use domain::base::Serial;
 
 pub mod dep;
-
-const DEFAULT_AXFR_PORT: u16 = 53;
 
 //----------- ZoneName ---------------------------------------------------------
 
@@ -296,7 +294,6 @@ pub enum ZoneAddError {
     AlreadyExists,
     NoSuchPolicy,
     PolicyMidDeletion,
-    InvalidTsigKeyName(String),
     NoSuchTsigKey,
     Other(String),
 }
@@ -307,7 +304,6 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
-            Self::InvalidTsigKeyName(reason) => reason,
             Self::NoSuchTsigKey => "no TSIG key with that name exists",
             Self::Other(reason) => reason,
         })
@@ -350,10 +346,7 @@ pub enum ZoneSource {
         addr: SocketAddr,
 
         /// The name of a TSIG key, if any.
-        tsig_key: Option<String>,
-
-        /// The XFR status of the zone.
-        xfr_status: ZoneRefreshStatus,
+        tsig_key: Option<TsigKeyName>,
     },
 }
 
@@ -380,40 +373,6 @@ impl Display for ZoneSource {
             ZoneSource::None => f.write_str("<none>"),
             ZoneSource::Zonefile { path } => path.fmt(f),
             ZoneSource::Server { addr, .. } => addr.fmt(f),
-        }
-    }
-}
-
-/// Support parsing of ``-source`` command line arguments.
-///
-/// Supported forms:
-///   - `<IP>[:<PORT>][^<TSIG_KEY_NAME>]`
-///   - `<PATH/TO/ZONE/FILE/TO/LOAD>`
-impl From<&str> for ZoneSource {
-    fn from(mut s: &str) -> Self {
-        // Split out any provided TSIG key from the rest of the
-        // source argument.
-        let tsig_key = s.split_once('^').map(|(new_s, k)| {
-            s = new_s;
-            k.to_string()
-        });
-
-        if let Ok(addr) = s.parse::<SocketAddr>() {
-            ZoneSource::Server {
-                addr,
-                tsig_key,
-                xfr_status: Default::default(),
-            }
-        } else if let Ok(addr) = s.parse::<IpAddr>() {
-            ZoneSource::Server {
-                addr: SocketAddr::new(addr, DEFAULT_AXFR_PORT),
-                tsig_key,
-                xfr_status: Default::default(),
-            }
-        } else {
-            ZoneSource::Zonefile {
-                path: Utf8PathBuf::from(s).into_boxed_path(),
-            }
         }
     }
 }

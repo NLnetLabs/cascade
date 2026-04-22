@@ -384,7 +384,6 @@ impl HttpServer {
                 loader::Source::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
                     addr,
                     tsig_key: None,
-                    xfr_status: Default::default(),
                 },
             };
             unsigned_review_addr = state

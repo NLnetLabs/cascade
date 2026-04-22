@@ -1,7 +1,6 @@
 //! Cascade's central command.
 
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::{
     fmt, io,
     sync::{Arc, Mutex},
@@ -94,16 +93,8 @@ pub async fn add_zone(
         source = match api_source {
             cascade_api::ZoneSource::None => crate::loader::Source::None,
             cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
-            cascade_api::ZoneSource::Server {
-                addr,
-                tsig_key,
-                xfr_status: _,
-            } => {
+            cascade_api::ZoneSource::Server { addr, tsig_key } => {
                 let tsig_key = if let Some(key_name) = tsig_key {
-                    // Verify that the key name is syntactically valid.
-                    let key_name = Name::from_str(&key_name)
-                        .map_err(|err| ZoneAddError::InvalidTsigKeyName(err.to_string()))?;
-
                     // Lookup the key in the TSIG key store.
                     let key = state
                         .tsig_store
@@ -372,8 +363,6 @@ pub enum ZoneAddError {
     NoSuchPolicy,
     /// The specified policy is being deleted.
     PolicyMidDeletion,
-    /// The specified TSIG key name is invalid.
-    InvalidTsigKeyName(String),
     /// No TSIG key with that name exists.
     NoSuchTsigKey,
     /// Some other error occurred.
@@ -388,7 +377,6 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
-            Self::InvalidTsigKeyName(reason) => reason,
             Self::NoSuchTsigKey => "no TSIG key with that name exists",
             Self::Other(reason) => reason,
         })
@@ -401,7 +389,6 @@ impl From<ZoneAddError> for api::ZoneAddError {
             ZoneAddError::AlreadyExists => Self::AlreadyExists,
             ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
             ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
-            ZoneAddError::InvalidTsigKeyName(reason) => Self::InvalidTsigKeyName(reason),
             ZoneAddError::NoSuchTsigKey => Self::NoSuchTsigKey,
             ZoneAddError::Other(reason) => Self::Other(reason),
         }
