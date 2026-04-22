@@ -59,7 +59,7 @@ example\:
   key:
     name: "sec1_key"
     algorithm: hmac-sha256
-    secret: "...=="
+    secret: "..."
 
    zone:
      name: example.com
@@ -83,7 +83,7 @@ command, e.g. like so:
    $ cascade tsig add --name sec1_key --alg hmac-sha256 --secret "...=="
 
 To use the new TSIG key it must be specified when adding a zone to
-Cascade. Assuming that NSD is running on host 192.168.0.1 on port 53
+Cascade. Assuming that NSD is running on host 192.168.0.1 on port 53,
 the following command instructs Cascade to add the ``example.com``
 zone sourced from the NSD server using the ``sec1_key`` TSIG key to
 authenticate with NSD:

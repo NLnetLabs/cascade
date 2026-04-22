@@ -265,7 +265,7 @@ The ``[key-manager]`` section.
 
    Each nameserver is specified as a string with the syntax:
 
-     ``<IP-Address>:<Port>[^[TSIG-Key-Name]]``
+     ``<IP>[:<PORT>][^[TSIG_KEY_NAME]``
 
    If not specified then the nameserver specified in the zone apex SOA MNAME
    field will be queried.

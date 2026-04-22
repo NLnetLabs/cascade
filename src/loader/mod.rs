@@ -307,7 +307,7 @@ impl std::fmt::Display for Source {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Source::None => f.write_str("none"),
-            Source::Zonefile { path } => write!(f, "zone file '{}'", path.as_std_path().display()),
+            Source::Zonefile { path } => write!(f, "zone file '{path}'"),
             Source::Server { addr, tsig_key } => {
                 write!(f, "{addr}")?;
                 if let Some(tsig_key) = &tsig_key {

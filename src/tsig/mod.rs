@@ -259,7 +259,7 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     let mut state = center.state.lock().unwrap();
 
     // Currently if a zone was added with `--source
-    // ip[:port]^<TSIG_KEY_NAME>` that would cause the TSIG key to be used
+    // <IP>[:<PORT>]^<TSIG_KEY_NAME>` that would cause the TSIG key to be used
     // by the loader when refreshing the zone.
     //
     // In future policies may refer to TSIG keys in a couple of places:

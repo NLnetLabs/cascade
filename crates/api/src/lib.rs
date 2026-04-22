@@ -387,8 +387,8 @@ impl Display for ZoneSource {
 /// Support parsing of ``-source`` command line arguments.
 ///
 /// Supported forms:
-///   - `<IP_ADDRESS>[:<PORT>][^<TSIG_KEY_NAME>]`
-///   - `</PATH/TO/ZONE/FILE/TO/LOAD>`
+///   - `<IP>[:<PORT>][^<TSIG_KEY_NAME>]`
+///   - `<PATH/TO/ZONE/FILE/TO/LOAD>`
 impl From<&str> for ZoneSource {
     fn from(mut s: &str) -> Self {
         // Split out any provided TSIG key from the rest of the

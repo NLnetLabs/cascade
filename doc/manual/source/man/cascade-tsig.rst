@@ -49,9 +49,8 @@ Commands
 
    Remove a registered TSIG key.
 
-   .. note:: Returns an error if the key does not exist in the TSIG key store
-             or if any zone exists that is configured to authenticate with an
-			 upstream source using the specified TSIG key.
+   .. note:: Returns an error if the key does not exist in the TSIG key store,
+             or if the key is still referenced by other configuration.
 
 Arguments for :subcmd:`tsig add`
 --------------------------------

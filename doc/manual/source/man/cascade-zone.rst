@@ -48,7 +48,7 @@ Commands
 
    Remove a zone.
 
-   .. note:: Once removed downstream servers will no longer be able to fetch
+   .. note:: Once removed, downstream servers will no longer be able to fetch
              the zone!
 
 .. subcmd:: list

@@ -159,8 +159,8 @@ auto-remove = true
 # The upstream nameservers to use when checking for RRSIG propagation during
 # a key roll.
 # 
-# Each nameserver must be specifeid as a string in the form `"<IP
-# address>:[<port>][^<TSIG key name>]"`.
+# Each nameserver must be specifeid as a string in the form
+# `"<IP>:[<PORT>][^<TSIG_KEY_NAME>]"`.
 #
 # If not specified, the nameserver specified by the SOA MNAME field will be
 # checked.
