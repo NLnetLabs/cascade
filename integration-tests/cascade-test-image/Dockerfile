@@ -13,8 +13,19 @@ RUN <<EOF
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
 
-  # For rustup (for common Actions scripts)
-  apt-get install -y build-essential curl
+  # For rustup and dnst
+  apt-get install -y build-essential curl ca-certificates curl gnupg lsb-release
+
+  # Fetch NLnet Labs package key
+  curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | \
+    gpg --dearmor -o /usr/share/keyrings/nlnetlabs-archive-keyring.gpg
+
+  # Setup the nlnetlabs proposed package repo
+  printf "deb [arch=%s signed-by=%s] %s\n" \
+    "$(dpkg --print-architecture)" \
+    "/usr/share/keyrings/nlnetlabs-archive-keyring.gpg" \
+    "https://packages.nlnetlabs.nl/linux/ubuntu $(lsb_release -cs)-proposed main" \
+      > /etc/apt/sources.list.d/nlnetlabs-proposed.list
 
   # Node.js (for common Actions scripts)
   apt-get install -y nodejs
@@ -26,6 +37,27 @@ RUN <<EOF
   apt-get install -y pkg-config libssl-dev
 
   apt-get install -y file
+EOF
+
+# Provide the dnst version as a variable to make it easy to update the docker
+# image used by the act-wrapper to a new version of dnst. Otherwise, users will
+# have to manually invalidate the cached version of the RUN step below as the
+# RUN step content wouldn't change. When a new version of dnst is published,
+# we need to update these variables.
+ARG DNST_VERSION=0.2.0~alpha1-1noble
+ARG DNST_VERSION_CARGO=v0.2.0-alpha1
+
+RUN <<EOF
+  # Install dnst
+  export DEBIAN_FRONTEND=noninteractive
+
+  apt-get update
+  apt-get install -y dnst=$DNST_VERSION
+
+  # Link the installed dnst installed by apt to the cargo-release directory so
+  # that we don't have to modify the build profile selection action.
+  mkdir -p /root/cargo-release/bin
+  ln -sf -T /usr/bin/dnst /root/cargo-release/bin/dnst
 EOF
 
 RUN <<EOF
@@ -47,11 +79,8 @@ RUN <<EOF
 EOF
 
 RUN <<EOF
-  # Install dnst.
-  # TODO: Switch installing release builds via apt-get install once a dnst
-  # release with keyset functionality has been released.
-  cargo install --debug --git https://github.com/nlnetlabs/dnst --rev 01e7fab --root /root/cargo-debug --locked --bin=dnst dnst
-  cargo install --git https://github.com/nlnetlabs/dnst --rev 01e7fab --root /root/cargo-release --locked --bin=dnst dnst
+  # Install the debug build of dnst.
+  cargo install --debug --git https://github.com/nlnetlabs/dnst --tag $DNST_VERSION_CARGO --root /root/cargo-debug --locked --bin=dnst dnst
 EOF
 
 # Copy source files into container in case we need to build from source
