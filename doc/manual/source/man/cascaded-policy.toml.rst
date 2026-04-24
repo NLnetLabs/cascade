@@ -260,15 +260,19 @@ The ``[key-manager]`` section.
 
 .. option:: publication-nameservers = []
 
-   A set of nameservers to use when checking for rrsiG propagation during a
+   The set of nameservers to use when checking for RRSIG propagation during a
    key roll.
 
-   Each nameserver is specified as a string with the syntax:
-
-     ``<IP>[:<PORT>][^[TSIG_KEY_NAME]``
-
-   If this option is not set, the nameserver specified in the zone apex SOA
-   MNAME field will be queried.
+   Each nameserver must be specified as a string in the form:
+  
+     ``"<IP>:[<PORT>][^<TSIG_KEY_NAME>]"``
+  
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+  
+   If no nameservers are specified, the nameserver specified by the SOA MNAME
+   field will be checked.
 
 The management of DNS records by the key manager.
 +++++++++++++++++++++++++++++++++++++++++++++++++
@@ -516,13 +520,17 @@ The ``[server.outbound]`` section.
 
 .. option:: send-notify-to = []
 
-   The set of nameservers to which NOTIFY messages should be sent.
+   The set of nameservers to which NOTIFY messages should be sent
 
-   If empty, no NOTIFY messages will be sent.
+   Each nameserver must be specified as a string in the form:
 
-   A collection of ``IP:[port]``, defaulting to port 53 when not specified, e.g.:
-   ``send-notify-to = ["[::1]:53"]``
+   `"<IP>:[<PORT>][^<TSIG_KEY_NAME>]"`
 
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+
+   If not specified, no NOTIFY messages will be sent.
 
 Files
 -----
