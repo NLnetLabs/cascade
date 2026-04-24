@@ -913,7 +913,7 @@ pub enum ZoneSource {
     },
 }
 
-/// Support parsing of ``-source`` command line arguments.
+/// Support parsing of `-source` command line arguments.
 ///
 /// Supported forms:
 ///   - `<IP>[:<PORT>][^<TSIG_KEY_NAME>]`
