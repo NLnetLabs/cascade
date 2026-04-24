@@ -306,6 +306,7 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
         });
 
     if tsig_key_found {
+        // TODO: Indicate to the operator where the key is in use.
         return Err(RemoveError::Used);
     }
 
@@ -319,6 +320,7 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     match state.tsig_store.map.entry(name.clone()) {
         hash_map::Entry::Occupied(entry) => {
             if !entry.get().zones.is_empty() {
+                // TODO: Indicate to the operator where the key is in use.
                 return Err(RemoveError::Used);
             }
             entry.remove_entry();
