@@ -311,7 +311,7 @@ impl std::fmt::Display for Source {
             Source::Server { addr, tsig_key } => {
                 write!(f, "{addr}")?;
                 if let Some(tsig_key) = &tsig_key {
-                    write!(f, "^{}", tsig_key.name())?;
+                    write!(f, " with  TSIG key '{}'", tsig_key.name())?;
                 }
                 Ok(())
             }
