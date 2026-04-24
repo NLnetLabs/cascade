@@ -10,9 +10,9 @@ Communication of changed zone records from upstream to downstream should
 be done via the network using the :RFC:`5936` (AXFR) and :RFC:`1995` (IXFR)
 protocols.
 
-Securing the transferred data can be done using :RFC:`8945` (TSIG) keys,
-using a shared secret communicated out of band to the nameservers sending and
-receiving the zone records.
+Authentication of transfering parties can be done using :RFC:`8945` (TSIG)
+keys, using a shared secret communicated out of band to the nameservers
+sending and receiving the zone records.
 
 Cascade supports timely discovery of zone changes by sending SOA queries to
 the upsream nameserver, either in response to an :RFC:`1996` NOTIFY message or
@@ -29,13 +29,11 @@ Using zone transfers with an upstream nameserver
 
 To instruct Cascade to transfer a zone via the network instead of loading
 it from a file you must supply an upstream nameserver IP address when
-adding the zone. See :program:`cascade` :subcmd:`zone add`.
+adding the zone. See :program:`cascade` :subcmd:`zone add`, and optionally
+a TSIG key to use to authenticate communication.
 
 Cascade will then attempt to fetch the zone. Where possible it will fetch
 newer versions of the zone incrementally, as this is more efficient.
-
-Securing zone transfers with an upstream nameserver
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Cascade can be instructed to authenticate the upstream nameserver by use of a
 TSIG key. The TSIG key to use must be provided to Cascade _before_ adding the
