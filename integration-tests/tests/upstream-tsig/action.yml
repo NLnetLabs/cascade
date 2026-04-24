@@ -18,6 +18,14 @@ inputs:
       - info
       - debug
       - trace
+  key-source:
+    description: Where to take the TSIG key from.
+    required: true
+    type: choice
+    options:
+      - cmdline
+      - file
+      - none
 runs:
   using: "composite"
   steps:
@@ -46,7 +54,17 @@ runs:
     - name: Remove and re-add the zone with the required TSIG key.
       run: |
         cascade zone remove example-tsig.test
-        cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+        
+        case "${{ inputs.key-source }}" in
+          "cmdline")
+            cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+            ;;
+          "file")
+            echo -n "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0=" >/tmp/tsig.key
+            cascade tsig add tsig-key hmac-sha256 /tmp/tsig.key
+            ;;
+        esac
+
         cascade zone add --policy default --source 127.0.0.1:1055^tsig-key example-tsig.test
 
     - name: Check zone status
