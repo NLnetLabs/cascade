@@ -3,7 +3,7 @@ Zone Transfers
 
 Cascade is designed to be deployed between a hidden upstream nameserver and
 public downstream nameservers. The hidden upstream serves the unsigned zone,
-Cascade signs it, and passes it to the downstream nameservers for publication
+Cascade signs it, and serves it to downstream nameservers for publication
 to consumers.
 
 Communication of changed zone records from upstream to downstream should
