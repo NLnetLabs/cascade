@@ -42,7 +42,8 @@ zone. See :program:`cascade` :subcmd:`tsig add`.
 Using zone transfers with a downstream server
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Cascade permits zone transfers by default, no configuration is required.
+By default, Cascade allows downstream servers to access published zones by
+zone transfer, no configuration is needed.
 
 To ensure timely update by secondaries, Cascade can be configured to send
 :RFC:`1996` NOTIFY messages to specified secondaries. This is done via the
