@@ -45,7 +45,7 @@ running on host 192.168.0.2 listening on the default port 4542:
 
    zone:
      name: example.com
-	 zonefile: "zonefile.name"
+	 zonefile: /etc/nsd/example.com.zone
 	 notify: 192.168.0.2@4542 NOKEY
 	 provide-xfr: 192.168.0.2 NOKEY
 	 store-ixfr: yes
@@ -63,7 +63,7 @@ example\:
 
    zone:
      name: example.com
-	 zonefile: "zonefile.name"
+	 zonefile: /etc/nsd/example.com.zone
 	 notify: 192.168.0.2@4542 sec1_key
 	 provide-xfr: 192.168.0.2 sec1_key
 	 store-ixfr: yes
