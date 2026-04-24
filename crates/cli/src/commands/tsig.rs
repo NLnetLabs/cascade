@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use camino::Utf8PathBuf;
 use cascade_api::{
     TsigAddError, TsigAddResult, TsigKeyName, TsigListResult, TsigRemoveError, TsigRemoveResult,
 };
@@ -16,10 +17,10 @@ pub struct Tsig {
 #[derive(Clone, Debug, clap::Subcommand)]
 #[allow(clippy::large_enum_variant)]
 pub enum TsigCommand {
-    /// Register a TSIG key
+    /// Add a TSIG key
     #[command(name = "add")]
     Add {
-        /// The name of the TSIG key to register.
+        /// The name of the TSIG key to add.
         ///
         /// Can also be in the form `[algorithm]:keyname:secret`.
         name: String,
@@ -37,10 +38,13 @@ pub enum TsigCommand {
         #[arg(requires = "secret")]
         alg: Option<TsigAlgorithm>,
 
-        /// The secret key material in base64 encoded form.
+        /// Base64 encoded secret key material.
         ///
         /// Can be omitted if provided as part of the name.
         /// Required if `[ALG]` is provided.
+        ///
+        /// Can also be a path to a file containing the Base64 encoded secret
+        /// key material.
         #[arg(requires = "alg")]
         secret: Option<String>,
     },
@@ -95,7 +99,20 @@ impl Tsig {
 
                     // Separate name, algorithm and secret argument values
                     // were provided.
-                    (Some(alg), Some(secret)) => (name, alg, secret),
+                    (Some(alg), Some(secret)) => {
+                        let path = Utf8PathBuf::from_str(&secret).unwrap();
+                        if path.exists() {
+                            // Assume that the secret is contained in the
+                            // specified file.
+                            let secret = std::fs::read_to_string(&path).map_err(|err| {
+                                format!("Failed to read TSIG key file '{path}': {err}")
+                            })?;
+                            (name, alg, secret)
+                        } else {
+                            // Assume that the secret was provided directly.
+                            (name, alg, secret)
+                        }
+                    }
 
                     // An unsupported combination of arguments was provided
                     // but this should not be possible due to the Clap

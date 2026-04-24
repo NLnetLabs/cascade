@@ -18,7 +18,7 @@ pub struct Zone {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum ZoneCommand {
-    /// Register a new zone
+    /// Add a new zone
     #[command(name = "add")]
     Add {
         name: ZoneName,

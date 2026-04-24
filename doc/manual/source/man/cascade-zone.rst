@@ -42,7 +42,7 @@ Commands
 
 .. subcmd:: add
 
-   Register a new zone.
+   Add a new zone.
 
 .. subcmd:: remove
 

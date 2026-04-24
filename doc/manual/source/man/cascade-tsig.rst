@@ -36,18 +36,18 @@ Commands
 
 .. subcmd:: add
 
-   Register a new TSIG key.
+   Add a new TSIG key.
 
    Incoming DNS messages that are TSIG signed will be rejected if the key used
    to sign the message is not registered with Cascade.
 
 .. subcmd:: list
 
-   List registered TSIG keys and the zones that use them.
+   List registered TSIG keys.
 
 .. subcmd:: remove
 
-   Remove a registered TSIG key.
+   Remove a TSIG key.
 
    .. note:: Returns an error if the key does not exist in the TSIG key store,
              or if the key is still referenced by other configuration.
@@ -84,9 +84,11 @@ Arguments for :subcmd:`tsig add`
    :RFC:`4648` Base64 encoded secret key material. The number of bytes prior
    to encoding must be correct for the specified ``<ALGORITHM>``.
 
+   Can also be a path to a file containing the Base64 encoded secret material.
+
    .. note:: Secret key material supplied via a command-line argument may be
              visible to other processes running on the same computer as the
-             Cascade CLI.
+             Cascade CLI. Consider supplying a file name instead.
 
 See Also
 --------
