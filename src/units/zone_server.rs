@@ -249,7 +249,7 @@ impl ZoneServer {
                     .outbound
                     .send_notify_to
                     .iter()
-                    .filter(|s| s.addr.filter(|addr| addr.port() != 0).is_some());
+                    .filter(|s| s.addr.port() != 0);
 
                 send_notify_to_addrs(zone_name.clone(), addrs, center);
             }
@@ -736,7 +736,7 @@ pub fn send_notify_to_addrs<'a>(
     let mut msg = msg.question();
     msg.push((apex_name, Rtype::SOA)).unwrap();
 
-    for nameserver in notify_set.filter(|ns| ns.addr.is_some()) {
+    for nameserver in notify_set {
         let dgram_config = dgram_config.clone();
         let req = RequestMessage::new(msg.clone()).unwrap();
 
@@ -744,7 +744,7 @@ pub fn send_notify_to_addrs<'a>(
         let center = center.clone();
         tokio::spawn(async move {
             // TODO: Use the connection factory here.
-            let udp_connect = UdpConnect::new(nameserver.addr.unwrap());
+            let udp_connect = UdpConnect::new(nameserver.addr);
             let client = Connection::with_config(udp_connect, dgram_config.clone());
 
             trace!("Sending NOTIFY to nameserver {nameserver}");
@@ -782,7 +782,6 @@ pub fn send_notify_to_addrs<'a>(
             } else {
                 client.send_request(req.clone()).get_response().await
             };
-            // let res = client.send_request(req.clone()).get_response().await;
 
             if let Err(err) = res {
                 warn!("Unable to send NOTIFY to nameserver {nameserver}: {err}");

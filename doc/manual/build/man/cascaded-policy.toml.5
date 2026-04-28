@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Apr 20, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "Apr 28, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -643,6 +643,22 @@ If empty, no NOTIFY messages will be sent.
 .sp
 A collection of \fBIP:[port]\fP, defaulting to port 53 when not specified, e.g.:
 \fBsend\-notify\-to = [\(dq[::1]:53\(dq]\fP
+.UNINDENT
+.INDENT 0.0
+.TP
+.B accept\-xfr\-from = []
+The set of nameservers to accept zone transfer requests from.
+.sp
+Each nameserver must be specified as a string in the form:
+.sp
+\fI\(dq<IP>[^<TSIG_KEY_NAME>]\(dq\fP
+.sp
+If a TSIG key name is specified, a key by that name must exist in the
+Cascade TSIG key store and will be used to authenticate communication with
+the nameserver.
+.sp
+If not specified, zone transfer requests will be accepted from any
+nameserver.
 .UNINDENT
 .SH FILES
 .INDENT 0.0

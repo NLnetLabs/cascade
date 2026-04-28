@@ -281,10 +281,11 @@ jobs:
     name: Using TSIG with downstream nameservers.
     runs-on: ubuntu-latest
     strategy:
+      # max-parallel: 1
       fail-fast: true
       matrix:
         send-notify-to: [ '',  '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
-        accept-xfr-from: [ '', '127.0.0.1:1054', '127.0.0.1:1054^tsig-key', '^tsig-key' ]
+        accept-xfr-from: [ '', '127.0.0.1', '127.0.0.1^tsig-key' ]
         downstream-expects-tsig: [ 0, 1 ]
         downstream-uses-tsig: [ 0, 1 ]
     steps:

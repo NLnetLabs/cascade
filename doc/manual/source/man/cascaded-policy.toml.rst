@@ -523,6 +523,20 @@ The ``[server.outbound]`` section.
    A collection of ``IP:[port]``, defaulting to port 53 when not specified, e.g.:
    ``send-notify-to = ["[::1]:53"]``
 
+.. option:: accept-xfr-from = []
+
+   The set of nameservers to accept zone transfer requests from.
+   
+   Each nameserver must be specified as a string in the form:
+
+   `"<IP>[^<TSIG_KEY_NAME>]"`
+
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+
+   If not specified, zone transfer requests will be accepted from any
+   nameserver.
 
 Files
 -----

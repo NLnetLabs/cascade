@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, SystemTime};
@@ -265,14 +265,17 @@ impl fmt::Display for TsigRemoveError {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigListResult {
     /// The set of TSIG keys known to Cascade plus information about each key.
-    pub tsig_keys: HashMap<TsigKeyName, TsigListResultItem>,
+    pub tsig_key_info: HashMap<TsigKeyName, TsigListResultItem>,
 }
 
 /// Information about a single listed TSIG key.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigListResultItem {
     /// The set of zones with which this TSIG key is used.
-    pub zones: Vec<ZoneName>,
+    pub zone_names: HashSet<ZoneName>,
+
+    /// The set of policies with which this TSIG key is used.
+    pub policy_names: HashSet<String>,
 }
 
 //----------- ZoneAdd --------------------------------------------------------
@@ -883,7 +886,7 @@ pub struct ServerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct OutboundPolicyInfo {
-    pub accept_xfr_requests_from: Vec<NameserverCommsPolicyInfo>,
+    pub accept_xfr_from: Vec<NameserverCommsPolicyInfo>,
     pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
 }
 

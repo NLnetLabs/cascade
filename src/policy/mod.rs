@@ -8,6 +8,7 @@ use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 use domain::base::Ttl;
+use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
@@ -204,7 +205,7 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
         .key_manager
         .publication_nameservers
         .iter()
-        .chain(policy.server.outbound.accept_xfr_requests_from.iter())
+        .chain(policy.server.outbound.accept_xfr_from.iter())
         .chain(policy.server.outbound.send_notify_to.iter())
         .filter_map(|ns| ns.tsig_key_name.as_ref());
 
@@ -438,7 +439,7 @@ pub struct OutboundPolicy {
     /// The set of nameservers from which SOA and XFR requests may be received.
     ///
     /// If empty, any nameserver may request XFR from us.
-    pub accept_xfr_requests_from: Vec<NameserverCommsPolicy>,
+    pub accept_xfr_from: Vec<NameserverCommsPolicy>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///
@@ -446,24 +447,6 @@ pub struct OutboundPolicy {
     ///
     /// TODO: support the RFC 1996 "Notify Set"?
     pub send_notify_to: Vec<NameserverCommsPolicy>,
-}
-
-//----------- InboundPolicy ---------------------------------------------------
-
-/// Policy for restricting from whom data may be received.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InboundPolicy {
-    /// The set of nameservers to which SOA and XFR requests should be sent.
-    ///
-    /// If empty, the nameserver from which the zone was received will be
-    /// contacted.
-    pub send_xfr_and_soa_requests_to: Vec<NameserverCommsPolicy>,
-
-    /// The set of nameservers from which may NOTIFY messages may be received.
-    ///
-    /// If empty, the nameserver from which the zone was received will be
-    /// allowed to send us NOTIFY messages.
-    pub accept_notify_messages_from: Vec<NameserverCommsPolicy>,
 }
 
 //----------- NameserverCommsPolicy -------------------------------------------
@@ -492,7 +475,7 @@ pub struct NameserverCommsPolicy {
     /// The address to send to/receive from.
     ///
     /// TODO: Support IP prefixes?
-    pub addr: Option<SocketAddr>,
+    pub addr: SocketAddr,
 
     /// An optional TSIG key to sign and authenticate messages with.
     pub tsig_key_name: Option<KeyName>,
@@ -500,9 +483,7 @@ pub struct NameserverCommsPolicy {
 
 impl Display for NameserverCommsPolicy {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(addr) = self.addr {
-            write!(f, "{addr}")?;
-        }
+        write!(f, "{}", self.addr)?;
         if let Some(tsig_key_name) = &self.tsig_key_name {
             write!(f, "^{tsig_key_name}")?;
         }

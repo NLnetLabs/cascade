@@ -74,7 +74,7 @@ runs:
 
     - name: Make a zonefile to load zone ${{ steps.set-zone-name.outputs.ZONE_NAME }}
       run: |
-        tee test.zone <<'EOF'
+        cat >test.zone <<'EOF'
         $TTL 5 ; use a very short TTL for sped up keyset rolls
         ${{ steps.set-zone-name.outputs.ZONE_NAME }}   IN SOA ns1.${{ steps.set-zone-name.outputs.ZONE_NAME }} mail.${{ steps.set-zone-name.outputs.ZONE_NAME }} (
                            1          ; serial
@@ -96,9 +96,9 @@ runs:
     - name: Add a custom policy
       run: |
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        cascade template policy | grep -Ev '(send-notify-to|accept-xfr-requests-from)' > "${POLICY_DIR}/restricted.toml"
+        cascade template policy | grep -Ev '(send-notify-to|accept-xfr-from)' > "${POLICY_DIR}/restricted.toml"
         if [ "${{ inputs.accept-xfr-from }}" != "" ]; then
-          echo 'accept-xfr-requests-from = ["${{ inputs.accept-xfr-from }}"]' >> "${POLICY_DIR}/restricted.toml"
+          echo 'accept-xfr-from = ["${{ inputs.accept-xfr-from }}"]' >> "${POLICY_DIR}/restricted.toml"
         fi
         if [ "${{ inputs.send-notify-to }}" != "" ]; then
           echo 'send-notify-to = ["${{ inputs.send-notify-to }}"]' >> "${POLICY_DIR}/restricted.toml"
@@ -127,7 +127,7 @@ runs:
 
     - name: Verify that the ${{ steps.set-zone-name.outputs.ZONE_NAME }} zone is being served
       run: |
-        dig @127.0.0.1 -p 4542 ${{ steps.set-zone-name.outputs.ZONE_NAME }} SOA
+        dig @127.0.0.1 -p 4542 ${{ steps.set-zone-name.outputs.ZONE_NAME }} SOA &> soa-query.log
 
     - name: Tell NSD that zone ${{ steps.set-zone-name.outputs.ZONE_NAME }} is now available
       # Only necessary if NOTIFY is not setup for cascade

@@ -150,11 +150,11 @@ impl Tsig {
             TsigCommand::List => {
                 let response: TsigListResult = client.get_json("tsig/").await?;
 
-                for (tsig_key_name, key_info) in response.tsig_keys {
+                for (tsig_key_name, key_info) in response.tsig_key_info {
                     // For each TSIG key also list the zones that it is used
                     // with.
                     let zones = key_info
-                        .zones
+                        .zone_names
                         .iter()
                         .map(ToString::to_string)
                         .collect::<Vec<String>>()

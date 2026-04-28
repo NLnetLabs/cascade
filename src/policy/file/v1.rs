@@ -2,10 +2,12 @@
 
 use std::{
     fmt::{self, Display},
-    net::{AddrParseError, IpAddr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     str::FromStr,
 };
 
+use cascade_api::TsigKeyName;
+use domain::tsig::KeyName;
 use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
@@ -856,7 +858,7 @@ pub struct OutboundSpec {
     ///
     /// If empty, any nameserver may request XFR from us.
     #[serde(default = "empty_list")]
-    pub accept_xfr_requests_from: Vec<NameserverCommsSpec>,
+    pub accept_xfr_from: Vec<NameserverCommsSpec>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///
@@ -877,8 +879,8 @@ impl OutboundSpec {
     /// Parse from this specification.
     pub fn parse(self) -> OutboundPolicy {
         OutboundPolicy {
-            accept_xfr_requests_from: self
-                .accept_xfr_requests_from
+            accept_xfr_from: self
+                .accept_xfr_from
                 .into_iter()
                 .map(|v| v.parse())
                 .collect(),
@@ -889,8 +891,8 @@ impl OutboundSpec {
     /// Build into this specification.
     pub fn build(policy: &OutboundPolicy) -> Self {
         Self {
-            accept_xfr_requests_from: policy
-                .accept_xfr_requests_from
+            accept_xfr_from: policy
+                .accept_xfr_from
                 .iter()
                 .map(NameserverCommsSpec::build)
                 .collect(),
@@ -924,12 +926,7 @@ pub enum NameserverCommsSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ComplexNameserverCommsSpec {
     /// The address to send NOTIFYs to or allow XFRs from.
-    ///
-    /// For sending NOTIFY it must not be None.
-    ///
-    /// For receiving XFR, if None the only restriction is the TSIG key name,
-    /// if defined, otherwise access is unrestricted.
-    pub addr: Option<SocketAddr>,
+    pub addr: SocketAddr,
 
     /// An optional TSIG key to sign and authenticate messages with.
     pub tsig_key_name: Option<KeyName>,
@@ -940,12 +937,7 @@ pub struct ComplexNameserverCommsSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SimpleNameserverCommsSpec {
     /// The address to send NOTIFYs to or allow XFRs from.
-    ///
-    /// For sending NOTIFY it must not be None.
-    ///
-    /// For receiving XFR, if None the only restriction is the TSIG key name,
-    /// if defined, otherwise access is unrestricted.
-    pub addr: Option<SocketAddr>,
+    pub addr: SocketAddr,
 
     /// An optional TSIG key to sign and authenticate messages with.
     pub tsig_key_name: Option<KeyName>,
@@ -964,33 +956,58 @@ impl NameserverCommsSpec {
 
     /// Build into this specification.
     pub fn build(policy: &NameserverCommsPolicy) -> Self {
-        Self::Complex(ComplexNameserverCommsSpec { addr: policy.addr })
+        Self::Complex(ComplexNameserverCommsSpec {
+            addr: policy.addr,
+            tsig_key_name: policy.tsig_key_name.clone(),
+        })
     }
 }
 
 impl SimpleNameserverCommsSpec {
     /// Parse from this specification.
     pub fn parse(self) -> NameserverCommsPolicy {
-        NameserverCommsPolicy { addr: self.addr }
+        NameserverCommsPolicy {
+            addr: self.addr,
+            tsig_key_name: self.tsig_key_name,
+        }
     }
 }
 
 impl ComplexNameserverCommsSpec {
     /// Parse from this specification.
     pub fn parse(self) -> NameserverCommsPolicy {
-        NameserverCommsPolicy { addr: self.addr }
+        NameserverCommsPolicy {
+            addr: self.addr,
+            tsig_key_name: self.tsig_key_name,
+        }
     }
 }
 
-/// Parse`<IP_ADDRESS>[:<PORT>]`
+/// Parse`<IP_ADDRESS>[:<PORT>][^<TSIG_KEY_NAME>]`
 impl FromStr for SimpleNameserverCommsSpec {
-    type Err = AddrParseError;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (s, tsig_key_name) = s.split_once('^').unwrap_or((s, ""));
+
+        let tsig_key_name = if !tsig_key_name.is_empty() {
+            Some(
+                TsigKeyName::from_str(tsig_key_name)
+                    .map_err(|err| format!("Invalid TSIG key name '{tsig_key_name}': {err}"))?,
+            )
+        } else {
+            None
+        };
+
         let addr = IpAddr::from_str(s)
             .map(|ip| SocketAddr::new(ip, 53))
-            .or_else(|_| SocketAddr::from_str(s))?;
-        Ok(SimpleNameserverCommsSpec { addr })
+            .or_else(|_| SocketAddr::from_str(s))
+            .map_err(|err| format!("Invalid IP address '{s}': {err}"))?;
+
+        Ok(SimpleNameserverCommsSpec {
+            addr,
+            tsig_key_name,
+        })
     }
 }
 
