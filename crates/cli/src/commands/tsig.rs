@@ -104,9 +104,12 @@ impl Tsig {
                         if path.exists() {
                             // Assume that the secret is contained in the
                             // specified file.
-                            let secret = std::fs::read_to_string(&path).map_err(|err| {
-                                format!("Failed to read TSIG key file '{path}': {err}")
-                            })?;
+                            let secret = std::fs::read_to_string(&path)
+                                .map_err(|err| {
+                                    format!("Failed to read TSIG key file '{path}': {err}")
+                                })?
+                                .trim()
+                                .to_string();
                             (name, alg, secret)
                         } else {
                             // Assume that the secret was provided directly.
