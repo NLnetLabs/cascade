@@ -733,7 +733,7 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
             .collect(),
     );
 
-    cmds.append(&mut vec![
+    cmds.extend([
         strs!["use-csk", km.use_csk],
         algorithm_cmd,
         strs!["ksk-validity", validity(km.ksk_validity)],
