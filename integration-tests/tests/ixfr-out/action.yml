@@ -1,0 +1,92 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Serve a zone via IXFR to the NSD secondary.'
+description: 'Serve a zone via IXFR to the NSD secondary.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Add a NOTIFY with TSIG outbound policy
+      run: |
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        cascade template policy | grep -Ev '(send-notify-to|accept-xfr-from)' > "${POLICY_DIR}/custom.toml"
+
+        sed -i -e 's/serial-policy = "date-counter"/serial-policy = "keep"/' "${POLICY_DIR}/custom.toml"
+        echo 'send-notify-to = ["127.0.0.1:1054"]' >> "${POLICY_DIR}/custom.toml"
+
+        # TODO: Extend the test to use TSIG (driven by inputs ala the tsig-downstream test)
+        # once PRs #564 and #587 have been merged.
+        # echo 'send-notify-to = ["127.0.0.1:1054^tsig-key"]' >> "${POLICY_DIR}/custom.toml"
+        # cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+        cascade policy reload
+
+    - name: Make an initial zone based on RFC 1995 section 7
+      run: |
+        tee example.test.zone <<'EOF'
+        example.test.       IN SOA ns.example.test. mail.example.test. (
+                                     1 60 60 3600 5)
+                            IN NS  ns.example.test.
+        ns.example.test.    IN A   133.69.136.1
+        nezu.example.test.  IN A   133.69.136.5
+        EOF
+
+    - name: Add the zone using the custom policy
+      run: |
+        cascade zone add --policy custom --source $PWD/example.test.zone example.test
+
+    - name: Check zone status
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status example.test
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check the SOA SERIAL at the NSD secondary
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 1054 example.test SOA | grep -q 'ns.example.test. mail.example.test. 1 60 60 3600 5'; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status example.test
+            dig +short @127.0.0.1 -p 1054 example.test SOA
+            echo "::error:: timeout: NSD did not acquire the zone changes"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    # Note: There is no NSD metric that I am aware of that we can use to
+    # verify that it received IXFR from Cascade instead of AXFR, nor is there
+    # any Cascade Prometheus metric or CLI command that we can use to check
+    # this either. Increasing the NSD log level to 9 doesn't cause it to
+    # report whether it received IXFR or AXFR either.
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

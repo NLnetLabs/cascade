@@ -79,10 +79,14 @@ mod compat {
             message::Request,
             service::{CallResult, Service, ServiceResult},
         },
-        new::base::wire::ParseBytesZC,
+        new::{
+            base::{name::Name, wire::ParseBytesZC},
+            rdata::Soa,
+        },
         tsig,
     };
     use futures::Stream;
+    use tracing::trace;
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
 
@@ -142,10 +146,9 @@ mod compat {
                         }
 
                         // TODO: Support IXFR.
-                        ZoneRequestKind::Ixfr { .. } => Box::pin(std::future::ready(error(
-                            old_request.message(),
-                            Rcode::NOTIMP,
-                        ))),
+                        ZoneRequestKind::Ixfr { known_soa } => {
+                            Box::pin(ixfr(old_request, known_soa.rdata, zone.clone())) as Response
+                        }
                     }
                 }
             }
@@ -250,6 +253,68 @@ mod compat {
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
 
         Box::new(stream) as _
+    }
+
+    async fn ixfr<V: Viewer + Send + Sync + 'static>(
+        request: Request<Vec<u8>, Option<Arc<tsig::Key>>>,
+        client_soa: Soa<Box<Name>>,
+        zone: ServedZone<V>,
+    ) -> ResponseStream {
+        // Refuse IXFR requests over UDP.
+        if request.transport_ctx().is_udp() {
+            return error(request.message(), Rcode::NOTIMP);
+        }
+
+        // Save a cheap clone of the zone to avoid a borrow checker error.
+        let zone_clone = zone.clone();
+
+        // Obtain a read lock to read the zone for an extended duration.
+        let viewer = zone.viewer.read_owned().await;
+
+        if viewer.is_empty() {
+            // The zone is known to exist, but we don't have any data for it.
+            return error(request.message(), Rcode::NOTAUTH);
+        }
+
+        // https://datatracker.ietf.org/doc/html/rfc1995#section-4
+        // 4. Response Format
+        //    "If incremental zone transfer is not available, the entire zone
+        //     is returned.  The first and the last RR of the response is the
+        //     SOA record of the zone. I.e. the behavior is the same as an
+        //     AXFR response except the query type is IXFR."
+
+        // https://datatracker.ietf.org/doc/html/rfc1995#section-2
+        // 2. Brief Description of the Protocol
+        //   "If an IXFR query with the same or newer version number than that
+        //    of the server is received, it is replied to with a single SOA
+        //    record of the server's current version, just as in AXFR."
+        //                                            ^^^^^^^^^^^^^^^
+        // Errata https://www.rfc-editor.org/errata/eid3196 points out that
+        // this is NOT "just as in AXFR" as AXFR does not do that.
+        let our_soa_serial = { viewer.soa().rdata.serial };
+
+        if client_soa.serial >= our_soa_serial {
+            trace!("Responding to IXFR with single SOA because query serial >= zone serial");
+            return soa(request.message(), &*viewer);
+        } else {
+            // TODO: implement retrieval and serving of diffs.
+
+            // TODO: Add something like the Bind `max-ixfr-ratio` option that
+            // "sets the size threshold (expressed as a percentage of the
+            // size of the full zone) beyond which named chooses to use an
+            // AXFR response rather than IXFR when answering zone transfer
+            // requests"?
+
+            // Note: Unlike RFC 5936 for AXFR, neither RFC 1995 nor RFC 9103
+            // say anything about whether an IXFR response can consist of
+            // more than one response message, but given the 2^16 byte maximum
+            // response size of a TCP DNS message and the 2^16 maximum number
+            // of ANSWER RRs allowed per DNS response, large zones may not
+            // fit in a single response message and will have to be split into
+            // multiple response messages.
+
+            axfr(request, zone_clone).await
+        }
     }
 
     fn error(request: &Message<Vec<u8>>, rcode: Rcode) -> ResponseStream {
