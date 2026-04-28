@@ -18,6 +18,14 @@ inputs:
       - info
       - debug
       - trace
+  key-source:
+    description: Where to take the TSIG key from.
+    required: true
+    type: choice
+    options:
+      - cmdline
+      - file
+      - none
 runs:
   using: "composite"
   steps:
@@ -28,26 +36,41 @@ runs:
 
     - name: Add zone without the required TSIG key.
       run: |
-        cascade zone add --policy default --source 127.0.0.1:1055 example-tsig.test
+        cascade zone add --policy default --source "127.0.0.1:1055" example-tsig.test
 
     - name: Check zone status
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example-tsig.test | grep -q "Published zone available"; do
+
+        # TODO: The error message we are checking for is the one that Cascade
+        # currently produces, but doesn't seem like the correct error...
+        # See: https://github.com/NLnetLabs/cascade/issues/603
+        until cascade zone status example-tsig.test | grep -q "ERROR: the AXFR failed: the server's response was semantically incorrect: Not a valid XFR response"; do
           if (($(date +%s) > (start + timeout))); then
-            exit 0
+            echo "::error:: zone status failed to report the expected error"
+            cascade zone status example-tsig.test
+            exit 1
           fi
           sleep 1
         done
-        echo "::error:: zone status unexpectedly reports TSIG required zone was retrieved and published without using the TSIG key"
-        exit 1
+        exit 0
 
     - name: Remove and re-add the zone with the required TSIG key.
       run: |
         cascade zone remove example-tsig.test
-        cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
-        cascade zone add --policy default --source 127.0.0.1:1055^tsig-key example-tsig.test
+        
+        case "${{ inputs.key-source }}" in
+          "cmdline")
+            cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+            ;;
+          "file")
+            echo -n "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0=" >/tmp/tsig.key
+            cascade tsig add tsig-key hmac-sha256 /tmp/tsig.key
+            ;;
+        esac
+
+        cascade zone add --policy default --source "127.0.0.1:1055^tsig-key" example-tsig.test
 
     - name: Check zone status
       run: |

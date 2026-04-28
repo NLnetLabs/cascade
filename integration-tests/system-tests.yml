@@ -267,7 +267,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable]
+        key-source: [cmdline, file]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
@@ -276,6 +276,7 @@ jobs:
       - uses: ./integration-tests/tests/upstream-tsig
         with:
           log-level: ${{ inputs.log-level }}
+          key-source: ${{ matrix.key-source }}
 
   downstream-tsig:
     name: Using TSIG with downstream nameservers.

@@ -1,7 +1,6 @@
 //! Cascade's central command.
 
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::{
     fmt, io,
     sync::{Arc, Mutex},
@@ -11,7 +10,7 @@ use std::{
 use bytes::Bytes;
 use cascade_api::{TsigAddError, TsigAddResult};
 use domain::base::Name;
-use domain::rdata::dnssec::Timestamp;
+use domain::dnssec::sign::keys::keyset::UnixTime;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
@@ -65,7 +64,7 @@ pub struct Center {
     pub publication_server: PublicationServer,
 
     /// Zones currently being re-signed.
-    pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
+    pub resign_busy: Mutex<HashMap<Name<Bytes>, UnixTime>>,
 }
 
 //--- Actions
@@ -108,16 +107,8 @@ pub async fn add_zone(
         source = match api_source {
             cascade_api::ZoneSource::None => crate::loader::Source::None,
             cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
-            cascade_api::ZoneSource::Server {
-                addr,
-                tsig_key,
-                xfr_status: _,
-            } => {
+            cascade_api::ZoneSource::Server { addr, tsig_key } => {
                 let tsig_key = if let Some(key_name) = tsig_key {
-                    // Verify that the key name is syntactically valid.
-                    let key_name = Name::from_str(&key_name)
-                        .map_err(|err| ZoneAddError::InvalidTsigKeyName(err.to_string()))?;
-
                     // Lookup the key in the TSIG key store.
                     let key = state
                         .tsig_store
@@ -127,8 +118,12 @@ pub async fn add_zone(
                     // Record that this zone uses this key.
                     key.zones.insert(ZoneByPtr(zone.clone()));
 
+                    let key = key.inner.clone();
+
+                    state.tsig_store.mark_dirty(center);
+
                     // Use the found key.
-                    Some(key.inner.clone())
+                    Some(key)
                 } else {
                     None
                 };
@@ -170,11 +165,35 @@ pub async fn add_zone(
         register_zone(center, zone.name.clone(), policy_name.clone(), key_imports).await
     {
         // Remove in reverse order what was added above.
+        LoadedReviewServer::remove_zone(center, &zone);
+        SignedReviewServer::remove_zone(center, &zone);
+        PublicationServer::remove_zone(center, &zone);
+
         let mut state = center.state.lock().unwrap();
+
         state.zones.remove(&zone.name);
+
         if let Some(policy) = state.policies.get_mut(&policy_name) {
             policy.zones.remove(&zone.name);
         }
+
+        state.mark_dirty(center);
+
+        if let crate::loader::Source::Server {
+            tsig_key: Some(key_name),
+            ..
+        } = &source
+        {
+            state
+                .tsig_store
+                .get_mut(key_name.name())
+                .unwrap()
+                .zones
+                .remove(&ZoneByPtr(zone));
+
+            state.tsig_store.mark_dirty(center);
+        }
+
         return Err(err);
     }
 
@@ -243,6 +262,21 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
         assert!(policy.zones.remove(&name), "zone policies are consistent");
 
         state.mark_dirty(center);
+    }
+
+    // Update the TSIG key's referenced zones.
+    if let crate::loader::Source::Server {
+        tsig_key: Some(key_name),
+        ..
+    } = &zone_state.loader.source
+    {
+        state
+            .tsig_store
+            .get_mut(key_name.name())
+            .unwrap()
+            .zones
+            .remove(&ZoneByPtr(zone.clone()));
+        state.tsig_store.mark_dirty(center);
     }
 
     info!("Removed zone '{name}'");
@@ -377,8 +411,6 @@ pub enum ZoneAddError {
     NoSuchPolicy,
     /// The specified policy is being deleted.
     PolicyMidDeletion,
-    /// The specified TSIG key name is invalid.
-    InvalidTsigKeyName(String),
     /// No TSIG key with that name exists.
     NoSuchTsigKey,
     /// Some other error occurred.
@@ -393,7 +425,6 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
-            Self::InvalidTsigKeyName(reason) => reason,
             Self::NoSuchTsigKey => "no TSIG key with that name exists",
             Self::Other(reason) => reason,
         })
@@ -406,7 +437,6 @@ impl From<ZoneAddError> for api::ZoneAddError {
             ZoneAddError::AlreadyExists => Self::AlreadyExists,
             ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
             ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
-            ZoneAddError::InvalidTsigKeyName(reason) => Self::InvalidTsigKeyName(reason),
             ZoneAddError::NoSuchTsigKey => Self::NoSuchTsigKey,
             ZoneAddError::Other(reason) => Self::Other(reason),
         }

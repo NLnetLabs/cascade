@@ -386,7 +386,6 @@ impl HttpServer {
                 loader::Source::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
                     addr,
                     tsig_key: None,
-                    xfr_status: Default::default(),
                 },
             };
             unsigned_review_addr = state
@@ -470,6 +469,7 @@ impl HttpServer {
                 .last_published
                 .as_ref()
                 .map(|p| LastPublishedZone {
+                    loaded_serial: p.loaded_serial,
                     signed_serial: p.signed_serial,
                 });
         }
@@ -1111,8 +1111,14 @@ impl HttpServer {
             return Json(Err(TsigAddError::InvalidBase64Secret));
         };
 
-        match center::add_tsig_key(&state.center, tsig_add.name, tsig_add.alg.into(), &secret).await
-        {
+        let alg = match tsig_add.alg {
+            TsigAlgorithm::Sha1 => domain::tsig::Algorithm::Sha1,
+            TsigAlgorithm::Sha256 => domain::tsig::Algorithm::Sha256,
+            TsigAlgorithm::Sha384 => domain::tsig::Algorithm::Sha384,
+            TsigAlgorithm::Sha512 => domain::tsig::Algorithm::Sha512,
+        };
+
+        match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {
             Ok(TsigAddResult) => Json(Ok(TsigAddResult)),
             Err(err) => Json(Err(err)),
         }

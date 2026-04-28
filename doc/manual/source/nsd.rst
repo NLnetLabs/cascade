@@ -18,7 +18,7 @@ Using NSD as a primary to Cascade
 
 To use NSD as an upstream name server of Cascade you must add a zone to NSD
 that refers to Cascade as a secondary name server. If enabled in NSD, NSD will
-send an RFC 1996 DNS NOTIFY message to Cascade notifying it when changes to
+send an :RFC:`1996` DNS NOTIFY message to Cascade notifying it when changes to
 the zone occur.
 
 The NOTIFY message will trigger Cascade to perform an AXFR transfer to fetch
@@ -45,7 +45,7 @@ running on host 192.168.0.2 listening on the default port 4542:
 
    zone:
      name: example.com
-	 zonefile: "zonefile.name"
+	 zonefile: /etc/nsd/example.com.zone
 	 notify: 192.168.0.2@4542 NOKEY
 	 provide-xfr: 192.168.0.2 NOKEY
 	 store-ixfr: yes
@@ -59,11 +59,11 @@ example\:
   key:
     name: "sec1_key"
     algorithm: hmac-sha256
-    secret: "...=="
+    secret: "..."
 
    zone:
      name: example.com
-	 zonefile: "zonefile.name"
+	 zonefile: /etc/nsd/example.com.zone
 	 notify: 192.168.0.2@4542 sec1_key
 	 provide-xfr: 192.168.0.2 sec1_key
 	 store-ixfr: yes
@@ -75,15 +75,14 @@ information.
 .. tip:: Remember to reload the NSD configuration or restart NSD so that
          changes to the configuration take effect.
 
-Adding the TSIG key to Cascade is done using the ``cascade tsig add`` CLI
-command, e.g. like so:
+To add the TSIG key to Cascade use :program:`cascade` :subcmd:`tsig add`:
 
 .. code-block:: bash
 
    $ cascade tsig add --name sec1_key --alg hmac-sha256 --secret "...=="
 
 To use the new TSIG key it must be specified when adding a zone to
-Cascade. Assuming that NSD is running on host 192.168.0.1 on port 53
+Cascade. Assuming that NSD is running on host 192.168.0.1 on port 53,
 the following command instructs Cascade to add the ``example.com``
 zone sourced from the NSD server using the ``sec1_key`` TSIG key to
 authenticate with NSD:

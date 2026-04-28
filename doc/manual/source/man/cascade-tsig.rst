@@ -17,7 +17,7 @@ Synopsis
 Description
 -----------
 
-Manage RFC 8945 TSIG keys for authenticating zone transfer (AXFR, IXFR) and
+Manage :RFC:`8945` (TSIG) keys for authenticating zone transfer (AXFR, IXFR) and
 related messages (SOA and NOTIFY).
 
 .. tip:: Cascade isn't currently able to generate TSIG keys itself.
@@ -36,43 +36,59 @@ Commands
 
 .. subcmd:: add
 
-   Register a new TSIG key.
+   Add a new TSIG key.
 
    Incoming DNS messages that are TSIG signed will be rejected if the key used
    to sign the message is not registered with Cascade.
 
 .. subcmd:: list
 
-   List registered TSIG keys and the zones that use them.
+   List registered TSIG keys.
 
 .. subcmd:: remove
 
-   Remove a registered TSIG key.
+   Remove a TSIG key.
 
-   .. note:: Returns an error if the key does not exist in the TSIG key store
-             or if any zone exists that is configured to authenticate with an
-			 upstream source using the specified TSIG key.
+   .. note:: Returns an error if the key does not exist in the TSIG key store,
+             or if the key is still referenced by other configuration.
 
 Arguments for :subcmd:`tsig add`
 --------------------------------
 
 .. option:: <TSIG_KEY_NAME>
+.. option:: [<ALGORITHM>]:<TSIG_KEY_NAME>:<SECRET>
 
-   The name of the TSIG key to add.
+   The name of the TSIG key to add, or a complete TSIG key specification.
 
-   Alternatively this argument also supports dig syntax for specifying all of
-   the TSIG properties at once in colon separated form. The colon separated
-   syntax cannot be used in combination with the ``--alg`` and ``--secret``
-   options. If ``<ALGORITHM>`` is not specified it defaults to SHA256.
+   TSIG key names must be valid domain names.
+
+   A complete TSIG key specification consists of an optional algorithm
+   (default ``hmac-sha256``), a key name and the secret key material. When a
+   complete TSIG key specification is supplied, supplying the ``<ALGORITHM>``
+   and ``<SECRET>`` arguments as well will result in an error.
+
+   Secret key material must be the correct length for the specified algorithm
+   and must be encoded using the :RFC:`4648` Base64 encoding.
+
+   .. warning:: Secret key material supplied via a command-line argument may
+                be visible to other processes running on the same computer as
+                the Cascade CLI.
 
 .. option:: <ALGORITHM>
 
-   The TSIG algorithm of the specified TSIG key. Can be one of: hmac-sha1,
-   hmac-sha256, hmac-sha384 or hmac-sha512.
+   The TSIG algorithm of the specified TSIG key. Can be one of: ``hmac-sha1``,
+   ``hmac-sha256``, ``hmac-sha384`` or ``hmac-sha512``.
 
 .. option:: <SECRET>
 
-   A base64 encoded string defining the actual TSIG key material bytes.
+   :RFC:`4648` Base64 encoded secret key material. The number of bytes prior
+   to encoding must be correct for the specified ``<ALGORITHM>``.
+
+   Can also be a path to a file containing the Base64 encoded secret material.
+
+   .. note:: Secret key material supplied via a command-line argument may be
+             visible to other processes running on the same computer as the
+             Cascade CLI. Consider supplying a file name instead.
 
 See Also
 --------

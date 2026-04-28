@@ -336,24 +336,28 @@ Supported options:
 .B auto\-remove = true
 Whether to automatically remove expired keys.
 .sp
-If this is set, expired keys will be removed automatically (by deleting the
-files for on\-disk keys or removing it from the HSM).
+If this option is set, expired keys will be removed automatically (by
+deleting the files for on\-disk keys or removing it from the HSM).
 .UNINDENT
 .INDENT 0.0
 .TP
 .B publication\-nameservers = []
-A set of nameservers to use when checking for rrsiG propagation during a
+The set of nameservers to use when checking for RRSIG propagation during a
 key roll.
 .sp
-Each nameserver is specified as a string with the syntax:
+Each nameserver must be specified as a string in the form:
 .INDENT 7.0
 .INDENT 3.5
-\fB<IP\-Address>:<Port>[^[TSIG\-Key\-Name]]\fP
+\fB\(dq<IP>:[<PORT>][^<TSIG_KEY_NAME>]\(dq\fP
 .UNINDENT
 .UNINDENT
 .sp
-If not specified then the nameserver specified in the zone apex SOA MNAME
-field will be queried.
+If a TSIG key name is specified, a key by that name must exist in the
+Cascade TSIG key store and will be used to authenticate communication with
+the nameserver.
+.sp
+If no nameservers are specified, the nameserver specified by the SOA MNAME
+field will be checked.
 .UNINDENT
 .SS The management of DNS records by the key manager.
 .sp
@@ -571,9 +575,9 @@ The type of denial\-of\-existence records to generate.
 Supported options:
 .INDENT 7.0
 .IP \(bu 2
-\fBnsec\fP: Use NSEC records (RFC 4034).
+\fBnsec\fP: Use NSEC records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc4034.html'\fI\%RFC 4034\fP\X'tty: link').
 .IP \(bu 2
-\fBnsec3\fP: Use NSEC3 records (RFC 5155).
+\fBnsec3\fP: Use NSEC3 records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc5155.html'\fI\%RFC 5155\fP\X'tty: link').
 .UNINDENT
 .UNINDENT
 .INDENT 0.0
@@ -639,26 +643,27 @@ The \fB[server.outbound]\fP section.
 .B send\-notify\-to = []
 The set of nameservers to which NOTIFY messages should be sent.
 .sp
-If empty, no NOTIFY messages will be sent.
+If no nameservers are specified, no NOTIFY messages will be sent.
 .sp
-A collection of \fBIP:[port]\fP, defaulting to port 53 when not specified, e.g.:
-\fBsend\-notify\-to = [\(dq[::1]:53\(dq]\fP
+Each nameserver must be specified as a string in the form:
+.sp
+\fI\(dq<IP>:[<PORT>][^<TSIG_KEY_NAME>]\(dq\fP
+.sp
+If a TSIG key name is specified, a key by that name must exist in the
+Cascade TSIG key store and will be used to authenticate communication with
+the nameserver.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B accept\-xfr\-from = []
 The set of nameservers to accept zone transfer requests from.
 .sp
+If no nameservers are specified, zone transfer requests will be accepted
+from any nameserver.
+.sp
 Each nameserver must be specified as a string in the form:
 .sp
 \fI\(dq<IP>[^<TSIG_KEY_NAME>]\(dq\fP
-.sp
-If a TSIG key name is specified, a key by that name must exist in the
-Cascade TSIG key store and will be used to authenticate communication with
-the nameserver.
-.sp
-If not specified, zone transfer requests will be accepted from any
-nameserver.
 .UNINDENT
 .SH FILES
 .INDENT 0.0

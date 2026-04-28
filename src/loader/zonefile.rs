@@ -186,7 +186,7 @@ impl fmt::Display for Error {
                 write!(f, "the zonefile does not contain a SOA record")
             }
             Error::Write(ReplaceError::MultipleSoas) => {
-                write!(f, "the zonefile contain multiple SOA records")
+                write!(f, "the zonefile contains multiple SOA records")
             }
         }
     }

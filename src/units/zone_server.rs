@@ -38,8 +38,8 @@ use crate::policy::NameserverCommsPolicy;
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, LastPublished, SignedZoneVersionState, UnsignedZoneVersionState, Zone,
-    ZoneHandle, ZoneVersionReviewState,
+    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneHandle,
+    ZoneVersionReviewState,
 };
 
 /// The source of a zone server.
@@ -495,10 +495,6 @@ impl ZoneServer {
                 center,
             }
             .approve_signed();
-
-            state.last_published = Some(LastPublished {
-                signed_serial: zone_serial,
-            })
         }
 
         // Send a message to the zone signer to trigger a re-scan of

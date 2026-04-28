@@ -50,6 +50,10 @@ pub enum PolicyChange {
 /// Reload all policies.
 ///
 /// Any changes are reported via the `on_change` callback.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
@@ -117,6 +121,10 @@ pub fn reload_all(
 ///
 /// The current policies are used for logging purposes so we can log whether
 /// a policy is new, updated, unchanged or removed.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 pub fn load_all(
     policies: &foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
@@ -198,6 +206,10 @@ pub fn load_all(
 }
 
 /// Perform a semantic check on the loaded policy.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
     // Check the publication nameservers for the key manager. Any TSIG key
     // that is part of those nameservers has to exist in the TSIG key store.
@@ -212,9 +224,7 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     for tsig_name in tsig_names {
         tsig_store
             .get(tsig_name)
-            .ok_or(PolicyReloadError::Check(format!(
-                "unknown TSIG key '{tsig_name}'"
-            )))?;
+            .ok_or(PolicyReloadError::NoSuchTsigKey(tsig_name.clone()))?;
     }
 
     Ok(())
@@ -336,6 +346,13 @@ pub struct SignerPolicy {
 
     /// How long before expiration a new signature has to be generated.
     pub sig_remain_time: u32,
+
+    /// How often to refresh some amount of signatures to make resigning
+    /// smoother.
+    pub signature_refresh_interval: u32,
+
+    /// How long should it take to resign a zone during a ZSK or CSK roll.
+    pub key_roll_time: u32,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicy,
