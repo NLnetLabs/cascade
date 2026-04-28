@@ -26,9 +26,9 @@
 use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
-    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReviewer, SignedZoneBuilder,
-    SignedZoneBuilt, SignedZonePersister, SignedZoneReviewer, SoaRecord, ZoneCleaner,
-    ZoneDataStorage, ZoneViewer,
+    DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersister, LoadedZoneReviewer,
+    SignedZoneBuilder, SignedZoneBuilt, SignedZonePersister, SignedZoneReviewer, SoaRecord,
+    ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
@@ -648,12 +648,24 @@ impl StorageZoneHandle<'_> {
             trace!("Persisting the signed instance");
 
             // Perform the persisting.
-            let persisted = tokio::task::spawn_blocking(move || persister.persist()).await.unwrap();
+            let (persisted, signed_diff) = tokio::task::spawn_blocking(move || persister.persist()).await.unwrap();
 
             // Mark persistence as completed.
             let viewer = {
                 let mut state = zone.state.lock().unwrap();
                 let state = &mut *state;
+
+                // Store the signed diff in-memory for serving IXFR.
+                // Only push a diff if a SOA was removed, otherwise this is
+                // not a diff to a previous version of the zone but actually
+                // the entire new zone content compared to an empty zone. Also
+                // don't store a diff to the same serial.
+                if signed_diff.removed_soa.is_some() {
+                    if signed_diff.removed_soa != signed_diff.added_soa {
+                        state.storage.diffs.push(signed_diff);
+                    }
+                }
+
                 match transition(&mut state.storage.machine) {
                     (transition, ZoneDataStorage::PersistingSigned(s)) => {
                         let (s, viewer) = s.mark_complete(persisted);
@@ -836,6 +848,9 @@ pub struct StorageState {
     // current i.e. published zone instance.
     pub published_loaded_soa: Option<SoaRecord>,
 
+    /// Diffs from one serial to another.
+    pub diffs: Vec<Arc<DiffData>>,
+
     /// Ongoing background tasks.
     ///
     /// When the zone data needs to be cleaned or persisted, a background task
@@ -857,6 +872,7 @@ impl StorageState {
             signed_review_soa: None,
             published_soa: None,
             published_loaded_soa: None,
+            diffs: Default::default(),
             background_tasks: Default::default(),
         }
     }

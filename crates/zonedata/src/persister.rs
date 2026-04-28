@@ -116,17 +116,17 @@ impl SignedZonePersister {
 
 impl SignedZonePersister {
     /// Perform the actual persisting.
-    pub fn persist(self) -> SignedZonePersisted {
+    pub fn persist(self) -> (SignedZonePersisted, Arc<DiffData>) {
         let SignedZonePersister {
             data,
-            signed_index,
+            signed_index: _,
             signed_diff,
         } = self;
 
         // TODO
-        let _ = (signed_index, signed_diff);
+        // let _ = (signed_index, signed_diff);
 
-        SignedZonePersisted { data }
+        (SignedZonePersisted { data }, signed_diff)
     }
 }
 
