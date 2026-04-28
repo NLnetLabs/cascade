@@ -477,16 +477,8 @@ pub struct OutboundPolicy {
 ///     port are mandatory.
 ///   - For inbound communication this type is intended to support the access
 ///     control use case, acting as a white list entry. When used for this
-///     purpose all fields are optional and typically a port is not specified
-///     as the sending port is not known in advance. If neither an address
-///     nor TSIG key are specified the meaning is to allow all inbound
-///     communication. If a TSIG key is specified a user of this type could
-///     for example use it to reject incoming requests that are not signed
-///     with that key, either in combination with a sender address check or
-///     to allow requests from any sender address as long as the request is
-///     signed using the correct TSIG key. How multiple instances of this type
-///     are combined is not defined here, e.g. whether all rules must be
-///     satisfied or only one or whether order of rules matters.
+///     purpose typically a port is not specified as the sending port that
+///     will be used by the client cannot be known in advance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NameserverCommsPolicy {
     /// The address to send to/receive from.
