@@ -524,7 +524,7 @@ The ``[server.outbound]`` section.
 
    Each nameserver must be specified as a string in the form:
 
-   `"<IP>:[<PORT>][^<TSIG_KEY_NAME>]"`
+     `"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"`
 
    If a TSIG key name is specified, a key by that name must exist in the
    Cascade TSIG key store and will be used to authenticate communication with
