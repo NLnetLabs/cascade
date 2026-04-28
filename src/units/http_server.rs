@@ -1143,8 +1143,6 @@ impl HttpServer {
         let state = http_state.center.state.lock().unwrap();
 
         // Get the set of TSIG keys and related zones from the TSIG key store.
-        // TODO: Check if everywhere that should update the TSIG key zone set
-        // actually does so.
         for (tsig_key_name, key) in state.tsig_store.map.iter() {
             let zone_names = key.zones.iter().map(|item| item.0.name.clone()).collect();
             tsig_key_info.insert(
