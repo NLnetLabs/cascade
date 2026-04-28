@@ -40,6 +40,9 @@ pub use storage::{StorageState, StorageZoneHandle};
 pub mod machine;
 pub mod state;
 
+mod lock;
+pub use lock::{ReadableZoneState, WritableZoneState, ZoneStateLock};
+
 //----------- Zone -------------------------------------------------------------
 
 /// A zone.
