@@ -113,7 +113,7 @@ running at 192.168.0.2 listening on the default port 4542:
 	 request-xfr: 192.168.0.2@4542
 
 To authenticate zone transfer related messages using TSIG you must first have
-added the key to both Cascade and NSD using the same ``cascade tsig add``
+added the key to both Cascade and NSD using the same :program:`cascade` :subcmd:`tsig add`
 command and ``key:`` block as shown above.
 
 To instruct Cascade to use TSIG when communicating with a downstream
