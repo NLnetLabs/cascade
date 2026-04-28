@@ -89,7 +89,7 @@ authenticate with NSD:
 
 .. code-block:: bash
 
-   $ cascade zone add --source 192.168.0.1^sec1_key --policy default example.com
+   $ cascade zone add --source "192.168.0.1^sec1_key" --policy default example.com
 
 Using NSD as a secondary to Cascade
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
