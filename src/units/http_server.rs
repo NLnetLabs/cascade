@@ -1158,7 +1158,7 @@ impl HttpServer {
                     }
                 })
                 .collect::<Vec<ZoneName>>();
-            tsig_keys.insert(tsig_key_name.clone(), TsigListResultItem { zones });
+            tsig_keys.insert(tsig_key_name.clone(), TsigKeyInfo { zones });
         }
         Json(TsigListResult { tsig_keys })
     }

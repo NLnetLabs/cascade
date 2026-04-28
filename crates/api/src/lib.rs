@@ -262,12 +262,12 @@ impl fmt::Display for TsigRemoveError {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigListResult {
     /// The set of TSIG keys known to Cascade plus information about each key.
-    pub tsig_keys: HashMap<TsigKeyName, TsigListResultItem>,
+    pub tsig_keys: HashMap<TsigKeyName, TsigKeyInfo>,
 }
 
 /// Information about a single listed TSIG key.
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct TsigListResultItem {
+pub struct TsigKeyInfo {
     /// The set of zones with which this TSIG key is used.
     pub zones: Vec<ZoneName>,
 }
