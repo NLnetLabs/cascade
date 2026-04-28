@@ -1110,10 +1110,10 @@ impl HttpServer {
         };
 
         let alg = match tsig_add.alg {
-            TsigAlgorithm::Sha1 => domain::tsig::Algorithm::Sha1,
-            TsigAlgorithm::Sha256 => domain::tsig::Algorithm::Sha256,
-            TsigAlgorithm::Sha384 => domain::tsig::Algorithm::Sha384,
-            TsigAlgorithm::Sha512 => domain::tsig::Algorithm::Sha512,
+            TsigAlgorithm::HmacSha1 => domain::tsig::Algorithm::Sha1,
+            TsigAlgorithm::HmacSha256 => domain::tsig::Algorithm::Sha256,
+            TsigAlgorithm::HmacSha384 => domain::tsig::Algorithm::Sha384,
+            TsigAlgorithm::HmacSha512 => domain::tsig::Algorithm::Sha512,
         };
 
         match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {

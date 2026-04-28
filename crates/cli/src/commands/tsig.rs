@@ -220,10 +220,10 @@ impl FromStr for TsigAlgorithm {
 impl From<TsigAlgorithm> for crate::api::TsigAlgorithm {
     fn from(alg: TsigAlgorithm) -> Self {
         match alg {
-            TsigAlgorithm::HmacSha1 => cascade_api::TsigAlgorithm::Sha1,
-            TsigAlgorithm::HmacSha256 => cascade_api::TsigAlgorithm::Sha256,
-            TsigAlgorithm::HmacSha384 => cascade_api::TsigAlgorithm::Sha384,
-            TsigAlgorithm::HmacSha512 => cascade_api::TsigAlgorithm::Sha512,
+            TsigAlgorithm::HmacSha1 => cascade_api::TsigAlgorithm::HmacSha1,
+            TsigAlgorithm::HmacSha256 => cascade_api::TsigAlgorithm::HmacSha256,
+            TsigAlgorithm::HmacSha384 => cascade_api::TsigAlgorithm::HmacSha384,
+            TsigAlgorithm::HmacSha512 => cascade_api::TsigAlgorithm::HmacSha512,
         }
     }
 }

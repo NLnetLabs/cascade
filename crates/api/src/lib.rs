@@ -571,19 +571,19 @@ impl Display for KeyType {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum TsigAlgorithm {
-    Sha1,
-    Sha256,
-    Sha384,
-    Sha512,
+    HmacSha1,
+    HmacSha256,
+    HmacSha384,
+    HmacSha512,
 }
 
 impl Display for TsigAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TsigAlgorithm::Sha1 => "hmac-sha1",
-            TsigAlgorithm::Sha256 => "hmac-sha256",
-            TsigAlgorithm::Sha384 => "hmac-sha384",
-            TsigAlgorithm::Sha512 => "hmac-sha512",
+            TsigAlgorithm::HmacSha1 => "hmac-sha1",
+            TsigAlgorithm::HmacSha256 => "hmac-sha256",
+            TsigAlgorithm::HmacSha384 => "hmac-sha384",
+            TsigAlgorithm::HmacSha512 => "hmac-sha512",
         }
         .fmt(f)
     }
