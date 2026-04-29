@@ -10,6 +10,7 @@ pub mod loader;
 pub mod log;
 pub mod manager;
 pub mod metrics;
+pub mod persistence;
 pub mod policy;
 pub mod server;
 pub mod signer;

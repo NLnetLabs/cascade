@@ -6,11 +6,13 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
+    io,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
+use cascade_cfg::Config;
 use domain::base::{Name, Rtype, Serial};
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::rdata::dnssec::Timestamp;
@@ -21,7 +23,8 @@ use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
     loader::zone::{LoaderState, LoaderZoneHandle},
-    policy::PolicyVersion,
+    persistence::zone::{PersistenceState, ZonePersistenceHandle},
+    policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
     zone::machine::ZoneStateMachine,
@@ -50,6 +53,69 @@ pub struct Zone {
     /// consistent with each other, and that changes to the zone happen in a
     /// single (sequentially consistent) order.
     pub state: Mutex<ZoneState>,
+
+    /// Whether the zone was restored from the state file.
+    ///
+    /// This is set if the zone originates from a previous execution of Cascade
+    /// and its state was loaded from a file (rather than being created in the
+    /// current execution).
+    pub restored: bool,
+}
+
+impl Zone {
+    /// Construct a new zone.
+    ///
+    /// The zone is initialized to an empty state, where nothing is known about
+    /// it and Cascade won't act on it.
+    pub fn new(name: Name<Bytes>) -> Self {
+        Self {
+            name,
+            state: Default::default(),
+            restored: false,
+        }
+    }
+
+    /// Restore a zone from a state file.
+    ///
+    /// A zone originating from a previous execution of Cascade is initialized,
+    /// by reading and parsing the appropriate state file.
+    ///
+    /// `policies` should contain the set of policies loaded from the global
+    /// state file. If the zone uses a policy that is not present in the global
+    /// state file, it will restore the last seen version of that policy.
+    ///
+    /// Persisted zone data will not be restored in this function, as it may
+    /// take a while (and should not block Cascade's initialization as a whole);
+    /// it will be handled by [`crate::persistence::Restorer::run()`].
+    #[tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(%name),
+    )]
+    pub fn restore(
+        config: &Config,
+        name: Name<Bytes>,
+        policies: &mut foldhash::HashMap<Box<str>, Policy>,
+    ) -> io::Result<Self> {
+        let path = config.zone_state_dir.join(format!("{name}.db"));
+
+        // Load the underlying state file.
+        let state = match state::Spec::load(&path) {
+            Ok(spec) => spec.parse(&name, policies),
+            Err(err) => {
+                error!("Failed to load the state of zone '{name}' from '{path}': {err}");
+                return Err(err);
+            }
+        };
+
+        debug!("Restored the state of zone '{name}' (from '{path}')");
+
+        Ok(Self {
+            name,
+            state: Mutex::new(state),
+            restored: true,
+        })
+    }
 }
 
 //----------- ZoneHandle -------------------------------------------------------
@@ -88,6 +154,15 @@ impl ZoneHandle<'_> {
     /// Consider storage-specific operations.
     pub const fn storage(&mut self) -> StorageZoneHandle<'_> {
         StorageZoneHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider data persistence specific operations.
+    pub const fn persistence(&mut self) -> ZonePersistenceHandle<'_> {
+        ZonePersistenceHandle {
             zone: self.zone,
             state: self.state,
             center: self.center,
@@ -181,6 +256,9 @@ pub struct ZoneState {
 
     /// Data storage for the zone.
     pub storage: StorageState,
+
+    /// Persisting zone data.
+    pub persistence: PersistenceState,
     //
     // TODO:
     // - A log?
@@ -231,6 +309,7 @@ impl Default for ZoneState {
             loader: Default::default(),
             signer: Default::default(),
             storage: Default::default(),
+            persistence: Default::default(),
         }
     }
 }
@@ -420,19 +499,6 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             HistoricalEvent::KeySetError { cmd, err, elapsed } => {
                 Self::KeySetError { cmd, err, elapsed }
             }
-        }
-    }
-}
-
-impl Zone {
-    /// Construct a new [`Zone`].
-    ///
-    /// The zone is initialized to an empty state, where nothing is known about
-    /// it and Cascade won't act on it.
-    pub fn new(name: Name<Bytes>) -> Self {
-        Self {
-            name: name.clone(),
-            state: Default::default(),
         }
     }
 }

@@ -16,7 +16,9 @@ use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::persistence::{Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
+use crate::state::PolicySpec;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_signer::ZoneSigner;
 use crate::zone::{HistoricalEvent, ZoneHandle};
@@ -46,11 +48,17 @@ pub struct Center {
     /// The zone loader.
     pub loader: Loader,
 
-    /// The zone signer
+    /// The zone signer.
     pub signer: ZoneSigner,
 
-    /// The key manager
+    /// The key manager.
     pub key_manager: KeyManager,
+
+    /// The zone data persister.
+    pub persister: Persister,
+
+    /// The zone data restorer.
+    pub restorer: Restorer,
 
     /// The review server for loaded instances of zones.
     pub loaded_review_server: LoadedReviewServer,
@@ -97,14 +105,23 @@ pub async fn add_zone(
 
         // Create the zone and initialize its state.
         zone = Arc::new(Zone::new(name));
-        let (loaded_reviewer, signed_reviewer, viewer);
         {
             let mut zone_state = zone.state.lock().unwrap();
+            let restorer = zone_state.storage.restorer.take().unwrap();
             zone_state.policy = Some(policy.latest.clone());
             policy.zones.insert(zone.name.clone());
-            loaded_reviewer = zone_state.storage.loaded_reviewer.take().unwrap();
-            signed_reviewer = zone_state.storage.signed_reviewer.take().unwrap();
-            viewer = zone_state.storage.viewer.take().unwrap();
+
+            // Don't try to restore zone data, since it's a completely new zone.
+            //
+            // This will clear the data for the zone and register it against the
+            // zone servers.
+            ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center,
+            }
+            .storage()
+            .abandon_loaded_restoration(restorer);
         }
 
         // Insert the zone in the global set.
@@ -113,11 +130,6 @@ pub async fn add_zone(
             "Already checked that 'state.zones' does not contain 'name'"
         );
         state.mark_dirty(center);
-
-        // Update the zone servers.
-        LoadedReviewServer::add_zone(center, zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(center, zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(center, zone.clone(), viewer);
     }
 
     // Send out a registration command so that prerequisites for zone setup
@@ -279,10 +291,21 @@ pub struct State {
 
 impl State {
     /// Attempt to load the global state file.
-    pub fn init_from_file(config: &Config) -> io::Result<Self> {
+    ///
+    /// `zones` will be set to the names of zones that need to be loaded.
+    /// `policies` will be set to the set of policies from the global state
+    /// file, that need to be parsed and inserted in the state.
+    pub fn init_from_file(
+        config: &Config,
+        zones: &mut foldhash::HashSet<Name<Bytes>>,
+        policies: &mut foldhash::HashMap<Box<str>, PolicySpec>,
+    ) -> io::Result<Self> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        Ok(spec.parse())
+
+        info!("Loaded the global state file (from '{path}')");
+
+        Ok(spec.parse(zones, policies))
     }
 
     /// Mark the global state as dirty.

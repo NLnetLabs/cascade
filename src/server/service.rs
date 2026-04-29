@@ -280,19 +280,15 @@ trait Viewer {
 
 impl Viewer for LoadedZoneReviewer {
     fn is_empty(&self) -> bool {
-        self.read_loaded().is_none()
+        self.read().is_none()
     }
 
     fn soa(&self) -> &SoaRecord {
-        self.read_loaded().unwrap().soa()
+        self.read().unwrap().soa()
     }
 
     fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send {
-        self.read_loaded()
-            .unwrap()
-            .regular_records()
-            .iter()
-            .cloned()
+        self.read().unwrap().regular_records().iter().cloned()
     }
 }
 

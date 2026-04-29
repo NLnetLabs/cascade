@@ -9,9 +9,56 @@ use super::ZoneDataStorage;
 
 #[cfg(doc)]
 use crate::{
-    LoadedZoneBuilder, LoadedZonePersister, LoadedZoneReviewer, SignedZoneBuilder,
-    SignedZoneCleaner, SignedZonePersister, SignedZoneReviewer, ZoneCleaner, ZoneViewer,
+    LoadedZoneBuilder, LoadedZonePersister, LoadedZoneRestorer, LoadedZoneReviewer,
+    SignedZoneBuilder, SignedZoneCleaner, SignedZonePersister, SignedZoneRestorer,
+    SignedZoneReviewer, ZoneCleaner, ZoneViewer,
 };
+
+//----------- RestoringLoadedStorage -------------------------------------------
+
+/// The [`ZoneDataStorage::RestoringLoaded`] state.
+///
+/// This is the initial state, in which a persisted loaded instance of the zone
+/// can be restored.
+///
+/// ## Data
+///
+/// There are no current loaded or signed instances of the zone.
+///
+/// There is an upcoming loaded instance of the zone.
+///
+/// ## Access
+///
+/// The [`LoadedZoneRestorer`] points to the upcoming instance.
+pub struct RestoringLoadedStorage {
+    /// The underlying data.
+    pub(super) data: Arc<Data>,
+}
+
+//----------- RestoringSignedStorage -------------------------------------------
+
+/// The [`ZoneDataStorage::RestoringSigned`] state.
+///
+/// This state follows [`RestoringLoadedStorage`]; in it, a persisted signed
+/// instance of the zone can be restored.
+///
+/// ## Data
+///
+/// There is a current loaded instance of the zone. There is no current signed
+/// instance of the zone.
+///
+/// There is an upcoming signed instance of the zone.
+///
+/// ## Access
+///
+/// The [`SignedZoneRestorer`] points to the upcoming instance.
+pub struct RestoringSignedStorage {
+    /// The underlying data.
+    pub(super) data: Arc<Data>,
+
+    /// The index of the current loaded instance.
+    pub(super) curr_loaded_index: bool,
+}
 
 //----------- PassiveStorage ---------------------------------------------------
 
@@ -31,9 +78,6 @@ use crate::{
 ///
 /// The [`LoadedZoneReviewer`], [`SignedZoneReviewer`], and [`ZoneViewer`] all
 /// point to the current instances.
-///
-/// There is no [`LoadedZoneBuilder`], [`SignedZoneBuilder`], [`ZoneCleaner`],
-/// [`SignedZoneCleaner`], [`LoadedZonePersister`], or [`SignedZonePersister`].
 pub struct PassiveStorage {
     /// The underlying data.
     pub(super) data: Arc<Data>,
