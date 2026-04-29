@@ -119,7 +119,7 @@ impl MetricsCollection {
             zones_configured = state.zones.len() as i64;
 
             for ZoneByName(zone) in &state.zones {
-                let zone_state = zone.state.lock().unwrap();
+                let zone_state = zone.state.read();
 
                 if !matches!(zone_state.loader.source, crate::loader::Source::None) {
                     zones_loaded += 1;
