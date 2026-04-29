@@ -142,6 +142,7 @@ pub struct ZoneHandle<'a> {
 
 impl ZoneHandle<'_> {
     /// Consider loader-specific operations.
+    #[must_use]
     pub const fn loader(&mut self) -> LoaderZoneHandle<'_> {
         LoaderZoneHandle {
             zone: self.zone,
@@ -151,6 +152,7 @@ impl ZoneHandle<'_> {
     }
 
     /// Consider signer-specific operations.
+    #[must_use]
     pub const fn signer(&mut self) -> SignerZoneHandle<'_> {
         SignerZoneHandle {
             zone: self.zone,
@@ -160,6 +162,7 @@ impl ZoneHandle<'_> {
     }
 
     /// Consider storage-specific operations.
+    #[must_use]
     pub const fn storage(&mut self) -> StorageZoneHandle<'_> {
         StorageZoneHandle {
             zone: self.zone,
@@ -169,10 +172,80 @@ impl ZoneHandle<'_> {
     }
 
     /// Consider data persistence specific operations.
+    #[must_use]
     pub const fn persistence(&mut self) -> ZonePersistenceHandle<'_> {
         ZonePersistenceHandle {
             zone: self.zone,
             state: self.state,
+            center: self.center,
+        }
+    }
+}
+
+//----------- OwnedZoneHandle --------------------------------------------------
+
+/// A [`ZoneHandle`] that owns a zone state write lock.
+///
+/// This is a convenience type. By owning the write lock, it can simplify
+/// construction of `ZoneHandle`s for quick uses.
+pub struct OwnedZoneHandle<'a> {
+    /// The zone being operated on.
+    pub zone: &'a Arc<Zone>,
+
+    /// The locked zone state.
+    pub state: WritableZoneState<'a>,
+
+    /// Cascade's global state.
+    pub center: &'a Arc<Center>,
+}
+
+impl OwnedZoneHandle<'_> {
+    /// Get the corresponding [`ZoneHandle`].
+    #[must_use]
+    pub fn get(&mut self) -> ZoneHandle<'_> {
+        ZoneHandle {
+            zone: self.zone,
+            state: &mut self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider loader-specific operations.
+    #[must_use]
+    pub fn loader(&mut self) -> LoaderZoneHandle<'_> {
+        LoaderZoneHandle {
+            zone: self.zone,
+            state: &mut self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider signer-specific operations.
+    #[must_use]
+    pub fn signer(&mut self) -> SignerZoneHandle<'_> {
+        SignerZoneHandle {
+            zone: self.zone,
+            state: &mut self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider storage-specific operations.
+    #[must_use]
+    pub fn storage(&mut self) -> StorageZoneHandle<'_> {
+        StorageZoneHandle {
+            zone: self.zone,
+            state: &mut self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider data persistence specific operations.
+    #[must_use]
+    pub fn persistence(&mut self) -> ZonePersistenceHandle<'_> {
+        ZonePersistenceHandle {
+            zone: self.zone,
+            state: &mut self.state,
             center: self.center,
         }
     }
