@@ -249,7 +249,7 @@ async fn refresh(
                 unreachable!("source-specific loading succeeded and must have filled 'builder'")
             });
 
-            handle.finish_load(built);
+            handle.finish_load(built, soa);
         }
 
         Err(err) => {

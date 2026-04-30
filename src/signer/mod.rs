@@ -23,7 +23,7 @@ use std::{
 };
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::units::zone_signer::SignerError;
 use crate::{
@@ -85,8 +85,16 @@ async fn sign(
 
     match result {
         Ok(()) => {
+            let soa = builder.next_signed().unwrap().soa().clone();
+
+            debug!(
+                zone = %zone.name,
+                serial = ?soa.rdata.serial,
+                "Generated a new signed instance of the zone"
+            );
+
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
-            handle.finish_signing(built);
+            handle.finish_signing(built, soa);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
         }
