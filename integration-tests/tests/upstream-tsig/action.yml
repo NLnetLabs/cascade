@@ -85,6 +85,34 @@ runs:
           sleep 1
         done
 
+    - name: Verify that tsig list shows the added key correctly.
+      run: |
+        cascade tsig list &> tsig-list.log
+        cat >/tmp/tsig-list-expected.out <<'EOF'
+        tsig-key                                                                                                                                                                                                                                                                                                                    
+          zones: example-tsig.test                                                                                                                                                                                                                                                                                                  
+          policies: none
+        EOF
+        diff -b -u tsig-list.log /tmp/tsig-list-expected.out
+
+    - name: Verify that attempting to remove the TSIG key fails.
+      run: |
+        cascade tsig remove tsig-key &> tsig-remove.log && exit 1
+        grep -F 'the TSIG key cannot be removed as it is in use' tsig-remove.log
+
+    - name: Remove the zone
+      run: |
+        cascade zone remove example-tsig.test
+
+    - name: Remove the TSIG key
+      run: |
+        cascade tsig remove tsig-key
+
+    - name: Verify that tsig list no longer shows TSIG key.
+      run: |
+        NUM_LINES=$(cascade tsig list | wc -l)
+        [[ ${NUM_LINES} -eq 0 ]] || exit 1
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()
