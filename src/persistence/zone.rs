@@ -118,6 +118,9 @@ impl ZonePersistenceHandle<'_> {
                 SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
                 PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
 
+                // Mark restoration as complete.
+                handle.state.instances.restore();
+
                 // Send a notification that the state machine is now passive.
                 handle.storage().on_passive();
 

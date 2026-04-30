@@ -224,8 +224,7 @@ async fn refresh(
         Ok(true) => {
             zone.metrics.last_successful_load_duration(duration);
 
-            let soa = builder.next().unwrap().soa().clone();
-
+            let soa = builder.next().unwrap().soa();
             debug!(
                 zone = %zone.name,
                 serial = ?soa.rdata.serial,

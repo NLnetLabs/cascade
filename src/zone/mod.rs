@@ -39,7 +39,7 @@ mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
 mod instance;
-pub use instance::Instances;
+pub use instance::{Instances, LoadedInstance, SignedInstance};
 
 pub mod machine;
 pub mod state;
