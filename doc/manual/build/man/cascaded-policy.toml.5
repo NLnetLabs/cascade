@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Apr 10, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "Apr 24, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -96,6 +96,7 @@ csk.auto\-done = true
 algorithm.auto\-done = true
 ds\-algorithm = \(dqSHA256\(dq
 auto\-remove = true
+publication\-nameservers = []
 
 [key\-manager.records]
 ttl = \(dq1h\(dq
@@ -335,8 +336,28 @@ Supported options:
 .B auto\-remove = true
 Whether to automatically remove expired keys.
 .sp
-If this is set, expired keys will be removed automatically (by deleting the
-files for on\-disk keys or removing it from the HSM).
+If this option is set, expired keys will be removed automatically (by
+deleting the files for on\-disk keys or removing it from the HSM).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B publication\-nameservers = []
+The set of nameservers to use when checking for RRSIG propagation during a
+key roll.
+.sp
+Each nameserver must be specified as a string in the form:
+.INDENT 7.0
+.INDENT 3.5
+\fB\(dq<IP>:[<PORT>][^<TSIG_KEY_NAME>]\(dq\fP
+.UNINDENT
+.UNINDENT
+.sp
+If a TSIG key name is specified, a key by that name must exist in the
+Cascade TSIG key store and will be used to authenticate communication with
+the nameserver.
+.sp
+If no nameservers are specified, the nameserver specified by the SOA MNAME
+field will be checked.
 .UNINDENT
 .SS The management of DNS records by the key manager.
 .sp
@@ -554,9 +575,9 @@ The type of denial\-of\-existence records to generate.
 Supported options:
 .INDENT 7.0
 .IP \(bu 2
-\fBnsec\fP: Use NSEC records (RFC 4034).
+\fBnsec\fP: Use NSEC records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc4034.html'\fI\%RFC 4034\fP\X'tty: link').
 .IP \(bu 2
-\fBnsec3\fP: Use NSEC3 records (RFC 5155).
+\fBnsec3\fP: Use NSEC3 records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc5155.html'\fI\%RFC 5155\fP\X'tty: link').
 .UNINDENT
 .UNINDENT
 .INDENT 0.0
@@ -620,12 +641,17 @@ The \fB[server.outbound]\fP section.
 .INDENT 0.0
 .TP
 .B send\-notify\-to = []
-The set of nameservers to which NOTIFY messages should be sent.
+The set of nameservers to which NOTIFY messages should be sent
 .sp
-If empty, no NOTIFY messages will be sent.
+Each nameserver must be specified as a string in the form:
 .sp
-A collection of \fBIP:[port]\fP, defaulting to port 53 when not specified, e.g.:
-\fBsend\-notify\-to = [\(dq[::1]:53\(dq]\fP
+\fI\(dq<IP>:[<PORT>][^<TSIG_KEY_NAME>]\(dq\fP
+.sp
+If a TSIG key name is specified, a key by that name must exist in the
+Cascade TSIG key store and will be used to authenticate communication with
+the nameserver.
+.sp
+If not specified, no NOTIFY messages will be sent.
 .UNINDENT
 .SH FILES
 .INDENT 0.0

@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::fmt::{self, Display};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::{Duration, SystemTime};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -8,8 +9,6 @@ use serde::{Deserialize, Serialize};
 pub use domain::base::Serial;
 
 pub mod dep;
-
-const DEFAULT_AXFR_PORT: u16 = 53;
 
 //----------- ZoneName ---------------------------------------------------------
 
@@ -187,6 +186,94 @@ pub struct KmipKeyImport {
     pub flags: String,
 }
 
+//----------- TsigKeyName -----------------------------------------------------
+
+/// The name of a TSIG key.
+pub type TsigKeyName = domain::base::Name<domain::dep::octseq::Array<255>>;
+
+//----------- TsigAdd ---------------------------------------------------------
+
+/// Add a TSIG key to Cascade.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigAdd {
+    /// The name of the TSIG key to add.
+    pub name: TsigKeyName,
+
+    /// The algorithm of the TSIG key.
+    pub alg: TsigAlgorithm,
+
+    /// The base64 encoded key material bytes.
+    pub secret: String,
+}
+
+/// The successful result of adding a TSIG key to Cascade.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigAddResult;
+
+/// An error result indicating why an attempt to add a TSIG key to Cascade
+/// failed.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum TsigAddError {
+    /// A TSIG key by the given name already exists in Cascade.
+    AlreadyExists,
+
+    /// The provided TSIG key secret was not correctly base64 encoded.
+    InvalidBase64Secret,
+}
+
+impl Display for TsigAddError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TsigAddError::AlreadyExists => write!(f, "TSIG key already exists"),
+            TsigAddError::InvalidBase64Secret => write!(f, "invalid TSIG base64 encoded secret"),
+        }
+    }
+}
+
+//------------ TsigRemove ----------------------------------------------------
+
+/// The successful result of removing a TSIG key from Cascade.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigRemoveResult;
+
+/// An error result indicating why an attempt to remove a TSIG key from
+/// Cascade failed.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum TsigRemoveError {
+    /// The specified TSIG key name was not found in Cascade.
+    NotFound,
+
+    /// The specified TSIG key cannot be removed as it is in use.
+    InUse,
+}
+
+impl fmt::Display for TsigRemoveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            TsigRemoveError::NotFound => "no such TSIG key was found",
+            TsigRemoveError::InUse => "the TSIG key cannot be removed as it is in use",
+        })
+    }
+}
+
+//------------ TsigListResult ------------------------------------------------
+
+/// The successful result of listing TSIG Cascade keys known to Cascade.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigListResult {
+    /// The set of TSIG keys known to Cascade plus information about each key.
+    pub tsig_keys: HashMap<TsigKeyName, TsigKeyInfo>,
+}
+
+/// Information about a single listed TSIG key.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigKeyInfo {
+    /// The set of zones with which this TSIG key is used.
+    pub zones: Vec<ZoneName>,
+}
+
+//----------- ZoneAdd --------------------------------------------------------
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAdd {
     pub name: ZoneName,
@@ -206,6 +293,7 @@ pub enum ZoneAddError {
     AlreadyExists,
     NoSuchPolicy,
     PolicyMidDeletion,
+    NoSuchTsigKey,
     Other(String),
 }
 
@@ -215,6 +303,7 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::NoSuchTsigKey => "no TSIG key with that name exists",
             Self::Other(reason) => reason,
         })
     }
@@ -240,6 +329,10 @@ impl fmt::Display for ZoneRemoveError {
 
 /// How to load the contents of a zone.
 #[derive(Deserialize, Serialize, Debug, Clone)]
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::large_enum_variant)]
 pub enum ZoneSource {
     /// Don't load the zone at all.
     None,
@@ -256,10 +349,7 @@ pub enum ZoneSource {
         addr: SocketAddr,
 
         /// The name of a TSIG key, if any.
-        tsig_key: Option<String>,
-
-        /// The XFR status of the zone.
-        xfr_status: ZoneRefreshStatus,
+        tsig_key: Option<TsigKeyName>,
     },
 }
 
@@ -286,28 +376,6 @@ impl Display for ZoneSource {
             ZoneSource::None => f.write_str("<none>"),
             ZoneSource::Zonefile { path } => path.fmt(f),
             ZoneSource::Server { addr, .. } => addr.fmt(f),
-        }
-    }
-}
-
-impl From<&str> for ZoneSource {
-    fn from(s: &str) -> Self {
-        if let Ok(addr) = s.parse::<SocketAddr>() {
-            ZoneSource::Server {
-                addr,
-                tsig_key: None,
-                xfr_status: Default::default(),
-            }
-        } else if let Ok(addr) = s.parse::<IpAddr>() {
-            ZoneSource::Server {
-                addr: SocketAddr::new(addr, DEFAULT_AXFR_PORT),
-                tsig_key: None,
-                xfr_status: Default::default(),
-            }
-        } else {
-            ZoneSource::Zonefile {
-                path: Utf8PathBuf::from(s).into_boxed_path(),
-            }
         }
     }
 }
@@ -503,6 +571,26 @@ impl Display for KeyType {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum TsigAlgorithm {
+    HmacSha1,
+    HmacSha256,
+    HmacSha384,
+    HmacSha512,
+}
+
+impl Display for TsigAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TsigAlgorithm::HmacSha1 => "hmac-sha1",
+            TsigAlgorithm::HmacSha256 => "hmac-sha256",
+            TsigAlgorithm::HmacSha384 => "hmac-sha384",
+            TsigAlgorithm::HmacSha512 => "hmac-sha512",
+        }
+        .fmt(f)
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneHistory {
     pub history: Vec<HistoryItem>,
@@ -675,14 +763,21 @@ pub struct KeyMsg {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::large_enum_variant)]
 pub enum PolicyReloadError {
     Io(Utf8PathBuf, String),
+    NoSuchTsigKey(TsigKeyName),
 }
 
 impl Display for PolicyReloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let PolicyReloadError::Io(p, e) = self;
-        format!("{p}: {e}").fmt(f)
+        match self {
+            PolicyReloadError::Io(p, e) => write!(f, "{p}: {e}"),
+            PolicyReloadError::NoSuchTsigKey(k) => write!(f, "no TSIG key with name '{k}' exists"),
+        }
     }
 }
 

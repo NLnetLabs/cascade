@@ -8,6 +8,7 @@ use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 
+use crate::policy::file::v1::NameserverCommsSpec;
 use crate::policy::file::v1::OutboundSpec;
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
 use crate::{
@@ -241,6 +242,9 @@ pub struct KeyManagerPolicySpec {
 
     /// Automatically remove keys that are no long in use.
     auto_remove: bool,
+
+    /// Nameservers to check for RRSIG propagation during a key roll.
+    pub publication_nameservers: Vec<NameserverCommsSpec>,
 }
 
 //--- Conversion
@@ -268,6 +272,11 @@ impl KeyManagerPolicySpec {
             ds_algorithm: self.ds_algorithm,
             default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
+            publication_nameservers: self
+                .publication_nameservers
+                .into_iter()
+                .map(|v| v.parse())
+                .collect(),
         }
     }
 
@@ -293,6 +302,11 @@ impl KeyManagerPolicySpec {
             ds_algorithm: policy.ds_algorithm.clone(),
             default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
+            publication_nameservers: policy
+                .publication_nameservers
+                .iter()
+                .map(NameserverCommsSpec::build)
+                .collect(),
         }
     }
 }

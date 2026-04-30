@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::IntoFuture;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
@@ -17,6 +18,7 @@ use bytes::Bytes;
 use domain::base::Name;
 use domain::base::Serial;
 use domain::dnssec::sign::keys::keyset::KeyType;
+use domain::utils::base64;
 use domain_kmip::ConnectionSettings;
 use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
@@ -39,6 +41,7 @@ use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
 use crate::server::SignedReviewServer;
+use crate::tsig::{self, RemoveError};
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -99,6 +102,9 @@ impl HttpServer {
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
             .route("/debug/change-logging", post(Self::change_logging))
+            .route("/tsig/", get(Self::tsig_key_list))
+            .route("/tsig/add", post(Self::tsig_key_add))
+            .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
@@ -379,7 +385,6 @@ impl HttpServer {
                 loader::Source::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
                     addr,
                     tsig_key: None,
-                    xfr_status: Default::default(),
                 },
             };
             unsigned_review_addr = state
@@ -845,20 +850,25 @@ impl HttpServer {
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
         let mut updates = Vec::new();
-        let res = crate::policy::reload_all(&mut state.policies, &center.config, |name, change| {
-            changed = true;
+        let res = crate::policy::reload_all(
+            &mut state.policies,
+            &center.config,
+            &state.tsig_store,
+            |name, change| {
+                changed = true;
 
-            changes.insert(
-                name.clone(),
-                match change {
-                    crate::policy::PolicyChange::Removed { .. } => PolicyChange::Removed,
-                    crate::policy::PolicyChange::Updated { .. } => PolicyChange::Updated,
-                    crate::policy::PolicyChange::Added { .. } => PolicyChange::Added,
-                },
-            );
+                changes.insert(
+                    name.clone(),
+                    match change {
+                        crate::policy::PolicyChange::Removed { .. } => PolicyChange::Removed,
+                        crate::policy::PolicyChange::Updated { .. } => PolicyChange::Updated,
+                        crate::policy::PolicyChange::Added { .. } => PolicyChange::Added,
+                    },
+                );
 
-            updates.push((name.clone(), change));
-        });
+                updates.push((name.clone(), change));
+            },
+        );
 
         if let Err(err) = res {
             return Json(Err(err));
@@ -1134,6 +1144,68 @@ impl HttpServer {
         zones.sort_by(|a, b| a.zone.cmp(&b.zone));
 
         Json(KeyStatusResult { expirations, zones })
+    }
+
+    async fn tsig_key_add(
+        State(state): State<Arc<HttpServer>>,
+        Json(tsig_add): Json<TsigAdd>,
+    ) -> Json<Result<TsigAddResult, TsigAddError>> {
+        let Ok(secret) = base64::decode::<Vec<u8>>(&tsig_add.secret) else {
+            return Json(Err(TsigAddError::InvalidBase64Secret));
+        };
+
+        let alg = match tsig_add.alg {
+            TsigAlgorithm::HmacSha1 => domain::tsig::Algorithm::Sha1,
+            TsigAlgorithm::HmacSha256 => domain::tsig::Algorithm::Sha256,
+            TsigAlgorithm::HmacSha384 => domain::tsig::Algorithm::Sha384,
+            TsigAlgorithm::HmacSha512 => domain::tsig::Algorithm::Sha512,
+        };
+
+        match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {
+            Ok(TsigAddResult) => Json(Ok(TsigAddResult)),
+            Err(err) => Json(Err(err)),
+        }
+    }
+
+    async fn tsig_key_remove(
+        State(http_server_state): State<Arc<HttpServer>>,
+        Path(tsig_key_name): Path<TsigKeyName>,
+    ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
+        let result = tsig::remove_key(&http_server_state.center, &tsig_key_name)
+            .map_err(|e| match e {
+                RemoveError::NotFound => TsigRemoveError::NotFound,
+                RemoveError::Used => TsigRemoveError::InUse,
+            })
+            // Map Ok value that we don't use.
+            .map(|_| TsigRemoveResult);
+        if result.is_err() {
+            return Json(result);
+        }
+
+        Json(Ok(TsigRemoveResult))
+    }
+
+    async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {
+        let state = http_state.center.state.lock().unwrap();
+        let mut tsig_keys = HashMap::new();
+        for tsig_key_name in state.tsig_store.map.keys() {
+            let zones = state
+                .zones
+                .iter()
+                .filter_map(|zone| {
+                    let zone_state = zone.0.state.lock().unwrap();
+                    match &zone_state.loader.source {
+                        loader::Source::Server {
+                            tsig_key: Some(tsig_key),
+                            ..
+                        } if tsig_key.name() == tsig_key_name => Some(zone.0.name.clone()),
+                        _ => None,
+                    }
+                })
+                .collect::<Vec<ZoneName>>();
+            tsig_keys.insert(tsig_key_name.clone(), TsigKeyInfo { zones });
+        }
+        Json(TsigListResult { tsig_keys })
     }
 }
 

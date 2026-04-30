@@ -62,6 +62,7 @@ Example
     algorithm.auto-done = true
     ds-algorithm = "SHA256"
     auto-remove = true
+    publication-nameservers = []
 
     [key-manager.records]
     ttl = "1h"
@@ -254,9 +255,24 @@ The ``[key-manager]`` section.
 
    Whether to automatically remove expired keys.
 
-   If this is set, expired keys will be removed automatically (by deleting the
-   files for on-disk keys or removing it from the HSM).
+   If this option is set, expired keys will be removed automatically (by
+   deleting the files for on-disk keys or removing it from the HSM).
 
+.. option:: publication-nameservers = []
+
+   The set of nameservers to use when checking for RRSIG propagation during a
+   key roll.
+
+   Each nameserver must be specified as a string in the form:
+  
+     ``"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"``
+  
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+  
+   If no nameservers are specified, the nameserver specified by the SOA MNAME
+   field will be checked.
 
 The management of DNS records by the key manager.
 +++++++++++++++++++++++++++++++++++++++++++++++++
@@ -444,8 +460,8 @@ The ``[signer.denial]`` section.
 
    Supported options:
 
-   - ``nsec``: Use NSEC records (RFC 4034).
-   - ``nsec3``: Use NSEC3 records (RFC 5155).
+   - ``nsec``: Use NSEC records (:RFC:`4034`).
+   - ``nsec3``: Use NSEC3 records (:RFC:`5155`).
 
 .. option:: opt-out = false
 
@@ -504,13 +520,17 @@ The ``[server.outbound]`` section.
 
 .. option:: send-notify-to = []
 
-   The set of nameservers to which NOTIFY messages should be sent.
+   The set of nameservers to which NOTIFY messages should be sent
 
-   If empty, no NOTIFY messages will be sent.
+   Each nameserver must be specified as a string in the form:
 
-   A collection of ``IP:[port]``, defaulting to port 53 when not specified, e.g.:
-   ``send-notify-to = ["[::1]:53"]``
+     `"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"`
 
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+
+   If not specified, no NOTIFY messages will be sent.
 
 Files
 -----

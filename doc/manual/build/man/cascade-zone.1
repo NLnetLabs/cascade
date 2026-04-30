@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Apr 10, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "Apr 24, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -64,12 +64,20 @@ command.
 .INDENT 0.0
 .TP
 .B add
-Register a new zone.
+Add a new zone.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B remove
 Remove a zone.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+Once removed, downstream servers will no longer be able to fetch
+the zone!
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -114,9 +122,43 @@ Get the history of a single zone.
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0
 .TP
-.B \-\-source <SOURCE>
-The zone source can be an IP address (with or without port, defaults to port
-53) or a file path.
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+The zone source can be the IP address of an upstream nameserver (with
+or without port, defaults to port 53) or the path to a zone file locally
+available to the \fBcascaded\fP daemon.
+.sp
+When specifying an upstream nameserver you may also optionally specify
+the name of an \X'tty: link https://datatracker.ietf.org/doc/html/rfc8945.html'\fI\%RFC 8945\fP\X'tty: link' TSIG key that should be used to authenticate
+communication with the upstream.
+.sp
+Zones sourced from an upstream nameserver will be automatically updated
+if a new version is detected via a SOA query, either based on the zone\(aqs
+SOA record timers, or in response to an \X'tty: link https://datatracker.ietf.org/doc/html/rfc1996.html'\fI\%RFC 1996\fP\X'tty: link' NOTIFY message from
+the upstream.
+.sp
+Zones can also be manualy updated via \fBcascade\fP \fI\%reload\fP\&.
+.sp
+For zones that have already been retrieved at least once via AXFR, subsequent
+refreshes will attempt to use IXFR and fallback to AXFR if IXFR is not
+available.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+When running \fBcascade\fP \fBzone add\fP from a
+different host than where the Cascade daemon is running, make
+sure that the source (whether filesystem path or IP address) is
+reachable by the Cascade daemon.
+.UNINDENT
+.UNINDENT
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+If using a TSIG key the key must first be added to Cascade via
+\fBcascade\fP \fBtsig add\fP\&.
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP

@@ -8,9 +8,11 @@ use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 use domain::base::Ttl;
+use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
+use crate::tsig::TsigStore;
 use crate::{api::PolicyReloadError, config::Config};
 
 pub mod file;
@@ -48,12 +50,17 @@ pub enum PolicyChange {
 /// Reload all policies.
 ///
 /// Any changes are reported via the `on_change` callback.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
+    tsig_store: &TsigStore,
     mut on_change: impl FnMut(&Box<str>, PolicyChange),
 ) -> Result<(), PolicyReloadError> {
-    let new_versions = load_all(policies, config)?;
+    let new_versions = load_all(policies, config, tsig_store)?;
 
     let mut new_policies = foldhash::HashMap::default();
 
@@ -114,9 +121,14 @@ pub fn reload_all(
 ///
 /// The current policies are used for logging purposes so we can log whether
 /// a policy is new, updated, unchanged or removed.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 pub fn load_all(
     policies: &foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
+    tsig_store: &TsigStore,
 ) -> Result<foldhash::HashMap<Box<str>, PolicyVersion>, PolicyReloadError> {
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
@@ -177,6 +189,8 @@ pub fn load_all(
             .expect("this path points to a readable file, so it must have a file name");
 
         let policy = spec.parse(name);
+
+        check_policy(&policy, tsig_store)?;
         if policies.contains_key(name) {
             info!("Reloaded policy '{name}'");
         } else {
@@ -189,6 +203,30 @@ pub fn load_all(
     }
 
     Ok(new_policies)
+}
+
+/// Perform a semantic check on the loaded policy.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
+fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
+    // Check the publication nameservers for the key manager. Any TSIG key
+    // that is part of those nameservers has to exist in the TSIG key store.
+    let tsig_names = policy
+        .key_manager
+        .publication_nameservers
+        .iter()
+        .chain(policy.server.outbound.accept_xfr_requests_from.iter())
+        .chain(policy.server.outbound.send_notify_to.iter())
+        .filter_map(|ns| ns.tsig_key_name.as_ref());
+
+    for tsig_name in tsig_names {
+        tsig_store
+            .get(tsig_name)
+            .ok_or(PolicyReloadError::NoSuchTsigKey(tsig_name.clone()))?;
+    }
+    Ok(())
 }
 
 //----------- PolicyVersion ----------------------------------------------------
@@ -278,6 +316,9 @@ pub struct KeyManagerPolicy {
 
     /// Automatically remove keys that are no long in use.
     pub auto_remove: bool,
+
+    /// Nameservers to check for RRSIG propagation during a key roll.
+    pub publication_nameservers: Vec<NameserverCommsPolicy>,
 }
 
 //----------- SignerPolicy -----------------------------------------------------
@@ -453,7 +494,19 @@ pub struct NameserverCommsPolicy {
     ///
     /// TODO: Support IP prefixes?
     pub addr: SocketAddr,
-    // TODO: Support TSIG key names?
+
+    /// An optional TSIG key to sign and authenticate messages with.
+    pub tsig_key_name: Option<KeyName>,
+}
+
+impl Display for NameserverCommsPolicy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.addr)?;
+        if let Some(tsig_key_name) = &self.tsig_key_name {
+            write!(f, "^{tsig_key_name}")?;
+        }
+        Ok(())
+    }
 }
 
 //----------- KeyParameters ---------------------------------------------------

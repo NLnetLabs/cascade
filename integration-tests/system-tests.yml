@@ -260,3 +260,20 @@ jobs:
       - uses: ./integration-tests/tests/all-rr-types
         with:
           log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/564
+  upstream-tsig:
+    name: Use TSIG with an upstream nameserver.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        key-source: [cmdline, file]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/upstream-tsig
+        with:
+          log-level: ${{ inputs.log-level }}
+          key-source: ${{ matrix.key-source }}

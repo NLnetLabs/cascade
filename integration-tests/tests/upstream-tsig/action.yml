@@ -1,0 +1,90 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Use TSIG with an upstream nameserver.'
+description: 'Use TSIG with an upstream nameserver.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+  key-source:
+    description: Where to take the TSIG key from.
+    required: true
+    type: choice
+    options:
+      - cmdline
+      - file
+      - none
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Add zone without the required TSIG key.
+      run: |
+        cascade zone add --policy default --source "127.0.0.1:1055" example-tsig.test
+
+    - name: Check zone status
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+
+        # TODO: The error message we are checking for is the one that Cascade
+        # currently produces, but doesn't seem like the correct error...
+        # See: https://github.com/NLnetLabs/cascade/issues/603
+        until cascade zone status example-tsig.test | grep -q "ERROR: the AXFR failed: the server's response was semantically incorrect: Not a valid XFR response"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: zone status failed to report the expected error"
+            cascade zone status example-tsig.test
+            exit 1
+          fi
+          sleep 1
+        done
+        exit 0
+
+    - name: Remove and re-add the zone with the required TSIG key.
+      run: |
+        cascade zone remove example-tsig.test
+        
+        case "${{ inputs.key-source }}" in
+          "cmdline")
+            cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+            ;;
+          "file")
+            echo -n "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0=" >/tmp/tsig.key
+            cascade tsig add tsig-key hmac-sha256 /tmp/tsig.key
+            ;;
+        esac
+
+        cascade zone add --policy default --source "127.0.0.1:1055^tsig-key" example-tsig.test
+
+    - name: Check zone status
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example-tsig.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status example-tsig.test
+            echo "::error:: timeout: zone status did not report published zone available"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

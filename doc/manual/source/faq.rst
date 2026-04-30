@@ -57,7 +57,7 @@ Key rolls should be automatic and frequent.
 Frequent key rolls help to ensure that they become normal operational
 practice and not an exception.
 Key rolls should be automated as much as possible to avoid mistakes.
-Unfortunately, the standard for updating DS records (CDS, RFC 8078) is not
+Unfortunately, the standard for updating DS records (CDS, :RFC:`8078`) is not
 widely implemented so in many cases a KSK roll has to have a manual component,
 namely submitting and updating the DS record at the parent.
 

@@ -6,6 +6,7 @@ pub mod keyset;
 pub mod policy;
 pub mod status;
 pub mod template;
+pub mod tsig;
 pub mod zone;
 
 use crate::client::CascadeApiClient;
@@ -37,10 +38,10 @@ pub enum Command {
     /// Execute manual key roll or key removal commands
     #[command(name = "keyset")]
     KeySet(self::keyset::KeySet),
-    //
-    // /// Manage keys
-    // #[command(name = "key")]
-    // Key(self::key::Key),
+
+    /// Manage TSIG keys
+    #[command(name = "tsig")]
+    Tsig(self::tsig::Tsig),
     // - Command: add/remove/modify a zone
     // - Command: add/remove/modify a key for a zone
     // - Command: add/remove/modify a key
@@ -74,6 +75,7 @@ impl Command {
             Self::Policy(policy) => policy.execute(client).await,
             Self::KeySet(keyset) => keyset.execute(client).await,
             Self::Hsm(hsm) => hsm.execute(client).await,
+            Self::Tsig(tsig) => tsig.execute(client).await,
             Self::Template(template) => template.execute(client).await,
         }
     }

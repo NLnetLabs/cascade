@@ -698,8 +698,23 @@ impl Notifiable for LoaderNotifier {
         // Don't do anything if the notifier is disabled.
         if self.enabled && class == Class::IN {
             // Propagate a request for the zone refresh.
-            // This request ignores the serial and source because we will just
-            // do a SOA query to our configured upstreams.
+            //
+            // We ignore the serial because we will just do a SOA query to our
+            // configured upstream.
+            //
+            // TODO: Do we want to try enforcing IP address based access
+            // control at this point? Would we want CIDR matching support?
+            // Would we want to require a DNS COOKIE if the transport is UDP?
+            //
+            // TODO: Do we want to try enforcing TSIG key based access control
+            // at this point? We can determine the key that the zone source
+            // is configured to use but we can't actually verify that that key
+            // was used. The TsigMiddlewareSvc will have ensured that the a
+            // valid key present in our key store was used, but that may not
+            // be the actual key configured on the zone source. We cannot test
+            // for the actual correct key because NotifyMiddlewareSvc that
+            // invokes us doesn't pass us the Request from which we would be
+            // able to learn the used TSIG key.
             let center = &self.center;
             if let Some(zone) = crate::center::get_zone(center, apex_name) {
                 info!("Instructing zone loader to refresh zone '{apex_name}");
