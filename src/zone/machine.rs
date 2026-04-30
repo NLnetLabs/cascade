@@ -101,6 +101,12 @@ impl ZoneStateMachine {
 /// # Initiating operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
+        // If we're in maintenance mode, then we don't start this operation.
+        // TODO: distinguish between a manual load and an automatic one.
+        if self.state.maintenance_mode {
+            return None;
+        }
+
         // It's important that we first check the storage here instead of the
         // zone state machine. The reason is that while the zone state machine
         // is in the waiting state, the storage might still be persisting or
@@ -126,6 +132,12 @@ impl<'a> ZoneHandle<'a> {
     }
 
     pub(crate) fn try_start_resign(&mut self) -> Option<SignedZoneBuilder> {
+        // If we're in maintenance mode, then we don't start this operation.
+        // TODO: distinguish between a manual resign and an automatic one.
+        if self.state.maintenance_mode {
+            return None;
+        }
+
         // It's important that we first check the storage here instead of the
         // zone state machine. The reason is that while the zone state machine
         // is in the waiting state, the storage might still be persisting or
