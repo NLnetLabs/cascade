@@ -31,14 +31,13 @@ use cascade_zonedata::{
     SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
     SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage,
 };
-use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{HistoricalEvent, LastPublished, Zone, ZoneHandle, ZoneState},
+    zone::{HistoricalEvent, Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -767,31 +766,6 @@ impl StorageZoneHandle<'_> {
 
                 _ => unreachable!("just transitioned to 'Switching'"),
             };
-
-            handle.state.last_published = Some(LastPublished {
-                loaded_serial: Serial(
-                    handle
-                        .state
-                        .storage
-                        .published_loaded_soa
-                        .as_ref()
-                        .unwrap()
-                        .rdata
-                        .serial
-                        .into(),
-                ),
-                signed_serial: Serial(
-                    handle
-                        .state
-                        .storage
-                        .published_soa
-                        .as_ref()
-                        .unwrap()
-                        .rdata
-                        .serial
-                        .into(),
-                ),
-            });
 
             handle.finish_switch(cleaner);
 
