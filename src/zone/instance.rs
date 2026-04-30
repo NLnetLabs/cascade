@@ -60,6 +60,181 @@ pub struct Instances {
     // - Abandoned instances.
 }
 
+/// # Initiating operations
+impl Instances {
+    /// Initiate a new operation.
+    ///
+    /// An upcoming instance will be prepared.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if an upcoming instance already exists.
+    pub fn start_load(&mut self) {
+        assert!(
+            self.upcoming.is_none(),
+            "Cannot start a load while an upcoming instance exists",
+        );
+
+        self.upcoming = Some(UpcomingInstance {
+            loaded: None,
+            signed: None,
+        });
+    }
+
+    /// Initiate a re-sign operation.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if:
+    /// - An upcoming instance already exists.
+    /// - There is no current loaded instance of the zone.
+    pub fn start_resign(&mut self) {
+        assert!(
+            self.upcoming.is_none(),
+            "Cannot start a re-sign while an upcoming instance exists",
+        );
+
+        assert!(
+            self.current.is_some(),
+            "Cannot start a re-sign without a current loaded instance",
+        );
+
+        self.upcoming = Some(UpcomingInstance {
+            loaded: None,
+            signed: None,
+        });
+    }
+
+    /// Clear the current instance.
+    ///
+    /// This method should be called if the data for the zone is being cleared.
+    /// The current instance (if any) will be abandoned.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if there is an upcoming instance of the zone. This method must be
+    /// called after the upcoming instance is resolved (applied or abandoned).
+    pub fn clear(&mut self) {
+        // TODO: Save the current instance to a list of obsolete ones.
+
+        assert!(
+            self.upcoming.is_none(),
+            "Cannot modify the current instance while an upcoming one exists"
+        );
+
+        self.current = None;
+    }
+}
+
+/// # Loading operations
+impl Instances {
+    /// Finish an ongoing load.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if:
+    /// - There is no upcoming instance of the zone.
+    /// - The upcoming instance is not empty.
+    pub fn finish_load(&mut self, soa: SoaRecord) {
+        let Some(upcoming) = &mut self.upcoming else {
+            panic!("There is no upcoming instance of the zone");
+        };
+
+        assert!(
+            upcoming.loaded.is_none() && upcoming.signed.is_none(),
+            "The upcoming instance is not empty"
+        );
+
+        upcoming.loaded = Some(LoadedInstance { soa });
+    }
+}
+
+/// # Signing operations
+impl Instances {
+    /// Finish an ongoing (re-)sign.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if:
+    /// - There is no upcoming instance of the zone.
+    /// - An upcoming signed instance already exists.
+    pub fn finish_sign(&mut self, soa: SoaRecord) {
+        let Some(upcoming) = &mut self.upcoming else {
+            panic!("There is no upcoming instance of the zone");
+        };
+
+        assert!(
+            upcoming.signed.is_none(),
+            "An upcoming signed instance already exists",
+        );
+
+        upcoming.signed = Some(SignedInstance { soa });
+    }
+}
+
+/// # Finalizing operations
+impl Instances {
+    /// Switch from the current instance to the upcoming one.
+    ///
+    /// The upcoming instance (which must exist) will replace the current one.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if:
+    /// - There is no upcoming instance.
+    /// - The upcoming instance is malformed.
+    /// - A re-sign took place but there is no current loaded instance.
+    pub fn switch(&mut self) {
+        // TODO: Save the current instance to a list of obsolete ones.
+
+        let upcoming = self
+            .upcoming
+            .take()
+            .unwrap_or_else(|| panic!("There is no upcoming instance"));
+        let current = self.current.take();
+
+        match upcoming {
+            // A re-sign took place.
+            UpcomingInstance {
+                loaded: None,
+                signed: Some(signed),
+            } => {
+                let CurrentInstance { loaded, signed: _ } = current.unwrap_or_else(|| {
+                    panic!("A re-sign took place but there is no current loaded instance")
+                });
+
+                self.current = Some(CurrentInstance { loaded, signed });
+            }
+
+            // A new loaded instance has appeared.
+            UpcomingInstance {
+                loaded: Some(loaded),
+                signed: Some(signed),
+            } => {
+                self.current = Some(CurrentInstance { loaded, signed });
+            }
+
+            // The upcoming instance is malformed.
+            _ => {
+                panic!("The upcoming instance is malformed")
+            }
+        }
+    }
+
+    /// Abandon the upcoming instance entirely.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if an upcoming instance does not exist.
+    pub fn abandon(&mut self) {
+        // TODO: Add the upcoming instance to a list of abandoned ones.
+
+        assert!(self.upcoming.is_some(), "Nothing to abandon");
+
+        self.upcoming = None;
+    }
+}
+
 //----------- CurrentInstance --------------------------------------------------
 
 /// The current/published instance of a zone.
