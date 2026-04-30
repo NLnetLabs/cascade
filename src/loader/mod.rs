@@ -25,7 +25,7 @@ use crate::{
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{Zone, ZoneByPtr, ZoneHandle},
+    zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle},
 };
 
 mod server;
@@ -260,6 +260,13 @@ async fn refresh(
 
             // Cancel the load
             handle.abandon_load(builder);
+
+            state.record_event(
+                HistoricalEvent::LoadingFailed {
+                    reason: err.to_string(),
+                },
+                None,
+            );
         }
     }
 }
@@ -399,6 +406,9 @@ pub struct ActiveLoadMetrics {
     /// See [`LoadMetrics::num_loaded_bytes`].
     pub num_loaded_bytes: AtomicUsize,
 
+    /// The (approximate) number of bytes to load.
+    pub num_total_bytes: AtomicUsize,
+
     /// The (approximate) number of DNS records loaded thus far.
     ///
     /// See [`LoadMetrics::num_loaded_records`].
@@ -412,6 +422,7 @@ impl ActiveLoadMetrics {
             start: (Instant::now(), SystemTime::now()),
             source,
             num_loaded_bytes: AtomicUsize::new(0),
+            num_total_bytes: AtomicUsize::new(0),
             num_loaded_records: AtomicUsize::new(0),
         }
     }
