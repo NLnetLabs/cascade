@@ -1228,7 +1228,7 @@ impl HttpServer {
             // If we found at least one reference to a TSIG key in this policy
             // update the map of TSIG key info results to pass back to the
             // caller.
-            if tsig_key_names.next().is_some() {
+            if tsig_key_names.peek().is_some() {
                 // For each found TSIG key:
                 for tsig_key_name in tsig_key_names {
                     match tsig_key_info.entry(tsig_key_name.clone()) {
