@@ -217,7 +217,7 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
         .key_manager
         .publication_nameservers
         .iter()
-        .chain(policy.server.outbound.accept_xfr_requests_from.iter())
+        .chain(policy.server.outbound.accept_xfr_from.iter())
         .chain(policy.server.outbound.send_notify_to.iter())
         .filter_map(|ns| ns.tsig_key_name.as_ref());
 
@@ -455,7 +455,7 @@ pub struct OutboundPolicy {
     /// The set of nameservers from which SOA and XFR requests may be received.
     ///
     /// If empty, any nameserver may request XFR from us.
-    pub accept_xfr_requests_from: Vec<NameserverCommsPolicy>,
+    pub accept_xfr_from: Vec<NameserverCommsPolicy>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///
@@ -465,32 +465,22 @@ pub struct OutboundPolicy {
     pub send_notify_to: Vec<NameserverCommsPolicy>,
 }
 
-//----------- InboundPolicy ---------------------------------------------------
-
-/// Policy for restricting from whom data may be received.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InboundPolicy {
-    /// The set of nameservers to which SOA and XFR requests should be sent.
-    ///
-    /// If empty, the nameserver from which the zone was received will be
-    /// contacted.
-    pub send_xfr_requests_to: Vec<NameserverCommsPolicy>,
-
-    /// The set of nameservers from which may NOTIFY messages may be received.
-    ///
-    /// If empty, the nameserver from which the zone was received will be
-    /// allowed to send us NOTIFY messages.
-    pub accept_notify_messages_from: Vec<NameserverCommsPolicy>,
-}
-
 //----------- NameserverCommsPolicy -------------------------------------------
 
 /// Policy for communicating with another namesever.
+///
+/// This type serves a dual purpose:
+///   - For outbound communication it specifies the address and port of the
+///     nameserver to contact, and optionally a TSIG key that should be used
+///     to sign outbound requests. When used for this purpose the address and
+///     port are mandatory.
+///   - For inbound communication this type is intended to support the access
+///     control use case, acting as a white list entry. When used for this
+///     purpose typically a port is not specified as the sending port that
+///     will be used by the client cannot be known in advance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NameserverCommsPolicy {
     /// The address to send to/receive from.
-    ///
-    /// For sending the port MUST NOT be zero.
     ///
     /// TODO: Support IP prefixes?
     pub addr: SocketAddr,

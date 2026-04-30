@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::hash_map::Entry;
 use std::future::IntoFuture;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
@@ -958,8 +960,8 @@ impl HttpServer {
         let p_outbound = &p.latest.server.outbound;
         let server = ServerPolicyInfo {
             outbound: OutboundPolicyInfo {
-                accept_xfr_requests_from: p_outbound
-                    .accept_xfr_requests_from
+                accept_xfr_from: p_outbound
+                    .accept_xfr_from
                     .iter()
                     .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
@@ -1171,41 +1173,86 @@ impl HttpServer {
         State(http_server_state): State<Arc<HttpServer>>,
         Path(tsig_key_name): Path<TsigKeyName>,
     ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
-        let result = tsig::remove_key(&http_server_state.center, &tsig_key_name)
+        let res = tsig::remove_key(&http_server_state.center, &tsig_key_name)
+            .map(|_| TsigRemoveResult)
             .map_err(|e| match e {
                 RemoveError::NotFound => TsigRemoveError::NotFound,
                 RemoveError::Used => TsigRemoveError::InUse,
-            })
-            // Map Ok value that we don't use.
-            .map(|_| TsigRemoveResult);
-        if result.is_err() {
-            return Json(result);
-        }
-
-        Json(Ok(TsigRemoveResult))
+            });
+        Json(res)
     }
 
     async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {
+        let mut tsig_key_info = HashMap::new();
+
         let state = http_state.center.state.lock().unwrap();
-        let mut tsig_keys = HashMap::new();
-        for tsig_key_name in state.tsig_store.map.keys() {
-            let zones = state
-                .zones
-                .iter()
-                .filter_map(|zone| {
-                    let zone_state = zone.0.state.lock().unwrap();
-                    match &zone_state.loader.source {
-                        loader::Source::Server {
-                            tsig_key: Some(tsig_key),
-                            ..
-                        } if tsig_key.name() == tsig_key_name => Some(zone.0.name.clone()),
-                        _ => None,
-                    }
-                })
-                .collect::<Vec<ZoneName>>();
-            tsig_keys.insert(tsig_key_name.clone(), TsigKeyInfo { zones });
+
+        // Get the set of TSIG keys and related zones from the TSIG key store.
+        for (tsig_key_name, key) in state.tsig_store.map.iter() {
+            let zone_names = key.zones.iter().map(|item| item.0.name.clone()).collect();
+            tsig_key_info.insert(
+                tsig_key_name.clone(),
+                TsigKeyInfo {
+                    zone_names,
+                    policy_names: HashSet::new(),
+                },
+            );
         }
-        Json(TsigListResult { tsig_keys })
+
+        // Note: We don't loop over all of the zones checking for TSIG keys
+        // referenced in the upstream source configuration because those
+        // relationships should be captured in the set of zones associated
+        // with TSIG keys in the TSIG key store that we accessed in the loop
+        // above.
+
+        // Find the set of policies that reference TSIG keys as these
+        // relationships are not tracked by the TSIG key store. Ignore
+        // policies that are in the process of being deleted.
+        let current_policies = state.policies.iter().filter(|(_, p)| !p.mid_deletion);
+
+        // For each policy, collect any TSIG key names from the various policy
+        // fields that may refer to TSIG keys, then update the TSIG key info
+        // result set we are building to note the relationship between the
+        // TSIG key and the policies that refer to it.
+        for (policy_name, policy) in current_policies {
+            let mut tsig_key_names = policy
+                .latest
+                .key_manager
+                .publication_nameservers
+                .iter()
+                .chain(policy.latest.server.outbound.accept_xfr_from.iter())
+                .chain(policy.latest.server.outbound.send_notify_to.iter())
+                .filter_map(|acl| acl.tsig_key_name.as_ref())
+                .peekable();
+
+            // If we found at least one reference to a TSIG key in this policy
+            // update the map of TSIG key info results to pass back to the
+            // caller.
+            if tsig_key_names.peek().is_some() {
+                // For each found TSIG key:
+                for tsig_key_name in tsig_key_names {
+                    match tsig_key_info.entry(tsig_key_name.clone()) {
+                        Entry::Occupied(mut e) => {
+                            // Info about this TSIG key already exists in the
+                            // results, update the result info to note the
+                            // relationship to this policy.
+                            e.get_mut().policy_names.insert(policy_name.to_string());
+                        }
+                        Entry::Vacant(e) => {
+                            // Info about this TSIG key does not yet exist in
+                            // the results, update the result info to note the
+                            // relationship to this policy.
+                            e.insert(TsigKeyInfo {
+                                zone_names: HashSet::new(),
+                                policy_names: [policy_name.to_string()].into(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Json(TsigListResult { tsig_key_info })
     }
 }
 

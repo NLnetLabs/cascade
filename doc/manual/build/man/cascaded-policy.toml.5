@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Apr 24, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "Apr 30, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -348,7 +348,7 @@ key roll.
 Each nameserver must be specified as a string in the form:
 .INDENT 7.0
 .INDENT 3.5
-\fB\(dq<IP>:[<PORT>][^<TSIG_KEY_NAME>]\(dq\fP
+\fB\(dq<IP>[:<PORT>][^<TSIG_KEY_NAME>]\(dq\fP
 .UNINDENT
 .UNINDENT
 .sp
@@ -641,17 +641,29 @@ The \fB[server.outbound]\fP section.
 .INDENT 0.0
 .TP
 .B send\-notify\-to = []
-The set of nameservers to which NOTIFY messages should be sent
+The set of nameservers to which NOTIFY messages should be sent.
+.sp
+If no nameservers are specified, no NOTIFY messages will be sent.
 .sp
 Each nameserver must be specified as a string in the form:
 .sp
-\fI\(dq<IP>:[<PORT>][^<TSIG_KEY_NAME>]\(dq\fP
+\fI\(dq<IP>[:<PORT>][^<TSIG_KEY_NAME>]\(dq\fP
 .sp
 If a TSIG key name is specified, a key by that name must exist in the
 Cascade TSIG key store and will be used to authenticate communication with
 the nameserver.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B accept\-xfr\-from = []
+The set of nameservers to accept zone transfer requests from.
 .sp
-If not specified, no NOTIFY messages will be sent.
+If no nameservers are specified, zone transfer requests will be accepted
+from any nameserver.
+.sp
+Each nameserver must be specified as a string in the form:
+.sp
+\fI\(dq<IP>[^<TSIG_KEY_NAME>]\(dq\fP
 .UNINDENT
 .SH FILES
 .INDENT 0.0

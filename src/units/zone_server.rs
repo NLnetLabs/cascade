@@ -1,6 +1,6 @@
 use std::future::Future;
 use std::marker::Sync;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -23,6 +23,7 @@ use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
 use domain::net::server::service::Service;
 use domain::net::server::stream::{self, StreamServer};
 use domain::tsig::{Algorithm, KeyStore};
+use domain::zonetree::StoredName;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{
@@ -33,6 +34,7 @@ use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
+use crate::policy::NameserverCommsPolicy;
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
 use crate::zone::{
@@ -237,19 +239,17 @@ impl ZoneServer {
                 "[{unit_name}]: Found {} NOTIFY targets",
                 policy.server.outbound.send_notify_to.len()
             );
+            trace!(
+                "NOTIFY targets: {:?}",
+                policy.server.outbound.send_notify_to
+            );
             if !policy.server.outbound.send_notify_to.is_empty() {
                 let addrs = policy
                     .server
                     .outbound
                     .send_notify_to
                     .iter()
-                    .filter_map(|s| {
-                        if s.addr.port() != 0 {
-                            Some(s.addr)
-                        } else {
-                            None
-                        }
-                    });
+                    .filter(|s| s.addr.port() != 0);
 
                 send_notify_to_addrs(zone_name.clone(), addrs, center);
             }
@@ -728,10 +728,10 @@ impl Notifiable for LoaderNotifier {
     }
 }
 
-pub fn send_notify_to_addrs(
-    apex_name: Name<Bytes>,
-    notify_set: impl Iterator<Item = SocketAddr>,
-    _center: &Arc<Center>,
+pub fn send_notify_to_addrs<'a>(
+    apex_name: StoredName,
+    notify_set: impl Iterator<Item = &'a NameserverCommsPolicy>,
+    center: &Arc<Center>,
 ) {
     let mut dgram_config = domain::net::client::dgram::Config::new();
     dgram_config.set_max_parallel(1);
@@ -744,32 +744,19 @@ pub fn send_notify_to_addrs(
     let mut msg = msg.question();
     msg.push((apex_name, Rtype::SOA)).unwrap();
 
-    for nameserver_addr in notify_set {
+    for nameserver in notify_set {
         let dgram_config = dgram_config.clone();
         let req = RequestMessage::new(msg.clone()).unwrap();
 
-        // let tsig_key = zone_info
-        //     .config
-        //     .send_notify_to
-        //     .dst(&nameserver_addr)
-        //     .and_then(|cfg| cfg.tsig_key.as_ref())
-        //     .and_then(|(name, alg)| key_store.get_key(name, *alg));
-        //
-        // if let Some(key) = tsig_key.as_ref() {
-        //     debug!(
-        //         "Found TSIG key '{}' (algorith {}) for NOTIFY to {nameserver_addr}",
-        //         key.as_ref().name(),
-        //         key.as_ref().algorithm()
-        //     );
-        // }
-
+        let nameserver = nameserver.clone();
+        let center = center.clone();
         tokio::spawn(async move {
             // TODO: Use the connection factory here.
-            let udp_connect = UdpConnect::new(nameserver_addr);
+            let udp_connect = UdpConnect::new(nameserver.addr);
             let client = Connection::with_config(udp_connect, dgram_config.clone());
 
-            trace!("Sending NOTIFY to nameserver {nameserver_addr}");
-            let span = tracing::trace_span!("auth", addr = %nameserver_addr);
+            trace!("Sending NOTIFY to nameserver {nameserver}");
+            let span = tracing::trace_span!("auth", addr = %nameserver);
             let _guard = span.enter();
 
             // https://datatracker.ietf.org/doc/html/rfc1996
@@ -781,16 +768,31 @@ pub fn send_notify_to_addrs(
             //
             // TODO: We have no retry queue at the moment. Do we need one?
 
-            // let res = if let Some(key) = tsig_key {
-            //     let client = net::client::tsig::Connection::new(key.clone(), client);
-            //     client.send_request(req.clone()).get_response().await
-            // } else {
-            //     client.send_request(req.clone()).get_response().await
-            // };
-            let res = client.send_request(req.clone()).get_response().await;
+            let tsig_key = {
+                let state = center.state.lock().unwrap();
+                nameserver
+                    .tsig_key_name
+                    .as_ref()
+                    .and_then(|tsig_key_name| state.tsig_store.get(tsig_key_name))
+                    .map(|key| key.inner.clone())
+            };
+
+            if let Some(key) = &tsig_key {
+                debug!(
+                    "Found TSIG key '{}' (algorithm {}) for NOTIFY to {nameserver}",
+                    key.name(),
+                    key.algorithm()
+                );
+            }
+            let res = if let Some(key) = tsig_key {
+                let client = domain::net::client::tsig::Connection::new(key.clone(), client);
+                client.send_request(req.clone()).get_response().await
+            } else {
+                client.send_request(req.clone()).get_response().await
+            };
 
             if let Err(err) = res {
-                warn!("Unable to send NOTIFY to nameserver {nameserver_addr}: {err}");
+                warn!("Unable to send NOTIFY to nameserver {nameserver}: {err}");
             }
         });
     }

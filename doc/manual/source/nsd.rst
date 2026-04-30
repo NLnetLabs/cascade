@@ -94,4 +94,31 @@ authenticate with NSD:
 Using NSD as a secondary to Cascade
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-TODO
+The NSD settings relevant here are:
+  - `allow-notify <https://nsd.docs.nlnetlabs.nl/en/latest/manpages/nsd.conf.html#allow~2>`_
+  - `request-xfr <https://nsd.docs.nlnetlabs.nl/en/latest/manpages/nsd.conf.html#request>`_
+
+To allow NSD to receive and respond to NOTIFY messages from Cascade, and
+to instruct NSD to fetch zone updates via zone transfer from Cascade, these
+settings need to be added to the zone configuration.
+
+For example the following configures NSD for an upstream Cascade server
+running at 192.168.0.2 listening on the default port 4542:
+
+.. code-block::
+
+   zone:
+     name: example.com
+	 allow-notify: 192.168.0.2
+	 request-xfr: 192.168.0.2@4542
+
+To authenticate zone transfer related messages using TSIG you must first have
+added the key to both Cascade and NSD using the same :program:`cascade` :subcmd:`tsig add`
+command and ``key:`` block as shown above.
+
+To instruct Cascade to use TSIG when communicating with a downstream
+nameserver such as NSD you must set the required policy settings and reload
+the policy. The relevant policy settings in Cascade are:
+
+- ``server.outbound.send-notify-to``
+- ``server.outbound.accept-xfr-from```

@@ -520,17 +520,28 @@ The ``[server.outbound]`` section.
 
 .. option:: send-notify-to = []
 
-   The set of nameservers to which NOTIFY messages should be sent
+   The set of nameservers to which NOTIFY messages should be sent.
+
+   If no nameservers are specified, no NOTIFY messages will be sent.
 
    Each nameserver must be specified as a string in the form:
 
-     `"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"`
+   `"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"`
 
    If a TSIG key name is specified, a key by that name must exist in the
    Cascade TSIG key store and will be used to authenticate communication with
    the nameserver.
 
-   If not specified, no NOTIFY messages will be sent.
+.. option:: accept-xfr-from = []
+
+   The set of nameservers to accept zone transfer requests from.
+
+   If no nameservers are specified, zone transfer requests will be accepted
+   from any nameserver.
+   
+   Each nameserver must be specified as a string in the form:
+
+   `"<IP>[^<TSIG_KEY_NAME>]"`
 
 Files
 -----

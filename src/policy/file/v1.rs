@@ -882,7 +882,7 @@ pub struct OutboundSpec {
     ///
     /// If empty, any nameserver may request XFR from us.
     #[serde(default = "empty_list")]
-    pub accept_xfr_requests_from: Vec<NameserverCommsSpec>,
+    pub accept_xfr_from: Vec<NameserverCommsSpec>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///
@@ -903,8 +903,8 @@ impl OutboundSpec {
     /// Parse from this specification.
     pub fn parse(self) -> OutboundPolicy {
         OutboundPolicy {
-            accept_xfr_requests_from: self
-                .accept_xfr_requests_from
+            accept_xfr_from: self
+                .accept_xfr_from
                 .into_iter()
                 .map(|v| v.parse())
                 .collect(),
@@ -915,8 +915,8 @@ impl OutboundSpec {
     /// Build into this specification.
     pub fn build(policy: &OutboundPolicy) -> Self {
         Self {
-            accept_xfr_requests_from: policy
-                .accept_xfr_requests_from
+            accept_xfr_from: policy
+                .accept_xfr_from
                 .iter()
                 .map(NameserverCommsSpec::build)
                 .collect(),
@@ -949,22 +949,22 @@ pub enum NameserverCommsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ComplexNameserverCommsSpec {
-    /// The address to send NOTIFYs to.
+    /// The address to send NOTIFYs to or allow XFRs from.
     pub addr: SocketAddr,
 
     /// An optional TSIG key to sign and authenticate messages with.
-    tsig_key_name: Option<KeyName>,
+    pub tsig_key_name: Option<KeyName>,
 }
 
 /// Policy for communicating with another namesever.
 #[derive(Clone, Debug, DeserializeFromStr, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SimpleNameserverCommsSpec {
-    /// The address to send NOTIFYs to.
+    /// The address to send NOTIFYs to or allow XFRs from.
     pub addr: SocketAddr,
 
     /// An optional TSIG key to sign and authenticate messages with.
-    tsig_key_name: Option<KeyName>,
+    pub tsig_key_name: Option<KeyName>,
 }
 
 //--- Conversion
@@ -1007,12 +1007,12 @@ impl ComplexNameserverCommsSpec {
     }
 }
 
-/// Parse`<IP_ADDRESS>[:<PORT>]`
+/// Parse`<IP_ADDRESS>[:<PORT>][^<TSIG_KEY_NAME>]`
 impl FromStr for SimpleNameserverCommsSpec {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (tsig_key_name, s) = s.split_once('^').unwrap_or(("", s));
+        let (s, tsig_key_name) = s.split_once('^').unwrap_or((s, ""));
 
         let tsig_key_name = if !tsig_key_name.is_empty() {
             Some(

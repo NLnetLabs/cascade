@@ -170,11 +170,18 @@ impl Tsig {
             TsigCommand::List => {
                 let response: TsigListResult = client.get_json("tsig/").await?;
 
-                for (tsig_key_name, key_info) in response.tsig_keys {
-                    // For each TSIG key also list the zones that it is used
-                    // with.
-                    let zones = key_info
-                        .zones
+                for (tsig_key_name, key_info) in response.tsig_key_info {
+                    // For each TSIG key also list the zones and policies that
+                    // it is used with.
+                    let zone_names = key_info
+                        .zone_names
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<String>>()
+                        .join(", ");
+
+                    let policy_names = key_info
+                        .policy_names
                         .iter()
                         .map(ToString::to_string)
                         .collect::<Vec<String>>()
@@ -182,8 +189,14 @@ impl Tsig {
 
                     println!("{tsig_key_name}");
                     print!("  zones: ");
-                    if !zones.is_empty() {
-                        println!("{zones}");
+                    if !zone_names.is_empty() {
+                        println!("{zone_names}");
+                    } else {
+                        println!("none");
+                    }
+                    print!("  policies: ");
+                    if !policy_names.is_empty() {
+                        println!("{policy_names}");
                     } else {
                         println!("none");
                     }
