@@ -439,7 +439,7 @@ mod compat {
 
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
 
-        return Box::new(stream) as _;
+        Box::new(stream) as _
     }
 
     fn error(request: &Message<Vec<u8>>, rcode: Rcode) -> ResponseStream {

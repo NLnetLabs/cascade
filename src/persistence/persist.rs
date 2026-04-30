@@ -44,11 +44,9 @@ pub fn persist_signed(
     // compared to an empty zone. Also don't store a diff to the same serial.
     let signed_diff = persister.signed_diff();
 
-    if signed_diff.removed_soa.is_some() {
-        if signed_diff.removed_soa != signed_diff.added_soa {
-            let mut state = zone.state.lock().unwrap();
-            state.storage.diffs.push(signed_diff.clone());
-        }
+    if signed_diff.removed_soa.is_some() && signed_diff.removed_soa != signed_diff.added_soa {
+        let mut state = zone.state.lock().unwrap();
+        state.storage.diffs.push(signed_diff.clone());
     }
 
     persister.mark_complete()
