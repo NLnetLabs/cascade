@@ -394,6 +394,7 @@ pub struct ZoneLoaderReport {
     pub started_at: SystemTime,
     pub finished_at: Option<SystemTime>,
     pub byte_count: usize,
+    pub total_byte_count: Option<usize>,
     pub record_count: usize,
 }
 
