@@ -7,12 +7,12 @@ use cascade_zonedata::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer};
 use domain::base::Serial;
 
 use crate::{
-    center::{Center, State},
+    center::Center,
     daemon::SocketProvider,
     manager::Terminated,
     units::zone_server::{Source, ZoneServer},
     util::AbortOnDrop,
-    zone::{Zone, ZoneByName},
+    zone::Zone,
 };
 
 mod request;
@@ -36,16 +36,6 @@ impl LoadedReviewServer {
     pub fn new() -> Self {
         let (service, handle) = ZoneService::new();
         Self { service, handle }
-    }
-
-    /// Initialize the server, synchronously.
-    pub fn init(center: &Arc<Center>, state: &mut State) {
-        // Store the viewer for all known zones.
-        for ZoneByName(zone) in &state.zones {
-            let mut state = zone.state.lock().unwrap();
-            let viewer = state.storage.loaded_reviewer.take().unwrap();
-            Self::add_zone(center, zone.clone(), viewer);
-        }
     }
 
     /// Drive the server.
@@ -137,16 +127,6 @@ impl SignedReviewServer {
         Self { service, handle }
     }
 
-    /// Initialize the server, synchronously.
-    pub fn init(center: &Arc<Center>, state: &mut State) {
-        // Store the viewer for all known zones.
-        for ZoneByName(zone) in &state.zones {
-            let mut state = zone.state.lock().unwrap();
-            let viewer = state.storage.signed_reviewer.take().unwrap();
-            Self::add_zone(center, zone.clone(), viewer);
-        }
-    }
-
     /// Drive the server.
     pub fn run(
         center: &Arc<Center>,
@@ -234,16 +214,6 @@ impl PublicationServer {
     pub fn new() -> Self {
         let (service, handle) = ZoneService::new();
         Self { service, handle }
-    }
-
-    /// Initialize the server, synchronously.
-    pub fn init(center: &Arc<Center>, state: &mut State) {
-        // Store the viewer for all known zones.
-        for ZoneByName(zone) in &state.zones {
-            let mut state = zone.state.lock().unwrap();
-            let viewer = state.storage.viewer.take().unwrap();
-            Self::add_zone(center, zone.clone(), viewer);
-        }
     }
 
     /// Drive the server.

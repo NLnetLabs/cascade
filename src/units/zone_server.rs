@@ -455,10 +455,22 @@ impl ZoneServer {
                     let mut zone_state = zone.state.lock().unwrap();
                     match self.source {
                         Source::Unsigned => {
+                            zone_state.record_event(
+                                HistoricalEvent::UnsignedHookFailed {
+                                    err: err.to_string(),
+                                },
+                                Some(zone_serial),
+                            );
                             zone_state.unsigned.get_mut(&zone_serial).unwrap().review =
                                 ZoneVersionReviewState::Rejected;
                         }
                         Source::Signed => {
+                            zone_state.record_event(
+                                HistoricalEvent::SignedHookFailed {
+                                    err: err.to_string(),
+                                },
+                                Some(zone_serial),
+                            );
                             zone_state.signed.get_mut(&zone_serial).unwrap().review =
                                 ZoneVersionReviewState::Rejected;
                         }

@@ -404,6 +404,8 @@ impl Zone {
                                 None => "-".to_string(),
                             };
                             let what = match &history_item.event {
+                                HistoricalEvent::StartedLoad => "Started load".to_string(),
+                                HistoricalEvent::StartedResign => "Started resign".to_string(),
                                 HistoricalEvent::Added => "Zone added".to_string(),
                                 HistoricalEvent::Removed => "Zone removed".to_string(),
                                 HistoricalEvent::PolicyChanged => "Policy changed".to_string(),
@@ -477,6 +479,12 @@ impl Zone {
                                         ZoneReviewStatus::Rejected => "rejected",
                                     }
                                 ),
+                                HistoricalEvent::UnsignedHookFailed { err, .. } => {
+                                    format!("Could not execute loaded review hook: {err}",)
+                                }
+                                HistoricalEvent::SignedHookFailed { err, .. } => {
+                                    format!("Could not execute signed review hook: {err}",)
+                                }
                                 HistoricalEvent::KeySetCommand {
                                     cmd,
                                     elapsed,
@@ -503,6 +511,7 @@ impl Zone {
                                         elapsed.as_secs()
                                     )
                                 }
+                                HistoricalEvent::LoadingFailed { reason } => reason.clone(),
                             };
                             println!("{when} {serial:10} {what}");
                         }
@@ -576,6 +585,18 @@ impl Zone {
         if zone.last_published.is_some() {
             println!("");
             println!("Published zone available at {}", zone.publish_addr);
+        }
+
+        if let Some(error) = zone.error {
+            println!("");
+            println!("An error occurred during the last operation:");
+            println!("  {}ERROR: {error}{}", ansi::RED, ansi::RESET);
+            println!(
+                "  Run {}`cascade zone history {}`{} for more information.",
+                ansi::BLUE,
+                zone.name,
+                ansi::RESET
+            );
         }
 
         if detailed {
@@ -654,9 +675,33 @@ fn print_load_phase(
             receipt_report.as_ref().map(|r| r.started_at),
             "<not started yet>",
         );
+
+        let v = receipt_report.as_ref().map_or(0, |r| r.byte_count);
+        let bytes = format_size(v, " ", "B");
+
+        let total_size = receipt_report
+            .as_ref()
+            .and_then(|r| r.total_byte_count)
+            .map_or("".into(), |bytes| {
+                let total_size = format_size(bytes, " ", "B");
+                format!(" / {total_size}")
+            });
+
+        let percentage = if let Some(r) = receipt_report
+            && let Some(t) = r.total_byte_count
+        {
+            let b = r.byte_count as f64;
+            let t = t as f64;
+            let n = 100.0 * b / t;
+            format!(" ({n:.0}%)")
+        } else {
+            "".into()
+        };
+
         println!("  {Ongoing} load{short_serial}");
         println!("  |   serial: {unsigned_serial}");
         println!("  |   start time: {start_time}");
+        println!("  |   progress: {bytes}{total_size}{percentage}");
         println!("  |");
     }
 }
@@ -803,7 +848,6 @@ impl std::fmt::Display for Icon {
     }
 }
 
-#[expect(dead_code)]
 fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
     match v {
         n if n > 1_000_000 => format!("{}{spacer}M{suffix}", n / 1_000_000),

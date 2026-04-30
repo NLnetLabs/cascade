@@ -361,6 +361,7 @@ impl HttpServer {
         let signed_serial;
         let published_serial;
         let last_published;
+        let error;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -472,6 +473,47 @@ impl HttpServer {
                     loaded_serial: p.loaded_serial,
                     signed_serial: p.signed_serial,
                 });
+
+            let mut found_error = None;
+            for item in zone_state.history.iter().rev() {
+                // TODO: When we have instance IDs we should only look through
+                // history items related to that ID.
+                match &item.event {
+                    HistoricalEvent::StartedLoad | HistoricalEvent::StartedResign => {
+                        break;
+                    }
+                    HistoricalEvent::LoadingFailed { reason } => {
+                        found_error = Some(reason.clone());
+                        break;
+                    }
+                    HistoricalEvent::SigningFailed { trigger: _, reason } => {
+                        found_error = Some(format!("signing failed: {reason}"));
+                        break;
+                    }
+                    HistoricalEvent::UnsignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                    } => {
+                        found_error = Some("loaded zone was rejected".into());
+                        break;
+                    }
+                    HistoricalEvent::SignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                    } => {
+                        found_error = Some("signed zone was rejected".into());
+                        break;
+                    }
+                    HistoricalEvent::UnsignedHookFailed { err } => {
+                        found_error = Some(format!("could not execute loaded review hook: {err}"));
+                        break;
+                    }
+                    HistoricalEvent::SignedHookFailed { err } => {
+                        found_error = Some(format!("could not execute signed review hook: {err}"));
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            error = found_error;
         }
 
         // Query key status
@@ -562,6 +604,7 @@ impl HttpServer {
                     started_at: metrics.start.1,
                     finished_at: None,
                     byte_count: metrics.num_loaded_bytes.load(Relaxed),
+                    total_byte_count: Some(metrics.num_total_bytes.load(Relaxed)),
                     record_count: metrics.num_loaded_records.load(Relaxed),
                 })
                 .or_else(|| {
@@ -569,6 +612,7 @@ impl HttpServer {
                         started_at: metrics.start,
                         finished_at: Some(metrics.end),
                         byte_count: metrics.num_loaded_bytes,
+                        total_byte_count: None,
                         record_count: metrics.num_loaded_records,
                     })
                 })
@@ -593,6 +637,7 @@ impl HttpServer {
             published_serial,
             publish_addr,
             halted_reason,
+            error,
         })
     }
 
@@ -1112,10 +1157,10 @@ impl HttpServer {
         };
 
         let alg = match tsig_add.alg {
-            TsigAlgorithm::Sha1 => domain::tsig::Algorithm::Sha1,
-            TsigAlgorithm::Sha256 => domain::tsig::Algorithm::Sha256,
-            TsigAlgorithm::Sha384 => domain::tsig::Algorithm::Sha384,
-            TsigAlgorithm::Sha512 => domain::tsig::Algorithm::Sha512,
+            TsigAlgorithm::HmacSha1 => domain::tsig::Algorithm::Sha1,
+            TsigAlgorithm::HmacSha256 => domain::tsig::Algorithm::Sha256,
+            TsigAlgorithm::HmacSha384 => domain::tsig::Algorithm::Sha384,
+            TsigAlgorithm::HmacSha512 => domain::tsig::Algorithm::Sha512,
         };
 
         match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {
@@ -1147,7 +1192,7 @@ impl HttpServer {
             let zone_names = key.zones.iter().map(|item| item.0.name.clone()).collect();
             tsig_key_info.insert(
                 tsig_key_name.clone(),
-                TsigListResultItem {
+                TsigKeyInfo {
                     zone_names,
                     policy_names: HashSet::new(),
                 },
@@ -1160,10 +1205,9 @@ impl HttpServer {
         // with TSIG keys in the TSIG key store that we accessed in the loop
         // above.
 
-        // Find the set of policies that reference TSIG keys, and the zones
-        // that use them, as these relationships are not tracked by the
-        // TSIG key store. Ignore policies that are in the process of being
-        // deleted.
+        // Find the set of policies that reference TSIG keys as these
+        // relationships are not tracked by the TSIG key store. Ignore
+        // policies that are in the process of being deleted.
         let current_policies = state.policies.iter().filter(|(_, p)| !p.mid_deletion);
 
         // For each policy, collect any TSIG key names from the various policy
@@ -1198,7 +1242,7 @@ impl HttpServer {
                             // Info about this TSIG key does not yet exist in
                             // the results, update the result info to note the
                             // relationship to this policy.
-                            e.insert(TsigListResultItem {
+                            e.insert(TsigKeyInfo {
                                 zone_names: HashSet::new(),
                                 policy_names: [policy_name.to_string()].into(),
                             });

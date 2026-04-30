@@ -262,12 +262,12 @@ impl fmt::Display for TsigRemoveError {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct TsigListResult {
     /// The set of TSIG keys known to Cascade plus information about each key.
-    pub tsig_key_info: HashMap<TsigKeyName, TsigListResultItem>,
+    pub tsig_key_info: HashMap<TsigKeyName, TsigKeyInfo>,
 }
 
 /// Information about a single listed TSIG key.
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct TsigListResultItem {
+pub struct TsigKeyInfo {
     /// The set of zones with which this TSIG key is used.
     pub zone_names: HashSet<ZoneName>,
 
@@ -424,6 +424,7 @@ pub struct ZoneStatus {
     pub progress: Progress,
     pub keys: Vec<KeyInfo>,
     pub key_status: String,
+    pub error: Option<String>,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
@@ -464,6 +465,7 @@ pub struct ZoneLoaderReport {
     pub started_at: SystemTime,
     pub finished_at: Option<SystemTime>,
     pub byte_count: usize,
+    pub total_byte_count: Option<usize>,
     pub record_count: usize,
 }
 
@@ -574,19 +576,19 @@ impl Display for KeyType {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum TsigAlgorithm {
-    Sha1,
-    Sha256,
-    Sha384,
-    Sha512,
+    HmacSha1,
+    HmacSha256,
+    HmacSha384,
+    HmacSha512,
 }
 
 impl Display for TsigAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TsigAlgorithm::Sha1 => "hmac-sha1",
-            TsigAlgorithm::Sha256 => "hmac-sha256",
-            TsigAlgorithm::Sha384 => "hmac-sha384",
-            TsigAlgorithm::Sha512 => "hmac-sha512",
+            TsigAlgorithm::HmacSha1 => "hmac-sha1",
+            TsigAlgorithm::HmacSha256 => "hmac-sha256",
+            TsigAlgorithm::HmacSha384 => "hmac-sha384",
+            TsigAlgorithm::HmacSha512 => "hmac-sha512",
         }
         .fmt(f)
     }
@@ -623,6 +625,8 @@ pub struct HistoryItem {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HistoricalEventType {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -632,12 +636,16 @@ pub enum HistoricalEventType {
     SigningFailed,
     UnsignedZoneReview,
     SignedZoneReview,
+    UnsignedHookFailed,
+    SignedHookFailed,
     KeySetCommand,
     KeySetError,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum HistoricalEvent {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -656,6 +664,12 @@ pub enum HistoricalEvent {
     SignedZoneReview {
         status: ZoneReviewStatus,
     },
+    UnsignedHookFailed {
+        err: String,
+    },
+    SignedHookFailed {
+        err: String,
+    },
     KeySetCommand {
         cmd: String,
         warning: Option<String>,
@@ -665,6 +679,9 @@ pub enum HistoricalEvent {
         cmd: String,
         err: String,
         elapsed: Duration,
+    },
+    LoadingFailed {
+        reason: String,
     },
 }
 

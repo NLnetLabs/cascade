@@ -208,8 +208,16 @@ pub fn import_key(
             });
         }
     }
+
+    // Release the lock before calling save_now() as it will  attempt to
+    // acquire the same lock.
     drop(state);
+
+    // Ensure that the TSIG key store is persisted to disk before a zone add
+    // causes `dnst keyset` to attempt to read the added TSIG key from the
+    // on-disk copy of the key store.
     save_now(center);
+
     Ok(())
 }
 

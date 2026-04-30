@@ -1,7 +1,7 @@
 Zone Transfers
 ==============
 
-Cascade is designed to be deployed between a hidden upstream nameserver and
+Cascade is expected to be deployed between a hidden upstream nameserver and
 public downstream nameservers. The hidden upstream serves the unsigned zone,
 Cascade signs it, and serves it to downstream nameservers for publication
 to consumers.
@@ -22,7 +22,10 @@ based on the zone's SOA timers.
           only a small fraction of the records in the zone change from one
           version to the next, loading the entire file every time the zone
           file changes will require more time, CPU and memory compared to
-          processing only the differences when using IXFR.
+          processing only the differences when using IXFR. Cascade doesn't
+          yet support direct writing of signed zones to a file, though a
+          signed zone review hook could be used to AXFR the signed zone to
+          a file on disk to achieve this.
 
 Using zone transfers with an upstream nameserver
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

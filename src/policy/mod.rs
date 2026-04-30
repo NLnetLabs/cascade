@@ -226,7 +226,6 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
             .get(tsig_name)
             .ok_or(PolicyReloadError::NoSuchTsigKey(tsig_name.clone()))?;
     }
-
     Ok(())
 }
 

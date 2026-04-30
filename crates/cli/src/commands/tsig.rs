@@ -104,9 +104,12 @@ impl Tsig {
                         if path.exists() {
                             // Assume that the secret is contained in the
                             // specified file.
-                            let secret = std::fs::read_to_string(&path).map_err(|err| {
-                                format!("Failed to read TSIG key file '{path}': {err}")
-                            })?;
+                            let secret = std::fs::read_to_string(&path)
+                                .map_err(|err| {
+                                    format!("Failed to read TSIG key file '{path}': {err}")
+                                })?
+                                .trim()
+                                .to_string();
                             (name, alg, secret)
                         } else {
                             // Assume that the secret was provided directly.
@@ -233,10 +236,10 @@ impl FromStr for TsigAlgorithm {
 impl From<TsigAlgorithm> for crate::api::TsigAlgorithm {
     fn from(alg: TsigAlgorithm) -> Self {
         match alg {
-            TsigAlgorithm::HmacSha1 => cascade_api::TsigAlgorithm::Sha1,
-            TsigAlgorithm::HmacSha256 => cascade_api::TsigAlgorithm::Sha256,
-            TsigAlgorithm::HmacSha384 => cascade_api::TsigAlgorithm::Sha384,
-            TsigAlgorithm::HmacSha512 => cascade_api::TsigAlgorithm::Sha512,
+            TsigAlgorithm::HmacSha1 => cascade_api::TsigAlgorithm::HmacSha1,
+            TsigAlgorithm::HmacSha256 => cascade_api::TsigAlgorithm::HmacSha256,
+            TsigAlgorithm::HmacSha384 => cascade_api::TsigAlgorithm::HmacSha384,
+            TsigAlgorithm::HmacSha512 => cascade_api::TsigAlgorithm::HmacSha512,
         }
     }
 }

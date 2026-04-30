@@ -1025,9 +1025,10 @@ impl FromStr for SimpleNameserverCommsSpec {
 
         let addr = IpAddr::from_str(s)
             .map(|ip| SocketAddr::new(ip, 53))
-            .or_else(|_| SocketAddr::from_str(s))
-            .map_err(|err| format!("Invalid IP address '{s}': {err}"))?;
-
+            .or_else(|_| {
+                SocketAddr::from_str(s)
+                    .map_err(|err| format!("Invalid socket address '{s}': {err}"))
+            })?;
         Ok(SimpleNameserverCommsSpec {
             addr,
             tsig_key_name,
