@@ -24,7 +24,7 @@ readme = "README.md"
 #
 # TODO: Maintenance?
 [dependencies.anstream]
-version = "0.6.21"
+version = "1.0.0"
 
 # The CLI has to communicate filesystem paths.  A simple, portable option that
 # avoids platform-specific encoding issues is 'camino'.
@@ -55,7 +55,7 @@ workspace = true
 #
 # TODO: Maintenance?
 [dependencies.reqwest]
-version = "0.12"
+version = "0.13.3"
 default-features = false
 features = ["http2", "json"]
 

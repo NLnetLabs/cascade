@@ -6,6 +6,7 @@ use crate::center::Center;
 use crate::daemon::SocketProvider;
 use crate::loader::Loader;
 use crate::metrics::MetricsCollection;
+use crate::persistence::Restorer;
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::units::http_server::HTTP_UNIT_NAME;
 use crate::units::http_server::HttpServer;
@@ -43,35 +44,36 @@ impl Manager {
         {
             let mut state = center.state.lock().unwrap();
             Loader::init(&center, &mut state);
-            LoadedReviewServer::init(&center, &mut state);
-            SignedReviewServer::init(&center, &mut state);
-            PublicationServer::init(&center, &mut state);
         }
 
         let mut handles = Vec::new();
 
+        // Spawn the zone data restorer.
+        debug!("Starting the zone data restorer");
+        handles.push(Restorer::run(center.clone()));
+
         // Spawn the zone loader.
-        info!("Starting unit 'ZL'");
+        debug!("Starting the zone loader");
         handles.push(Loader::run(center.clone()));
 
-        // Spawn the unsigned zone review server.
-        info!("Starting unit 'RS'");
+        // Spawn the loaded zone review server.
+        debug!("Starting the loaded review server");
         handles.extend(LoadedReviewServer::run(&center, &mut socket_provider)?);
 
         // Spawn the key manager.
-        info!("Starting unit 'KM'");
+        debug!("Starting the key manager");
         handles.push(KeyManager::run(center.clone()));
 
         // Spawn the zone signer.
-        info!("Starting unit 'ZS'");
+        debug!("Starting the zone signer");
         handles.push(ZoneSigner::run(center.clone()));
 
         // Spawn the signed zone review server.
-        info!("Starting unit 'RS2'");
+        debug!("Starting the signed review server");
         handles.extend(SignedReviewServer::run(&center, &mut socket_provider)?);
 
-        // Take out HTTP listen sockets before PS takes them all.
-        debug!("Pre-fetching listen sockets for 'HS'");
+        // Take out HTTP listen sockets before the publication server takes them all.
+        debug!("Pre-fetching listen sockets for the remote-control server");
         let http_sockets = center
             .config
             .remote_control
@@ -89,20 +91,18 @@ impl Manager {
             // address. Otherwise this socket couldn't have been created.
             let addr = socket.local_addr().unwrap();
             info!(
-                "Obtained TCP listener for HTTP server for remote-control and metrics on address {addr}"
+                "Obtained a TCP listener for the remote-control and metrics server on address {addr}"
             );
         }
 
-        info!("Starting unit 'PS'");
+        debug!("Starting the publication server");
         handles.extend(PublicationServer::run(&center, &mut socket_provider)?);
 
-        // Register any Manager metrics here, before giving the metrics to the HttpServer
+        // TODO: Register any `Manager` metrics here, before giving the metrics to `HttpServer`.
 
-        // Spawn the HTTP server.
-        info!("Starting unit 'HS'");
+        // Spawn the remote-control server.
+        debug!("Starting the HTTP remote-control server");
         let http_server = HttpServer::launch(center.clone(), http_sockets, metrics)?;
-
-        info!("All units report ready.");
 
         Ok(Self {
             center,

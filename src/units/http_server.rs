@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::hash_map::Entry;
 use std::future::IntoFuture;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
@@ -17,6 +20,7 @@ use bytes::Bytes;
 use domain::base::Name;
 use domain::base::Serial;
 use domain::dnssec::sign::keys::keyset::KeyType;
+use domain::utils::base64;
 use domain_kmip::ConnectionSettings;
 use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
@@ -39,6 +43,7 @@ use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
 use crate::server::SignedReviewServer;
+use crate::tsig::{self, RemoveError};
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
 use crate::units::key_manager::KmipServerCredentialsFileMode;
@@ -99,6 +104,9 @@ impl HttpServer {
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
             .route("/debug/change-logging", post(Self::change_logging))
+            .route("/tsig/", get(Self::tsig_key_list))
+            .route("/tsig/add", post(Self::tsig_key_add))
+            .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
@@ -353,6 +361,7 @@ impl HttpServer {
         let signed_serial;
         let published_serial;
         let last_published;
+        let error;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -378,7 +387,6 @@ impl HttpServer {
                 loader::Source::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
                     addr,
                     tsig_key: None,
-                    xfr_status: Default::default(),
                 },
             };
             unsigned_review_addr = state
@@ -465,6 +473,47 @@ impl HttpServer {
                     loaded_serial: p.loaded_serial,
                     signed_serial: p.signed_serial,
                 });
+
+            let mut found_error = None;
+            for item in zone_state.history.iter().rev() {
+                // TODO: When we have instance IDs we should only look through
+                // history items related to that ID.
+                match &item.event {
+                    HistoricalEvent::StartedLoad | HistoricalEvent::StartedResign => {
+                        break;
+                    }
+                    HistoricalEvent::LoadingFailed { reason } => {
+                        found_error = Some(reason.clone());
+                        break;
+                    }
+                    HistoricalEvent::SigningFailed { trigger: _, reason } => {
+                        found_error = Some(format!("signing failed: {reason}"));
+                        break;
+                    }
+                    HistoricalEvent::UnsignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                    } => {
+                        found_error = Some("loaded zone was rejected".into());
+                        break;
+                    }
+                    HistoricalEvent::SignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                    } => {
+                        found_error = Some("signed zone was rejected".into());
+                        break;
+                    }
+                    HistoricalEvent::UnsignedHookFailed { err } => {
+                        found_error = Some(format!("could not execute loaded review hook: {err}"));
+                        break;
+                    }
+                    HistoricalEvent::SignedHookFailed { err } => {
+                        found_error = Some(format!("could not execute signed review hook: {err}"));
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            error = found_error;
         }
 
         // Query key status
@@ -555,6 +604,7 @@ impl HttpServer {
                     started_at: metrics.start.1,
                     finished_at: None,
                     byte_count: metrics.num_loaded_bytes.load(Relaxed),
+                    total_byte_count: Some(metrics.num_total_bytes.load(Relaxed)),
                     record_count: metrics.num_loaded_records.load(Relaxed),
                 })
                 .or_else(|| {
@@ -562,6 +612,7 @@ impl HttpServer {
                         started_at: metrics.start,
                         finished_at: Some(metrics.end),
                         byte_count: metrics.num_loaded_bytes,
+                        total_byte_count: None,
                         record_count: metrics.num_loaded_records,
                     })
                 })
@@ -586,6 +637,7 @@ impl HttpServer {
             published_serial,
             publish_addr,
             halted_reason,
+            error,
         })
     }
 
@@ -800,20 +852,25 @@ impl HttpServer {
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
         let mut updates = Vec::new();
-        let res = crate::policy::reload_all(&mut state.policies, &center.config, |name, change| {
-            changed = true;
+        let res = crate::policy::reload_all(
+            &mut state.policies,
+            &center.config,
+            &state.tsig_store,
+            |name, change| {
+                changed = true;
 
-            changes.insert(
-                name.clone(),
-                match change {
-                    crate::policy::PolicyChange::Removed { .. } => PolicyChange::Removed,
-                    crate::policy::PolicyChange::Updated { .. } => PolicyChange::Updated,
-                    crate::policy::PolicyChange::Added { .. } => PolicyChange::Added,
-                },
-            );
+                changes.insert(
+                    name.clone(),
+                    match change {
+                        crate::policy::PolicyChange::Removed { .. } => PolicyChange::Removed,
+                        crate::policy::PolicyChange::Updated { .. } => PolicyChange::Updated,
+                        crate::policy::PolicyChange::Added { .. } => PolicyChange::Added,
+                    },
+                );
 
-            updates.push((name.clone(), change));
-        });
+                updates.push((name.clone(), change));
+            },
+        );
 
         if let Err(err) = res {
             return Json(Err(err));
@@ -903,8 +960,8 @@ impl HttpServer {
         let p_outbound = &p.latest.server.outbound;
         let server = ServerPolicyInfo {
             outbound: OutboundPolicyInfo {
-                accept_xfr_requests_from: p_outbound
-                    .accept_xfr_requests_from
+                accept_xfr_from: p_outbound
+                    .accept_xfr_from
                     .iter()
                     .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
@@ -1089,6 +1146,113 @@ impl HttpServer {
         zones.sort_by(|a, b| a.zone.cmp(&b.zone));
 
         Json(KeyStatusResult { expirations, zones })
+    }
+
+    async fn tsig_key_add(
+        State(state): State<Arc<HttpServer>>,
+        Json(tsig_add): Json<TsigAdd>,
+    ) -> Json<Result<TsigAddResult, TsigAddError>> {
+        let Ok(secret) = base64::decode::<Vec<u8>>(&tsig_add.secret) else {
+            return Json(Err(TsigAddError::InvalidBase64Secret));
+        };
+
+        let alg = match tsig_add.alg {
+            TsigAlgorithm::HmacSha1 => domain::tsig::Algorithm::Sha1,
+            TsigAlgorithm::HmacSha256 => domain::tsig::Algorithm::Sha256,
+            TsigAlgorithm::HmacSha384 => domain::tsig::Algorithm::Sha384,
+            TsigAlgorithm::HmacSha512 => domain::tsig::Algorithm::Sha512,
+        };
+
+        match center::add_tsig_key(&state.center, tsig_add.name, alg, &secret).await {
+            Ok(TsigAddResult) => Json(Ok(TsigAddResult)),
+            Err(err) => Json(Err(err)),
+        }
+    }
+
+    async fn tsig_key_remove(
+        State(http_server_state): State<Arc<HttpServer>>,
+        Path(tsig_key_name): Path<TsigKeyName>,
+    ) -> Json<Result<TsigRemoveResult, TsigRemoveError>> {
+        let res = tsig::remove_key(&http_server_state.center, &tsig_key_name)
+            .map(|_| TsigRemoveResult)
+            .map_err(|e| match e {
+                RemoveError::NotFound => TsigRemoveError::NotFound,
+                RemoveError::Used => TsigRemoveError::InUse,
+            });
+        Json(res)
+    }
+
+    async fn tsig_key_list(State(http_state): State<Arc<HttpServer>>) -> Json<TsigListResult> {
+        let mut tsig_key_info = HashMap::new();
+
+        let state = http_state.center.state.lock().unwrap();
+
+        // Get the set of TSIG keys and related zones from the TSIG key store.
+        for (tsig_key_name, key) in state.tsig_store.map.iter() {
+            let zone_names = key.zones.iter().map(|item| item.0.name.clone()).collect();
+            tsig_key_info.insert(
+                tsig_key_name.clone(),
+                TsigKeyInfo {
+                    zone_names,
+                    policy_names: HashSet::new(),
+                },
+            );
+        }
+
+        // Note: We don't loop over all of the zones checking for TSIG keys
+        // referenced in the upstream source configuration because those
+        // relationships should be captured in the set of zones associated
+        // with TSIG keys in the TSIG key store that we accessed in the loop
+        // above.
+
+        // Find the set of policies that reference TSIG keys as these
+        // relationships are not tracked by the TSIG key store. Ignore
+        // policies that are in the process of being deleted.
+        let current_policies = state.policies.iter().filter(|(_, p)| !p.mid_deletion);
+
+        // For each policy, collect any TSIG key names from the various policy
+        // fields that may refer to TSIG keys, then update the TSIG key info
+        // result set we are building to note the relationship between the
+        // TSIG key and the policies that refer to it.
+        for (policy_name, policy) in current_policies {
+            let mut tsig_key_names = policy
+                .latest
+                .key_manager
+                .publication_nameservers
+                .iter()
+                .chain(policy.latest.server.outbound.accept_xfr_from.iter())
+                .chain(policy.latest.server.outbound.send_notify_to.iter())
+                .filter_map(|acl| acl.tsig_key_name.as_ref())
+                .peekable();
+
+            // If we found at least one reference to a TSIG key in this policy
+            // update the map of TSIG key info results to pass back to the
+            // caller.
+            if tsig_key_names.peek().is_some() {
+                // For each found TSIG key:
+                for tsig_key_name in tsig_key_names {
+                    match tsig_key_info.entry(tsig_key_name.clone()) {
+                        Entry::Occupied(mut e) => {
+                            // Info about this TSIG key already exists in the
+                            // results, update the result info to note the
+                            // relationship to this policy.
+                            e.get_mut().policy_names.insert(policy_name.to_string());
+                        }
+                        Entry::Vacant(e) => {
+                            // Info about this TSIG key does not yet exist in
+                            // the results, update the result info to note the
+                            // relationship to this policy.
+                            e.insert(TsigKeyInfo {
+                                zone_names: HashSet::new(),
+                                policy_names: [policy_name.to_string()].into(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Json(TsigListResult { tsig_key_info })
     }
 }
 

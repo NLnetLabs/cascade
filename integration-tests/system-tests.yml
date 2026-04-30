@@ -275,3 +275,44 @@ jobs:
       - uses: ./integration-tests/tests/all-rr-types
         with:
           log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/564
+  upstream-tsig:
+    name: Use TSIG with an upstream nameserver.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        key-source: [cmdline, file]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/upstream-tsig
+        with:
+          log-level: ${{ inputs.log-level }}
+          key-source: ${{ matrix.key-source }}
+
+  downstream-tsig:
+    name: Using TSIG with downstream nameservers.
+    runs-on: ubuntu-latest
+    strategy:
+      # max-parallel: 1
+      fail-fast: true
+      matrix:
+        send-notify-to: [ '',  '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
+        accept-xfr-from: [ '', '127.0.0.1', '127.0.0.1^tsig-key' ]
+        downstream-expects-tsig: [ 0, 1 ]
+        downstream-uses-tsig: [ 0, 1 ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/downstream-tsig
+        with:
+          log-level: ${{ inputs.log-level }}
+          send-notify-to: ${{ matrix.send-notify-to }}
+          accept-xfr-from: ${{ matrix.accept-xfr-from }}
+          downstream-expects-tsig: ${{ matrix.downstream-expects-tsig }}
+          downstream-uses-tsig: ${{ matrix.downstream-uses-tsig }}

@@ -100,6 +100,7 @@ Examples of things we're interested in:
    key-management
    hsms
    review-hooks
+   zone-transfers
 
 .. toctree::
    :maxdepth: 2
@@ -112,8 +113,16 @@ Examples of things we're interested in:
 .. toctree::
    :maxdepth: 2
    :hidden:
-   :caption: Integrations
-   :name: toc-integrations
+   :caption: Nameserver Integrations
+   :name: toc-nameserver-integrations
+
+   nsd
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: HSM Integrations
+   :name: toc-hsm-integrations
 
    softhsm
    thales
@@ -161,6 +170,7 @@ Examples of things we're interested in:
    man/cascade-policy
    man/cascade-status
    man/cascade-template
+   man/cascade-tsig
    man/cascade-zone
    cascade-hsm-bridge Daemon <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge.html>
    cascade-hsm-bridge Configuration File Format <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge-config.toml.html>

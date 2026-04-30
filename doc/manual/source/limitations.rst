@@ -82,7 +82,7 @@ Other known limitations
 -----------------------
 
 - No NOTIFY retry support.
-- No NOTIFY "Notify Set" (RFC 1996) discovery.
+- No NOTIFY "Notify Set" (:RFC:`1996`) discovery.
 - No KMIP batching support.
 - No DNS UPDATE support.
 - HSM algorithm support is limited to RSASHA256 and ECDSAP256SHA256.

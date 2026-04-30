@@ -289,6 +289,11 @@ remote-control:
   control-enable: yes
   control-interface: "${base_dir}/nsd/nsd.sock"
 
+key:
+  name: "tsig-key"
+  algorithm: hmac-sha256
+  secret: "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+  
 pattern:
   name: secondary
   zonefile: "%s.secondary-zone"
@@ -299,6 +304,27 @@ pattern:
 zone:
   name: example.test
   include-pattern: secondary
+
+zone:
+  name: notify-tsig.test
+  zonefile: "notify-tsig.test.secondary-zone"
+  allow-notify: 127.0.0.1 tsig-key
+  request-xfr: AXFR 127.0.0.1@${_cascade_port} NOKEY
+  provide-xfr: 127.0.0.1 NOKEY
+
+zone:
+  name: xfr-tsig.test
+  zonefile: "xfr-tsig.test.secondary-zone"
+  allow-notify: 127.0.0.1 NOKEY
+  request-xfr: AXFR 127.0.0.1@${_cascade_port} tsig-key
+  provide-xfr: 127.0.0.1 NOKEY
+
+zone:
+  name: notify-and-xfr-tsig.test
+  zonefile: "notify-and-xfr-tsig.test.secondary-zone"
+  allow-notify: 127.0.0.1 tsig-key
+  request-xfr: AXFR 127.0.0.1@${_cascade_port} tsig-key
+  provide-xfr: 127.0.0.1 NOKEY
 EOF
 
 tee "${base_dir}/nsd-primary.conf" <<EOF >&2
@@ -324,18 +350,34 @@ remote-control:
   control-enable: yes
   control-interface: "${base_dir}/nsd-primary/nsd.sock"
 
+key:
+  name: "tsig-key"
+  algorithm: hmac-sha256
+  secret: "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+
 pattern:
   name: primary
   zonefile: "%s.primary-zone"
-  allow-notify: 127.0.0.1 NOKEY
   provide-xfr: 127.0.0.1 NOKEY
   notify: 127.0.0.1@${_cascade_port} NOKEY 
+  store-ixfr: yes
+  create-ixfr: yes
+
+pattern:
+  name: primary-tsig
+  zonefile: "%s.primary-zone"
+  provide-xfr: 127.0.0.1 tsig-key
+  notify: 127.0.0.1@${_cascade_port} tsig-key
   store-ixfr: yes
   create-ixfr: yes
 
 zone:
   name: example.test
   include-pattern: primary
+
+zone:
+  name: example-tsig.test
+  include-pattern: primary-tsig
 EOF
 
 tee "${base_dir}/nsd-primary/zones/example.test.primary-zone" <<'EOF' >&2
@@ -357,6 +399,24 @@ mail        MX  10 example.test.
 text        TXT "Hello World!"
 EOF
 
+tee "${base_dir}/nsd-primary/zones/example-tsig.test.primary-zone" <<'EOF' >&2
+$TTL 5 ; use a very short TTL for sped up keyset rolls
+example-tsig.test.   IN SOA ns1.example-tsig.test. mail.example-tsig.test. (
+                      1          ; serial
+                     60          ; refresh (60 seconds)
+                     60          ; retry (60 seconds)
+                   3600          ; expire (1 hour)
+                      5          ; minimum (5 seconds)
+                    )
+@           NS  example-tsig.test.
+@           NS  ns1.example-tsig.test.
+@           A   127.0.0.1
+ns1         A   127.0.0.1
+
+www         A   169.254.1.1
+mail        MX  10 example-tsig.test.
+text        TXT "Hello TSIG World!"
+EOF
 
 }
 
