@@ -929,8 +929,15 @@ impl HttpServer {
         let zones = p.zones.iter().cloned().collect();
         let loader = LoaderPolicyInfo {
             review: ReviewPolicyInfo {
-                required: p.latest.loader.review.required,
-                cmd_hook: p.latest.loader.review.cmd_hook.clone(),
+                mode: match p.latest.loader.review.mode.clone() {
+                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+                },
+                on_reject: match p.latest.loader.review.on_reject {
+                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                },
             },
         };
 
@@ -948,8 +955,15 @@ impl HttpServer {
                 SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 { opt_out },
             },
             review: ReviewPolicyInfo {
-                required: p.latest.signer.review.required,
-                cmd_hook: p.latest.signer.review.cmd_hook.clone(),
+                mode: match p.latest.signer.review.mode.clone() {
+                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+                },
+                on_reject: match p.latest.signer.review.on_reject {
+                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                },
             },
         };
 

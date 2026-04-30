@@ -816,8 +816,21 @@ pub struct KeyManagerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ReviewPolicyInfo {
-    pub required: bool,
-    pub cmd_hook: Option<String>,
+    pub mode: ReviewPolicyMode,
+    pub on_reject: ReviewPolicyOnReject,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ReviewPolicyMode {
+    Off,
+    Manual,
+    Script { hook: String },
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ReviewPolicyOnReject {
+    Discard,
+    Halt,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
