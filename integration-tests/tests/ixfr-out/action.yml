@@ -165,15 +165,18 @@ runs:
     # this either. Increasing the NSD log level to 9 doesn't cause it to
     # report whether it received IXFR or AXFR either.
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test AXFR
+    # TODO: Verify the AXFR and IXFR response content is as expected /
+    # matching that of NSD.
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=1
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test AXFR > cascade-axfr.log
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=2
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=1 >cascade-ixfr-1.log
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=3
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=2 >cascade-ixfr-2.log
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 1054 example.test AXFR
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=3 >cascade-ixfr-3.log
+
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 1054 example.test AXFR >nsd-axfr.log
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
