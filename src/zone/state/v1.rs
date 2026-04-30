@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use bytes::Bytes;
 use camino::Utf8Path;
@@ -87,6 +88,16 @@ pub struct Spec {
 
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
+
+    /// Locations of persisted unsigned zone diffs to enable IXFR from
+    /// the upstream to resume on restart, and to enable a complete latest
+    /// unsigned version of the zone to be reconstituted.
+    pub persisted_loaded_diffs: Vec<PathBuf>,
+
+    /// Locations of persisted signed zone diffs to ensure IXFR out toward
+    /// downstreams is still possible after restart, and to enable a complete
+    /// latest signed version of the zone to be reconsituted.
+    pub persisted_signed_diffs: Vec<PathBuf>,
 }
 
 //--- Conversion
@@ -106,6 +117,8 @@ impl Spec {
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
             history: zone.history.clone(),
+            persisted_loaded_diffs: zone.persisted_loaded_diffs.clone(),
+            persisted_signed_diffs: zone.persisted_signed_diffs.clone(),
         }
     }
 }

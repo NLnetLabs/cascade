@@ -1,6 +1,7 @@
 //! Zone-specific state and management.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::{
     borrow::Borrow,
     cmp::Ordering,
@@ -248,6 +249,16 @@ pub struct ZoneState {
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
 
+    /// Locations of persisted unsigned zone diffs to enable IXFR from
+    /// the upstream to resume on restart, and to enable a complete latest
+    /// unsigned version of the zone to be reconstituted.
+    pub persisted_loaded_diffs: Vec<PathBuf>,
+
+    /// Locations of persisted signed zone diffs to ensure IXFR out toward
+    /// downstreams is still possible after restart, and to enable a complete
+    /// latest signed version of the zone to be reconsituted.
+    pub persisted_signed_diffs: Vec<PathBuf>,
+
     /// Loading new versions of the zone.
     pub loader: LoaderState,
 
@@ -310,6 +321,8 @@ impl Default for ZoneState {
             signer: Default::default(),
             storage: Default::default(),
             persistence: Default::default(),
+            persisted_loaded_diffs: Default::default(),
+            persisted_signed_diffs: Default::default(),
         }
     }
 }

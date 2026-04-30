@@ -91,6 +91,8 @@ impl Spec {
                 last_signature_refresh,
                 previous_serial,
                 history,
+                persisted_loaded_diffs,
+                persisted_signed_diffs,
             }) => {
                 let loader = LoaderState {
                     source: source.parse(),
@@ -118,6 +120,8 @@ impl Spec {
                     previous_serial,
                     loader,
                     history,
+                    persisted_loaded_diffs,
+                    persisted_signed_diffs,
                     ..Default::default()
                 }
             }
