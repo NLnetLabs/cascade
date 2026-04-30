@@ -38,6 +38,9 @@ use crate::units::zone_signer::faketime_or_now;
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
+mod instance;
+pub use instance::{Instances, LoadedInstance, SignedInstance};
+
 pub mod machine;
 pub mod state;
 
@@ -387,6 +390,9 @@ pub struct ZoneState {
     /// Signed versions of the zone.
     pub signed: foldhash::HashMap<Serial, SignedZoneVersionState>,
 
+    /// Instances of the zone.
+    pub instances: Instances,
+
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
 
@@ -460,6 +466,7 @@ impl Default for ZoneState {
             previous_serial: Default::default(),
             unsigned: Default::default(),
             signed: Default::default(),
+            instances: Default::default(),
             history: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
