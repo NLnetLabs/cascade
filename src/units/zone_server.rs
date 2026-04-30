@@ -779,7 +779,7 @@ pub fn send_notify_to_addrs<'a>(
 
             if let Some(key) = &tsig_key {
                 debug!(
-                    "Found TSIG key '{}' (algorith {}) for NOTIFY to {nameserver}",
+                    "Found TSIG key '{}' (algorithm {}) for NOTIFY to {nameserver}",
                     key.name(),
                     key.algorithm()
                 );
