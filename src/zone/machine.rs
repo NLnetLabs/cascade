@@ -120,6 +120,8 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Loading(waiting.start_load()));
 
+        self.state.record_event(HistoricalEvent::StartedLoad, None);
+
         Some(builder)
     }
 
@@ -143,6 +145,8 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Signing(waiting.start_resign()));
+
+        self.state.record_event(HistoricalEvent::StartedLoad, None);
 
         Some(builder)
     }

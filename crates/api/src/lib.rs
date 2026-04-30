@@ -353,6 +353,7 @@ pub struct ZoneStatus {
     pub progress: Progress,
     pub keys: Vec<KeyInfo>,
     pub key_status: String,
+    pub error: Option<String>,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
@@ -532,6 +533,8 @@ pub struct HistoryItem {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HistoricalEventType {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -541,12 +544,16 @@ pub enum HistoricalEventType {
     SigningFailed,
     UnsignedZoneReview,
     SignedZoneReview,
+    UnsignedHookFailed,
+    SignedHookFailed,
     KeySetCommand,
     KeySetError,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum HistoricalEvent {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -565,6 +572,12 @@ pub enum HistoricalEvent {
     SignedZoneReview {
         status: ZoneReviewStatus,
     },
+    UnsignedHookFailed {
+        err: String,
+    },
+    SignedHookFailed {
+        err: String,
+    },
     KeySetCommand {
         cmd: String,
         warning: Option<String>,
@@ -574,6 +587,9 @@ pub enum HistoricalEvent {
         cmd: String,
         err: String,
         elapsed: Duration,
+    },
+    LoadingFailed {
+        reason: String,
     },
 }
 

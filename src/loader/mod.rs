@@ -25,7 +25,7 @@ use crate::{
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{Zone, ZoneByPtr, ZoneHandle},
+    zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle},
 };
 
 mod server;
@@ -260,6 +260,13 @@ async fn refresh(
 
             // Cancel the load
             handle.abandon_load(builder);
+
+            state.record_event(
+                HistoricalEvent::LoadingFailed {
+                    reason: err.to_string(),
+                },
+                None,
+            );
         }
     }
 }

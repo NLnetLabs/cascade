@@ -353,6 +353,7 @@ impl HttpServer {
         let signed_serial;
         let published_serial;
         let last_published;
+        let error;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -465,6 +466,47 @@ impl HttpServer {
                     loaded_serial: p.loaded_serial,
                     signed_serial: p.signed_serial,
                 });
+
+            let mut found_error = None;
+            for item in zone_state.history.iter().rev() {
+                // TODO: When we have instance IDs we should only look through
+                // history items related to that ID.
+                match &item.event {
+                    HistoricalEvent::StartedLoad | HistoricalEvent::StartedResign => {
+                        break;
+                    }
+                    HistoricalEvent::LoadingFailed { reason } => {
+                        found_error = Some(reason.clone());
+                        break;
+                    }
+                    HistoricalEvent::SigningFailed { trigger: _, reason } => {
+                        found_error = Some(format!("signing failed: {reason}"));
+                        break;
+                    }
+                    HistoricalEvent::UnsignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                    } => {
+                        found_error = Some("loaded zone was rejected".into());
+                        break;
+                    }
+                    HistoricalEvent::SignedZoneReview {
+                        status: ZoneReviewStatus::Rejected,
+                    } => {
+                        found_error = Some("signed zone was rejected".into());
+                        break;
+                    }
+                    HistoricalEvent::UnsignedHookFailed { err } => {
+                        found_error = Some(format!("could not execute loaded review hook: {err}"));
+                        break;
+                    }
+                    HistoricalEvent::SignedHookFailed { err } => {
+                        found_error = Some(format!("could not execute signed review hook: {err}"));
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            error = found_error;
         }
 
         // Query key status
@@ -586,6 +628,7 @@ impl HttpServer {
             published_serial,
             publish_addr,
             halted_reason,
+            error,
         })
     }
 
