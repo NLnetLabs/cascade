@@ -39,13 +39,17 @@ version = "v1"
 # loaded by Cascade.
 [loader.review]
 
-# Whether review is required.
+# The mode for loader review.
 #
-# If this is 'true', a loaded version of a zone will not be signed or published
-# until it is approved.  If it is 'false', loaded zones will be signed
-# immediately.  At the moment, the review hook will only be run if this is set
-# to true.
-required = false
+# This can be one of the following values:
+# 
+#  - "off" will disable review
+#  - "manual" will enable manual review via the CLI.
+#  - "script" will enable automatic review via a hook. The `hook` field must be
+#    specified in this case. 
+#
+# The default value is "off"
+mode = "off"
 
 # A hook for reviewing a loaded zone.
 #
@@ -64,8 +68,19 @@ required = false
 # The command will be called from an unspecified directory, and it must be
 # accessible to Cascade (i.e. after it has dropped privileges).  Its exit code
 # will determine whether the zone is approved or not.
-#cmd-hook = "review-unsigned-zone.sh"
+#hook = "review-unsigned-zone.sh"
 
+# What to do when a zone is rejected by review.
+#
+# This field can only be specified if 'mode' is either "manual" or "script" and
+# can have one of the following values:
+#
+#  - "discard" will discard the rejected zone and go back to an idle state
+#  - "halt" will halt the pipeline until an operator either resets the pipeline
+#    or overrides the rejection.
+#
+# The default value is "discard".
+#on-reject = "discard"
 
 # DNSSEC key management.
 [key-manager]
@@ -349,12 +364,17 @@ type = "nsec"
 # How signed zones are reviewed.
 [signer.review]
 
-# Whether review is required.
+# The mode for loader review.
 #
-# If this is 'true', a signed version of a zone will not be published until it
-# is approved.  If it is 'false', signed zones will be published immediately.
-# At the moment, the review hook will only be run if this is set to true.
-required = false
+# This can be one of the following values:
+# 
+#  - "off" will disable review
+#  - "manual" will enable manual review via the CLI.
+#  - "script" will enable automatic review via a hook. The `hook` field must be
+#    specified in this case. 
+#
+# The default value is "off"
+mode = "off"
 
 # A hook for reviewing a signed zone.
 #
@@ -373,8 +393,19 @@ required = false
 # The command will be called from an unspecified directory, and it must be
 # accessible to Cascade (i.e. after it has dropped privileges).  Its exit code
 # will determine whether the zone is approved or not.
-#cmd-hook = "review-signed-zone.sh"
+#hook = "review-signed-zone.sh"
 
+# What to do when a zone is rejected by review.
+#
+# This field can only be specified if 'mode' is either "manual" or "script" and
+# can have one of the following values:
+#
+#  - "discard" will discard the rejected zone and go back to an idle state
+#  - "halt" will halt the pipeline until an operator either resets the pipeline
+#    or overrides the rejection.
+#
+# The default value is "discard".
+#on-reject = "discard"
 
 # How published zones are served.
 [server.outbound]
