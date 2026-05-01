@@ -4,15 +4,10 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
 
 use bytes::Bytes;
-use cascade_zonedata::{OldRecord, SoaRecord};
-use domain::base::iana::{Class, Opcode};
-use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
-use domain::net::client::dgram::Connection;
-use domain::net::client::protocol::UdpConnect;
-use domain::net::client::request::{RequestMessage, SendRequest};
+use domain::base::iana::Class;
+use domain::base::{Name, Serial, ToName};
 use domain::net::server::ConnectionConfig;
 use domain::net::server::buf::VecBufSource;
 use domain::net::server::dgram::{self, DgramServer};
@@ -24,8 +19,7 @@ use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
 use domain::net::server::service::Service;
 use domain::net::server::stream::{self, StreamServer};
 use domain::tsig::{Algorithm, KeyStore};
-use domain::zonetree::StoredName;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::api::{ZoneReviewDecision, ZoneReviewStatus};
 use crate::center::Center;
@@ -33,8 +27,8 @@ use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
-use crate::policy::{NameserverCommsPolicy, ReviewMode};
-use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
+use crate::policy::ReviewMode;
+use crate::server::{LoadedReviewServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, Zone, ZoneHandle};
 
@@ -202,56 +196,6 @@ impl ZoneServer {
             Source::Unsigned => "RS",
             Source::Signed => "RS2",
             Source::Published => "PS",
-        }
-    }
-
-    pub fn on_publish_signed_zone(
-        &self,
-        center: &Arc<Center>,
-        zone: &Arc<Zone>,
-        zone_serial: Serial,
-    ) {
-        let unit_name = self.unit_name();
-        let zone_name = &zone.name;
-        info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.",);
-
-        // Move next_min_expiration to min_expiration, and determine policy.
-        let (policy, soa) = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let mut zone_state = zone.state.lock().unwrap();
-
-            // Save as next_min_expiration. After the signed zone is approved
-            // this value should be move to min_expiration.
-            zone_state.min_expiration = zone_state.next_min_expiration;
-            zone_state.next_min_expiration = None;
-            zone.mark_dirty(&mut zone_state, center);
-
-            (
-                zone_state.policy.clone(),
-                zone_state.storage.signed_review_soa.clone().unwrap(),
-            )
-        };
-
-        // Send NOTIFY if configured to do so.
-        if let Some(policy) = policy {
-            info!(
-                "[{unit_name}]: Found {} NOTIFY targets",
-                policy.server.outbound.send_notify_to.len()
-            );
-            trace!(
-                "NOTIFY targets: {:?}",
-                policy.server.outbound.send_notify_to
-            );
-            if !policy.server.outbound.send_notify_to.is_empty() {
-                let addrs = policy
-                    .server
-                    .outbound
-                    .send_notify_to
-                    .iter()
-                    .filter(|s| s.addr.port() != 0);
-
-                send_notify_to_addrs(zone_name.clone(), soa.clone(), addrs, center);
-            }
         }
     }
 
@@ -487,9 +431,6 @@ impl ZoneServer {
         // Send a message to the zone signer to trigger a re-scan of
         // when to re-sign next.
         center.signer.on_publish_signed_zone(center);
-
-        info!("[CC]: Instructing publication server to publish the signed zone");
-        PublicationServer::publish(center, zone, zone_serial);
     }
 
     async fn process_output(
@@ -612,83 +553,5 @@ impl Notifiable for LoaderNotifier {
         }
 
         Box::pin(std::future::ready(Ok(())))
-    }
-}
-
-pub fn send_notify_to_addrs<'a>(
-    apex_name: StoredName,
-    soa: SoaRecord,
-    notify_set: impl Iterator<Item = &'a NameserverCommsPolicy>,
-    center: &Arc<Center>,
-) {
-    let mut dgram_config = domain::net::client::dgram::Config::new();
-    dgram_config.set_max_parallel(1);
-    dgram_config.set_read_timeout(Duration::from_millis(1000));
-    dgram_config.set_max_retries(1);
-    dgram_config.set_udp_payload_size(Some(1400));
-
-    let mut msg = MessageBuilder::new_vec();
-    msg.header_mut().set_opcode(Opcode::NOTIFY);
-    let mut msg = msg.question();
-    msg.push((apex_name, Rtype::SOA)).unwrap();
-
-    // Include the current zone SOA as an RFC 1996 "unsecure hint" (see
-    // section 3.7) to the receiving nameserver so that it can choose to avoid
-    // sending a SOA query if it deems that it has this version of the zone
-    // already.
-    let mut msg = msg.answer();
-    msg.push(OldRecord::from(soa)).unwrap();
-
-    for nameserver in notify_set {
-        let dgram_config = dgram_config.clone();
-        let req = RequestMessage::new(msg.clone()).unwrap();
-
-        let nameserver = nameserver.clone();
-        let center = center.clone();
-        tokio::spawn(async move {
-            // TODO: Use the connection factory here.
-            let udp_connect = UdpConnect::new(nameserver.addr);
-            let client = Connection::with_config(udp_connect, dgram_config.clone());
-
-            trace!("Sending NOTIFY to nameserver {nameserver}");
-            let span = tracing::trace_span!("auth", addr = %nameserver);
-            let _guard = span.enter();
-
-            // https://datatracker.ietf.org/doc/html/rfc1996
-            //   "4.8 Master Receives a NOTIFY Response from Slave
-            //
-            //    When a master server receives a NOTIFY response, it deletes this
-            //    query from the retry queue, thus completing the "notification
-            //    process" of "this" RRset change to "that" server."
-            //
-            // TODO: We have no retry queue at the moment. Do we need one?
-
-            let tsig_key = {
-                let state = center.state.lock().unwrap();
-                nameserver
-                    .tsig_key_name
-                    .as_ref()
-                    .and_then(|tsig_key_name| state.tsig_store.get(tsig_key_name))
-                    .map(|key| key.inner.clone())
-            };
-
-            if let Some(key) = &tsig_key {
-                debug!(
-                    "Found TSIG key '{}' (algorithm {}) for NOTIFY to {nameserver}",
-                    key.name(),
-                    key.algorithm()
-                );
-            }
-            let res = if let Some(key) = tsig_key {
-                let client = domain::net::client::tsig::Connection::new(key.clone(), client);
-                client.send_request(req.clone()).get_response().await
-            } else {
-                client.send_request(req.clone()).get_response().await
-            };
-
-            if let Err(err) = res {
-                warn!("Unable to send NOTIFY to nameserver {nameserver}: {err}");
-            }
-        });
     }
 }

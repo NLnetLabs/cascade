@@ -4,7 +4,7 @@ use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer};
 use domain::base::Serial;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 use crate::{
     center::Center,
@@ -16,6 +16,7 @@ use crate::{
     zone::{UpcomingInstance, Zone, ZoneHandle, machine::ZoneStateMachine},
 };
 
+mod notify;
 mod request;
 mod service;
 
@@ -366,10 +367,35 @@ impl PublicationServer {
         )
     }
 
-    /// Publish an instance.
-    pub fn publish(center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
-        // TODO: Inline.
-        ZoneServer::new(Source::Published).on_publish_signed_zone(center, zone, zone_serial)
+    /// Send NOTIFY messages to downstream servers after publication.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %handle.zone.name),
+    )]
+    pub fn notify_downstream(handle: &mut ZoneHandle<'_>) {
+        let Some(policy) = handle.state.policy.clone() else {
+            trace!("Can't send NOTIFY messages: missing policy");
+            return;
+        };
+
+        let Some(instance) = &handle.state.instances.current else {
+            trace!("Can't send NOTIFY messages: no published instance");
+            return;
+        };
+
+        let soa = instance.signed.soa.clone();
+
+        let targets = &policy.server.outbound.send_notify_to;
+        if targets.is_empty() {
+            trace!("Can't send NOTIFY messages: no downstream servers configured");
+            return;
+        }
+        trace!("NOTIFY targets: {targets:?}");
+
+        let addrs = targets.iter().filter(|s| s.addr.port() != 0);
+
+        notify::send_notify_to_addrs(handle.zone.name.clone(), soa, addrs, handle.center);
     }
 
     /// Register a new zone.

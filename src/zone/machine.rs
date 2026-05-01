@@ -3,6 +3,7 @@ use cascade_zonedata::SoaRecord;
 use tracing::{info, trace};
 
 use crate::{
+    server::PublicationServer,
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, ZoneHandle},
 };
@@ -437,6 +438,11 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
 
         self.state.instances.switch();
+
+        // TODO: Move this into 'instances.switch()'.
+        self.state.min_expiration = self.state.next_min_expiration.take();
+
+        PublicationServer::notify_downstream(&mut *self);
 
         self.storage().start_cleanup(cleaner);
     }
