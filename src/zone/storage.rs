@@ -29,7 +29,7 @@ use cascade_zonedata::{
     DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
     LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
     SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
-    SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage,
+    SignedZoneReviewer, ZoneCleaner, ZoneDataStorage,
 };
 use tracing::{info, trace, trace_span, warn};
 
@@ -184,8 +184,6 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
-        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
-
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("start_loaded_review");
@@ -268,8 +266,6 @@ impl StorageZoneHandle<'_> {
                 info!("The loaded instance has been rejected; cleaning it up");
 
                 let (s, loaded_reviewer) = s.give_up();
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
                 transition.move_to(ZoneDataStorage::CleanLoadedPending(s));
                 loaded_reviewer
             }
@@ -395,8 +391,6 @@ impl StorageZoneHandle<'_> {
                 trace!("Abandoning the ongoing sign operation");
 
                 let (s, loaded_reviewer) = s.give_up(builder);
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
                 transition.move_to(ZoneDataStorage::CleanLoadedPending(s));
                 loaded_reviewer
             }
@@ -420,8 +414,6 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer) {
-        self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
-
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("start_signed_review");
@@ -503,10 +495,6 @@ impl StorageZoneHandle<'_> {
                 let new_s;
                 (new_s, loaded_reviewer, signed_reviewer) = s.give_up();
                 transition.move_to(ZoneDataStorage::CleanWholePending(new_s));
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
-                self.state.storage.signed_review_soa =
-                    signed_reviewer.read().map(|r| r.soa().clone());
             }
 
             _ => panic!("The zone is not undergoing signer review"),
@@ -735,9 +723,6 @@ impl StorageZoneHandle<'_> {
             ),
         };
 
-        self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
-        self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
-
         // Spawn a background task to update the publication server.
         let span = trace_span!("switch_publication_server");
         let zone = self.zone.clone();
@@ -872,33 +857,6 @@ pub struct StorageState {
     /// passed to [`StorageZoneHandle::abandon_loaded_restoration()`].
     pub restorer: Option<LoadedZoneRestorer>,
 
-    /// The SOA record of the loaded instance of the zone being reviewed, if
-    /// any.
-    //
-    // TODO: This should move into a component of 'ZoneState' tracking the
-    // upcoming zone instance.
-    pub loaded_review_soa: Option<SoaRecord>,
-
-    /// The SOA record of the signed instance of the zone being reviewed, if
-    /// any.
-    //
-    // TODO: This should move into a component of 'ZoneState' tracking the
-    // upcoming zone instance.
-    pub signed_review_soa: Option<SoaRecord>,
-
-    /// The SOA record of the published instance of the zone, if any.
-    //
-    // TODO: This should move into a component of 'ZoneState' tracking the
-    // current i.e. published zone instance.
-    pub published_soa: Option<SoaRecord>,
-
-    /// The SOA record of the loaded instance underlying the published instance
-    /// of the zone, if any.
-    //
-    // TODO: This should move into a component of 'ZoneState' tracking the
-    // current i.e. published zone instance.
-    pub published_loaded_soa: Option<SoaRecord>,
-
     /// Diffs from one serial to another. Each diff consists of changes in the
     /// loaded part and changes in the signed part.
     ///
@@ -924,10 +882,6 @@ impl StorageState {
         Self {
             machine,
             restorer: Some(restorer),
-            loaded_review_soa: None,
-            signed_review_soa: None,
-            published_soa: None,
-            published_loaded_soa: None,
             diffs: Default::default(),
             background_tasks: Default::default(),
         }

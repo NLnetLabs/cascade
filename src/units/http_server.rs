@@ -457,21 +457,18 @@ impl HttpServer {
                     }
                 });
 
-            unsigned_serial = zone_state
-                .storage
-                .loaded_review_soa
-                .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
-            signed_serial = zone_state
-                .storage
-                .signed_review_soa
-                .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+            let upcoming = zone_state.instances.upcoming.as_ref();
+            unsigned_serial = upcoming
+                .and_then(|i| i.loaded.as_ref())
+                .map(|i| Serial(u32::from(i.serial())));
+            signed_serial = upcoming
+                .and_then(|i| i.signed.as_ref())
+                .map(|i| Serial(u32::from(i.serial())));
             published_serial = zone_state
-                .storage
-                .published_soa
+                .instances
+                .current
                 .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+                .map(|i| Serial(u32::from(i.signed.serial())));
 
             progress = match zone_state.machine {
                 ZoneStateMachine::Waiting(..) => Progress::Waiting,
