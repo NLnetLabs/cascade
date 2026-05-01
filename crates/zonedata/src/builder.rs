@@ -260,6 +260,7 @@ impl LoadedZoneBuilder {
         if self.built() {
             Ok(LoadedZoneBuilt {
                 data: self.data,
+                index: self.index,
                 diff: Arc::new(*self.diff.unwrap()),
             })
         } else {
@@ -710,6 +711,9 @@ impl SignedZoneBuilder {
         if self.built() {
             Ok(SignedZoneBuilt {
                 data: self.data,
+                loaded_index: self.loaded_index,
+                loaded_diff: self.loaded_diff.clone(),
+                signed_index: self.signed_index,
                 diff: Arc::new(*self.signed_diff.unwrap()),
             })
         } else {
@@ -736,8 +740,36 @@ pub struct LoadedZoneBuilt {
     /// The underlying data.
     pub(crate) data: Arc<Data>,
 
+    /// The index of the new loaded instance.
+    pub(crate) index: bool,
+
     /// The diff.
     pub(crate) diff: Arc<DiffData>,
+}
+
+impl LoadedZoneBuilt {
+    /// The new (loaded) instance.
+    ///
+    /// If a new instance instance has been built (with [`Self::replace()`] or
+    /// [`Self::patch()`]), it can be accessed here. Note that empty instances
+    /// (as built by [`Self::clear()`]) cannot be accessed.
+    pub fn next(&self) -> Option<LoadedZoneReader<'_>> {
+        // SAFETY: As per the caller, 'loaded[index]' will not be
+        // accessed elsewhere for the lifetime of 'self', and so is sound to
+        // access immutably.
+        let next = unsafe { &*self.data.loaded[self.index as usize].get() };
+
+        next.soa.as_ref()?;
+
+        // NOTE:
+        // - 'next' is complete, as checked above.
+        Some(LoadedZoneReader::new(next))
+    }
+
+    /// The prepared diff.
+    pub const fn diff(&self) -> &Arc<DiffData> {
+        &self.diff
+    }
 }
 
 //----------- SignedZoneBuilt --------------------------------------------------
@@ -747,6 +779,93 @@ pub struct SignedZoneBuilt {
     /// The underlying data.
     pub(crate) data: Arc<Data>,
 
+    /// The index of the next loaded instance.
+    pub(crate) loaded_index: bool,
+
+    /// The index of the new signed instance.
+    pub(crate) signed_index: bool,
+
+    /// The loaded diff.
+    pub(crate) loaded_diff: Option<Arc<DiffData>>,
+
     /// The diff.
     pub(crate) diff: Arc<DiffData>,
+}
+
+impl SignedZoneBuilt {
+    /// Whether a new loaded instance exists.
+    ///
+    /// If this is true, and the new loaded instance is non-empty,
+    /// [`Self::next_loaded()`] will return `Some` and provide access to it.
+    pub fn have_next_loaded(&self) -> bool {
+        self.loaded_diff.is_some()
+    }
+
+    /// The diff of the built loaded component.
+    ///
+    /// If the loaded component of the zone has been built, and the current
+    /// authoritative instance of the zone has a loaded component, the diff
+    /// between the two (from the old instance to the new one) can be accessed
+    /// here.
+    pub fn loaded_diff(&self) -> Option<&Arc<DiffData>> {
+        self.loaded_diff.as_ref()
+    }
+
+    /// The new loaded instance (if any).
+    ///
+    /// If a new loaded instance has been prepared, and is non-empty, it can be
+    /// accessed here. Check [`Self::have_next_loaded()`] to determine whether
+    /// the new instance exists but is empty. Use [`Self::loaded_diff()`] to
+    /// examine the differences between the current and new instances.
+    pub fn next_loaded(&self) -> Option<LoadedZoneReader<'_>> {
+        if !self.have_next_loaded() {
+            // The loaded component has not been built.
+            return None;
+        }
+
+        // SAFETY: As per the caller, 'loaded[loaded_index]' will not be
+        // accessed elsewhere for the lifetime of 'self', and so is sound to
+        // access immutably.
+        let next = unsafe { &*self.data.loaded[self.loaded_index as usize].get() };
+
+        next.soa.as_ref()?;
+
+        // NOTE:
+        // - 'next' is complete, as checked above.
+        Some(LoadedZoneReader::new(next))
+    }
+
+    /// The newly-built signed instance.
+    ///
+    /// If the instance is non-empty, it can be accessed here.
+    pub fn next_signed(&self) -> Option<SignedZoneReader<'_>> {
+        // SAFETY: As per the caller, 'signed[signed_index]' will not be
+        // accessed elsewhere for the lifetime of 'self', and so is sound to
+        // access immutably.
+        let signed = unsafe { &*self.data.signed[self.signed_index as usize].get() };
+
+        let loaded = if !self.have_next_loaded() {
+            // SAFETY: As per the caller, 'loaded[!loaded_index]' will not be
+            // accessed elsewhere for the lifetime of 'self', and so is sound to
+            // access immutably.
+            unsafe { &*self.data.loaded[!self.loaded_index as usize].get() }
+        } else {
+            // SAFETY: As per the caller, 'loaded[loaded_index]' will not be
+            // accessed elsewhere for the lifetime of 'self', and so is sound to
+            // access immutably.
+            unsafe { &*self.data.loaded[self.loaded_index as usize].get() }
+        };
+
+        signed.soa.as_ref()?;
+
+        // NOTE:
+        // - 'signed' is complete, as checked above.
+        // - Since 'signed' is complete, 'loaded' must be complete.
+        Some(SignedZoneReader::new(loaded, signed))
+    }
+
+    /// The prepared diff.
+    pub const fn diff(&self) -> &Arc<DiffData> {
+        &self.diff
+    }
 }
