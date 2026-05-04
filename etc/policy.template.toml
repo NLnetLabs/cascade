@@ -329,6 +329,23 @@ signature-lifetime = "2w"
 # string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
 signature-remain-time = "1w"
 
+# To prevent signatures from expiring, Cascade will periodically refresh
+# some number of signature. This way the work to refresh all signatures is
+# spread out over time.
+#
+# An integer value is interpreted as seconds. A string is interpreted as time
+# string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+signature-refresh-interval = "12h"
+
+# To avoid resigning the entire zone at once during a ZSK or CSK roll,
+# generating signatures with the new key can be spread out over time.
+# New signatures are generated at intervals controlled by
+# signature-refresh-interval.
+#
+# An integer value is interpreted as seconds. A string is interpreted as time
+# string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
+key-roll-time = "24h"
+
 # How denial-of-existence records are generated.
 [signer.denial]
 
