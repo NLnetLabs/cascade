@@ -114,7 +114,7 @@ version = "0.3.20"
 
 [dependencies]
 bytes              = "1.0"
-daemonbase         = "0.1.4"
+daemonbase         = { version = "0.1.5", features = ["tokio"] }
 futures            = "0.3.17"
 futures-util       = "0.3"
 octseq             = { version = "0.5.2", default-features = false }
@@ -320,6 +320,3 @@ cascade-dnst = "*"
 
 [package.metadata.generate-rpm.recommends]
 cascade-hsm-bridge = "*"
-
-[patch.crates-io]
-daemonbase = { git = "https://github.com/NLnetLabs/daemonbase", branch = "exit-signalled" }
