@@ -373,7 +373,7 @@ type = "nsec"
 #  - "script" will enable automatic review via a hook. The `hook` field must be
 #    specified in this case. 
 #
-# The default value is "off"
+# The default value is "off".
 mode = "off"
 
 # A hook for reviewing a signed zone.
