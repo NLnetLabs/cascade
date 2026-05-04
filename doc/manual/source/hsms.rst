@@ -66,16 +66,16 @@ to stress or performance test the interface. The tested HSMs are\:
 .. table:: Supported HSMs
    :widths: auto
 
-   =====================  =======================  =========  =================
-   HSM                    Type                     Interface  Integration guide
-   =====================  =======================  =========  =================
-   Fortanix DSM           Cloud                    KMIP       
-   Thales Cloud HSM       Cloud                    PKCS#11    :doc:`view <thales>`
-   Nitrokey NetHSM        Appliance, Docker image  PKCS#11    :doc:`view <nethsm>`
-   YubiHSM 2              USB key                  PKCS#11    
-   SoftHSM v2.6.1         Software                 PKCS#11    :doc:`view <softhsm>`
-   SmartCard-HSM          Smart Card               PKCS#11    :doc:`view <smartcard-hsm>`
-   =====================  =======================  =========  =================
+   ================  ======================  =========  =================
+   HSM               Type                    Interface  Integration guide
+   ================  ======================  =========  =================
+   Fortanix DSM      Cloud                   KMIP       
+   Thales Cloud HSM  Cldud                   PKCS#11    :doc:`view <thales>`
+   Nitrokey NetHSM   Hardware, Docker image  PKCS#11    :doc:`view <nethsm>`
+   YubiHSM 2         USB key                 PKCS#11    
+   SoftHSM v2.6.1    Software                PKCS#11    :doc:`view <softhsm>`
+   SmartCard-HSM     Smart Card              PKCS#11    :doc:`view <smartcard-hsm>`
+   ================  ======================  =========  =================
 
 .. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
    though KMIP 1.2 requires servers to offer support for old versions of the
