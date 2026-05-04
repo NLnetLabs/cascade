@@ -156,6 +156,22 @@ ds-algorithm = "SHA-256"
 # TODO: Perhaps support removing keys after a certain delay?
 auto-remove = true
 
+# The set of nameservers to use when checking for RRSIG propagation during a
+# key roll.
+# 
+# Each nameserver must be specified as a string in the form:
+#
+# `"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"`
+#
+# If a TSIG key name is specified, a key by that name must exist in the
+# Cascade TSIG key store and will be used to authenticate communication with
+# the nameserver.
+#
+# If no nameservers are specified, the nameserver specified by the SOA MNAME
+# field will be checked.
+# 
+# publication-nameservers = []
+
 # The management of DNS records by the key manager.
 # 
 # The key manager generates and signs several records (DNSKEY and CDS).  This
@@ -364,8 +380,28 @@ required = false
 [server.outbound]
 
 # The set of nameservers to which NOTIFY messages should be sent.
-#
-# If empty, no NOTIFY messages will be sent.
 # 
-# A collection of IP:[port], defaulting to port 53 when not specified.
+# Each nameserver must be specified as a string in the form:
+#
+# `"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"`
+#
+# If a TSIG key name is specified, a key by that name must exist in the
+# Cascade TSIG key store and will be used to authenticate communication with
+# the nameserver.
+#
+# If not specified, no NOTIFY messages will be sent.
 send-notify-to = []
+
+# The set of nameservers to accept zone transfer requests from.
+# 
+# Each nameserver must be specified as a string in the form:
+#
+# `"<IP>[^<TSIG_KEY_NAME>]"`
+#
+# If a TSIG key name is specified, a key by that name must exist in the
+# Cascade TSIG key store and will be used to authenticate communication with
+# the nameserver.
+#
+# If not specified, zone transfer requests will be accepted from any
+# nameserver.
+accept-xfr-from = []

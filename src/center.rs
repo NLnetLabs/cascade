@@ -8,18 +8,22 @@ use std::{
 };
 
 use bytes::Bytes;
+use cascade_api::{TsigAddError, TsigAddResult};
 use domain::base::Name;
-use domain::rdata::dnssec::Timestamp;
+use domain::dnssec::sign::keys::keyset::UnixTime;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::persistence::{Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
+use crate::state::PolicySpec;
+use crate::tsig::ImportError;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_signer::ZoneSigner;
-use crate::zone::{HistoricalEvent, ZoneHandle};
+use crate::zone::{HistoricalEvent, ZoneByPtr, ZoneHandle};
 use crate::{
     api,
     config::Config,
@@ -46,11 +50,17 @@ pub struct Center {
     /// The zone loader.
     pub loader: Loader,
 
-    /// The zone signer
+    /// The zone signer.
     pub signer: ZoneSigner,
 
-    /// The key manager
+    /// The key manager.
     pub key_manager: KeyManager,
+
+    /// The zone data persister.
+    pub persister: Persister,
+
+    /// The zone data restorer.
+    pub restorer: Restorer,
 
     /// The review server for loaded instances of zones.
     pub loaded_review_server: LoadedReviewServer,
@@ -62,7 +72,7 @@ pub struct Center {
     pub publication_server: PublicationServer,
 
     /// Zones currently being re-signed.
-    pub resign_busy: Mutex<HashMap<Name<Bytes>, Timestamp>>,
+    pub resign_busy: Mutex<HashMap<Name<Bytes>, UnixTime>>,
 }
 
 //--- Actions
@@ -72,11 +82,13 @@ pub async fn add_zone(
     center: &Arc<Center>,
     name: Name<Bytes>,
     policy_name: Box<str>,
-    source: api::ZoneSource,
+    api_source: api::ZoneSource,
     key_imports: Vec<KeyImport>,
 ) -> Result<(), ZoneAddError> {
     // Create and insert the zone.
     let zone;
+    let source;
+
     {
         // Lock the global state to check consistency and insert the zone.
         let mut state = center.state.lock().unwrap();
@@ -87,24 +99,68 @@ pub async fn add_zone(
         }
 
         // Look up the requested policy.
-        let policy = state
-            .policies
-            .get_mut(&policy_name)
-            .ok_or(ZoneAddError::NoSuchPolicy)?;
-        if policy.mid_deletion {
-            return Err(ZoneAddError::PolicyMidDeletion);
+        {
+            let policy = state
+                .policies
+                .get(&policy_name)
+                .ok_or(ZoneAddError::NoSuchPolicy)?;
+            if policy.mid_deletion {
+                return Err(ZoneAddError::PolicyMidDeletion);
+            }
         }
 
         // Create the zone and initialize its state.
         zone = Arc::new(Zone::new(name));
-        let (loaded_reviewer, signed_reviewer, viewer);
+
+        source = match api_source {
+            cascade_api::ZoneSource::None => crate::loader::Source::None,
+            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
+            cascade_api::ZoneSource::Server { addr, tsig_key } => {
+                let tsig_key = if let Some(key_name) = tsig_key {
+                    // Lookup the key in the TSIG key store.
+                    let key = state
+                        .tsig_store
+                        .get_mut(&key_name)
+                        .ok_or(ZoneAddError::NoSuchTsigKey)?;
+
+                    // Record that this zone uses this key.
+                    key.zones.insert(ZoneByPtr(zone.clone()));
+
+                    let key = key.inner.clone();
+
+                    state.tsig_store.mark_dirty(center);
+
+                    // Remember the found key.
+                    Some(key)
+                } else {
+                    None
+                };
+
+                crate::loader::Source::Server { addr, tsig_key }
+            }
+        };
+
         {
             let mut zone_state = zone.state.lock().unwrap();
+            let restorer = zone_state.storage.restorer.take().unwrap();
+            let policy = state
+                .policies
+                .get_mut(&policy_name)
+                .ok_or(ZoneAddError::NoSuchPolicy)?;
             zone_state.policy = Some(policy.latest.clone());
             policy.zones.insert(zone.name.clone());
-            loaded_reviewer = zone_state.storage.loaded_reviewer.take().unwrap();
-            signed_reviewer = zone_state.storage.signed_reviewer.take().unwrap();
-            viewer = zone_state.storage.viewer.take().unwrap();
+
+            // Don't try to restore zone data, since it's a completely new zone.
+            //
+            // This will clear the data for the zone and register it against the
+            // zone servers.
+            ZoneHandle {
+                zone: &zone,
+                state: &mut zone_state,
+                center,
+            }
+            .storage()
+            .abandon_loaded_restoration(restorer);
         }
 
         // Insert the zone in the global set.
@@ -113,11 +169,6 @@ pub async fn add_zone(
             "Already checked that 'state.zones' does not contain 'name'"
         );
         state.mark_dirty(center);
-
-        // Update the zone servers.
-        LoadedReviewServer::add_zone(center, zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(center, zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(center, zone.clone(), viewer);
     }
 
     // Send out a registration command so that prerequisites for zone setup
@@ -129,11 +180,35 @@ pub async fn add_zone(
         register_zone(center, zone.name.clone(), policy_name.clone(), key_imports).await
     {
         // Remove in reverse order what was added above.
+        LoadedReviewServer::remove_zone(center, &zone);
+        SignedReviewServer::remove_zone(center, &zone);
+        PublicationServer::remove_zone(center, &zone);
+
         let mut state = center.state.lock().unwrap();
+
         state.zones.remove(&zone.name);
+
         if let Some(policy) = state.policies.get_mut(&policy_name) {
             policy.zones.remove(&zone.name);
         }
+
+        state.mark_dirty(center);
+
+        if let crate::loader::Source::Server {
+            tsig_key: Some(key_name),
+            ..
+        } = &source
+        {
+            state
+                .tsig_store
+                .get_mut(key_name.name())
+                .unwrap()
+                .zones
+                .remove(&ZoneByPtr(zone));
+
+            state.tsig_store.mark_dirty(center);
+        }
+
         return Err(err);
     }
 
@@ -141,23 +216,6 @@ pub async fn add_zone(
         let mut state = zone.state.lock().unwrap();
 
         state.record_event(HistoricalEvent::Added, None);
-
-        let source = match source {
-            cascade_api::ZoneSource::None => crate::loader::Source::None,
-            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
-            cascade_api::ZoneSource::Server {
-                addr,
-                tsig_key,
-                xfr_status: _,
-            } => {
-                // TODO: TSIG.
-                let _ = tsig_key;
-                crate::loader::Source::Server {
-                    addr,
-                    tsig_key: None,
-                }
-            }
-        };
 
         // Set the source of the zone, and begin loading it.
         LoaderZoneHandle {
@@ -221,6 +279,21 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
         state.mark_dirty(center);
     }
 
+    // Update the TSIG key's referenced zones.
+    if let crate::loader::Source::Server {
+        tsig_key: Some(key_name),
+        ..
+    } = &zone_state.loader.source
+    {
+        state
+            .tsig_store
+            .get_mut(key_name.name())
+            .unwrap()
+            .zones
+            .remove(&ZoneByPtr(zone.clone()));
+        state.tsig_store.mark_dirty(center);
+    }
+
     info!("Removed zone '{name}'");
     zone_state.record_event(HistoricalEvent::Removed, None);
     zone.mark_dirty(&mut zone_state, center);
@@ -230,6 +303,20 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 pub fn get_zone(center: &Arc<Center>, name: &Name<Bytes>) -> Option<Arc<Zone>> {
     let state = center.state.lock().unwrap();
     state.zones.get(name).map(|zone| zone.0.clone())
+}
+
+pub async fn add_tsig_key(
+    center: &Arc<Center>,
+    name: Name<domain::dep::octseq::Array<255>>,
+    alg: domain::tsig::Algorithm,
+    secret: &[u8],
+) -> Result<TsigAddResult, TsigAddError> {
+    crate::tsig::import_key(center, name.clone(), alg, secret, false)
+        .map_err(|ImportError::AlreadyExists| TsigAddError::AlreadyExists)?;
+
+    info!("Added TSIG key '{name}'");
+
+    Ok(TsigAddResult)
 }
 
 //----------- State ------------------------------------------------------------
@@ -279,10 +366,21 @@ pub struct State {
 
 impl State {
     /// Attempt to load the global state file.
-    pub fn init_from_file(config: &Config) -> io::Result<Self> {
+    ///
+    /// `zones` will be set to the names of zones that need to be loaded.
+    /// `policies` will be set to the set of policies from the global state
+    /// file, that need to be parsed and inserted in the state.
+    pub fn init_from_file(
+        config: &Config,
+        zones: &mut foldhash::HashSet<Name<Bytes>>,
+        policies: &mut foldhash::HashMap<Box<str>, PolicySpec>,
+    ) -> io::Result<Self> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
-        Ok(spec.parse())
+
+        info!("Loaded the global state file (from '{path}')");
+
+        Ok(spec.parse(zones, policies))
     }
 
     /// Mark the global state as dirty.
@@ -339,6 +437,8 @@ pub enum ZoneAddError {
     NoSuchPolicy,
     /// The specified policy is being deleted.
     PolicyMidDeletion,
+    /// No TSIG key with that name exists.
+    NoSuchTsigKey,
     /// Some other error occurred.
     Other(String),
 }
@@ -351,6 +451,7 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::NoSuchTsigKey => "no TSIG key with that name exists",
             Self::Other(reason) => reason,
         })
     }
@@ -362,6 +463,7 @@ impl From<ZoneAddError> for api::ZoneAddError {
             ZoneAddError::AlreadyExists => Self::AlreadyExists,
             ZoneAddError::NoSuchPolicy => Self::NoSuchPolicy,
             ZoneAddError::PolicyMidDeletion => Self::PolicyMidDeletion,
+            ZoneAddError::NoSuchTsigKey => Self::NoSuchTsigKey,
             ZoneAddError::Other(reason) => Self::Other(reason),
         }
     }

@@ -128,6 +128,13 @@ mod compat {
                         return Box::pin(std::future::ready(error(old_request.message(), rcode)));
                     };
 
+                    if !is_permitted(zone, &old_request) {
+                        return Box::pin(std::future::ready(error(
+                            old_request.message(),
+                            Rcode::REFUSED,
+                        )));
+                    }
+
                     match zone_request.kind {
                         ZoneRequestKind::Soa => Box::pin({
                             let viewer = zone.viewer.clone();
@@ -150,6 +157,41 @@ mod compat {
                 }
             }
         }
+    }
+
+    fn is_permitted<V: Viewer>(
+        zone: &ServedZone<V>,
+        old_request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
+    ) -> bool {
+        let zone_state = zone.handle.state.lock().unwrap();
+
+        if let Some(acls) = zone_state
+            .policy
+            .as_ref()
+            .map(|p| &p.server.outbound.accept_xfr_from)
+        {
+            // If at least one ACL was specified, enforce it.
+            if !acls.is_empty() {
+                let wanted_tsig_key_name = old_request.metadata().as_ref().map(|key| key.name());
+
+                for acl in acls {
+                    // Does the client address match the allowed address?
+                    if acl.addr.ip() == old_request.client_addr().ip() {
+                        // Is the request signed with the right TSIG key?
+                        if acl.tsig_key_name.as_ref() == wanted_tsig_key_name {
+                            // Allow the request.
+                            return true;
+                        }
+                    }
+                }
+
+                // No ACL matched, reject the request.
+                return false;
+            }
+        }
+
+        // No ACL defined, accept the request.
+        true
     }
 
     fn soa<V: Viewer>(request: &Message<Vec<u8>>, viewer: &V) -> ResponseStream {
@@ -280,19 +322,15 @@ trait Viewer {
 
 impl Viewer for LoadedZoneReviewer {
     fn is_empty(&self) -> bool {
-        self.read_loaded().is_none()
+        self.read().is_none()
     }
 
     fn soa(&self) -> &SoaRecord {
-        self.read_loaded().unwrap().soa()
+        self.read().unwrap().soa()
     }
 
     fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send {
-        self.read_loaded()
-            .unwrap()
-            .regular_records()
-            .iter()
-            .cloned()
+        self.read().unwrap().regular_records().iter().cloned()
     }
 }
 

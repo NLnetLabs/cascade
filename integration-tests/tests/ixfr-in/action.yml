@@ -45,8 +45,9 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "load (serial: 1)"; do
+        until cascade zone status example.test | grep -q "loaded serial: 1"; do
           if (($(date +%s) > (start + timeout))); then
+            cascade zone status example.test
             echo "::error:: timeout: zone status did not report that the zone serial 1 was loaded"
             exit 1
           fi
@@ -100,7 +101,7 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "load (serial: 2)"; do
+        until cascade zone status example.test | grep -q "loaded serial: 2"; do
           if (($(date +%s) > (start + timeout))); then
             cascade zone status example.test
             echo "::error:: timeout: zone status did not report that the zone serial 2 was loaded"
@@ -154,7 +155,7 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "load (serial: 3)"; do
+        until cascade zone status example.test | grep -q "loaded serial: 3"; do
           if (($(date +%s) > (start + timeout))); then
             cascade zone status example.test
             echo "::error:: timeout: zone status did not report that the zone serial 3 was loaded"

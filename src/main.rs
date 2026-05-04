@@ -4,9 +4,11 @@ use cascaded::{
     daemon::{PreBindError, SocketProvider, daemonize},
     loader::Loader,
     manager::Manager,
+    persistence::{Persister, Restorer},
     policy,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     units::{key_manager::KeyManager, zone_signer::ZoneSigner},
+    zone::{Zone, ZoneByName},
 };
 use clap::{crate_authors, crate_description};
 use daemonbase::process::exit_signalled;
@@ -72,7 +74,37 @@ fn main() -> ExitCode {
     }
 
     // Load the global state file or build one from scratch.
-    let mut state = match center::State::init_from_file(&config) {
+    let mut zones = Default::default();
+    let mut policies = Default::default();
+    let mut state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
+        Ok(mut state) => {
+            // TODO: Restore the TSIG key store here, so that keys are available
+            // to the zones and policies being restored.
+
+            // Restore pending zones.
+            for name in zones {
+                assert!(
+                    !state.zones.contains(&name),
+                    "Zone '{name}' was encountered twice"
+                );
+                let zone = match Zone::restore(&config, name, &mut state.policies) {
+                    Ok(zone) => zone,
+                    Err(_) => return ExitCode::FAILURE,
+                };
+                state.zones.insert(ZoneByName(Arc::new(zone)));
+            }
+
+            // Restore pending policies.
+            state
+                .policies
+                .extend(policies.into_iter().map(|(name, spec)| {
+                    let policy = spec.parse(&name);
+                    (name, policy)
+                }));
+
+            state
+        }
+
         Err(err) => {
             if err.kind() != io::ErrorKind::NotFound {
                 error!("Could not load the state file: {err}");
@@ -107,9 +139,14 @@ fn main() -> ExitCode {
 
             // Load all policies.
             let mut updates = Vec::new();
-            let res = policy::reload_all(&mut state.policies, &config, |name, _| {
-                updates.push(name.clone());
-            });
+            let res = policy::reload_all(
+                &mut state.policies,
+                &config,
+                &state.tsig_store,
+                |name, _| {
+                    updates.push(name.clone());
+                },
+            );
 
             if let Err(err) = res {
                 error!("Cascade couldn't load all policies: {err}");
@@ -134,30 +171,6 @@ fn main() -> ExitCode {
             }
 
             // TODO: Fail if any zone state files exist.
-            state
-        }
-        Ok(mut state) => {
-            info!("Successfully loaded the global state file");
-
-            let zone_state_dir = &config.zone_state_dir;
-            let policies = &mut state.policies;
-            for zone in &state.zones {
-                let name = &zone.0.name;
-                let path = zone_state_dir.join(format!("{name}.db"));
-                let spec = match cascaded::zone::state::Spec::load(&path) {
-                    Ok(spec) => {
-                        debug!("Loaded state of zone '{name}' (from {path})");
-                        spec
-                    }
-                    Err(err) => {
-                        error!("Failed to load zone state '{name}' from '{path}': {err}");
-                        return ExitCode::FAILURE;
-                    }
-                };
-                let mut state = zone.0.state.lock().unwrap();
-                *state = spec.parse(&zone.0, policies);
-            }
-
             state
         }
     };
@@ -205,6 +218,8 @@ fn main() -> ExitCode {
         logger,
         loader: Loader::new(),
         key_manager: KeyManager::new(),
+        persister: Persister::new(),
+        restorer: Restorer::new(),
         loaded_review_server: LoadedReviewServer::new(),
         signed_review_server: SignedReviewServer::new(),
         publication_server: PublicationServer::new(),
@@ -242,7 +257,8 @@ fn main() -> ExitCode {
             }
         };
 
-        info!("Running");
+        info!("Cascade is fully initialized.");
+
         let res = match exit_signalled().await {
             Ok(_) => ExitCode::SUCCESS,
             Err(error) => {

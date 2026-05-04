@@ -1,6 +1,8 @@
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::ansi;
 use crate::api::*;
@@ -16,7 +18,7 @@ pub struct Zone {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum ZoneCommand {
-    /// Register a new zone
+    /// Add a new zone
     #[command(name = "add")]
     Add {
         name: ZoneName,
@@ -219,7 +221,7 @@ impl Zone {
                         "zone/add",
                         &ZoneAdd {
                             name,
-                            source,
+                            source: source.try_into()?,
                             policy,
                             key_imports,
                         },
@@ -402,6 +404,8 @@ impl Zone {
                                 None => "-".to_string(),
                             };
                             let what = match &history_item.event {
+                                HistoricalEvent::StartedLoad => "Started load".to_string(),
+                                HistoricalEvent::StartedResign => "Started resign".to_string(),
                                 HistoricalEvent::Added => "Zone added".to_string(),
                                 HistoricalEvent::Removed => "Zone removed".to_string(),
                                 HistoricalEvent::PolicyChanged => "Policy changed".to_string(),
@@ -475,6 +479,12 @@ impl Zone {
                                         ZoneReviewStatus::Rejected => "rejected",
                                     }
                                 ),
+                                HistoricalEvent::UnsignedHookFailed { err, .. } => {
+                                    format!("Could not execute loaded review hook: {err}",)
+                                }
+                                HistoricalEvent::SignedHookFailed { err, .. } => {
+                                    format!("Could not execute signed review hook: {err}",)
+                                }
                                 HistoricalEvent::KeySetCommand {
                                     cmd,
                                     elapsed,
@@ -501,6 +511,7 @@ impl Zone {
                                         elapsed.as_secs()
                                     )
                                 }
+                                HistoricalEvent::LoadingFailed { reason } => reason.clone(),
                             };
                             println!("{when} {serial:10} {what}");
                         }
@@ -558,7 +569,7 @@ impl Zone {
 
         println!("last published");
         if let Some(last) = &zone.last_published {
-            println!("  loaded serial: <TODO>");
+            println!("  loaded serial: {}", last.loaded_serial);
             println!("  signed serial: {}", last.signed_serial);
             println!("  timestamp:     <TODO>");
             println!("  size:          <TODO> records (<TODO>B)");
@@ -574,6 +585,18 @@ impl Zone {
         if zone.last_published.is_some() {
             println!("");
             println!("Published zone available at {}", zone.publish_addr);
+        }
+
+        if let Some(error) = zone.error {
+            println!("");
+            println!("An error occurred during the last operation:");
+            println!("  {}ERROR: {error}{}", ansi::RED, ansi::RESET);
+            println!(
+                "  Run {}`cascade zone history {}`{} for more information.",
+                ansi::BLUE,
+                zone.name,
+                ansi::RESET
+            );
         }
 
         if detailed {
@@ -652,9 +675,33 @@ fn print_load_phase(
             receipt_report.as_ref().map(|r| r.started_at),
             "<not started yet>",
         );
+
+        let v = receipt_report.as_ref().map_or(0, |r| r.byte_count);
+        let bytes = format_size(v, " ", "B");
+
+        let total_size = receipt_report
+            .as_ref()
+            .and_then(|r| r.total_byte_count)
+            .map_or("".into(), |bytes| {
+                let total_size = format_size(bytes, " ", "B");
+                format!(" / {total_size}")
+            });
+
+        let percentage = if let Some(r) = receipt_report
+            && let Some(t) = r.total_byte_count
+        {
+            let b = r.byte_count as f64;
+            let t = t as f64;
+            let n = 100.0 * b / t;
+            format!(" ({n:.0}%)")
+        } else {
+            "".into()
+        };
+
         println!("  {Ongoing} load{short_serial}");
         println!("  |   serial: {unsigned_serial}");
         println!("  |   start time: {start_time}");
+        println!("  |   progress: {bytes}{total_size}{percentage}");
         println!("  |");
     }
 }
@@ -801,7 +848,6 @@ impl std::fmt::Display for Icon {
     }
 }
 
-#[expect(dead_code)]
 fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
     match v {
         n if n > 1_000_000 => format!("{}{spacer}M{suffix}", n / 1_000_000),
@@ -883,4 +929,83 @@ fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {
             })
         })
         .collect()
+}
+
+//------------ ZoneSource ----------------------------------------------------
+
+const DEFAULT_NS_PORT: u16 = 53;
+
+/// How to load the contents of a zone.
+#[derive(Debug, Clone)]
+pub enum ZoneSource {
+    /// Don't load the zone at all.
+    None,
+
+    /// From a zonefile on disk.
+    Zonefile {
+        /// The path to the zonefile.
+        path: Box<Utf8Path>,
+    },
+
+    /// From a DNS server via XFR.
+    Server {
+        /// The address of the server.
+        addr: SocketAddr,
+
+        /// The name of a TSIG key, if any.
+        tsig_key: Option<String>,
+    },
+}
+
+/// Support parsing of `-source` command line arguments.
+///
+/// Supported forms:
+///   - `<IP>[:<PORT>][^<TSIG_KEY_NAME>]`
+///   - `<PATH/TO/ZONE/FILE/TO/LOAD>`
+impl From<&str> for ZoneSource {
+    fn from(s: &str) -> Self {
+        // Split out any provided TSIG key from the rest of the
+        // source argument.
+        let (s, tsig_key) = s.split_once('^').unwrap_or((s, ""));
+
+        let tsig_key = if !tsig_key.is_empty() {
+            Some(tsig_key.to_string())
+        } else {
+            None
+        };
+
+        if let Ok(addr) = s.parse::<SocketAddr>() {
+            ZoneSource::Server { addr, tsig_key }
+        } else if let Ok(addr) = s.parse::<IpAddr>() {
+            ZoneSource::Server {
+                addr: SocketAddr::new(addr, DEFAULT_NS_PORT),
+                tsig_key,
+            }
+        } else {
+            ZoneSource::Zonefile {
+                path: Utf8PathBuf::from(s).into_boxed_path(),
+            }
+        }
+    }
+}
+
+impl TryFrom<ZoneSource> for cascade_api::ZoneSource {
+    type Error = String;
+
+    fn try_from(source: ZoneSource) -> Result<Self, Self::Error> {
+        Ok(match source {
+            ZoneSource::None => cascade_api::ZoneSource::None,
+            ZoneSource::Zonefile { path } => cascade_api::ZoneSource::Zonefile { path },
+            ZoneSource::Server { addr, tsig_key } => {
+                let tsig_key = if let Some(tsig_key) = tsig_key {
+                    Some(TsigKeyName::from_str(&tsig_key).map_err(|err| {
+                        format!("TSIG key name '{tsig_key}' is not a valid domain name: {err}")
+                    })?)
+                } else {
+                    None
+                };
+                cascade_api::ZoneSource::Server { addr, tsig_key }
+            }
+        })
+    }
 }

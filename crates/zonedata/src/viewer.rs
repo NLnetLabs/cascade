@@ -169,8 +169,8 @@ impl LoadedZoneReviewer {
 }
 
 impl LoadedZoneReviewer {
-    /// Read the loaded component, if there is one.
-    pub fn read_loaded(&self) -> Option<LoadedZoneReader<'_>> {
+    /// Read the instance, if it is non-empty.
+    pub fn read(&self) -> Option<LoadedZoneReader<'_>> {
         let instance = &self.data.loaded[self.loaded_index as usize];
 
         // SAFETY: As per invariant 'loaded-access', 'instance' will not be
