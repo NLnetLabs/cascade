@@ -76,10 +76,19 @@ fn main() -> ExitCode {
     // Load the global state file or build one from scratch.
     let mut zones = Default::default();
     let mut policies = Default::default();
-    let mut state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
+    let state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
         Ok(mut state) => {
-            // TODO: Restore the TSIG key store here, so that keys are available
-            // to the zones and policies being restored.
+            // Load the TSIG store file.
+            match state.tsig_store.init_from_file(&config) {
+                Ok(()) => debug!("Loaded the TSIG store"),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    debug!("No TSIG store found; will create one");
+                }
+                Err(err) => {
+                    error!("Failed to load the TSIG store: {err}");
+                    return ExitCode::FAILURE;
+                }
+            }
 
             // Restore pending zones.
             for name in zones {
@@ -87,10 +96,11 @@ fn main() -> ExitCode {
                     !state.zones.contains(&name),
                     "Zone '{name}' was encountered twice"
                 );
-                let zone = match Zone::restore(&config, name, &mut state.policies) {
-                    Ok(zone) => zone,
-                    Err(_) => return ExitCode::FAILURE,
-                };
+                let zone =
+                    match Zone::restore(&config, name, &mut state.policies, &state.tsig_store) {
+                        Ok(zone) => zone,
+                        Err(_) => return ExitCode::FAILURE,
+                    };
                 state.zones.insert(ZoneByName(Arc::new(zone)));
             }
 
@@ -136,6 +146,18 @@ fn main() -> ExitCode {
             }
 
             let mut state = center::State::default();
+
+            // Load the TSIG store file.
+            match state.tsig_store.init_from_file(&config) {
+                Ok(()) => debug!("Loaded the TSIG store"),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    debug!("No TSIG store found; will create one");
+                }
+                Err(err) => {
+                    error!("Failed to load the TSIG store: {err}");
+                    return ExitCode::FAILURE;
+                }
+            }
 
             // Load all policies.
             let mut updates = Vec::new();
@@ -185,20 +207,6 @@ fn main() -> ExitCode {
         warn!(
             "No review server configured for [signer.review], therefore no signed zone transfer available for review."
         );
-    }
-
-    // Load the TSIG store file.
-    //
-    // TODO: Track which TSIG keys are in use by zones.
-    match state.tsig_store.init_from_file(&config) {
-        Ok(()) => debug!("Loaded the TSIG store"),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            debug!("No TSIG store found; will create one");
-        }
-        Err(err) => {
-            error!("Failed to load the TSIG store: {err}");
-            return ExitCode::FAILURE;
-        }
     }
 
     // Bind to listen addresses before daemonizing.
