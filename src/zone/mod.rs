@@ -6,7 +6,6 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
-    io,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
@@ -26,6 +25,7 @@ use crate::{
     persistence::zone::{PersistenceState, ZonePersistenceHandle},
     policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
+    tsig::TsigStore,
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
     zone::machine::ZoneStateMachine,
 };
@@ -96,15 +96,19 @@ impl Zone {
         config: &Config,
         name: Name<Bytes>,
         policies: &mut foldhash::HashMap<Box<str>, Policy>,
-    ) -> io::Result<Self> {
+        tsig_store: &TsigStore,
+    ) -> Result<Self, state::LoadError> {
         let path = config.zone_state_dir.join(format!("{name}.db"));
 
         // Load the underlying state file.
         let state = match state::Spec::load(&path) {
-            Ok(spec) => spec.parse(&name, policies),
-            Err(err) => {
-                error!("Failed to load the state of zone '{name}' from '{path}': {err}");
-                return Err(err);
+            Ok(spec) => spec.parse(&name, policies, tsig_store)?,
+            Err(error) => {
+                error!("Failed to load the state of zone '{name}' from '{path}': {error}");
+                return Err(state::LoadError::Read {
+                    path: path.into(),
+                    error,
+                });
             }
         };
 
