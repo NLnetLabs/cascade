@@ -12,6 +12,7 @@ use cascade_zonedata::{
 };
 
 use domain::new::base::wire::{BuildBytes, TruncationError};
+use tracing::debug;
 
 use crate::{
     center::Center,
@@ -29,27 +30,29 @@ pub fn persist_loaded(
     center: &Arc<Center>,
     persister: LoadedZonePersister,
 ) -> LoadedZonePersisted {
-    // Determine the path to write to and update the record of written
-    // paths here as we don't want to give responsibility for working
-    // with ZoneState to the persistence crate. Accumulate a set of
-    // diffs per unsigned and signed zone, each stored at a path one
-    // suffixed by an index which rises by one when persisted.
-    // TODO: Don't keep an unlimited number of diffs.
-    // TODO: Compact diffs when idle?
-    let mut state = zone.state.lock().unwrap();
-    let handle = ZoneHandle {
-        zone,
-        state: &mut state,
-        center,
-    };
-    let next_idx = handle.state.persisted_loaded_diffs.len();
-    let destination = center
-        .config
-        .zone_state_dir
-        .join(format!("{}.loaded.{next_idx}", zone.name));
-    persist_to_file(destination.as_std_path(), persister.loaded_diff().clone());
-    handle.state.persisted_loaded_diffs.push(destination.into());
-    handle.zone.mark_dirty(handle.state, handle.center);
+    if !persister.loaded_diff().is_empty() {
+        // Determine the path to write to and update the record of written
+        // paths here as we don't want to give responsibility for working
+        // with ZoneState to the persistence crate. Accumulate a set of
+        // diffs per unsigned and signed zone, each stored at a path one
+        // suffixed by an index which rises by one when persisted.
+        // TODO: Don't keep an unlimited number of diffs.
+        // TODO: Compact diffs when idle?
+        let mut state = zone.state.lock().unwrap();
+        let handle = ZoneHandle {
+            zone,
+            state: &mut state,
+            center,
+        };
+        let next_idx = handle.state.persisted_loaded_diffs.len();
+        let destination = center
+            .config
+            .zone_state_dir
+            .join(format!("{}.loaded.{next_idx}", zone.name));
+        persist_to_file(destination.as_std_path(), persister.loaded_diff().clone());
+        handle.state.persisted_loaded_diffs.push(destination.into());
+        handle.zone.mark_dirty(handle.state, handle.center);
+    }
     persister.mark_complete()
 }
 
@@ -64,27 +67,29 @@ pub fn persist_signed(
     center: &Arc<Center>,
     persister: SignedZonePersister,
 ) -> SignedZonePersisted {
-    // Determine the path to write to and update the record of written
-    // paths here as we don't want to give responsibility for working
-    // with ZoneState to the persistence crate. Accumulate a set of
-    // diffs per unsigned and signed zone, each stored at a path one
-    // suffixed by an index which rises by one when persisted.
-    // TODO: Don't keep an unlimited number of diffs.
-    // TODO: Compact diffs when idle?
-    let mut state = zone.state.lock().unwrap();
-    let handle = ZoneHandle {
-        zone,
-        state: &mut state,
-        center,
-    };
-    let next_idx = handle.state.persisted_signed_diffs.len();
-    let destination = center
-        .config
-        .zone_state_dir
-        .join(format!("{}.signed.{next_idx}", zone.name));
-    persist_to_file(destination.as_std_path(), persister.signed_diff().clone());
-    handle.state.persisted_loaded_diffs.push(destination.into());
-    handle.zone.mark_dirty(handle.state, handle.center);
+    if !persister.signed_diff().is_empty() {
+        // Determine the path to write to and update the record of written
+        // paths here as we don't want to give responsibility for working
+        // with ZoneState to the persistence crate. Accumulate a set of
+        // diffs per unsigned and signed zone, each stored at a path one
+        // suffixed by an index which rises by one when persisted.
+        // TODO: Don't keep an unlimited number of diffs.
+        // TODO: Compact diffs when idle?
+        let mut state = zone.state.lock().unwrap();
+        let handle = ZoneHandle {
+            zone,
+            state: &mut state,
+            center,
+        };
+        let next_idx = handle.state.persisted_signed_diffs.len();
+        let destination = center
+            .config
+            .zone_state_dir
+            .join(format!("{}.signed.{next_idx}", zone.name));
+        persist_to_file(destination.as_std_path(), persister.signed_diff().clone());
+        handle.state.persisted_signed_diffs.push(destination.into());
+        handle.zone.mark_dirty(handle.state, handle.center);
+    }
     persister.mark_complete()
 }
 
@@ -177,4 +182,19 @@ fn persist_to_file(destination: &Path, loaded_diff: Arc<DiffData>) {
 
     // Finish the AXFR/IXFR by writing the new SOA again
     write_rr(&mut buf, &added_soa, &mut f);
+
+    debug!(
+        "Persisted zone to file '{}': {} records removed, {} records added",
+        destination.display(),
+        if !loaded_diff.removed_records.is_empty() {
+            loaded_diff.removed_records.len() + 1
+        } else {
+            0
+        },
+        if !loaded_diff.added_records.is_empty() {
+            loaded_diff.added_records.len() + 1
+        } else {
+            0
+        },
+    );
 }
