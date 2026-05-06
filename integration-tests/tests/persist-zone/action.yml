@@ -1,0 +1,223 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Added zone should still exist after restart.'
+description: 'Added zone should still exist after restart.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Add a zone served by the NSD primary
+      run: |
+        cascade zone add --policy default --source 127.0.0.1:1055 example.test
+
+    # By default Casade policy uses the 'date-counter' serial policy which
+    # makes it possible to predict the serial number it will generate.
+    - name: Predict the SOA SERIAL that Cascade will generate for the signed zone
+      id: expected-serial
+      run: |
+        EXPECTED_SERIAL=$(date +'%Y%m%d00')
+        echo "serial=${EXPECTED_SERIAL}" >> "$GITHUB_OUTPUT"
+
+    - name: Wait for Cascade to serve the signed zone
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Save the signed zone
+      run: |
+        dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed.log
+
+    - name: Stop Cascade
+      run: |
+        pkill cascaded
+
+    - name: Wait for Cascade to exit
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until ! cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade health
+            echo "::error:: timeout: health check did not indicate Cascade had stopped"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    # Cascade should reload the signed zone data from the data it persisted
+    # to disk.
+    - name: Start Cascade again
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+
+    - name: Wait for Cascade to become healthy again
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: health check did not indicate Cascade had started"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check that Cascade still knows the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone list | grep -q example.test; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone list
+            echo "::error:: timeout: Cascade no longer knows the zone"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Wait for Cascade to serve the signed zone
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Save the signed zone again
+      run: |
+        dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed2.log
+
+    - name: Check that Cascade did NOT resign the zone
+      run: |
+        diff -u example.test.signed.log example.test.signed2.log
+
+    - name: Stop Cascade again
+      run: |
+        pkill cascaded
+
+    - name: Wait for Cascade to exit again
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until ! cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade health
+            echo "::error:: timeout: health check did not indicate Cascade had stopped"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Delete the persisted zone data that Cascade wrote to disk
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        rm "${CASCADE_DIR}"/zone-state/example.test.loaded.*
+        rm "${CASCADE_DIR}"/zone-state/example.test.signed.*
+
+    - name: Start Cascade a 3rd time
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+
+    - name: Wait for Cascade to become healthy a 3rd time
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: health check did not indicate Cascade had started"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check that Cascade still knows the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone list | grep -q example.test; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone list
+            echo "::error:: timeout: Cascade no longer knows the zone"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Wait for Cascade to serve the re-signed zone with a newer serial number
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        until dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Save the signed zone
+      run: |
+        dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed3.log
+
+    - name: Check that Cascade DID resign the zone
+      run: |
+        if diff -u example.test.signed.log example.test.signed3.log > unexpected-diff.log; then
+          echo "::error:: Cascade should have re-signed the zone"
+          exit 1
+        fi
+
+    - name: Edit the source zone and tell NSD to reload it.
+      run: |
+        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
+        perl -pi -e 's/1          ; serial/2          ; serial/' ${ZONE_FILE}
+        perl -pi -e 's/www         A   169.254.1.1/www         A   192.168.0.1/' ${ZONE_FILE}
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()
