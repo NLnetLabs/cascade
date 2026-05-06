@@ -102,7 +102,20 @@ async fn sign(
             // Something in status would be good.
             handle.abandon_signing(builder);
             status.status.finish(true);
+
             status.current_action = "Resign failed due to Keep policy".to_string();
+
+            let error =
+                "serial policy is \"keep\" but the serial of the loaded zone did not increase";
+
+            error!("Signing failed: {error}");
+            handle.state.record_event(
+                HistoricalEvent::SigningFailed {
+                    trigger: trigger.into(),
+                    reason: error.to_string(),
+                },
+                None, // TODO
+            );
         }
         Err(error) => {
             error!("Signing failed: {error}");
