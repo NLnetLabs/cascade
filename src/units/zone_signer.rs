@@ -1274,6 +1274,7 @@ impl ZoneSignerStatus {
     }
 
     /// Enqueue a zone for signing.
+    #[allow(clippy::type_complexity)] // TODO
     #[tracing::instrument(
         level = "debug",
         skip_all,
