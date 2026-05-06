@@ -7,10 +7,10 @@ used to perform any validation the user requires to ensure their zone is
 correct at all stages, using any (third-party) tools desired.
 
 A review script in Cascade is a custom program created by the user and
-configured in the zone's policy, as shown below in `Configuration`_. It
-performs the desired validation and signals approval or rejection to Cascade
-via the program's exit code. An exit code of 0 means the zone is approved,
-and any other exit code means the zone is rejected.
+configured in the zone's policy, as shown below in `Review With Script`_. It
+performs the desired validation and signals approval or rejection to Cascade via
+the program's exit code. An exit code of 0 means the zone is approved, and any
+other exit code means the zone is rejected.
 
 The first review hook is available after a zone is loaded by Cascade before
 it is signed. The second review hook is available after the zone is signed
@@ -41,30 +41,76 @@ and perform the required checks.
     ``ReadWritePaths`` option in the unit file. See the ``systemd.exec`` manpage
     for more information.
 
-Configuration
--------------
+Review with Script
+------------------
 
-To configure a review hook, you set the review :option:`required = true
-<required = false>` policy option, and specify the review script using the
-:option:`cmd-hook <cmd-hook = "">` option in the :ref:`[loader.review]
+To configure a script as review hook, you set the review :option:`mode
+= "script" <mode = "off">` policy option, and specify the review script
+using the :option:`hook <hook = "">` option in the :ref:`[loader.review]
 <policy-loaded-review>` and/or :ref:`[signer.review] <policy-signed-review>`
 policy file sections.
 
 Review scripts (or programs) are called using ``sh -c``, so you can provide
-arguments to your review script, e.g.: :option:`cmd-hook = "script.sh --stage
-unsigned" <cmd-hook = "">`.
+arguments to your review script, e.g.: :option:`hook = "script.sh --stage
+unsigned" <hook = "">`.
+
+Here is an example configuration for automatic review:
+
+.. code-block:: toml
+
+    [loader.review]
+    mode = "script"
+    hook = "review_loaded.sh"
+
+    [signer.review]
+    mode = "script"
+    hook = "review_signed.sh"
 
 Manual Review
 -------------
 
-You can also enable manual review by setting the review :option:`required =
-true <required = false>` option under :ref:`[loader.review]
-<policy-loaded-review>` or :ref:`[signer.review] <policy-signed-review>`
-without providing a :option:`cmd-hook <cmd-hook = "">` command.
+You can also enable manual review by setting the review :option:`mode =
+"manual" <mode = "off">` option under :ref:`[loader.review]
+<policy-loaded-review>` or :ref:`[signer.review] <policy-signed-review>`.
 
 If no hook command is provided, but review is required, manual approval or
 rejection has to be performed using the CLI commands :command:`cascade zone
 approve` or :command:`cascade zone reject`.
+
+Here is an example configuration for manual review:
+
+.. code-block:: toml
+
+    [loader.review]
+    mode = "manual"
+
+    [signer.review]
+    mode = "manual"
+
+Decide What Happens on Rejection
+--------------------------------
+
+Cascade can do to two things when a zone instance is rejected: halt or discard.
+This is configured through the ``on-reject`` field under :ref:`[loader.review]
+<policy-loaded-review>` or :ref:`[signer.review] <policy-signed-review>`.
+
+If it is configured to ``"discard"``, it will simply go back to the idle
+state as if the loading or signing operation didn't happen. This is the most
+fault-tolerant option.
+
+It it is instead set to ``"halt"`` then Cascade will stop doing any operations
+to the zone. This allows the operator to investigate the issue before Cascade
+continues. If the zone should be accepted anyway, the :command:`cascade zone
+override` command can be used to override the previous rejection. If the
+rejection was correct, the :command:`cascade zone reset` command can be used to
+discard the loaded instance.
+
+.. code-block:: toml
+
+    [loader.review]
+    mode = "script"
+    hook = "review_loaded.sh"
+    on-reject = "halt"
 
 Example
 -------
@@ -108,12 +154,12 @@ Next, we update the zone's policy to use the review script for both stages:
     # Keep the other settings in the policy as is ...
 
     [loader.review]
-    required = true
-    cmd-hook = "/usr/local/bin/cascade-review.sh unsigned"
+    mode = "script"
+    hook = "/usr/local/bin/cascade-review.sh unsigned"
 
     [signer.review]
-    required = true
-    cmd-hook = "/usr/local/bin/cascade-review.sh"
+    mode = "script"
+    hook = "/usr/local/bin/cascade-review.sh"
 
 
 Finally, we need to reload the policy with :command:`cascade policy reload` to
