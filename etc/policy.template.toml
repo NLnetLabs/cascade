@@ -329,9 +329,15 @@ signature-lifetime = "2w"
 # string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
 signature-remain-time = "1w"
 
-# To prevent signatures from expiring, Cascade will periodically refresh
-# some number of signature. This way the work to refresh all signatures is
-# spread out over time.
+# Refresh period to prevent signatures from expiring. Each period, Cascade
+# will refresh some number of signatures. This way the work to refresh all
+# signatures is spread out over time. The effective lifetime of a signature
+# is signature-lifetime - signature-remain-time. Each period roughly a
+# fraction of all signatures that is equal to signature-refresh-interval
+# divided by the effective signature lifetime will be refreshed.
+#
+# signature-refresh-interval should be a lot smaller than
+# signature-remain-time to make sure that signatures are refreshed in time.
 #
 # An integer value is interpreted as seconds. A string is interpreted as time
 # string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
