@@ -271,7 +271,7 @@ impl ZoneSigner {
     }
 
     pub fn on_publish_signed_zone(&self, center: &Arc<Center>) {
-        trace!("[ZS]: a zone is published, recompute next time to re-sign");
+        trace!("a zone is published, recompute next time to re-sign");
         let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
     }
 
@@ -281,7 +281,7 @@ impl ZoneSigner {
         zone: &Arc<Zone>,
     ) -> (Arc<RwLock<SigningStatusPerZone>>, [OwnedSemaphorePermit; 3]) {
         let zone_name = &zone.name;
-        info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
+        info!("Waiting to enqueue signing operation for zone '{zone_name}'.");
 
         self.signer_status.dump_queue();
 
@@ -297,7 +297,7 @@ impl ZoneSigner {
         let num_ops_in_progress =
             self.max_concurrent_operations - self.concurrent_operation_permits.available_permits();
         info!(
-            "[ZS]: Waiting to start signing operation for zone '{zone_name}': {num_ops_in_progress} signing operations are in progress and {} operations are queued ahead of us.",
+            "Waiting to start signing operation for zone '{zone_name}': {num_ops_in_progress} signing operations are in progress and {} operations are queued ahead of us.",
             q_size - 1
         );
 
@@ -326,7 +326,7 @@ impl ZoneSigner {
             return sign_incrementally(self, patcher, zone, center, status);
         }
 
-        info!("[ZS]: Starting signing operation for zone '{zone_name}'");
+        info!("Starting signing operation for zone '{zone_name}'");
         let start = Instant::now();
 
         let (last_signed_serial, policy) = {
@@ -410,7 +410,7 @@ impl ZoneSigner {
         };
 
         info!(
-            "[ZS]: Serials for zone '{zone_name}': last signed={last_signed_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
+            "Serials for zone '{zone_name}': last signed={last_signed_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
             policy.signer.serial_policy
         );
 
@@ -437,7 +437,7 @@ impl ZoneSigner {
         // Convert zone records into a form we can sign.
         //
         status.write().unwrap().current_action = "Collecting records to sign".to_string();
-        debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
+        debug!("Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
         let mut records = loaded
             .unsigned_records()
@@ -506,7 +506,7 @@ impl ZoneSigner {
         //
         // Sort them into DNSSEC order ready for NSEC(3) generation.
         //
-        debug!("[ZS]: Sorting collected records for zone '{zone_name}'.");
+        debug!("Sorting collected records for zone '{zone_name}'.");
         status.write().unwrap().current_action = "Sorting records".to_string();
         let sort_start = Instant::now();
         // Note: This may briefly use lots of CPU and many CPU cores.
@@ -525,7 +525,7 @@ impl ZoneSigner {
         //
         // Generate NSEC(3) RRs.
         //
-        debug!("[ZS]: Generating denial records for zone '{zone_name}'.");
+        debug!("Generating denial records for zone '{zone_name}'.");
         status.write().unwrap().current_action = "Generating denial records".to_string();
         let denial_start = Instant::now();
         match &signing_config.denial {
@@ -593,7 +593,7 @@ impl ZoneSigner {
         // async task which receives generated RRSIGs via a Tokio
         // mpsc::channel and accumulates them into the signed zone.
         //
-        debug!("[ZS]: Generating RRSIG records.");
+        debug!("Generating RRSIG records.");
         status.write().unwrap().current_action = "Generating signature records".to_string();
 
         // TODO: Configure Rayon's thread pool to set the number of threads. By
@@ -693,7 +693,7 @@ impl ZoneSigner {
         writer.set_soa(new_soa.clone()).unwrap();
         writer.apply().unwrap();
 
-        debug!("SIGNER: Determining min expiration time");
+        debug!("Determining min expiration time");
         let reader = builder.next_signed().unwrap();
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
@@ -723,7 +723,7 @@ impl ZoneSigner {
             // this value should be move to min_expiration.
             zone_state.next_min_expiration = saved_min_expiration.get();
             debug!(
-                "SIGNER: Determined min expiration time: {:?}",
+                "Determined min expiration time: {:?}",
                 zone_state.next_min_expiration
             );
 
@@ -841,7 +841,7 @@ impl ZoneSigner {
                 if let Some(saved_refresh_time) = opt_refresh_time {
                     if *saved_refresh_time == curr_refresh_time {
                         // This zone is busy.
-                        trace!("[ZS]: resign: zone {zone_name} is busy");
+                        trace!("resign: zone {zone_name} is busy");
                         continue;
                     }
 
@@ -921,7 +921,7 @@ impl ZoneSigner {
             let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time.clone());
 
             if refresh_time < now {
-                trace!("[ZS]: re-signing: request signing of zone {zone_name}");
+                trace!("re-signing: request signing of zone {zone_name}");
 
                 // Start a new block to make sure the mutex is released.
                 {
@@ -1218,16 +1218,16 @@ impl ZoneSignerStatus {
                 let q_item = q_item.read().unwrap();
                 match q_item.status {
                     ZoneSigningStatus::Requested(_) => {
-                        debug!("[ZS]: Queue item: {} => requested", q_item.zone.name)
+                        debug!("Queue item: {} => requested", q_item.zone.name)
                     }
                     ZoneSigningStatus::InProgress(_) => {
-                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone.name)
+                        debug!("Queue item: {} => in-progress", q_item.zone.name)
                     }
                     ZoneSigningStatus::Finished(_) => {
-                        debug!("[ZS]: Queue item: {} => finished", q_item.zone.name)
+                        debug!("Queue item: {} => finished", q_item.zone.name)
                     }
                     ZoneSigningStatus::Aborted => {
-                        debug!("[ZS]: Queue item: {} => aborted", q_item.zone.name)
+                        debug!("Queue item: {} => aborted", q_item.zone.name)
                     }
                 };
             }
@@ -1235,6 +1235,11 @@ impl ZoneSignerStatus {
     }
 
     /// Enqueue a zone for signing.
+    #[tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(zone = %zone.name),
+    )]
     pub async fn enqueue(
         &self,
         zone: &Arc<Zone>,
@@ -1248,7 +1253,7 @@ impl ZoneSignerStatus {
         SignerError,
     > {
         let zone_name = &zone.name;
-        debug!("SIGNER[{zone_name}]: Adding to the queue");
+        debug!("Adding to the queue");
         let status = Arc::new(RwLock::new(SigningStatusPerZone {
             zone: zone.clone(),
             current_action: "Waiting for any existing signing operation for this zone to finish"
@@ -1261,9 +1266,9 @@ impl ZoneSignerStatus {
         }
 
         let approx_q_size = SIGNING_QUEUE_SIZE - self.queue_semaphore.available_permits() + 1;
-        debug!("SIGNER[{zone_name}]: Approx queue size = {approx_q_size}");
+        debug!("Approx queue size = {approx_q_size}");
 
-        debug!("SIGNER[{zone_name}]: Acquiring zone permit");
+        debug!("Acquiring zone permit");
         let zone_semaphore = self
             .zone_semaphores
             .write()
@@ -1274,18 +1279,18 @@ impl ZoneSignerStatus {
         let zone_permit = zone_semaphore.acquire_owned().await.map_err(|_| {
             SignerError::InternalError("Cannot acquire the zone semaphore".to_string())
         })?;
-        debug!("SIGNER[{zone_name}]: Zone permit acquired");
+        debug!("Zone permit acquired");
 
         status.write().unwrap().current_action = "Waiting for a signing queue slot".to_string();
 
-        debug!("SIGNER: Acquiring queue permit");
+        debug!("Acquiring queue permit");
         let queue_permit = self
             .queue_semaphore
             .clone()
             .acquire_owned()
             .await
             .map_err(|_| SignerError::SignerNotReady)?;
-        debug!("SIGNER[{zone_name}]: Queue permit acquired");
+        debug!("Queue permit acquired");
 
         // If we were able to acquire a permit that means that a signing operation completed
         // and so we are safe to remove one item from the ring buffer.
@@ -1310,7 +1315,7 @@ impl ZoneSignerStatus {
 
         status.write().unwrap().current_action = "Queued for signing".to_string();
 
-        debug!("SIGNER[{zone_name}]: Enqueuing complete.");
+        debug!("Enqueuing complete.");
         Ok((approx_q_size, queue_permit, zone_permit, status))
     }
 }
