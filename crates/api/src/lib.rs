@@ -378,7 +378,13 @@ impl Display for ZoneSource {
         match self {
             ZoneSource::None => f.write_str("<none>"),
             ZoneSource::Zonefile { path } => path.fmt(f),
-            ZoneSource::Server { addr, .. } => addr.fmt(f),
+            ZoneSource::Server { addr, tsig_key } => {
+                write!(f, "{addr}")?;
+                if let Some(tsig_key) = &tsig_key {
+                    write!(f, " with TSIG key '{tsig_key}'")?;
+                }
+                Ok(())
+            }
         }
     }
 }

@@ -384,10 +384,10 @@ impl HttpServer {
             source = match zone_state.loader.source.clone() {
                 loader::Source::None => api::ZoneSource::None,
                 loader::Source::Zonefile { path } => api::ZoneSource::Zonefile { path },
-                loader::Source::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
-                    addr,
-                    tsig_key: None,
-                },
+                loader::Source::Server { addr, tsig_key } => {
+                    let tsig_key = tsig_key.map(|k| k.name().clone());
+                    api::ZoneSource::Server { addr, tsig_key }
+                }
             };
             unsigned_review_addr = state
                 .center
