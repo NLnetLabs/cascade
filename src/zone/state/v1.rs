@@ -476,10 +476,23 @@ impl Default for SignerDenialPolicySpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReviewPolicySpec {
     /// Whether review is required.
-    pub required: bool,
+    pub mode: ReviewPolicyMode,
 
     /// A command hook for reviewing a new version of the zone.
-    pub cmd_hook: Option<String>,
+    pub on_reject: ReviewPolicyOnReject,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReviewPolicyMode {
+    Off,
+    Manual,
+    Script { hook: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReviewPolicyOnReject {
+    Discard,
+    Halt,
 }
 
 //--- Conversion
@@ -488,16 +501,30 @@ impl ReviewPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> ReviewPolicy {
         ReviewPolicy {
-            required: self.required,
-            cmd_hook: self.cmd_hook,
+            mode: match self.mode {
+                ReviewPolicyMode::Off => crate::policy::ReviewMode::Off,
+                ReviewPolicyMode::Manual => crate::policy::ReviewMode::Manual,
+                ReviewPolicyMode::Script { hook } => crate::policy::ReviewMode::Script { hook },
+            },
+            on_reject: match self.on_reject {
+                ReviewPolicyOnReject::Discard => crate::policy::OnReject::Discard,
+                ReviewPolicyOnReject::Halt => crate::policy::OnReject::Halt,
+            },
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ReviewPolicy) -> Self {
         Self {
-            required: policy.required,
-            cmd_hook: policy.cmd_hook.clone(),
+            mode: match policy.mode.clone() {
+                crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+            },
+            on_reject: match policy.on_reject {
+                crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+            },
         }
     }
 }

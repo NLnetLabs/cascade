@@ -34,7 +34,7 @@ use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
-use crate::policy::NameserverCommsPolicy;
+use crate::policy::{NameserverCommsPolicy, OnReject, ReviewMode};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
 use crate::zone::{
@@ -295,7 +295,7 @@ impl ZoneServer {
         };
 
         let zone_name = &zone.name;
-        if !review.required {
+        if let ReviewMode::Off = review.mode {
             // Approve immediately.
             match self.source {
                 Source::Unsigned => {
@@ -348,18 +348,21 @@ impl ZoneServer {
 
         record_zone_event(center, zone, pending_event, Some(zone_serial));
 
-        if review.cmd_hook.is_none() || review_server.is_none() {
-            match (review_server, review.cmd_hook) {
-                (None, None) => warn!(
-                    "[{unit_name}] Review required, but neither a review server nor a review hook is set; use the CLI to approve or reject the zone"
-                ),
-                (None, Some(_)) => warn!(
+        if ReviewMode::Off == review.mode
+            || ReviewMode::Manual == review.mode
+            || review_server.is_none()
+        {
+            match (review_server, review.mode) {
+                (None, ReviewMode::Script { .. }) => warn!(
                     "[{unit_name}] Review required, but no review server configured; use the CLI to approve or reject the zone"
                 ),
-                (Some(_), None) => {
+                (None, _) => warn!(
+                    "[{unit_name}] Review required, but neither a review server nor a review hook is set; use the CLI to approve or reject the zone"
+                ),
+                (Some(_), ReviewMode::Off | ReviewMode::Manual) => {
                     info!("[{unit_name}] No review hook set; waiting for manual review")
                 }
-                (Some(_), Some(_)) => unreachable!(),
+                (Some(_), ReviewMode::Script { .. }) => unreachable!(),
             }
             info!(
                 "[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
@@ -370,7 +373,9 @@ impl ZoneServer {
             return None;
         }
 
-        let hook = review.cmd_hook.unwrap();
+        let ReviewMode::Script { hook } = review.mode else {
+            panic!()
+        };
         let review_server = review_server.unwrap();
 
         // TODO: Windows support?
@@ -589,14 +594,25 @@ impl ZoneServer {
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
                     );
 
-                    // TODO: Whether to soft or hard reject should be part of the policy
                     let mut state = zone.state.lock().unwrap();
-                    ZoneHandle {
-                        zone,
-                        state: &mut state,
-                        center,
+                    match state.policy.as_ref().unwrap().loader.review.on_reject {
+                        OnReject::Discard => {
+                            ZoneHandle {
+                                zone,
+                                state: &mut state,
+                                center,
+                            }
+                            .soft_reject_loaded();
+                        }
+                        OnReject::Halt => {
+                            ZoneHandle {
+                                zone,
+                                state: &mut state,
+                                center,
+                            }
+                            .hard_reject_loaded();
+                        }
                     }
-                    .hard_reject_loaded();
                 }
             }
 
@@ -634,12 +650,24 @@ impl ZoneServer {
                     );
                     // TODO: Whether to soft or hard reject should be part of the policy
                     let mut state = zone.state.lock().unwrap();
-                    ZoneHandle {
-                        zone,
-                        state: &mut state,
-                        center,
+                    match state.policy.as_ref().unwrap().signer.review.on_reject {
+                        OnReject::Discard => {
+                            ZoneHandle {
+                                zone,
+                                state: &mut state,
+                                center,
+                            }
+                            .soft_reject_signed();
+                        }
+                        OnReject::Halt => {
+                            ZoneHandle {
+                                zone,
+                                state: &mut state,
+                                center,
+                            }
+                            .hard_reject_signed();
+                        }
                     }
-                    .hard_reject_signed();
                 }
             }
 

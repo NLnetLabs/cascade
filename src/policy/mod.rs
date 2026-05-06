@@ -422,20 +422,28 @@ pub enum SignerDenialPolicy {
 //----------- ReviewPolicy -----------------------------------------------------
 
 /// Policy for reviewing loaded/signed zones.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ReviewPolicy {
-    /// Whether review is required.
-    ///
-    /// If this is `false`, zones under this policy will not wait for external
-    /// approval of new versions when they are loaded / signed.
-    pub required: bool,
+    pub mode: ReviewMode,
 
-    /// A command hook for reviewing a new version of the zone.
-    ///
-    /// When a new loaded / signed version of the zone is prepared, this hook
-    /// (if [`Some`]) will be spawned to verify the zone.  If review is required
-    /// and the hook fails, the zone will not be propagated.
-    pub cmd_hook: Option<String>,
+    pub on_reject: OnReject,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ReviewMode {
+    #[default]
+    Off,
+    Manual,
+    Script {
+        hook: String,
+    },
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum OnReject {
+    #[default]
+    Discard,
+    Halt,
 }
 
 //----------- ServerPolicy -----------------------------------------------------

@@ -32,13 +32,13 @@ policy files, then update Cascade with ``cascade policy reload``.  Note that:
 Example
 -------
 
-.. code-block:: text
+.. code-block:: toml
 
     version = "v1"
 
     [loader]
     [loader.review]
-    required = false
+    mode = "off"
 
     [key-manager]
     ksk.validity = "365d"
@@ -87,7 +87,7 @@ Example
     type = "nsec"
 
     [signer.review]
-    required = false
+    mode = "off"
 
     [server.outbound]
     send-notify-to = []
@@ -126,18 +126,22 @@ The ``[loader.review]`` section.
 Review offers an opportunity to perform external checks on the zone contents
 loaded by Cascade.
 
-.. option:: required = false
+.. option:: mode = "off"
 
-   Whether review is required.
+   The mode for loader review.
 
-   If this is ``true``, a loaded version of a zone will not be signed or
-   published until it is approved.  If it is ``false``, loaded zones will be
-   signed immediately.  At the moment, the review hook will only be run if this
-   is set to true.
+   This can be one of the following values:
+   
+    - ``"off"`` will disable review
+    - ``"manual"`` will enable manual review via the CLI.
+    - ``"script"`` will enable automatic review via a hook. The ``hook`` field
+      must be specified in this case.
+
+   The default value is ``"off"``.
 
 .. _policy-loaded-review-cmd:
 
-.. option:: cmd-hook = ""
+.. option:: hook = ""
 
    A hook for reviewing a loaded zone. This is a path to an executable.
 
@@ -161,6 +165,18 @@ loaded by Cascade.
    accessible to Cascade (i.e. after it has dropped privileges). Its exit code
    will determine whether the zone is approved or not.
 
+.. option:: on-reject = "discard"
+
+   What to do when a zone is rejected by review.
+  
+   This field can only be specified if ``mode``` is either ``"manual"`` or
+   ``"script"`` and can have one of the following values:
+  
+    - ``"discard"`` will discard the rejected zone and go back to an idle state
+    - ``"halt"`` will halt the pipeline until an operator either resets the pipeline
+      or overrides the rejection.
+  
+   The default value is ``"discard"``.
 
 DNSSEC key management.
 ++++++++++++++++++++++
