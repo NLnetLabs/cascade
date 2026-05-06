@@ -38,9 +38,9 @@ pub fn persist_loaded(
     // TODO: Compact diffs when idle?
     let mut state = zone.state.lock().unwrap();
     let handle = ZoneHandle {
-        zone: &zone,
+        zone,
         state: &mut state,
-        center: &center,
+        center,
     };
     let next_idx = handle.state.persisted_loaded_diffs.len();
     let destination = center
@@ -73,9 +73,9 @@ pub fn persist_signed(
     // TODO: Compact diffs when idle?
     let mut state = zone.state.lock().unwrap();
     let handle = ZoneHandle {
-        zone: &zone,
+        zone,
         state: &mut state,
-        center: &center,
+        center,
     };
     let next_idx = handle.state.persisted_signed_diffs.len();
     let destination = center
