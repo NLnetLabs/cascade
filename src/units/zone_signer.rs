@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
+use domain::base::Rtype;
 use domain::base::Serial;
 use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
@@ -464,21 +465,15 @@ impl ZoneSigner {
         let state = std::fs::read_to_string(&state_path)
             .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();
-        for dnskey_rr in &state.dnskey_rrset {
-            let mut zonefile = Zonefile::new();
-            zonefile.extend_from_slice(dnskey_rr.as_bytes());
-            zonefile.extend_from_slice(b"\n");
-            if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
-                let record: OldRecord = rec.flatten_into();
-                new_records.push(record.clone().into());
-                records.push(record);
-            }
-        }
 
-        // Also add CDS and CDNSKEY records plus their signatures.
-        for cds_rr in &state.cds_rrset {
+	local_state.apex_remove = state.apex_remove.clone();
+	let mut apex_extra = state.apex_extra.clone();
+	apex_extra.sort();
+	local_state.apex_extra = apex_extra;
+
+        for rr in &state.apex_extra {
             let mut zonefile = Zonefile::new();
-            zonefile.extend_from_slice(cds_rr.as_bytes());
+            zonefile.extend_from_slice(rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
             if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
                 let record: OldRecord = rec.flatten_into();
@@ -955,10 +950,9 @@ pub struct KeySetState {
     /// Domain KeySet state.
     pub keyset: KeySet,
 
-    pub dnskey_rrset: Vec<String>,
     pub ds_rrset: Vec<String>,
-    pub cds_rrset: Vec<String>,
-    pub ns_rrset: Vec<String>,
+    pub apex_remove: HashSet<Rtype>,
+    pub apex_extra: Vec<String>,
 }
 
 pub struct MinTimestamp(Mutex<Option<Timestamp>>);

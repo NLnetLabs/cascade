@@ -523,10 +523,7 @@ impl WorkSpace<'_> {
     pub fn handle_keyset_changed(&mut self) -> bool {
         let mut apex_changed = false;
 
-        // Check the apex RRtypes that need to be removed. We
-        // should get that from keyset, but currently we don't.
-        // Just have a fixed list.
-        let apex_remove: HashSet<Rtype> = [Rtype::DNSKEY, Rtype::CDS, Rtype::CDNSKEY].into();
+        let apex_remove = self.keyset_state.apex_remove.clone();
 
         let curr_apex_remove = &self.local_state.apex_remove;
         if apex_remove != *curr_apex_remove {
@@ -536,9 +533,7 @@ impl WorkSpace<'_> {
         }
 
         // Check records that need to be added to the apex.
-        let mut apex_extra = vec![];
-        apex_extra.extend_from_slice(&self.keyset_state.dnskey_rrset);
-        apex_extra.extend_from_slice(&self.keyset_state.cds_rrset);
+        let mut apex_extra = self.keyset_state.apex_extra.clone();
         apex_extra.sort();
 
         let curr_apex_extra = &self.local_state.apex_extra;
