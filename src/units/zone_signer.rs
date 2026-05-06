@@ -466,10 +466,10 @@ impl ZoneSigner {
             .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();
 
-	local_state.apex_remove = state.apex_remove.clone();
-	let mut apex_extra = state.apex_extra.clone();
-	apex_extra.sort();
-	local_state.apex_extra = apex_extra;
+        local_state.apex_remove = state.apex_remove.clone();
+        let mut apex_extra = state.apex_extra.clone();
+        apex_extra.sort();
+        local_state.apex_extra = apex_extra;
 
         for rr in &state.apex_extra {
             let mut zonefile = Zonefile::new();
