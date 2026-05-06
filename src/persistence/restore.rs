@@ -50,17 +50,15 @@ pub fn restore_loaded(
         let count = state.persisted_loaded_diffs.len();
         let mut buf = Vec::<u8>::new();
 
-        // Extract the initial unsigned integer number file extension.
-        let n = loaded_source
-            .extension()
-            .unwrap()
-            .to_string()
-            .parse::<usize>()
-            .unwrap();
-
         // Process the initial "loaded" AXFR wire format dump.
-        let (soa, records) = load_axfr_wire_dump(loaded_source.as_std_path(), &mut buf).unwrap();
-        let mut loaded_replacer = restorer.fill().unwrap(); // TODO: SAFETY
+        let (soa, records) =
+            load_axfr_wire_dump(loaded_source.as_std_path(), &mut buf).map_err(|err| {
+                io::Error::other(format!(
+                    "Failed to load persisted snapshot for zone '{}' from '{loaded_source}': {err}",
+                    zone.name
+                ))
+            })?;
+        let mut loaded_replacer = restorer.fill().ok_or(io::Error::other(format!("Unable to restore persisted snapshot for zone '{}' from '{loaded_source}': Could not acquire replacer", zone.name)))?;
         loaded_replacer.set_soa(soa).unwrap();
         loaded_replacer.set_records(records).unwrap();
         loaded_replacer.apply().unwrap();
@@ -69,17 +67,16 @@ pub fn restore_loaded(
             let mut loaded_patcher = restorer.patch().unwrap(); // TODO: SAFETY
             let mut source = loaded_source.to_path_buf();
             for i in 1..count {
-                source.set_extension((n + i).to_string());
+                source.set_extension(i.to_string());
 
                 let loaded_patcher = &mut loaded_patcher;
                 load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
                     apply_ixfr_event_to_loaded_data(loaded_patcher, event);
-                })
-                .unwrap();
+                })?;
 
-                loaded_patcher.next_patchset().unwrap()
+                loaded_patcher.next_patchset().map_err(|err| io::Error::other(format!("Unable to restore persisted diff {i} for zone '{}' from '{source}': Could not move to next patch set: {err}", zone.name)))?;
             }
-            loaded_patcher.apply().unwrap();
+            loaded_patcher.apply().map_err(|err| io::Error::other(format!("Unable to restore persisted diffs for zone '{}': Could apply the collected changes: {err}", zone.name)))?;
         }
     }
 
@@ -187,10 +184,14 @@ fn load_file_into_memory(source: &Path, buf: &mut Vec<u8>) -> std::io::Result<us
 fn load_axfr_wire_dump(
     source: &Path,
     buf: &mut Vec<u8>,
-) -> Result<(SoaRecord, Vec<RegularRecord>), String> {
-    load_file_into_memory(source, buf).map_err(|err| err.to_string())?;
+) -> io::Result<(SoaRecord, Vec<RegularRecord>)> {
+    load_file_into_memory(source, buf)?;
 
-    let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0)?;
+    let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0).map_err(|err| {
+        io::Error::other(format!(
+            "Failed to parse persisted snapshot initial SOA: {err}"
+        ))
+    })?;
 
     let mut records = vec![];
     loop {
@@ -199,7 +200,11 @@ fn load_axfr_wire_dump(
         // index at which parsing should start on the next iteration
         // of the loop.
         let r;
-        (r, rest) = parse_rr(buf, rest)?;
+        (r, rest) = parse_rr(buf, rest).map_err(|err| {
+            io::Error::other(format!(
+                "Failed to parse persisted snapshot resource record at pos {rest}: {err}"
+            ))
+        })?;
 
         // If the parsed record is a SOA it should be identical to
         // the SOA record that started the AXFR dump and signals the
@@ -212,14 +217,13 @@ fn load_axfr_wire_dump(
             // Since we persisted the AXFR wire dump to disk it is a
             // very unexpected error if it does not match the starting
             // SOA.
-            if r.rname.as_ref() == &*start_soa.0.rname
+            if (r.rname.as_ref() == &*start_soa.0.rname
                 || r.rclass == start_soa.0.rclass
-                || r.ttl == start_soa.ttl
+                || r.ttl == start_soa.ttl)
+                && let Ok(soa_rdata) = Soa::<NameBuf>::parse_message_bytes(r.rdata.bytes(), 0)
+                && soa_rdata == start_soa_rdata
             {
-                let soa_rdata = Soa::<NameBuf>::parse_message_bytes(r.rdata.bytes(), 0).unwrap();
-                if soa_rdata == start_soa_rdata {
-                    break;
-                }
+                break;
             }
         }
 
@@ -230,14 +234,16 @@ fn load_axfr_wire_dump(
     Ok((start_soa, records))
 }
 
-fn load_ixfr_wire_dump<F>(source: &Path, buf: &mut Vec<u8>, mut rr_handler: F) -> Result<(), String>
+fn load_ixfr_wire_dump<F>(source: &Path, buf: &mut Vec<u8>, mut rr_handler: F) -> io::Result<()>
 where
     F: FnMut(IxfrEvent),
 {
-    load_file_into_memory(source, buf).map_err(|err| err.to_string())?;
+    load_file_into_memory(source, buf)?;
 
     let buf = buf.as_slice();
-    let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0)?;
+    let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0).map_err(|err| {
+        io::Error::other(format!("Failed to parse persisted diff initial SOA: {err}"))
+    })?;
 
     // Parse one or more diff sequences.
     loop {
@@ -252,15 +258,19 @@ where
 
         // Read the first deleted RR which should be a SOA RR.
         let r;
-        (r, rest) = parse_rr(buf, rest)?;
+        (r, rest) = parse_rr(buf, rest).map_err(|err| {
+            io::Error::other(format!(
+                "Failed to parse persisted diff resource record at pos {rest}: {err}"
+            ))
+        })?;
 
         if r.rtype != RType::SOA {
             // If this is the first RR of the sequence it MUST
             // be a SOA RR.
-            return Err(format!(
-                "Expected first record of IXFR remove sequence to be a SOA RR but found RTYPE {}",
+            return Err(io::Error::other(format!(
+                "Expected first record of persisted diff remove sequence to be a SOA RR but found RTYPE {}",
                 r.rtype.code
-            ));
+            )));
         }
 
         let r = RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data));
@@ -270,7 +280,11 @@ where
         // removed RRs and the start of the added RRs.
         loop {
             let r;
-            (r, rest) = parse_rr(buf, rest)?;
+            (r, rest) = parse_rr(buf, rest).map_err(|err| {
+                io::Error::other(format!(
+                    "Failed to parse persisted diff removed resource record at pos {rest}: {err}"
+                ))
+            })?;
 
             let r = RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data));
             if r.rtype == RType::SOA {
@@ -284,7 +298,11 @@ where
         // Read more added RRs until a SOA signals the end of added RRs.
         loop {
             let r;
-            (r, rest) = parse_rr(buf, rest)?;
+            (r, rest) = parse_rr(buf, rest).map_err(|err| {
+                io::Error::other(format!(
+                    "Failed to parse persisted diff added resource record at pos {rest}: {err}"
+                ))
+            })?;
 
             let r = RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data));
             if r.rtype == RType::SOA {
@@ -304,12 +322,12 @@ where
 }
 
 fn is_same_soa(start_soa: &SoaRecord, start_soa_rdata: &Soa<NameBuf>, r: &RegularRecord) -> bool {
-    if r.rtype == RType::SOA
+    if (r.rtype == RType::SOA
         && r.rname.as_ref() == &*start_soa.0.rname
         && r.rclass == start_soa.0.rclass
-        && r.ttl == start_soa.ttl
+        && r.ttl == start_soa.ttl)
+        && let Ok(soa_rdata) = Soa::<NameBuf>::parse_message_bytes(r.rdata.bytes(), 0)
     {
-        let soa_rdata = Soa::<NameBuf>::parse_message_bytes(r.rdata.bytes(), 0).unwrap();
         return &soa_rdata == start_soa_rdata;
     }
     false
