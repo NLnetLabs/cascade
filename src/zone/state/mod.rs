@@ -2,20 +2,22 @@
 
 use std::{
     collections::hash_map,
-    fs,
+    error::Error,
+    fmt, fs,
     io::{self, BufReader},
     sync::Arc,
 };
 
 use bytes::Bytes;
 use camino::Utf8Path;
-use domain::base::Name;
+use domain::{base::Name, dep::octseq::Array};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::{
     loader::zone::LoaderState,
     policy::{Policy, PolicyVersion},
+    tsig::TsigStore,
     zone::ZoneState,
 };
 
@@ -39,7 +41,8 @@ impl Spec {
         self,
         zone_name: &Name<Bytes>,
         policies: &mut foldhash::HashMap<Box<str>, Policy>,
-    ) -> ZoneState {
+        tsig_store: &TsigStore,
+    ) -> Result<ZoneState, LoadError> {
         /// Synchronize a loaded policy with global state.
         fn sync_policy(
             known_version: PolicyVersion,
@@ -95,7 +98,9 @@ impl Spec {
                 persisted_signed_diffs,
             }) => {
                 let loader = LoaderState {
-                    source: source.parse(),
+                    source: source
+                        .parse(tsig_store)
+                        .map_err(LoadError::MissingSourceTsigKey)?,
                     ..Default::default()
                 };
 
@@ -108,7 +113,7 @@ impl Spec {
                 }
                 let policy = policy.map(|p| p.latest.clone());
 
-                ZoneState {
+                Ok(ZoneState {
                     policy,
                     min_expiration,
                     next_min_expiration,
@@ -123,7 +128,7 @@ impl Spec {
                     persisted_loaded_diffs,
                     persisted_signed_diffs,
                     ..Default::default()
-                }
+                })
             }
         }
     }
@@ -148,5 +153,67 @@ impl Spec {
     pub fn save(&self, path: &Utf8Path) -> io::Result<()> {
         let text = serde_json::to_string(self)?;
         crate::util::write_file(path, text.as_bytes())
+    }
+}
+
+//============ Errors ==========================================================
+
+//----------- LoadError --------------------------------------------------------
+
+/// An error loading a zone state file.
+#[derive(Debug)]
+pub enum LoadError {
+    /// The file could not be read.
+    Read {
+        /// The path being read from.
+        path: Box<Utf8Path>,
+
+        /// The I/O error.
+        error: io::Error,
+    },
+
+    /// The TSIG key for the zone source could not be found.
+    MissingSourceTsigKey(MissingTsigKeyError),
+}
+
+impl Error for LoadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Read { error, .. } => Some(error),
+            Self::MissingSourceTsigKey(error) => Some(error),
+        }
+    }
+}
+
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Read { path, error } => {
+                write!(f, "could not read the zone state file '{path}': {error}")
+            }
+            Self::MissingSourceTsigKey(error) => {
+                write!(f, "could not load the zone source setting: {error}")
+            }
+        }
+    }
+}
+
+//----------- MissingTsigKeyError ----------------------------------------------
+
+/// A TSIG key could not be found.
+///
+/// A zone's state file indicated that it was using a TSIG key, but the key
+/// could not be found in the configured TSIG key store.
+#[derive(Clone, Debug)]
+pub struct MissingTsigKeyError {
+    /// The name of the TSIG key.
+    pub name: Box<Name<Array<255>>>,
+}
+
+impl Error for MissingTsigKeyError {}
+
+impl fmt::Display for MissingTsigKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TSIG key '{}' could not be found", self.name)
     }
 }

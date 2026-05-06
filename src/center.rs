@@ -378,8 +378,6 @@ impl State {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
 
-        info!("Loaded the global state file (from '{path}')");
-
         Ok(spec.parse(zones, policies))
     }
 

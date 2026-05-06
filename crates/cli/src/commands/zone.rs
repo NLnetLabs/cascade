@@ -545,24 +545,20 @@ impl Zone {
         println!("policy: {}", zone.policy);
         println!("source: {}", zone.source);
 
-        let loader_review = if !policy.loader.review.required {
-            "none"
-        } else if let Some(hook) = &policy.loader.review.cmd_hook {
-            hook
-        } else {
-            "manual"
+        let loader_review = match &policy.loader.review.mode {
+            ReviewPolicyMode::Off => "off",
+            ReviewPolicyMode::Script { hook } => &format!("script `{hook}`"),
+            ReviewPolicyMode::Manual => "manual",
         };
 
-        let signer_review = if !policy.signer.review.required {
-            "none"
-        } else if let Some(hook) = &policy.signer.review.cmd_hook {
-            hook
-        } else {
-            "manual"
+        let signer_review = match &policy.signer.review.mode {
+            ReviewPolicyMode::Off => "off",
+            ReviewPolicyMode::Script { hook } => &format!("script `{hook}`"),
+            ReviewPolicyMode::Manual => "manual",
         };
 
         println!("");
-        println!("review hooks");
+        println!("review");
         println!("  loaded: {loader_review}");
         println!("  signed: {signer_review}");
         println!("");
@@ -712,11 +708,17 @@ fn print_loaded_review_phase(
     policy: &PolicyInfo,
     current: Progress,
 ) {
-    use ansi::{BLUE, RED, RESET, YELLOW};
+    use ansi::{BLUE, DIM, RED, RESET, YELLOW};
+
+    if let ReviewPolicyMode::Off = policy.loader.review.mode {
+        println!("  {Pending} {DIM}review loaded zone (disabled){RESET}");
+        return;
+    }
+
     if current < Progress::LoadedReview {
         println!("  {Pending} review loaded zone");
     } else if current == Progress::LoadedReview {
-        if let Some(hook) = &policy.loader.review.cmd_hook {
+        if let ReviewPolicyMode::Script { hook } = &policy.loader.review.mode {
             println!("  {Ongoing} review loaded zone");
             println!("  |   {BLUE}automatic zone review in progress{RESET}");
             println!("  |   review hook: \"{hook}\"",);
@@ -785,11 +787,17 @@ fn print_signed_review_phase(
     policy: &PolicyInfo,
     current: Progress,
 ) {
-    use ansi::{BLUE, RED, RESET, YELLOW};
+    use ansi::{BLUE, DIM, RED, RESET, YELLOW};
+
+    if let ReviewPolicyMode::Off = policy.signer.review.mode {
+        println!("  {Pending} {DIM}review signed zone (disabled){RESET}");
+        return;
+    }
+
     if current < Progress::SignedReview {
         println!("  {Pending} review signed zone");
     } else if current == Progress::SignedReview {
-        if let Some(hook) = &policy.signer.review.cmd_hook {
+        if let ReviewPolicyMode::Script { hook } = &policy.signer.review.mode {
             println!("  {Ongoing} review signed zone");
             println!("  |   {YELLOW}automatic zone review in progress{RESET}");
             println!("  |   review hook: \"{hook}\"",);
@@ -835,12 +843,12 @@ use Icon::{Done, Error, Ongoing, Pending, Stopped};
 
 impl std::fmt::Display for Icon {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ansi::{BLUE, GRAY, GREEN, RED, RESET, YELLOW};
+        use ansi::{BLUE, DIM, GREEN, RED, RESET, YELLOW};
         let (color, character) = match self {
             Self::Done => (GREEN, '\u{2714}'),     // tick ✔
             Self::Ongoing => (BLUE, '\u{25CF}'),   // black circle ●
             Self::Stopped => (YELLOW, '\u{25A0}'), // black square ■
-            Self::Pending => (GRAY, '\u{25CB}'),   // white circle ○
+            Self::Pending => (DIM, '\u{25CB}'),    // white circle ○
             Self::Error => (RED, '\u{2A2F}'),      // cross ⨯
         };
         let s = format!("{color}{character}{RESET}");

@@ -16,7 +16,7 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
 use crate::{
     common::datetime::TimeSpan,
     policy::{
-        KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
+        self, KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
         ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
     },
 };
@@ -107,7 +107,7 @@ impl Spec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct LoaderSpec {
     /// Reviewing loaded zones.
-    pub review: ReviewSpec,
+    pub review: Option<ReviewSpec>,
 }
 
 //--- Conversion
@@ -116,14 +116,14 @@ impl LoaderSpec {
     /// Parse from this specification.
     pub fn parse(self) -> LoaderPolicy {
         LoaderPolicy {
-            review: self.review.parse(),
+            review: self.review.map_or(Default::default(), |r| r.parse()),
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &LoaderPolicy) -> Self {
         Self {
-            review: ReviewSpec::build(&policy.review),
+            review: Some(ReviewSpec::build(&policy.review)),
         }
     }
 }
@@ -817,13 +817,37 @@ impl SignerDenialSpec {
 
 /// Policy for reviewing loaded/signed zones.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct ReviewSpec {
-    /// Whether review is required.
-    pub required: bool,
+#[serde(tag = "mode", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ReviewSpec {
+    /// Do not review
+    #[default]
+    Off,
 
-    /// A command hook for reviewing a new version of the zone.
-    pub cmd_hook: Option<String>,
+    /// Reset the pipeline on reject
+    #[serde(rename_all = "kebab-case")]
+    Manual {
+        #[serde(default)]
+        on_reject: OnReject,
+    },
+
+    /// Halt the pipeline on reject
+    #[serde(rename_all = "kebab-case")]
+    Script {
+        hook: String,
+        #[serde(default)]
+        on_reject: OnReject,
+    },
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnReject {
+    /// Reset the pipeline on reject
+    #[default]
+    Discard,
+
+    /// Halt the pipeline on reject
+    Halt,
 }
 
 //--- Conversion
@@ -831,17 +855,37 @@ pub struct ReviewSpec {
 impl ReviewSpec {
     /// Parse from this specification.
     pub fn parse(self) -> ReviewPolicy {
+        let (mode, on_reject) = match self {
+            ReviewSpec::Off => (policy::ReviewMode::Off, OnReject::Discard),
+            ReviewSpec::Manual { on_reject } => (policy::ReviewMode::Manual, on_reject),
+            ReviewSpec::Script { hook, on_reject } => {
+                (policy::ReviewMode::Script { hook }, on_reject)
+            }
+        };
         ReviewPolicy {
-            required: self.required,
-            cmd_hook: self.cmd_hook,
+            mode,
+            on_reject: match on_reject {
+                OnReject::Discard => policy::OnReject::Discard,
+                OnReject::Halt => policy::OnReject::Halt,
+            },
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ReviewPolicy) -> Self {
-        Self {
-            required: policy.required,
-            cmd_hook: policy.cmd_hook.clone(),
+        let map_on_reject = |r: &policy::OnReject| match r {
+            policy::OnReject::Discard => OnReject::Discard,
+            policy::OnReject::Halt => OnReject::Halt,
+        };
+        match policy.mode.clone() {
+            policy::ReviewMode::Off => ReviewSpec::Off,
+            policy::ReviewMode::Manual => ReviewSpec::Manual {
+                on_reject: map_on_reject(&policy.on_reject),
+            },
+            policy::ReviewMode::Script { hook } => ReviewSpec::Script {
+                hook,
+                on_reject: map_on_reject(&policy.on_reject),
+            },
         }
     }
 }
