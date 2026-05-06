@@ -439,7 +439,6 @@ impl ZoneSigner {
         status.write().unwrap().current_action = "Collecting records to sign".to_string();
         debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
-        // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
             .unsigned_records()
             .map(OldRecord::from)
