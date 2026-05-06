@@ -9,7 +9,7 @@ use bytes::Bytes;
 use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
 use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
-use domain::base::{CanonicalOrd, Name, Record};
+use domain::base::{CanonicalOrd, Name, Record, RelativeName};
 use domain::crypto::sign::{SecretKeyBytes, SignRaw};
 use domain::dnssec::common::parse_from_bind;
 use domain::dnssec::sign::SigningConfig;
@@ -26,7 +26,7 @@ use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_
 use domain::new::base::{RType, Serial};
 use domain::new::rdata::RecordData;
 use domain::rdata::dnssec::Timestamp;
-use domain::rdata::{Dnskey, Nsec3param, ZoneRecordData};
+use domain::rdata::{Dnskey, Nsec3param};
 use domain::zonefile::inplace::{Entry, Zonefile};
 use domain_kmip::KeyUrl;
 use domain_kmip::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
@@ -614,71 +614,110 @@ impl ZoneSigner {
         // needs a slice of references, so we need to build that here.
         let keys = signing_keys.iter().collect::<Vec<_>>();
 
-        // TODO: This generation code is incorrect; 'sign_sorted_zone_records'
-        // looks for zone cuts, but zone cuts may need to be detected _across_
-        // the segments we split the records into. Zone cut detection needs to
-        // be re-implemented here with parallel execution in mind. This also
-        // applies to NSEC(3) generation, but it is currently single-threaded.
+        // Sign the records in parallel.
+        //
+        // Records are split at top-level labels within the zone (e.g. between
+        // 'foo.example.org' and 'bar.example.org' in the 'example.org' zone);
+        // for TLDs, which are by far the largest zones, this will result
+        // in many small chunks which can be signed in parallel. Signing
+        // considerations do not cross these boundaries; e.g. a zone cut (an
+        // `NS` record) in one top-level name does not affect any other.
 
-        // Disable parallel signing for now. This may also split RRsets.
-        let signatures = if false {
-            // Split the records into segments.
-            let segments = rayon::iter::split(0..unsigned_records.len(), |range| {
-                // Always sign at least 1024 records at a time.
-                if range.len() < 1024 {
-                    return (range, None);
-                }
+        // Split the records into segments.
+        let segments = rayon::iter::split(0..unsigned_records.len(), |range| {
+            // Always sign at least 1024 records at a time.
+            if range.len() < 1024 {
+                return (range, None);
+            }
 
-                let midpoint = range.start + range.len() / 2;
-                let left = range.start..midpoint;
-                let right = midpoint..range.end;
-                (left, Some(right))
-            });
-
-            // Generate signatures from each segment.
-            let signatures = segments.map(|range| {
-                sign_sorted_zone_records(
-                    &zone.name,
-                    RecordsIter::new_from_owned(&unsigned_records[range]),
-                    &keys,
-                    &rrsig_cfg,
-                )
-            });
-
-            // Convert the signatures into new-base types and collect them together.
-            // If errors occur, one error is arbitrarily chosen and returned.
-            signatures
-                .try_fold(Vec::new, |mut a, b| {
-                    a.extend(b?.into_iter().map(|r| OldRecord::from_record(r).into()));
-                    Ok::<_, SigningError>(a)
+            // Find a top-level label boundary close to the midpoint.
+            //
+            // We could search _around_ the exact midpoint rather than right
+            // after it, but there's no significant advantage to this. Most
+            // top-level labels (in big zones) will have few records.
+            let midpoint = range.start + range.len() / 2;
+            let mut prev_top_level_label = None;
+            let midpoint = unsigned_records[midpoint..range.end]
+                .iter()
+                // Extract the top-level label within the zone. If the record
+                // is at the zone apex, store 'Some(None)'. If the record falls
+                // outside the zone, store 'None'.
+                .map(|r| {
+                    // This is mostly complicated due to borrowing issues.
+                    r.owner()
+                        .for_slice()
+                        .for_ref()
+                        .strip_suffix(zone_name)
+                        .ok()
+                        .map(|rn| RelativeName::from_slice(rn.into_octets()).unwrap().last())
                 })
-                .try_reduce(Vec::new, |mut a, mut b| {
-                    a.append(&mut b);
-                    Ok(a)
-                })
-                .map_err(|err| SignerError::SigningError(err.to_string()))?
-        } else {
-            let signatures = sign_sorted_zone_records(
+                // Find the first position where the extracted values differ
+                // between adjacent pairs of records. This will return true if
+                // and only if:
+                // 1. The records are both within the zone and differ in their
+                //    top-level labels.
+                // 2. The latter record falls outside the zone. (The former
+                //    record could not have fallen outside the zone, since if
+                //    it did, '.position()' would have terminated already.)
+                // We do not generate signatures for records outside the zone,
+                // so we allow splitting anywhere within them.
+                .position(|top_level_label| {
+                    // If this record falls outside the zone, stop immediately.
+                    let Some(curr) = top_level_label else {
+                        return true;
+                    };
+
+                    // Retrieve the previous top-level label, and update it
+                    // for the next iteration.
+                    let prev = prev_top_level_label.replace(curr);
+
+                    // If there was no previous top-level label (i.e. this is
+                    // the first iteration), don't split here.
+                    let Some(prev) = prev else {
+                        return false;
+                    };
+
+                    // Allow splitting here if the adjacent top-level labels
+                    // differ.
+                    prev != curr
+                });
+
+            // If we could not find a useful midpoint, give up. This should be
+            // very rare, since 'range' covers at least 1024 records.
+            let Some(midpoint) = midpoint else {
+                trace!("Could not find a useful midpoint");
+                return (range, None);
+            };
+
+            // Split the records at this midpoint. The record *at* the midpoint
+            // has a different top-level label from the record *before* it.
+            let left = range.start..midpoint;
+            let right = midpoint..range.end;
+            (left, Some(right))
+        });
+
+        // Generate signatures from each segment.
+        let signatures = segments.map(|range| {
+            sign_sorted_zone_records(
                 &zone.name,
-                RecordsIter::new_from_owned(&unsigned_records),
+                RecordsIter::new_from_owned(&unsigned_records[range]),
                 &keys,
                 &rrsig_cfg,
             )
+        });
+
+        // Convert the signatures into new-base types and collect them together.
+        // If errors occur, one error is arbitrarily chosen and returned.
+        let signatures: Vec<RegularRecord> = signatures
+            .try_fold(Vec::new, |mut a, b| {
+                a.extend(b?.into_iter().map(|r| OldRecord::from_record(r).into()));
+                Ok::<_, SigningError>(a)
+            })
+            .try_reduce(Vec::new, |mut a, mut b| {
+                a.append(&mut b);
+                Ok(a)
+            })
             .map_err(|err| SignerError::SigningError(err.to_string()))?;
-            let signatures: Vec<RegularRecord> = signatures
-                .into_iter()
-                .map(|s| {
-                    let r = Record::new(
-                        s.owner().clone(),
-                        s.class(),
-                        s.ttl(),
-                        ZoneRecordData::Rrsig(s.data().clone()),
-                    );
-                    r.into()
-                })
-                .collect();
-            signatures
-        };
 
         let total_signatures = signatures.len();
 
