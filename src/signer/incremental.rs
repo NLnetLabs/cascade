@@ -2216,18 +2216,18 @@ impl IncrementalSigningState {
 }
 
 /// Load the state varibles we need at the start and then update state at the end.
-struct LocalState {
-    apex_remove: HashSet<Rtype>,
-    apex_extra: Vec<String>,
-    last_signature_refresh: UnixTime,
-    key_tags: HashSet<u16>,
-    key_roll: Option<UnixTime>,
-    previous_serial: Option<Serial>,
-    next_min_expiration: Option<Timestamp>,
+pub struct LocalState {
+    pub apex_remove: HashSet<Rtype>,
+    pub apex_extra: Vec<String>,
+    pub last_signature_refresh: UnixTime,
+    pub key_tags: HashSet<u16>,
+    pub key_roll: Option<UnixTime>,
+    pub previous_serial: Option<Serial>,
+    pub next_min_expiration: Option<Timestamp>,
 }
 
 impl LocalState {
-    fn new(zone: &Arc<Zone>) -> Result<Self, SignerError> {
+    pub fn new(zone: &Arc<Zone>) -> Result<Self, SignerError> {
         let zone_state = zone
             .state
             .lock()
@@ -2244,7 +2244,7 @@ impl LocalState {
         })
     }
 
-    fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) -> Result<(), SignerError> {
+    pub fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) -> Result<(), SignerError> {
         let mut modified = false;
 
         let mut zone_state = zone
