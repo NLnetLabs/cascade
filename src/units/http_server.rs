@@ -519,7 +519,7 @@ impl HttpServer {
         // Query key status
         let key_status = {
             let center = &state.center;
-            let res = center.key_manager.on_status(center, name.clone()).await;
+            let res = center.key_manager.on_status(center, &zone).await;
 
             let (Ok(output) | Err(output)) = res;
 
@@ -903,7 +903,7 @@ impl HttpServer {
 
                 center.key_manager.on_zone_policy_changed(
                     center,
-                    zone_name.clone(),
+                    &zone.0,
                     old.clone(),
                     new.clone(),
                 );
@@ -989,9 +989,12 @@ impl HttpServer {
         Json(KeyRoll { variant, cmd }): Json<KeyRoll>,
     ) -> Json<Result<(), String>> {
         let center = &state.center;
+        let Some(zone) = center::get_zone(center, &zone) else {
+            return Json(Err(format!("Zone '{zone}' does not exist")));
+        };
         let res = center
             .key_manager
-            .on_roll_key(center, zone, variant, cmd)
+            .on_roll_key(center, &zone, variant, cmd)
             .await;
 
         Json(res)
@@ -1007,9 +1010,12 @@ impl HttpServer {
         }): Json<KeyRemove>,
     ) -> Json<Result<(), String>> {
         let center = &state.center;
+        let Some(zone) = center::get_zone(center, &zone) else {
+            return Json(Err(format!("Zone '{zone}' does not exist")));
+        };
         let res = center
             .key_manager
-            .on_remove_key(center, zone, key, force, continue_flag)
+            .on_remove_key(center, &zone, key, force, continue_flag)
             .await;
 
         Json(res)
@@ -1021,9 +1027,12 @@ impl HttpServer {
         Json(KeyGet { key_type }): Json<KeyGet>,
     ) -> Json<Result<String, String>> {
         let center = &state.center;
+        let Some(zone) = center::get_zone(center, &zone) else {
+            return Json(Err(format!("Zone '{zone}' does not exist")));
+        };
         let res = center
             .key_manager
-            .on_get_key(center, zone, key_type.to_string())
+            .on_get_key(center, &zone, key_type.to_string())
             .await;
 
         Json(res)

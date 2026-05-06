@@ -445,6 +445,7 @@ dependencies = [
  "serde",
  "syslog",
  "time",
+ "tokio",
  "toml_edit",
 ]
 
