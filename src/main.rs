@@ -78,14 +78,25 @@ fn main() -> ExitCode {
     let mut policies = Default::default();
     let state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
         Ok(mut state) => {
+            info!(
+                "Loaded the global state file (from '{}')",
+                config.daemon.state_file.value()
+            );
+
             // Load the TSIG store file.
             match state.tsig_store.init_from_file(&config) {
-                Ok(()) => debug!("Loaded the TSIG store"),
+                Ok(()) => debug!("Loaded the TSIG store (from '{}')", config.tsig_store_path),
                 Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                    debug!("No TSIG store found; will create one");
+                    debug!(
+                        "TSIG store file '{}' did not exist; it will be created",
+                        config.tsig_store_path
+                    );
                 }
                 Err(err) => {
-                    error!("Failed to load the TSIG store: {err}");
+                    error!(
+                        "TSIG store file '{}' could not be read: {err}",
+                        config.tsig_store_path
+                    );
                     return ExitCode::FAILURE;
                 }
             }
@@ -117,11 +128,17 @@ fn main() -> ExitCode {
 
         Err(err) => {
             if err.kind() != io::ErrorKind::NotFound {
-                error!("Could not load the state file: {err}");
+                error!(
+                    "State file '{}' could not be read: {err}",
+                    config.daemon.state_file.value()
+                );
                 return ExitCode::FAILURE;
             }
 
-            info!("State file not found; starting from scratch");
+            info!(
+                "State file '{}' did not exist; starting from scratch",
+                config.daemon.state_file.value()
+            );
 
             // Create required subdirectories (and their parents) if they don't
             // exist. This is only needed for directories to which we write files
