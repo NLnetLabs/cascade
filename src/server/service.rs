@@ -394,7 +394,7 @@ mod compat {
 
         // Stream the records in the background.
         tokio::task::spawn(async move {
-            // Collect the sequence of IXFR output records..
+            // Collect the sequence of IXFR output records.
             let mut rrs = vec![new_soa.clone().into()];
             for diff in &diffs[start_idx..] {
                 rrs.push(diff.removed_soa.clone().unwrap().into());
