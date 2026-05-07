@@ -7,9 +7,12 @@ use std::{
 };
 
 use bytes::Bytes;
+use cascade_zonedata::OldRecord;
 use cascade_zonedata::{
     LoadedZoneBuilder, LoadedZonePatcher, LoadedZoneReplacer, PatchError, ReplaceError, SoaRecord,
 };
+use domain::base::MessageBuilder as OldBaseMessageBuilder;
+use domain::base::Rtype;
 use domain::{
     base::{iana::Rcode, wire::FormError},
     net::{
@@ -113,30 +116,40 @@ pub async fn ixfr(
 ) -> Result<bool, IxfrError> {
     debug!("Attempting an IXFR");
 
-    let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
     let local_soa = builder.curr().unwrap().soa().clone();
 
     // Prepare the IXFR query message.
-    let mut buffer = [0u8; 1024];
-    let mut compressor = NameCompressor::default();
-    let mut msgbuilder = MessageBuilder::new(
-        &mut buffer,
-        &mut compressor,
-        0u16.into(),
-        *HeaderFlags::default().set_qr(false),
-    );
-    msgbuilder
-        .push_question(&Question {
-            qname: zone_name,
-            // TODO: 'QType::IXFR'.
-            qtype: QType { code: 251.into() },
-            qclass: QClass::IN,
-        })
-        .unwrap();
-    msgbuilder.push_authority(&local_soa).unwrap();
-    let message = Bytes::copy_from_slice(msgbuilder.finish().as_bytes());
-    let message =
-        domain::base::Message::from_octets(message).expect("'Message' is at least 12 bytes long");
+    let message = OldBaseMessageBuilder::new_bytes();
+    let mut message = message.question();
+    message.push((zone.name.clone(), Rtype::IXFR)).unwrap();
+    let mut message = message.authority();
+    let old_soa: OldRecord = local_soa.clone().into();
+    message.push(old_soa).unwrap();
+
+    /*
+        // New base:
+        let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
+        let mut buffer = [0u8; 1024];
+        let mut compressor = NameCompressor::default();
+        let mut msgbuilder = MessageBuilder::new(
+            &mut buffer,
+            &mut compressor,
+            0u16.into(),
+            *HeaderFlags::default().set_qr(false),
+        );
+        msgbuilder
+            .push_question(&Question {
+                qname: zone_name,
+                // TODO: 'QType::IXFR'.
+                qtype: QType { code: 251.into() },
+                qclass: QClass::IN,
+            })
+            .unwrap();
+        msgbuilder.push_authority(&local_soa).unwrap();
+        let message = Bytes::copy_from_slice(msgbuilder.finish().as_bytes());
+        let message =
+            domain::base::Message::from_octets(message).expect("'Message' is at least 12 bytes long");
+    */
 
     // Prepare a TCP client.
     let tcp_conn = TcpStream::connect(*addr)

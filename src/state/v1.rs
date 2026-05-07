@@ -8,6 +8,7 @@ use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
 
+use crate::policy;
 use crate::policy::file::v1::NameserverCommsSpec;
 use crate::policy::file::v1::OutboundSpec;
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
@@ -464,11 +465,22 @@ impl SignerDenialPolicySpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReviewPolicySpec {
-    /// Whether review is required.
-    pub required: bool,
+    pub mode: ReviewMode,
 
-    /// A command hook for reviewing a new version of the zone.
-    pub cmd_hook: Option<String>,
+    pub on_reject: OnReject,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReviewMode {
+    Off,
+    Manual,
+    Script { hook: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum OnReject {
+    Discard,
+    Halt,
 }
 
 //--- Conversion
@@ -477,16 +489,30 @@ impl ReviewPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> ReviewPolicy {
         ReviewPolicy {
-            required: self.required,
-            cmd_hook: self.cmd_hook,
+            mode: match self.mode {
+                ReviewMode::Off => policy::ReviewMode::Off,
+                ReviewMode::Manual => policy::ReviewMode::Manual,
+                ReviewMode::Script { hook } => policy::ReviewMode::Script { hook },
+            },
+            on_reject: match self.on_reject {
+                OnReject::Discard => policy::OnReject::Discard,
+                OnReject::Halt => policy::OnReject::Halt,
+            },
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ReviewPolicy) -> Self {
         Self {
-            required: policy.required,
-            cmd_hook: policy.cmd_hook.clone(),
+            mode: match policy.mode.clone() {
+                policy::ReviewMode::Off => ReviewMode::Off,
+                policy::ReviewMode::Manual => ReviewMode::Manual,
+                policy::ReviewMode::Script { hook } => ReviewMode::Script { hook },
+            },
+            on_reject: match policy.on_reject {
+                policy::OnReject::Discard => OnReject::Discard,
+                policy::OnReject::Halt => OnReject::Halt,
+            },
         }
     }
 }

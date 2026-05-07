@@ -199,7 +199,6 @@ impl<'a> ZoneHandle<'a> {
         self.persistence().start_loaded_persistence(persister);
     }
 
-    #[expect(dead_code)]
     pub(crate) fn soft_reject_loaded(&mut self) {
         self.state.record_event(
             HistoricalEvent::UnsignedZoneReview {
@@ -215,6 +214,7 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Waiting(loaded.soft_reject()));
+        self.storage().abandon_loaded_review();
     }
 
     pub(crate) fn hard_reject_loaded(&mut self) {
@@ -343,7 +343,6 @@ impl<'a> ZoneHandle<'a> {
         self.persistence().start_signed_persistence(persister);
     }
 
-    #[expect(dead_code)]
     pub(crate) fn soft_reject_signed(&mut self) {
         self.state.record_event(
             HistoricalEvent::SignedZoneReview {
@@ -359,6 +358,7 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Waiting(signed.soft_reject()));
+        self.storage().abandon_signed_review();
     }
 
     pub(crate) fn hard_reject_signed(&mut self) {

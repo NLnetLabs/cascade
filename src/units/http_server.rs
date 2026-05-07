@@ -384,10 +384,10 @@ impl HttpServer {
             source = match zone_state.loader.source.clone() {
                 loader::Source::None => api::ZoneSource::None,
                 loader::Source::Zonefile { path } => api::ZoneSource::Zonefile { path },
-                loader::Source::Server { addr, tsig_key: _ } => api::ZoneSource::Server {
-                    addr,
-                    tsig_key: None,
-                },
+                loader::Source::Server { addr, tsig_key } => {
+                    let tsig_key = tsig_key.map(|k| k.name().clone());
+                    api::ZoneSource::Server { addr, tsig_key }
+                }
             };
             unsigned_review_addr = state
                 .center
@@ -519,7 +519,7 @@ impl HttpServer {
         // Query key status
         let key_status = {
             let center = &state.center;
-            let res = center.key_manager.on_status(center, name.clone()).await;
+            let res = center.key_manager.on_status(center, &zone).await;
 
             let (Ok(output) | Err(output)) = res;
 
@@ -903,7 +903,7 @@ impl HttpServer {
 
                 center.key_manager.on_zone_policy_changed(
                     center,
-                    zone_name.clone(),
+                    &zone.0,
                     old.clone(),
                     new.clone(),
                 );
@@ -929,8 +929,15 @@ impl HttpServer {
         let zones = p.zones.iter().cloned().collect();
         let loader = LoaderPolicyInfo {
             review: ReviewPolicyInfo {
-                required: p.latest.loader.review.required,
-                cmd_hook: p.latest.loader.review.cmd_hook.clone(),
+                mode: match p.latest.loader.review.mode.clone() {
+                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+                },
+                on_reject: match p.latest.loader.review.on_reject {
+                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                },
             },
         };
 
@@ -948,8 +955,15 @@ impl HttpServer {
                 SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 { opt_out },
             },
             review: ReviewPolicyInfo {
-                required: p.latest.signer.review.required,
-                cmd_hook: p.latest.signer.review.cmd_hook.clone(),
+                mode: match p.latest.signer.review.mode.clone() {
+                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+                },
+                on_reject: match p.latest.signer.review.on_reject {
+                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                },
             },
         };
 
@@ -989,9 +1003,12 @@ impl HttpServer {
         Json(KeyRoll { variant, cmd }): Json<KeyRoll>,
     ) -> Json<Result<(), String>> {
         let center = &state.center;
+        let Some(zone) = center::get_zone(center, &zone) else {
+            return Json(Err(format!("Zone '{zone}' does not exist")));
+        };
         let res = center
             .key_manager
-            .on_roll_key(center, zone, variant, cmd)
+            .on_roll_key(center, &zone, variant, cmd)
             .await;
 
         Json(res)
@@ -1007,9 +1024,12 @@ impl HttpServer {
         }): Json<KeyRemove>,
     ) -> Json<Result<(), String>> {
         let center = &state.center;
+        let Some(zone) = center::get_zone(center, &zone) else {
+            return Json(Err(format!("Zone '{zone}' does not exist")));
+        };
         let res = center
             .key_manager
-            .on_remove_key(center, zone, key, force, continue_flag)
+            .on_remove_key(center, &zone, key, force, continue_flag)
             .await;
 
         Json(res)
@@ -1021,9 +1041,12 @@ impl HttpServer {
         Json(KeyGet { key_type }): Json<KeyGet>,
     ) -> Json<Result<String, String>> {
         let center = &state.center;
+        let Some(zone) = center::get_zone(center, &zone) else {
+            return Json(Err(format!("Zone '{zone}' does not exist")));
+        };
         let res = center
             .key_manager
-            .on_get_key(center, zone, key_type.to_string())
+            .on_get_key(center, &zone, key_type.to_string())
             .await;
 
         Json(res)

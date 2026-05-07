@@ -378,7 +378,13 @@ impl Display for ZoneSource {
         match self {
             ZoneSource::None => f.write_str("<none>"),
             ZoneSource::Zonefile { path } => path.fmt(f),
-            ZoneSource::Server { addr, .. } => addr.fmt(f),
+            ZoneSource::Server { addr, tsig_key } => {
+                write!(f, "{addr}")?;
+                if let Some(tsig_key) = &tsig_key {
+                    write!(f, " with TSIG key '{tsig_key}'")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -816,8 +822,21 @@ pub struct KeyManagerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ReviewPolicyInfo {
-    pub required: bool,
-    pub cmd_hook: Option<String>,
+    pub mode: ReviewPolicyMode,
+    pub on_reject: ReviewPolicyOnReject,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ReviewPolicyMode {
+    Off,
+    Manual,
+    Script { hook: String },
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ReviewPolicyOnReject {
+    Discard,
+    Halt,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

@@ -6,7 +6,7 @@ use crate::policy::{KeyParameters, PolicyVersion};
 use crate::signer::ResigningTrigger;
 use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
-use crate::zone::{HistoricalEvent, ZoneHandle};
+use crate::zone::{HistoricalEvent, Zone, ZoneHandle};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
@@ -91,12 +91,12 @@ impl KeyManager {
     pub async fn on_roll_key(
         &self,
         center: &Arc<Center>,
-        zone: Name<Bytes>,
+        zone: &Zone,
         roll_variant: KeyRollVariant,
         roll_cmd: KeyRollCommand,
     ) -> Result<(), String> {
         let center = center.clone();
-        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+        let mut cmd = Self::keyset_cmd(&center, zone.name.clone(), RecordingMode::Record);
 
         cmd.arg(match roll_variant {
             api::keyset::KeyRollVariant::Ksk => "ksk",
@@ -137,13 +137,13 @@ impl KeyManager {
     pub async fn on_remove_key(
         &self,
         center: &Arc<Center>,
-        zone: Name<Bytes>,
+        zone: &Zone,
         key: String,
         force: bool,
         continue_flag: bool,
     ) -> Result<(), String> {
         let center = center.clone();
-        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+        let mut cmd = Self::keyset_cmd(&center, zone.name.clone(), RecordingMode::Record);
 
         cmd.arg("remove-key").arg(key);
 
@@ -166,11 +166,11 @@ impl KeyManager {
     pub async fn on_get_key(
         &self,
         center: &Arc<Center>,
-        zone: Name<Bytes>,
+        zone: &Zone,
         key_type: String,
     ) -> Result<String, String> {
         let center = center.clone();
-        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+        let mut cmd = Self::keyset_cmd(&center, zone.name.clone(), RecordingMode::Record);
 
         cmd.arg("get").arg(key_type);
 
@@ -196,17 +196,17 @@ impl KeyManager {
         }
     }
 
-    pub async fn on_status(
-        &self,
-        center: &Arc<Center>,
-        zone: Name<Bytes>,
-    ) -> Result<String, String> {
+    pub async fn on_status(&self, center: &Arc<Center>, zone: &Zone) -> Result<String, String> {
         let center = center.clone();
-        let res = Self::keyset_cmd(&center, zone, RecordingMode::RecordOnlyOnWarningOrError)
-            .arg("status")
-            .arg("-v")
-            .output()
-            .await;
+        let res = Self::keyset_cmd(
+            &center,
+            zone.name.clone(),
+            RecordingMode::RecordOnlyOnWarningOrError,
+        )
+        .arg("status")
+        .arg("-v")
+        .output()
+        .await;
         match res {
             Err(KeySetCommandError { err, output, .. }) => {
                 // The dnst keyset status command failed.
@@ -232,7 +232,7 @@ impl KeyManager {
     pub fn on_zone_policy_changed(
         &self,
         center: &Arc<Center>,
-        name: Name<Bytes>,
+        zone: &Zone,
         old: Option<Arc<PolicyVersion>>,
         new: Arc<PolicyVersion>,
     ) {
@@ -245,12 +245,14 @@ impl KeyManager {
             return;
         }
 
+        let zone_name = zone.name.clone();
+
         tokio::spawn(async move {
             // Keep it simple, just send all config items to keyset even
             // if they didn't change.
             let config_commands = policy_to_commands(&center, &new);
             for c in config_commands {
-                let mut cmd = Self::keyset_cmd(&center, name.clone(), RecordingMode::Record);
+                let mut cmd = Self::keyset_cmd(&center, zone_name.clone(), RecordingMode::Record);
                 cmd.arg("set");
 
                 for a in c {
@@ -428,11 +430,11 @@ impl KeyManager {
     /// Create a keyset command with the config file for the given zone.
     fn keyset_cmd(
         center: &Arc<Center>,
-        name: Name<Bytes>,
+        zone_name: Name<Bytes>,
         recording_mode: RecordingMode,
     ) -> KeySetCommand {
         KeySetCommand::new(
-            name,
+            zone_name,
             center.clone(),
             center.config.keys_dir.clone(),
             center.config.dnst_binary_path.clone(),

@@ -114,7 +114,7 @@ version = "0.3.20"
 
 [dependencies]
 bytes              = "1.0"
-daemonbase         = "0.1.5"
+daemonbase         = { version = "0.1.5", features = ["tokio"] }
 futures            = "0.3.17"
 futures-util       = "0.3"
 serde              = { workspace = true, features = ["derive", "rc"] }

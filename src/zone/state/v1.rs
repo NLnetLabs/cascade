@@ -3,9 +3,9 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
 
-use bytes::Bytes;
 use camino::Utf8Path;
 use domain::base::{Rtype, Serial, Ttl};
+use domain::dep::octseq::Array;
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::loader::Source;
 use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
+use crate::tsig::TsigStore;
 use crate::zone::HistoryItem;
 use crate::{
     policy::{
@@ -21,6 +22,8 @@ use crate::{
     },
     zone::ZoneState,
 };
+
+use super::MissingTsigKeyError;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -473,10 +476,23 @@ impl Default for SignerDenialPolicySpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReviewPolicySpec {
     /// Whether review is required.
-    pub required: bool,
+    pub mode: ReviewPolicyMode,
 
     /// A command hook for reviewing a new version of the zone.
-    pub cmd_hook: Option<String>,
+    pub on_reject: ReviewPolicyOnReject,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReviewPolicyMode {
+    Off,
+    Manual,
+    Script { hook: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReviewPolicyOnReject {
+    Discard,
+    Halt,
 }
 
 //--- Conversion
@@ -485,16 +501,30 @@ impl ReviewPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> ReviewPolicy {
         ReviewPolicy {
-            required: self.required,
-            cmd_hook: self.cmd_hook,
+            mode: match self.mode {
+                ReviewPolicyMode::Off => crate::policy::ReviewMode::Off,
+                ReviewPolicyMode::Manual => crate::policy::ReviewMode::Manual,
+                ReviewPolicyMode::Script { hook } => crate::policy::ReviewMode::Script { hook },
+            },
+            on_reject: match self.on_reject {
+                ReviewPolicyOnReject::Discard => crate::policy::OnReject::Discard,
+                ReviewPolicyOnReject::Halt => crate::policy::OnReject::Halt,
+            },
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ReviewPolicy) -> Self {
         Self {
-            required: policy.required,
-            cmd_hook: policy.cmd_hook.clone(),
+            mode: match policy.mode.clone() {
+                crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+            },
+            on_reject: match policy.on_reject {
+                crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+            },
         }
     }
 }
@@ -547,7 +577,7 @@ pub enum ZoneLoadSourceSpec {
         addr: SocketAddr,
 
         /// The TSIG key to use, if any.
-        tsig_key: Option<Name<Bytes>>,
+        tsig_key: Option<Box<Name<Array<255>>>>,
     },
 }
 
@@ -555,15 +585,23 @@ pub enum ZoneLoadSourceSpec {
 
 impl ZoneLoadSourceSpec {
     /// Parse from this specification.
-    pub fn parse(self) -> Source {
+    pub fn parse(self, tsig_store: &TsigStore) -> Result<Source, MissingTsigKeyError> {
         match self {
-            Self::None => Source::None,
-            Self::Zonefile { path } => Source::Zonefile { path },
-            // TODO: Look up the TSIG key in the key store.
-            Self::Server { addr, tsig_key: _ } => Source::Server {
-                addr,
-                tsig_key: None,
-            },
+            Self::None => Ok(Source::None),
+            Self::Zonefile { path } => Ok(Source::Zonefile { path }),
+            Self::Server { addr, tsig_key } => {
+                // Look up the TSIG key from the key store.
+                let tsig_key = tsig_key
+                    .map(|name| {
+                        tsig_store
+                            .get(&name)
+                            .map(|key| key.inner.clone())
+                            .ok_or(MissingTsigKeyError { name })
+                    })
+                    .transpose()?;
+
+                Ok(Source::Server { addr, tsig_key })
+            }
         }
     }
 
@@ -574,11 +612,7 @@ impl ZoneLoadSourceSpec {
             Source::Zonefile { path } => Self::Zonefile { path },
             Source::Server { addr, tsig_key } => Self::Server {
                 addr,
-                tsig_key: tsig_key.map(|key| {
-                    let bytes = key.name().as_slice();
-                    let bytes = Bytes::copy_from_slice(bytes);
-                    Name::from_octets(bytes).unwrap()
-                }),
+                tsig_key: tsig_key.map(|key| key.name().clone().into()),
             },
         }
     }

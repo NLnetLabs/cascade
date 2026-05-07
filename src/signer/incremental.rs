@@ -1648,7 +1648,7 @@ impl IncrementalSigningState {
 
     pub fn initial_diffs(&mut self) -> Result<(), SignerError> {
         let mut new_sigs = vec![];
-        for (_, new_rrset) in self.new_data.iter_mut() {
+        for new_rrset in self.new_data.values_mut() {
             let key = (new_rrset[0].owner().clone(), new_rrset[0].rtype());
             if let Some(mut old_rrset) = self.old_data.remove(&key) {
                 let rtype = new_rrset[0].rtype();
@@ -1681,7 +1681,7 @@ impl IncrementalSigningState {
                 self.changes.insert(key.0, (added, removed));
             }
         }
-        for (_, new_rrset) in self.new_apex.iter_mut() {
+        for new_rrset in self.new_apex.values_mut() {
             let key = (new_rrset[0].owner().clone(), new_rrset[0].rtype());
             if let Some(mut old_rrset) = self.old_apex.remove(&key.1) {
                 let rtype = new_rrset[0].rtype();
