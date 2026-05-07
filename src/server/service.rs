@@ -303,7 +303,7 @@ mod compat {
     ) -> ResponseStream {
         // Refuse IXFR requests over UDP.
         if request.transport_ctx().is_udp() {
-            tracing::warn!("Reject IXFR over UDP");
+            tracing::warn!("Rejecting IXFR over UDP");
             return error(request.message(), Rcode::NOTIMP);
         }
 
