@@ -196,9 +196,14 @@ mod compat {
         true
     }
 
+    /// Generate a SOA DNS message response stream for the given zone viewer.
+    ///
+    /// Note: Also used by [`axfr()`] and [`ixfr()`] as well as in response to
+    /// a direct SOA query.
+    ///
+    /// Returns an NXDOMAIN response if we have the zone but no data for it.
     fn soa<V: Viewer>(request: &Message<Vec<u8>>, viewer: &V) -> ResponseStream {
         if viewer.is_empty() {
-            // The zone is known to exist, but we don't have any data for it.
             return error(request, Rcode::NXDOMAIN);
         }
         let soa = viewer.soa().clone();
@@ -213,6 +218,7 @@ mod compat {
         Box::new(futures::stream::once(std::future::ready(result))) as _
     }
 
+    /// Generate an AXFR DNS message response stream for the given zone.
     async fn axfr<V: Viewer + Send + Sync + 'static>(
         request: Request<Vec<u8>, Option<Arc<tsig::Key>>>,
         zone: ServedZone<V>,
@@ -296,6 +302,7 @@ mod compat {
         Box::new(stream) as _
     }
 
+    /// Generate an IXFR DNS message response stream for the given zone.
     async fn ixfr<V: Viewer + Send + Sync + 'static>(
         request: Request<Vec<u8>, Option<Arc<tsig::Key>>>,
         client_soa: Soa<Box<Name>>,
