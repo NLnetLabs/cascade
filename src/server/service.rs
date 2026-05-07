@@ -336,7 +336,7 @@ mod compat {
         //                                            ^^^^^^^^^^^^^^^
         // Errata https://www.rfc-editor.org/errata/eid3196 points out that
         // this is NOT "just as in AXFR" as AXFR does not do that.
-        let our_soa_serial = { viewer.soa().rdata.serial };
+        let our_soa_serial = viewer.soa().rdata.serial;
 
         if client_soa.serial >= our_soa_serial {
             trace!("Responding to IXFR with single SOA because query serial >= zone serial");
