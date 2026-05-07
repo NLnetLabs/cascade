@@ -338,6 +338,7 @@ signature-remain-time = "1w"
 #
 # signature-refresh-interval should be a lot smaller than
 # signature-remain-time to make sure that signatures are refreshed in time.
+# If this is not the case then in extreme cases, signatures could expire.
 #
 # An integer value is interpreted as seconds. A string is interpreted as time
 # string with a number followed by a unit (i.e. "s", "m", "h", "d", or "w").
