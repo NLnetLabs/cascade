@@ -18,6 +18,10 @@ inputs:
       - info
       - debug
       - trace
+  with-tsig:
+    description: Whether or not TSIG should be required for XFR out.
+    required: true
+    type: boolean
 runs:
   using: "composite"
   steps:
@@ -29,38 +33,64 @@ runs:
     - name: Add a NOTIFY with TSIG outbound policy
       run: |
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        cascade template policy | grep -Ev '(send-notify-to|accept-xfr-from)' > "${POLICY_DIR}/custom.toml"
+        cascade template policy | grep -Ev '(send-notify-to|accept-xfr-from)' > "${POLICY_DIR}/without-tsig.toml"
+        cascade template policy | grep -Ev '(send-notify-to|accept-xfr-from)' > "${POLICY_DIR}/with-tsig.toml"
 
-        sed -i -e 's/serial-policy = "date-counter"/serial-policy = "keep"/' "${POLICY_DIR}/custom.toml"
-        echo 'send-notify-to = ["127.0.0.1:1054"]' >> "${POLICY_DIR}/custom.toml"
+        sed -i -e 's/serial-policy = "date-counter"/serial-policy = "keep"/' "${POLICY_DIR}/without-tsig.toml"
+        sed -i -e 's/serial-policy = "date-counter"/serial-policy = "keep"/' "${POLICY_DIR}/with-tsig.toml"
+      
+        echo 'send-notify-to = ["127.0.0.1:1054"]' >> "${POLICY_DIR}/without-tsig.toml"
+        echo 'send-notify-to = ["127.0.0.1:1054^tsig-key"]' >> "${POLICY_DIR}/with-tsig.toml"
 
-        # TODO: Extend the test to use TSIG (driven by inputs ala the tsig-downstream test)
-        # once PRs #564 and #587 have been merged.
-        # echo 'send-notify-to = ["127.0.0.1:1054^tsig-key"]' >> "${POLICY_DIR}/custom.toml"
-        # cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+        cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
         cascade policy reload
-
-    - name: Make an initial zone based on RFC 1995 section 7
+  
+    - name: Determine the downstrem secondary zone config to use
+      id: set-vars
       run: |
-        tee example.test.zone <<'EOF'
-        EXAMPLE.TEST.       IN SOA NS.EXAMPLE.TEST. mail.example.test. (
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          ZONE_NAME="notify-and-xfr-tsig.test."
+          POLICY_NAME="with-tsig"
+        else
+          ZONE_NAME="example.test."
+          POLICY_NAME="without-tsig"
+        fi
+        echo "ZONE_NAME=${ZONE_NAME}" >> "$GITHUB_OUTPUT"
+        echo "POLICY_NAME=${POLICY_NAME}" >> "$GITHUB_OUTPUT"
+
+    # The zone name has to match a zone configured in the downstream NSD
+    # nameserver. Zone 'notify-and-xfr-tsig.test' is a zone in the downstream
+    # NSD nameserver that is configured to expect TSIG to be used for the
+    # NOTIFY message it is sent, to use IXFR (as opposed to only AXFR) and for
+    # it to need to use TSIG to request an IXFR transfer from Cascade.
+    - name: Make an initial zone based on RFC 1995 section 7
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        cat >"${ZONE_NAME}zone" <<EOF
+        ${ZONE_NAME}       IN SOA NS.${ZONE_NAME} mail.${ZONE_NAME} (
                                      1 60 60 3600 5)
-                            IN NS  NS.EXAMPLE.TEST.
-        NS.EXAMPLE.TEST.    IN A   133.69.136.1
-        NEZU.EXAMPLE.TEST.  IN A   133.69.136.5
+                           IN NS  NS.${ZONE_NAME}
+        NS.${ZONE_NAME}    IN A   133.69.136.1
+        NEZU.${ZONE_NAME}  IN A   133.69.136.5
         EOF
 
     - name: Add the zone using the custom policy
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+        POLICY_NAME: ${{ steps.set-vars.outputs.POLICY_NAME }}
       run: |
-        cascade zone add --policy custom --source $PWD/example.test.zone example.test
+        cascade zone add --policy ${POLICY_NAME} --source "${ZONE_NAME}zone" ${ZONE_NAME}
 
     - name: Check zone status
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status ${ZONE_NAME} | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test
+            cascade zone status ${ZONE_NAME}
             echo "timeout: zone status did not report published zone available" >&2
             exit 1
           fi
@@ -68,13 +98,15 @@ runs:
         done
 
     - name: Check the SOA SERIAL at the NSD secondary
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until dig +short @127.0.0.1 -p 1054 example.test SOA | grep -q 'ns.example.test. mail.example.test. 1 60 60 3600 5'; do
+        until dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA | grep -q "ns.${ZONE_NAME} mail.${ZONE_NAME} 1 60 60 3600 5"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test
-            dig +short @127.0.0.1 -p 1054 example.test SOA
+            cascade zone status ${ZONE_NAME}
+            dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA
             echo "::error:: timeout: NSD did not acquire the zone changes"
             exit 1
           fi
@@ -82,24 +114,28 @@ runs:
         done
 
     - name: Edit the source zone and tell Cascade to reload it.
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
-        tee example.test.zone <<'EOF'
-        example.test.          IN SOA ns.example.test. mail.example.test. (
+        cat >"${ZONE_NAME}zone" <<EOF
+        ${ZONE_NAME}          IN SOA ns.${ZONE_NAME} mail.${ZONE_NAME} (
                                      2 60 60 3600 5)
-                               IN NS  NS.EXAMPLE.TEST.
-        NS.EXAMPLE.TEST.       IN A   133.69.136.1
-        JAIN-BB.EXAMPLE.TEST.  IN A   133.69.136.4
+                               IN NS  NS.${ZONE_NAME}
+        NS.${ZONE_NAME}       IN A   133.69.136.1
+        JAIN-BB.${ZONE_NAME}  IN A   133.69.136.4
                                IN A   192.41.197.2
         EOF
-        cascade zone reload example.test
+        cascade zone reload ${ZONE_NAME}
 
     - name: Check zone status
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status ${ZONE_NAME} | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test
+            cascade zone status ${ZONE_NAME}
             echo "timeout: zone status did not report published zone available" >&2
             exit 1
           fi
@@ -107,52 +143,60 @@ runs:
         done
 
     - name: Check the SOA SERIAL at the NSD secondary
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until dig +short @127.0.0.1 -p 1054 example.test SOA | grep -q 'ns.example.test. mail.example.test. 2 60 60 3600 5'; do
+        until dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA | grep -q "ns.${ZONE_NAME} mail.${ZONE_NAME} 2 60 60 3600 5"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test
-            dig +short @127.0.0.1 -p 1054 example.test SOA
+            dig @127.0.0.1 -p 1054 ${ZONE_NAME} SOA
+            cascade zone status ${ZONE_NAME}
             echo "::error:: timeout: NSD did not acquire the zone changes"
             exit 1
           fi
           sleep 1
         done
 
-    - name: Edit the source zone and tell Cascade to reload it.
+    - name: Edit the source zone again and tell Cascade to reload it.
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
-        tee example.test.zone <<'EOF'
-        EXAMPLE.TEST.          IN SOA ns.example.test. mail.example.test. (
+        cat >"${ZONE_NAME}zone" <<EOF
+        ${ZONE_NAME}          IN SOA ns.${ZONE_NAME} mail.${ZONE_NAME} (
                                      3 60 60 3600 5)
-                               IN NS  NS.EXAMPLE.TEST.
-        NS.EXAMPLE.TEST.       IN A   133.69.136.1
-        JAIN-BB.EXAMPLE.TEST.  IN A   133.69.136.3
+                               IN NS  NS.${ZONE_NAME}
+        NS.${ZONE_NAME}       IN A   133.69.136.1
+        JAIN-BB.${ZONE_NAME}  IN A   133.69.136.3
                                IN A   192.41.197.2
         EOF
-        cascade zone reload example.test
+        cascade zone reload ${ZONE_NAME}
 
     - name: Check zone status
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "Published zone available"; do
+        until cascade zone status ${ZONE_NAME} | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test
+            cascade zone status ${ZONE_NAME}
             echo "timeout: zone status did not report published zone available" >&2
             exit 1
           fi
           sleep 1
         done
 
-    - name: Check the SOA SERIAL at the NSD secondary
+    - name: Check the SOA SERIAL again at the NSD secondary
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until dig +short @127.0.0.1 -p 1054 example.test SOA | grep -q 'ns.example.test. mail.example.test. 3 60 60 3600 5'; do
+        until dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA | grep -q "ns.${ZONE_NAME} mail.${ZONE_NAME} 3 60 60 3600 5"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status example.test
-            dig +short @127.0.0.1 -p 1054 example.test SOA
+            cascade zone status ${ZONE_NAME}
+            dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA
             echo "::error:: timeout: NSD did not acquire the zone changes"
             exit 1
           fi
@@ -168,15 +212,15 @@ runs:
     # TODO: Verify the AXFR and IXFR response content is as expected /
     # matching that of NSD.
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test AXFR > cascade-axfr.log
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${{ steps.set-vars.outputs.ZONE_NAME }} AXFR > cascade-axfr.log
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=1 >cascade-ixfr-1.log
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${{ steps.set-vars.outputs.ZONE_NAME }} -t IXFR=1 >cascade-ixfr-1.log
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=2 >cascade-ixfr-2.log
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${{ steps.set-vars.outputs.ZONE_NAME }} -t IXFR=2 >cascade-ixfr-2.log
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 example.test -t IXFR=3 >cascade-ixfr-3.log
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${{ steps.set-vars.outputs.ZONE_NAME }} -t IXFR=3 >cascade-ixfr-3.log
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 1054 example.test AXFR >nsd-axfr.log
+    - run: dig +onesoa +noall +answer @127.0.0.1 -p 1054 ${{ steps.set-vars.outputs.ZONE_NAME }} AXFR >nsd-axfr.log
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
