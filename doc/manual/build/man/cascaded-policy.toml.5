@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Apr 30, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "May 07, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -72,7 +72,7 @@ version = \(dqv1\(dq
 
 [loader]
 [loader.review]
-required = false
+mode = \(dqoff\(dq
 
 [key\-manager]
 ksk.validity = \(dq365d\(dq
@@ -96,6 +96,7 @@ csk.auto\-done = true
 algorithm.auto\-done = true
 ds\-algorithm = \(dqSHA256\(dq
 auto\-remove = true
+auto\-remove\-delay = \(dq7d\(dq
 publication\-nameservers = []
 
 [key\-manager.records]
@@ -121,7 +122,7 @@ signature\-remain\-time = \(dq1w\(dq
 type = \(dqnsec\(dq
 
 [signer.review]
-required = false
+mode = \(dqoff\(dq
 
 [server.outbound]
 send\-notify\-to = []
@@ -154,17 +155,29 @@ Review offers an opportunity to perform external checks on the zone contents
 loaded by Cascade.
 .INDENT 0.0
 .TP
-.B required = false
-Whether review is required.
+.B mode = \(dqoff\(dq
+The mode for loader review.
 .sp
-If this is \fBtrue\fP, a loaded version of a zone will not be signed or
-published until it is approved.  If it is \fBfalse\fP, loaded zones will be
-signed immediately.  At the moment, the review hook will only be run if this
-is set to true.
+This can be one of the following values:
+.INDENT 7.0
+.INDENT 3.5
+.INDENT 0.0
+.IP \(bu 2
+\fB\(dqoff\(dq\fP will disable review
+.IP \(bu 2
+\fB\(dqmanual\(dq\fP will enable manual review via the CLI.
+.IP \(bu 2
+\fB\(dqscript\(dq\fP will enable automatic review via a hook. The \fBhook\fP field
+must be specified in this case.
+.UNINDENT
+.UNINDENT
+.UNINDENT
+.sp
+The default value is \fB\(dqoff\(dq\fP\&.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B cmd\-hook = \(dq\(dq
+.B hook = \(dq\(dq
 A hook for reviewing a loaded zone. This is a path to an executable.
 .sp
 This command string will be executed in the user\(aqs shell when a new version
@@ -186,12 +199,33 @@ the zone for review, formatted as \fB<ip\-addr>:<port>\fP\&.
 \fBCASCADE_SERVER_PORT\fP: Just the port of the above server.
 .UNINDENT
 .sp
-Added in version 0.1.0\-alpha2: \fBCASCADE_SERVER_IP\fP and \fBCASCADE_SERVER_PORT\fP\&.
+New in version 0.1.0\-alpha2: \fBCASCADE_SERVER_IP\fP and \fBCASCADE_SERVER_PORT\fP\&.
 
 .sp
 The command will be called from an unspecified directory, and it must be
 accessible to Cascade (i.e. after it has dropped privileges). Its exit code
 will determine whether the zone is approved or not.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B on\-reject = \(dqdiscard\(dq
+What to do when a zone is rejected by review.
+.sp
+This field can only be specified if \fBmode\(ga\fP is either \fB\(dqmanual\(dq\fP or
+\fB\(dqscript\(dq\fP and can have one of the following values:
+.INDENT 7.0
+.INDENT 3.5
+.INDENT 0.0
+.IP \(bu 2
+\fB\(dqdiscard\(dq\fP will discard the rejected zone and go back to an idle state
+.IP \(bu 2
+\fB\(dqhalt\(dq\fP will halt the pipeline until an operator either resets the pipeline
+or overrides the rejection.
+.UNINDENT
+.UNINDENT
+.UNINDENT
+.sp
+The default value is \fB\(dqdiscard\(dq\fP\&.
 .UNINDENT
 .SS DNSSEC key management.
 .sp
@@ -341,6 +375,15 @@ deleting the files for on\-disk keys or removing it from the HSM).
 .UNINDENT
 .INDENT 0.0
 .TP
+.B auto\-remove\-delay = \(dq7d\(dq
+Delay after which expired keys will be removed when auto\-remove is true.
+.sp
+An integer value is interpreted as seconds. A string is interpreted as
+time string with a number followed by a unit (i.e. \(dqs\(dq, \(dqm\(dq, \(dqh\(dq, \(dqd\(dq,
+or \(dqw\(dq).
+.UNINDENT
+.INDENT 0.0
+.TP
 .B publication\-nameservers = []
 The set of nameservers to use when checking for RRSIG propagation during a
 key roll.
@@ -441,7 +484,7 @@ The HSM server to use.
 If this is set, the named HSM server (which must be configured via \fBcascade
 hsm add\fP) will be used for generating new DNSSEC keys.
 .sp
-See \X'tty: link https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html'\fI\%https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html\fP\X'tty: link' for more
+See \fI\%https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html\fP for more
 information.
 .UNINDENT
 .INDENT 0.0
@@ -575,9 +618,9 @@ The type of denial\-of\-existence records to generate.
 Supported options:
 .INDENT 7.0
 .IP \(bu 2
-\fBnsec\fP: Use NSEC records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc4034.html'\fI\%RFC 4034\fP\X'tty: link').
+\fBnsec\fP: Use NSEC records (\fI\%RFC 4034\fP).
 .IP \(bu 2
-\fBnsec3\fP: Use NSEC3 records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc5155.html'\fI\%RFC 5155\fP\X'tty: link').
+\fBnsec3\fP: Use NSEC3 records (\fI\%RFC 5155\fP).
 .UNINDENT
 .UNINDENT
 .INDENT 0.0
@@ -677,7 +720,7 @@ Default policies directory
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
+.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
 Cascade online documentation
 .TP
 \fBcascade\fP(1)

@@ -62,6 +62,7 @@ Example
     algorithm.auto-done = true
     ds-algorithm = "SHA256"
     auto-remove = true
+    auto-remove-delay = "7d"
     publication-nameservers = []
 
     [key-manager.records]
@@ -273,6 +274,14 @@ The ``[key-manager]`` section.
 
    If this option is set, expired keys will be removed automatically (by
    deleting the files for on-disk keys or removing it from the HSM).
+
+.. option:: auto-remove-delay = "7d"
+
+    Delay after which expired keys will be removed when auto-remove is true.
+
+    An integer value is interpreted as seconds. A string is interpreted as
+    time string with a number followed by a unit (i.e. "s", "m", "h", "d",
+    or "w").
 
 .. option:: publication-nameservers = []
 
