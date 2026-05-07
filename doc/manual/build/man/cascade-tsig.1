@@ -27,11 +27,11 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-TSIG" "1" "Apr 30, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-TSIG" "1" "May 07, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-tsig \- Manage TSIG keys
 .sp
-Added in version 0.1.0\-beta1.
+New in version 0.1.0\-beta1.
 
 .SH SYNOPSIS
 .sp
@@ -44,14 +44,14 @@ Added in version 0.1.0\-beta1.
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fI\%remove\fP \fB<TSIG_KEY_NAME>\fP
 .SH DESCRIPTION
 .sp
-Manage \X'tty: link https://datatracker.ietf.org/doc/html/rfc8945.html'\fI\%RFC 8945\fP\X'tty: link' (TSIG) keys for authenticating zone transfer (AXFR, IXFR) and
+Manage \fI\%RFC 8945\fP (TSIG) keys for authenticating zone transfer (AXFR, IXFR) and
 related messages (SOA and NOTIFY).
 .sp
 \fBTIP:\fP
 .INDENT 0.0
 .INDENT 3.5
 Cascade isn\(aqt currently able to generate TSIG keys itself.
-One way to generate a TSIG key is to use the \X'tty: link https://bind9.readthedocs.io/en/latest/manpages.html#tsig-keygen-tsig-key-generation-tool'\fI\%tsig\-keygen\fP\X'tty: link' tool from the ISC BIND project.
+One way to generate a TSIG key is to use the \fI\%tsig\-keygen\fP tool from the ISC BIND project.
 .UNINDENT
 .UNINDENT
 .SH GLOBAL OPTIONS
@@ -103,7 +103,7 @@ complete TSIG key specification is supplied, supplying the \fB<ALGORITHM>\fP
 and \fB<SECRET>\fP arguments as well will result in an error.
 .sp
 Secret key material must be the correct length for the specified algorithm
-and must be encoded using the \X'tty: link https://datatracker.ietf.org/doc/html/rfc4648.html'\fI\%RFC 4648\fP\X'tty: link' Base64 encoding.
+and must be encoded using the \fI\%RFC 4648\fP Base64 encoding.
 .sp
 \fBWARNING:\fP
 .INDENT 7.0
@@ -123,7 +123,7 @@ The TSIG algorithm of the specified TSIG key. Can be one of: \fBhmac\-sha1\fP,
 .INDENT 0.0
 .TP
 .B <SECRET>
-\X'tty: link https://datatracker.ietf.org/doc/html/rfc4648.html'\fI\%RFC 4648\fP\X'tty: link' Base64 encoded secret key material. The number of bytes prior
+\fI\%RFC 4648\fP Base64 encoded secret key material. The number of bytes prior
 to encoding must be correct for the specified \fB<ALGORITHM>\fP\&.
 .sp
 Can also be a path to a file containing the Base64 encoded secret material.
@@ -140,7 +140,7 @@ Cascade CLI. Consider supplying a file name instead.
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
+.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
 Cascade online documentation
 .TP
 \fBcascade\fP(1)

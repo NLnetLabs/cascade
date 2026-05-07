@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Apr 30, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "May 07, 2026" "0.1.0-alpha5" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -128,12 +128,12 @@ or without port, defaults to port 53) or the path to a zone file locally
 available to the \fBcascaded\fP daemon.
 .sp
 When specifying an upstream nameserver you may also optionally specify
-the name of an \X'tty: link https://datatracker.ietf.org/doc/html/rfc8945.html'\fI\%RFC 8945\fP\X'tty: link' TSIG key that should be used to authenticate
+the name of an \fI\%RFC 8945\fP TSIG key that should be used to authenticate
 communication with the upstream.
 .sp
 Zones sourced from an upstream nameserver will be automatically updated
 if a new version is detected via a SOA query, either based on the zone\(aqs
-SOA record timers, or in response to an \X'tty: link https://datatracker.ietf.org/doc/html/rfc1996.html'\fI\%RFC 1996\fP\X'tty: link' NOTIFY message from
+SOA record timers, or in response to an \fI\%RFC 1996\fP NOTIFY message from
 the upstream.
 .sp
 Zones can also be manualy updated via \fBcascade\fP \fI\%reload\fP\&.
@@ -307,7 +307,7 @@ The name of the zone to reset the pipeline of.
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
+.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
 Cascade online documentation
 .TP
 \fBcascade\fP(1)
