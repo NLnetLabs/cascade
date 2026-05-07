@@ -86,7 +86,7 @@ mod compat {
         tsig,
     };
     use futures::Stream;
-    use tracing::trace;
+    use tracing::{Level, trace};
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
 
@@ -359,13 +359,19 @@ mod compat {
         // messages.
 
         // Currently we have only a single diff available.
-        for (i, d) in diffs.iter().enumerate() {
-            tracing::info!(
-                "Diff {i} for zone '{}': serial {} => serial {}",
-                zone.handle.name,
-                d.removed_soa.as_ref().unwrap().0.rdata.serial,
-                d.added_soa.as_ref().unwrap().0.rdata.serial,
+        if tracing::enabled!(Level::TRACE) {
+            trace!(
+                "IXFR out: {} diffs availablei for zone {}:",
+                diffs.len(),
+                zone.handle.name
             );
+            for (i, d) in diffs.iter().enumerate() {
+                trace!(
+                    "IXFR out: Diff #{i}: serial {} => serial {}",
+                    d.removed_soa.as_ref().unwrap().0.rdata.serial,
+                    d.added_soa.as_ref().unwrap().0.rdata.serial,
+                );
+            }
         }
 
         // Find the diff, if we have it, that removes the SOA serial number
