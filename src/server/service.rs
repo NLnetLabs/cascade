@@ -152,7 +152,6 @@ mod compat {
                             Box::pin(axfr(old_request, zone.clone())) as Response
                         }
 
-                        // TODO: Support IXFR.
                         ZoneRequestKind::Ixfr { known_soa } => {
                             Box::pin(ixfr(old_request, known_soa.rdata, zone.clone())) as Response
                         }
