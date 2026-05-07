@@ -59,7 +59,7 @@ version = "4.5"
 #
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain]
-version = "0.11.1"
+version = "0.12.0"
 git = "https://github.com/NLnetLabs/domain"
 branch = "main"
 
@@ -95,7 +95,7 @@ version = "1.0"
 #
 # It is used throughout the Rust ecosystem and is maintained accordingly.
 [workspace.dependencies.toml]
-version = "0.9"
+version = "1.1.2"
 
 # 'tokio' is an async runtime, particularly suited for networking.
 #
@@ -113,12 +113,10 @@ version = "0.3.20"
 
 
 [dependencies]
-arc-swap           = "1.7.0"
 bytes              = "1.0"
-daemonbase         = "0.1.4"
+daemonbase         = { version = "0.1.5", features = ["tokio"] }
 futures            = "0.3.17"
 futures-util       = "0.3"
-octseq             = { version = "0.5.2", default-features = false }
 serde              = { workspace = true, features = ["derive", "rc"] }
 axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio", "tracing"] }
 
@@ -248,6 +246,7 @@ assets = [
 ["doc/manual/build/man/cascade-config.1", "usr/share/man/man1/cascade-config.1", "644"],
 ["doc/manual/build/man/cascade-health.1", "usr/share/man/man1/cascade-health.1", "644"],
 ["doc/manual/build/man/cascade-hsm.1", "usr/share/man/man1/cascade-hsm.1", "644"],
+["doc/manual/build/man/cascade-tsig.1", "usr/share/man/man1/cascade-tsig.1", "644"],
 ["doc/manual/build/man/cascade-keyset.1", "usr/share/man/man1/cascade-keyset.1", "644"],
 ["doc/manual/build/man/cascade-policy.1", "usr/share/man/man1/cascade-policy.1", "644"],
 ["doc/manual/build/man/cascade-status.1", "usr/share/man/man1/cascade-status.1", "644"],
@@ -302,6 +301,7 @@ assets = [
 { source = "doc/manual/build/man/cascade-config.1", dest = "/usr/share/man/man1/cascade-config.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-health.1", dest = "/usr/share/man/man1/cascade-health.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-hsm.1", dest = "/usr/share/man/man1/cascade-hsm.1", mode = "644", doc = true },
+{ source = "doc/manual/build/man/cascade-tsig.1", dest = "/usr/share/man/man1/cascade-tsig.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-keyset.1", dest = "/usr/share/man/man1/cascade-keyset.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-policy.1", dest = "/usr/share/man/man1/cascade-policy.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-status.1", dest = "/usr/share/man/man1/cascade-status.1", mode = "644", doc = true },

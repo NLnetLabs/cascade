@@ -25,7 +25,7 @@ use crate::{
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{Zone, ZoneByPtr, ZoneHandle},
+    zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle},
 };
 
 mod server;
@@ -260,6 +260,13 @@ async fn refresh(
 
             // Cancel the load
             handle.abandon_load(builder);
+
+            state.record_event(
+                HistoricalEvent::LoadingFailed {
+                    reason: err.to_string(),
+                },
+                None,
+            );
         }
     }
 }
@@ -301,6 +308,22 @@ pub enum Source {
         /// The TSIG key for communicating with the server, if any.
         tsig_key: Option<Arc<tsig::Key>>,
     },
+}
+
+impl std::fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Source::None => f.write_str("none"),
+            Source::Zonefile { path } => write!(f, "zone file '{path}'"),
+            Source::Server { addr, tsig_key } => {
+                write!(f, "{addr}")?;
+                if let Some(tsig_key) = &tsig_key {
+                    write!(f, " with TSIG key '{}'", tsig_key.name())?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 //============ Metrics =========================================================
@@ -383,6 +406,9 @@ pub struct ActiveLoadMetrics {
     /// See [`LoadMetrics::num_loaded_bytes`].
     pub num_loaded_bytes: AtomicUsize,
 
+    /// The (approximate) number of bytes to load.
+    pub num_total_bytes: AtomicUsize,
+
     /// The (approximate) number of DNS records loaded thus far.
     ///
     /// See [`LoadMetrics::num_loaded_records`].
@@ -396,6 +422,7 @@ impl ActiveLoadMetrics {
             start: (Instant::now(), SystemTime::now()),
             source,
             num_loaded_bytes: AtomicUsize::new(0),
+            num_total_bytes: AtomicUsize::new(0),
             num_loaded_records: AtomicUsize::new(0),
         }
     }

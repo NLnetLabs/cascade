@@ -1,16 +1,19 @@
 //! Version 1 of the zone state file.
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 
-use bytes::Bytes;
 use camino::Utf8Path;
-use domain::base::Ttl;
+use domain::base::{Rtype, Serial, Ttl};
+use domain::dep::octseq::Array;
+use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
-use crate::policy::file::v1::OutboundSpec;
+use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
+use crate::tsig::TsigStore;
 use crate::zone::HistoryItem;
 use crate::{
     policy::{
@@ -19,6 +22,8 @@ use crate::{
     },
     zone::ZoneState,
 };
+
+use super::MissingTsigKeyError;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -44,6 +49,45 @@ pub struct Spec {
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
 
+    /// We expect this from the key manager. These are the types that
+    /// the key manager takes control over in the apex. Use this to
+    /// determine if the zone needs resigning. If what is stored here is
+    /// different from what we get from the key manager, then update this
+    /// field and resign the zone. Maybe this should be associated with
+    /// a signed instance of a zone to avoid problems when a signed zone
+    /// gets rejected.
+    pub apex_remove: HashSet<Rtype>,
+
+    /// Same comment as for apex_remove. But this is about the records
+    /// that should be added to the apex after removing the apex_remove
+    /// types.
+    pub apex_extra: Vec<String>,
+
+    /// This field is set based on the key tags of the keys that need to
+    /// sign the zone. It doesn't say anything about how the zone is
+    /// currently signed, just what the goal is. This field is used to
+    /// detiermine when a ZSK or CSK key roll has started and the zone
+    /// needs to be resigned with a new key.
+    pub key_tags: HashSet<u16>,
+
+    /// Record when key_tags has changed. We take this as the start of a key
+    /// roll. This start time is used to compute which percentage of
+    /// RRsets that should have signatures from the new key.
+    pub key_roll: Option<UnixTime>,
+
+    /// Record when the last time signtures were refreshed. This is used
+    /// together with the signature_refresh_interval value in policy to
+    /// determine when to refresh signatures next. Maybe this should be
+    /// associated with a signed instance of a zone to avoid problems when
+    /// a signed zone gets rejected.
+    pub last_signature_refresh: UnixTime,
+
+    /// Record the SOA serial of the last signed version of the zone.
+    /// We use a serial only once, even if the signed zone gets rejected.
+    /// It would be good to have a command where the user can set the
+    /// serial for the Increment serial policy.
+    pub previous_serial: Option<Serial>,
+
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
 }
@@ -58,6 +102,12 @@ impl Spec {
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
+            apex_remove: zone.apex_remove.clone(),
+            apex_extra: zone.apex_extra.clone(),
+            key_tags: zone.key_tags.clone(),
+            key_roll: zone.key_roll.clone(),
+            last_signature_refresh: zone.last_signature_refresh.clone(),
+            previous_serial: zone.previous_serial,
             history: zone.history.clone(),
         }
     }
@@ -197,6 +247,9 @@ pub struct KeyManagerPolicySpec {
 
     /// Automatically remove keys that are no long in use.
     auto_remove: bool,
+
+    /// Nameservers to check for RRSIG propagation during a key roll.
+    publication_nameservers: Vec<NameserverCommsSpec>,
 }
 
 //--- Conversion
@@ -224,6 +277,11 @@ impl KeyManagerPolicySpec {
             ds_algorithm: self.ds_algorithm,
             default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
+            publication_nameservers: self
+                .publication_nameservers
+                .into_iter()
+                .map(|v| v.parse())
+                .collect(),
         }
     }
 
@@ -249,6 +307,11 @@ impl KeyManagerPolicySpec {
             ds_algorithm: policy.ds_algorithm.clone(),
             default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
+            publication_nameservers: policy
+                .publication_nameservers
+                .iter()
+                .map(NameserverCommsSpec::build)
+                .collect(),
         }
     }
 }
@@ -271,6 +334,13 @@ pub struct SignerPolicySpec {
     /// How long before expiration a new signature has to be generated, in seconds.
     pub sig_remain_time: u32,
 
+    /// How often to refresh some amount of signatures to make resigning
+    /// smoother.
+    pub signature_refresh_interval: u32,
+
+    /// How long should it take to resign a zone during a ZSK or CSK roll.
+    pub key_roll_time: u32,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicySpec,
 
@@ -288,6 +358,8 @@ impl SignerPolicySpec {
             sig_inception_offset: self.sig_inception_offset,
             sig_validity_time: self.sig_validity_time,
             sig_remain_time: self.sig_remain_time,
+            signature_refresh_interval: self.signature_refresh_interval,
+            key_roll_time: self.key_roll_time,
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -300,6 +372,8 @@ impl SignerPolicySpec {
             sig_inception_offset: policy.sig_inception_offset,
             sig_validity_time: policy.sig_validity_time,
             sig_remain_time: policy.sig_remain_time,
+            signature_refresh_interval: policy.signature_refresh_interval,
+            key_roll_time: policy.key_roll_time,
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
         }
@@ -402,10 +476,23 @@ impl Default for SignerDenialPolicySpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReviewPolicySpec {
     /// Whether review is required.
-    pub required: bool,
+    pub mode: ReviewPolicyMode,
 
     /// A command hook for reviewing a new version of the zone.
-    pub cmd_hook: Option<String>,
+    pub on_reject: ReviewPolicyOnReject,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReviewPolicyMode {
+    Off,
+    Manual,
+    Script { hook: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReviewPolicyOnReject {
+    Discard,
+    Halt,
 }
 
 //--- Conversion
@@ -414,16 +501,30 @@ impl ReviewPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> ReviewPolicy {
         ReviewPolicy {
-            required: self.required,
-            cmd_hook: self.cmd_hook,
+            mode: match self.mode {
+                ReviewPolicyMode::Off => crate::policy::ReviewMode::Off,
+                ReviewPolicyMode::Manual => crate::policy::ReviewMode::Manual,
+                ReviewPolicyMode::Script { hook } => crate::policy::ReviewMode::Script { hook },
+            },
+            on_reject: match self.on_reject {
+                ReviewPolicyOnReject::Discard => crate::policy::OnReject::Discard,
+                ReviewPolicyOnReject::Halt => crate::policy::OnReject::Halt,
+            },
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ReviewPolicy) -> Self {
         Self {
-            required: policy.required,
-            cmd_hook: policy.cmd_hook.clone(),
+            mode: match policy.mode.clone() {
+                crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+            },
+            on_reject: match policy.on_reject {
+                crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+            },
         }
     }
 }
@@ -476,7 +577,7 @@ pub enum ZoneLoadSourceSpec {
         addr: SocketAddr,
 
         /// The TSIG key to use, if any.
-        tsig_key: Option<Name<Bytes>>,
+        tsig_key: Option<Box<Name<Array<255>>>>,
     },
 }
 
@@ -484,15 +585,23 @@ pub enum ZoneLoadSourceSpec {
 
 impl ZoneLoadSourceSpec {
     /// Parse from this specification.
-    pub fn parse(self) -> Source {
+    pub fn parse(self, tsig_store: &TsigStore) -> Result<Source, MissingTsigKeyError> {
         match self {
-            Self::None => Source::None,
-            Self::Zonefile { path } => Source::Zonefile { path },
-            // TODO: Look up the TSIG key in the key store.
-            Self::Server { addr, tsig_key: _ } => Source::Server {
-                addr,
-                tsig_key: None,
-            },
+            Self::None => Ok(Source::None),
+            Self::Zonefile { path } => Ok(Source::Zonefile { path }),
+            Self::Server { addr, tsig_key } => {
+                // Look up the TSIG key from the key store.
+                let tsig_key = tsig_key
+                    .map(|name| {
+                        tsig_store
+                            .get(&name)
+                            .map(|key| key.inner.clone())
+                            .ok_or(MissingTsigKeyError { name })
+                    })
+                    .transpose()?;
+
+                Ok(Source::Server { addr, tsig_key })
+            }
         }
     }
 
@@ -503,11 +612,7 @@ impl ZoneLoadSourceSpec {
             Source::Zonefile { path } => Self::Zonefile { path },
             Source::Server { addr, tsig_key } => Self::Server {
                 addr,
-                tsig_key: tsig_key.map(|key| {
-                    let bytes = key.name().as_slice();
-                    let bytes = Bytes::copy_from_slice(bytes);
-                    Name::from_octets(bytes).unwrap()
-                }),
+                tsig_key: tsig_key.map(|key| key.name().clone().into()),
             },
         }
     }

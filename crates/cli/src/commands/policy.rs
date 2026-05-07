@@ -1,3 +1,5 @@
+use cascade_api::ReviewPolicyMode;
+
 use crate::{
     ansi,
     api::{
@@ -131,11 +133,14 @@ fn print_policy(p: &PolicyInfo) {
 
     fn print_review(r: &ReviewPolicyInfo) {
         println!("    review:");
-        println!("      required: {}", r.required);
-        println!(
-            "      cmd_hook: {}",
-            r.cmd_hook.as_ref().cloned().unwrap_or("<none>".into())
-        );
+        match &r.mode {
+            ReviewPolicyMode::Off => println!("      mode: off"),
+            ReviewPolicyMode::Manual => println!("      mode: manual"),
+            ReviewPolicyMode::Script { hook } => {
+                println!("      mode: script");
+                println!("      hook: {hook}")
+            }
+        }
     }
 
     fn print_nameserver_comms_policy(n: &[NameserverCommsPolicyInfo]) {
@@ -158,8 +163,8 @@ fn print_policy(p: &PolicyInfo) {
     print_review(&p.signer.review);
     println!("  server:");
     println!("    outbound:");
-    println!("      accept XFR requests from:");
-    print_nameserver_comms_policy(&p.server.outbound.accept_xfr_requests_from);
+    println!("      accept XFR from:");
+    print_nameserver_comms_policy(&p.server.outbound.accept_xfr_from);
     println!("      send NOTIFY to:");
     print_nameserver_comms_policy(&p.server.outbound.send_notify_to);
 }

@@ -1,23 +1,23 @@
 //! Version 1 of the state file.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use domain::base::Name;
 use domain::base::Ttl;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
+use crate::policy;
+use crate::policy::file::v1::NameserverCommsSpec;
 use crate::policy::file::v1::OutboundSpec;
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
-use crate::tsig::TsigStore;
 use crate::{
     center::State,
     policy::{
         KeyManagerPolicy, LoaderPolicy, Policy, PolicyVersion, ReviewPolicy, ServerPolicy,
         SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
     },
-    zone::{Zone, ZoneByName},
 };
 
 //----------- Spec -------------------------------------------------------------
@@ -40,31 +40,19 @@ pub struct Spec {
 
 impl Spec {
     /// Parse from this specification.
+    ///
+    /// [`Self::zones`] and [`Self::policies`] are ignored; these should be
+    /// extracted from `self` before calling this function.
     pub fn parse(self) -> State {
-        let mut policies = foldhash::HashMap::default();
-        for (name, spec) in self.policies {
-            info!("Adding policy '{name}' from global state");
-            let policy = spec.parse(&name);
-            policies.insert(name, policy);
-        }
+        let Self {
+            // The caller will extract 'zones' and 'policies' beforehand.
+            zones: _,
+            policies: _,
+            // TODO: More fields.
+        };
 
-        #[allow(clippy::mutable_key_type)]
-        let zones = self
-            .zones
-            .into_iter()
-            .map(|name| {
-                info!("Adding zone '{name}' from global state");
-                ZoneByName(Arc::new(Zone::new(name.clone())))
-            })
-            .collect();
-
-        State {
-            zones,
-            policies,
-            rt_config: cascade_cfg::RuntimeConfig::default(),
-            tsig_store: TsigStore::default(),
-            enqueued_save: None,
-        }
+        // TODO: Initialize fields from 'Spec'.
+        State::default()
     }
 
     /// Build this state specification.
@@ -255,6 +243,9 @@ pub struct KeyManagerPolicySpec {
 
     /// Automatically remove keys that are no long in use.
     auto_remove: bool,
+
+    /// Nameservers to check for RRSIG propagation during a key roll.
+    pub publication_nameservers: Vec<NameserverCommsSpec>,
 }
 
 //--- Conversion
@@ -282,6 +273,11 @@ impl KeyManagerPolicySpec {
             ds_algorithm: self.ds_algorithm,
             default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
+            publication_nameservers: self
+                .publication_nameservers
+                .into_iter()
+                .map(|v| v.parse())
+                .collect(),
         }
     }
 
@@ -307,6 +303,11 @@ impl KeyManagerPolicySpec {
             ds_algorithm: policy.ds_algorithm.clone(),
             default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
+            publication_nameservers: policy
+                .publication_nameservers
+                .iter()
+                .map(NameserverCommsSpec::build)
+                .collect(),
         }
     }
 }
@@ -321,13 +322,20 @@ pub struct SignerPolicySpec {
     pub serial_policy: SignerSerialPolicySpec,
 
     /// The offset for record signature inceptions, in seconds.
-    pub sig_inception_offset: u32,
+    pub sig_inception_offset: Duration,
 
     /// How long record signatures will be valid for, in seconds.
-    pub sig_validity_time: u32,
+    pub sig_validity_time: Duration,
 
     /// How long before expiration a new signature has to be generated, in seconds.
-    pub sig_remain_time: u32,
+    pub sig_remain_time: Duration,
+
+    /// How often to refresh some amount of signatures to make resigning
+    /// smoother.
+    pub signature_refresh_interval: Duration,
+
+    /// How long should it take to resign a zone during a ZSK or CSK roll.
+    pub key_roll_time: Duration,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicySpec,
@@ -343,9 +351,11 @@ impl SignerPolicySpec {
     pub fn parse(self) -> SignerPolicy {
         SignerPolicy {
             serial_policy: self.serial_policy.parse(),
-            sig_inception_offset: self.sig_inception_offset,
-            sig_validity_time: self.sig_validity_time,
-            sig_remain_time: self.sig_remain_time,
+            sig_inception_offset: self.sig_inception_offset.as_secs() as u32,
+            sig_validity_time: self.sig_validity_time.as_secs() as u32,
+            sig_remain_time: self.sig_remain_time.as_secs() as u32,
+            signature_refresh_interval: self.signature_refresh_interval.as_secs() as u32,
+            key_roll_time: self.key_roll_time.as_secs() as u32,
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -355,9 +365,13 @@ impl SignerPolicySpec {
     pub fn build(policy: &SignerPolicy) -> Self {
         Self {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
-            sig_inception_offset: policy.sig_inception_offset,
-            sig_validity_time: policy.sig_validity_time,
-            sig_remain_time: policy.sig_remain_time,
+            sig_inception_offset: Duration::from_secs(policy.sig_inception_offset.into()),
+            sig_validity_time: Duration::from_secs(policy.sig_validity_time.into()),
+            sig_remain_time: Duration::from_secs(policy.sig_remain_time.into()),
+            signature_refresh_interval: Duration::from_secs(
+                policy.signature_refresh_interval.into(),
+            ),
+            key_roll_time: Duration::from_secs(policy.key_roll_time.into()),
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
         }
@@ -451,11 +465,22 @@ impl SignerDenialPolicySpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReviewPolicySpec {
-    /// Whether review is required.
-    pub required: bool,
+    pub mode: ReviewMode,
 
-    /// A command hook for reviewing a new version of the zone.
-    pub cmd_hook: Option<String>,
+    pub on_reject: OnReject,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum ReviewMode {
+    Off,
+    Manual,
+    Script { hook: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum OnReject {
+    Discard,
+    Halt,
 }
 
 //--- Conversion
@@ -464,16 +489,30 @@ impl ReviewPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> ReviewPolicy {
         ReviewPolicy {
-            required: self.required,
-            cmd_hook: self.cmd_hook,
+            mode: match self.mode {
+                ReviewMode::Off => policy::ReviewMode::Off,
+                ReviewMode::Manual => policy::ReviewMode::Manual,
+                ReviewMode::Script { hook } => policy::ReviewMode::Script { hook },
+            },
+            on_reject: match self.on_reject {
+                OnReject::Discard => policy::OnReject::Discard,
+                OnReject::Halt => policy::OnReject::Halt,
+            },
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ReviewPolicy) -> Self {
         Self {
-            required: policy.required,
-            cmd_hook: policy.cmd_hook.clone(),
+            mode: match policy.mode.clone() {
+                policy::ReviewMode::Off => ReviewMode::Off,
+                policy::ReviewMode::Manual => ReviewMode::Manual,
+                policy::ReviewMode::Script { hook } => ReviewMode::Script { hook },
+            },
+            on_reject: match policy.on_reject {
+                policy::OnReject::Discard => OnReject::Discard,
+                policy::OnReject::Halt => OnReject::Halt,
+            },
         }
     }
 }

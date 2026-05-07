@@ -172,6 +172,11 @@ impl<'d> SignedZoneReader<'d> {
         self.signed_instance.records.as_slice()
     }
 
+    /// The underlying loaded instance.
+    pub const fn loaded(&self) -> LoadedZoneReader<'d> {
+        LoadedZoneReader::new(self.loaded_instance)
+    }
+
     /// Records from the loaded instance of the zone.
     ///
     /// Records are sorted in DNSSEC canonical order. Only records also present

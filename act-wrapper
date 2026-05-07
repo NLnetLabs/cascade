@@ -2,7 +2,8 @@
 
 set -e
 
-WORKFLOW_PATH="integration-tests/system-tests.yml"
+CHDIR_PATH="integration-tests"
+WORKFLOW_PATH="system-tests.yml"
 ACT_EXTRA_ARGS=
 
 function usage {
@@ -110,7 +111,7 @@ while [[ "$1" =~ ^\+ ]]; do
 		  POLICY_NAME=$(basename -- "${POLICY_PATH}")
       POLICY_NAME="${POLICY_NAME%.*}"
 		  NOW=$(date +"%Y%m%d_%H%M%S")
-		  WORKFLOW_PATH="integration-tests/benchmark-test.yml"
+		  WORKFLOW_PATH="benchmark-test.yml"
       ACT_EXTRA_ARGS="--rm --input log-level=info --input zone-name=${ZONE_NAME} --input policy-name=${POLICY_NAME} --input timeout-seconds=${TIMEOUT_SECS}"
 		  docker_stats_graph=true
 		  docker_stats_graph_path="benchmark-${NOW}.png"
@@ -193,8 +194,13 @@ if [[ "$docker_stats" == true ]]; then
 	echo "Docker stats being collected by PID ${STATS_PID}."
 fi
 
+# Use -C to make the integration-tests the working directory as this makes
+# the startup time of each test much faster due to reducing the amount of data
+# that the invoked `docker cp` command copies. Unfortunately neither act nor
+# `docker cp` respect .gitignore or .dockerignore or have any other way I have
+# found to achieve the same result.
 echo "Running tests"
-act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -W "${WORKFLOW_PATH}" ${ACT_EXTRA_ARGS} "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
+act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -C "${CHDIR_PATH}" -W "${WORKFLOW_PATH}" ${ACT_EXTRA_ARGS} "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
 
 # Stop the docker stats collection process, if needed.
 if [[ "$docker_stats" == true ]]; then

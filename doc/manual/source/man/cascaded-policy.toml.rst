@@ -32,13 +32,13 @@ policy files, then update Cascade with ``cascade policy reload``.  Note that:
 Example
 -------
 
-.. code-block:: text
+.. code-block:: toml
 
     version = "v1"
 
     [loader]
     [loader.review]
-    required = false
+    mode = "off"
 
     [key-manager]
     ksk.validity = "365d"
@@ -62,6 +62,7 @@ Example
     algorithm.auto-done = true
     ds-algorithm = "SHA256"
     auto-remove = true
+    publication-nameservers = []
 
     [key-manager.records]
     ttl = "1h"
@@ -86,7 +87,7 @@ Example
     type = "nsec"
 
     [signer.review]
-    required = false
+    mode = "off"
 
     [server.outbound]
     send-notify-to = []
@@ -125,18 +126,22 @@ The ``[loader.review]`` section.
 Review offers an opportunity to perform external checks on the zone contents
 loaded by Cascade.
 
-.. option:: required = false
+.. option:: mode = "off"
 
-   Whether review is required.
+   The mode for loader review.
 
-   If this is ``true``, a loaded version of a zone will not be signed or
-   published until it is approved.  If it is ``false``, loaded zones will be
-   signed immediately.  At the moment, the review hook will only be run if this
-   is set to true.
+   This can be one of the following values:
+   
+    - ``"off"`` will disable review
+    - ``"manual"`` will enable manual review via the CLI.
+    - ``"script"`` will enable automatic review via a hook. The ``hook`` field
+      must be specified in this case.
+
+   The default value is ``"off"``.
 
 .. _policy-loaded-review-cmd:
 
-.. option:: cmd-hook = ""
+.. option:: hook = ""
 
    A hook for reviewing a loaded zone. This is a path to an executable.
 
@@ -160,6 +165,18 @@ loaded by Cascade.
    accessible to Cascade (i.e. after it has dropped privileges). Its exit code
    will determine whether the zone is approved or not.
 
+.. option:: on-reject = "discard"
+
+   What to do when a zone is rejected by review.
+  
+   This field can only be specified if ``mode``` is either ``"manual"`` or
+   ``"script"`` and can have one of the following values:
+  
+    - ``"discard"`` will discard the rejected zone and go back to an idle state
+    - ``"halt"`` will halt the pipeline until an operator either resets the pipeline
+      or overrides the rejection.
+  
+   The default value is ``"discard"``.
 
 DNSSEC key management.
 ++++++++++++++++++++++
@@ -254,9 +271,24 @@ The ``[key-manager]`` section.
 
    Whether to automatically remove expired keys.
 
-   If this is set, expired keys will be removed automatically (by deleting the
-   files for on-disk keys or removing it from the HSM).
+   If this option is set, expired keys will be removed automatically (by
+   deleting the files for on-disk keys or removing it from the HSM).
 
+.. option:: publication-nameservers = []
+
+   The set of nameservers to use when checking for RRSIG propagation during a
+   key roll.
+
+   Each nameserver must be specified as a string in the form:
+  
+     ``"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"``
+  
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+  
+   If no nameservers are specified, the nameserver specified by the SOA MNAME
+   field will be checked.
 
 The management of DNS records by the key manager.
 +++++++++++++++++++++++++++++++++++++++++++++++++
@@ -444,8 +476,8 @@ The ``[signer.denial]`` section.
 
    Supported options:
 
-   - ``nsec``: Use NSEC records (RFC 4034).
-   - ``nsec3``: Use NSEC3 records (RFC 5155).
+   - ``nsec``: Use NSEC records (:RFC:`4034`).
+   - ``nsec3``: Use NSEC3 records (:RFC:`5155`).
 
 .. option:: opt-out = false
 
@@ -506,11 +538,26 @@ The ``[server.outbound]`` section.
 
    The set of nameservers to which NOTIFY messages should be sent.
 
-   If empty, no NOTIFY messages will be sent.
+   If no nameservers are specified, no NOTIFY messages will be sent.
 
-   A collection of ``IP:[port]``, defaulting to port 53 when not specified, e.g.:
-   ``send-notify-to = ["[::1]:53"]``
+   Each nameserver must be specified as a string in the form:
 
+   `"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"`
+
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+
+.. option:: accept-xfr-from = []
+
+   The set of nameservers to accept zone transfer requests from.
+
+   If no nameservers are specified, zone transfer requests will be accepted
+   from any nameserver.
+   
+   Each nameserver must be specified as a string in the form:
+
+   `"<IP>[^<TSIG_KEY_NAME>]"`
 
 Files
 -----

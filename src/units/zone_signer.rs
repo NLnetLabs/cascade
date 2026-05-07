@@ -1,15 +1,15 @@
 use std::cmp::{Ordering, min};
 use std::collections::{HashMap, VecDeque};
-use std::env::{VarError, var};
+use std::env::{self, VarError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
 use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
-use domain::base::{CanonicalOrd, Record};
+use domain::base::{CanonicalOrd, Name, Record};
 use domain::crypto::sign::{SecretKeyBytes, SignRaw};
 use domain::dnssec::common::parse_from_bind;
 use domain::dnssec::sign::SigningConfig;
@@ -20,7 +20,7 @@ use domain::dnssec::sign::denial::nsec3::{
 };
 use domain::dnssec::sign::error::SigningError;
 use domain::dnssec::sign::keys::SigningKey;
-use domain::dnssec::sign::keys::keyset::{KeySet, KeyType};
+use domain::dnssec::sign::keys::keyset::{KeySet, KeyType, UnixTime};
 use domain::dnssec::sign::records::RecordsIter;
 use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_zone_records};
 use domain::new::base::{RType, Serial};
@@ -28,7 +28,6 @@ use domain::new::rdata::RecordData;
 use domain::rdata::dnssec::Timestamp;
 use domain::rdata::{Dnskey, Nsec3param, ZoneRecordData};
 use domain::zonefile::inplace::{Entry, Zonefile};
-use domain::zonetree::StoredName;
 use domain_kmip::KeyUrl;
 use domain_kmip::dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool};
 use domain_kmip::{self, ClientCertificate, ConnectionSettings};
@@ -51,6 +50,7 @@ use crate::api::{
 use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::signer::incremental::sign_incrementally;
 use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
@@ -83,7 +83,7 @@ pub struct ZoneSigner {
     max_concurrent_operations: usize,
     concurrent_operation_permits: Arc<Semaphore>,
     signer_status: ZoneSignerStatus,
-    kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
+    pub kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
 
     /// A live view of the next scheduled global resigning time.
     next_resign_time_tx: watch::Sender<Option<tokio::time::Instant>>,
@@ -146,7 +146,7 @@ impl ZoneSigner {
         }))
     }
 
-    fn load_private_key(key_path: &Path) -> Result<SecretKeyBytes, Terminated> {
+    pub fn load_private_key(key_path: &Path) -> Result<SecretKeyBytes, Terminated> {
         let private_data = std::fs::read_to_string(key_path).map_err(|err| {
             error!("Unable to read file '{}': {err}", key_path.display());
             Terminated
@@ -167,7 +167,9 @@ impl ZoneSigner {
         Ok(secret_key)
     }
 
-    fn load_public_key(key_path: &Path) -> Result<Record<StoredName, Dnskey<Bytes>>, Terminated> {
+    pub fn load_public_key(
+        key_path: &Path,
+    ) -> Result<Record<Name<Bytes>, Dnskey<Bytes>>, Terminated> {
         let public_data = std::fs::read_to_string(key_path).map_err(|_| {
             error!("loading public key from file '{}'", key_path.display(),);
             Terminated
@@ -319,6 +321,11 @@ impl ZoneSigner {
         status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Result<(), SignerError> {
         let zone_name = &zone.name;
+
+        if let Some(patcher) = builder.patch() {
+            return sign_incrementally(self, patcher, zone, center, status);
+        }
+
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
         let start = Instant::now();
 
@@ -332,9 +339,6 @@ impl ZoneSigner {
                 .map(|serial| Serial::from(serial.0));
             (last_signed_serial, zone_state.policy.clone().unwrap())
         };
-
-        let kmip_server_state_dir = &center.config.kmip_server_state_dir;
-        let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
 
         //
         // Lookup the zone to sign.
@@ -352,10 +356,7 @@ impl ZoneSigner {
                 if let Some(previous_serial) = last_signed_serial
                     && loaded_serial <= previous_serial
                 {
-                    // TODO Ignore this error until we can figure out how to
-                    // return a soft error. Waits for new pipeline to
-                    // land.
-                    // return Err(SignerError::KeepSerialPolicyViolated);
+                    return Err(SignerError::KeepSerialPolicyViolated);
                 }
 
                 loaded_serial
@@ -464,7 +465,7 @@ impl ZoneSigner {
         let state = std::fs::read_to_string(&state_path)
             .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();
-        for dnskey_rr in state.dnskey_rrset {
+        for dnskey_rr in &state.dnskey_rrset {
             let mut zonefile = Zonefile::new();
             zonefile.extend_from_slice(dnskey_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
@@ -476,7 +477,7 @@ impl ZoneSigner {
         }
 
         // Also add CDS and CDNSKEY records plus their signatures.
-        for cds_rr in state.cds_rrset {
+        for cds_rr in &state.cds_rrset {
             let mut zonefile = Zonefile::new();
             zonefile.extend_from_slice(cds_rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
@@ -490,174 +491,7 @@ impl ZoneSigner {
         debug!("Loading dnst keyset signing keys");
         status.write().unwrap().current_action = "Loading signing keys".to_string();
         // Load the signing keys indicated by the keyset state.
-        let mut signing_keys = vec![];
-        for (pub_key_name, key_info) in state.keyset.keys() {
-            // Only use active ZSKs or CSKs to sign the records in the zone.
-            if !matches!(key_info.keytype(),
-                KeyType::Zsk(key_state)|KeyType::Csk(_, key_state) if key_state.signer())
-            {
-                continue;
-            }
-
-            if let Some(priv_key_name) = key_info.privref() {
-                let priv_url = Url::parse(priv_key_name).expect("valid URL expected");
-                let pub_url = Url::parse(pub_key_name).expect("valid URL expected");
-
-                match (priv_url.scheme(), pub_url.scheme()) {
-                    ("file", "file") => {
-                        let priv_key_path = priv_url.path();
-                        debug!("Attempting to load private key '{priv_key_path}'.");
-
-                        let private_key = ZoneSigner::load_private_key(Path::new(priv_key_path))
-                            .map_err(|_| {
-                                SignerError::CannotReadPrivateKeyFile(priv_key_path.to_string())
-                            })?;
-
-                        let pub_key_path = pub_url.path();
-                        debug!("Attempting to load public key '{pub_key_path}'.");
-
-                        let public_key = ZoneSigner::load_public_key(Path::new(pub_key_path))
-                            .map_err(|_| {
-                                SignerError::CannotReadPublicKeyFile(pub_key_path.to_string())
-                            })?;
-
-                        let key_pair = domain::crypto::sign::KeyPair::from_bytes(
-                            &private_key,
-                            public_key.data(),
-                        )
-                        .map_err(|err| SignerError::InvalidKeyPairComponents(err.to_string()))?;
-                        let signing_key = SigningKey::new(
-                            zone_name.clone(),
-                            public_key.data().flags(),
-                            KeyPair::Domain(key_pair),
-                        );
-
-                        signing_keys.push(signing_key);
-                    }
-
-                    ("kmip", "kmip") => {
-                        let priv_key_url =
-                            KeyUrl::try_from(priv_url).map_err(SignerError::InvalidPublicKeyUrl)?;
-                        let pub_key_url =
-                            KeyUrl::try_from(pub_url).map_err(SignerError::InvalidPrivateKeyUrl)?;
-
-                        // TODO: Replace the connection pool if the persisted KMIP server settings
-                        // were updated more recently than the pool was created.
-
-                        let mut kmip_servers = self.kmip_servers.lock().unwrap();
-                        let kmip_conn_pool = match kmip_servers
-                            .entry(priv_key_url.server_id().to_string())
-                        {
-                            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
-                            std::collections::hash_map::Entry::Vacant(e) => {
-                                // Try and load the KMIP server settings.
-                                let p = kmip_server_state_dir.join(priv_key_url.server_id());
-                                info!("Reading KMIP server state from '{p}'");
-                                let f = std::fs::File::open(p).unwrap();
-                                let kmip_server: KmipServerState =
-                                    serde_json::from_reader(f).unwrap();
-                                let KmipServerState {
-                                    server_id,
-                                    ip_host_or_fqdn: host,
-                                    port,
-                                    insecure,
-                                    connect_timeout,
-                                    read_timeout,
-                                    write_timeout,
-                                    max_response_bytes,
-                                    has_credentials,
-                                    ..
-                                } = kmip_server;
-
-                                let mut username = None;
-                                let mut password = None;
-                                if has_credentials {
-                                    let creds_file = KmipClientCredentialsFile::new(
-                                        kmip_credentials_store_path.as_std_path(),
-                                        KmipServerCredentialsFileMode::ReadOnly,
-                                    )
-                                    .unwrap();
-
-                                    let creds = creds_file.get(&server_id).ok_or(
-                                        SignerError::KmipServerCredentialsNeeded(server_id.clone()),
-                                    )?;
-
-                                    username = Some(creds.username.clone());
-                                    password = creds.password.clone();
-                                }
-
-                                let conn_settings = ConnectionSettings {
-                                    host,
-                                    port,
-                                    username,
-                                    password,
-                                    insecure,
-                                    client_cert: None, // TODO
-                                    server_cert: None, // TODO
-                                    ca_cert: None,     // TODO
-                                    connect_timeout: Some(connect_timeout),
-                                    read_timeout: Some(read_timeout),
-                                    write_timeout: Some(write_timeout),
-                                    max_response_bytes: Some(max_response_bytes),
-                                };
-
-                                let cloned_status = status.clone();
-                                let cloned_server_id = server_id.clone();
-                                tokio::task::spawn(async move {
-                                    cloned_status.write().unwrap().current_action =
-                                        format!("Connecting to KMIP server '{cloned_server_id}");
-                                });
-                                let pool = ConnectionManager::create_connection_pool(
-                                    server_id.clone(),
-                                    Arc::new(conn_settings.clone()),
-                                    10,
-                                    Some(Duration::from_secs(60)),
-                                    Some(Duration::from_secs(60)),
-                                )
-                                .map_err(|err| {
-                                    SignerError::CannotCreateKmipConnectionPool(server_id, err)
-                                })?;
-
-                                e.insert(pool)
-                            }
-                        };
-
-                        let _flags = priv_key_url.flags();
-
-                        let cloned_status = status.clone();
-                        let cloned_server_id = priv_key_url.server_id().to_string();
-                        tokio::task::spawn(async move {
-                            cloned_status.write().unwrap().current_action =
-                                format!("Fetching keys from KMIP server '{cloned_server_id}'");
-                        });
-
-                        let key_pair = KeyPair::Kmip(
-                            domain_kmip::sign::KeyPair::from_urls(
-                                priv_key_url,
-                                pub_key_url,
-                                kmip_conn_pool.clone(),
-                            )
-                            .map_err(|err| {
-                                SignerError::InvalidKeyPairComponents(err.to_string())
-                            })?,
-                        );
-
-                        let signing_key =
-                            SigningKey::new(zone_name.clone(), key_pair.dnskey().flags(), key_pair);
-
-                        signing_keys.push(signing_key);
-                    }
-
-                    (other1, other2) => {
-                        return Err(SignerError::InvalidKeyPairComponents(format!(
-                            "Using different key URI schemes ({other1} vs {other2}) for a public/private key pair is not supported."
-                        )));
-                    }
-                }
-
-                debug!("Loaded key pair for zone {zone_name} from key pair");
-            }
-        }
+        let signing_keys = load_keys(self, center, zone_name.clone(), &state, status.clone())?;
 
         debug!("{} signing keys loaded", signing_keys.len());
 
@@ -949,7 +783,7 @@ impl ZoneSigner {
             }
         };
 
-        let now = match var("CASCADE_FAKETIME") {
+        let now = match env::var("CASCADE_FAKETIME") {
             Ok(val) => val
                 .parse::<u32>()
                 .map_err(|e| SignerError::InternalError(format!("cannot parse {e} as u32")))?,
@@ -967,7 +801,6 @@ impl ZoneSigner {
 
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
         let mut min_time = None;
-        let now = SystemTime::now();
 
         #[allow(clippy::mutable_key_type)]
         let zones = {
@@ -975,27 +808,39 @@ impl ZoneSigner {
             state.zones.clone()
         };
 
+        // Compute when to incrementally sign a zone again to refresh
+        // signatures.
         for zone in zones {
             let zone = &zone.0;
             let zone_name = &zone.name;
 
-            let min_expiration = {
+            let last_signature_refresh = {
                 // Use a block to make sure that the mutex is clearly dropped.
                 let zone_state = zone.state.lock().unwrap();
-                zone_state.min_expiration
+                zone_state.last_signature_refresh.clone()
             };
 
-            let Some(min_expiration) = min_expiration else {
-                trace!("[ZS] resign: no min-expiration for zone {zone_name}");
-                continue;
+            // Ensure that the Mutexes are locked only in this block;
+            let signature_refresh_interval = {
+                let zone_state = zone.state.lock().unwrap();
+                // TODO: what if there is no policy?
+                zone_state
+                    .policy
+                    .as_ref()
+                    .unwrap()
+                    .signer
+                    .signature_refresh_interval
             };
+
+            let curr_refresh_time = last_signature_refresh.clone()
+                + Duration::from_secs(signature_refresh_interval as u64);
 
             // Start a new block to make sure the mutex is released.
             {
                 let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_expiration = resign_busy.get(zone_name);
-                if let Some(expiration) = opt_expiration {
-                    if *expiration == min_expiration {
+                let opt_refresh_time = resign_busy.get(zone_name);
+                if let Some(saved_refresh_time) = opt_refresh_time {
+                    if *saved_refresh_time == curr_refresh_time {
                         // This zone is busy.
                         trace!("[ZS]: resign: zone {zone_name} is busy");
                         continue;
@@ -1006,20 +851,12 @@ impl ZoneSigner {
                 }
             }
 
-            // Ensure that the Mutexes are locked only in this block;
-            let remain_time = {
-                let zone_state = zone.state.lock().unwrap();
-                // TODO: what if there is no policy?
-                zone_state.policy.as_ref().unwrap().signer.sig_remain_time
-            };
-
-            let exp_time = min_expiration.to_system_time(now);
-            let exp_time = exp_time - Duration::from_secs(remain_time as u64);
+            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
 
             min_time = if let Some(time) = min_time {
-                Some(min(time, exp_time))
+                Some(min(time, refresh_time))
             } else {
-                Some(exp_time)
+                Some(refresh_time)
             };
         }
         min_time.map(|t| {
@@ -1049,45 +886,48 @@ impl ZoneSigner {
             let zone = &zone.0;
             let zone_name = &zone.name;
 
-            let min_expiration = {
+            let last_signature_refresh = {
                 // Use a block to make sure that the mutex is clearly dropped.
                 let zone_state = zone.state.lock().unwrap();
-                zone_state.min_expiration
+                zone_state.last_signature_refresh.clone()
             };
 
-            let Some(min_expiration) = min_expiration else {
-                continue;
+            // Ensure that the Mutexes are locked only in this block;
+            let signature_refresh_interval = {
+                let zone_state = zone.state.lock().unwrap();
+                // What if there is no policy?
+                zone_state
+                    .policy
+                    .as_ref()
+                    .unwrap()
+                    .signer
+                    .signature_refresh_interval
             };
+
+            let curr_refresh_time = last_signature_refresh.clone()
+                + Duration::from_secs(signature_refresh_interval as u64);
 
             // Start a new block to make sure the mutex is released.
             {
                 let resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_expiration = resign_busy.get(zone_name);
-                if let Some(expiration) = opt_expiration
-                    && *expiration == min_expiration
+                let opt_refresh_time = resign_busy.get(zone_name);
+                if let Some(saved_refresh_time) = opt_refresh_time
+                    && *saved_refresh_time == curr_refresh_time
                 {
                     // This zone is busy.
                     continue;
                 }
             }
 
-            // Ensure that the Mutexes are locked only in this block;
-            let remain_time = {
-                let zone_state = zone.state.lock().unwrap();
-                // What if there is no policy?
-                zone_state.policy.as_ref().unwrap().signer.sig_remain_time
-            };
+            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time.clone());
 
-            let exp_time = min_expiration.to_system_time(now);
-            let exp_time = exp_time - Duration::from_secs(remain_time as u64);
-
-            if exp_time < now {
+            if refresh_time < now {
                 trace!("[ZS]: re-signing: request signing of zone {zone_name}");
 
                 // Start a new block to make sure the mutex is released.
                 {
                     let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                    resign_busy.insert(zone_name.clone(), min_expiration);
+                    resign_busy.insert(zone_name.clone(), curr_refresh_time);
                 }
                 let mut state = zone.state.lock().unwrap();
                 ZoneHandle {
@@ -1115,13 +955,13 @@ pub struct KeySetState {
     pub ns_rrset: Vec<String>,
 }
 
-struct MinTimestamp(Mutex<Option<Timestamp>>);
+pub struct MinTimestamp(Mutex<Option<Timestamp>>);
 
 impl MinTimestamp {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self(Mutex::new(None))
     }
-    fn add(&self, ts: Timestamp) {
+    pub fn add(&self, ts: Timestamp) {
         let mut min_ts = self.0.lock().expect("should not fail");
         if let Some(curr_min) = *min_ts {
             if ts < curr_min {
@@ -1131,9 +971,15 @@ impl MinTimestamp {
             *min_ts = Some(ts);
         }
     }
-    fn get(&self) -> Option<Timestamp> {
+    pub fn get(&self) -> Option<Timestamp> {
         let min_ts = self.0.lock().expect("should not fail");
         *min_ts
+    }
+}
+
+impl Default for MinTimestamp {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1335,7 +1181,7 @@ struct ZoneSignerStatus {
     zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<SigningStatusPerZone>>>>>,
 
     // Sign each zone only once at a time.
-    zone_semaphores: Arc<RwLock<HashMap<StoredName, Arc<Semaphore>>>>,
+    zone_semaphores: Arc<RwLock<HashMap<Name<Bytes>, Arc<Semaphore>>>>,
 
     queue_semaphore: Arc<Semaphore>,
 }
@@ -1474,7 +1320,7 @@ impl ZoneSignerStatus {
 
 /// A cryptographic keypair for signing.
 #[derive(Debug)]
-enum KeyPair {
+pub enum KeyPair {
     /// A keypair provided by [`domain`].
     Domain(domain::crypto::sign::KeyPair),
 
@@ -1631,6 +1477,230 @@ pub fn load_binary_file(path: &Path) -> Vec<u8> {
     bytes
 }
 
+pub fn load_keys(
+    zone_signer: &ZoneSigner,
+    center: &Arc<Center>,
+    zone_name: Name<Bytes>,
+    keyset_state: &KeySetState,
+    status: Arc<RwLock<SigningStatusPerZone>>,
+) -> Result<Vec<SigningKey<Bytes, KeyPair>>, SignerError> {
+    debug!("Loading dnst keyset signing keys");
+
+    let kmip_server_state_dir = &center.config.kmip_server_state_dir;
+    let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
+
+    debug!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
+    status.write().unwrap().current_action = "Fetching apex RRs from the key manager".to_string();
+
+    // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
+
+    status.write().unwrap().current_action = "Loading signing keys".to_string();
+    // Load the signing keys indicated by the keyset state.
+    let mut signing_keys = vec![];
+    for (pub_key_name, key_info) in keyset_state.keyset.keys() {
+        // Only use active ZSKs or CSKs to sign the records in the zone.
+        if !matches!(key_info.keytype(),
+		KeyType::Zsk(key_state)
+		| KeyType::Csk(_, key_state) if key_state.signer())
+        {
+            continue;
+        }
+
+        if let Some(priv_key_name) = key_info.privref() {
+            let priv_url = Url::parse(priv_key_name).expect("valid URL expected");
+            let pub_url = Url::parse(pub_key_name).expect("valid URL expected");
+
+            match (priv_url.scheme(), pub_url.scheme()) {
+                ("file", "file") => {
+                    let priv_key_path = priv_url.path();
+                    debug!("Attempting to load private key '{priv_key_path}'.");
+
+                    let private_key = ZoneSigner::load_private_key(Path::new(priv_key_path))
+                        .map_err(|_| {
+                            SignerError::CannotReadPrivateKeyFile(priv_key_path.to_string())
+                        })?;
+
+                    let pub_key_path = pub_url.path();
+                    debug!("Attempting to load public key '{pub_key_path}'.");
+
+                    let public_key =
+                        ZoneSigner::load_public_key(Path::new(pub_key_path)).map_err(|_| {
+                            SignerError::CannotReadPublicKeyFile(pub_key_path.to_string())
+                        })?;
+
+                    let key_pair =
+                        domain::crypto::sign::KeyPair::from_bytes(&private_key, public_key.data())
+                            .map_err(|err| {
+                                SignerError::InvalidKeyPairComponents(err.to_string())
+                            })?;
+                    let signing_key = SigningKey::new(
+                        zone_name.clone(),
+                        public_key.data().flags(),
+                        KeyPair::Domain(key_pair),
+                    );
+
+                    signing_keys.push(signing_key);
+                }
+
+                ("kmip", "kmip") => {
+                    let priv_key_url =
+                        KeyUrl::try_from(priv_url).map_err(SignerError::InvalidPublicKeyUrl)?;
+                    let pub_key_url =
+                        KeyUrl::try_from(pub_url).map_err(SignerError::InvalidPrivateKeyUrl)?;
+
+                    // TODO: Replace the connection pool if the persisted KMIP server settings
+                    // were updated more recently than the pool was created.
+
+                    let mut kmip_servers = zone_signer.kmip_servers.lock().unwrap();
+                    let kmip_conn_pool = match kmip_servers
+                        .entry(priv_key_url.server_id().to_string())
+                    {
+                        std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+                        std::collections::hash_map::Entry::Vacant(e) => {
+                            // Try and load the KMIP server settings.
+                            let p = kmip_server_state_dir.join(priv_key_url.server_id());
+                            info!("Reading KMIP server state from '{p}'");
+                            let f = std::fs::File::open(p).unwrap();
+                            let kmip_server: KmipServerState = serde_json::from_reader(f).unwrap();
+                            let KmipServerState {
+                                server_id,
+                                ip_host_or_fqdn: host,
+                                port,
+                                insecure,
+                                connect_timeout,
+                                read_timeout,
+                                write_timeout,
+                                max_response_bytes,
+                                has_credentials,
+                                ..
+                            } = kmip_server;
+
+                            let mut username = None;
+                            let mut password = None;
+                            if has_credentials {
+                                let creds_file = KmipClientCredentialsFile::new(
+                                    kmip_credentials_store_path.as_std_path(),
+                                    KmipServerCredentialsFileMode::ReadOnly,
+                                )
+                                .unwrap();
+
+                                let creds = creds_file.get(&server_id).ok_or(
+                                    SignerError::KmipServerCredentialsNeeded(server_id.clone()),
+                                )?;
+
+                                username = Some(creds.username.clone());
+                                password = creds.password.clone();
+                            }
+
+                            let conn_settings = ConnectionSettings {
+                                host,
+                                port,
+                                username,
+                                password,
+                                insecure,
+                                client_cert: None, // TODO
+                                server_cert: None, // TODO
+                                ca_cert: None,     // TODO
+                                connect_timeout: Some(connect_timeout),
+                                read_timeout: Some(read_timeout),
+                                write_timeout: Some(write_timeout),
+                                max_response_bytes: Some(max_response_bytes),
+                            };
+
+                            let cloned_status = status.clone();
+                            let cloned_server_id = server_id.clone();
+                            tokio::task::spawn(async move {
+                                cloned_status.write().unwrap().current_action =
+                                    format!("Connecting to KMIP server '{cloned_server_id}");
+                            });
+                            let pool = ConnectionManager::create_connection_pool(
+                                server_id.clone(),
+                                Arc::new(conn_settings.clone()),
+                                10,
+                                Some(Duration::from_secs(60)),
+                                Some(Duration::from_secs(60)),
+                            )
+                            .map_err(|err| {
+                                SignerError::CannotCreateKmipConnectionPool(server_id, err)
+                            })?;
+
+                            e.insert(pool)
+                        }
+                    };
+
+                    let _flags = priv_key_url.flags();
+
+                    let cloned_status = status.clone();
+                    let cloned_server_id = priv_key_url.server_id().to_string();
+                    tokio::task::spawn(async move {
+                        cloned_status.write().unwrap().current_action =
+                            format!("Fetching keys from KMIP server '{cloned_server_id}'");
+                    });
+
+                    let key_pair = KeyPair::Kmip(
+                        domain_kmip::sign::KeyPair::from_urls(
+                            priv_key_url,
+                            pub_key_url,
+                            kmip_conn_pool.clone(),
+                        )
+                        .map_err(|err| SignerError::InvalidKeyPairComponents(err.to_string()))?,
+                    );
+
+                    let signing_key =
+                        SigningKey::new(zone_name.clone(), key_pair.dnskey().flags(), key_pair);
+
+                    signing_keys.push(signing_key);
+                }
+
+                (other1, other2) => {
+                    return Err(SignerError::InvalidKeyPairComponents(format!(
+                        "Using different key URI schemes ({other1} vs {other2}) for a public/private key pair is not supported."
+                    )));
+                }
+            }
+
+            debug!("Loaded key pair for zone {zone_name} from key pair");
+        }
+    }
+
+    debug!("{} signing keys loaded", signing_keys.len());
+
+    // TODO: If signing is disabled for a zone should we then allow the
+    // unsigned zone to propagate through the pipeline?
+    if signing_keys.is_empty() {
+        warn!("No signing keys found for zone {zone_name}, aborting");
+        return Err(SignerError::SigningError(
+            "No signing keys found".to_string(),
+        ));
+    }
+
+    Ok(signing_keys)
+}
+
+pub fn faketime_or_now() -> UnixTime {
+    match env::var("CASCADE_FAKETIME") {
+        Ok(val) => val.parse::<Timestamp>().unwrap().into(),
+        Err(VarError::NotPresent) => UnixTime::now(),
+        Err(_e) => panic!("Cannot parse environment variable CASCADE_FAKETIME"),
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub enum PassThroughMode {
+    /// Pass-through is disabled.
+    #[default]
+    Off,
+
+    /// Copy the DNSKEY RRset plus signatures from keyset into an already
+    /// signed zone. The operator has to make sure that the DNSKEY RRset
+    /// contains the public key of the key that signed the zone.
+    CopyDnskeyRrset,
+
+    /// Add the DNSKEY signatures from keyset. This requires that the DNSKEY
+    /// RRset in the input zone is equal to the one from keyset.
+    MergeDnskeySignatures,
+}
+
 #[derive(Clone, Debug)]
 pub enum SignerError {
     SoaNotFound,
@@ -1645,6 +1715,8 @@ pub enum SignerError {
     InvalidPrivateKeyUrl(String),
     KmipServerCredentialsNeeded(String),
     CannotCreateKmipConnectionPool(String, KmipConnError),
+    PatchFailed(String),
+    NothingToDo,
     SigningError(String),
 }
 
@@ -1687,6 +1759,8 @@ impl std::fmt::Display for SignerError {
                     "Cannot create connection pool for KMIP server '{server_id}': {err}"
                 )
             }
+            SignerError::PatchFailed(err) => write!(f, "Patch failed: {err}"),
+            SignerError::NothingToDo => write!(f, "Nothing To Do"),
             SignerError::SigningError(err) => write!(f, "Signing error: {err}"),
         }
     }

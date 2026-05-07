@@ -8,12 +8,12 @@
 version = "v1"
 
 [loader.review]
-required = true
-cmd-hook = "<INTEGRATION_TEST_DIR>/hooks/unsigned-review-compare-to-original"
+mode = "script"
+hook = "<INTEGRATION_TEST_DIR>/hooks/unsigned-review-compare-to-original"
 
 [signer.review]
-required = true
-cmd-hook = "<INTEGRATION_TEST_DIR>/hooks/signed-review-compare-to-original"
+mode = "script"
+hook = "<INTEGRATION_TEST_DIR>/hooks/signed-review-compare-to-original"
 
 # How zones are signed.
 #

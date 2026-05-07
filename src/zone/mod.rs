@@ -1,5 +1,6 @@
 //! Zone-specific state and management.
 
+use std::collections::HashSet;
 use std::{
     borrow::Borrow,
     cmp::Ordering,
@@ -10,7 +11,9 @@ use std::{
 };
 
 use bytes::Bytes;
-use domain::base::{Name, Serial};
+use cascade_cfg::Config;
+use domain::base::{Name, Rtype, Serial};
+use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
@@ -19,11 +22,16 @@ use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
     loader::zone::{LoaderState, LoaderZoneHandle},
-    policy::PolicyVersion,
+    persistence::zone::{PersistenceState, ZonePersistenceHandle},
+    policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
+    tsig::TsigStore,
     util::{deserialize_duration_from_secs, serialize_duration_as_secs},
     zone::machine::ZoneStateMachine,
 };
+
+/// TODO: this temporary until there is a more permanent solution for fake time.
+use crate::units::zone_signer::faketime_or_now;
 
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
@@ -45,6 +53,73 @@ pub struct Zone {
     /// consistent with each other, and that changes to the zone happen in a
     /// single (sequentially consistent) order.
     pub state: Mutex<ZoneState>,
+
+    /// Whether the zone was restored from the state file.
+    ///
+    /// This is set if the zone originates from a previous execution of Cascade
+    /// and its state was loaded from a file (rather than being created in the
+    /// current execution).
+    pub restored: bool,
+}
+
+impl Zone {
+    /// Construct a new zone.
+    ///
+    /// The zone is initialized to an empty state, where nothing is known about
+    /// it and Cascade won't act on it.
+    pub fn new(name: Name<Bytes>) -> Self {
+        Self {
+            name,
+            state: Default::default(),
+            restored: false,
+        }
+    }
+
+    /// Restore a zone from a state file.
+    ///
+    /// A zone originating from a previous execution of Cascade is initialized,
+    /// by reading and parsing the appropriate state file.
+    ///
+    /// `policies` should contain the set of policies loaded from the global
+    /// state file. If the zone uses a policy that is not present in the global
+    /// state file, it will restore the last seen version of that policy.
+    ///
+    /// Persisted zone data will not be restored in this function, as it may
+    /// take a while (and should not block Cascade's initialization as a whole);
+    /// it will be handled by [`crate::persistence::Restorer::run()`].
+    #[tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(%name),
+    )]
+    pub fn restore(
+        config: &Config,
+        name: Name<Bytes>,
+        policies: &mut foldhash::HashMap<Box<str>, Policy>,
+        tsig_store: &TsigStore,
+    ) -> Result<Self, state::LoadError> {
+        let path = config.zone_state_dir.join(format!("{name}.db"));
+
+        // Load the underlying state file.
+        let state = match state::Spec::load(&path) {
+            Ok(spec) => spec.parse(&name, policies, tsig_store)?,
+            Err(error) => {
+                error!("Failed to load the state of zone '{name}' from '{path}': {error}");
+                return Err(state::LoadError::Read {
+                    path: path.into(),
+                    error,
+                });
+            }
+        };
+
+        debug!("Restored the state of zone '{name}' (from '{path}')");
+
+        Ok(Self {
+            name,
+            state: Mutex::new(state),
+            restored: true,
+        })
+    }
 }
 
 //----------- ZoneHandle -------------------------------------------------------
@@ -88,18 +163,30 @@ impl ZoneHandle<'_> {
             center: self.center,
         }
     }
+
+    /// Consider data persistence specific operations.
+    pub const fn persistence(&mut self) -> ZonePersistenceHandle<'_> {
+        ZonePersistenceHandle {
+            zone: self.zone,
+            state: self.state,
+            center: self.center,
+        }
+    }
 }
 
 //----------- ZoneState --------------------------------------------------------
 
 /// The state of a zone.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ZoneState {
     /// The top-level state machine
     pub machine: ZoneStateMachine,
 
     /// The policy (version) used by the zone.
     pub policy: Option<Arc<PolicyVersion>>,
+
+    /// Metadata related to the last published zone version.
+    pub last_published: Option<LastPublished>,
 
     /// An enqueued save of this state.
     ///
@@ -116,6 +203,45 @@ pub struct ZoneState {
     /// value should be move to min_expiration after the signed zone is
     /// approved.
     pub next_min_expiration: Option<Timestamp>,
+
+    /// We expect this from the key manager. These are the types that
+    /// the key manager takes control over in the apex. Use this to
+    /// determine if the zone needs resigning. If what is stored here is
+    /// different from what we get from the key manager, then update this
+    /// field and resign the zone. Maybe this should be associated with
+    /// a signed instance of a zone to avoid problems when a signed zone
+    /// gets rejected.
+    pub apex_remove: HashSet<Rtype>,
+
+    /// Same comment as for apex_remove. But this is about the records
+    /// that should be added to the apex after removing the apex_remove
+    /// types.
+    pub apex_extra: Vec<String>,
+
+    /// This field is set based on the key tags of the keys that need to
+    /// sign the zone. It doesn't say anything about how the zone is
+    /// currently signed, just what the goal is. This field is used to
+    /// detiermine when a ZSK or CSK key roll has started and the zone
+    /// needs to be resigned with a new key.
+    pub key_tags: HashSet<u16>,
+
+    /// Record when key_tags has changed. We take this as the start of a key
+    /// roll. This start time is used to compute which percentage of
+    /// RRsets that should have signatures from the new key.
+    pub key_roll: Option<UnixTime>,
+
+    /// Record when the last time signtures were refreshed. This is used
+    /// together with the signature_refresh_interval value in policy to
+    /// determine when to refresh signatures next. Maybe this should be
+    /// associated with a signed instance of a zone to avoid problems when
+    /// a signed zone gets rejected.
+    pub last_signature_refresh: UnixTime,
+
+    /// Record the SOA serial of the last signed version of the zone.
+    /// We use a serial only once, even if the signed zone gets rejected.
+    /// It would be good to have a command where the user can set the
+    /// serial for the Increment serial policy.
+    pub previous_serial: Option<Serial>,
 
     /// Unsigned versions of the zone.
     pub unsigned: foldhash::HashMap<Serial, UnsignedZoneVersionState>,
@@ -134,6 +260,9 @@ pub struct ZoneState {
 
     /// Data storage for the zone.
     pub storage: StorageState,
+
+    /// Persisting zone data.
+    pub persistence: PersistenceState,
     //
     // TODO:
     // - A log?
@@ -161,6 +290,42 @@ impl ZoneState {
             .rev()
             .find(|item| item.event.is_of_type(typ) && (serial.is_none() || item.serial == serial))
     }
+}
+
+impl Default for ZoneState {
+    fn default() -> Self {
+        Self {
+            machine: Default::default(),
+            policy: Default::default(),
+            last_published: Default::default(),
+            enqueued_save: Default::default(),
+            min_expiration: Default::default(),
+            next_min_expiration: Default::default(),
+            apex_remove: Default::default(),
+            apex_extra: Default::default(),
+            key_tags: Default::default(),
+            key_roll: Default::default(),
+            last_signature_refresh: faketime_or_now(),
+            previous_serial: Default::default(),
+            unsigned: Default::default(),
+            signed: Default::default(),
+            history: Default::default(),
+            loader: Default::default(),
+            signer: Default::default(),
+            storage: Default::default(),
+            persistence: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct LastPublished {
+    pub loaded_serial: Serial,
+    pub signed_serial: Serial,
+    // TODO:
+    //  - time of publish
+    //  - number of records
+    //  - size in bytes
 }
 
 /// The state of an unsigned version of a zone.
@@ -236,6 +401,8 @@ impl HistoryItem {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HistoricalEventType {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -245,17 +412,25 @@ pub enum HistoricalEventType {
     SigningFailed,
     UnsignedZoneReview,
     SignedZoneReview,
+    UnsignedHookFailed,
+    SignedHookFailed,
     KeySetCommand,
     KeySetError,
+    Error,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum HistoricalEvent {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
     SourceChanged,
     NewVersionReceived,
+    LoadingFailed {
+        reason: String,
+    },
     SigningSucceeded {
         trigger: cascade_api::SigningTrigger,
     },
@@ -268,6 +443,12 @@ pub enum HistoricalEvent {
     },
     SignedZoneReview {
         status: ZoneReviewStatus,
+    },
+    UnsignedHookFailed {
+        err: String,
+    },
+    SignedHookFailed {
+        err: String,
     },
     KeySetCommand {
         cmd: String,
@@ -293,6 +474,8 @@ pub enum HistoricalEvent {
 impl HistoricalEvent {
     fn get_type(&self) -> HistoricalEventType {
         match self {
+            HistoricalEvent::StartedLoad => HistoricalEventType::StartedLoad,
+            HistoricalEvent::StartedResign => HistoricalEventType::StartedResign,
             HistoricalEvent::Added => HistoricalEventType::Added,
             HistoricalEvent::Removed => HistoricalEventType::Removed,
             HistoricalEvent::PolicyChanged => HistoricalEventType::PolicyChanged,
@@ -302,8 +485,11 @@ impl HistoricalEvent {
             HistoricalEvent::SigningFailed { .. } => HistoricalEventType::SigningFailed,
             HistoricalEvent::UnsignedZoneReview { .. } => HistoricalEventType::UnsignedZoneReview,
             HistoricalEvent::SignedZoneReview { .. } => HistoricalEventType::SignedZoneReview,
+            HistoricalEvent::UnsignedHookFailed { .. } => HistoricalEventType::UnsignedHookFailed,
+            HistoricalEvent::SignedHookFailed { .. } => HistoricalEventType::SignedHookFailed,
             HistoricalEvent::KeySetCommand { .. } => HistoricalEventType::KeySetCommand,
             HistoricalEvent::KeySetError { .. } => HistoricalEventType::KeySetError,
+            HistoricalEvent::LoadingFailed { .. } => HistoricalEventType::Error,
         }
     }
 
@@ -315,6 +501,8 @@ impl HistoricalEvent {
 impl From<HistoricalEvent> for api::HistoricalEvent {
     fn from(value: HistoricalEvent) -> Self {
         match value {
+            HistoricalEvent::StartedLoad => Self::StartedLoad,
+            HistoricalEvent::StartedResign => Self::StartedResign,
             HistoricalEvent::Added => Self::Added,
             HistoricalEvent::Removed => Self::Removed,
             HistoricalEvent::PolicyChanged => Self::PolicyChanged,
@@ -326,6 +514,8 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             }
             HistoricalEvent::UnsignedZoneReview { status } => Self::UnsignedZoneReview { status },
             HistoricalEvent::SignedZoneReview { status } => Self::SignedZoneReview { status },
+            HistoricalEvent::UnsignedHookFailed { err } => Self::UnsignedHookFailed { err },
+            HistoricalEvent::SignedHookFailed { err } => Self::SignedHookFailed { err },
             HistoricalEvent::KeySetCommand {
                 cmd,
                 warning,
@@ -338,19 +528,7 @@ impl From<HistoricalEvent> for api::HistoricalEvent {
             HistoricalEvent::KeySetError { cmd, err, elapsed } => {
                 Self::KeySetError { cmd, err, elapsed }
             }
-        }
-    }
-}
-
-impl Zone {
-    /// Construct a new [`Zone`].
-    ///
-    /// The zone is initialized to an empty state, where nothing is known about
-    /// it and Cascade won't act on it.
-    pub fn new(name: Name<Bytes>) -> Self {
-        Self {
-            name: name.clone(),
-            state: Default::default(),
+            HistoricalEvent::LoadingFailed { reason } => Self::LoadingFailed { reason },
         }
     }
 }
