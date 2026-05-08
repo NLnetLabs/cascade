@@ -274,11 +274,50 @@ runs:
         LC_COLLATE=C sort cascade-ixfr-1-3.log > output.sorted
         diff -u -w output.sorted reference.output.sorted
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${{ steps.set-vars.outputs.ZONE_NAME }} -t IXFR=2 >cascade-ixfr-2.log
+    - name: Verify Cascade IXFR serial 2..=3 out
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        EXTRA_ARGS=
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
+        fi
+        dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${ZONE_NAME} -t IXFR=2 ${EXTRA_ARGS} &> cascade-ixfr-2-3.log
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+        LC_COLLATE=C sort "${TEST_DIR}/reference-output/${ZONE_NAME}ixfr-2-3" | egrep -v '^;|^$' > reference.output.sorted
+        LC_COLLATE=C sort cascade-ixfr-2-3.log > output.sorted
+        diff -u -w output.sorted reference.output.sorted
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${{ steps.set-vars.outputs.ZONE_NAME }} -t IXFR=3 >cascade-ixfr-3.log
+    - name: Verify Cascade IXFR serial 3..=3 out
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        EXTRA_ARGS=
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
+        fi
+        dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${ZONE_NAME} -t IXFR=3 ${EXTRA_ARGS} &> cascade-ixfr-3-3.log
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+        LC_COLLATE=C sort "${TEST_DIR}/reference-output/${ZONE_NAME}ixfr-3-3" | egrep -v '^;|^$' > reference.output.sorted
+        LC_COLLATE=C sort cascade-ixfr-3-3.log > output.sorted
+        diff -u -w output.sorted reference.output.sorted
 
-    - run: dig +onesoa +noall +answer @127.0.0.1 -p 1054 ${{ steps.set-vars.outputs.ZONE_NAME }} AXFR >nsd-axfr.log
+    - name: Verify NSD AXFR out
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        dig +onesoa +noall +answer @127.0.0.1 -p 1054 ${ZONE_NAME} AXFR &> nsd-axfr.log
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+
+        # Pass -f to sort and -i to diff to normalize case in the Cascade and
+        # NSD output being compared, as NSD outputs lower case labels while
+        # Cascade preserves label case. -f tells sort not to order differently
+        # based on case, and -i tells diff to consider differing case to be
+        # equal.
+  
+        LC_COLLATE=C sort -f "${TEST_DIR}/reference-output/${ZONE_NAME}axfr" | egrep -v '^;|^$' > reference.output.sorted
+        LC_COLLATE=C sort -f nsd-axfr.log > output.sorted
+        diff -u -w -i output.sorted reference.output.sorted
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
