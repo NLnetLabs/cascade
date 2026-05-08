@@ -467,6 +467,8 @@ mod compat {
         tokio::task::spawn(async move {
             // Collect the sequence of IXFR output records.
             let mut rrs = vec![new_soa.clone().into()];
+            // TODO: Use diffs[..].iter().flat_map() here to avoid the
+            // intermediate Vec allocation?
             for (loaded_diff, signed_diff) in &diffs[start_idx..] {
                 rrs.push(signed_diff.removed_soa.clone().unwrap().into());
                 rrs.extend(loaded_diff.removed_records.clone());
