@@ -79,10 +79,14 @@ mod compat {
             message::Request,
             service::{CallResult, Service, ServiceResult},
         },
-        new::base::wire::ParseBytesZC,
+        new::{
+            base::{name::Name, wire::ParseBytesZC},
+            rdata::Soa,
+        },
         tsig,
     };
     use futures::Stream;
+    use tracing::trace;
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
 
@@ -149,10 +153,9 @@ mod compat {
                         }
 
                         // TODO: Support IXFR.
-                        ZoneRequestKind::Ixfr { .. } => Box::pin(std::future::ready(error(
-                            old_request.message(),
-                            Rcode::NOTIMP,
-                        ))),
+                        ZoneRequestKind::Ixfr { known_soa } => {
+                            Box::pin(ixfr(old_request, known_soa.rdata, zone.clone())) as Response
+                        }
                     }
                 }
             }
@@ -270,6 +273,151 @@ mod compat {
                         // On success, consume the record.
                         Ok(()) => {
                             let _ = records.next();
+                        }
+
+                        // Once the message runs out of space, stop.
+                        Err(_) => break,
+                    }
+                }
+
+                let response = builder.additional();
+                Some(CallResult::new(response))
+            });
+
+            for message in messages {
+                if tx.send(message).await.is_err() {
+                    // The channel has closed; stop.
+                    break;
+                }
+            }
+        });
+
+        let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
+
+        Box::new(stream) as _
+    }
+
+    async fn ixfr<V: Viewer + Send + Sync + 'static>(
+        request: Request<Vec<u8>, Option<Arc<tsig::Key>>>,
+        client_soa: Soa<Box<Name>>,
+        zone: ServedZone<V>,
+    ) -> ResponseStream {
+        // Refuse IXFR requests over UDP.
+        if request.transport_ctx().is_udp() {
+            tracing::warn!("Reject IXFR over UDP");
+            return error(request.message(), Rcode::NOTIMP);
+        }
+
+        // Save a cheap clone of the zone to avoid a borrow checker error.
+        let zone_clone = zone.clone();
+
+        // Obtain a read lock to read the zone for an extended duration.
+        let viewer = zone.viewer.read_owned().await;
+
+        if viewer.is_empty() {
+            // The zone is known to exist, but we don't have any data for it.
+            return error(request.message(), Rcode::NOTAUTH);
+        }
+
+        // Remember the latest SOA.
+        let new_soa = viewer.soa().clone();
+
+        // https://datatracker.ietf.org/doc/html/rfc1995#section-4
+        // 4. Response Format
+        //    "If incremental zone transfer is not available, the entire zone
+        //     is returned.  The first and the last RR of the response is the
+        //     SOA record of the zone. I.e. the behavior is the same as an
+        //     AXFR response except the query type is IXFR."
+
+        // https://datatracker.ietf.org/doc/html/rfc1995#section-2
+        // 2. Brief Description of the Protocol
+        //   "If an IXFR query with the same or newer version number than that
+        //    of the server is received, it is replied to with a single SOA
+        //    record of the server's current version, just as in AXFR."
+        //                                            ^^^^^^^^^^^^^^^
+        // Errata https://www.rfc-editor.org/errata/eid3196 points out that
+        // this is NOT "just as in AXFR" as AXFR does not do that.
+        let our_soa_serial = { viewer.soa().rdata.serial };
+
+        if client_soa.serial >= our_soa_serial {
+            trace!("Responding to IXFR with single SOA because query serial >= zone serial");
+            return soa(request.message(), &*viewer);
+        }
+
+        let diffs = zone.handle.state.lock().unwrap().storage.diffs.clone();
+
+        // TODO: Add something like the Bind `max-ixfr-ratio` option that
+        // "sets the size threshold (expressed as a percentage of the size of
+        // the full zone) beyond which named chooses to use an AXFR response
+        // rather than IXFR when answering zone transfer requests"?
+
+        // Note: Unlike RFC 5936 for AXFR, neither RFC 1995 nor RFC 9103 say
+        // anything about whether an IXFR response can consist of more than
+        // one response message, but given the 2^16 byte maximum response
+        // size of a TCP DNS message and the 2^16 maximum number of ANSWER
+        // RRs allowed per DNS response, large zones may not fit in a single
+        // response message and will have to be split into multiple response
+        // messages.
+
+        // Currently we have only a single diff available.
+        for (i, d) in diffs.iter().enumerate() {
+            tracing::info!(
+                "Diff {i} for zone '{}': serial {} => serial {}",
+                zone.handle.name,
+                d.removed_soa.as_ref().unwrap().0.rdata.serial,
+                d.added_soa.as_ref().unwrap().0.rdata.serial,
+            );
+        }
+
+        // Find the diff, if we have it, that removes the SOA serial number
+        // that the client currently has. That will be the start of the diff
+        // that we need to serve.
+        let start_idx = diffs.iter().position(|d| {
+            d.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
+        });
+
+        let Some(start_idx) = start_idx else {
+            tracing::trace!(
+                "Falling back from IXFR to AXFR because no diff is available for zone '{}' from serial {}",
+                zone.handle.name,
+                client_soa.serial,
+            );
+            return axfr(request, zone_clone).await;
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
+
+        // Stream the records in the background.
+        tokio::task::spawn(async move {
+            // Collect the sequence of IXFR output records..
+            let mut rrs = vec![new_soa.clone().into()];
+            for diff in &diffs[start_idx..] {
+                rrs.push(diff.removed_soa.clone().unwrap().into());
+                rrs.extend(diff.removed_records.clone());
+                rrs.push(diff.added_soa.clone().unwrap().into());
+                rrs.extend(diff.added_records.clone());
+            }
+            rrs.push(new_soa.into());
+
+            // Divide the records into DNS messages.
+            let mut rr_iter = rrs.into_iter().peekable();
+            let mut max_message_size = u16::MAX; // TCP
+            max_message_size -= request.num_reserved_bytes();
+            let messages = std::iter::from_fn(move || {
+                rr_iter.peek()?;
+
+                let mut builder = MessageBuilder::new_stream_vec();
+                builder.set_push_limit(max_message_size as usize);
+                let mut builder = builder
+                    .start_answer(request.message(), Rcode::NOERROR)
+                    .unwrap();
+                builder.header_mut().set_aa(true);
+
+                while let Some(record) = rr_iter.peek() {
+                    match builder.push(OldRecord::from(record.clone())) {
+                        // On success, consume the record.
+                        Ok(()) => {
+                            let _ = rr_iter.next();
                         }
 
                         // Once the message runs out of space, stop.

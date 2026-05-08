@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use cascade_zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister};
-use tracing::{debug, info, trace, trace_span};
+use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
@@ -62,9 +62,11 @@ impl ZonePersistenceHandle<'_> {
                             "'restore_loaded()' always completes restoration on successful return"
                         )
                     }),
-                    Err(_) => {
-                        trace!("Abandoning loaded restoration");
+                    Err(err) => {
+                        warn!("Abandoning loaded restoration: {err}");
                         let mut state = zone.state.lock().unwrap();
+                        state.persisted_loaded_diffs.clear();
+                        state.persisted_signed_diffs.clear();
                         let mut handle = ZoneHandle {
                             zone: &zone,
                             state: &mut state,
@@ -97,6 +99,8 @@ impl ZonePersistenceHandle<'_> {
                     Err(_) => {
                         trace!("Abandoning signed restoration");
                         let mut state = zone.state.lock().unwrap();
+                        state.persisted_loaded_diffs.clear();
+                        state.persisted_signed_diffs.clear();
                         let mut handle = ZoneHandle {
                             zone: &zone,
                             state: &mut state,
@@ -110,6 +114,7 @@ impl ZonePersistenceHandle<'_> {
 
                 info!("Restored the zone's persisted data");
                 let mut state = zone.state.lock().unwrap();
+                trace!("Restored diffs: {:?}", state.persisted_loaded_diffs);
                 let mut handle = ZoneHandle {
                     zone: &zone,
                     state: &mut state,

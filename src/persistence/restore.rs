@@ -14,7 +14,7 @@ use cascade_zonedata::{
 use domain::{
     new::{
         base::{
-            RType, Record,
+            RType, Record, Serial,
             name::{NameBuf, RevNameBuf},
             parse::{ParseMessageBytes, SplitMessageBytes},
         },
@@ -22,6 +22,7 @@ use domain::{
     },
     utils::dst::UnsizedCopy,
 };
+use tracing::trace;
 
 use crate::{center::Center, zone::Zone};
 
@@ -54,29 +55,54 @@ pub fn restore_loaded(
         let (soa, records) =
             load_axfr_wire_dump(loaded_source.as_std_path(), &mut buf).map_err(|err| {
                 io::Error::other(format!(
-                    "Failed to load persisted snapshot for zone '{}' from '{loaded_source}': {err}",
+                    "Failed to load persisted loaded snapshot for zone '{}' from '{loaded_source}': {err}",
                     zone.name
                 ))
             })?;
         let mut loaded_replacer = restorer.fill().ok_or(io::Error::other(format!("Unable to restore persisted snapshot for zone '{}' from '{loaded_source}': Could not acquire replacer", zone.name)))?;
-        loaded_replacer.set_soa(soa).unwrap();
+        loaded_replacer.set_soa(soa.clone()).unwrap();
         loaded_replacer.set_records(records).unwrap();
         loaded_replacer.apply().unwrap();
+        trace!(
+            "Restored loaded snapshot for SOA serial {} for zone '{}' from file '{loaded_source}'",
+            soa.rdata.serial, zone.name
+        );
 
         if count > 1 {
-            let mut loaded_patcher = restorer.patch().unwrap(); // TODO: SAFETY
+            let mut loaded_patcher = restorer.patch().ok_or(io::Error::other(format!(
+                "Failed to load persisted signed diff for zone '{}' from '{loaded_source}'",
+                zone.name
+            )))?;
             let mut source = loaded_source.to_path_buf();
+            let mut all_serials = vec![];
             for i in 1..count {
                 source.set_extension(i.to_string());
 
                 let loaded_patcher = &mut loaded_patcher;
-                load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
-                    apply_ixfr_event_to_loaded_data(loaded_patcher, event);
+                let (start_serial, end_serial) = load_ixfr_wire_dump(
+                    source.as_std_path(),
+                    &mut buf,
+                    |event| {
+                        apply_ixfr_event_to_loaded_data(loaded_patcher, event);
+                    }
+                ).map_err(|err| {
+                    io::Error::other(format!(
+                        "Failed to load persisted loaded diff for zone '{}' from '{loaded_source}': {err}",
+                        zone.name
+                    ))
                 })?;
 
-                loaded_patcher.next_patchset().map_err(|err| io::Error::other(format!("Unable to restore persisted diff {i} for zone '{}' from '{source}': Could not move to next patch set: {err}", zone.name)))?;
+                loaded_patcher.next_patchset().map_err(|err| io::Error::other(format!("Unable to restore loaded persisted diff {i} for zone '{}' from '{source}': Could not move to next patch set: {err}", zone.name)))?;
+
+                let start_serial: u32 = start_serial.into();
+                let end_serial: u32 = end_serial.into();
+                all_serials.push((start_serial, end_serial));
             }
-            loaded_patcher.apply().map_err(|err| io::Error::other(format!("Unable to restore persisted diffs for zone '{}': Could apply the collected changes: {err}", zone.name)))?;
+            loaded_patcher.apply().map_err(|err| io::Error::other(format!("Unable to restore persisted loaded diffs for zone '{}': Could apply the collected changes: {err}", zone.name)))?;
+            trace!(
+                "Restored loaded diff for SOA serial {} for zone '{}' from file '{loaded_source}' with diff serials: {all_serials:?}",
+                soa.rdata.serial, zone.name
+            );
         }
     }
 
@@ -94,7 +120,7 @@ pub fn restore_signed(
     center: &Arc<Center>,
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<()> {
-    let state = zone.state.lock().unwrap();
+    let mut state = zone.state.lock().unwrap();
     if !state.persisted_loaded_diffs.is_empty() {
         // Determine the paths to read from. Each zone is persisted as an AXFR
         // plus zero or more IXFRs. The restorer takes a base path ending in
@@ -108,36 +134,64 @@ pub fn restore_signed(
         let count = state.persisted_signed_diffs.len();
         let mut buf = Vec::<u8>::new();
 
-        // Extract the initial unsigned integer number file extension.
-        let n = signed_source
-            .extension()
-            .unwrap()
-            .to_string()
-            .parse::<usize>()
-            .unwrap();
-
         // Process the initial "signed" AXFR wire format dump.
-        let (soa, records) = load_axfr_wire_dump(signed_source.as_std_path(), &mut buf).unwrap();
-        let mut signed_replacer = restorer.fill().unwrap(); // TODO: SAFETY
-        signed_replacer.set_soa(soa).unwrap();
+        let (soa, records) = load_axfr_wire_dump(signed_source.as_std_path(), &mut buf).map_err(|err| {
+                io::Error::other(format!(
+                    "Failed to load persisted signed snapshot for zone '{}' from '{signed_source}': {err}",
+                    zone.name
+                ))
+            })?;
+        let mut signed_replacer = restorer.fill().ok_or(io::Error::other(format!("Unable to restore persisted signed snapshot for zone '{}' from '{signed_source}': Could not acquire replacer", zone.name)))?;
+        signed_replacer.set_soa(soa.clone()).unwrap();
         signed_replacer.set_records(records).unwrap();
         signed_replacer.apply().unwrap();
+        trace!(
+            "Restored signed snapshot for SOA serial {} for zone '{}' from file '{signed_source}'",
+            soa.rdata.serial, zone.name
+        );
 
         // Process zero or more "signed" IXFR wire format dumps.
         if count > 1 {
-            let mut signed_patcher = restorer.patch().unwrap(); // TODO: SAFETY
             let mut source = signed_source.to_path_buf();
+            let mut all_serials = vec![];
             for i in 1..count {
-                source.set_extension((n + i).to_string());
+                let mut signed_patcher = restorer.patch().ok_or(io::Error::other(format!(
+                    "Failed to load persisted signed diff for zone '{}' from '{signed_source}'",
+                    zone.name
+                )))?;
+                source.set_extension(i.to_string());
 
-                load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
-                    apply_ixfr_event_to_signed_data(&mut signed_patcher, event);
-                })
-                .unwrap();
+                let (start_serial, end_serial) =
+                    load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
+                        apply_ixfr_event_to_signed_data(&mut signed_patcher, event);
+                    })
+                .map_err(|err| {
+                    io::Error::other(format!(
+                        "Failed to load persisted signed diff for zone '{}' from '{signed_source}': {err}",
+                        zone.name
+                    ))
+                })?;
 
-                signed_patcher.next_patchset().unwrap()
+                signed_patcher.next_patchset().map_err(|err| io::Error::other(format!("Unable to restore persisted signed diff {i} for zone '{}' from '{source}': Could not move to next patch set: {err}", zone.name)))?;
+
+                signed_patcher.apply().map_err(|err| io::Error::other(format!("Unable to restore persisted signed diffs for zone '{}': Could apply the collected changes: {err}", zone.name)))?;
+
+                if let Some(diff) = restorer.take_diff() {
+                    state.storage.diffs.push(diff.into());
+                    trace!(
+                        "Stored IXFR diff for SOA serial {} for zone '{}' from file '{signed_source}': serial {start_serial} -> {end_serial}",
+                        soa.rdata.serial, zone.name
+                    );
+                }
+
+                let start_serial: u32 = start_serial.into();
+                let end_serial: u32 = end_serial.into();
+                all_serials.push((start_serial, end_serial));
             }
-            signed_patcher.apply().unwrap();
+            trace!(
+                "Restored signed diff for SOA serial {} for zone '{}' from file '{signed_source}' with diff serials: {all_serials:?}",
+                soa.rdata.serial, zone.name
+            );
         }
     }
     io::Result::Ok(())
@@ -234,7 +288,11 @@ fn load_axfr_wire_dump(
     Ok((start_soa, records))
 }
 
-fn load_ixfr_wire_dump<F>(source: &Path, buf: &mut Vec<u8>, mut rr_handler: F) -> io::Result<()>
+fn load_ixfr_wire_dump<F>(
+    source: &Path,
+    buf: &mut Vec<u8>,
+    mut rr_handler: F,
+) -> io::Result<(Serial, Serial)>
 where
     F: FnMut(IxfrEvent),
 {
@@ -244,6 +302,8 @@ where
     let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0).map_err(|err| {
         io::Error::other(format!("Failed to parse persisted diff initial SOA: {err}"))
     })?;
+
+    let mut oldest_soa = None;
 
     // Parse one or more diff sequences.
     loop {
@@ -271,6 +331,11 @@ where
                 "Expected first record of persisted diff remove sequence to be a SOA RR but found RTYPE {}",
                 r.rtype.code
             )));
+        }
+
+        if oldest_soa.is_none() {
+            let soa = Soa::<NameBuf>::parse_message_bytes(r.rdata.bytes(), 0).unwrap();
+            oldest_soa = Some(soa);
         }
 
         let r = RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data));
@@ -304,11 +369,12 @@ where
                 ))
             })?;
 
-            let r = RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data));
+            let r =
+                RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data.clone()));
             if r.rtype == RType::SOA {
                 if is_same_soa(&start_soa, &start_soa_rdata, &r) {
                     // This SOA signals the end of the IXFR dump.
-                    return Ok(());
+                    return Ok((oldest_soa.unwrap().serial, start_soa.rdata.serial));
                 }
 
                 rr_handler(IxfrEvent::EndOfUpdate);

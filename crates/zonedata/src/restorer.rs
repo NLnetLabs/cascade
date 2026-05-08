@@ -469,6 +469,11 @@ impl SignedZoneRestorer {
             .find(|inst| inst.soa.is_some())
             .map(|inst| SignedZoneReader::new(curr_loaded, inst))
     }
+
+    /// The diff from the preceding signed instance to the current one.
+    pub fn take_diff(&mut self) -> Option<Box<DiffData>> {
+        self.diff.take()
+    }
 }
 
 impl SignedZoneRestorer {

@@ -26,7 +26,7 @@
 use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
-    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
+    DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
     LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
     SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
     SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage,
@@ -925,6 +925,9 @@ pub struct StorageState {
     // current i.e. published zone instance.
     pub published_loaded_soa: Option<SoaRecord>,
 
+    /// Diffs from one serial to another.
+    pub diffs: Vec<Arc<DiffData>>,
+
     /// Ongoing background tasks.
     ///
     /// When the zone data needs to be cleaned or persisted, a background task
@@ -944,6 +947,7 @@ impl StorageState {
             signed_review_soa: None,
             published_soa: None,
             published_loaded_soa: None,
+            diffs: Default::default(),
             background_tasks: Default::default(),
         }
     }

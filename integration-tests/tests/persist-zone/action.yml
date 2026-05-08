@@ -27,6 +27,10 @@ runs:
       with:
         log-level: ${{ inputs.log-level }}
 
+    # ------------------------------------------------------------------------
+    # 1. Add an upstream NSD source zone and sign it.
+    # ------------------------------------------------------------------------
+
     - name: Add a zone served by the NSD primary
       run: |
         cascade zone add --policy default --source 127.0.0.1:1055 example.test
@@ -54,9 +58,17 @@ runs:
           sleep 1
         done
 
-    - name: Save the signed zone
+    - name: Write the signed zone to a file so we can compare it later.
       run: |
         dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed.log
+
+    # ------------------------------------------------------------------------
+    # 2. Stop and restart Cascade so we can test that it:
+    #      - Restores the signed zone correctly from persisted data on disk.
+    #      - Does NOT re-sign the already signed zone, i.e. an AXFR of the
+    #        published zone should be identical to the AXFR of the published
+    #        zone that we saved to disk in the step above.
+    # ------------------------------------------------------------------------
 
     - name: Stop Cascade
       run: |
@@ -123,10 +135,18 @@ runs:
           sleep 1
         done
 
-    - name: Check that Cascade did NOT resign the zone
+    - name: Check that Cascade did NOT re-sign the zone
       run: |
         dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed2.log
         diff -u example.test.signed.log example.test.signed2.log
+
+    # ------------------------------------------------------------------------
+    # 3. Stop and restart Cascade again so we can test that it:
+    #      - If persisted state files are deleted, does Cascade handle this
+    #        correctly? It should attempt to load the persisted data files (as
+    #        has paths to them in its main state file), find that they are
+    #        missing and then ignore them and fully re-sign the zone.
+    # ------------------------------------------------------------------------
 
     - name: Stop Cascade again
       run: |
@@ -198,16 +218,25 @@ runs:
           sleep 1
         done
 
-    - name: Save the signed zone
+    - name: Save the signed zone for later comparison
       run: |
         dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed3.log
 
-    - name: Check that Cascade DID resign the zone
+    - name: Check that Cascade DID resign the zone, not just bump the serial number
       run: |
         if diff -u example.test.signed2.log example.test.signed3.log > unexpected-diff.log; then
           echo "::error:: Cascade should have re-signed the zone"
           exit 1
         fi
+
+    # ------------------------------------------------------------------------
+    # 4. Update the zone at the source and tell NSD to reload it.
+    #    This should cause Cascade to generate, persist and serve an IXFR
+    #    diff for serial 01 -> 02. Note: it cannot serve the diff from
+    #    00 -> 01 because that diff was lost and cannot be recreated because
+    #    a full zone signing needed to be done again and could not re-use the
+    #    00 serial number.
+    # ------------------------------------------------------------------------
 
     - name: Edit the source zone and tell NSD to reload it.
       run: |
@@ -253,7 +282,259 @@ runs:
         # Cascade can only answer SOA and XFR queries at the moment so we
         # cannot query it for the A record we are interested in.
         dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.final.log
-        cat example.test.final.log | grep -Fq www.example.test | grep -Fq "192.168.0.1"
+        grep -F www.example.test example.test.final.log | grep -Fq "192.168.0.1"
+
+    - name: Dump IXFR ${{ steps.expected-serial.outputs.serial }}
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 0 ))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        dig +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+
+
+    # ------------------------------------------------------------------------
+    # 5. Update the zone at the source and tell NSD to reload it again.
+    #    This should create a second IXFR diff.
+    # ------------------------------------------------------------------------
+
+    - name: Edit the source zone and tell NSD to reload it.
+      run: |
+        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
+        perl -pi -e 's/12345      ; serial/45678      ; serial/' ${ZONE_FILE}
+        perl -pi -e 's/www         A   192.168.0.1/www         A   192.168.0.2/' ${ZONE_FILE}
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
+
+    - name: Wait for Cascade to load the changed zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+
+        until dig +noall +answer @127.0.0.1 -p 4540 example.test SOA | grep -q 45678 ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed zone did not become available for AXFR with expected SOA SERIAL 12345"
+            dig +noall +answer @127.0.0.1 -p 4540 example.test SOA
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Wait for Cascade to serve the re-signed zone with a newer serial number
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 3 ))
+
+        until dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR | grep -Fq "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Verify that the modified A record is served in the published zone
+      run: |
+        # Cascade can only answer SOA and XFR queries at the moment so we
+        # cannot query it for the A record we are interested in.
+        dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.final.log
+        grep -F www.example.test example.test.final.log | grep -Fq "192.168.0.2"
+
+    # Note: Cascade cannot serve the diff from 00 -> 01 because that diff was
+    # lost and cannot be recreated because a full zone signing needed to be
+    # done again. This creates only a snapshot of the zone, not a diff against
+    # a previous signed zone.
+    - name: "Verify that IXFR for 00 -> 01 is NOT available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        # Attempting to get the diff from 00 -> 01 should return an AXFR
+        # (denoted by a single leading SOA and a single trailing SOA)
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 0 ))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        dig +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+
+        NUM_SOA=$(grep -E 'example.test.\s+5\s+IN\s+SOA\s+ns1.example.test.\smail.example.test.\s2026050703\s60\s60\s3600\s5' "${OUT_FILE}" | wc -l)
+        if [[ ${NUM_SOA} -ne 2 ]]; then
+          echo "::error:: Expected 2 SOA RRs but got ${NUM_SOA} RRs."
+          exit 1
+        fi
+
+    - name: "Verify that IXFR for 01 -> 03 is available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        EXPECTED_OUT_FILE="expected.out"
+
+        let SER_1=$(( EXPECTED_SERIAL + 1))
+        let SER_2=$(( EXPECTED_SERIAL + 2))
+        let SER_3=$(( EXPECTED_SERIAL + 3))
+
+        cat >"${EXPECTED_OUT_FILE}" <<EOF
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_1} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_2} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_2} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        EOF
+
+        dig +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+        sed -e 's/\s\+/ /g' "${OUT_FILE}" | grep -F '5 IN SOA' > diff.in
+        diff -u diff.in "${EXPECTED_OUT_FILE}"
+
+    - name: "Verify that IXFR for 02 -> 03 is available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 2 ))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        EXPECTED_OUT_FILE="expected.out"
+
+        let SER_2=$(( EXPECTED_SERIAL + 2))
+        let SER_3=$(( EXPECTED_SERIAL + 3))
+
+        cat >"${EXPECTED_OUT_FILE}" <<EOF
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_2} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        EOF
+
+        dig +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+        sed -e 's/\s\+/ /g' "${OUT_FILE}" | grep -F '5 IN SOA' > diff.in
+        diff -u diff.in "${EXPECTED_OUT_FILE}"
+
+    - name: Write the signed zone to a file so we can compare it later.
+      run: |
+        dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed4.log
+
+    # ------------------------------------------------------------------------
+    # 6. Stop and restart Cascade again so we can test that it still serves
+    #    the same IXFRs as before.
+    # ------------------------------------------------------------------------
+
+    - name: Stop Cascade again
+      run: |
+        pkill cascaded
+
+    - name: Wait for Cascade to exit again
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until ! cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade health
+            echo "::error:: timeout: health check did not indicate Cascade had stopped"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Start Cascade a 4th time
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+
+    - name: Wait for Cascade to become healthy a 4th time
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: health check did not indicate Cascade had started"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check that Cascade still knows the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone list | grep -q example.test; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone list
+            echo "::error:: timeout: Cascade no longer knows the zone"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Wait for Cascade to serve the re-signed zone with a newer serial number
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 3 ))
+
+        until dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check that Cascade did NOT re-sign the zone
+      run: |
+        dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed5.log
+        diff -u example.test.signed4.log example.test.signed5.log
+
+    - name: "Verify again that IXFR for 01 -> 03 is available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        EXPECTED_OUT_FILE="expected.out"
+
+        let SER_1=$(( EXPECTED_SERIAL + 1))
+        let SER_2=$(( EXPECTED_SERIAL + 2))
+        let SER_3=$(( EXPECTED_SERIAL + 3))
+
+        cat >"${EXPECTED_OUT_FILE}" <<EOF
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_1} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_2} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_2} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        EOF
+
+        dig +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+        sed -e 's/\s\+/ /g' "${OUT_FILE}" | grep -F '5 IN SOA' > diff.in
+        diff -u diff.in "${EXPECTED_OUT_FILE}"
+
+    - name: "Verify again that IXFR for 02 -> 03 is available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 2 ))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        EXPECTED_OUT_FILE="expected.out"
+
+        let SER_2=$(( EXPECTED_SERIAL + 2))
+        let SER_3=$(( EXPECTED_SERIAL + 3))
+
+        cat >"${EXPECTED_OUT_FILE}" <<EOF
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_2} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        EOF
+
+        dig +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+        sed -e 's/\s\+/ /g' "${OUT_FILE}" | grep -F '5 IN SOA' > diff.in
+        diff -u diff.in "${EXPECTED_OUT_FILE}"
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles

@@ -298,8 +298,7 @@ pattern:
   name: secondary
   zonefile: "%s.secondary-zone"
   allow-notify: 127.0.0.1 NOKEY
-  # Until Cascade supports IXFR we always use AXFR
-  request-xfr: AXFR 127.0.0.1@${_cascade_port} NOKEY
+  request-xfr: 127.0.0.1@${_cascade_port} NOKEY
   provide-xfr: 127.0.0.1 NOKEY
 
 zone:

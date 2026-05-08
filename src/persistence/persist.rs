@@ -12,7 +12,7 @@ use cascade_zonedata::{
 };
 
 use domain::new::base::wire::{BuildBytes, TruncationError};
-use tracing::debug;
+use tracing::trace;
 
 use crate::{
     center::Center,
@@ -68,6 +68,8 @@ pub fn persist_signed(
     persister: SignedZonePersister,
 ) -> SignedZonePersisted {
     if !persister.signed_diff().is_empty() {
+        let signed_diff = persister.signed_diff();
+
         // Determine the path to write to and update the record of written
         // paths here as we don't want to give responsibility for working
         // with ZoneState to the persistence crate. Accumulate a set of
@@ -86,16 +88,26 @@ pub fn persist_signed(
             .config
             .zone_state_dir
             .join(format!("{}.signed.{next_idx}", zone.name));
-        persist_to_file(destination.as_std_path(), persister.signed_diff().clone());
+
+        // Write the diff to disk as a binary AXFR snapshot or binary IXFR
+        // diff.
+        persist_to_file(destination.as_std_path(), signed_diff.clone());
         handle.state.persisted_signed_diffs.push(destination.into());
         handle.zone.mark_dirty(handle.state, handle.center);
+
+        // If this is a diff rather than a snapshort, Store the diff in-memory
+        // for serving via IXFR. A diff has a removed SOA.
+        if signed_diff.removed_soa.is_some() {
+            assert_ne!(signed_diff.removed_soa, signed_diff.added_soa);
+            state.storage.diffs.push(signed_diff.clone());
+        }
     }
     persister.mark_complete()
 }
 
 //------------ persist_to_file() ----------------------------------------------
 
-fn persist_to_file(destination: &Path, loaded_diff: Arc<DiffData>) {
+fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
     // Write the diff in AXFR / IXFR wire format to disk.
     let f = File::create_new(destination).unwrap_or_else(|err| {
         panic!(
@@ -143,7 +155,7 @@ fn persist_to_file(destination: &Path, loaded_diff: Arc<DiffData>) {
         writer.write_all(&buf[0..num_bytes_to_write]).unwrap();
     }
 
-    let added_soa = loaded_diff.added_soa.clone().unwrap();
+    let added_soa = diff.added_soa.clone().unwrap();
 
     // IXFR format has the form:
     //   - New SOA
@@ -163,11 +175,11 @@ fn persist_to_file(destination: &Path, loaded_diff: Arc<DiffData>) {
     write_rr(&mut buf, &added_soa, &mut f);
 
     // Start deleted records block by writing the old SOA, if any.
-    if let Some(removed_soa) = &loaded_diff.removed_soa {
+    if let Some(removed_soa) = &diff.removed_soa {
         write_rr(&mut buf, removed_soa, &mut f);
 
         // Write the deleted records.
-        for r in &loaded_diff.removed_records {
+        for r in &diff.removed_records {
             write_rr(&mut buf, r, &mut f);
         }
 
@@ -176,23 +188,25 @@ fn persist_to_file(destination: &Path, loaded_diff: Arc<DiffData>) {
     }
 
     // Write the added records.
-    for r in &loaded_diff.added_records {
+    for r in &diff.added_records {
         write_rr(&mut buf, r, &mut f);
     }
 
     // Finish the AXFR/IXFR by writing the new SOA again
     write_rr(&mut buf, &added_soa, &mut f);
 
-    debug!(
-        "Persisted zone to file '{}': {} records removed, {} records added",
+    trace!(
+        "Persisted zone to file '{}': SOA {:?} -> {:?}: {} records removed, {} records added",
         destination.display(),
-        if !loaded_diff.removed_records.is_empty() {
-            loaded_diff.removed_records.len() + 1
+        diff.removed_soa.as_ref().map(|v| v.rdata.serial),
+        diff.added_soa.as_ref().map(|v| v.rdata.serial),
+        if !diff.removed_records.is_empty() {
+            diff.removed_records.len() + 1
         } else {
             0
         },
-        if !loaded_diff.added_records.is_empty() {
-            loaded_diff.added_records.len() + 1
+        if !diff.added_records.is_empty() {
+            diff.added_records.len() + 1
         } else {
             0
         },
