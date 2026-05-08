@@ -18,11 +18,11 @@ and not yet published. The review script can approve or reject a zone at
 either of these stages.
 
 If a review script approves the zone, then that version of the zone will
-continue through the pipeline as usual. If a review script rejects the zone
-instead, then that version of the zone will be halted and not proceed
-further. However, a subsequently loaded version of the zone will be processed
-and traverse the pipeline as usual, unless it too is rejected by a review
-script.
+continue through the pipeline as usual. If a review script rejects the
+zone instead, then there are two things that can happen, depending on the
+configuration. Either the new version will be discarded and Cascade will simply
+wait for a new version of the zone, or Cascade will halt and stop doing new
+operations to the zone until an operator resolves the issue.
 
 A review script receives relevant information about the zone in environment
 variables listed in the :ref:`policy file manual <policy-loaded-review-cmd>`.
