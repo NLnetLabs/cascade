@@ -45,10 +45,13 @@ runs:
         log-level: ${{ inputs.log-level }}
 
     - name: Determine the downstrem secondary zone config to use
-      id: set-zone-name
+      id: set-vars
       run: |
+        TSIG_SPEC="hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+
         if [[ ${{ inputs.downstream-expects-tsig }} -eq 0 && ${{ inputs.downstream-uses-tsig }} -eq 0 ]]; then
           ZONE_NAME="example.test."
+          TSIG_SPEC=""
         elif [[ ${{ inputs.downstream-expects-tsig }} -eq 0 && ${{ inputs.downstream-uses-tsig }} -eq 1 ]]; then
           ZONE_NAME="xfr-tsig.test."
         elif [[ ${{ inputs.downstream-expects-tsig }} -eq 1 && ${{ inputs.downstream-uses-tsig }} -eq 0 ]]; then
@@ -56,7 +59,9 @@ runs:
         else
           ZONE_NAME="notify-and-xfr-tsig.test."
         fi
+
         echo "ZONE_NAME=${ZONE_NAME}" >> "$GITHUB_OUTPUT"
+        echo "TSIG_SPEC=${TSIG_SPEC}" >> "$GITHUB_OUTPUT"
 
     - name: Determine if we expect this test to succeed or fail
       id: set-expected-outcome
@@ -72,24 +77,24 @@ runs:
         fi
         echo "SUCCESS=${SUCCESS}" >> "$GITHUB_OUTPUT"
 
-    - name: Make a zonefile to load zone ${{ steps.set-zone-name.outputs.ZONE_NAME }}
+    - name: Make a zonefile to load zone ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
         cat >test.zone <<'EOF'
         $TTL 5 ; use a very short TTL for sped up keyset rolls
-        ${{ steps.set-zone-name.outputs.ZONE_NAME }}   IN SOA ns1.${{ steps.set-zone-name.outputs.ZONE_NAME }} mail.${{ steps.set-zone-name.outputs.ZONE_NAME }} (
+        ${{ steps.set-vars.outputs.ZONE_NAME }}   IN SOA ns1.${{ steps.set-vars.outputs.ZONE_NAME }} mail.${{ steps.set-vars.outputs.ZONE_NAME }} (
                            1          ; serial
                           60          ; refresh (60 seconds)
                           60          ; retry (60 seconds)
                         3600          ; expire (1 hour)
                            5          ; minimum (5 seconds)
                         )
-        @           NS  ${{ steps.set-zone-name.outputs.ZONE_NAME }}
-        @           NS  ns1.${{ steps.set-zone-name.outputs.ZONE_NAME }}
+        @           NS  ${{ steps.set-vars.outputs.ZONE_NAME }}
+        @           NS  ns1.${{ steps.set-vars.outputs.ZONE_NAME }}
         @           A   127.0.0.1
         ns1         A   127.0.0.1
 
         www         A   169.254.1.1
-        mail        MX  10 ${{ steps.set-zone-name.outputs.ZONE_NAME }}
+        mail        MX  10 ${{ steps.set-vars.outputs.ZONE_NAME }}
         text        TXT "Hello World!"
         EOF
 
@@ -108,37 +113,49 @@ runs:
         fi
         cascade policy reload
 
-    - name: Add zone ${{ steps.set-zone-name.outputs.ZONE_NAME }} using the custom policy
+    - name: Add zone ${{ steps.set-vars.outputs.ZONE_NAME }} using the custom policy
       run: |
-        cascade zone add --policy restricted --source $PWD/test.zone ${{ steps.set-zone-name.outputs.ZONE_NAME }}
+        cascade zone add --policy restricted --source $PWD/test.zone ${{ steps.set-vars.outputs.ZONE_NAME }}
 
-    - name: Wait for zone ${{ steps.set-zone-name.outputs.ZONE_NAME }} to be signed and published
+    - name: Wait for zone ${{ steps.set-vars.outputs.ZONE_NAME }} to be signed and published
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status ${{ steps.set-zone-name.outputs.ZONE_NAME }}| grep -q "Published zone available"; do
+        until cascade zone status ${{ steps.set-vars.outputs.ZONE_NAME }}| grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
-            cascade zone status ${{ steps.set-zone-name.outputs.ZONE_NAME }}
+            cascade zone status ${{ steps.set-vars.outputs.ZONE_NAME }}
             echo "timeout: zone status did not report published zone available" >&2
             exit 1
           fi
           sleep 1
         done
 
-    - name: Verify that the ${{ steps.set-zone-name.outputs.ZONE_NAME }} zone is being served
+    - name: Verify that the ${{ steps.set-vars.outputs.ZONE_NAME }} zone is being served
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+        TSIG_SPEC: ${{ steps.set-vars.outputs.TSIG_SPEC }}
       run: |
-        dig @127.0.0.1 -p 4542 ${{ steps.set-zone-name.outputs.ZONE_NAME }} SOA &> soa-query.log
+        EXTRA_ARGS=
+        if [[ "${TSIG_SPEC}" != "" ]]; then
+          EXTRA_ARGS="-y ${TSIG_SPEC}"
+        fi
+        dig @127.0.0.1 -p 4542 ${EXTRA_ARGS} ${ZONE_NAME} SOA &> soa-query.log
+        ! grep -Fq "Transfer failed" soa-query.log
+        ! grep -Fq ";; Warning: Message parser reports malformed message packet." soa-query.log
+        ! grep -Fq ";; Couldn't verify signature: expected a TSIG or SIG(0)" soa-query.log
 
-    - name: Tell NSD that zone ${{ steps.set-zone-name.outputs.ZONE_NAME }} is now available
+    - name: Tell NSD that zone ${{ steps.set-vars.outputs.ZONE_NAME }} is now available
       # Only necessary if NOTIFY is not setup for cascade
       if: ${{ inputs.send-notify-to == '' }}
       run: |
-        ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer ${{ steps.set-zone-name.outputs.ZONE_NAME }}
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-secondary transfer ${{ steps.set-vars.outputs.ZONE_NAME }}
 
-    - name: The ${{ steps.set-zone-name.outputs.ZONE_NAME }} zone should now be available via the secondary
+    - name: The ${{ steps.set-vars.outputs.ZONE_NAME }} zone should now be available via the secondary
       if: ${{ steps.set-expected-outcome.output.SUCCESS }}
       run: |
-        dig @127.0.0.1 -p 1054 text.${{ steps.set-zone-name.outputs.ZONE_NAME }} TXT | grep 'Hello World'
+        dig @127.0.0.1 -p 1054 text.${{ steps.set-vars.outputs.ZONE_NAME }} TXT | grep 'Hello World'
+
+    - run: exit 1
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
