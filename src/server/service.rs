@@ -387,9 +387,6 @@ mod compat {
         //   "If an IXFR query with the same or newer version number than that
         //    of the server is received, it is replied to with a single SOA
         //    record of the server's current version, just as in AXFR."
-        //                                            ^^^^^^^^^^^^^^^
-        // Errata https://www.rfc-editor.org/errata/eid3196 points out that
-        // this is NOT "just as in AXFR" as AXFR does not do that.
         let our_soa_serial = viewer.soa().rdata.serial;
 
         if client_soa.serial >= our_soa_serial {
