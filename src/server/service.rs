@@ -344,12 +344,6 @@ mod compat {
         client_soa: Soa<Box<Name>>,
         zone: ServedZone<V>,
     ) -> ResponseStream {
-        // Refuse IXFR requests over UDP.
-        if request.transport_ctx().is_udp() {
-            tracing::warn!("Rejecting IXFR over UDP");
-            return error(request.message(), Rcode::NOTIMP);
-        }
-
         // Save a cheap clone of the zone to avoid a borrow checker error.
         let zone_clone = zone.clone();
 
@@ -359,6 +353,23 @@ mod compat {
         if viewer.is_empty() {
             // The zone is known to exist, but we don't have any data for it.
             return error(request.message(), Rcode::NOTAUTH);
+        }
+
+        // UDP is unlikely to work for any but the smallest of diffs,
+        // especially with a DNSSEC signed zone because even removal of a
+        // single A record can result in many RRs being changed due to the
+        // impact on the NSEC(3) chain, plus any change has to include a SOA
+        // SERIAL bump causing both the SOA RR and its RRSIG to also be in
+        // every IXFR diff. However, RFC 1995 says that "Transport of a query
+        // may be by either UDP or TCP" so we can't refuse UDP entirely. We
+        // can however return a single SOA record per RFC 1995 "to inform the
+        // client that a TCP query should be initiated".
+        if request.transport_ctx().is_udp() {
+            trace!(
+                "Signalling UDP IXR client at {} to retry by TCP",
+                request.client_addr().ip()
+            );
+            return soa(request.message(), &*viewer);
         }
 
         // Remember the latest SOA.
@@ -430,10 +441,9 @@ mod compat {
         });
 
         let Some(start_idx) = start_idx else {
-            tracing::trace!(
+            trace!(
                 "Falling back from IXFR to AXFR because no diff is available for zone '{}' from serial {}",
-                zone.handle.name,
-                client_soa.serial,
+                zone.handle.name, client_soa.serial,
             );
             return axfr(request, zone_clone).await;
         };

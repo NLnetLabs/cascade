@@ -216,9 +216,6 @@ runs:
     # this either. Increasing the NSD log level to 9 doesn't cause it to
     # report whether it received IXFR or AXFR either.
 
-    # TODO: Verify the AXFR and IXFR response content is as expected /
-    # matching that of NSD.
-
     - name: Verify that TSIG is required by Cascade
       env:
         ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
@@ -247,6 +244,21 @@ runs:
         LC_COLLATE=C sort "${TEST_DIR}/reference-output/${ZONE_NAME}axfr" | egrep -v '^;|^$' > reference.output.sorted
         LC_COLLATE=C sort cascade-axfr.log > output.sorted
         diff -u -w output.sorted reference.output.sorted
+
+    # A UDP IXFR request should result in a single SOA response "to inform the
+    # client that a TCP query should be initiated".
+    - name: Verify that UDP is not supported
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        EXTRA_ARGS=
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
+        fi
+        SOA_RR=$(dig +short +notcp +ignore @127.0.0.1 -p 4542 ${ZONE_NAME} -t IXFR=1 ${EXTRA_ARGS} 2>&1 | tee dig-udp-ixfr.log)
+        if [[ "${SOA_RR}" != "ns.${ZONE_NAME} mail.${ZONE_NAME} 3 60 60 3600 5" ]]; then
+          exit 1
+        fi
 
     - name: Verify Cascade IXFR serial 1..=3 out
       env:
