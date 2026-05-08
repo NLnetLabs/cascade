@@ -280,7 +280,7 @@ mod compat {
         // prepare the messages in an async function (as a Tokio task) and send
         // them over a channel from there.
         //
-        // In the future, AXFRs could be implemented by spawning an OS thread
+        // In the future, IXFRs could be implemented by spawning an OS thread
         // and doing all the work there. This is incompatible with the API of
         // `domain::net::server`, as the underlying TCP connection cannot be
         // extracted, but we plan to stop using that API anyway.
@@ -449,6 +449,19 @@ mod compat {
         };
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
+
+        // NOTE: The following code is a bit tricky. Ideally, we would elide
+        // the channel and return the `messages` iterator as an async `Stream`;
+        // but the iterator borrows from `viewer` via `.non_soa_records()`, and
+        // this prevents the iterator from satisfying `'static`. Rust actually
+        // _does_ have machinery to work around this, in async functions, so we
+        // prepare the messages in an async function (as a Tokio task) and send
+        // them over a channel from there.
+        //
+        // In the future, AXFRs could be implemented by spawning an OS thread
+        // and doing all the work there. This is incompatible with the API of
+        // `domain::net::server`, as the underlying TCP connection cannot be
+        // extracted, but we plan to stop using that API anyway.
 
         // Stream the records in the background.
         tokio::task::spawn(async move {
