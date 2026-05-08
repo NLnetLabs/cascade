@@ -86,7 +86,7 @@ mod compat {
         tsig,
     };
     use futures::Stream;
-    use tracing::{Level, trace};
+    use tracing::{Level, debug, trace};
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
 
@@ -167,6 +167,21 @@ mod compat {
     ) -> bool {
         let zone_state = zone.handle.state.lock().unwrap();
 
+        if tracing::enabled!(Level::TRACE) {
+            let tsig_key = old_request.metadata().as_ref().map(|key| key.name());
+            trace!(
+                "Received request {} from {} for {} in zone {} with TSIG key {tsig_key:?}",
+                old_request.message().header().id(),
+                old_request.client_addr().ip(),
+                old_request
+                    .message()
+                    .qtype()
+                    .map(|rtype| rtype.to_string())
+                    .unwrap_or("<NO QTYPE>".to_string()),
+                zone.handle.name,
+            );
+        }
+
         if let Some(acls) = zone_state
             .policy
             .as_ref()
@@ -188,6 +203,27 @@ mod compat {
                 }
 
                 // No ACL matched, reject the request.
+                if tracing::enabled!(Level::DEBUG) {
+                    let extra = if tracing::enabled!(Level::TRACE) {
+                        &format!(
+                            " (TSIG key={wanted_tsig_key_name:?}) [no matching ACL found: {acls:?}]"
+                        )
+                    } else {
+                        ""
+                    };
+                    debug!(
+                        "Rejecting request {} from {} for {} in zone {}: access denied{extra}",
+                        old_request.message().header().id(),
+                        old_request.client_addr().ip(),
+                        old_request
+                            .message()
+                            .qtype()
+                            .map(|rtype| rtype.to_string())
+                            .unwrap_or("<NO QTYPE>".to_string()),
+                        zone.handle.name,
+                    );
+                }
+
                 return false;
             }
         }
@@ -365,27 +401,32 @@ mod compat {
         // response message and will have to be split into multiple response
         // messages.
 
-        // Currently we have only a single diff available.
         if tracing::enabled!(Level::TRACE) {
             trace!(
-                "IXFR out: {} diffs availablei for zone {}:",
+                "IXFR out: {} diffs available for zone {}:",
                 diffs.len(),
                 zone.handle.name
             );
-            for (i, d) in diffs.iter().enumerate() {
+            for (i, (loaded_diff, signed_diff)) in diffs.iter().enumerate() {
                 trace!(
-                    "IXFR out: Diff #{i}: serial {} => serial {}",
-                    d.removed_soa.as_ref().unwrap().0.rdata.serial,
-                    d.added_soa.as_ref().unwrap().0.rdata.serial,
+                    "IXFR out: Diff #{i}: serial {} => serial {}, loaded -{}+{}, signed -{}+{}",
+                    signed_diff.removed_soa.as_ref().unwrap().0.rdata.serial,
+                    signed_diff.added_soa.as_ref().unwrap().0.rdata.serial,
+                    loaded_diff.removed_records.len(),
+                    loaded_diff.added_records.len(),
+                    signed_diff.removed_records.len(),
+                    signed_diff.added_records.len(),
                 );
             }
         }
 
         // Find the diff, if we have it, that removes the SOA serial number
         // that the client currently has. That will be the start of the diff
-        // that we need to serve.
-        let start_idx = diffs.iter().position(|d| {
-            d.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
+        // that we need to serve. The SOA serial has to match the one seen by
+        // the client, i.e. the one we published in the signed zone, not the
+        // one from the loaded zone which could be completely different.
+        let start_idx = diffs.iter().position(|(_, signed_diff)| {
+            signed_diff.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
         });
 
         let Some(start_idx) = start_idx else {
@@ -403,11 +444,13 @@ mod compat {
         tokio::task::spawn(async move {
             // Collect the sequence of IXFR output records.
             let mut rrs = vec![new_soa.clone().into()];
-            for diff in &diffs[start_idx..] {
-                rrs.push(diff.removed_soa.clone().unwrap().into());
-                rrs.extend(diff.removed_records.clone());
-                rrs.push(diff.added_soa.clone().unwrap().into());
-                rrs.extend(diff.added_records.clone());
+            for (loaded_diff, signed_diff) in &diffs[start_idx..] {
+                rrs.push(signed_diff.removed_soa.clone().unwrap().into());
+                rrs.extend(loaded_diff.removed_records.clone());
+                rrs.extend(signed_diff.removed_records.clone());
+                rrs.push(signed_diff.added_soa.clone().unwrap().into());
+                rrs.extend(loaded_diff.added_records.clone());
+                rrs.extend(signed_diff.added_records.clone());
             }
             rrs.push(new_soa.into());
 
