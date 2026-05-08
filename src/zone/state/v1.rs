@@ -246,7 +246,7 @@ pub struct KeyManagerPolicySpec {
     /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
     default_ttl: Ttl,
 
-    /// Automatically remove keys that are no lerong in use.
+    /// Automatically remove keys that are no longer in use.
     auto_remove: bool,
 
     /// Remove old keys after this amount of time.
