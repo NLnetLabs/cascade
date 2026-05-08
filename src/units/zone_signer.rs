@@ -366,12 +366,7 @@ impl ZoneSigner {
             SignerSerialPolicy::Counter => {
                 // Always increment the serial number, ignore the serial
                 // number in the unsigned zone.
-                let previous_serial = if let Some(serial) = previous_serial {
-                    serial
-                } else {
-                    Serial::from(0)
-                };
-
+                let previous_serial = previous_serial.unwrap_or(Serial::from(0));
                 previous_serial.add(1)
             }
             SignerSerialPolicy::UnixTime => {

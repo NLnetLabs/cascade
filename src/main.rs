@@ -428,8 +428,8 @@ fn check_dnst_version(config: &Config) -> bool {
     // Change this string and the match pattern to whatever version we require in the future
     let required_version = ">0.2.0";
     let res = match (major, minor, patch) {
-        // major = 0; minor >= 1; patch = *
-        (0, 1.., ..) => true,
+        // major = 0; minor >= 2; patch = *
+        (0, 2.., ..) => true,
         _ => false,
     };
 
