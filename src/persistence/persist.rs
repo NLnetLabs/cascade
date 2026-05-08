@@ -38,15 +38,35 @@ pub fn persist_signed(
     // TODO
     let _ = center;
 
-    // Store the signed diff in-memory for serving IXFR.
-    // Only push a diff if a SOA was removed, otherwise this is not a diff to
-    // a previous version of the zone but actually the entire new zone content
-    // compared to an empty zone. Also don't store a diff to the same serial.
+    // Store the diffs in-memory for serving IXFR.
+    //
+    // Only store a diff if the SOA from the previous version of the signed
+    // zone was removed and a new one added, otherwise this is not a diff to a
+    // previous version of the zone but actually a snapshot of the zone after
+    // having been signed for the first time.
+    let loaded_diff = persister.loaded_diff();
     let signed_diff = persister.signed_diff();
 
-    if signed_diff.removed_soa.is_some() && signed_diff.removed_soa != signed_diff.added_soa {
+    if let Some(loaded_diff) = loaded_diff
+        && signed_diff.removed_soa.is_some()
+        && signed_diff.removed_soa != signed_diff.added_soa
+    {
         let mut state = zone.state.lock().unwrap();
-        state.storage.diffs.push(signed_diff.clone());
+
+        // Store anything that changed when the zone was re-loaded, i.e.
+        // unsigned zone content changes. Note that the SOA SERIAL is not
+        // required to change unless using 'keep' policy and so we should not
+        // require the SOA to have been removed and a new one added.
+
+        // Store anything that changed when the zone was re-signed, i.e.
+        // changes DNSSEC RRs that can be caused by unsigned content changes
+        // or changing from NSEC <-> NSEC3 or using a new key to sign with or
+        // just regenerating signatures to avoid them expiring. Signed zones
+        // MUST always have a new SOA SERIAL compared to the previous version
+        // of the signed zone.
+
+        let complete_diff = (loaded_diff.clone(), signed_diff.clone());
+        state.storage.diffs.push(complete_diff);
     }
 
     persister.mark_complete()
