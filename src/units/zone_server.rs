@@ -182,9 +182,9 @@ impl ZoneServer {
 
         let svc = service;
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
-        let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = CookiesMiddlewareSvc::with_random_secret(svc);
         let svc = EdnsMiddlewareSvc::new(svc);
+        let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
         let svc = Arc::new(svc);
 
