@@ -220,21 +220,19 @@ runs:
     # matching that of NSD.
 
     - name: Verify that TSIG is required by Cascade
-      if: ${{ inputs.with-tsig }}
       env:
         ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
       run: |
+        if [[ "${{ inputs.with-tsig }}" == "false" ]]; then
+          exit 0
+        fi
+
         # This should not succeed as it lacks the required TSIG key.
         # Note that dig will exit with code 0 even if the request fails,
         # because it considers an error response still to be successful
         # receipt of a response, so we have to check the actual output.
-        dig @127.0.0.1 -p 4542 ${ZONE_NAME} AXFR &> dig-no-tsig.log
-        if grep -Fq 'Transfer failed' dig-no-tsig.log; then
-          exit 0
-        else
-          echo "::error:: dig unexpectedly was able to AXFR the zone without a TSIG key"
-          exit 1
-        fi
+        dig @127.0.0.1 +yaml -p 4542 ${ZONE_NAME} AXFR &> dig-no-tsig.log
+        grep -Fq "status: REFUSED" dig-no-tsig.log
 
     - name: Verify Cascade AXFR out
       env:
@@ -244,7 +242,6 @@ runs:
         if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
           EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
         fi
-        echo "EXTRA_ARGS: ${EXTRA_ARGS}"
         dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${EXTRA_ARGS} ${ZONE_NAME} AXFR &> cascade-axfr.log
         TEST_DIR="${PWD}/integration-tests/ixfr-out"
         LC_COLLATE=C sort "${TEST_DIR}/reference-output/${ZONE_NAME}axfr" | egrep -v '^;|^$' > reference.output.sorted
@@ -270,8 +267,6 @@ runs:
     - run: dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${{ steps.set-vars.outputs.ZONE_NAME }} -t IXFR=3 >cascade-ixfr-3.log
 
     - run: dig +onesoa +noall +answer @127.0.0.1 -p 1054 ${{ steps.set-vars.outputs.ZONE_NAME }} AXFR >nsd-axfr.log
-
-    - run: exit 1
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
