@@ -199,7 +199,7 @@ the zone for review, formatted as \fB<ip\-addr>:<port>\fP\&.
 \fBCASCADE_SERVER_PORT\fP: Just the port of the above server.
 .UNINDENT
 .sp
-New in version 0.1.0\-alpha2: \fBCASCADE_SERVER_IP\fP and \fBCASCADE_SERVER_PORT\fP\&.
+Added in version 0.1.0\-alpha2: \fBCASCADE_SERVER_IP\fP and \fBCASCADE_SERVER_PORT\fP\&.
 
 .sp
 The command will be called from an unspecified directory, and it must be
@@ -211,7 +211,7 @@ will determine whether the zone is approved or not.
 .B on\-reject = \(dqdiscard\(dq
 What to do when a zone is rejected by review.
 .sp
-This field can only be specified if \fBmode\(ga\fP is either \fB\(dqmanual\(dq\fP or
+This field can only be specified if \fBmode\fP is either \fB\(dqmanual\(dq\fP or
 \fB\(dqscript\(dq\fP and can have one of the following values:
 .INDENT 7.0
 .INDENT 3.5
@@ -484,7 +484,7 @@ The HSM server to use.
 If this is set, the named HSM server (which must be configured via \fBcascade
 hsm add\fP) will be used for generating new DNSSEC keys.
 .sp
-See \fI\%https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html\fP for more
+See \X'tty: link https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html'\fI\%https://cascade.docs.nlnetlabs.nl/en/latest/hsms.html\fP\X'tty: link' for more
 information.
 .UNINDENT
 .INDENT 0.0
@@ -618,9 +618,9 @@ The type of denial\-of\-existence records to generate.
 Supported options:
 .INDENT 7.0
 .IP \(bu 2
-\fBnsec\fP: Use NSEC records (\fI\%RFC 4034\fP).
+\fBnsec\fP: Use NSEC records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc4034.html'\fI\%RFC 4034\fP\X'tty: link').
 .IP \(bu 2
-\fBnsec3\fP: Use NSEC3 records (\fI\%RFC 5155\fP).
+\fBnsec3\fP: Use NSEC3 records (\X'tty: link https://datatracker.ietf.org/doc/html/rfc5155.html'\fI\%RFC 5155\fP\X'tty: link').
 .UNINDENT
 .UNINDENT
 .INDENT 0.0
@@ -720,7 +720,7 @@ Default policies directory
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \fI\%https://cascade.docs.nlnetlabs.nl\fP
+.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
 Cascade online documentation
 .TP
 \fBcascade\fP(1)
