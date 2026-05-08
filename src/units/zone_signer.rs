@@ -680,7 +680,8 @@ impl ZoneSigner {
                     // Allow splitting here if the adjacent top-level labels
                     // differ.
                     prev != curr
-                });
+                })
+                .map(|pos| midpoint + pos);
 
             // If we could not find a useful midpoint, give up. This should be
             // very rare, since 'range' covers at least 1024 records.
