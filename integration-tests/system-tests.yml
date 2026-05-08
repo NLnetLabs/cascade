@@ -180,7 +180,7 @@ jobs:
       - uses: ./integration-tests/tests/ixfr-out
         with:
           log-level: ${{ inputs.log-level }}
-          with-tsig: ${{ inputs.with-tsig }}
+          with-tsig: ${{ matrix.with-tsig }}
 
   incremental-signing:
     name: Test incremental signing.
