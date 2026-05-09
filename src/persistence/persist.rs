@@ -102,6 +102,10 @@ pub fn persist_signed(
             state.storage.diffs.push(signed_diff.clone());
         }
     }
+
+    // let state = zone.state.lock().unwrap();
+    // tracing::trace!("Persisted signed diff: {signed_diff:?}");
+    // tracing::info!("XIMON: Persist: # diffs = {}", state.storage.diffs.len());
     persister.mark_complete()
 }
 
