@@ -197,6 +197,11 @@ impl LoadedZoneRestorer {
             .find(|inst| inst.soa.is_some())
             .map(LoadedZoneReader::new)
     }
+
+    /// The diff from the preceding loaded instance to the current one.
+    pub fn take_diff(&mut self) -> Option<Box<DiffData>> {
+        self.diff.take()
+    }
 }
 
 impl LoadedZoneRestorer {

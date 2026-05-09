@@ -37,7 +37,7 @@ pub fn restore_loaded(
     center: &Arc<Center>,
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<()> {
-    let state = zone.state.lock().unwrap();
+    let mut state = zone.state.lock().unwrap();
     if !state.persisted_loaded_diffs.is_empty() {
         // Determine the paths to read from. Each zone is persisted as an AXFR
         // plus zero or more IXFRs. The restorer takes a base path ending in
@@ -54,12 +54,11 @@ pub fn restore_loaded(
         // Process the initial "loaded" AXFR wire format dump.
         let (soa, records) =
             load_axfr_wire_dump(loaded_source.as_std_path(), &mut buf).map_err(|err| {
-                io::Error::other(format!(
-                    "Failed to load persisted loaded snapshot for zone '{}' from '{loaded_source}': {err}",
-                    zone.name
-                ))
+                io::Error::other(format!("Loading snapshot '{loaded_source}' failed: {err}"))
             })?;
-        let mut loaded_replacer = restorer.fill().ok_or(io::Error::other(format!("Unable to restore persisted snapshot for zone '{}' from '{loaded_source}': Could not acquire replacer", zone.name)))?;
+        let mut loaded_replacer = restorer.fill().ok_or(io::Error::other(
+            "Internal error: Could not acquire replacer".to_string(),
+        ))?;
         loaded_replacer.set_soa(soa.clone()).unwrap();
         loaded_replacer.set_records(records).unwrap();
         loaded_replacer.apply().unwrap();
@@ -69,36 +68,47 @@ pub fn restore_loaded(
         );
 
         if count > 1 {
-            let mut loaded_patcher = restorer.patch().ok_or(io::Error::other(format!(
-                "Failed to load persisted signed diff for zone '{}' from '{loaded_source}'",
-                zone.name
-            )))?;
             let mut source = loaded_source.to_path_buf();
             let mut all_serials = vec![];
+
+            state.storage.diffs.clear();
+
             for i in 1..count {
+                let mut loaded_patcher = restorer
+                    .patch()
+                    .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
                 source.set_extension(i.to_string());
 
-                let loaded_patcher = &mut loaded_patcher;
-                let (start_serial, end_serial) = load_ixfr_wire_dump(
-                    source.as_std_path(),
-                    &mut buf,
-                    |event| {
-                        apply_ixfr_event_to_loaded_data(loaded_patcher, event);
-                    }
-                ).map_err(|err| {
-                    io::Error::other(format!(
-                        "Failed to load persisted loaded diff for zone '{}' from '{loaded_source}': {err}",
-                        zone.name
-                    ))
+                let (start_serial, end_serial) =
+                    load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
+                        apply_ixfr_event_to_loaded_data(&mut loaded_patcher, event);
+                    })
+                    .map_err(|err| {
+                        io::Error::other(format!("Loading diff '{loaded_source}' failed: {err}",))
+                    })?;
+
+                loaded_patcher.next_patchset().map_err(|err| {
+                    io::Error::other(format!("Internal error: Next patchset failed: {err}"))
                 })?;
 
-                loaded_patcher.next_patchset().map_err(|err| io::Error::other(format!("Unable to restore loaded persisted diff {i} for zone '{}' from '{source}': Could not move to next patch set: {err}", zone.name)))?;
+                loaded_patcher.apply().map_err(|err| {
+                    io::Error::other(format!("Internal error: Apply failed: {err}"))
+                })?;
+
+                if let Some(diff) = restorer.take_diff() {
+                    // Store the loaded diff to be used as part of serving an IXFR.
+                    state.storage.diffs.push((diff.into(), None));
+
+                    trace!(
+                        "Stored IXFR loaded diff for SOA serial {} from file '{loaded_source}': serial {start_serial} -> {end_serial}",
+                        soa.rdata.serial,
+                    );
+                }
 
                 let start_serial: u32 = start_serial.into();
                 let end_serial: u32 = end_serial.into();
                 all_serials.push((start_serial, end_serial));
             }
-            loaded_patcher.apply().map_err(|err| io::Error::other(format!("Unable to restore persisted loaded diffs for zone '{}': Could apply the collected changes: {err}", zone.name)))?;
             trace!(
                 "Restored loaded diff for SOA serial {} for zone '{}' from file '{loaded_source}' with diff serials: {all_serials:?}",
                 soa.rdata.serial, zone.name
@@ -135,13 +145,15 @@ pub fn restore_signed(
         let mut buf = Vec::<u8>::new();
 
         // Process the initial "signed" AXFR wire format dump.
-        let (soa, records) = load_axfr_wire_dump(signed_source.as_std_path(), &mut buf).map_err(|err| {
+        let (soa, records) =
+            load_axfr_wire_dump(signed_source.as_std_path(), &mut buf).map_err(|err| {
                 io::Error::other(format!(
-                    "Failed to load persisted signed snapshot for zone '{}' from '{signed_source}': {err}",
-                    zone.name
+                    "Loading snapshot from '{signed_source}' failed: {err}"
                 ))
             })?;
-        let mut signed_replacer = restorer.fill().ok_or(io::Error::other(format!("Unable to restore persisted signed snapshot for zone '{}' from '{signed_source}': Could not acquire replacer", zone.name)))?;
+        let mut signed_replacer = restorer.fill().ok_or(io::Error::other(
+            "Internal error: Could not acquire replacer".to_string(),
+        ))?;
         signed_replacer.set_soa(soa.clone()).unwrap();
         signed_replacer.set_records(records).unwrap();
         signed_replacer.apply().unwrap();
@@ -154,33 +166,55 @@ pub fn restore_signed(
         if count > 1 {
             let mut source = signed_source.to_path_buf();
             let mut all_serials = vec![];
+
+            // Load each diff and apply it to the zone, retrieving a single
+            // DiffData per signed diff. Store each signed DiffData alongside
+            // the corresponding loaded DiffData that was restored earlier
+            // in restore_loaded(). These DiffData's will be used to respond
+            // to IXFR requests, while at the same time also building up the
+            // entire signed zone that should be served for AXFR requests.
             for i in 1..count {
-                let mut signed_patcher = restorer.patch().ok_or(io::Error::other(format!(
-                    "Failed to load persisted signed diff for zone '{}' from '{signed_source}'",
-                    zone.name
-                )))?;
+                let mut signed_patcher = restorer
+                    .patch()
+                    .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
                 source.set_extension(i.to_string());
 
                 let (start_serial, end_serial) =
                     load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
                         apply_ixfr_event_to_signed_data(&mut signed_patcher, event);
                     })
-                .map_err(|err| {
-                    io::Error::other(format!(
-                        "Failed to load persisted signed diff for zone '{}' from '{signed_source}': {err}",
-                        zone.name
-                    ))
+                    .map_err(|err| {
+                        io::Error::other(format!("Loading diff '{signed_source}' failed: {err}"))
+                    })?;
+
+                signed_patcher.next_patchset().map_err(|err| {
+                    io::Error::other(format!("Internal error: Next patchset failed: {err}"))
                 })?;
 
-                signed_patcher.next_patchset().map_err(|err| io::Error::other(format!("Unable to restore persisted signed diff {i} for zone '{}' from '{source}': Could not move to next patch set: {err}", zone.name)))?;
-
-                signed_patcher.apply().map_err(|err| io::Error::other(format!("Unable to restore persisted signed diffs for zone '{}': Could apply the collected changes: {err}", zone.name)))?;
+                signed_patcher.apply().map_err(|err| {
+                    io::Error::other(format!("Internal error: Apply failed: {err}"))
+                })?;
 
                 if let Some(diff) = restorer.take_diff() {
-                    state.storage.diffs.push(diff.into());
+                    // Get the diff pair (loaded diff and missing signed diff)
+                    // that this signed diff needs to be inserted into.
+                    let diffs = state
+                        .storage
+                        .diffs
+                        .get_mut(i - 1)
+                        .ok_or(io::Error::other(format!("Missing loaded diff {i}")))?;
+
+                    // Insert the signed diff alongside the loaded diff, unless the
+                    // signed diff already unexpectedly exists.
+                    if diffs.1.is_some() {
+                        return Err(io::Error::other(format!("Signed diff {i} already exists")));
+                    } else {
+                        diffs.1 = Some(diff.into());
+                    }
+
                     trace!(
-                        "Stored IXFR diff for SOA serial {} for zone '{}' from file '{signed_source}': serial {start_serial} -> {end_serial}",
-                        soa.rdata.serial, zone.name
+                        "Stored signed diff for SOA serial {} from file '{signed_source}': serial {start_serial} -> {end_serial}",
+                        soa.rdata.serial,
                     );
                 }
 

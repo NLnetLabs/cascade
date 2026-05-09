@@ -927,7 +927,7 @@ pub struct StorageState {
 
     /// Diffs from one serial to another. Each diff consists of changes in the
     /// loaded part and changes in the signed part.
-    pub diffs: Vec<(Arc<DiffData>, Arc<DiffData>)>,
+    pub diffs: Vec<(Arc<DiffData>, Option<Arc<DiffData>>)>,
 
     /// Ongoing background tasks.
     ///

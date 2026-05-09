@@ -96,8 +96,8 @@ impl ZonePersistenceHandle<'_> {
                             "'restore_signed()' always completes restoration on successful return"
                         )
                     }),
-                    Err(_) => {
-                        trace!("Abandoning signed restoration");
+                    Err(err) => {
+                        warn!("Abandoning signed restoration: {err}");
                         let mut state = zone.state.lock().unwrap();
                         state.persisted_loaded_diffs.clear();
                         state.persisted_signed_diffs.clear();

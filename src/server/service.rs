@@ -416,6 +416,7 @@ mod compat {
                 zone.handle.name
             );
             for (i, (loaded_diff, signed_diff)) in diffs.iter().enumerate() {
+                let signed_diff = signed_diff.as_ref().unwrap();
                 trace!(
                     "IXFR out: Diff #{i}: serial {} => serial {}, loaded -{}+{}, signed -{}+{}",
                     signed_diff.removed_soa.as_ref().unwrap().0.rdata.serial,
@@ -434,7 +435,13 @@ mod compat {
         // the client, i.e. the one we published in the signed zone, not the
         // one from the loaded zone which could be completely different.
         let start_idx = diffs.iter().position(|(_, signed_diff)| {
-            signed_diff.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
+            signed_diff
+                .as_ref()
+                .unwrap()
+                .removed_soa
+                .as_ref()
+                .map(|rr| rr.0.rdata.serial)
+                == Some(client_soa.serial)
         });
 
         let Some(start_idx) = start_idx else {
@@ -467,6 +474,7 @@ mod compat {
             // TODO: Use diffs[..].iter().flat_map() here to avoid the
             // intermediate Vec allocation?
             for (loaded_diff, signed_diff) in &diffs[start_idx..] {
+                let signed_diff = signed_diff.as_ref().unwrap();
                 rrs.push(signed_diff.removed_soa.clone().unwrap().into());
                 rrs.extend(loaded_diff.removed_records.clone());
                 rrs.extend(signed_diff.removed_records.clone());

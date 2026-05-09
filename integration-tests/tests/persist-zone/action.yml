@@ -350,15 +350,15 @@ runs:
     # a previous signed zone.
     - name: "Verify that IXFR for 00 -> 01 is NOT available"
       env:
-        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+        CLIENT_SERIAL: ${{ steps.expected-serial.outputs.serial }}
       run: |
         # Attempting to get the diff from 00 -> 01 should return an AXFR
         # (denoted by a single leading SOA and a single trailing SOA)
-        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 0 ))
+        let EXPECTED_SERIAL=$(( CLIENT_SERIAL + 3 ))
         OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
         dig +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
 
-        NUM_SOA=$(grep -E 'example.test.\s+5\s+IN\s+SOA\s+ns1.example.test.\smail.example.test.\s2026050703\s60\s60\s3600\s5' "${OUT_FILE}" | wc -l)
+        NUM_SOA=$(grep -E 'example.test.\s+5\s+IN\s+SOA\s+ns1.example.test.\smail.example.test.\s'${EXPECTED_SERIAL}'\s60\s60\s3600\s5' "${OUT_FILE}" | wc -l)
         if [[ ${NUM_SOA} -ne 2 ]]; then
           echo "::error:: Expected 2 SOA RRs but got ${NUM_SOA} RRs."
           exit 1

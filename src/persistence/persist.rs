@@ -118,8 +118,13 @@ pub fn persist_signed(
             // expiring. Signed zones MUST always have a new SOA SERIAL
             // compared to the previous version of the signed zone.
 
-            let complete_diff = (loaded_diff.clone(), signed_diff.clone());
+            let complete_diff = (loaded_diff.clone(), Some(signed_diff.clone()));
             state.storage.diffs.push(complete_diff);
+            trace!(
+                "Stored IXFR diff for SOA serial {} -> {}",
+                loaded_diff.removed_soa.as_ref().unwrap().rdata.serial,
+                signed_diff.added_soa.as_ref().unwrap().rdata.serial,
+            );
         }
     }
     persister.mark_complete()
