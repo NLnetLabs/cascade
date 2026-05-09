@@ -925,8 +925,9 @@ pub struct StorageState {
     // current i.e. published zone instance.
     pub published_loaded_soa: Option<SoaRecord>,
 
-    /// Diffs from one serial to another.
-    pub diffs: Vec<Arc<DiffData>>,
+    /// Diffs from one serial to another. Each diff consists of changes in the
+    /// loaded part and changes in the signed part.
+    pub diffs: Vec<(Arc<DiffData>, Arc<DiffData>)>,
 
     /// Ongoing background tasks.
     ///

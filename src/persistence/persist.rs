@@ -68,13 +68,14 @@ pub fn persist_signed(
     persister: SignedZonePersister,
 ) -> SignedZonePersisted {
     if !persister.signed_diff().is_empty() {
+        let loaded_diff = persister.loaded_diff();
         let signed_diff = persister.signed_diff();
 
         // Determine the path to write to and update the record of written
-        // paths here as we don't want to give responsibility for working
-        // with ZoneState to the persistence crate. Accumulate a set of
-        // diffs per unsigned and signed zone, each stored at a path one
-        // suffixed by an index which rises by one when persisted.
+        // paths here as we don't want to give responsibility for working with
+        // ZoneState to the persistence crate. Accumulate a set of diffs per
+        // unsigned and signed zone, each stored at a path one suffixed by an
+        // index which rises by one when persisted.
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
         let mut state = zone.state.lock().unwrap();
@@ -95,17 +96,32 @@ pub fn persist_signed(
         handle.state.persisted_signed_diffs.push(destination.into());
         handle.zone.mark_dirty(handle.state, handle.center);
 
-        // If this is a diff rather than a snapshort, Store the diff in-memory
-        // for serving via IXFR. A diff has a removed SOA.
-        if signed_diff.removed_soa.is_some() {
-            assert_ne!(signed_diff.removed_soa, signed_diff.added_soa);
-            state.storage.diffs.push(signed_diff.clone());
+        // Store the diffs in-memory for serving IXFR.
+        //
+        // Only store a diff if the SOA from the previous version of the
+        // signed zone was removed and a new one added, otherwise this is not
+        // a diff to a previous version of the zone but actually a snapshot of
+        // the zone after having been signed for the first time.
+        if let Some(loaded_diff) = loaded_diff
+            && signed_diff.removed_soa.is_some()
+            && signed_diff.removed_soa != signed_diff.added_soa
+        {
+            // Store anything that changed when the zone was re-loaded, i.e.
+            // unsigned zone content changes. Note that the SOA SERIAL is not
+            // required to change unless using 'keep' policy and so we should
+            // not require the SOA to have been removed and a new one added.
+
+            // Store anything that changed when the zone was re-signed, i.e.
+            // changes DNSSEC RRs that can be caused by unsigned content
+            // changes or changing from NSEC <-> NSEC3 or using a new key
+            // to sign with or just regenerating signatures to avoid them
+            // expiring. Signed zones MUST always have a new SOA SERIAL
+            // compared to the previous version of the signed zone.
+
+            let complete_diff = (loaded_diff.clone(), signed_diff.clone());
+            state.storage.diffs.push(complete_diff);
         }
     }
-
-    // let state = zone.state.lock().unwrap();
-    // tracing::trace!("Persisted signed diff: {signed_diff:?}");
-    // tracing::info!("XIMON: Persist: # diffs = {}", state.storage.diffs.len());
     persister.mark_complete()
 }
 

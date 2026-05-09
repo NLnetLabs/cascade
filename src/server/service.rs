@@ -86,7 +86,7 @@ mod compat {
         tsig,
     };
     use futures::Stream;
-    use tracing::trace;
+    use tracing::{Level, debug, trace};
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
 
@@ -152,7 +152,6 @@ mod compat {
                             Box::pin(axfr(old_request, zone.clone())) as Response
                         }
 
-                        // TODO: Support IXFR.
                         ZoneRequestKind::Ixfr { known_soa } => {
                             Box::pin(ixfr(old_request, known_soa.rdata, zone.clone())) as Response
                         }
@@ -167,6 +166,21 @@ mod compat {
         old_request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
     ) -> bool {
         let zone_state = zone.handle.state.lock().unwrap();
+
+        if tracing::enabled!(Level::TRACE) {
+            let tsig_key = old_request.metadata().as_ref().map(|key| key.name());
+            trace!(
+                "Received request {} from {} for {} in zone {} with TSIG key {tsig_key:?}",
+                old_request.message().header().id(),
+                old_request.client_addr().ip(),
+                old_request
+                    .message()
+                    .qtype()
+                    .map(|rtype| rtype.to_string())
+                    .unwrap_or("<NO QTYPE>".to_string()),
+                zone.handle.name,
+            );
+        }
 
         if let Some(acls) = zone_state
             .policy
@@ -189,6 +203,27 @@ mod compat {
                 }
 
                 // No ACL matched, reject the request.
+                if tracing::enabled!(Level::DEBUG) {
+                    let extra = if tracing::enabled!(Level::TRACE) {
+                        &format!(
+                            " (TSIG key={wanted_tsig_key_name:?}) [no matching ACL found: {acls:?}]"
+                        )
+                    } else {
+                        ""
+                    };
+                    debug!(
+                        "Rejecting request {} from {} for {} in zone {}: access denied{extra}",
+                        old_request.message().header().id(),
+                        old_request.client_addr().ip(),
+                        old_request
+                            .message()
+                            .qtype()
+                            .map(|rtype| rtype.to_string())
+                            .unwrap_or("<NO QTYPE>".to_string()),
+                        zone.handle.name,
+                    );
+                }
+
                 return false;
             }
         }
@@ -197,9 +232,14 @@ mod compat {
         true
     }
 
+    /// Generate a SOA DNS message response stream for the given zone viewer.
+    ///
+    /// Note: Also used by [`axfr()`] and [`ixfr()`] as well as in response to
+    /// a direct SOA query.
+    ///
+    /// Returns an NXDOMAIN response if we have the zone but no data for it.
     fn soa<V: Viewer>(request: &Message<Vec<u8>>, viewer: &V) -> ResponseStream {
         if viewer.is_empty() {
-            // The zone is known to exist, but we don't have any data for it.
             return error(request, Rcode::NXDOMAIN);
         }
         let soa = viewer.soa().clone();
@@ -214,6 +254,7 @@ mod compat {
         Box::new(futures::stream::once(std::future::ready(result))) as _
     }
 
+    /// Generate an AXFR DNS message response stream for the given zone.
     async fn axfr<V: Viewer + Send + Sync + 'static>(
         request: Request<Vec<u8>, Option<Arc<tsig::Key>>>,
         zone: ServedZone<V>,
@@ -239,7 +280,7 @@ mod compat {
         // prepare the messages in an async function (as a Tokio task) and send
         // them over a channel from there.
         //
-        // In the future, AXFRs could be implemented by spawning an OS thread
+        // In the future, IXFRs could be implemented by spawning an OS thread
         // and doing all the work there. This is incompatible with the API of
         // `domain::net::server`, as the underlying TCP connection cannot be
         // extracted, but we plan to stop using that API anyway.
@@ -297,17 +338,12 @@ mod compat {
         Box::new(stream) as _
     }
 
+    /// Generate an IXFR DNS message response stream for the given zone.
     async fn ixfr<V: Viewer + Send + Sync + 'static>(
         request: Request<Vec<u8>, Option<Arc<tsig::Key>>>,
         client_soa: Soa<Box<Name>>,
         zone: ServedZone<V>,
     ) -> ResponseStream {
-        // Refuse IXFR requests over UDP.
-        if request.transport_ctx().is_udp() {
-            tracing::warn!("Reject IXFR over UDP");
-            return error(request.message(), Rcode::NOTIMP);
-        }
-
         // Save a cheap clone of the zone to avoid a borrow checker error.
         let zone_clone = zone.clone();
 
@@ -317,6 +353,23 @@ mod compat {
         if viewer.is_empty() {
             // The zone is known to exist, but we don't have any data for it.
             return error(request.message(), Rcode::NOTAUTH);
+        }
+
+        // UDP is unlikely to work for any but the smallest of diffs,
+        // especially with a DNSSEC signed zone because even removal of a
+        // single A record can result in many RRs being changed due to the
+        // impact on the NSEC(3) chain, plus any change has to include a SOA
+        // SERIAL bump causing both the SOA RR and its RRSIG to also be in
+        // every IXFR diff. However, RFC 1995 says that "Transport of a query
+        // may be by either UDP or TCP" so we can't refuse UDP entirely. We
+        // can however return a single SOA record per RFC 1995 "to inform the
+        // client that a TCP query should be initiated".
+        if request.transport_ctx().is_udp() {
+            trace!(
+                "Signalling UDP IXR client at {} to retry by TCP",
+                request.client_addr().ip()
+            );
+            return soa(request.message(), &*viewer);
         }
 
         // Remember the latest SOA.
@@ -334,10 +387,7 @@ mod compat {
         //   "If an IXFR query with the same or newer version number than that
         //    of the server is received, it is replied to with a single SOA
         //    record of the server's current version, just as in AXFR."
-        //                                            ^^^^^^^^^^^^^^^
-        // Errata https://www.rfc-editor.org/errata/eid3196 points out that
-        // this is NOT "just as in AXFR" as AXFR does not do that.
-        let our_soa_serial = { viewer.soa().rdata.serial };
+        let our_soa_serial = viewer.soa().rdata.serial;
 
         if client_soa.serial >= our_soa_serial {
             trace!("Responding to IXFR with single SOA because query serial >= zone serial");
@@ -359,43 +409,70 @@ mod compat {
         // response message and will have to be split into multiple response
         // messages.
 
-        // Currently we have only a single diff available.
-        for (i, d) in diffs.iter().enumerate() {
-            tracing::info!(
-                "Diff {i} for zone '{}': serial {} => serial {}",
-                zone.handle.name,
-                d.removed_soa.as_ref().unwrap().0.rdata.serial,
-                d.added_soa.as_ref().unwrap().0.rdata.serial,
+        if tracing::enabled!(Level::TRACE) {
+            trace!(
+                "IXFR out: {} diffs available for zone {}:",
+                diffs.len(),
+                zone.handle.name
             );
+            for (i, (loaded_diff, signed_diff)) in diffs.iter().enumerate() {
+                trace!(
+                    "IXFR out: Diff #{i}: serial {} => serial {}, loaded -{}+{}, signed -{}+{}",
+                    signed_diff.removed_soa.as_ref().unwrap().0.rdata.serial,
+                    signed_diff.added_soa.as_ref().unwrap().0.rdata.serial,
+                    loaded_diff.removed_records.len(),
+                    loaded_diff.added_records.len(),
+                    signed_diff.removed_records.len(),
+                    signed_diff.added_records.len(),
+                );
+            }
         }
 
         // Find the diff, if we have it, that removes the SOA serial number
         // that the client currently has. That will be the start of the diff
-        // that we need to serve.
-        let start_idx = diffs.iter().position(|d| {
-            d.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
+        // that we need to serve. The SOA serial has to match the one seen by
+        // the client, i.e. the one we published in the signed zone, not the
+        // one from the loaded zone which could be completely different.
+        let start_idx = diffs.iter().position(|(_, signed_diff)| {
+            signed_diff.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
         });
 
         let Some(start_idx) = start_idx else {
-            tracing::trace!(
+            trace!(
                 "Falling back from IXFR to AXFR because no diff is available for zone '{}' from serial {}",
-                zone.handle.name,
-                client_soa.serial,
+                zone.handle.name, client_soa.serial,
             );
             return axfr(request, zone_clone).await;
         };
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
 
+        // NOTE: The following code is a bit tricky. Ideally, we would elide
+        // the channel and return the `messages` iterator as an async `Stream`;
+        // but the iterator borrows from `viewer` via `.non_soa_records()`, and
+        // this prevents the iterator from satisfying `'static`. Rust actually
+        // _does_ have machinery to work around this, in async functions, so we
+        // prepare the messages in an async function (as a Tokio task) and send
+        // them over a channel from there.
+        //
+        // In the future, AXFRs could be implemented by spawning an OS thread
+        // and doing all the work there. This is incompatible with the API of
+        // `domain::net::server`, as the underlying TCP connection cannot be
+        // extracted, but we plan to stop using that API anyway.
+
         // Stream the records in the background.
         tokio::task::spawn(async move {
-            // Collect the sequence of IXFR output records..
+            // Collect the sequence of IXFR output records.
             let mut rrs = vec![new_soa.clone().into()];
-            for diff in &diffs[start_idx..] {
-                rrs.push(diff.removed_soa.clone().unwrap().into());
-                rrs.extend(diff.removed_records.clone());
-                rrs.push(diff.added_soa.clone().unwrap().into());
-                rrs.extend(diff.added_records.clone());
+            // TODO: Use diffs[..].iter().flat_map() here to avoid the
+            // intermediate Vec allocation?
+            for (loaded_diff, signed_diff) in &diffs[start_idx..] {
+                rrs.push(signed_diff.removed_soa.clone().unwrap().into());
+                rrs.extend(loaded_diff.removed_records.clone());
+                rrs.extend(signed_diff.removed_records.clone());
+                rrs.push(signed_diff.added_soa.clone().unwrap().into());
+                rrs.extend(loaded_diff.added_records.clone());
+                rrs.extend(signed_diff.added_records.clone());
             }
             rrs.push(new_soa.into());
 
