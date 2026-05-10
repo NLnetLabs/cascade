@@ -76,8 +76,8 @@ First of all, all changes in the loaded zone are accounted for, from NSEC/NSEC3
 chain updates to generating new signatures.
 
 Then: every signature that needs re-generating (because it is sufficiently close
-to expiry) will be considered. Signatures that are _too_ close to expiry will be
-re-generated immediately. The rest will be sorted into a _re-signing schedule_,
+to expiry) will be considered. Signatures that are *too* close to expiry will be
+re-generated immediately. The rest will be sorted into a *re-signing schedule*,
 which is a deterministic way to spread out incremental signing work. They will
 be sorted by ascending order of expiry, and then by DNSSEC canonical order. The
 first ``N`` such signatures will be re-generated, where ``N`` is chosen so that
