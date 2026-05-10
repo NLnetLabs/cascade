@@ -22,13 +22,13 @@ use domain::{
     },
     utils::dst::UnsizedCopy,
 };
-use tracing::trace;
+use tracing::{info, trace};
 
 use crate::{center::Center, zone::Zone};
 
 /// Restore the loaded instance data of a zone.
 #[tracing::instrument(
-    level = "trace",
+    level = "info",
     skip_all,
     fields(zone = %zone.name),
 )]
@@ -39,6 +39,9 @@ pub fn restore_loaded(
 ) -> io::Result<()> {
     let mut state = zone.state.lock().unwrap();
     if !state.persisted_loaded_diffs.is_empty() {
+        info!("Restoring loaded zone from persisted data");
+        state.storage.diffs.clear();
+
         // Determine the paths to read from. Each zone is persisted as an AXFR
         // plus zero or more IXFRs. The restorer takes a base path ending in
         // an unsigned integer number and loads that file plus N more, where
@@ -50,6 +53,7 @@ pub fn restore_loaded(
             .join(format!("{}.loaded.0", zone.name));
         let count = state.persisted_loaded_diffs.len();
         let mut buf = Vec::<u8>::new();
+        drop(state);
 
         // Process the initial "loaded" AXFR wire format dump.
         let (soa, records) =
@@ -70,8 +74,6 @@ pub fn restore_loaded(
         if count > 1 {
             let mut source = loaded_source.to_path_buf();
             let mut all_serials = vec![];
-
-            state.storage.diffs.clear();
 
             for i in 1..count {
                 let mut loaded_patcher = restorer
@@ -97,6 +99,7 @@ pub fn restore_loaded(
 
                 if let Some(diff) = restorer.take_diff() {
                     // Store the loaded diff to be used as part of serving an IXFR.
+                    let mut state = zone.state.lock().unwrap();
                     state.storage.diffs.push((diff.into(), None));
 
                     trace!(
@@ -114,6 +117,8 @@ pub fn restore_loaded(
                 soa.rdata.serial, zone.name
             );
         }
+
+        info!("Restored loaded zone snapshot and {} diffs", count - 1);
     }
 
     io::Result::Ok(())
@@ -121,7 +126,7 @@ pub fn restore_loaded(
 
 /// Restore the loaded instance data of a zone.
 #[tracing::instrument(
-    level = "trace",
+    level = "info",
     skip_all,
     fields(zone = %zone.name),
 )]
@@ -130,8 +135,10 @@ pub fn restore_signed(
     center: &Arc<Center>,
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<()> {
-    let mut state = zone.state.lock().unwrap();
+    let state = zone.state.lock().unwrap();
     if !state.persisted_loaded_diffs.is_empty() {
+        info!("Restoring signed zone from persisted data");
+
         // Determine the paths to read from. Each zone is persisted as an AXFR
         // plus zero or more IXFRs. The restorer takes a base path ending in
         // an unsigned integer number and loads that file plus N more, where
@@ -143,6 +150,7 @@ pub fn restore_signed(
             .join(format!("{}.signed.0", zone.name));
         let count = state.persisted_signed_diffs.len();
         let mut buf = Vec::<u8>::new();
+        drop(state);
 
         // Process the initial "signed" AXFR wire format dump.
         let (soa, records) =
@@ -196,6 +204,7 @@ pub fn restore_signed(
                 })?;
 
                 if let Some(diff) = restorer.take_diff() {
+                    let mut state = zone.state.lock().unwrap();
                     // Get the diff pair (loaded diff and missing signed diff)
                     // that this signed diff needs to be inserted into.
                     let diffs = state
@@ -227,6 +236,7 @@ pub fn restore_signed(
                 soa.rdata.serial, zone.name
             );
         }
+        info!("Restored signed zone snapshot and {} diffs", count - 1);
     }
     io::Result::Ok(())
 }

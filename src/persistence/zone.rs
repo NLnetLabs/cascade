@@ -40,7 +40,7 @@ impl ZonePersistenceHandle<'_> {
     /// A background task will be spawned to restore the zone's data (for both
     /// the loaded and signed instances).
     #[tracing::instrument(
-        level = "trace",
+        level = "info",
         skip_all,
         fields(zone = %self.zone.name),
     )]

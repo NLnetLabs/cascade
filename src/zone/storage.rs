@@ -952,6 +952,13 @@ impl StorageState {
             background_tasks: Default::default(),
         }
     }
+
+    pub fn is_restoring(&self) -> bool {
+        matches!(
+            self.machine,
+            ZoneDataStorage::RestoringLoaded(_) | ZoneDataStorage::RestoringSigned(_)
+        )
+    }
 }
 
 impl Default for StorageState {

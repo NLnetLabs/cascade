@@ -455,7 +455,13 @@ impl HttpServer {
                 .map(|r| Serial::from(u32::from(r.rdata.serial)));
 
             progress = match zone_state.machine {
-                ZoneStateMachine::Waiting(..) => Progress::Waiting,
+                ZoneStateMachine::Waiting(..) => {
+                    if zone_state.storage.is_restoring() {
+                        Progress::Restoring
+                    } else {
+                        Progress::Waiting
+                    }
+                }
                 ZoneStateMachine::Loading(..) => Progress::Loading,
                 ZoneStateMachine::LoadedReview(..) => Progress::LoadedReview,
                 ZoneStateMachine::HaltLoaded(..) => Progress::HaltLoaded,
