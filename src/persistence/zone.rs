@@ -110,7 +110,6 @@ impl ZonePersistenceHandle<'_> {
                     }
                 };
 
-                info!("Restored the zone's persisted data");
                 let mut state = zone.state.lock().unwrap();
                 trace!("Restored diffs: {:?}", state.persisted_loaded_diffs);
                 let mut handle = ZoneHandle {
@@ -207,20 +206,19 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
         .iter()
         .chain(state.persisted_signed_diffs.iter())
     {
-        if p.exists() {
-            if let Ok(ref p) = p.canonicalize() {
-                if p.starts_with(&zone_state_dir) {
-                    info!(
-                        "Removing unusable persisted zone data file '{}'",
-                        p.display()
-                    );
-                    if let Err(err) = std::fs::remove_file(p) {
-                        warn!(
-                            "Failed to remove unusable persisted zone data file '{}': {err}",
-                            p.display()
-                        );
-                    }
-                }
+        if p.exists()
+            && let Ok(ref p) = p.canonicalize()
+            && p.starts_with(&zone_state_dir)
+        {
+            info!(
+                "Removing unusable persisted zone data file '{}'",
+                p.display()
+            );
+            if let Err(err) = std::fs::remove_file(p) {
+                warn!(
+                    "Failed to remove unusable persisted zone data file '{}': {err}",
+                    p.display()
+                );
             }
         }
     }
