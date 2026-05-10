@@ -65,8 +65,7 @@ impl ZonePersistenceHandle<'_> {
                     Err(err) => {
                         warn!("Abandoning loaded restoration: {err}");
                         let mut state = zone.state.lock().unwrap();
-                        state.persisted_loaded_diffs.clear();
-                        state.persisted_signed_diffs.clear();
+                        clear_persisted_zone_data(&center, &mut state);
                         let mut handle = ZoneHandle {
                             zone: &zone,
                             state: &mut state,
@@ -99,8 +98,7 @@ impl ZonePersistenceHandle<'_> {
                     Err(err) => {
                         warn!("Abandoning signed restoration: {err}");
                         let mut state = zone.state.lock().unwrap();
-                        state.persisted_loaded_diffs.clear();
-                        state.persisted_signed_diffs.clear();
+                        clear_persisted_zone_data(&center, &mut state);
                         let mut handle = ZoneHandle {
                             zone: &zone,
                             state: &mut state,
@@ -198,6 +196,36 @@ impl ZonePersistenceHandle<'_> {
                 handle.state.persistence.ongoing.finish();
             });
     }
+}
+
+fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
+    // We can't use the persisted data so remove the paths from state and also
+    // the corresponding files on disk.
+    let zone_state_dir = center.config.zone_state_dir.canonicalize().unwrap();
+    for p in state
+        .persisted_loaded_diffs
+        .iter()
+        .chain(state.persisted_signed_diffs.iter())
+    {
+        if p.exists() {
+            if let Ok(ref p) = p.canonicalize() {
+                if p.starts_with(&zone_state_dir) {
+                    info!(
+                        "Removing unusable persisted zone data file '{}'",
+                        p.display()
+                    );
+                    if let Err(err) = std::fs::remove_file(p) {
+                        warn!(
+                            "Failed to remove unusable persisted zone data file '{}': {err}",
+                            p.display()
+                        );
+                    }
+                }
+            }
+        }
+    }
+    state.persisted_loaded_diffs.clear();
+    state.persisted_signed_diffs.clear();
 }
 
 //----------- PersistenceState -------------------------------------------------
