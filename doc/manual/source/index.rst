@@ -98,6 +98,7 @@ Examples of things we're interested in:
    :name: toc-core
 
    key-management
+   incremental-signing
    hsms
    review-hooks
    zone-transfers
