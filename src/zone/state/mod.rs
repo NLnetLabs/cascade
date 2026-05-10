@@ -84,6 +84,7 @@ impl Spec {
         match self {
             Self::V1(v1::Spec {
                 policy,
+                last_published,
                 source,
                 min_expiration,
                 next_min_expiration,
@@ -115,6 +116,7 @@ impl Spec {
 
                 Ok(ZoneState {
                     policy,
+                    last_published,
                     min_expiration,
                     next_min_expiration,
                     apex_remove,

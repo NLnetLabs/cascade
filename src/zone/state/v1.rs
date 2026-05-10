@@ -15,7 +15,7 @@ use crate::loader::Source;
 use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
 use crate::tsig::TsigStore;
-use crate::zone::HistoryItem;
+use crate::zone::{HistoryItem, LastPublished};
 use crate::{
     policy::{
         KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
@@ -37,6 +37,9 @@ pub struct Spec {
     /// The full details of the policy are stored here, as there may be a newer
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
+
+    /// Metadata related to the last published zone version.
+    pub last_published: Option<LastPublished>,
 
     /// The source of the zone.
     pub source: ZoneLoadSourceSpec,
@@ -110,6 +113,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
+            last_published: zone.last_published.clone(),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,

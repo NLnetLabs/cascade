@@ -331,7 +331,7 @@ impl Default for ZoneState {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct LastPublished {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,
