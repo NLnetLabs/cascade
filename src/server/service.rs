@@ -72,7 +72,7 @@ impl<V> Clone for ZoneService<V> {
 mod compat {
     use std::{pin::Pin, sync::Arc};
 
-    use cascade_zonedata::OldRecord;
+    use cascade_zonedata::{DiffData, OldRecord};
     use domain::{
         base::{Message, MessageBuilder, iana::Rcode},
         net::server::{
@@ -102,7 +102,8 @@ mod compat {
 
         fn call(&self, old_request: Request<Vec<u8>, Option<Arc<tsig::Key>>>) -> Response {
             // Parse the request.
-            let message = old_request.message().as_slice();
+            let slice = old_request.message().as_slice();
+            let message = slice;
             let message = domain::new::base::Message::parse_bytes_by_ref(message)
                 .expect("'message' was already checked to be a valid DNS message");
             let request = match crate::server::request::parse(message) {
@@ -511,164 +512,100 @@ mod compat {
             // Collect the sequence of IXFR output records.
             let mut rrs = vec![new_soa.clone().into()];
 
-            if viewer.is_loaded_viewer() {
-                // Serve a loaded zone diff.
-                let mut last_removed_soa = None;
-                let mut last_added_soa = None;
-                for (i, (loaded_diff, _)) in diffs[start_idx..].iter().enumerate() {
-                    // Skip a change that only occured in the signed zone e.g.
-                    // due to incremental re-signing.
-                    let Some(loaded_diff) = &loaded_diff else {
-                        continue;
-                    };
-                    if loaded_diff.is_empty() {
-                        continue;
-                    }
-                    trace!(
-                        "Serving diff #{} for loaded review server IXFR out",
-                        start_idx + i
-                    );
+            // Serve the correct records:
+            //   - to a client of the loaded review server, who shouldn't
+            //     receive any signed records in the IXFR response, OR
+            //   - to a client of the signed review or publication server,
+            //     who should be served differences in both loaded and signed
+            //     records in the IXFR response.
+            //
+            // There is a lot of overlap between these two branches but I
+            // find it much harder to understand if the code is merged so I
+            // kept it separate like this.
+            let mut last_removed_soa = None;
+            let mut last_added_soa = None;
 
-                    // The loaded zone SOA serial may not have changed, e.g.
-                    // if serial policy is NOT set to keep then the operator
-                    // expects the signed zone SOA serial to get bumped even
-                    // if the input zone has changed RRs but not a changed SOA
-                    // serial. However, for IXFR out we MUST have a change in
-                    // SOA RR in order to construct the IXFR out. Such a diff
-                    // should not have been stored and it is a serious error
-                    // if we get such a diff here.
-                    assert!(loaded_diff.removed_soa.is_some());
-                    assert!(loaded_diff.added_soa.is_some());
-                    let removed_soa = loaded_diff.removed_soa.as_ref().unwrap();
-                    let added_soa = loaded_diff.added_soa.as_ref().unwrap();
+            for (i, (loaded_diff, signed_diff)) in diffs[start_idx..].iter().enumerate() {
+                let abs_idx = start_idx + i;
 
-                    // Stop iterating if we encounter the same SOA serial
-                    // again which happens if the loaded zone remained
-                    // unchanged but incremental signing caused changes in the
-                    // signed part only to occur.
+                // Select the appropriate diff as the SOA source to use.
+                let candidate_diff = if viewer.is_loaded_viewer() {
+                    loaded_diff
+                } else {
+                    signed_diff
+                };
+
+                // Skip diffs that didn't change the key part of the zone,
+                // loaded or signed, being served, i.e.
+                //   - For a loaded review server, skip a change that only
+                //     occured in the signed zone e.g. due to incremental
+                //     re-signing.
+                //   - For a signed review / publication server, skip a change
+                //     that only occured in the loaded zone and not (yet) in
+                //     the signed zone.
+                let soa_source_diff = match require_diff(candidate_diff) {
+                    Some(diff) => diff,
+                    None => continue,
+                };
+
+                // To serve an IXFR we must have a change in serial number.
+                assert!(soa_source_diff.removed_soa.is_some());
+                assert!(soa_source_diff.added_soa.is_some());
+                let removed_soa = soa_source_diff.removed_soa.as_ref().unwrap();
+                let added_soa = soa_source_diff.added_soa.as_ref().unwrap();
+
+                // Stop iterating if we encounter the same SOA serial
+                // again which happens if the loaded zone remained
+                // unchanged but incremental signing caused changes in the
+                // signed part only to occur.
+                if viewer.is_loaded_viewer() {
                     if let Some(last_removed_soa) = last_removed_soa {
                         if removed_soa == last_removed_soa {
-                            trace!("Stopping at last unique loaded diff #{}.", start_idx + i);
+                            trace!("Stopping at last unique loaded diff #{abs_idx}.");
                             break;
                         }
                     }
+                }
 
-                    // Ensure that the sequence of diffs has no SOA serial
-                    // gaps, each last added SOA should be the SOA that the
-                    // next diff sequence removes.
-                    if let Some(last_added_soa) = last_added_soa {
-                        assert_eq!(removed_soa, last_added_soa);
-                    }
+                // Ensure that the sequence of diffs has no SOA serial
+                // gaps, each last added SOA should be the SOA that the
+                // next diff sequence removes.
+                if let Some(last_added_soa) = last_added_soa {
+                    assert_eq!(removed_soa, last_added_soa);
+                }
 
+                if tracing::enabled!(Level::TRACE) {
+                    trace_diff_pair(abs_idx, loaded_diff, signed_diff);
+                }
+
+                trace!("Serving diff #{abs_idx} for loaded review server IXFR out",);
+
+                if viewer.is_loaded_viewer() {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    rrs.extend(loaded_diff.removed_records.clone());
+                    rrs.extend(soa_source_diff.removed_records.clone());
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    rrs.extend(loaded_diff.added_records.clone());
-
-                    last_removed_soa = Some(removed_soa);
-                    last_added_soa = Some(added_soa);
-                }
-            } else {
-                // Serve a diff based on both the loaded diff (if the source
-                // zone changed) and the signed diff.
-                let mut last_added_soa = None;
-                for (i, (loaded_diff, signed_diff)) in diffs[start_idx..].iter().enumerate() {
-                    // Skip a change that only occured in the loaded zone and
-                    // not (yet) in the signed zone.
-                    let Some(signed_diff) = &signed_diff else {
-                        continue;
-                    };
-                    if signed_diff.is_empty() {
-                        continue;
-                    }
-                    trace!(
-                        "Serving diff #{} for signed / publication server IXFR out",
-                        start_idx + i
-                    );
-
-                    // The signed zone SOA serial MUST have been bumped.
-                    let removed_soa = signed_diff.removed_soa.as_ref().unwrap();
-                    let added_soa = signed_diff.added_soa.as_ref().unwrap();
-
-                    // Ensure that the sequence of diffs has no SOA serial
-                    // gaps, each last added SOA should be the SOA that the
-                    // next diff sequence removes.
-                    if let Some(last_added_soa) = last_added_soa {
-                        assert_eq!(removed_soa, last_added_soa);
-                    }
-
-                    // trace!(
-                    //     "Loaded diff #{}: {:?}->{:?}: {:?}->{:?}",
-                    //     start_idx + i,
-                    //     loaded_diff
-                    //         .as_ref()
-                    //         .map(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial))
-                    //         .flatten(),
-                    //     loaded_diff
-                    //         .as_ref()
-                    //         .map(|d| d.added_soa.as_ref().map(|s| s.rdata.serial))
-                    //         .flatten(),
-                    //     loaded_diff.as_ref().map(|d| d
-                    //         .removed_records
-                    //         .iter()
-                    //         .map(|r| format!("{:?}", r.rtype))
-                    //         .collect::<Vec<String>>()
-                    //         .join(",")),
-                    //     loaded_diff.as_ref().map(|d| d
-                    //         .added_records
-                    //         .iter()
-                    //         .map(|r| format!("{:?}", r.rtype))
-                    //         .collect::<Vec<String>>()
-                    //         .join(",")),
-                    // );
-
-                    // trace!(
-                    //     "Signed diff #{}: {:?}->{:?}: {:?}->{:?}",
-                    //     start_idx + i,
-                    //     signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial),
-                    //     signed_diff.added_soa.as_ref().map(|s| s.rdata.serial),
-                    //     signed_diff
-                    //         .as_ref()
-                    //         .removed_records
-                    //         .iter()
-                    //         .map(|r| format!("{:?}", r.rtype))
-                    //         .collect::<Vec<String>>()
-                    //         .join(","),
-                    //     signed_diff
-                    //         .as_ref()
-                    //         .added_records
-                    //         .iter()
-                    //         .map(|r| format!("{:?}", r.rtype))
-                    //         .collect::<Vec<String>>()
-                    //         .join(","),
-                    // );
-
+                    rrs.extend(soa_source_diff.added_records.clone());
+                } else {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
                     if let Some(d) = loaded_diff {
                         rrs.extend(d.removed_records.clone());
                     }
-                    rrs.extend(signed_diff.removed_records.clone());
+                    rrs.extend(soa_source_diff.removed_records.clone());
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
                     if let Some(d) = loaded_diff {
                         rrs.extend(d.added_records.clone());
                     }
-                    rrs.extend(signed_diff.added_records.clone());
-
-                    // Ensure that the sequence of diffs has no SOA serial
-                    // gaps, each last added SOA should be the SOA that the
-                    // next diff sequence removes.
-                    if let Some(last_added_soa) = last_added_soa {
-                        assert_eq!(removed_soa, last_added_soa);
-                    }
-
-                    last_added_soa = Some(added_soa);
+                    rrs.extend(soa_source_diff.added_records.clone());
                 }
+
+                last_removed_soa = Some(removed_soa);
+                last_added_soa = Some(added_soa);
             }
             rrs.push(new_soa.into());
 
@@ -713,6 +650,50 @@ mod compat {
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
 
         Box::new(stream) as _
+    }
+
+    fn require_diff(d: &Option<Arc<DiffData>>) -> Option<&Arc<DiffData>> {
+        let Some(d) = &d else {
+            return None;
+        };
+        if d.is_empty() {
+            return None;
+        }
+        Some(d)
+    }
+
+    fn trace_diff_pair(
+        diff_idx: usize,
+        loaded_diff: &Option<Arc<DiffData>>,
+        signed_diff: &Option<Arc<DiffData>>,
+    ) {
+        fn trace_diff(prefix: &str, diff_idx: usize, d: &Option<Arc<DiffData>>) {
+            trace!(
+                "{prefix} diff #{}: {:?}->{:?}: {:?}->{:?}",
+                diff_idx,
+                d.as_ref()
+                    .map(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial))
+                    .flatten(),
+                d.as_ref()
+                    .map(|d| d.added_soa.as_ref().map(|s| s.rdata.serial))
+                    .flatten(),
+                d.as_ref().map(|d| d
+                    .removed_records
+                    .iter()
+                    .map(|r| format!("{:?}", r.rtype))
+                    .collect::<Vec<String>>()
+                    .join(",")),
+                d.as_ref().map(|d| d
+                    .added_records
+                    .iter()
+                    .map(|r| format!("{:?}", r.rtype))
+                    .collect::<Vec<String>>()
+                    .join(",")),
+            );
+        }
+
+        trace_diff("Loaded", diff_idx, loaded_diff);
+        trace_diff("Signed", diff_idx, signed_diff);
     }
 
     fn error(request: &Message<Vec<u8>>, rcode: Rcode) -> ResponseStream {
