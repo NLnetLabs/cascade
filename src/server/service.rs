@@ -425,37 +425,25 @@ mod compat {
                 debug!(
                     "IXFR out: Diff #{i}: loaded serial -{:?}+{:?} => signed serial -{:?}+{:?}, loaded -{}+{}, signed -{}+{}",
                     loaded_diff
+                        .removed_soa
                         .as_ref()
-                        .map(|d| d.removed_soa.as_ref().map(|soa_rr| soa_rr.0.rdata.serial))
-                        .flatten(),
+                        .map(|soa_rr| soa_rr.0.rdata.serial),
                     loaded_diff
+                        .added_soa
                         .as_ref()
-                        .map(|d| d.added_soa.as_ref().map(|soa_rr| soa_rr.0.rdata.serial))
-                        .flatten(),
+                        .map(|soa_rr| soa_rr.0.rdata.serial),
                     signed_diff
+                        .removed_soa
                         .as_ref()
-                        .map(|d| d.removed_soa.as_ref().map(|soa_rr| soa_rr.0.rdata.serial))
-                        .flatten(),
+                        .map(|soa_rr| soa_rr.0.rdata.serial),
                     signed_diff
+                        .added_soa
                         .as_ref()
-                        .map(|d| d.added_soa.as_ref().map(|soa_rr| soa_rr.0.rdata.serial))
-                        .flatten(),
-                    loaded_diff
-                        .as_ref()
-                        .map(|d| d.removed_records.len())
-                        .unwrap_or(0),
-                    loaded_diff
-                        .as_ref()
-                        .map(|d| d.added_records.len())
-                        .unwrap_or(0),
-                    signed_diff
-                        .as_ref()
-                        .map(|d| d.removed_records.len())
-                        .unwrap_or(0),
-                    signed_diff
-                        .as_ref()
-                        .map(|d| d.added_records.len())
-                        .unwrap_or(0),
+                        .map(|soa_rr| soa_rr.0.rdata.serial),
+                    loaded_diff.removed_records.len(),
+                    loaded_diff.added_records.len(),
+                    signed_diff.removed_records.len(),
+                    signed_diff.added_records.len(),
                 );
             }
         }
@@ -476,11 +464,7 @@ mod compat {
                 } else {
                     signed_diff
                 };
-                if let Some(d) = d {
-                    d.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
-                } else {
-                    false
-                }
+                d.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
             })
         };
 
@@ -529,7 +513,7 @@ mod compat {
                 let abs_idx = start_idx + i;
 
                 // Select the appropriate diff as the SOA source to use.
-                let candidate_diff = if viewer.is_loaded_viewer() {
+                let soa_source_diff = if viewer.is_loaded_viewer() {
                     loaded_diff
                 } else {
                     signed_diff
@@ -543,10 +527,9 @@ mod compat {
                 //   - For a signed review / publication server, skip a change
                 //     that only occured in the loaded zone and not (yet) in
                 //     the signed zone.
-                let soa_source_diff = match require_diff(candidate_diff) {
-                    Some(diff) => diff,
-                    None => continue,
-                };
+                if soa_source_diff.is_empty() {
+                    continue;
+                }
 
                 // To serve an IXFR we must have a change in serial number.
                 assert!(soa_source_diff.removed_soa.is_some());
@@ -558,13 +541,12 @@ mod compat {
                 // again which happens if the loaded zone remained
                 // unchanged but incremental signing caused changes in the
                 // signed part only to occur.
-                if viewer.is_loaded_viewer() {
-                    if let Some(last_removed_soa) = last_removed_soa {
-                        if removed_soa == last_removed_soa {
-                            trace!("Stopping at last unique loaded diff #{abs_idx}.");
-                            break;
-                        }
-                    }
+                if viewer.is_loaded_viewer()
+                    && let Some(last_removed_soa) = last_removed_soa
+                    && removed_soa == last_removed_soa
+                {
+                    trace!("Stopping at last unique loaded diff #{abs_idx}.");
+                    break;
                 }
 
                 // Ensure that the sequence of diffs has no SOA serial
@@ -591,16 +573,12 @@ mod compat {
                 } else {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    if let Some(d) = loaded_diff {
-                        rrs.extend(d.removed_records.clone());
-                    }
+                    rrs.extend(loaded_diff.removed_records.clone());
                     rrs.extend(soa_source_diff.removed_records.clone());
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    if let Some(d) = loaded_diff {
-                        rrs.extend(d.added_records.clone());
-                    }
+                    rrs.extend(loaded_diff.added_records.clone());
                     rrs.extend(soa_source_diff.added_records.clone());
                 }
 
@@ -652,43 +630,23 @@ mod compat {
         Box::new(stream) as _
     }
 
-    fn require_diff(d: &Option<Arc<DiffData>>) -> Option<&Arc<DiffData>> {
-        let Some(d) = &d else {
-            return None;
-        };
-        if d.is_empty() {
-            return None;
-        }
-        Some(d)
-    }
-
-    fn trace_diff_pair(
-        diff_idx: usize,
-        loaded_diff: &Option<Arc<DiffData>>,
-        signed_diff: &Option<Arc<DiffData>>,
-    ) {
-        fn trace_diff(prefix: &str, diff_idx: usize, d: &Option<Arc<DiffData>>) {
+    fn trace_diff_pair(diff_idx: usize, loaded_diff: &Arc<DiffData>, signed_diff: &Arc<DiffData>) {
+        fn trace_diff(prefix: &str, diff_idx: usize, d: &Arc<DiffData>) {
             trace!(
                 "{prefix} diff #{}: {:?}->{:?}: {:?}->{:?}",
                 diff_idx,
-                d.as_ref()
-                    .map(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial))
-                    .flatten(),
-                d.as_ref()
-                    .map(|d| d.added_soa.as_ref().map(|s| s.rdata.serial))
-                    .flatten(),
-                d.as_ref().map(|d| d
-                    .removed_records
+                d.removed_soa.as_ref().map(|s| s.rdata.serial),
+                d.added_soa.as_ref().map(|s| s.rdata.serial),
+                d.removed_records
                     .iter()
                     .map(|r| format!("{:?}", r.rtype))
                     .collect::<Vec<String>>()
-                    .join(",")),
-                d.as_ref().map(|d| d
-                    .added_records
+                    .join(","),
+                d.added_records
                     .iter()
                     .map(|r| format!("{:?}", r.rtype))
                     .collect::<Vec<String>>()
-                    .join(",")),
+                    .join(","),
             );
         }
 

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use cascade_zonedata::{
-    LoadedZonePersisted, LoadedZonePersister, SignedZonePersisted, SignedZonePersister,
+    DiffData, LoadedZonePersisted, LoadedZonePersister, SignedZonePersisted, SignedZonePersister,
 };
 
 use crate::{center::Center, zone::Zone};
@@ -39,7 +39,7 @@ pub fn persist_loaded(
         // require the SOA to have been removed and a new one added.
         let mut state = zone.state.lock().unwrap();
 
-        let loaded_only_diff = (Some(persister.loaded_diff().clone()), None);
+        let loaded_only_diff = (persister.loaded_diff().clone(), DiffData::new().into());
         state.storage.diffs.push(loaded_only_diff);
     }
 
@@ -83,7 +83,8 @@ pub fn persist_signed(
         // MUST always have a new SOA SERIAL compared to the previous version
         // of the signed zone.
 
-        let complete_diff = (loaded_diff.cloned(), Some(signed_diff.clone()));
+        let loaded_diff = loaded_diff.cloned().unwrap_or(DiffData::new().into());
+        let complete_diff = (loaded_diff, signed_diff.clone());
         state.storage.diffs.push(complete_diff);
     }
 
