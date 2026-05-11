@@ -163,17 +163,17 @@ mod compat {
 
     fn is_permitted<V: Viewer>(
         zone: &ServedZone<V>,
-        old_request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
+        request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
     ) -> bool {
         let zone_state = zone.handle.state.lock().unwrap();
 
         if tracing::enabled!(Level::TRACE) {
-            let tsig_key = old_request.metadata().as_ref().map(|key| key.name());
+            let tsig_key = request.metadata().as_ref().map(|key| key.name());
             trace!(
                 "Received request {} from {} for {} in zone {} with TSIG key {tsig_key:?}",
-                old_request.message().header().id(),
-                old_request.client_addr().ip(),
-                old_request
+                request.message().header().id(),
+                request.client_addr().ip(),
+                request
                     .message()
                     .qtype()
                     .map(|rtype| rtype.to_string())
@@ -189,11 +189,11 @@ mod compat {
         {
             // If at least one ACL was specified, enforce it.
             if !acls.is_empty() {
-                let wanted_tsig_key_name = old_request.metadata().as_ref().map(|key| key.name());
+                let wanted_tsig_key_name = request.metadata().as_ref().map(|key| key.name());
 
                 for acl in acls {
                     // Does the client address match the allowed address?
-                    if acl.addr.ip() == old_request.client_addr().ip() {
+                    if acl.addr.ip() == request.client_addr().ip() {
                         // Is the request signed with the right TSIG key?
                         if acl.tsig_key_name.as_ref() == wanted_tsig_key_name {
                             // Allow the request.
@@ -213,9 +213,9 @@ mod compat {
                     };
                     debug!(
                         "Rejecting request {} from {} for {} in zone {}: access denied{extra}",
-                        old_request.message().header().id(),
-                        old_request.client_addr().ip(),
-                        old_request
+                        request.message().header().id(),
+                        request.client_addr().ip(),
+                        request
                             .message()
                             .qtype()
                             .map(|rtype| rtype.to_string())
