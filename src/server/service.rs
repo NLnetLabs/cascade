@@ -420,8 +420,14 @@ mod compat {
                     "IXFR out: Diff #{i}: serial {} => serial {}, loaded -{}+{}, signed -{}+{}",
                     signed_diff.removed_soa.as_ref().unwrap().0.rdata.serial,
                     signed_diff.added_soa.as_ref().unwrap().0.rdata.serial,
-                    loaded_diff.removed_records.len(),
-                    loaded_diff.added_records.len(),
+                    loaded_diff
+                        .as_ref()
+                        .map(|d| d.removed_records.len())
+                        .unwrap_or(0),
+                    loaded_diff
+                        .as_ref()
+                        .map(|d| d.added_records.len())
+                        .unwrap_or(0),
                     signed_diff.removed_records.len(),
                     signed_diff.added_records.len(),
                 );
@@ -468,10 +474,14 @@ mod compat {
             // intermediate Vec allocation?
             for (loaded_diff, signed_diff) in &diffs[start_idx..] {
                 rrs.push(signed_diff.removed_soa.clone().unwrap().into());
-                rrs.extend(loaded_diff.removed_records.clone());
+                if let Some(d) = loaded_diff {
+                    rrs.extend(d.removed_records.clone());
+                }
                 rrs.extend(signed_diff.removed_records.clone());
                 rrs.push(signed_diff.added_soa.clone().unwrap().into());
-                rrs.extend(loaded_diff.added_records.clone());
+                if let Some(d) = loaded_diff {
+                    rrs.extend(d.added_records.clone());
+                }
                 rrs.extend(signed_diff.added_records.clone());
             }
             rrs.push(new_soa.into());

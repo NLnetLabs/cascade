@@ -47,10 +47,7 @@ pub fn persist_signed(
     let loaded_diff = persister.loaded_diff();
     let signed_diff = persister.signed_diff();
 
-    if let Some(loaded_diff) = loaded_diff
-        && signed_diff.removed_soa.is_some()
-        && signed_diff.removed_soa != signed_diff.added_soa
-    {
+    if signed_diff.removed_soa.is_some() && signed_diff.removed_soa != signed_diff.added_soa {
         let mut state = zone.state.lock().unwrap();
 
         // Store anything that changed when the zone was re-loaded, i.e.
@@ -65,7 +62,7 @@ pub fn persist_signed(
         // MUST always have a new SOA SERIAL compared to the previous version
         // of the signed zone.
 
-        let complete_diff = (loaded_diff.clone(), signed_diff.clone());
+        let complete_diff = (loaded_diff.cloned(), signed_diff.clone());
         state.storage.diffs.push(complete_diff);
     }
 

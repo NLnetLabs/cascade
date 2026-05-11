@@ -927,7 +927,10 @@ pub struct StorageState {
 
     /// Diffs from one serial to another. Each diff consists of changes in the
     /// loaded part and changes in the signed part.
-    pub diffs: Vec<(Arc<DiffData>, Arc<DiffData>)>,
+    ///
+    /// A loaded diff is not available if the zone was re-signed due to
+    /// changes in signing key or to refresh expiring signatures.
+    pub diffs: Vec<(Option<Arc<DiffData>>, Arc<DiffData>)>,
 
     /// Ongoing background tasks.
     ///
