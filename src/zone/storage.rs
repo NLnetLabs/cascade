@@ -930,7 +930,10 @@ pub struct StorageState {
     ///
     /// A loaded diff is not available if the zone was re-signed due to
     /// changes in signing key or to refresh expiring signatures.
-    pub diffs: Vec<(Option<Arc<DiffData>>, Arc<DiffData>)>,
+    ///
+    /// A signed diff is not available if the zone has been re-loaded and has
+    /// not yet been signed, e.g. is held at review or signing is in-progress.
+    pub diffs: Vec<(Option<Arc<DiffData>>, Option<Arc<DiffData>>)>,
 
     /// Ongoing background tasks.
     ///

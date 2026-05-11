@@ -19,8 +19,30 @@ pub fn persist_loaded(
     center: &Arc<Center>,
     persister: LoadedZonePersister,
 ) -> LoadedZonePersisted {
-    // TODO
-    let _ = (zone, center);
+    let _ = center;
+
+    // Store the loaded diff in-memory for serving IXFR out.
+
+    let loaded_diff = persister.loaded_diff();
+
+    // Only store a diff if something has changed compared to the previous
+    // version of the loaded zone, otherwise this is not a diff to a previous
+    // version of the zone but actually a snapshot of the zone after having
+    // been loaded for the first time. If the SOA serial didn't change (which
+    // is legal for a loaded zone) don't store a diff because the IXFR protocol
+    // requires a SOA serial number change so we won't be able to serve the diff
+    // anyway.
+    if !loaded_diff.is_empty() && loaded_diff.removed_soa.is_some() {
+        // Store anything that changed when the zone was re-loaded, i.e.
+        // unsigned zone content changes. Note that the SOA SERIAL is not
+        // required to change unless using 'keep' policy and so we should not
+        // require the SOA to have been removed and a new one added.
+        let mut state = zone.state.lock().unwrap();
+
+        let loaded_only_diff = (Some(persister.loaded_diff().clone()), None);
+        state.storage.diffs.push(loaded_only_diff);
+    }
+
     persister.mark_complete()
 }
 
@@ -35,10 +57,9 @@ pub fn persist_signed(
     center: &Arc<Center>,
     persister: SignedZonePersister,
 ) -> SignedZonePersisted {
-    // TODO
     let _ = center;
 
-    // Store the diffs in-memory for serving IXFR.
+    // Store the signed diff in-memory for serving IXFR out.
     //
     // Only store a diff if the SOA from the previous version of the signed
     // zone was removed and a new one added, otherwise this is not a diff to a
@@ -62,7 +83,7 @@ pub fn persist_signed(
         // MUST always have a new SOA SERIAL compared to the previous version
         // of the signed zone.
 
-        let complete_diff = (loaded_diff.cloned(), signed_diff.clone());
+        let complete_diff = (loaded_diff.cloned(), Some(signed_diff.clone()));
         state.storage.diffs.push(complete_diff);
     }
 
