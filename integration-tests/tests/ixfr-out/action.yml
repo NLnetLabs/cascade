@@ -1,6 +1,6 @@
 # Making reusable composite actions documented at
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
-name: 'Serve a zone via IXFR to the NSD secondary.'
+name: 'Serve manual zone modifications via IXFR to the NSD secondary.'
 description: 'Serve a zone via IXFR to the NSD secondary.'
 defaults:
   # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
