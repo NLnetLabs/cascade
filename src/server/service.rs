@@ -409,14 +409,14 @@ mod compat {
         // response message and will have to be split into multiple response
         // messages.
 
-        if tracing::enabled!(Level::TRACE) {
-            trace!(
+        if tracing::enabled!(Level::DEBUG) {
+            debug!(
                 "IXFR out: {} diffs available for zone {}:",
                 diffs.len(),
                 zone.handle.name
             );
             for (i, (loaded_diff, signed_diff)) in diffs.iter().enumerate() {
-                trace!(
+                debug!(
                     "IXFR out: Diff #{i}: serial {} => serial {}, loaded -{}+{}, signed -{}+{}",
                     signed_diff.removed_soa.as_ref().unwrap().0.rdata.serial,
                     signed_diff.added_soa.as_ref().unwrap().0.rdata.serial,
@@ -438,7 +438,7 @@ mod compat {
         });
 
         let Some(start_idx) = start_idx else {
-            trace!(
+            debug!(
                 "Falling back from IXFR to AXFR because no diff is available for zone '{}' from serial {}",
                 zone.handle.name, client_soa.serial,
             );
