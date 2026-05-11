@@ -127,8 +127,8 @@ impl Spec {
                     previous_serial,
                     loader,
                     history,
-                    persisted_loaded_diffs,
-                    persisted_signed_diffs,
+                    persisted_loaded_diff_paths: persisted_loaded_diffs,
+                    persisted_signed_diff_paths: persisted_signed_diffs,
                     ..Default::default()
                 })
             }

@@ -111,7 +111,7 @@ impl ZonePersistenceHandle<'_> {
                 };
 
                 let mut state = zone.state.lock().unwrap();
-                trace!("Restored diffs: {:?}", state.persisted_loaded_diffs);
+                trace!("Restored diffs: {:?}", state.persisted_loaded_diff_paths);
                 let mut handle = ZoneHandle {
                     zone: &zone,
                     state: &mut state,
@@ -202,9 +202,9 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
     // the corresponding files on disk.
     let zone_state_dir = center.config.zone_state_dir.canonicalize().unwrap();
     for p in state
-        .persisted_loaded_diffs
+        .persisted_loaded_diff_paths
         .iter()
-        .chain(state.persisted_signed_diffs.iter())
+        .chain(state.persisted_signed_diff_paths.iter())
     {
         if p.exists()
             && let Ok(ref p) = p.canonicalize()
@@ -222,8 +222,8 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
             }
         }
     }
-    state.persisted_loaded_diffs.clear();
-    state.persisted_signed_diffs.clear();
+    state.persisted_loaded_diff_paths.clear();
+    state.persisted_signed_diff_paths.clear();
 }
 
 //----------- PersistenceState -------------------------------------------------

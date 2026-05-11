@@ -44,13 +44,16 @@ pub fn persist_loaded(
             state: &mut state,
             center,
         };
-        let next_idx = handle.state.persisted_loaded_diffs.len();
+        let next_idx = handle.state.persisted_loaded_diff_paths.len();
         let destination = center
             .config
             .zone_state_dir
             .join(format!("{}.loaded.{next_idx}", zone.name));
         persist_to_file(destination.as_std_path(), persister.loaded_diff().clone());
-        handle.state.persisted_loaded_diffs.push(destination.into());
+        handle
+            .state
+            .persisted_loaded_diff_paths
+            .push(destination.into());
         handle.zone.mark_dirty(handle.state, handle.center);
     }
     persister.mark_complete()
@@ -84,7 +87,7 @@ pub fn persist_signed(
             state: &mut state,
             center,
         };
-        let next_idx = handle.state.persisted_signed_diffs.len();
+        let next_idx = handle.state.persisted_signed_diff_paths.len();
         let destination = center
             .config
             .zone_state_dir
@@ -93,7 +96,10 @@ pub fn persist_signed(
         // Write the diff to disk as a binary AXFR snapshot or binary IXFR
         // diff.
         persist_to_file(destination.as_std_path(), signed_diff.clone());
-        handle.state.persisted_signed_diffs.push(destination.into());
+        handle
+            .state
+            .persisted_signed_diff_paths
+            .push(destination.into());
         handle.zone.mark_dirty(handle.state, handle.center);
 
         // Store the diffs in-memory for serving IXFR.

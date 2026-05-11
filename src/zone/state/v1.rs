@@ -124,8 +124,8 @@ impl Spec {
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
             history: zone.history.clone(),
-            persisted_loaded_diffs: zone.persisted_loaded_diffs.clone(),
-            persisted_signed_diffs: zone.persisted_signed_diffs.clone(),
+            persisted_loaded_diffs: zone.persisted_loaded_diff_paths.clone(),
+            persisted_signed_diffs: zone.persisted_signed_diff_paths.clone(),
         }
     }
 }

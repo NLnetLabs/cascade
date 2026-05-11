@@ -38,7 +38,7 @@ pub fn restore_loaded(
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<()> {
     let mut state = zone.state.lock().unwrap();
-    if !state.persisted_loaded_diffs.is_empty() {
+    if !state.persisted_loaded_diff_paths.is_empty() {
         info!("Restoring loaded zone from persisted data");
         state.storage.diffs.clear();
 
@@ -51,7 +51,7 @@ pub fn restore_loaded(
             .config
             .zone_state_dir
             .join(format!("{}.loaded.0", zone.name));
-        let count = state.persisted_loaded_diffs.len();
+        let count = state.persisted_loaded_diff_paths.len();
         let mut buf = Vec::<u8>::new();
         drop(state);
 
@@ -136,7 +136,7 @@ pub fn restore_signed(
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<()> {
     let state = zone.state.lock().unwrap();
-    if !state.persisted_loaded_diffs.is_empty() {
+    if !state.persisted_loaded_diff_paths.is_empty() {
         info!("Restoring signed zone from persisted data");
 
         // Determine the paths to read from. Each zone is persisted as an AXFR
@@ -148,7 +148,7 @@ pub fn restore_signed(
             .config
             .zone_state_dir
             .join(format!("{}.signed.0", zone.name));
-        let count = state.persisted_signed_diffs.len();
+        let count = state.persisted_signed_diff_paths.len();
         let mut buf = Vec::<u8>::new();
         drop(state);
 
