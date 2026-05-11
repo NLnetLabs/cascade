@@ -275,6 +275,13 @@ impl ZoneSigner {
         let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
     }
 
+    pub fn on_zone_policy_changed(&self) {
+        // Just recompute the resign timer. In the future we may want to
+        // react to changes in policy, for example, whether NSEC is used
+        // or NSEC3.
+        let _ = self.next_resign_time_tx.send(Some(Instant::now()));
+    }
+
     /// Enqueue a zone for signing, waiting until it can begin.
     pub async fn wait_to_sign(
         &self,
