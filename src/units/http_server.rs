@@ -136,6 +136,14 @@ impl HttpServer {
                 post(Self::reject_signed),
             )
             .route("/zone/{name}/signed/override", post(Self::override_signed))
+            .route(
+                "/zone/{zone}/maintenance/enable",
+                post(Self::enable_maintenance_mode),
+            )
+            .route(
+                "/zone/{zone}/maintenance/disable",
+                post(Self::disable_maintenance_mode),
+            )
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/{name}", get(Self::policy_show))
@@ -362,6 +370,7 @@ impl HttpServer {
         let published_serial;
         let last_published;
         let error;
+        let maintenance_mode;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -520,6 +529,8 @@ impl HttpServer {
                 }
             }
             error = found_error;
+
+            maintenance_mode = zone_state.maintenance_mode;
         }
 
         // Query key status
@@ -629,6 +640,7 @@ impl HttpServer {
             source,
             policy,
             progress,
+            maintenance_mode,
             last_published,
             keys,
             key_status,
@@ -827,6 +839,38 @@ impl HttpServer {
         };
 
         Json(do_override())
+    }
+
+    async fn enable_maintenance_mode(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneMaintenanceModeResult> {
+        Json(Self::set_maintenance_mode(state, name, true))
+    }
+
+    async fn disable_maintenance_mode(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneMaintenanceModeResult> {
+        Json(Self::set_maintenance_mode(state, name, false))
+    }
+
+    fn set_maintenance_mode(
+        state: Arc<HttpServer>,
+        name: Name<Bytes>,
+        enable: bool,
+    ) -> ZoneMaintenanceModeResult {
+        let zone =
+            center::get_zone(&state.center, &name).ok_or(ZoneMaintenanceModeError::NoSuchZone)?;
+
+        let mut zone_state = zone.state.lock().unwrap();
+
+        if zone_state.maintenance_mode == enable {
+            return Err(ZoneMaintenanceModeError::AlreadyInThatState);
+        }
+
+        zone_state.maintenance_mode = enable;
+        Ok(ZoneMaintenanceModeOutput { zone: name.clone() })
     }
 
     async fn policy_list(State(state): State<Arc<HttpServer>>) -> Json<PolicyListResult> {

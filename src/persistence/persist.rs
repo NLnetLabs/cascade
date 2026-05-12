@@ -56,6 +56,29 @@ pub fn persist_loaded(
             .push(destination.into());
         handle.zone.mark_dirty(handle.state, handle.center);
     }
+
+    // Store the loaded diff in-memory for serving IXFR out.
+
+    let loaded_diff = persister.loaded_diff();
+
+    // Only store a diff if something has changed compared to the previous
+    // version of the loaded zone, otherwise this is not a diff to a previous
+    // version of the zone but actually a snapshot of the zone after having
+    // been loaded for the first time. If the SOA serial didn't change (which
+    // is legal for a loaded zone) don't store a diff because the IXFR protocol
+    // requires a SOA serial number change so we won't be able to serve the diff
+    // anyway.
+    if !loaded_diff.is_empty() && loaded_diff.removed_soa.is_some() {
+        // Store anything that changed when the zone was re-loaded, i.e.
+        // unsigned zone content changes. Note that the SOA SERIAL is not
+        // required to change unless using 'keep' policy and so we should not
+        // require the SOA to have been removed and a new one added.
+        let mut state = zone.state.lock().unwrap();
+
+        let loaded_only_diff = (persister.loaded_diff().clone(), DiffData::new().into());
+        state.storage.diffs.push(loaded_only_diff);
+    }
+
     persister.mark_complete()
 }
 
@@ -124,7 +147,7 @@ pub fn persist_signed(
             // expiring. Signed zones MUST always have a new SOA SERIAL
             // compared to the previous version of the signed zone.
 
-            let complete_diff = (loaded_diff.clone(), Some(signed_diff.clone()));
+            let complete_diff = (loaded_diff.clone(), signed_diff.clone());
             state.storage.diffs.push(complete_diff);
             trace!(
                 "Stored IXFR diff for SOA serial {} -> {}",
@@ -133,6 +156,36 @@ pub fn persist_signed(
             );
         }
     }
+
+    // Store the signed diff in-memory for serving IXFR out.
+    //
+    // Only store a diff if the SOA from the previous version of the signed
+    // zone was removed and a new one added, otherwise this is not a diff to a
+    // previous version of the zone but actually a snapshot of the zone after
+    // having been signed for the first time.
+    let loaded_diff = persister.loaded_diff();
+    let signed_diff = persister.signed_diff();
+
+    if signed_diff.removed_soa.is_some() && signed_diff.removed_soa != signed_diff.added_soa {
+        let mut state = zone.state.lock().unwrap();
+
+        // Store anything that changed when the zone was re-loaded, i.e.
+        // unsigned zone content changes. Note that the SOA SERIAL is not
+        // required to change unless using 'keep' policy and so we should not
+        // require the SOA to have been removed and a new one added.
+
+        // Store anything that changed when the zone was re-signed, i.e.
+        // changes DNSSEC RRs that can be caused by unsigned content changes
+        // or changing from NSEC <-> NSEC3 or using a new key to sign with or
+        // just regenerating signatures to avoid them expiring. Signed zones
+        // MUST always have a new SOA SERIAL compared to the previous version
+        // of the signed zone.
+
+        let loaded_diff = loaded_diff.cloned().unwrap_or(DiffData::new().into());
+        let complete_diff = (loaded_diff, signed_diff.clone());
+        state.storage.diffs.push(complete_diff);
+    }
+
     persister.mark_complete()
 }
 

@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use camino::Utf8Path;
 use domain::base::{Rtype, Serial, Ttl};
@@ -262,8 +263,11 @@ pub struct KeyManagerPolicySpec {
     /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
     default_ttl: Ttl,
 
-    /// Automatically remove keys that are no long in use.
+    /// Automatically remove keys that are no longer in use.
     auto_remove: bool,
+
+    /// Remove old keys after this amount of time.
+    auto_remove_delay: u64,
 
     /// Nameservers to check for RRSIG propagation during a key roll.
     publication_nameservers: Vec<NameserverCommsSpec>,
@@ -294,6 +298,7 @@ impl KeyManagerPolicySpec {
             ds_algorithm: self.ds_algorithm,
             default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
+            auto_remove_delay: Duration::from_secs(self.auto_remove_delay),
             publication_nameservers: self
                 .publication_nameservers
                 .into_iter()
@@ -324,6 +329,7 @@ impl KeyManagerPolicySpec {
             ds_algorithm: policy.ds_algorithm.clone(),
             default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
+            auto_remove_delay: policy.auto_remove_delay.as_secs(),
             publication_nameservers: policy
                 .publication_nameservers
                 .iter()

@@ -34,7 +34,7 @@ pub struct LoadedReviewServer {
 impl LoadedReviewServer {
     /// Construct a new [`LoadedReviewServer`].
     pub fn new() -> Self {
-        let (service, handle) = ZoneService::new();
+        let (service, handle) = ZoneService::new(service::ServiceMode::LoadedReview);
         Self { service, handle }
     }
 
@@ -123,7 +123,7 @@ pub struct SignedReviewServer {
 impl SignedReviewServer {
     /// Construct a new [`SignedReviewServer`].
     pub fn new() -> Self {
-        let (service, handle) = ZoneService::new();
+        let (service, handle) = ZoneService::new(service::ServiceMode::SignedReview);
         Self { service, handle }
     }
 
@@ -212,7 +212,7 @@ pub struct PublicationServer {
 impl PublicationServer {
     /// Construct a new [`PublicationServer`].
     pub fn new() -> Self {
-        let (service, handle) = ZoneService::new();
+        let (service, handle) = ZoneService::new(service::ServiceMode::Publication);
         Self { service, handle }
     }
 

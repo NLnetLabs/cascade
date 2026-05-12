@@ -8,8 +8,8 @@ use std::{
 };
 
 use cascade_zonedata::{
-    LoadedZonePatcher, LoadedZoneRestorer, RegularRecord, SignedZonePatcher, SignedZoneRestorer,
-    SoaRecord,
+    DiffData, LoadedZonePatcher, LoadedZoneRestorer, RegularRecord, SignedZonePatcher,
+    SignedZoneRestorer, SoaRecord,
 };
 use domain::{
     new::{
@@ -100,7 +100,10 @@ pub fn restore_loaded(
                 if let Some(diff) = restorer.take_diff() {
                     // Store the loaded diff to be used as part of serving an IXFR.
                     let mut state = zone.state.lock().unwrap();
-                    state.storage.diffs.push((diff.into(), None));
+                    state
+                        .storage
+                        .diffs
+                        .push((diff.into(), DiffData::new().into()));
 
                     trace!(
                         "Stored IXFR loaded diff for SOA serial {} from file '{loaded_source}': serial {start_serial} -> {end_serial}",
@@ -215,10 +218,10 @@ pub fn restore_signed(
 
                     // Insert the signed diff alongside the loaded diff, unless the
                     // signed diff already unexpectedly exists.
-                    if diffs.1.is_some() {
+                    if !diffs.1.is_empty() {
                         return Err(io::Error::other(format!("Signed diff {i} already exists")));
                     } else {
-                        diffs.1 = Some(diff.into());
+                        diffs.1 = diff.into();
                     }
 
                     trace!(

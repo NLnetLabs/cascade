@@ -120,6 +120,23 @@ impl std::fmt::Display for ZoneOverrideError {
     }
 }
 
+//----------- ZoneOverride -----------------------------------------------------
+
+/// The result of a `zone maintenance start/stop` command.
+pub type ZoneMaintenanceModeResult = Result<ZoneMaintenanceModeOutput, ZoneMaintenanceModeError>;
+
+/// The output of a `zone maintenance start/stop` command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneMaintenanceModeOutput {
+    pub zone: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneMaintenanceModeError {
+    NoSuchZone,
+    AlreadyInThatState,
+}
+
 //----------- ChangeLogging ----------------------------------------------------
 
 /// Change how Cascade logs information.
@@ -428,6 +445,7 @@ pub struct ZoneStatus {
     pub policy: String,
     pub last_published: Option<LastPublishedZone>,
     pub progress: Progress,
+    pub maintenance_mode: bool,
     pub keys: Vec<KeyInfo>,
     pub key_status: String,
     pub error: Option<String>,

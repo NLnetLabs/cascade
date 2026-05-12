@@ -366,11 +366,7 @@ impl ZoneSigner {
             SignerSerialPolicy::Counter => {
                 // Always increment the serial number, ignore the serial
                 // number in the unsigned zone.
-                let previous_serial = if let Some(serial) = previous_serial {
-                    serial
-                } else {
-                    Serial::from(0)
-                };
+                let previous_serial = previous_serial.unwrap_or(Serial::from(0));
                 previous_serial.add(1)
             }
             SignerSerialPolicy::UnixTime => {
@@ -726,7 +722,6 @@ impl ZoneSigner {
 
             min_expiration.add(u32::from(sig.expiration).into());
         }
-
         local_state.next_min_expiration = saved_min_expiration.get();
 
         let total_time = start.elapsed();

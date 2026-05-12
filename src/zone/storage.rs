@@ -927,7 +927,13 @@ pub struct StorageState {
 
     /// Diffs from one serial to another. Each diff consists of changes in the
     /// loaded part and changes in the signed part.
-    pub diffs: Vec<(Arc<DiffData>, Option<Arc<DiffData>>)>,
+    ///
+    /// A loaded diff is not available if the zone was re-signed due to
+    /// changes in signing key or to refresh expiring signatures.
+    ///
+    /// A signed diff is not available if the zone has been re-loaded and has
+    /// not yet been signed, e.g. is held at review or signing is in-progress.
+    pub diffs: Vec<(Arc<DiffData>, Arc<DiffData>)>,
 
     /// Ongoing background tasks.
     ///
@@ -953,11 +959,22 @@ impl StorageState {
         }
     }
 
+    /// Is this zone currently being restored from persistent storage?
     pub fn is_restoring(&self) -> bool {
         matches!(
             self.machine,
             ZoneDataStorage::RestoringLoaded(_) | ZoneDataStorage::RestoringSigned(_)
         )
+    }
+
+    /// Get the current loaded diff, if any.
+    pub fn current_loaded_diff(&self) -> Option<Arc<DiffData>> {
+        self.machine.loaded_diff()
+    }
+
+    /// Get the current signed diff, if any.
+    pub fn current_signed_diff(&self) -> Option<Arc<DiffData>> {
+        self.machine.signed_diff()
     }
 }
 
