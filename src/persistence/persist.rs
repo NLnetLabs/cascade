@@ -181,9 +181,10 @@ pub fn persist_signed(
         // MUST always have a new SOA SERIAL compared to the previous version
         // of the signed zone.
 
+        let partial_diff = state.storage.diffs.last_mut().unwrap();
         let loaded_diff = loaded_diff.cloned().unwrap_or(DiffData::new().into());
         let complete_diff = (loaded_diff, signed_diff.clone());
-        state.storage.diffs.push(complete_diff);
+        *partial_diff = complete_diff;
     }
 
     persister.mark_complete()
