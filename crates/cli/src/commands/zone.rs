@@ -559,7 +559,7 @@ impl Zone {
                                 "Cascade will no longer automatically start new loading and signing operations"
                             );
                             println!(
-                                "Run {}`cascade zone maintenance stop {name}`{} to continue automatic operation",
+                                "Run {}`cascade zone maintenance stop {name}`{} to resume automatic operation",
                                 ansi::BLUE,
                                 ansi::RESET,
                             );
