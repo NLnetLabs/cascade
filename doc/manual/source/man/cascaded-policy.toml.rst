@@ -170,7 +170,7 @@ loaded by Cascade.
 
    What to do when a zone is rejected by review.
   
-   This field can only be specified if ``mode``` is either ``"manual"`` or
+   This field can only be specified if ``mode`` is either ``"manual"`` or
    ``"script"`` and can have one of the following values:
   
     - ``"discard"`` will discard the rejected zone and go back to an idle state
