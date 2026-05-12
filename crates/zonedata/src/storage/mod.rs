@@ -7,7 +7,9 @@
 
 use std::sync::Arc;
 
-use crate::{LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data};
+use crate::{
+    DiffData, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data,
+};
 
 mod states;
 pub use states::{
@@ -133,6 +135,29 @@ impl ZoneDataStorage {
             ZoneDataStorage::CleaningSigned(_) => "CleaningSigned",
             ZoneDataStorage::Switching(_) => "Switching",
             ZoneDataStorage::Poisoned => "Poisoned",
+        }
+    }
+
+    /// Get the current loaded diff, if any.
+    pub fn loaded_diff(&self) -> Option<Arc<DiffData>> {
+        match self {
+            ZoneDataStorage::ReviewLoadedPending(s) => Some(s.loaded_diff.clone()),
+            ZoneDataStorage::ReviewingLoaded(s) => Some(s.loaded_diff.clone()),
+            ZoneDataStorage::PersistingLoaded(s) => Some(s.loaded_diff.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the current signed diff, if any.
+    pub fn signed_diff(&self) -> Option<Arc<DiffData>> {
+        match self {
+            ZoneDataStorage::ReviewSignedPending(s) => Some(s.signed_diff.clone()),
+            ZoneDataStorage::ReviewingSigned(s) => Some(s.signed_diff.clone()),
+            ZoneDataStorage::PersistingSigned(_) => {
+                // PersistingSigned has no diff unlike PersistingLoaded
+                None
+            }
+            _ => None,
         }
     }
 }
