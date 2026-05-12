@@ -537,16 +537,16 @@ mod compat {
                 let removed_soa = soa_source_diff.removed_soa.as_ref().unwrap();
                 let added_soa = soa_source_diff.added_soa.as_ref().unwrap();
 
-                // Stop iterating if we encounter the same SOA serial
-                // again which happens if the loaded zone remained
+                // Skip a diff if we encounter the same SOA serial
+                // again which can happen if the loaded zone remained
                 // unchanged but incremental signing caused changes in the
                 // signed part only to occur.
                 if viewer.is_loaded_viewer()
                     && let Some(last_removed_soa) = last_removed_soa
                     && removed_soa == last_removed_soa
                 {
-                    trace!("Stopping at last unique loaded diff #{abs_idx}.");
-                    break;
+                    trace!("Skipping unchanged loaded diff #{abs_idx}.");
+                    continue;
                 }
 
                 // Ensure that the sequence of diffs has no SOA serial
