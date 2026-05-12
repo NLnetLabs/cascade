@@ -412,24 +412,26 @@ impl HttpServer {
                 .loader
                 .review
                 .servers
-                .first()
-                .map(|v| v.addr());
+                .iter()
+                .map(|s| s.addr())
+                .collect();
             signed_review_addr = state
                 .center
                 .config
                 .signer
                 .review
                 .servers
-                .first()
-                .map(|v| v.addr());
+                .iter()
+                .map(|s| s.addr())
+                .collect();
             publish_addr = state
                 .center
                 .config
                 .server
                 .servers
-                .first()
-                .expect("Server must have a publish address")
-                .addr();
+                .iter()
+                .map(|s| s.addr())
+                .collect();
 
             unsigned_review_status = zone_state
                 .find_last_event(HistoricalEventType::UnsignedZoneReview, None)
