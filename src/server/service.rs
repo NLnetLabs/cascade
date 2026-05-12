@@ -39,6 +39,16 @@ pub struct ZoneService<V> {
     // of the limitations of 'domain::net::server'; that architecture should be
     // gradually replaced locally for better flexibility and efficiency.
     state: Arc<std::sync::RwLock<ZoneServiceState<V>>>,
+
+    /// What mode of operation is intended?
+    mode: ServiceMode,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum ServiceMode {
+    LoadedReview,
+    SignedReview,
+    Publication,
 }
 
 impl<V> ZoneService<V> {
@@ -46,10 +56,11 @@ impl<V> ZoneService<V> {
     ///
     /// In addition to the service, a [`ZoneServiceHandle`] is returned through
     /// which the service can be interacted with.
-    pub fn new() -> (ZoneService<V>, ZoneServiceHandle<V>) {
+    pub fn new(server_mode: ServiceMode) -> (ZoneService<V>, ZoneServiceHandle<V>) {
         let state = Arc::new(std::sync::RwLock::default());
         let service = ZoneService {
             state: state.clone(),
+            mode: server_mode,
         };
         let handle = ZoneServiceHandle { state };
         (service, handle)
@@ -60,6 +71,7 @@ impl<V> Clone for ZoneService<V> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
+            mode: self.mode,
         }
     }
 }
@@ -88,7 +100,10 @@ mod compat {
     use futures::Stream;
     use tracing::{Level, debug, trace, warn};
 
-    use crate::server::request::{RequestKind, ZoneRequestKind};
+    use crate::server::{
+        request::{RequestKind, ZoneRequestKind},
+        service::ServiceMode,
+    };
 
     use super::{ServedZone, Viewer, ZoneService};
 
@@ -132,7 +147,7 @@ mod compat {
                         return Box::pin(std::future::ready(error(old_request.message(), rcode)));
                     };
 
-                    if !is_permitted(zone, &old_request) {
+                    if self.mode == ServiceMode::Publication && !is_permitted(zone, &old_request) {
                         return Box::pin(std::future::ready(error(
                             old_request.message(),
                             Rcode::REFUSED,
@@ -153,7 +168,8 @@ mod compat {
                         }
 
                         ZoneRequestKind::Ixfr { known_soa } => {
-                            Box::pin(ixfr(old_request, known_soa.rdata, zone.clone())) as Response
+                            Box::pin(ixfr(old_request, known_soa.rdata, zone.clone(), self.mode))
+                                as Response
                         }
                     }
                 }
@@ -352,6 +368,7 @@ mod compat {
         request: Request<Vec<u8>, Option<Arc<tsig::Key>>>,
         client_soa: Soa<Box<Name>>,
         zone: ServedZone<V>,
+        mode: ServiceMode,
     ) -> ResponseStream {
         // Save a cheap clone of the zone to avoid a borrow checker error.
         let zone_clone = zone.clone();
@@ -468,7 +485,7 @@ mod compat {
         // SOA serial.
         let start_idx = {
             diffs.iter().position(|(loaded_diff, signed_diff)| {
-                let d = if viewer.is_loaded_viewer() {
+                let d = if mode == ServiceMode::LoadedReview {
                     loaded_diff
                 } else {
                     signed_diff
@@ -522,7 +539,7 @@ mod compat {
                 let abs_idx = start_idx + i;
 
                 // Select the appropriate diff as the SOA source to use.
-                let soa_source_diff = if viewer.is_loaded_viewer() {
+                let soa_source_diff = if mode == ServiceMode::LoadedReview {
                     loaded_diff
                 } else {
                     signed_diff
@@ -550,7 +567,7 @@ mod compat {
                 // again which can happen if the loaded zone remained
                 // unchanged but incremental signing caused changes in the
                 // signed part only to occur.
-                if viewer.is_loaded_viewer()
+                if mode == ServiceMode::LoadedReview
                     && let Some(last_removed_soa) = last_removed_soa
                     && removed_soa == last_removed_soa
                 {
@@ -571,7 +588,7 @@ mod compat {
 
                 trace!("Serving diff #{abs_idx} for loaded review server IXFR out",);
 
-                if viewer.is_loaded_viewer() {
+                if mode == ServiceMode::LoadedReview {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
                     rrs.extend(soa_source_diff.removed_records.clone());
@@ -682,21 +699,6 @@ trait Viewer {
     /// Whether the zone instance is empty.
     fn is_empty(&self) -> bool;
 
-    /// Whether the records being viewed are at the loaded stage or the signed
-    /// stage/publication stage.
-    ///
-    /// IXFR out needs to know this to know whether or not to check the loaded
-    /// SOA or the signed SOA in a diff against the client SOA. The Service
-    /// impl that servers the IXFR out only has a Viewer trait to work with,
-    /// it doesn't know whether it is being used by a PublicationServer or
-    /// SignedReviewServer or LoadedReviewServer.
-    ///
-    /// The name is a bit verbose to distinguish between the presence of
-    /// signed records vs the stage at which the viewer sees the records
-    /// in Cascade, because in passthrough mode the loaded zone could also
-    /// contain DNSSEC records, i.e. be a "signed" zone).
-    fn is_loaded_viewer(&self) -> bool;
-
     /// Return the SOA record.
     fn soa(&self) -> &SoaRecord;
 
@@ -707,10 +709,6 @@ trait Viewer {
 impl Viewer for LoadedZoneReviewer {
     fn is_empty(&self) -> bool {
         self.read().is_none()
-    }
-
-    fn is_loaded_viewer(&self) -> bool {
-        true
     }
 
     fn soa(&self) -> &SoaRecord {
@@ -725,10 +723,6 @@ impl Viewer for LoadedZoneReviewer {
 impl Viewer for SignedZoneReviewer {
     fn is_empty(&self) -> bool {
         self.read().is_none()
-    }
-
-    fn is_loaded_viewer(&self) -> bool {
-        false
     }
 
     fn soa(&self) -> &SoaRecord {
@@ -746,10 +740,6 @@ impl Viewer for SignedZoneReviewer {
 impl Viewer for ZoneViewer {
     fn is_empty(&self) -> bool {
         self.read().is_none()
-    }
-
-    fn is_loaded_viewer(&self) -> bool {
-        false
     }
 
     fn soa(&self) -> &SoaRecord {
