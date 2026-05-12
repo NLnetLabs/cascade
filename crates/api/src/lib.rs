@@ -762,6 +762,9 @@ impl fmt::Display for ZoneReloadError {
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
+    pub loaded_review_addrs: Vec<SocketAddr>,
+    pub signed_review_addrs: Vec<SocketAddr>,
+    pub server_addrs: Vec<SocketAddr>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
