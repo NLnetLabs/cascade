@@ -86,7 +86,7 @@ mod compat {
         tsig,
     };
     use futures::Stream;
-    use tracing::{Level, debug, trace};
+    use tracing::{Level, debug, trace, warn};
 
     use crate::server::request::{RequestKind, ZoneRequestKind};
 
@@ -270,7 +270,12 @@ mod compat {
 
         if viewer.is_empty() {
             // The zone is known to exist, but we don't have any data for it.
-            return error(request.message(), Rcode::NOTAUTH);
+            warn!(
+                "Returning SERVFAIL for AXFR request from client '{}' for zone '{}': zone is empty",
+                request.client_addr().ip(),
+                zone.handle.name,
+            );
+            return error(request.message(), Rcode::SERVFAIL);
         }
 
         // NOTE: The following code is a bit tricky. Ideally, we would elide
@@ -357,7 +362,12 @@ mod compat {
 
         if viewer.is_empty() {
             // The zone is known to exist, but we don't have any data for it.
-            return error(request.message(), Rcode::NOTAUTH);
+            warn!(
+                "Returning SERVFAIL for AXFR request from client '{}' for zone '{}': zone is empty",
+                request.client_addr().ip(),
+                zone.handle.name,
+            );
+            return error(request.message(), Rcode::SERVFAIL);
         }
 
         // UDP is unlikely to work for any but the smallest of diffs,
