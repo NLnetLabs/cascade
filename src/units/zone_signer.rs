@@ -1,5 +1,5 @@
 use std::cmp::{Ordering, min};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::env::{self, VarError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -7,6 +7,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
+use domain::base::Rtype;
+use domain::base::Serial;
 use domain::base::iana::SecurityAlgorithm;
 use domain::base::name::FlattenInto;
 use domain::base::{CanonicalOrd, Name, Record};
@@ -23,7 +25,7 @@ use domain::dnssec::sign::keys::SigningKey;
 use domain::dnssec::sign::keys::keyset::{KeySet, KeyType, UnixTime};
 use domain::dnssec::sign::records::RecordsIter;
 use domain::dnssec::sign::signatures::rrsigs::{GenerateRrsigConfig, sign_sorted_zone_records};
-use domain::new::base::{RType, Serial};
+use domain::new::base::{RType, Serial as NewBaseSerial};
 use domain::new::rdata::RecordData;
 use domain::rdata::dnssec::Timestamp;
 use domain::rdata::{Dnskey, Nsec3param, ZoneRecordData};
@@ -50,7 +52,7 @@ use crate::api::{
 use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
-use crate::signer::incremental::sign_incrementally;
+use crate::signer::incremental::{LocalState, sign_incrementally};
 use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
@@ -60,7 +62,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, HistoricalEventType, Zone, ZoneHandle};
+use crate::zone::{HistoricalEvent, Zone, ZoneHandle};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -329,16 +331,15 @@ impl ZoneSigner {
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
         let start = Instant::now();
 
-        let (last_signed_serial, policy) = {
+        let mut local_state = LocalState::new(zone)?;
+
+        let policy = {
             // Use a block to make sure that the mutex is clearly dropped.
             let zone_state = zone.state.lock().unwrap();
 
-            let last_signed_serial = zone_state
-                .find_last_event(HistoricalEventType::SigningSucceeded, None)
-                .and_then(|item| item.serial)
-                .map(|serial| Serial::from(serial.0));
-            (last_signed_serial, zone_state.policy.clone().unwrap())
+            zone_state.policy.clone().unwrap()
         };
+        let previous_serial = local_state.previous_serial;
 
         //
         // Lookup the zone to sign.
@@ -351,9 +352,10 @@ impl ZoneSigner {
             .expect("a non-empty loaded instance must exist");
         let loaded_serial = loaded.soa().rdata.serial;
 
-        let serial = match policy.signer.serial_policy {
+        let serial: Serial = match policy.signer.serial_policy {
             SignerSerialPolicy::Keep => {
-                if let Some(previous_serial) = last_signed_serial
+                let loaded_serial = Serial::from(Into::<u32>::into(loaded_serial));
+                if let Some(previous_serial) = previous_serial
                     && loaded_serial <= previous_serial
                 {
                     return Err(SignerError::KeepSerialPolicyViolated);
@@ -362,26 +364,17 @@ impl ZoneSigner {
                 loaded_serial
             }
             SignerSerialPolicy::Counter => {
-                // Select the maximum of 'last_signed_serial + 1' and
-                // 'loaded_serial'.
-                //
-                // TODO: This is a partial workaround to help users starting
-                // out with counter mode. For ongoing discussion, see
-                // <https://github.com/NLnetLabs/cascade/issues/495>.
-                let mut serial = loaded_serial;
-                if let Some(previous_serial) = last_signed_serial
-                    && serial <= previous_serial
-                {
-                    serial = previous_serial.inc(1);
-                }
-                serial
+                // Always increment the serial number, ignore the serial
+                // number in the unsigned zone.
+                let previous_serial = previous_serial.unwrap_or(Serial::from(0));
+                previous_serial.add(1)
             }
             SignerSerialPolicy::UnixTime => {
-                let mut serial = Serial::unix_time();
-                if let Some(previous_serial) = last_signed_serial
+                let mut serial = Serial::now();
+                if let Some(previous_serial) = previous_serial
                     && serial <= previous_serial
                 {
-                    serial = previous_serial.inc(1);
+                    serial = previous_serial.add(1);
                 }
 
                 serial
@@ -394,15 +387,17 @@ impl ZoneSigner {
                     * 100;
                 let mut serial: Serial = serial.into();
 
-                if let Some(previous_serial) = last_signed_serial
+                if let Some(previous_serial) = previous_serial
                     && serial <= previous_serial
                 {
-                    serial = previous_serial.inc(1);
+                    serial = previous_serial.add(1);
                 }
 
                 serial
             }
         };
+        local_state.previous_serial = Some(serial);
+        let serial = NewBaseSerial::from(serial.into_int());
         let new_soa = {
             let mut soa = loaded.soa().clone();
             soa.rdata.serial = serial;
@@ -410,7 +405,7 @@ impl ZoneSigner {
         };
 
         info!(
-            "[ZS]: Serials for zone '{zone_name}': last signed={last_signed_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
+            "[ZS]: Serials for zone '{zone_name}': last signed={previous_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
             policy.signer.serial_policy
         );
 
@@ -465,21 +460,15 @@ impl ZoneSigner {
         let state = std::fs::read_to_string(&state_path)
             .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
         let state: KeySetState = serde_json::from_str(&state).unwrap();
-        for dnskey_rr in &state.dnskey_rrset {
-            let mut zonefile = Zonefile::new();
-            zonefile.extend_from_slice(dnskey_rr.as_bytes());
-            zonefile.extend_from_slice(b"\n");
-            if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
-                let record: OldRecord = rec.flatten_into();
-                new_records.push(record.clone().into());
-                records.push(record);
-            }
-        }
 
-        // Also add CDS and CDNSKEY records plus their signatures.
-        for cds_rr in &state.cds_rrset {
+        local_state.apex_remove = state.apex_remove.clone();
+        let mut apex_extra = state.apex_extra.clone();
+        apex_extra.sort();
+        local_state.apex_extra = apex_extra;
+
+        for rr in &state.apex_extra {
             let mut zonefile = Zonefile::new();
-            zonefile.extend_from_slice(cds_rr.as_bytes());
+            zonefile.extend_from_slice(rr.as_bytes());
             zonefile.extend_from_slice(b"\n");
             if let Ok(Some(Entry::Record(rec))) = zonefile.next_entry() {
                 let record: OldRecord = rec.flatten_into();
@@ -503,6 +492,25 @@ impl ZoneSigner {
                 "No signing keys found".to_string(),
             ));
         }
+
+        // Save the current zone signing keys and clear key_roll
+        let mut key_tags = HashSet::new();
+        for v in state.keyset.keys().values() {
+            let signer = match v.keytype() {
+                KeyType::Ksk(_) => false,
+                KeyType::Zsk(key_state) => key_state.signer(),
+                KeyType::Csk(_, key_state) => key_state.signer(),
+                KeyType::Include(_) => false,
+            };
+
+            if !signer {
+                continue;
+            }
+
+            key_tags.insert(v.key_tag());
+        }
+        local_state.key_tags = key_tags;
+        local_state.key_roll = None;
 
         //
         // Sort them into DNSSEC order ready for NSEC(3) generation.
@@ -714,22 +722,7 @@ impl ZoneSigner {
 
             min_expiration.add(u32::from(sig.expiration).into());
         }
-
-        // Save the minimum of the expiration times.
-        {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let mut zone_state = zone.state.lock().unwrap();
-
-            // Save as next_min_expiration. After the signed zone is approved
-            // this value should be move to min_expiration.
-            zone_state.next_min_expiration = saved_min_expiration.get();
-            debug!(
-                "SIGNER: Determined min expiration time: {:?}",
-                zone_state.next_min_expiration
-            );
-
-            zone.mark_dirty(&mut zone_state, center);
-        }
+        local_state.next_min_expiration = saved_min_expiration.get();
 
         let total_time = start.elapsed();
 
@@ -767,6 +760,9 @@ impl ZoneSigner {
             },
             Some(domain::base::Serial(serial.into())),
         );
+
+        local_state.last_signature_refresh = UnixTime::now();
+        local_state.save(center, zone)?;
 
         Ok(())
     }
@@ -949,10 +945,9 @@ pub struct KeySetState {
     /// Domain KeySet state.
     pub keyset: KeySet,
 
-    pub dnskey_rrset: Vec<String>,
     pub ds_rrset: Vec<String>,
-    pub cds_rrset: Vec<String>,
-    pub ns_rrset: Vec<String>,
+    pub apex_remove: HashSet<Rtype>,
+    pub apex_extra: Vec<String>,
 }
 
 pub struct MinTimestamp(Mutex<Option<Timestamp>>);
@@ -1041,7 +1036,7 @@ pub struct InProgressStatus {
 }
 
 impl InProgressStatus {
-    fn new(requested_status: RequestedStatus, zone_serial: Serial) -> Self {
+    fn new(requested_status: RequestedStatus, zone_serial: NewBaseSerial) -> Self {
         Self {
             requested_at: requested_status.requested_at,
             zone_serial: domain::base::Serial(zone_serial.into()),
@@ -1125,7 +1120,7 @@ impl ZoneSigningStatus {
         Self::Requested(RequestedStatus::new())
     }
 
-    fn start(&mut self, zone_serial: Serial) -> Result<(), ()> {
+    fn start(&mut self, zone_serial: NewBaseSerial) -> Result<(), ()> {
         match *self {
             ZoneSigningStatus::Requested(s) => {
                 *self = Self::InProgress(InProgressStatus::new(s, zone_serial));
