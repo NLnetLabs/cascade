@@ -130,6 +130,22 @@ pub enum ZoneCommand {
         /// The zone to report the history of.
         zone: ZoneName,
     },
+
+    /// Resume a paused zone pipeline
+    #[command(name = "maintenance")]
+    Maintenance {
+        /// Enable or disable maintenance mode.
+        #[command(subcommand)]
+        maintenance: Maintenance,
+    },
+}
+
+#[derive(Clone, Debug, clap::Subcommand)]
+pub enum Maintenance {
+    /// Enable maintenance mode; preventing new loading and signing operations.
+    Enable { zone: ZoneName },
+    /// Disable maintenance mode and resume normal operation.
+    Disable { zone: ZoneName },
 }
 
 /// The stage to review a zone at.
@@ -522,6 +538,54 @@ impl Zone {
                     }
                 }
             }
+            ZoneCommand::Maintenance { maintenance } => {
+                let (name, state) = match &maintenance {
+                    Maintenance::Enable { zone } => (zone, "enable"),
+                    Maintenance::Disable { zone } => (zone, "disable"),
+                };
+                let url = format!("/zone/{name}/maintenance/{state}");
+                let result: ZoneMaintenanceModeResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(_) => {
+                        if let Maintenance::Enable { .. } = maintenance {
+                            println!(
+                                "Maintenance mode for zone `{name}` is now {}enabled{}",
+                                ansi::BOLD,
+                                ansi::RESET
+                            );
+                            println!("");
+                            println!(
+                                "Cascade will no longer automatically start new loading and signing operations"
+                            );
+                            println!(
+                                "Run {}`cascade zone maintenance stop {name}`{} to resume automatic operation",
+                                ansi::BLUE,
+                                ansi::RESET,
+                            );
+                        } else {
+                            println!(
+                                "Maintenance mode for zone `{name}` is now {}disabled{}",
+                                ansi::BOLD,
+                                ansi::RESET
+                            );
+                            println!("");
+                            println!(
+                                "Cascade will automatically start new loading and signing operations when appropriate."
+                            );
+                        }
+                        Ok(())
+                    }
+                    Err(err) => match err {
+                        ZoneMaintenanceModeError::NoSuchZone => {
+                            Err(format!("zone `{name}` does not exist"))
+                        }
+                        ZoneMaintenanceModeError::AlreadyInThatState => Err(format!(
+                            "maintenance mode for zone `{name}` was already {state}d"
+                        )),
+                    },
+                }
+            }
         }
     }
 
@@ -589,6 +653,22 @@ impl Zone {
             println!("  {}ERROR: {error}{}", ansi::RED, ansi::RESET);
             println!(
                 "  Run {}`cascade zone history {}`{} for more information.",
+                ansi::BLUE,
+                zone.name,
+                ansi::RESET
+            );
+        }
+
+        if zone.maintenance_mode {
+            println!("");
+            println!(
+                "{}WARNING: This zone is in maintenance mode{}",
+                ansi::YELLOW,
+                ansi::RESET
+            );
+            println!("  Cascade will not automatically start new loading and signing operations");
+            println!(
+                "  Run {}`cascade zone maintenance disable {}`{} to resume normal operation",
                 ansi::BLUE,
                 zone.name,
                 ansi::RESET

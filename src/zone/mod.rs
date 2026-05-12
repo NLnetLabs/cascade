@@ -185,6 +185,12 @@ pub struct ZoneState {
     /// The policy (version) used by the zone.
     pub policy: Option<Arc<PolicyVersion>>,
 
+    /// Whether the zone is in maintenance mode
+    ///
+    /// Maintenance mode means that Cascade won't start loading and signing
+    /// operations automatically.
+    pub maintenance_mode: bool,
+
     /// Metadata related to the last published zone version.
     pub last_published: Option<LastPublished>,
 
@@ -297,6 +303,7 @@ impl Default for ZoneState {
         Self {
             machine: Default::default(),
             policy: Default::default(),
+            maintenance_mode: Default::default(),
             last_published: Default::default(),
             enqueued_save: Default::default(),
             min_expiration: Default::default(),
