@@ -96,6 +96,7 @@ csk.auto\-done = true
 algorithm.auto\-done = true
 ds\-algorithm = \(dqSHA256\(dq
 auto\-remove = true
+auto\-remove\-delay = \(dq7d\(dq
 publication\-nameservers = []
 
 [key\-manager.records]
@@ -371,6 +372,15 @@ Whether to automatically remove expired keys.
 .sp
 If this option is set, expired keys will be removed automatically (by
 deleting the files for on\-disk keys or removing it from the HSM).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B auto\-remove\-delay = \(dq7d\(dq
+Delay after which expired keys will be removed when auto\-remove is true.
+.sp
+An integer value is interpreted as seconds. A string is interpreted as
+time string with a number followed by a unit (i.e. \(dqs\(dq, \(dqm\(dq, \(dqh\(dq, \(dqd\(dq,
+or \(dqw\(dq).
 .UNINDENT
 .INDENT 0.0
 .TP

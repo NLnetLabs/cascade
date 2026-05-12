@@ -167,9 +167,14 @@ ds-algorithm = "SHA-256"
 #
 # If this is set, expired keys will be removed automatically (by deleting the
 # files for on-disk keys or removing it from the HSM).
-#
-# TODO: Perhaps support removing keys after a certain delay?
 auto-remove = true
+
+# Delay after which expired keys will be removed when auto-remove is true.
+#
+# An integer value is interpreted as seconds. A string is interpreted as
+# time string with a number followed by a unit (i.e. "s", "m", "h", "d",
+# or "w").
+auto-remove-delay = "7d"
 
 # The set of nameservers to use when checking for RRSIG propagation during a
 # key roll.
