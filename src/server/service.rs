@@ -102,8 +102,7 @@ mod compat {
 
         fn call(&self, old_request: Request<Vec<u8>, Option<Arc<tsig::Key>>>) -> Response {
             // Parse the request.
-            let slice = old_request.message().as_slice();
-            let message = slice;
+            let message = old_request.message().as_slice();
             let message = domain::new::base::Message::parse_bytes_by_ref(message)
                 .expect("'message' was already checked to be a valid DNS message");
             let request = match crate::server::request::parse(message) {
