@@ -452,13 +452,13 @@ pub struct ZoneStatus {
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
-    pub unsigned_review_addr: Option<SocketAddr>,
+    pub unsigned_review_addr: Vec<SocketAddr>,
     pub signed_serial: Option<Serial>,
     pub signed_review_status: Option<TimestampedZoneReviewStatus>,
-    pub signed_review_addr: Option<SocketAddr>,
+    pub signed_review_addr: Vec<SocketAddr>,
     pub signing_report: Option<SigningReport>,
     pub published_serial: Option<Serial>,
-    pub publish_addr: SocketAddr,
+    pub publish_addr: Vec<SocketAddr>,
     pub halted_reason: Option<String>,
 }
 
@@ -762,6 +762,9 @@ impl fmt::Display for ZoneReloadError {
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
+    pub loaded_review_addrs: Vec<SocketAddr>,
+    pub signed_review_addrs: Vec<SocketAddr>,
+    pub server_addrs: Vec<SocketAddr>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
