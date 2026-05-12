@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
+use std::time::Duration;
 use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
@@ -314,8 +315,11 @@ pub struct KeyManagerPolicy {
     /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
     pub default_ttl: Ttl,
 
-    /// Automatically remove keys that are no long in use.
+    /// Automatically remove keys that are no longer in use.
     pub auto_remove: bool,
+
+    /// Remove keys after this amount of time.
+    pub auto_remove_delay: Duration,
 
     /// Nameservers to check for RRSIG propagation during a key roll.
     pub publication_nameservers: Vec<NameserverCommsPolicy>,

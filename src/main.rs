@@ -123,6 +123,18 @@ fn main() -> ExitCode {
                     (name, policy)
                 }));
 
+            // Update policy.zones
+            for zone in &state.zones {
+                let zone_state = zone.0.state.lock().expect("zone state lock should work");
+                if let Some(ref policy) = zone_state.policy {
+                    let pol = state
+                        .policies
+                        .get_mut(&policy.name)
+                        .expect("zone policy should exist");
+                    pol.zones.insert(zone.0.name.clone());
+                }
+            }
+
             state
         }
 

@@ -1,5 +1,6 @@
 //! Version 1 of the policy file.
 
+use std::time::Duration;
 use std::{
     fmt::{self, Display},
     net::{IpAddr, SocketAddr},
@@ -55,6 +56,9 @@ const SIGNATURE_REFRESH_INTERVAL: u32 = 12 * 3600;
 // the DNSKEY RRset contains an extra KSK and how disruptive it is to
 // sign more records.
 const KEY_ROLL_TIME: u32 = 24 * 3600;
+
+// When auto remove is enabled, remove old keys after one week.
+const AUTO_REMOVE_DELAY: u32 = 7 * 24 * 3600;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -149,8 +153,11 @@ pub struct KeyManagerSpec {
     /// The DS hash algorithm.
     pub ds_algorithm: DsAlgorithm,
 
-    /// Automatically remove keys that are no long in use.
+    /// Automatically remove keys that are no longer in use.
     pub auto_remove: bool,
+
+    /// How long to wait before removing old keys.
+    pub auto_remove_delay: TimeSpan,
 
     /// How special DNS records are managed.
     pub records: KeyManagerRecordsSpec,
@@ -259,6 +266,7 @@ impl KeyManagerSpec {
             default_ttl: self.records.ttl.as_ttl(),
             ds_algorithm: self.ds_algorithm,
             auto_remove: self.auto_remove,
+            auto_remove_delay: Duration::from_secs(self.auto_remove_delay.as_secs().into()),
             publication_nameservers: self
                 .publication_nameservers
                 .into_iter()
@@ -295,6 +303,7 @@ impl KeyManagerSpec {
 
             ds_algorithm: policy.ds_algorithm.clone(),
             auto_remove: policy.auto_remove,
+            auto_remove_delay: TimeSpan::from_secs(policy.auto_remove_delay.as_secs() as u32),
             publication_nameservers: policy
                 .publication_nameservers
                 .iter()
@@ -348,6 +357,7 @@ impl Default for KeyManagerSpec {
             algorithm: Default::default(),
             ds_algorithm: DsAlgorithm::Sha256,
             auto_remove: true,
+            auto_remove_delay: TimeSpan::from_secs(AUTO_REMOVE_DELAY),
             publication_nameservers: Default::default(),
             records: Default::default(),
             generation: Default::default(),
