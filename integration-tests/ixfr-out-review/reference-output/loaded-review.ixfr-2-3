@@ -1,6 +1,0 @@
-example.test.         3600    IN      SOA     ns.example.test. mail.example.test. 3 60 60 3600 5
-example.test.         3600    IN      SOA     ns.example.test. mail.example.test. 2 60 60 3600 5
-JAIN-BB.example.test. 3600    IN      A       133.69.136.4
-example.test.         3600    IN      SOA     ns.example.test. mail.example.test. 3 60 60 3600 5
-JAIN-BB.example.test. 3600    IN      A       133.69.136.3
-example.test.         3600    IN      SOA     ns.example.test. mail.example.test. 3 60 60 3600 5
