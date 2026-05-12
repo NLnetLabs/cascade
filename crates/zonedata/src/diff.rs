@@ -19,7 +19,7 @@ use crate::{RegularRecord, SoaRecord};
 /// [`DiffData`] can be used to store the data for an old zone (where it is the
 /// base, and the next newer zone is the target). This is perfect for serving
 /// IXFR requests.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct DiffData {
     /// The SOA record to remove.
     ///
