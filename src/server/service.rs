@@ -425,7 +425,29 @@ mod compat {
             return soa(request.message(), &*viewer);
         }
 
-        let diffs = zone.handle.state.lock().unwrap().storage.diffs.clone();
+        let diffs = {
+            let zone_state = zone.handle.state.lock().unwrap();
+
+            match mode {
+                ServiceMode::LoadedReview => {
+                    let mut diffs = Vec::with_capacity(1);
+                    if let Some(loaded_diff) = zone_state.storage.current_loaded_diff() {
+                        let empty_signed_diff = Arc::new(DiffData::new());
+                        diffs.push((loaded_diff, empty_signed_diff));
+                    }
+                    diffs
+                }
+                ServiceMode::SignedReview => {
+                    let mut diffs = Vec::with_capacity(1);
+                    if let Some(signed_diff) = zone_state.storage.current_signed_diff() {
+                        let empty_loaded_diff = Arc::new(DiffData::new());
+                        diffs.push((empty_loaded_diff, signed_diff));
+                    }
+                    diffs
+                }
+                ServiceMode::Publication => zone_state.storage.diffs.clone(),
+            }
+        };
 
         // TODO: Add something like the Bind `max-ixfr-ratio` option that
         // "sets the size threshold (expressed as a percentage of the size of
