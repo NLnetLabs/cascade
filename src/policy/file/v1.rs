@@ -57,7 +57,7 @@ const SIGNATURE_REFRESH_INTERVAL: u32 = 12 * 3600;
 // sign more records.
 const KEY_ROLL_TIME: u32 = 24 * 3600;
 
-// When auto remove is enable, remove old keys after one week.
+// When auto remove is enabled, remove old keys after one week.
 const AUTO_REMOVE_DELAY: u32 = 7 * 24 * 3600;
 
 //----------- Spec -------------------------------------------------------------
