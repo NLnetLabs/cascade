@@ -31,7 +31,7 @@ runs:
         log-level: ${{ inputs.log-level }}
         fake-time: 1600000000
   
-    - name: Determine the downstrem secondary zone config to use
+    - name: Determine the downstream secondary zone config to use
       id: set-vars
       run: |
         if [[ "${{ inputs.with-tsig }}" == "true" ]]; then

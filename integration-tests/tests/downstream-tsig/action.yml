@@ -44,7 +44,7 @@ runs:
       with:
         log-level: ${{ inputs.log-level }}
 
-    - name: Determine the downstrem secondary zone config to use
+    - name: Determine the downstream secondary zone config to use
       id: set-zone-name
       run: |
         if [[ ${{ inputs.downstream-expects-tsig }} -eq 0 && ${{ inputs.downstream-uses-tsig }} -eq 0 ]]; then
