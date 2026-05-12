@@ -958,6 +958,16 @@ impl StorageState {
             background_tasks: Default::default(),
         }
     }
+
+    /// Get the current loaded diff, if any.
+    pub fn current_loaded_diff(&self) -> Option<Arc<DiffData>> {
+        self.machine.loaded_diff()
+    }
+
+    /// Get the current signed diff, if any.
+    pub fn current_signed_diff(&self) -> Option<Arc<DiffData>> {
+        self.machine.signed_diff()
+    }
 }
 
 impl Default for StorageState {
