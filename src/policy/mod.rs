@@ -227,6 +227,79 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
             .get(tsig_name)
             .ok_or(PolicyReloadError::NoSuchTsigKey(tsig_name.clone()))?;
     }
+
+    // Check signer policy.
+
+    // sig_validity_time
+    //
+    // The maximum sig_validity_time is determined by what we can put in
+    // the expiration time. Expiration time is effectively a 32-bit signed
+    // value. So sig_validity_time has to be less then 0x8000_0000. To
+    // give ourselves some headroom, set the limit to 0x4000_0000.
+    if policy.signer.sig_validity_time >= 0x4000_0000 {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-lifetime {} too big (>= 0x4000_0000)",
+            policy.signer.sig_validity_time
+        )));
+    }
+
+    // The minimum value of sig_validity_time is bounded by sig_remain_time
+    // and signature_refresh_interval. We get to this later.
+
+    // sig_remain_time
+    //
+    // The effective lifetime of a signature is
+    // sig_validity_time - sig_remain_time. This needs to be greater than
+    // zero. So the maximum value of sig_remain_time is bounded by
+    // sig_validity_time. We will check this later.
+    //
+    // Ideally, sig_remain_time should be larger than the maximum TTL
+    // to make sure that old signature are removed from caches before
+    // they expire. We don't have a maximum TTL value. So what the signer
+    // does is add the TTL of an RRset to sig_remain_time to determine
+    // if a signature needs to be refreshed. For this reason, the lower bound
+    // of sig_remain_time is zero. However, this does not leave any margin
+    // for error.
+
+    // signature_refresh_interval
+    //
+    // The maximum is again bounded by sig_validity_time.
+    //
+    // Each signature_refresh_interval seconds, the signer will generate a
+    // new version of the zone with some refreshed signatures. For this reason,
+    // signature_refresh_interval should not be too low. Enforce a lower
+    // bound of 60 seconds to avoid accidentally generating new zone versions
+    // at a high rate.
+    if policy.signer.signature_refresh_interval < 60 {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-refresh-interval {} too small (< 60)",
+            policy.signer.signature_refresh_interval
+        )));
+    }
+
+    // Check if everything fits together. The effective lifetime of a
+    // signature is sig_validity_time - sig_remain_time. This needs to be
+    // greater than zero. We need to take TTL into account. Assume a reasonable
+    // TTL of one hour (3600 seconds). This could cause signing a zone to
+    // be aborted, but there is not much we can do. So now we have
+    // sig_validity_time - sig_remain_time - 3600 > 0.
+    // We sign every signature_refresh_interval so we need to take that into
+    // account as. Which gives:
+    // sig_validity_time - sig_remain_time - 3600 - signature_refresh_interval > 0
+    // Which can be written as:
+    // sig_validity_time > sig_remain_time + 3600 + signature_refresh_interval
+    if policy.signer.sig_validity_time
+        <= policy.signer.sig_remain_time + 3600 + policy.signer.signature_refresh_interval
+    {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-lifetime ({}) too small (<= signature-remain-time ({}) + room for TTL (3600) + signature-refresh-interval ({}))",
+            policy.signer.sig_validity_time,
+            policy.signer.sig_remain_time,
+            policy.signer.signature_refresh_interval
+        )));
+    }
+
+    // key_roll_time
     Ok(())
 }
 
