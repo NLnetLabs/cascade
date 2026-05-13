@@ -768,7 +768,7 @@ impl Notifiable for LoaderNotifier {
                     }
 
                     crate::loader::Source::None => {
-                        // Nothing to do.
+                        warn!("Ignoring NOTIFY for zone '{apex_name}': zone has no source")
                     }
                 }
             } else {
