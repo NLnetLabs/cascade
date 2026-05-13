@@ -300,6 +300,12 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     }
 
     // key_roll_time
+    //
+    // If the value is too high then the key roll never completes. It is not
+    // clear if there is a sensible upper bound.
+    //
+    // It is fine to set this value to zero, the key roll will just complete
+    // the next time the refresh timer expires.
     Ok(())
 }
 
