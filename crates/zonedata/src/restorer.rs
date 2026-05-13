@@ -326,7 +326,7 @@ impl SignedZoneRestorer {
         // SAFETY: As per the caller, 'loaded[loaded_index]' will not be
         // modified for the lifetime of 'self', and so is sound to access
         // immutably.
-        let curr_loaded = unsafe { &*self.data.signed[self.loaded_index as usize].get() };
+        let curr_loaded = unsafe { &*self.data.loaded[self.loaded_index as usize].get() };
 
         // SAFETY: As per the caller, 'signed[index]' will not be accessed
         // elsewhere for the lifetime of 'self', and so is sound to access
