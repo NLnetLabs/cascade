@@ -120,6 +120,23 @@ impl std::fmt::Display for ZoneOverrideError {
     }
 }
 
+//----------- ZoneOverride -----------------------------------------------------
+
+/// The result of a `zone maintenance start/stop` command.
+pub type ZoneMaintenanceModeResult = Result<ZoneMaintenanceModeOutput, ZoneMaintenanceModeError>;
+
+/// The output of a `zone maintenance start/stop` command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneMaintenanceModeOutput {
+    pub zone: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneMaintenanceModeError {
+    NoSuchZone,
+    AlreadyInThatState,
+}
+
 //----------- ChangeLogging ----------------------------------------------------
 
 /// Change how Cascade logs information.
@@ -428,19 +445,20 @@ pub struct ZoneStatus {
     pub policy: String,
     pub last_published: Option<LastPublishedZone>,
     pub progress: Progress,
+    pub maintenance_mode: bool,
     pub keys: Vec<KeyInfo>,
     pub key_status: String,
     pub error: Option<String>,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
-    pub unsigned_review_addr: Option<SocketAddr>,
+    pub unsigned_review_addr: Vec<SocketAddr>,
     pub signed_serial: Option<Serial>,
     pub signed_review_status: Option<TimestampedZoneReviewStatus>,
-    pub signed_review_addr: Option<SocketAddr>,
+    pub signed_review_addr: Vec<SocketAddr>,
     pub signing_report: Option<SigningReport>,
     pub published_serial: Option<Serial>,
-    pub publish_addr: SocketAddr,
+    pub publish_addr: Vec<SocketAddr>,
     pub halted_reason: Option<String>,
 }
 
@@ -744,6 +762,9 @@ impl fmt::Display for ZoneReloadError {
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
+    pub loaded_review_addrs: Vec<SocketAddr>,
+    pub signed_review_addrs: Vec<SocketAddr>,
+    pub server_addrs: Vec<SocketAddr>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

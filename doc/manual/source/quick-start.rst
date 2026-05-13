@@ -191,19 +191,23 @@ For example:
 
 .. code-block:: text
 
-    Status report for zone 'example.com' using policy 'default'
-    ✔ Waited for a new version of the example.com zone
-    ✔ Loaded version 1
-      Loaded at 2025-09-30T12:00:05+00:00 (2s ago)
-      Loaded 596 B from the filesystem in 0 seconds
-    ✔ Auto approving signing of version 1, no checks enabled in policy.
-    ✔ Approval received to sign version 1, signing requested
-    ✔ Signed version 1 as version 2025093001
-      Signed at 2025-09-30T12:00:06+00:00 (1s ago)
-      Signed 3 records in 0s
-    ✔ Auto approving publication of version 2025093001, no checks enabled in policy.
-    ✔ Published version 2025093001
-      Published zone available on 127.0.0.1:4542
+    zone:   example.com
+    policy: default
+    source: /path/to/zonefile/example.txt
+
+    review
+      loaded: off
+      signed: off
+
+    last published
+      loaded serial: 2001062501
+      signed serial: 2026050600
+      timestamp:     <TODO>
+      size:          <TODO> records (<TODO>B)
+
+    status: idle
+
+    Published zone available at 127.0.0.1:4542
 
 From the above you can see that the signed zone can be retrieved from
 ``127.0.0.1:4542`` using a DNS client, e.g.:

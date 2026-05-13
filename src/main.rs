@@ -123,6 +123,18 @@ fn main() -> ExitCode {
                     (name, policy)
                 }));
 
+            // Update policy.zones
+            for zone in &state.zones {
+                let zone_state = zone.0.state.lock().expect("zone state lock should work");
+                if let Some(ref policy) = zone_state.policy {
+                    let pol = state
+                        .policies
+                        .get_mut(&policy.name)
+                        .expect("zone policy should exist");
+                    pol.zones.insert(zone.0.name.clone());
+                }
+            }
+
             state
         }
 
@@ -451,10 +463,10 @@ fn check_dnst_version(config: &Config) -> bool {
     };
 
     // Change this string and the match pattern to whatever version we require in the future
-    let required_version = ">0.1.0";
+    let required_version = ">0.2.0";
     let res = match (major, minor, patch) {
-        // major = 0; minor >= 1; patch = *
-        (0, 1.., ..) => true,
+        // major = 0; minor >= 2; patch = *
+        (0, 2.., ..) => true,
         _ => false,
     };
 

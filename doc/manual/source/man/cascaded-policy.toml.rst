@@ -62,6 +62,7 @@ Example
     algorithm.auto-done = true
     ds-algorithm = "SHA256"
     auto-remove = true
+    auto-remove-delay = "7d"
     publication-nameservers = []
 
     [key-manager.records]
@@ -82,6 +83,8 @@ Example
     signature-inception-offset = "1d"
     signature-lifetime = "2w"
     signature-remain-time = "1w"
+    signature-refresh-interval = "12h"
+    key-roll-time = "24h"
 
     [signer.denial]
     type = "nsec"
@@ -169,7 +172,7 @@ loaded by Cascade.
 
    What to do when a zone is rejected by review.
   
-   This field can only be specified if ``mode``` is either ``"manual"`` or
+   This field can only be specified if ``mode`` is either ``"manual"`` or
    ``"script"`` and can have one of the following values:
   
     - ``"discard"`` will discard the rejected zone and go back to an idle state
@@ -273,6 +276,14 @@ The ``[key-manager]`` section.
 
    If this option is set, expired keys will be removed automatically (by
    deleting the files for on-disk keys or removing it from the HSM).
+
+.. option:: auto-remove-delay = "7d"
+
+    Delay after which expired keys will be removed when auto-remove is true.
+
+    An integer value is interpreted as seconds. A string is interpreted as
+    time string with a number followed by a unit (i.e. "s", "m", "h", "d",
+    or "w").
 
 .. option:: publication-nameservers = []
 
@@ -460,6 +471,34 @@ zone) are signed by the key manager, rather than the zone signer; see the
    ``signature-lifetime`` above.  This setting controls how long before expiry
    signatures will be regenerated; it must be less than the ``signature-lifetime``
    setting.
+
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
+
+.. option:: signature-refresh-interval = "12h"
+
+   Refresh period to prevent signatures from expiring. Each period, Cascade
+   will refresh some number of signatures. This way the work to refresh all
+   signatures is spread out over time. The effective lifetime of a signature
+   is signature-lifetime - signature-remain-time. Each period roughly a
+   fraction of all signatures that is equal to signature-refresh-interval
+   divided by the effective signature lifetime will be refreshed.
+
+   signature-refresh-interval should be a lot smaller than
+   signature-remain-time to make sure that signatures are refreshed in time.
+   If this is not the case then in extreme cases, signatures could expire.
+
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
+
+.. option:: key-roll-time = "24h"
+
+   To avoid resigning the entire zone at once during a ZSK or CSK roll,
+   generating signatures with the new key can be spread out over time.
+   New signatures are generated at intervals controlled by
+   signature-refresh-interval.
 
    An integer value is interpreted as seconds. A string is interpreted as a time
    string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,

@@ -130,6 +130,22 @@ pub enum ZoneCommand {
         /// The zone to report the history of.
         zone: ZoneName,
     },
+
+    /// Resume a paused zone pipeline
+    #[command(name = "maintenance")]
+    Maintenance {
+        /// Enable or disable maintenance mode.
+        #[command(subcommand)]
+        maintenance: Maintenance,
+    },
+}
+
+#[derive(Clone, Debug, clap::Subcommand)]
+pub enum Maintenance {
+    /// Enable maintenance mode; preventing new loading and signing operations.
+    Enable { zone: ZoneName },
+    /// Disable maintenance mode and resume normal operation.
+    Disable { zone: ZoneName },
 }
 
 /// The stage to review a zone at.
@@ -522,6 +538,54 @@ impl Zone {
                     }
                 }
             }
+            ZoneCommand::Maintenance { maintenance } => {
+                let (name, state) = match &maintenance {
+                    Maintenance::Enable { zone } => (zone, "enable"),
+                    Maintenance::Disable { zone } => (zone, "disable"),
+                };
+                let url = format!("/zone/{name}/maintenance/{state}");
+                let result: ZoneMaintenanceModeResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(_) => {
+                        if let Maintenance::Enable { .. } = maintenance {
+                            println!(
+                                "Maintenance mode for zone `{name}` is now {}enabled{}",
+                                ansi::BOLD,
+                                ansi::RESET
+                            );
+                            println!("");
+                            println!(
+                                "Cascade will no longer automatically start new loading and signing operations"
+                            );
+                            println!(
+                                "Run {}`cascade zone maintenance stop {name}`{} to resume automatic operation",
+                                ansi::BLUE,
+                                ansi::RESET,
+                            );
+                        } else {
+                            println!(
+                                "Maintenance mode for zone `{name}` is now {}disabled{}",
+                                ansi::BOLD,
+                                ansi::RESET
+                            );
+                            println!("");
+                            println!(
+                                "Cascade will automatically start new loading and signing operations when appropriate."
+                            );
+                        }
+                        Ok(())
+                    }
+                    Err(err) => match err {
+                        ZoneMaintenanceModeError::NoSuchZone => {
+                            Err(format!("zone `{name}` does not exist"))
+                        }
+                        ZoneMaintenanceModeError::AlreadyInThatState => Err(format!(
+                            "maintenance mode for zone `{name}` was already {state}d"
+                        )),
+                    },
+                }
+            }
         }
     }
 
@@ -580,7 +644,10 @@ impl Zone {
 
         if zone.last_published.is_some() {
             println!("");
-            println!("Published zone available at {}", zone.publish_addr);
+            println!("Published zone available at:");
+            for addr in zone.publish_addr {
+                println!("  - {addr}")
+            }
         }
 
         if let Some(error) = zone.error {
@@ -589,6 +656,22 @@ impl Zone {
             println!("  {}ERROR: {error}{}", ansi::RED, ansi::RESET);
             println!(
                 "  Run {}`cascade zone history {}`{} for more information.",
+                ansi::BLUE,
+                zone.name,
+                ansi::RESET
+            );
+        }
+
+        if zone.maintenance_mode {
+            println!("");
+            println!(
+                "{}WARNING: This zone is in maintenance mode{}",
+                ansi::YELLOW,
+                ansi::RESET
+            );
+            println!("  Cascade will not automatically start new loading and signing operations");
+            println!(
+                "  Run {}`cascade zone maintenance disable {}`{} to resume normal operation",
                 ansi::BLUE,
                 zone.name,
                 ansi::RESET
@@ -639,14 +722,26 @@ pub fn print_status(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
     }
 
     print_load_phase(current, zone.unsigned_serial, &zone.receipt_report);
-    print_loaded_review_phase(&zone.name, zone.unsigned_serial, policy, current);
+    print_loaded_review_phase(
+        &zone.name,
+        zone.unsigned_serial,
+        policy,
+        current,
+        &zone.unsigned_review_addr,
+    );
     print_sign_phase(
         current,
         zone.unsigned_serial,
         zone.signed_serial,
         &zone.signing_report,
     );
-    print_signed_review_phase(&zone.name, zone.signed_serial, policy, current);
+    print_signed_review_phase(
+        &zone.name,
+        zone.signed_serial,
+        policy,
+        current,
+        &zone.signed_review_addr,
+    );
     print_publish_phase();
 }
 
@@ -707,6 +802,7 @@ fn print_loaded_review_phase(
     serial: Option<Serial>,
     policy: &PolicyInfo,
     current: Progress,
+    addrs: &[SocketAddr],
 ) {
     use ansi::{BLUE, DIM, RED, RESET, YELLOW};
 
@@ -727,6 +823,14 @@ fn print_loaded_review_phase(
             let serial = serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
             println!("  {Stopped} review loaded zone");
             println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            if addrs.is_empty() {
+                println!("  |   {RED}no loaded review addresses were specified{RESET}");
+            } else {
+                println!("  |   loaded zone is available at:");
+                for addr in addrs {
+                    println!("  |     - {addr}");
+                }
+            }
             println!("  |   possible actions:");
             println!("  |     {BLUE}cascade zone approve --unsigned {zone} {serial}{RESET}");
             println!("  |     {BLUE}cascade zone reject --unsigned {zone} {serial}{RESET}");
@@ -786,6 +890,7 @@ fn print_signed_review_phase(
     signed_serial: Option<Serial>,
     policy: &PolicyInfo,
     current: Progress,
+    addrs: &[SocketAddr],
 ) {
     use ansi::{BLUE, DIM, RED, RESET, YELLOW};
 
@@ -805,6 +910,14 @@ fn print_signed_review_phase(
             let serial = signed_serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
             println!("  {Stopped} review signed zone");
             println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            if addrs.is_empty() {
+                println!("  |   {RED}no signed review addresses were specified{RESET}");
+            } else {
+                println!("  |   signed zone is available at:");
+                for addr in addrs {
+                    println!("  |     - {addr}");
+                }
+            }
             println!("  |   possible actions:");
             println!("  |     {BLUE}cascade zone approve --signed {zone} {serial}{RESET}");
             println!("  |     {BLUE}cascade zone reject --signed {zone} {serial}{RESET}");

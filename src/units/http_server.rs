@@ -136,6 +136,14 @@ impl HttpServer {
                 post(Self::reject_signed),
             )
             .route("/zone/{name}/signed/override", post(Self::override_signed))
+            .route(
+                "/zone/{zone}/maintenance/enable",
+                post(Self::enable_maintenance_mode),
+            )
+            .route(
+                "/zone/{zone}/maintenance/disable",
+                post(Self::disable_maintenance_mode),
+            )
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/{name}", get(Self::policy_show))
@@ -221,9 +229,17 @@ impl HttpServer {
         // Fetch the signing queue.
         let signing_queue = center.signer.on_queue_report(center);
 
+        let f = |x: &Vec<cascade_cfg::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
+        let loaded_review_addrs = f(&center.config.loader.review.servers);
+        let signed_review_addrs = f(&center.config.signer.review.servers);
+        let server_addrs = f(&center.config.server.servers);
+
         Json(ServerStatusResult {
             halted_zones,
             signing_queue,
+            loaded_review_addrs,
+            signed_review_addrs,
+            server_addrs,
         })
     }
 
@@ -362,6 +378,7 @@ impl HttpServer {
         let published_serial;
         let last_published;
         let error;
+        let maintenance_mode;
         {
             let locked_state = state.center.state.lock().unwrap();
             let keys_dir = &state.center.config.keys_dir;
@@ -395,24 +412,26 @@ impl HttpServer {
                 .loader
                 .review
                 .servers
-                .first()
-                .map(|v| v.addr());
+                .iter()
+                .map(|s| s.addr())
+                .collect();
             signed_review_addr = state
                 .center
                 .config
                 .signer
                 .review
                 .servers
-                .first()
-                .map(|v| v.addr());
+                .iter()
+                .map(|s| s.addr())
+                .collect();
             publish_addr = state
                 .center
                 .config
                 .server
                 .servers
-                .first()
-                .expect("Server must have a publish address")
-                .addr();
+                .iter()
+                .map(|s| s.addr())
+                .collect();
 
             unsigned_review_status = zone_state
                 .find_last_event(HistoricalEventType::UnsignedZoneReview, None)
@@ -514,6 +533,8 @@ impl HttpServer {
                 }
             }
             error = found_error;
+
+            maintenance_mode = zone_state.maintenance_mode;
         }
 
         // Query key status
@@ -623,6 +644,7 @@ impl HttpServer {
             source,
             policy,
             progress,
+            maintenance_mode,
             last_published,
             keys,
             key_status,
@@ -821,6 +843,38 @@ impl HttpServer {
         };
 
         Json(do_override())
+    }
+
+    async fn enable_maintenance_mode(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneMaintenanceModeResult> {
+        Json(Self::set_maintenance_mode(state, name, true))
+    }
+
+    async fn disable_maintenance_mode(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<ZoneMaintenanceModeResult> {
+        Json(Self::set_maintenance_mode(state, name, false))
+    }
+
+    fn set_maintenance_mode(
+        state: Arc<HttpServer>,
+        name: Name<Bytes>,
+        enable: bool,
+    ) -> ZoneMaintenanceModeResult {
+        let zone =
+            center::get_zone(&state.center, &name).ok_or(ZoneMaintenanceModeError::NoSuchZone)?;
+
+        let mut zone_state = zone.state.lock().unwrap();
+
+        if zone_state.maintenance_mode == enable {
+            return Err(ZoneMaintenanceModeError::AlreadyInThatState);
+        }
+
+        zone_state.maintenance_mode = enable;
+        Ok(ZoneMaintenanceModeOutput { zone: name.clone() })
     }
 
     async fn policy_list(State(state): State<Arc<HttpServer>>) -> Json<PolicyListResult> {

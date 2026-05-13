@@ -44,7 +44,7 @@ runs:
       with:
         log-level: ${{ inputs.log-level }}
 
-    - name: Determine the downstrem secondary zone config to use
+    - name: Determine the downstream secondary zone config to use
       id: set-vars
       run: |
         TSIG_SPEC="hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
