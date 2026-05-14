@@ -254,7 +254,7 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     // sig_validity_time. We will check this later.
     //
     // Ideally, sig_remain_time should be larger than the maximum TTL
-    // to make sure that old signature are removed from caches before
+    // to make sure that old signatures are removed from caches before
     // they expire. We don't have a maximum TTL value. So what the signer
     // does is add the TTL of an RRset to sig_remain_time to determine
     // if a signature needs to be refreshed. For this reason, the lower bound
