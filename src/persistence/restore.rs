@@ -28,7 +28,7 @@ use crate::{center::Center, zone::Zone};
 
 /// Restore the loaded instance data of a zone.
 #[tracing::instrument(
-    level = "info",
+    level = "trace",
     skip_all,
     fields(zone = %zone.name),
 )]
@@ -129,7 +129,7 @@ pub fn restore_loaded(
 
 /// Restore the loaded instance data of a zone.
 #[tracing::instrument(
-    level = "info",
+    level = "trace",
     skip_all,
     fields(zone = %zone.name),
 )]
