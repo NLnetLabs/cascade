@@ -262,11 +262,13 @@ pub struct ZoneState {
     /// Locations of persisted unsigned zone diffs to enable IXFR from
     /// the upstream to resume on restart, and to enable a complete latest
     /// unsigned version of the zone to be reconstituted.
+    // TODO: Move into `PersistenceState`.
     pub persisted_loaded_diff_paths: Vec<PathBuf>,
 
     /// Locations of persisted signed zone diffs to ensure IXFR out toward
     /// downstreams is still possible after restart, and to enable a complete
     /// latest signed version of the zone to be reconsituted.
+    // TODO: Move into `PersistenceState`.
     pub persisted_signed_diff_paths: Vec<PathBuf>,
 
     /// Loading new versions of the zone.
