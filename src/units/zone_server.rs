@@ -745,10 +745,36 @@ impl Notifiable for LoaderNotifier {
             // able to learn the used TSIG key.
             let center = &self.center;
             if let Some(zone) = crate::center::get_zone(center, apex_name) {
-                info!("Instructing zone loader to refresh zone '{apex_name}");
-                center.loader.on_refresh_zone(center, &zone);
+                // Don't allow NOTIFY to trigger re-signing of a zone loaded
+                // from disk because the operator may be in the middle
+                // of editing the file and thus the zone may not be ready
+                // to reload. Zones sourced from files should be reloaded
+                // explicitly using the `cascade zone reload` CLI command.
+                // Also ignore NOTIFY for a zone that has no source at all.
+
+                // Clone the source so that we don't hold the zone state lock
+                // when calling on_refresh_zone().
+                let zone_source = zone.state.lock().unwrap().loader.source.clone();
+                match zone_source {
+                    crate::loader::Source::Server { .. } => {
+                        info!("Instructing zone loader to refresh zone '{apex_name}");
+                        center.loader.on_refresh_zone(center, &zone);
+                    }
+
+                    crate::loader::Source::Zonefile { .. } => {
+                        warn!(
+                            "Ignoring NOTIFY for zone '{apex_name}': zone source is not an upstream nameserver"
+                        );
+                    }
+
+                    crate::loader::Source::None => {
+                        warn!("Ignoring NOTIFY for zone '{apex_name}': zone has no source")
+                    }
+                }
             } else {
-                warn!("Ignoring NOTIFY for unknown zone '{apex_name}'");
+                warn!(
+                    "Ignoring NOTIFY for zone '{apex_name}': zone is not registered with Cascade"
+                );
             }
         }
 

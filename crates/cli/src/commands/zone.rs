@@ -644,7 +644,10 @@ impl Zone {
 
         if zone.last_published.is_some() {
             println!("");
-            println!("Published zone available at {}", zone.publish_addr);
+            println!("Published zone available at:");
+            for addr in zone.publish_addr {
+                println!("  - {addr}")
+            }
         }
 
         if let Some(error) = zone.error {
@@ -722,14 +725,26 @@ pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
     }
 
     print_load_phase(current, zone.unsigned_serial, &zone.receipt_report);
-    print_loaded_review_phase(&zone.name, zone.unsigned_serial, policy, current);
+    print_loaded_review_phase(
+        &zone.name,
+        zone.unsigned_serial,
+        policy,
+        current,
+        &zone.unsigned_review_addr,
+    );
     print_sign_phase(
         current,
         zone.unsigned_serial,
         zone.signed_serial,
         &zone.signing_report,
     );
-    print_signed_review_phase(&zone.name, zone.signed_serial, policy, current);
+    print_signed_review_phase(
+        &zone.name,
+        zone.signed_serial,
+        policy,
+        current,
+        &zone.signed_review_addr,
+    );
     print_publish_phase();
 }
 
@@ -790,6 +805,7 @@ fn print_loaded_review_phase(
     serial: Option<Serial>,
     policy: &PolicyInfo,
     current: Progress,
+    addrs: &[SocketAddr],
 ) {
     use ansi::{BLUE, DIM, RED, RESET, YELLOW};
 
@@ -810,6 +826,14 @@ fn print_loaded_review_phase(
             let serial = serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
             println!("  {Stopped} review loaded zone");
             println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            if addrs.is_empty() {
+                println!("  |   {RED}no loaded review addresses were specified{RESET}");
+            } else {
+                println!("  |   loaded zone is available at:");
+                for addr in addrs {
+                    println!("  |     - {addr}");
+                }
+            }
             println!("  |   possible actions:");
             println!("  |     {BLUE}cascade zone approve --unsigned {zone} {serial}{RESET}");
             println!("  |     {BLUE}cascade zone reject --unsigned {zone} {serial}{RESET}");
@@ -869,6 +893,7 @@ fn print_signed_review_phase(
     signed_serial: Option<Serial>,
     policy: &PolicyInfo,
     current: Progress,
+    addrs: &[SocketAddr],
 ) {
     use ansi::{BLUE, DIM, RED, RESET, YELLOW};
 
@@ -888,6 +913,14 @@ fn print_signed_review_phase(
             let serial = signed_serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
             println!("  {Stopped} review signed zone");
             println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            if addrs.is_empty() {
+                println!("  |   {RED}no signed review addresses were specified{RESET}");
+            } else {
+                println!("  |   signed zone is available at:");
+                for addr in addrs {
+                    println!("  |     - {addr}");
+                }
+            }
             println!("  |   possible actions:");
             println!("  |     {BLUE}cascade zone approve --signed {zone} {serial}{RESET}");
             println!("  |     {BLUE}cascade zone reject --signed {zone} {serial}{RESET}");

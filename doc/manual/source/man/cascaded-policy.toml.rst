@@ -83,6 +83,8 @@ Example
     signature-inception-offset = "1d"
     signature-lifetime = "2w"
     signature-remain-time = "1w"
+    signature-refresh-interval = "12h"
+    key-roll-time = "24h"
 
     [signer.denial]
     type = "nsec"
@@ -469,6 +471,34 @@ zone) are signed by the key manager, rather than the zone signer; see the
    ``signature-lifetime`` above.  This setting controls how long before expiry
    signatures will be regenerated; it must be less than the ``signature-lifetime``
    setting.
+
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
+
+.. option:: signature-refresh-interval = "12h"
+
+   Refresh period to prevent signatures from expiring. Each period, Cascade
+   will refresh some number of signatures. This way the work to refresh all
+   signatures is spread out over time. The effective lifetime of a signature
+   is signature-lifetime - signature-remain-time. Each period roughly a
+   fraction of all signatures that is equal to signature-refresh-interval
+   divided by the effective signature lifetime will be refreshed.
+
+   signature-refresh-interval should be a lot smaller than
+   signature-remain-time to make sure that signatures are refreshed in time.
+   If this is not the case then in extreme cases, signatures could expire.
+
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
+
+.. option:: key-roll-time = "24h"
+
+   To avoid resigning the entire zone at once during a ZSK or CSK roll,
+   generating signatures with the new key can be spread out over time.
+   New signatures are generated at intervals controlled by
+   signature-refresh-interval.
 
    An integer value is interpreted as seconds. A string is interpreted as a time
    string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,

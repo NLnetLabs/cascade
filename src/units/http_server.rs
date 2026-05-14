@@ -229,9 +229,17 @@ impl HttpServer {
         // Fetch the signing queue.
         let signing_queue = center.signer.on_queue_report(center);
 
+        let f = |x: &Vec<cascade_cfg::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
+        let loaded_review_addrs = f(&center.config.loader.review.servers);
+        let signed_review_addrs = f(&center.config.signer.review.servers);
+        let server_addrs = f(&center.config.server.servers);
+
         Json(ServerStatusResult {
             halted_zones,
             signing_queue,
+            loaded_review_addrs,
+            signed_review_addrs,
+            server_addrs,
         })
     }
 
@@ -404,24 +412,26 @@ impl HttpServer {
                 .loader
                 .review
                 .servers
-                .first()
-                .map(|v| v.addr());
+                .iter()
+                .map(|s| s.addr())
+                .collect();
             signed_review_addr = state
                 .center
                 .config
                 .signer
                 .review
                 .servers
-                .first()
-                .map(|v| v.addr());
+                .iter()
+                .map(|s| s.addr())
+                .collect();
             publish_addr = state
                 .center
                 .config
                 .server
                 .servers
-                .first()
-                .expect("Server must have a publish address")
-                .addr();
+                .iter()
+                .map(|s| s.addr())
+                .collect();
 
             unsigned_review_status = zone_state
                 .find_last_event(HistoricalEventType::UnsignedZoneReview, None)
