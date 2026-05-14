@@ -284,7 +284,7 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     // be aborted, but there is not much we can do. So now we have
     // sig_validity_time - sig_remain_time - 3600 > 0.
     // We sign every signature_refresh_interval so we need to take that into
-    // account as. Which gives:
+    // account. Which gives:
     // sig_validity_time - sig_remain_time - 3600 - signature_refresh_interval > 0
     // Which can be written as:
     // sig_validity_time > sig_remain_time + 3600 + signature_refresh_interval
