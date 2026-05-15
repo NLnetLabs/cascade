@@ -38,6 +38,7 @@ use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
 use tracing::debug;
+use tracing::error;
 
 use crate::center::Center;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
@@ -246,13 +247,25 @@ impl WorkSpace<'_> {
         &mut self,
         iss: &mut IncrementalSigningState,
     ) -> Result<(), SignerError> {
+        // In policy we check that for a new policy the following holds:
+        // sig_validity_time > sig_remain_time + signature_refresh_interval.
+        // The calculation below is safe but ignores TTL. In general,
+        // effective_lifetime is expected to be much larger than most TTLs.
+        // If that is not true, then nothing bad will happen, but this
+        // algorithm will fail to properly spread out signature refresh.
         let effective_lifetime = Duration::from_secs(
-            (self.policy.signer.sig_validity_time - self.policy.signer.sig_remain_time) as u64,
+            (self.policy.signer.sig_validity_time
+                - self.policy.signer.sig_remain_time
+                - self.policy.signer.signature_refresh_interval) as u64,
         );
         let now = faketime_or_now();
         let now_system_time = UNIX_EPOCH + Duration::from(now.clone());
-        let min_expire =
-            now_system_time + Duration::from_secs(self.policy.signer.sig_remain_time as u64);
+
+        // Note that min_expire does not take TTL into account. We will
+        // correct for that later.
+        let min_expire = now_system_time
+            + Duration::from_secs(self.policy.signer.sig_remain_time as u64)
+            + Duration::from_secs(self.policy.signer.signature_refresh_interval as u64);
 
         let curr_last_signature_refresh = &self.local_state.last_signature_refresh;
 
@@ -279,8 +292,32 @@ impl WorkSpace<'_> {
             / effective_lifetime.as_secs_f64();
         let to_sign = to_sign.ceil() as usize;
 
+        // Check the TTL of all signatures. Just generate an error. Maybe
+        // zone versions with too high TTLs should be rejected during loading.
+        // A too high TTL causes the record to be signed each interval.
+        // With high TTLs signatures may be cached beyond expiration. We
+        // could return a failure, but that would affect the entire zone.
+        for ((owner, rtype), r) in &iss.rrsigs {
+            let ttl = r[0].ttl();
+            if self.policy.signer.sig_validity_time
+                <= self.policy.signer.sig_remain_time
+                    + ttl.as_secs()
+                    + self.policy.signer.signature_refresh_interval
+            {
+                error!(
+                    "TTL of {}/{} too large: signature-remain-time ({}) + TTL ({}) + signature-refresh-interval ({}) >= signature-lifetime ({})",
+                    owner,
+                    rtype,
+                    self.policy.signer.sig_remain_time,
+                    ttl.as_secs(),
+                    self.policy.signer.signature_refresh_interval,
+                    self.policy.signer.sig_validity_time,
+                );
+            }
+        }
+
         // Collect expiration times, owner names, and types to figure out what
-        // to sign.
+        // to sign. Subtract TTL to account for caching.
         let mut expire_sigs = vec![];
         for ((owner, rtype), r) in &iss.rrsigs {
             let min_expiration = r
@@ -290,6 +327,7 @@ impl WorkSpace<'_> {
                         panic!("Rrsig expected");
                     };
                     rrsig.expiration().to_system_time(now_system_time)
+                        - Duration::from_secs(rrsig.original_ttl().as_secs() as u64)
                 })
                 .min()
                 .expect("minimum should exist");

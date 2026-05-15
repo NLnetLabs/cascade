@@ -800,6 +800,7 @@ pub struct KeyMsg {
 pub enum PolicyReloadError {
     Io(Utf8PathBuf, String),
     NoSuchTsigKey(TsigKeyName),
+    BadValue(String),
 }
 
 impl Display for PolicyReloadError {
@@ -807,6 +808,7 @@ impl Display for PolicyReloadError {
         match self {
             PolicyReloadError::Io(p, e) => write!(f, "{p}: {e}"),
             PolicyReloadError::NoSuchTsigKey(k) => write!(f, "no TSIG key with name '{k}' exists"),
+            PolicyReloadError::BadValue(e) => write!(f, "bad value in policy variable: {e}"),
         }
     }
 }
