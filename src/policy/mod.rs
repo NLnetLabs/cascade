@@ -280,14 +280,22 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     // Check if everything fits together. The effective lifetime of a
     // signature is sig_validity_time - sig_remain_time. This needs to be
     // greater than zero. We need to take TTL into account. Assume a reasonable
-    // TTL of one hour (3600 seconds). This could cause signing a zone to
-    // be aborted, but there is not much we can do. So now we have
+    // TTL of one hour (3600 seconds). So now we have
     // sig_validity_time - sig_remain_time - 3600 > 0.
     // We sign every signature_refresh_interval so we need to take that into
     // account. Which gives:
     // sig_validity_time - sig_remain_time - 3600 - signature_refresh_interval > 0
     // Which can be written as:
     // sig_validity_time > sig_remain_time + 3600 + signature_refresh_interval
+    //
+    // If an RRset has a high TTL such that
+    // sig_remain_time + TTL + signature_refresh_interval >= sig_validity_time
+    // then the signature will be refreshed every signature_refresh_interval
+    // and an error will be logged. In extreme cases, i.e. when
+    // TTL + signature_refresh_interval > sig_validity_time
+    // then validation errors may happen due to caching. However, this only
+    // affects RRsets with too high TTLs. The rest of the zone will be
+    // unaffected.
     if policy.signer.sig_validity_time
         <= policy.signer.sig_remain_time + 3600 + policy.signer.signature_refresh_interval
     {
