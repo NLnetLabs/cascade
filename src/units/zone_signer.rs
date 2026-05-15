@@ -580,7 +580,8 @@ impl ZoneSigner {
         // Use a stable sort; the stable sort algorithm detects runs of sorted
         // elements ('records' contains two concatenated pre-sorted runs) and
         // can efficiently sort around them.
-        records.par_sort();
+        records.par_sort_by(|e1, e2| e1.canonical_cmp(e2));
+
         let unsigned_records = records;
         let denial_time = denial_start.elapsed();
         let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
