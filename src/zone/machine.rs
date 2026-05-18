@@ -3,7 +3,6 @@ use cascade_zonedata::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder};
 use tracing::{info, trace};
 
 use crate::{
-    signer::SigningTrigger,
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, ZoneHandle},
 };
@@ -158,8 +157,6 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Signing(waiting.start_resign()));
 
-        self.state.record_event(HistoricalEvent::StartedLoad, None);
-
         Some(builder)
     }
 }
@@ -288,15 +285,6 @@ impl<'a> ZoneHandle<'a> {
     }
 
     pub(crate) fn finish_signing(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
-        self.state.record_event(
-            // TODO: Get the right trigger.
-            HistoricalEvent::SigningSucceeded {
-                trigger: SigningTrigger::Load.into(),
-            },
-            // TODO: Get the serial in here.
-            None,
-        );
-
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
