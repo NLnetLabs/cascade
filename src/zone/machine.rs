@@ -157,6 +157,9 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Signing(waiting.start_resign()));
 
+        self.state
+            .record_event(HistoricalEvent::StartedResign, None);
+
         Some(builder)
     }
 }
