@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::fmt::Write;
 
 use cascade_api::{
     AutoConfigPolicyInfo, KeyManagerPolicyInfo, LoaderPolicyInfo, ReviewPolicyMode,
@@ -62,7 +63,7 @@ impl Policy {
                     }
                 };
 
-                print_policy(&p);
+                print_policy(&p).unwrap();
             }
             PolicyCommand::Reload => {
                 let res: Result<PolicyChanges, PolicyReloadError> =
@@ -108,7 +109,9 @@ impl Policy {
     }
 }
 
-fn print_policy(p: &PolicyInfo) {
+pub fn print_policy(p: &PolicyInfo) -> Result<String, std::fmt::Error> {
+    let mut res = String::new();
+    let out = &mut res;
     let PolicyInfo {
         name,
         zones,
@@ -128,12 +131,14 @@ fn print_policy(p: &PolicyInfo) {
         none.clone()
     };
 
-    println!("{name}:");
-    println!("  zones: {zones}");
-    print_loader_policy(loader);
-    print_key_manager_policy(key_manager);
-    print_signer_policy(signer);
-    print_server_policy(server);
+    writeln!(out, "{name}:")?;
+    writeln!(out, "  zones: {zones}")?;
+    print_loader_policy(out, loader)?;
+    print_key_manager_policy(out, key_manager)?;
+    print_signer_policy(out, signer)?;
+    print_server_policy(out, server)?;
+
+    Ok(res)
 }
 
 fn or_none(x: &Option<impl Display>) -> String {
@@ -142,12 +147,17 @@ fn or_none(x: &Option<impl Display>) -> String {
         .unwrap_or("<none>".into())
 }
 
-fn print_loader_policy(LoaderPolicyInfo { review }: &LoaderPolicyInfo) {
-    println!("  loader:");
-    print_review(review);
+fn print_loader_policy(
+    out: &mut String,
+    LoaderPolicyInfo { review }: &LoaderPolicyInfo,
+) -> Result<(), std::fmt::Error> {
+    writeln!(out, "  loader:")?;
+    print_review(out, review)?;
+    Ok(())
 }
 
 fn print_key_manager_policy(
+    out: &mut String,
     KeyManagerPolicyInfo {
         hsm_server_id,
         use_csk,
@@ -171,78 +181,92 @@ fn print_key_manager_policy(
         auto_remove_delay,
         publication_nameservers,
     }: &KeyManagerPolicyInfo,
-) {
+) -> Result<(), std::fmt::Error> {
     // TODO: we should probably condense this information a lot or hide unnecessary details. For example, only
     // show CSK info when `use_csk` is `true`.
-    println!("  key manager:");
-    println!("    HSM server: {}", or_none(hsm_server_id));
-    println!("    DS algorithm: {ds_algorithm}");
+    writeln!(out, "  key manager:")?;
+    writeln!(out, "    HSM server: {}", or_none(hsm_server_id))?;
+    writeln!(out, "    DS algorithm: {ds_algorithm}")?;
     if *auto_remove {
-        println!(
-            "    auto-remove: true (delay {}s)",
+        writeln!(
+            out,
+            "    auto-remove: true (delay {}s)?",
             auto_remove_delay.as_secs()
-        );
+        )?;
     } else {
-        println!("    auto-remove: false",);
+        writeln!(out, "    auto-remove: false",)?;
     }
-    println!("    algorithm: {algorithm}");
-    print_auto_flags(auto_algorithm);
+    writeln!(out, "    algorithm: {algorithm}")?;
+    print_auto_flags(out, auto_algorithm)?;
     if *use_csk {
-        println!("    CSK:");
-        println!("      validity: {}s", or_none(csk_validity));
-        print_auto_flags(auto_csk);
+        writeln!(out, "    CSK:")?;
+        writeln!(out, "      validity: {}s", or_none(csk_validity))?;
+        print_auto_flags(out, auto_csk)?;
     } else {
-        println!("    KSK:");
-        println!("      validity: {}s", or_none(ksk_validity));
-        print_auto_flags(auto_ksk);
-        println!("    ZSK:");
-        println!("      validity: {}s", or_none(zsk_validity));
-        print_auto_flags(auto_zsk);
+        writeln!(out, "    KSK:")?;
+        writeln!(out, "      validity: {}s", or_none(ksk_validity))?;
+        print_auto_flags(out, auto_ksk)?;
+        writeln!(out, "    ZSK:")?;
+        writeln!(out, "      validity: {}s", or_none(zsk_validity))?;
+        print_auto_flags(out, auto_zsk)?;
     }
-    println!("    records:");
-    println!("      TTL: {default_ttl}s");
-    println!("      DNSKEY:");
-    println!("        signature inception offset: {dnskey_inception_offset}s");
-    println!("        signature lifetime: {dnskey_signature_lifetime}s");
-    println!("        signature remain time: {dnskey_remain_time}s");
-    println!("      CDS:");
-    println!("        signature inception offset: {cds_inception_offset}s");
-    println!("        signature lifetime: {cds_signature_lifetime}s");
-    println!("        signature remain time: {cds_remain_time}s");
+    writeln!(out, "    records:")?;
+    writeln!(out, "      TTL: {default_ttl}s")?;
+    writeln!(out, "      DNSKEY:")?;
+    writeln!(
+        out,
+        "        signature inception offset: {dnskey_inception_offset}s"
+    )?;
+    writeln!(
+        out,
+        "        signature lifetime: {dnskey_signature_lifetime}s"
+    )?;
+    writeln!(out, "        signature remain time: {dnskey_remain_time}s")?;
+    writeln!(out, "      CDS:")?;
+    writeln!(
+        out,
+        "        signature inception offset: {cds_inception_offset}s"
+    )?;
+    writeln!(out, "        signature lifetime: {cds_signature_lifetime}s")?;
+    writeln!(out, "        signature remain time: {cds_remain_time}s")?;
 
     if publication_nameservers.is_empty() {
-        println!("    publication nameservers: <none>");
+        writeln!(out, "    publication nameservers: <none>")?;
     } else {
-        println!("    publication nameservers:");
+        writeln!(out, "    publication nameservers:")?;
 
         for ns in publication_nameservers {
-            println!("     - {ns}")
+            writeln!(out, "     - {ns}")?
         }
     }
+
+    Ok(())
 }
 
-fn print_auto_flags(auto: &AutoConfigPolicyInfo) {
-    print!("      auto flags:");
+fn print_auto_flags(out: &mut String, auto: &AutoConfigPolicyInfo) -> Result<(), std::fmt::Error> {
+    write!(out, "      auto flags:")?;
     if !auto.start && !auto.report && !auto.expire && !auto.done {
-        println!(" <none>");
-        return;
+        writeln!(out, " <none>")?;
+        return Ok(());
     }
     if auto.start {
-        print!(" start");
+        write!(out, " start")?;
     }
     if auto.report {
-        print!(" report");
+        write!(out, " report")?;
     }
     if auto.expire {
-        print!(" expire");
+        write!(out, " expire")?;
     }
     if auto.done {
-        print!(" done");
+        write!(out, " done")?;
     }
-    println!();
+    writeln!(out)?;
+    Ok(())
 }
 
 fn print_signer_policy(
+    out: &mut String,
     SignerPolicyInfo {
         review,
         serial_policy,
@@ -253,7 +277,7 @@ fn print_signer_policy(
         key_roll_time,
         denial,
     }: &SignerPolicyInfo,
-) {
+) -> Result<(), std::fmt::Error> {
     let serial_policy = match serial_policy {
         SignerSerialPolicyInfo::Keep => "keep",
         SignerSerialPolicyInfo::Counter => "counter",
@@ -269,18 +293,26 @@ fn print_signer_policy(
         },
     };
 
-    println!("  signer:");
-    println!("    serial policy: {serial_policy}");
-    println!("    signature inception offset: {sig_inception_offset}s");
-    println!("    signature validity offset: {sig_validity_offset}s");
-    println!("    signature remain time: {sig_remain_time}s");
-    println!("    signature refresh interval: {signature_refresh_interval}s");
-    println!("    key roll time: {key_roll_time}s");
-    println!("    denial: {denial}");
-    print_review(review);
+    writeln!(out, "  signer:")?;
+    writeln!(out, "    serial policy: {serial_policy}")?;
+    writeln!(
+        out,
+        "    signature inception offset: {sig_inception_offset}s"
+    )?;
+    writeln!(out, "    signature validity offset: {sig_validity_offset}s")?;
+    writeln!(out, "    signature remain time: {sig_remain_time}s")?;
+    writeln!(
+        out,
+        "    signature refresh interval: {signature_refresh_interval}s"
+    )?;
+    writeln!(out, "    key roll time: {key_roll_time}s")?;
+    writeln!(out, "    denial: {denial}")?;
+    print_review(out, review)?;
+    Ok(())
 }
 
 fn print_server_policy(
+    out: &mut String,
     ServerPolicyInfo {
         outbound:
             cascade_api::OutboundPolicyInfo {
@@ -288,44 +320,54 @@ fn print_server_policy(
                 send_notify_to,
             },
     }: &ServerPolicyInfo,
-) {
-    println!("  server:");
-    println!("    outbound:");
-    print_nameserver_comms_policy("provide XFR to", provide_xfr_to);
-    print_nameserver_comms_policy("send NOTIFY to", send_notify_to);
+) -> Result<(), std::fmt::Error> {
+    writeln!(out, "  server:")?;
+    writeln!(out, "    outbound:")?;
+    print_nameserver_comms_policy(out, "provide XFR to", provide_xfr_to)?;
+    print_nameserver_comms_policy(out, "send NOTIFY to", send_notify_to)?;
+    Ok(())
 }
 
-fn print_review(ReviewPolicyInfo { mode, on_reject }: &ReviewPolicyInfo) {
-    print!("    review:");
+fn print_review(
+    out: &mut String,
+    ReviewPolicyInfo { mode, on_reject }: &ReviewPolicyInfo,
+) -> Result<(), std::fmt::Error> {
+    write!(out, "    review:")?;
     match mode {
         ReviewPolicyMode::Off => {
-            println!(" off");
-            return;
+            writeln!(out, " off")?;
+            return Ok(());
         }
         ReviewPolicyMode::Manual => {
-            println!("");
-            println!("      mode: manual");
+            writeln!(out)?;
+            writeln!(out, "      mode: manual")?;
         }
         ReviewPolicyMode::Script { hook } => {
-            println!("");
-            println!("      mode: script");
-            println!("      hook: {hook}")
+            writeln!(out)?;
+            writeln!(out, "      mode: script")?;
+            writeln!(out, "      hook: {hook}")?
         }
     }
     let on_reject = match on_reject {
         cascade_api::ReviewPolicyOnReject::Discard => "discard",
         cascade_api::ReviewPolicyOnReject::Halt => "halt",
     };
-    println!("      on reject: {on_reject}")
+    writeln!(out, "      on reject: {on_reject}")?;
+    Ok(())
 }
 
-fn print_nameserver_comms_policy(name: &str, n: &[NameserverCommsPolicyInfo]) {
+fn print_nameserver_comms_policy(
+    out: &mut String,
+    name: &str,
+    n: &[NameserverCommsPolicyInfo],
+) -> Result<(), std::fmt::Error> {
     if n.is_empty() {
-        println!("      {name}: <none>");
-        return;
+        writeln!(out, "      {name}: <none>")?;
+        return Ok(());
     }
-    println!("      {name}:");
+    writeln!(out, "      {name}:")?;
     for item in n {
-        println!("        {item}");
+        writeln!(out, "        {item}")?;
     }
+    Ok(())
 }

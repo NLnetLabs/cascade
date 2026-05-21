@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
@@ -388,12 +389,27 @@ impl Zone {
                 let url = format!("zone/{}/status", zone);
                 let response: Result<ZoneStatus, ZoneStatusError> = client.get_json(&url).await?;
 
-                match response {
-                    Ok(status) => Self::print_zone_status(client, status, detailed).await,
+                let status = match response {
+                    Ok(status) => status,
                     Err(ZoneStatusError::ZoneDoesNotExist) => {
-                        Err(format!("zone `{zone}` does not exist"))
+                        return Err(format!("zone `{zone}` does not exist"));
                     }
-                }
+                };
+
+                // Fetch the policy for the zone.
+                let url = format!("policy/{}", status.policy);
+                let response: Result<PolicyInfo, PolicyInfoError> = client.get_json(&url).await?;
+
+                let policy = response.map_err(|_| {
+                    format!(
+                        "policy `{}` used by zone `{}` does not exist",
+                        status.policy, status.name
+                    )
+                })?;
+
+                let s = Self::print_zone_status(&status, &policy, detailed).unwrap();
+                println!("{s}");
+                Ok(())
             }
             ZoneCommand::History { zone } => {
                 let url = format!("zone/{}/history", zone);
@@ -579,25 +595,16 @@ impl Zone {
         }
     }
 
-    async fn print_zone_status(
-        client: CascadeApiClient,
-        zone: ZoneStatus,
+    pub fn print_zone_status(
+        zone: &ZoneStatus,
+        policy: &PolicyInfo,
         detailed: bool,
-    ) -> Result<(), String> {
-        // Fetch the policy for the zone.
-        let url = format!("policy/{}", zone.policy);
-        let response: Result<PolicyInfo, PolicyInfoError> = client.get_json(&url).await?;
+    ) -> Result<String, std::fmt::Error> {
+        let mut out = String::new();
 
-        let policy = response.map_err(|_| {
-            format!(
-                "policy `{}` used by zone `{}` does not exist",
-                zone.policy, zone.name
-            )
-        })?;
-
-        println!("zone:   {}", zone.name);
-        println!("policy: {}", zone.policy);
-        println!("source: {}", zone.source);
+        writeln!(out, "zone:   {}", zone.name)?;
+        writeln!(out, "policy: {}", zone.policy)?;
+        writeln!(out, "source: {}", zone.source)?;
 
         let loader_review = match &policy.loader.review.mode {
             ReviewPolicyMode::Off => "off",
@@ -611,92 +618,99 @@ impl Zone {
             ReviewPolicyMode::Manual => "manual",
         };
 
-        println!("");
-        println!("review");
-        println!("  loaded: {loader_review}");
-        println!("  signed: {signer_review}");
-        println!("");
+        writeln!(out)?;
+        writeln!(out, "review")?;
+        writeln!(out, "  loaded: {loader_review}")?;
+        writeln!(out, "  signed: {signer_review}")?;
+        writeln!(out)?;
 
-        println!("last published");
+        writeln!(out, "last published")?;
         if let Some(last) = &zone.last_published {
-            println!("  loaded serial: {}", last.loaded_serial);
-            println!("  signed serial: {}", last.signed_serial);
-            println!(
+            writeln!(out, "  loaded serial: {}", last.loaded_serial)?;
+            writeln!(out, "  signed serial: {}", last.signed_serial)?;
+            writeln!(
+                out,
                 "  timestamp:     {}",
                 jiff::Timestamp::try_from(last.timestamp).unwrap()
-            );
-            println!("  size:          {} records", last.num_records);
+            )?;
+            writeln!(out, "  size:          {} records", last.num_records)?;
         } else {
-            println!("  <no versions published yet>");
+            writeln!(out, "  <no versions published yet>")?;
         }
 
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
-        println!("");
-        print_status(&zone, &policy);
+        writeln!(out)?;
+        print_status(&mut out, zone, policy)?;
 
         if zone.last_published.is_some() {
-            println!("");
-            println!("Published zone available at:");
-            for addr in zone.publish_addr {
-                println!("  - {addr}")
+            writeln!(out)?;
+            writeln!(out, "Published zone available at:")?;
+            for addr in &zone.publish_addr {
+                writeln!(out, "  - {addr}")?;
             }
         }
 
-        if let Some(error) = zone.error {
-            println!("");
-            println!("An error occurred during the last operation:");
-            println!("  {}ERROR: {error}{}", ansi::RED, ansi::RESET);
-            println!(
+        if let Some(error) = &zone.error {
+            writeln!(out)?;
+            writeln!(out, "An error occurred during the last operation:")?;
+            writeln!(out, "  {}ERROR: {error}{}", ansi::RED, ansi::RESET)?;
+            writeln!(
+                out,
                 "  Run {}`cascade zone history {}`{} for more information.",
                 ansi::BLUE,
                 zone.name,
                 ansi::RESET
-            );
+            )?;
         }
 
         if zone.maintenance_mode {
-            println!("");
-            println!(
+            writeln!(out)?;
+            writeln!(
+                out,
                 "{}WARNING: This zone is in maintenance mode{}",
                 ansi::YELLOW,
                 ansi::RESET
-            );
-            println!("  Cascade will not automatically start new loading and signing operations");
-            println!(
+            )?;
+            writeln!(
+                out,
+                "  Cascade will not automatically start new loading and signing operations"
+            )?;
+            writeln!(
+                out,
                 "  Run {}`cascade zone maintenance disable {}`{} to resume normal operation",
                 ansi::BLUE,
                 zone.name,
                 ansi::RESET
-            );
+            )?;
         }
 
         if detailed {
-            println!("");
-            println!("DNSSEC keys:");
-            for key in zone.keys {
+            writeln!(out)?;
+            writeln!(out, "DNSSEC keys:")?;
+            for key in &zone.keys {
                 match key.key_type {
                     KeyType::Ksk => print!("  KSK"),
                     KeyType::Zsk => print!("  ZSK"),
                     KeyType::Csk => print!("  CSK"),
                 }
-                println!(" tagged {}:", key.key_tag);
-                println!("    Reference: {}", key.pubref);
+                writeln!(out, " tagged {}:", key.key_tag)?;
+                writeln!(out, "    Reference: {}", key.pubref)?;
                 if key.signer {
-                    println!("    Actively used for signing");
+                    writeln!(out, "    Actively used for signing")?;
                 }
             }
-            println!("  Details:");
+            writeln!(out, "  Details:")?;
             for line in zone.key_status.lines() {
-                println!("    {line}");
+                writeln!(out, "    {line}")?;
             }
         }
 
-        Ok(())
+        Ok(out)
     }
 }
 
-pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
+pub fn print_status(out: &mut String, zone: &ZoneStatus, policy: &PolicyInfo) -> std::fmt::Result {
     let current = zone.progress;
 
     let progress = match current {
@@ -711,46 +725,52 @@ pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
         Progress::HaltSigned => "halted after signed review",
     };
 
-    println!("status: {}{progress}{}", ansi::BLUE, ansi::RESET);
+    writeln!(out, "status: {}{progress}{}", ansi::BLUE, ansi::RESET)?;
 
     if matches!(current, Progress::Waiting | Progress::Restoring) {
-        return;
+        return Ok(());
     }
 
-    print_load_phase(current, zone.unsigned_serial, &zone.receipt_report);
+    print_load_phase(out, current, zone.unsigned_serial, &zone.receipt_report)?;
     print_loaded_review_phase(
+        out,
         &zone.name,
         zone.unsigned_serial,
         policy,
         current,
         &zone.unsigned_review_addr,
-    );
+    )?;
     print_sign_phase(
+        out,
         current,
         zone.unsigned_serial,
         zone.signed_serial,
         &zone.signing_report,
-    );
+    )?;
     print_signed_review_phase(
+        out,
         &zone.name,
         zone.signed_serial,
         policy,
         current,
         &zone.signed_review_addr,
-    );
-    print_publish_phase();
+    )?;
+    print_publish_phase(out)?;
+
+    Ok(())
 }
 
 fn print_load_phase(
+    out: &mut String,
     current: Progress,
     unsigned_serial: Option<Serial>,
     receipt_report: &Option<ZoneLoaderReport>,
-) {
+) -> std::fmt::Result {
     if current < Progress::Loading {
-        println!("  {Pending} load");
+        writeln!(out, "  {Pending} load")?;
     } else if current > Progress::Loading {
         let unsigned_serial = serial_to_string(unsigned_serial);
-        println!("  {Done} load (serial: {unsigned_serial})");
+        writeln!(out, "  {Done} load (serial: {unsigned_serial})")?;
     } else {
         let short_serial = if let Some(unsigned_serial) = unsigned_serial {
             format!(" (serial: {unsigned_serial})")
@@ -787,76 +807,91 @@ fn print_load_phase(
             "".into()
         };
 
-        println!("  {Ongoing} load{short_serial}");
-        println!("  |   serial: {unsigned_serial}");
-        println!("  |   start time: {start_time}");
-        println!("  |   progress: {bytes}{total_size}{percentage}");
-        println!("  |");
+        writeln!(out, "  {Ongoing} load{short_serial}")?;
+        writeln!(out, "  |   serial: {unsigned_serial}")?;
+        writeln!(out, "  |   start time: {start_time}")?;
+        writeln!(out, "  |   progress: {bytes}{total_size}{percentage}")?;
+        writeln!(out, "  |")?;
     }
+
+    Ok(())
 }
 
 fn print_loaded_review_phase(
+    out: &mut String,
     zone: &ZoneName,
     serial: Option<Serial>,
     policy: &PolicyInfo,
     current: Progress,
     addrs: &[SocketAddr],
-) {
+) -> std::fmt::Result {
     use ansi::{BLUE, DIM, RED, RESET, YELLOW};
 
     if let ReviewPolicyMode::Off = policy.loader.review.mode {
-        println!("  {Pending} {DIM}review loaded zone (disabled){RESET}");
-        return;
+        writeln!(out, "  {Pending} {DIM}review loaded zone (disabled){RESET}")?;
+        return Ok(());
     }
 
     if current < Progress::LoadedReview {
-        println!("  {Pending} review loaded zone");
+        writeln!(out, "  {Pending} review loaded zone")?;
     } else if current == Progress::LoadedReview {
         if let ReviewPolicyMode::Script { hook } = &policy.loader.review.mode {
-            println!("  {Ongoing} review loaded zone");
-            println!("  |   {BLUE}automatic zone review in progress{RESET}");
-            println!("  |   review hook: \"{hook}\"",);
-            println!("  |");
+            writeln!(out, "  {Ongoing} review loaded zone")?;
+            writeln!(out, "  |   {BLUE}automatic zone review in progress{RESET}")?;
+            writeln!(out, "  |   review hook: \"{hook}\"",)?;
+            writeln!(out, "  |")?;
         } else {
             let serial = serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
-            println!("  {Stopped} review loaded zone");
-            println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            writeln!(out, "  {Stopped} review loaded zone")?;
+            writeln!(out, "  |   {YELLOW}zone must be reviewed manually{RESET}")?;
             if addrs.is_empty() {
-                println!("  |   {RED}no loaded review addresses were specified{RESET}");
+                writeln!(
+                    out,
+                    "  |   {RED}no loaded review addresses were specified{RESET}"
+                )?;
             } else {
-                println!("  |   loaded zone is available at:");
+                writeln!(out, "  |   loaded zone is available at:")?;
                 for addr in addrs {
-                    println!("  |     - {addr}");
+                    writeln!(out, "  |     - {addr}")?;
                 }
             }
-            println!("  |   possible actions:");
-            println!("  |     {BLUE}cascade zone approve --unsigned {zone} {serial}{RESET}");
-            println!("  |     {BLUE}cascade zone reject --unsigned {zone} {serial}{RESET}");
-            println!("  |");
+            writeln!(out, "  |   possible actions:")?;
+            writeln!(
+                out,
+                "  |     {BLUE}cascade zone approve --unsigned {zone} {serial}{RESET}"
+            )?;
+            writeln!(
+                out,
+                "  |     {BLUE}cascade zone reject --unsigned {zone} {serial}{RESET}"
+            )?;
+            writeln!(out, "  |")?;
         }
     } else if current == Progress::HaltLoaded {
-        println!("  {Error} review loaded zone");
-        println!("  |   {RED}ERROR: zone was rejected{RESET}");
-        println!("  |   possible actions:");
-        println!("  |     {BLUE}cascade zone override {zone}{RESET}",);
-        println!("  |     {BLUE}cascade zone reset {zone}{RESET}",);
-        println!("  |");
+        writeln!(out, "  {Error} review loaded zone")?;
+        writeln!(out, "  |   {RED}ERROR: zone was rejected{RESET}")?;
+        writeln!(out, "  |   possible actions:")?;
+        writeln!(out, "  |     {BLUE}cascade zone override {zone}{RESET}",)?;
+        writeln!(out, "  |     {BLUE}cascade zone reset {zone}{RESET}",)?;
+        writeln!(out, "  |")?;
     } else {
-        println!("  {Done} review loaded zone");
+        writeln!(out, "  {Done} review loaded zone")?;
     }
+
+    Ok(())
 }
 
 fn print_sign_phase(
+    out: &mut String,
     current: Progress,
     unsigned_serial: Option<Serial>,
     signed_serial: Option<Serial>,
     signing_report: &Option<SigningReport>,
-) {
+) -> std::fmt::Result {
     if current < Progress::Signing {
-        println!("  {Pending} sign");
+        writeln!(out, "  {Pending} sign")?;
     } else if current > Progress::Signing {
         let signed_serial = serial_to_string(signed_serial);
-        println!("  {Done} sign (serial: {signed_serial})");
+        writeln!(out, "  {Done} sign (serial: {signed_serial})")?;
     } else {
         let start_time = match &signing_report.as_ref().map(|r| &r.stage_report) {
             None => None,
@@ -872,69 +907,87 @@ fn print_sign_phase(
             "".into()
         };
         let signed_serial = serial_to_string(signed_serial);
-        println!("  {Ongoing} sign{short_signed_serial}");
-        println!("  |   loaded serial: {unsigned_serial}");
-        println!("  |   signed serial: {signed_serial}");
-        println!(
+        writeln!(out, "  {Ongoing} sign{short_signed_serial}")?;
+        writeln!(out, "  |   loaded serial: {unsigned_serial}")?;
+        writeln!(out, "  |   signed serial: {signed_serial}")?;
+        writeln!(
+            out,
             "  |   start time: {}",
             to_rfc3339_ago(start_time, "<not started yet>")
-        );
-        println!("  |");
+        )?;
+        writeln!(out, "  |")?;
     }
+
+    Ok(())
 }
 
 fn print_signed_review_phase(
+    out: &mut String,
     zone: &ZoneName,
     signed_serial: Option<Serial>,
     policy: &PolicyInfo,
     current: Progress,
     addrs: &[SocketAddr],
-) {
+) -> std::fmt::Result {
     use ansi::{BLUE, DIM, RED, RESET, YELLOW};
 
     if let ReviewPolicyMode::Off = policy.signer.review.mode {
-        println!("  {Pending} {DIM}review signed zone (disabled){RESET}");
-        return;
+        writeln!(out, "  {Pending} {DIM}review signed zone (disabled){RESET}")?;
+        return Ok(());
     }
 
     if current < Progress::SignedReview {
-        println!("  {Pending} review signed zone");
+        writeln!(out, "  {Pending} review signed zone")?;
     } else if current == Progress::SignedReview {
         if let ReviewPolicyMode::Script { hook } = &policy.signer.review.mode {
-            println!("  {Ongoing} review signed zone");
-            println!("  |   {YELLOW}automatic zone review in progress{RESET}");
-            println!("  |   review hook: \"{hook}\"",);
+            writeln!(out, "  {Ongoing} review signed zone")?;
+            writeln!(
+                out,
+                "  |   {YELLOW}automatic zone review in progress{RESET}"
+            )?;
+            writeln!(out, "  |   review hook: \"{hook}\"",)?;
         } else {
             let serial = signed_serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
-            println!("  {Stopped} review signed zone");
-            println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            writeln!(out, "  {Stopped} review signed zone")?;
+            writeln!(out, "  |   {YELLOW}zone must be reviewed manually{RESET}")?;
             if addrs.is_empty() {
-                println!("  |   {RED}no signed review addresses were specified{RESET}");
+                writeln!(
+                    out,
+                    "  |   {RED}no signed review addresses were specified{RESET}"
+                )?;
             } else {
-                println!("  |   signed zone is available at:");
+                writeln!(out, "  |   signed zone is available at:")?;
                 for addr in addrs {
-                    println!("  |     - {addr}");
+                    writeln!(out, "  |     - {addr}")?;
                 }
             }
-            println!("  |   possible actions:");
-            println!("  |     {BLUE}cascade zone approve --signed {zone} {serial}{RESET}");
-            println!("  |     {BLUE}cascade zone reject --signed {zone} {serial}{RESET}");
-            println!("  |");
+            writeln!(out, "  |   possible actions:")?;
+            writeln!(
+                out,
+                "  |     {BLUE}cascade zone approve --signed {zone} {serial}{RESET}"
+            )?;
+            writeln!(
+                out,
+                "  |     {BLUE}cascade zone reject --signed {zone} {serial}{RESET}"
+            )?;
+            writeln!(out, "  |")?;
         }
     } else if current == Progress::HaltSigned {
-        println!("  {Error} review signed zone");
-        println!("  |   {RED}ERROR: zone was rejected{RESET}");
-        println!("  |   possible actions:");
-        println!("  |     {BLUE}cascade zone override {zone}{RESET}");
-        println!("  |     {BLUE}cascade zone reset {zone}{RESET}");
-        println!("  |");
+        writeln!(out, "  {Error} review signed zone")?;
+        writeln!(out, "  |   {RED}ERROR: zone was rejected{RESET}")?;
+        writeln!(out, "  |   possible actions:")?;
+        writeln!(out, "  |     {BLUE}cascade zone override {zone}{RESET}")?;
+        writeln!(out, "  |     {BLUE}cascade zone reset {zone}{RESET}")?;
+        writeln!(out, "  |")?;
     } else {
-        println!("  {Done} review signed zone");
+        writeln!(out, "  {Done} review signed zone")?;
     }
+
+    Ok(())
 }
 
-fn print_publish_phase() {
-    println!("  {Pending} publish");
+fn print_publish_phase(out: &mut String) -> std::fmt::Result {
+    writeln!(out, "  {Pending} publish")
 }
 
 enum Icon {
