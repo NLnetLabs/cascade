@@ -41,19 +41,22 @@ use tracing::debug;
 use tracing::error;
 
 use crate::center::Center;
+use crate::manager::record_zone_event;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::signer::SigningTrigger;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
     KeyPair, KeySetState, MinTimestamp, PassThroughMode, SignerError, SigningStatusPerZone,
     ZoneSigner, faketime_or_now, load_keys,
 };
-use crate::zone::Zone;
+use crate::zone::{HistoricalEvent, Zone};
 
 pub fn sign_incrementally(
     zone_signer: &ZoneSigner,
     patch: SignedZonePatcher,
     zone: &Arc<Zone>,
     center: &Arc<Center>,
+    trigger: SigningTrigger,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) -> Result<(), SignerError> {
     // Check what work needs to be done. If the keyset state
@@ -215,6 +218,17 @@ pub fn sign_incrementally(
     debug!(
         "SIGNER: Determined min expiration time: {:?}",
         ws.local_state.next_min_expiration
+    );
+
+    record_zone_event(
+        center,
+        zone,
+        HistoricalEvent::SigningSucceeded {
+            trigger: trigger.into(),
+        },
+        ws.local_state
+            .previous_serial
+            .map(|s| domain::base::Serial(s.into())),
     );
 
     ws.local_state.save(&ws.center, &ws.zone)?;

@@ -332,7 +332,7 @@ impl ZoneSigner {
         let zone_name = &zone.name;
 
         if let Some(patcher) = builder.patch() {
-            return sign_incrementally(self, patcher, zone, center, status);
+            return sign_incrementally(self, patcher, zone, center, trigger, status);
         }
 
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
