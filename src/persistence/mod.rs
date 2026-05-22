@@ -26,18 +26,18 @@
 //! and a sequence of zero or more diffs:
 //!   - A loaded snapshot file is written immediately after approval of the
 //!     initial version of a zone is received, whether from disk or via
-//!     XFR-in. This file has the name <zone-name>.loaded.0.
+//!     XFR-in. This file has the name `<zone-name>.loaded.0`.
 //!   - A loaded diff file is written each time the input zone is reloaded,
 //!     whether due to XFR-in or due to reloading of the input file from disk.
-//!     Loaded diff files are named <zone-name>.loaded.N where N > 0 and
+//!     Loaded diff files are named `<zone-name>.loaded.N` where N > 0 and
 //!     increases by one each time a new diff is persisted.
 //!   - A signed snapshot file is written immediately after approval of the
 //!     first signed version of the zone resulting from full zone signing.
-//!     This file has the name <zone-name>.signed.0.
+//!     This file has the name `<zone-name>.signed.0`.
 //!   - A signed diff file is written each time the zone is re-signed, whether
 //!     due to changes in the input zone or changes in the signing keys or the
 //!     replacing of signatures for records whose signatures need refreshing.
-//!     Signed diff files are named <zone-name>.signed.N where N > 0 and
+//!     Signed diff files are named `<zone-name>.signed.N` where N > 0 and
 //!     increases by one each time a new diff is persisted.
 //!
 //! After a diff is persisted successfully:
