@@ -1683,6 +1683,16 @@ impl IncrementalSigningState {
         let mut new_sigs = vec![];
         for new_rrset in self.new_data.values_mut() {
             let key = (new_rrset[0].owner().clone(), new_rrset[0].rtype());
+
+            // XXX for compatibility with the full zone signer, always
+            // ignore DNSKEY/CDS/CDNSKEY when not at apex.
+            let rtype = new_rrset[0].rtype();
+            if (rtype == Rtype::DNSKEY || rtype == Rtype::CDS || rtype == Rtype::CDNSKEY)
+                && *new_rrset[0].owner() != self.origin
+            {
+                continue;
+            }
+
             if let Some(mut old_rrset) = self.old_data.remove(&key) {
                 let rtype = new_rrset[0].rtype();
                 if (rtype == Rtype::DNSKEY || rtype == Rtype::CDS || rtype == Rtype::CDNSKEY)
