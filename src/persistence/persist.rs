@@ -1,4 +1,88 @@
 //! Persisting zone data.
+//!
+//! When re-starting Cascade in-memory zone and IXFR diff data will be lost
+//! unless persisted and restored. This module provides implements
+//! persistence and restoration using files on disk stored in the zone-state
+//! directory alongside the JSON '.db' zone state files.
+//!
+//! # Data format
+//!
+//! Data is persisted as AXFR and IXFR message ANSWER sections in wire format.
+//!
+//! # Persistence
+//!
+//! Persistence is invoked immediately after zone approval, either because of
+//! a successful review hook, or no review hook at all, or because the
+//! operator overrode a failed review hook.
+//!
+//! Persisted data is stored separately for records received loading the
+//! zone vs changes that occur to the zone as a result of (re)signing it.
+//!
+//! For both loaded and signed changes, persistence stores an initial snapshot
+//! and a sequence of zero or more diffs:
+//!   - A loaded snapshot file is written immediately after approval of the
+//!     initial version of a zone is received, whether from disk or via
+//!     XFR-in. This file has the name <zone-name>.loaded.0.
+//!   - A loaded diff file is written each time the input zone is reloaded,
+//!     whether due to XFR-in or due to reloading of the input file from disk.
+//!     Loaded diff files are named <zone-name>.loaded.N where N > 0 and
+//!     increases by one each time a new diff is persisted.
+//!   - A signed snapshot file is written immediately after approval of the
+//!     first signed version of the zone resulting from full zone signing.
+//!     This file has the name <zone-name>.signed.0.
+//!   - A signed diff file is written each time the zone is re-signed, whether
+//!     due to changes in the input zone or changes in the signing keys or the
+//!     replacing of signatures for records whose signatures need refreshing.
+//!     Signed diff files are named <zone-name>.signed.N where N > 0 and
+//!     increases by one each time a new diff is persisted.
+//!
+//! After a diff is persisted successfully:
+//!   - The diff is stored in memory alongside the zone so that it can be
+//!     served in response to an IXFR request from a downstream nameserver.
+//!   - The path that the diff file was written to is appended to a collection
+//!     of paths held in zone state and the zone state is immediately
+//!     saved to disk.
+//!
+//! If persistence fails due to an I/O error this will cause Cascade to panic.
+//! If the underlying storage that Cascade depends on is not reliable we have
+//! no way of knowing what else may be failing and abort as it is not safe to
+//! continue under such circumstances.
+//!
+//! # Restoration
+//!
+//! Zones are created in memory at Cascade startup in storage state
+//! RestoringLoaded. If the zone loader attempts to start loading the zone the
+//! load will fail because the zone storage is not yet in the Passive state.
+//! Instead a refresh will be enqueud and acted upon once the zone storage
+//! enters the passive state.
+//!
+//! On startup Cascade starts a zone restorer which will attempt to restore
+//! all known zones. If restoration fails the zone will move to the passive
+//! state and any subsequent load of data will be handled as usual. As long
+//! as the last used serial number was successfully persisted to state and
+//! restored from state the newly signed zone will receive a higher serial
+//! number than the last published zone that we failed to restore. Failure
+//! to restore also results in deletion of all persisted data for the zone
+//! and updating of the state to clear the paths to the no longer existing
+//! persisted data files. Failure to remove a persisted data file will be
+//! logged as a WARNing and Cascade will continue.
+//!
+//! Restoration of a zone is achieved by replacing the current (empty) zone
+//! content with the loaded snapshot, then applying each loaded diff file
+//! to the snapshot one at a time. The diffs are also kept in-memory for
+//! responding to IXFR requests from downstream nameservers. The signed
+//! snapshot and diffs are also restored like this.
+//!
+//! Any diff that was available at a review server will have been lost.
+//! However as only approved data gets persisted, there should be no need
+//! to still be able to query the review server for an IXFR diff after
+//! Cascsade restarts.
+//!
+//! TODO: What happens if loaded data is approved and persisted, but
+//! Cascade is terminated before signing occurs. In such a case if restore
+//! is done as described above signing can occur as usual, but will a
+//! signed review hook be able to query the loaded review server for the
+//! loaded diff?
 
 use std::{
     fs::File,
