@@ -57,10 +57,10 @@ impl Loader {
             match state.loader.source {
                 Source::None => { /* Nothing to do */ }
                 Source::Zonefile { .. } => {
-                    // Don't enqueue a refresh for zones sourced from disk as
-                    // the operator may in the middle of editing the zonefile
-                    // and thus we require zonefiles to be reloaded explicitly
-                    // via `cascade zone reload`.
+                    // Don't enqueue a refresh for zones sourced from disk
+                    // as the operator be may in the middle of editing the
+                    // zonefile and thus we require zonefiles to be reloaded
+                    // explicitly via `cascade zone reload`.
                 }
                 Source::Server { .. } => {
                     ZoneHandle {
