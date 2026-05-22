@@ -2,7 +2,7 @@
 
 use std::{
     fs::File,
-    io::{BufWriter, Write},
+    io::{BufWriter, ErrorKind, Write},
     path::Path,
     sync::Arc,
 };
@@ -12,11 +12,11 @@ use cascade_zonedata::{
 };
 
 use domain::new::base::wire::{BuildBytes, TruncationError};
-use tracing::trace;
+use tracing::{trace, warn};
 
 use crate::{
     center::Center,
-    zone::{Zone, ZoneHandle},
+    zone::{Zone, ZoneHandle, save_state_now},
 };
 
 /// Persist the data for a loaded instance of a zone.
@@ -38,23 +38,25 @@ pub fn persist_loaded(
         // suffixed by an index which rises by one when persisted.
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
-        let mut state = zone.state.lock().unwrap();
-        let handle = ZoneHandle {
-            zone,
-            state: &mut state,
-            center,
-        };
-        let next_idx = handle.state.persisted_loaded_diff_paths.len();
-        let destination = center
-            .config
-            .zone_state_dir
-            .join(format!("{}.loaded.{next_idx}", zone.name));
-        persist_to_file(destination.as_std_path(), persister.loaded_diff().clone());
-        handle
-            .state
-            .persisted_loaded_diff_paths
-            .push(destination.into());
-        handle.zone.mark_dirty(handle.state, handle.center);
+        {
+            let mut state = zone.state.lock().unwrap();
+            let handle = ZoneHandle {
+                zone,
+                state: &mut state,
+                center,
+            };
+            let next_idx = handle.state.persisted_loaded_diff_paths.len();
+            let destination = center
+                .config
+                .zone_state_dir
+                .join(format!("{}.loaded.{next_idx}", zone.name));
+            persist_to_file(destination.as_std_path(), persister.loaded_diff().clone());
+            handle
+                .state
+                .persisted_loaded_diff_paths
+                .push(destination.into());
+        }
+        save_state_now(center, zone);
     }
 
     // Store the loaded diff in-memory for serving IXFR out.
@@ -104,26 +106,28 @@ pub fn persist_signed(
         // index which rises by one when persisted.
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
-        let mut state = zone.state.lock().unwrap();
-        let handle = ZoneHandle {
-            zone,
-            state: &mut state,
-            center,
-        };
-        let next_idx = handle.state.persisted_signed_diff_paths.len();
-        let destination = center
-            .config
-            .zone_state_dir
-            .join(format!("{}.signed.{next_idx}", zone.name));
+        {
+            let mut state = zone.state.lock().unwrap();
+            let handle = ZoneHandle {
+                zone,
+                state: &mut state,
+                center,
+            };
+            let next_idx = handle.state.persisted_signed_diff_paths.len();
+            let destination = center
+                .config
+                .zone_state_dir
+                .join(format!("{}.signed.{next_idx}", zone.name));
 
-        // Write the diff to disk as a binary AXFR snapshot or binary IXFR
-        // diff.
-        persist_to_file(destination.as_std_path(), signed_diff.clone());
-        handle
-            .state
-            .persisted_signed_diff_paths
-            .push(destination.into());
-        handle.zone.mark_dirty(handle.state, handle.center);
+            // Write the diff to disk as a binary AXFR snapshot or binary IXFR
+            // diff.
+            persist_to_file(destination.as_std_path(), signed_diff.clone());
+            handle
+                .state
+                .persisted_signed_diff_paths
+                .push(destination.into());
+        }
+        save_state_now(center, zone);
 
         // Store the diffs in-memory for serving IXFR out.
         //
@@ -144,6 +148,7 @@ pub fn persist_signed(
             // expiring. Signed zones MUST always have a new SOA SERIAL
             // compared to the previous version of the signed zone.
 
+            let mut state = zone.state.lock().unwrap();
             let partial_diff = state.storage.diffs.last_mut().unwrap();
             let loaded_diff = loaded_diff.cloned().unwrap_or(DiffData::new().into());
             trace!(
@@ -169,12 +174,36 @@ pub fn persist_signed(
 
 fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
     // Write the diff in AXFR / IXFR wire format to disk.
-    let f = File::create_new(destination).unwrap_or_else(|err| {
-        panic!(
-            "Failed to persist unsigned zone data to '{}': {err}",
-            destination.display()
-        );
-    });
+    let f = match File::create_new(destination) {
+        Ok(f) => f,
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+            // This is not expected. When persisting the zone data to a file
+            // we save Cascade zone state "now" so that the persisted paths in
+            // use are known on next restart, so we should know this path was
+            // in use and be attempting to write to a different non-existing
+            // path. If for some reason zone state was not persisted after the
+            // persisted zone data file was created, e.g. a power outage in
+            // combination with a change to persistence logic compared to how
+            // it is at the time of writing so that zone state was not ensured
+            // to be persisted before proceeding, that could cause this.
+            warn!(
+                "Overwriting existing persisted zone data file at '{}'.",
+                destination.display()
+            );
+            File::create(destination).unwrap_or_else(|err| {
+                panic!(
+                    "Failed to persist zone data to '{}': {err}",
+                    destination.display()
+                );
+            })
+        }
+        Err(err) => {
+            panic!(
+                "Failed to persist zone data to '{}': {err}",
+                destination.display()
+            );
+        }
+    };
     let mut f = BufWriter::new(f);
 
     let mut buf = vec![0u8; 1024];
