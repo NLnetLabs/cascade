@@ -28,6 +28,68 @@ runs:
         log-level: ${{ inputs.log-level }}
 
     # ------------------------------------------------------------------------
+    # 0. Add a zone that cannot be loaded but does not fail `zone add`
+    #    immediately so that Cascade has the zone but no content for it,
+    #    then stop Cascade and restart it, to verify that Cascade can handle
+    #    restoration without any persisted state to restore from.
+    # ------------------------------------------------------------------------
+
+    - name: Add a non-existing upstream zone
+      run: |
+        cascade zone add --policy default --source 127.0.0.1:1055 i.dont.exist
+
+    - name: Stop Cascade
+      run: |
+        pkill cascaded
+
+    - name: Wait for Cascade to exit again
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until ! cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade health
+            echo "::error:: timeout: health check did not indicate Cascade had stopped"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Restart Cascade
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+
+    - name: Wait for Cascade to become healthy
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: health check did not indicate Cascade had started"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check that Cascade still knows the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone list | grep -q i.dont.exist; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone list
+            echo "::error:: timeout: Cascade no longer knows the zone"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Delete the zone
+      run: |
+        cascade zone remove i.dont.exist    
+
+    # ------------------------------------------------------------------------
     # 1. Add an upstream NSD source zone and sign it.
     # ------------------------------------------------------------------------
 
@@ -70,11 +132,11 @@ runs:
     #        zone that we saved to disk in the step above.
     # ------------------------------------------------------------------------
 
-    - name: Stop Cascade
+    - name: Stop Cascade again
       run: |
         pkill cascaded
 
-    - name: Wait for Cascade to exit
+    - name: Wait for Cascade to exit again
       run: |
         timeout=10 # seconds
         start=$(date +%s)
