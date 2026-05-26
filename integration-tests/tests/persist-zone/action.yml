@@ -58,7 +58,7 @@ runs:
     - name: Restart Cascade
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log" 
 
     - name: Wait for Cascade to become healthy
       run: |
@@ -87,7 +87,7 @@ runs:
 
     - name: Delete the zone
       run: |
-        cascade zone remove i.dont.exist    
+        cascade zone remove i.dont.exist
 
     # ------------------------------------------------------------------------
     # 1. Add an upstream NSD source zone and sign it.
