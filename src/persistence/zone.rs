@@ -73,6 +73,18 @@ impl ZonePersistenceHandle<'_> {
                         };
                         handle.storage().abandon_loaded_restoration(restorer);
                         handle.state.persistence.ongoing.finish();
+
+                        // In case this zone was signed in the past we have
+                        // to make sure that we don't attempt to sign it now,
+                        // as doing so will fail due to the lack of loaded
+                        // zone content.
+                        // TODO: Find a better way to prevent this issue
+                        // as changing the min_expiration timestamps is a
+                        // very indirect and non-obvious way of preventing
+                        // re-signing.
+                        state.min_expiration = None;
+                        state.next_min_expiration = None;
+
                         return;
                     }
                     Err(err) => {
@@ -119,6 +131,18 @@ impl ZonePersistenceHandle<'_> {
                         };
                         handle.storage().abandon_signed_restoration(restorer);
                         handle.state.persistence.ongoing.finish();
+
+                        // In case this zone was signed in the past we have
+                        // to make sure that we don't attempt to sign it now,
+                        // as doing so will fail due to the lack of loaded
+                        // zone content.
+                        // TODO: Find a better way to prevent this issue
+                        // as changing the min_expiration timestamps is a
+                        // very indirect and non-obvious way of preventing
+                        // re-signing.
+                        state.min_expiration = None;
+                        state.next_min_expiration = None;
+
                         return;
                     }
                     Err(err) => {

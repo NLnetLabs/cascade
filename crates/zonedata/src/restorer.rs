@@ -428,6 +428,21 @@ impl SignedZoneRestorer {
     /// it will be overwritten.
     pub fn clear(&mut self) {
         // Initialize the absolute data.
+        // Initialize the absolute data.
+
+        // SAFETY: As per the caller, 'loaded[index]' will not be
+        // accessed elsewhere for the lifetime of 'self', and so is sound to
+        // access mutably.
+        let next = unsafe { &mut *self.data.loaded[self.index as usize].get() };
+        next.soa = None;
+        next.records.clear();
+
+        // SAFETY: As per the caller, 'loaded[!index]' will not be
+        // accessed elsewhere for the lifetime of 'self', and so is sound to
+        // access mutably.
+        let curr = unsafe { &mut *self.data.loaded[!self.index as usize].get() };
+        curr.soa = None;
+        curr.records.clear();
 
         // SAFETY: As per the caller, 'signed[index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to

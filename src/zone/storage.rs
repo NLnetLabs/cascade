@@ -633,18 +633,16 @@ impl StorageZoneHandle<'_> {
 
     /// Abandon the ongoing signed-instance restore.
     ///
-    /// Any intermediate zone data for the signed instance is wiped. The
-    /// restored loaded instance is preserved. The zone is moved to the signing
-    /// state. It is registered against Cascade's zone servers and a signing
-    /// operation is enqueued.
+    /// Any intermediate zone data is cleared and the zone is moved to the
+    /// passive state. It is registered against Cascade's zone servers.
     pub fn abandon_signed_restoration(&mut self, restorer: SignedZoneRestorer) {
         // Examine the current state.
-        let (loaded_reviewer, signed_reviewer, viewer, builder);
+        let (loaded_reviewer, signed_reviewer, viewer);
         match transition(&mut self.state.storage.machine) {
             (transition, ZoneDataStorage::RestoringSigned(s)) => {
                 let new_s;
-                (loaded_reviewer, signed_reviewer, viewer, builder, new_s) = s.abandon(restorer);
-                transition.move_to(ZoneDataStorage::Signing(new_s));
+                (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
+                transition.move_to(ZoneDataStorage::Passive(new_s));
             }
 
             _ => unreachable!(
@@ -657,8 +655,8 @@ impl StorageZoneHandle<'_> {
         SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
         PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
 
-        // Initiate a new signing operation.
-        self.zone().start_sign_after_restore(builder);
+        // Send a notification that the state machine is now passive.
+        self.on_passive();
     }
 }
 

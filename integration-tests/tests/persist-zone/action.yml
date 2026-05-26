@@ -660,7 +660,7 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 3 ))
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 4 ))
 
         until dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
           if (($(date +%s) > (start + timeout))); then
