@@ -27,6 +27,9 @@ use tracing::{info, trace};
 use crate::{center::Center, zone::Zone};
 
 /// Restore the loaded instance data of a zone.
+///
+/// Returns Ok(true) if data was stored, Ok(false) if there was nothing to
+/// restore, or Err(..) on error.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -36,7 +39,7 @@ pub fn restore_loaded(
     zone: &Arc<Zone>,
     center: &Arc<Center>,
     restorer: &mut LoadedZoneRestorer,
-) -> io::Result<()> {
+) -> io::Result<bool> {
     let mut state = zone.state.lock().unwrap();
     if !state.persisted_loaded_diff_paths.is_empty() {
         info!("Restoring loaded zone from persisted data");
@@ -122,12 +125,16 @@ pub fn restore_loaded(
         }
 
         info!("Restored loaded zone snapshot and {} diffs", count - 1);
+        io::Result::Ok(true)
+    } else {
+        io::Result::Ok(false)
     }
-
-    io::Result::Ok(())
 }
 
 /// Restore the loaded instance data of a zone.
+///
+/// Returns Ok(true) if data was stored, Ok(false) if there was nothing to
+/// restore, or Err(..) on error.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -137,7 +144,7 @@ pub fn restore_signed(
     zone: &Arc<Zone>,
     center: &Arc<Center>,
     restorer: &mut SignedZoneRestorer,
-) -> io::Result<()> {
+) -> io::Result<bool> {
     let state = zone.state.lock().unwrap();
     if !state.persisted_loaded_diff_paths.is_empty() {
         info!("Restoring signed zone from persisted data");
@@ -240,8 +247,10 @@ pub fn restore_signed(
             );
         }
         info!("Restored signed zone snapshot and {} diffs", count - 1);
+        io::Result::Ok(true)
+    } else {
+        io::Result::Ok(false)
     }
-    io::Result::Ok(())
 }
 
 fn parse_rr(

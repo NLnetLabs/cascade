@@ -57,11 +57,24 @@ impl ZonePersistenceHandle<'_> {
                 // Try to restore the loaded instance.
                 let mut restorer = restorer;
                 let restored = match super::restore_loaded(&zone, &center, &mut restorer) {
-                    Ok(()) => restorer.finish().unwrap_or_else(|_| {
-                        unreachable!(
-                            "'restore_loaded()' always completes restoration on successful return"
-                        )
-                    }),
+                    Ok(true) => {
+                        // Data was restored. Use it.
+                        restorer.finish().unwrap_or_else(|_| {
+                            unreachable!("Loaded zone restoration should have built new zone data")
+                        })
+                    }
+                    Ok(false) => {
+                        // There was nothing to restore.
+                        let mut state = zone.state.lock().unwrap();
+                        let mut handle = ZoneHandle {
+                            zone: &zone,
+                            state: &mut state,
+                            center: &center,
+                        };
+                        handle.storage().abandon_loaded_restoration(restorer);
+                        handle.state.persistence.ongoing.finish();
+                        return;
+                    }
                     Err(err) => {
                         warn!("Abandoning loaded restoration: {err}");
                         let mut state = zone.state.lock().unwrap();
@@ -90,11 +103,24 @@ impl ZonePersistenceHandle<'_> {
 
                 // Try to restore the signed instance.
                 let restored = match super::restore_signed(&zone, &center, &mut restorer) {
-                    Ok(()) => restorer.finish().unwrap_or_else(|_| {
-                        unreachable!(
-                            "'restore_signed()' always completes restoration on successful return"
-                        )
-                    }),
+                    Ok(true) => {
+                        // Data was restored. Use it.
+                        restorer.finish().unwrap_or_else(|_| {
+                            unreachable!("Signed zone restoration should have built new zone data")
+                        })
+                    }
+                    Ok(false) => {
+                        // There was nothing to restore.
+                        let mut state = zone.state.lock().unwrap();
+                        let mut handle = ZoneHandle {
+                            zone: &zone,
+                            state: &mut state,
+                            center: &center,
+                        };
+                        handle.storage().abandon_signed_restoration(restorer);
+                        handle.state.persistence.ongoing.finish();
+                        return;
+                    }
                     Err(err) => {
                         warn!("Abandoning signed restoration: {err}");
                         let mut state = zone.state.lock().unwrap();
