@@ -149,7 +149,11 @@ pub fn persist_signed(
             // compared to the previous version of the signed zone.
 
             let mut state = zone.state.lock().unwrap();
-            let partial_diff = state.storage.diffs.last_mut().unwrap();
+
+            // Discard any partial (loaded only without signed) diff, we will
+            // push a complete (loaded + signed) diff to the collection.
+            let _partial_diff = state.storage.diffs.pop();
+
             let loaded_diff = loaded_diff.cloned().unwrap_or(DiffData::new().into());
             trace!(
                 "Storing IXFR diff for SOA serial {:?} -> {:?}",
@@ -162,8 +166,7 @@ pub fn persist_signed(
                     .as_ref()
                     .map(|soa_rr| soa_rr.rdata.serial),
             );
-            let complete_diff = (loaded_diff, signed_diff.clone());
-            *partial_diff = complete_diff;
+            state.storage.diffs.push((loaded_diff, signed_diff.clone()));
         }
     }
 

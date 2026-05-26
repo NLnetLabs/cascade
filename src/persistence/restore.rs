@@ -215,22 +215,21 @@ pub fn restore_signed(
                     io::Error::other(format!("Internal error: Apply failed: {err}"))
                 })?;
 
-                if let Some(diff) = restorer.take_diff() {
+                if let Some(signed_diff) = restorer.take_diff() {
                     let mut state = zone.state.lock().unwrap();
                     // Get the diff pair (loaded diff and missing signed diff)
-                    // that this signed diff needs to be inserted into.
-                    let diffs = state
-                        .storage
-                        .diffs
-                        .get_mut(i - 1)
-                        .ok_or(io::Error::other(format!("Missing loaded diff {i}")))?;
-
-                    // Insert the signed diff alongside the loaded diff, unless the
-                    // signed diff already unexpectedly exists.
-                    if !diffs.1.is_empty() {
-                        return Err(io::Error::other(format!("Signed diff {i} already exists")));
+                    // that this signed diff needs to be inserted into. If
+                    // the signed diff was caused by incremental signing then
+                    // a loaded diff won't have been available to restore, we
+                    // need to use an empty loaded diff in that case.
+                    if let Some(partial_diff) = state.storage.diffs.get_mut(i - 1) {
+                        // Insert the signed diff alongside the loaded diff, unless the
+                        // signed diff already unexpectedly exists.
+                        assert!(partial_diff.1.is_empty());
+                        partial_diff.1 = signed_diff.into();
                     } else {
-                        diffs.1 = diff.into();
+                        let loaded_diff = Arc::new(DiffData::new());
+                        state.storage.diffs.push((loaded_diff, signed_diff.into()));
                     }
 
                     trace!(
