@@ -442,6 +442,10 @@ impl<'a> ZoneHandle<'a> {
         // TODO: Move this into 'instances.switch()'.
         self.state.min_expiration = self.state.next_min_expiration.take();
 
+        // Send a message to the zone signer to trigger a re-scan of when to
+        // re-sign next.
+        self.center.signer.on_publish_signed_zone(self.center);
+
         PublicationServer::notify_downstream(&mut *self);
 
         self.storage().start_cleanup(cleaner);

@@ -239,14 +239,20 @@ impl ZoneServer {
 
         let zone_name = &zone.name;
         if let ReviewMode::Off = review.mode {
+            let mut state = zone.state.lock().unwrap();
+            let mut handle = ZoneHandle {
+                zone,
+                state: &mut state,
+                center,
+            };
+
             // Approve immediately.
             match self.source {
                 Source::Unsigned => {
-                    info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
-                    self.on_unsigned_zone_approved(center, zone, zone_serial);
+                    handle.approve_loaded();
                 }
                 Source::Signed => {
-                    self.on_signed_zone_approved(center, zone, zone_serial);
+                    handle.approve_signed();
                 }
                 Source::Published => unreachable!(),
             }
@@ -399,38 +405,6 @@ impl ZoneServer {
             }
         }
         None
-    }
-
-    fn on_unsigned_zone_approved(
-        &self,
-        center: &Arc<Center>,
-        zone: &Arc<Zone>,
-        zone_serial: Serial,
-    ) {
-        let _ = zone_serial; // TODO
-        let mut state = zone.state.lock().unwrap();
-        ZoneHandle {
-            zone,
-            state: &mut state,
-            center,
-        }
-        .approve_loaded();
-    }
-
-    fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
-        {
-            let mut state = zone.state.lock().unwrap();
-            ZoneHandle {
-                zone,
-                state: &mut state,
-                center,
-            }
-            .approve_signed();
-        }
-
-        // Send a message to the zone signer to trigger a re-scan of
-        // when to re-sign next.
-        center.signer.on_publish_signed_zone(center);
     }
 
     async fn process_output(
