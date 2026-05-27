@@ -344,6 +344,13 @@ impl<'a> ZoneHandle<'a> {
             None, // TODO
         );
 
+        // Move to the 'Waiting' state.
+        let (transition, state) = self.state.machine.transition();
+        let ZoneStateMachine::SignedReview(signed) = state else {
+            panic!("The zone must be in signer review")
+        };
+        transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
+
         // Persist the signed instance while remaining in the 'SignedReview'
         // state. Once persistence is complete, 'switch()' will be called, which
         // will transition to the 'Waiting' state.
@@ -396,13 +403,6 @@ impl<'a> ZoneHandle<'a> {
 
     /// Finish switching to a new instance of the zone.
     pub(crate) fn finish_switch(&mut self, cleaner: cascade_zonedata::ZoneCleaner) {
-        // Move to the 'Waiting' state.
-        let (transition, state) = self.state.machine.transition();
-        let ZoneStateMachine::SignedReview(signed) = state else {
-            panic!("The zone must be in signer review")
-        };
-        transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
-
         self.storage().start_cleanup(cleaner);
     }
 }
