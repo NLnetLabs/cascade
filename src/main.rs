@@ -101,6 +101,14 @@ fn main() -> ExitCode {
                 }
             }
 
+            // Restore pending policies.
+            state
+                .policies
+                .extend(policies.into_iter().map(|(name, spec)| {
+                    let policy = spec.parse(&name);
+                    (name, policy)
+                }));
+
             // Restore pending zones.
             for name in zones {
                 assert!(
@@ -114,14 +122,6 @@ fn main() -> ExitCode {
                     };
                 state.zones.insert(ZoneByName(Arc::new(zone)));
             }
-
-            // Restore pending policies.
-            state
-                .policies
-                .extend(policies.into_iter().map(|(name, spec)| {
-                    let policy = spec.parse(&name);
-                    (name, policy)
-                }));
 
             // Update policy.zones
             for zone in &state.zones {
