@@ -441,12 +441,12 @@ impl Zone {
                                             SigningTrigger::Resign(ResigningTrigger {
                                                 keys_changed: false,
                                                 sigs_need_refresh: true,
-                                            }) => "signatures nearing expiration",
+                                            }) => "signatures needing refresh",
                                             SigningTrigger::Resign(ResigningTrigger {
                                                 keys_changed: true,
                                                 sigs_need_refresh: true,
                                             }) =>
-                                                "a change in signing keys and signatures nearing expiration",
+                                                "a change in signing keys and signatures needing refresh",
                                             SigningTrigger::Resign(ResigningTrigger {
                                                 keys_changed: false,
                                                 sigs_need_refresh: false,

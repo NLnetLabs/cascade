@@ -277,6 +277,13 @@ impl ZoneSigner {
         let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
     }
 
+    pub fn on_zone_policy_changed(&self) {
+        // Just recompute the resign timer. In the future we may want to
+        // react to changes in policy, for example, whether NSEC is used
+        // or NSEC3.
+        let _ = self.next_resign_time_tx.send(Some(Instant::now()));
+    }
+
     /// Enqueue a zone for signing, waiting until it can begin.
     pub async fn wait_to_sign(
         &self,
@@ -325,7 +332,7 @@ impl ZoneSigner {
         let zone_name = &zone.name;
 
         if let Some(patcher) = builder.patch() {
-            return sign_incrementally(self, patcher, zone, center, status);
+            return sign_incrementally(self, patcher, zone, center, trigger, status);
         }
 
         info!("[ZS]: Starting signing operation for zone '{zone_name}'");
@@ -580,7 +587,8 @@ impl ZoneSigner {
         // Use a stable sort; the stable sort algorithm detects runs of sorted
         // elements ('records' contains two concatenated pre-sorted runs) and
         // can efficiently sort around them.
-        records.par_sort();
+        records.par_sort_by(CanonicalOrd::canonical_cmp);
+
         let unsigned_records = records;
         let denial_time = denial_start.elapsed();
         let denial_rr_count = unsigned_records.len() - unsigned_rr_count;

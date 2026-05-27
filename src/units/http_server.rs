@@ -970,6 +970,10 @@ impl HttpServer {
             }
         }
 
+        // We should have an on_zone_policy_changed per zone. For now, just
+        // call it once.
+        center.signer.on_zone_policy_changed();
+
         let mut changes: Vec<(String, _)> =
             changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
         changes.sort_unstable_by(|l, r| l.0.cmp(&r.0));
