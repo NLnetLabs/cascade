@@ -32,10 +32,10 @@ pub fn persist_loaded(
 ) -> LoadedZonePersisted {
     if !persister.loaded_diff().is_empty() {
         // Determine the path to write to and update the record of written
-        // paths here as we don't want to give responsibility for working
-        // with ZoneState to the persistence crate. Accumulate a set of
-        // diffs per unsigned and signed zone, each stored at a path one
-        // suffixed by an index which rises by one when persisted.
+        // paths here as we don't want to give responsibility for working with
+        // ZoneState to the persistence crate. Accumulate a set of diffs per
+        // unsigned and signed zone, each stored at a path one suffixed by an
+        // index which rises by one when persisted.
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
         {
@@ -66,10 +66,10 @@ pub fn persist_loaded(
     // Only store a diff if something has changed compared to the previous
     // version of the loaded zone, otherwise this is not a diff to a previous
     // version of the zone but actually a snapshot of the zone after having
-    // been loaded for the first time. If the SOA serial didn't change (which
-    // is legal for a loaded zone) don't store a diff because the IXFR protocol
-    // requires a SOA serial number change so we won't be able to serve the diff
-    // anyway.
+    // been loaded for the first time. If the SOA serial didn't change
+    // (which is legal for a loaded zone) don't store a diff because the IXFR
+    // protocol requires a SOA serial number change so we won't be able to
+    // serve the diff anyway.
     if !loaded_diff.is_empty() && loaded_diff.removed_soa.is_some() {
         // Store anything that changed when the zone was re-loaded, i.e.
         // unsigned zone content changes. Note that the SOA SERIAL is not
@@ -216,10 +216,6 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
         RR: std::ops::Deref<Target = BB>,
         W: Write,
     {
-        // Earlier attempt using presentation format instead of wire format.
-        // let r: OldRecord = loaded_diff.added_soa.clone().unwrap().into();
-        // writeln!(f, "{r}").unwrap();
-
         let buf_len = buf.len();
 
         let num_bytes_to_write = match rr.build_bytes(buf) {
