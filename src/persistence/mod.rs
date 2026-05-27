@@ -2,12 +2,12 @@
 //!
 //! The zone persister saves the data for loaded and signed zones to disk, so
 //! that Cascade can seamlessly resume operation after a crash / restart. At
-//! startup, it tries to restore data for all known zones.
+//! startup it tries to restore data for all known zones.
 //!
 //! When re-starting Cascade in-memory zone and IXFR diff data will be lost
-//! unless persisted and restored. This module provides implements
-//! persistence and restoration using files on disk stored in the zone-state
-//! directory alongside the JSON '.db' zone state files.
+//! unless persisted and restored. This module implements persistence
+//! and restoration using files on disk stored in the zone-state directory
+//! alongside the JSON '.db' zone state files.
 //!
 //! # Data format
 //!
@@ -19,7 +19,7 @@
 //! a successful review hook, or no review hook at all, or because the
 //! operator overrode a failed review hook.
 //!
-//! Persisted data is stored separately for records received loading the
+//! Persisted data is stored separately for records received while loading the
 //! zone vs changes that occur to the zone as a result of (re)signing it.
 //!
 //! For both loaded and signed changes, persistence stores an initial snapshot
@@ -41,11 +41,15 @@
 //!     increases by one each time a new diff is persisted.
 //!
 //! After a diff is persisted successfully:
-//!   - The diff is stored in memory alongside the zone so that it can be
-//!     served in response to an IXFR request from a downstream nameserver.
-//!   - The path that the diff file was written to is appended to a collection
-//!     of paths held in zone state and the zone state is immediately
-//!     saved to disk.
+//!   - The diff is stored in memory alongside the zone in
+//!     [`StorageState::diffs`]so that it can be served in response to an IXFR
+//!     request from a downstream nameserver.
+//!   - The path that the diff file was written to is appended to
+//!     [`ZoneState::persisted_loaded_diff_paths`] or
+//!     [`ZoneState::persisted_signed_diff_paths`] and the zone state is
+//!     immediately saved to disk.
+//!
+//! # Panics
 //!
 //! If persistence fails due to an I/O error this will cause Cascade to panic.
 //! If the underlying storage that Cascade depends on is not reliable we have
@@ -55,13 +59,13 @@
 //! # Restoration
 //!
 //! Zones are created in memory at Cascade startup in storage state
-//! RestoringLoaded. If the zone loader attempts to start loading the zone the
-//! load will fail because the zone storage is not yet in the Passive state.
-//! Instead a refresh will be enqueud and acted upon once the zone storage
-//! enters the passive state.
+//! `RestoringLoaded`. If the zone loader attempts to start loading the zone
+//! the load will fail because the zone storage is not yet in the `Passive`
+//! state. Instead a refresh will be enqueud and acted upon once the zone
+//! storage enters the `Passive` state.
 //!
 //! On startup Cascade starts a zone restorer which will attempt to restore
-//! all known zones. If restoration fails the zone will move to the passive
+//! all known zones. If restoration fails the zone will move to the `Passive`
 //! state and any subsequent load of data will be handled as usual. As long
 //! as the last used serial number was successfully persisted to state and
 //! restored from state the newly signed zone will receive a higher serial
