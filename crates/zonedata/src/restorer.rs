@@ -428,7 +428,6 @@ impl SignedZoneRestorer {
     /// it will be overwritten.
     pub fn clear(&mut self) {
         // Initialize the absolute data.
-        // Initialize the absolute data.
 
         // SAFETY: As per the caller, 'loaded[index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to
