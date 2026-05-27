@@ -301,3 +301,16 @@ jobs:
           accept-xfr-from: ${{ matrix.accept-xfr-from }}
           downstream-expects-tsig: ${{ matrix.downstream-expects-tsig }}
           downstream-uses-tsig: ${{ matrix.downstream-uses-tsig }}
+
+  review-signed-zone:
+    name: 
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/review-signed-zone
