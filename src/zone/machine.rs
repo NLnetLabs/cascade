@@ -1,6 +1,6 @@
 use cascade_api::ZoneReviewStatus;
 use cascade_zonedata::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder};
-use tracing::{info, trace};
+use tracing::{debug, info, trace};
 
 use crate::{
     units::zone_signer::SignerError,
@@ -90,7 +90,9 @@ impl ZoneStateMachine {
         let s = match self {
             Self::HaltLoaded(_) => "loaded zone was rejected".into(),
             Self::HaltSigned(_) => "signed zone was rejected".into(),
-            Self::SigningFailed(SigningFailed { err }) => format!("signing the zone failed: {err}"),
+            Self::SigningFailed(SigningFailed { err, .. }) => {
+                format!("signing the zone failed: {err}")
+            }
             _ => return None,
         };
         Some(s)
@@ -430,18 +432,24 @@ impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_reset(&mut self) -> Result<(), ()> {
         let (transition, state) = self.state.machine.transition();
 
+        // Whether a newly-loaded instance is being abandoned.
+        let abandoning_loaded;
+
         match state {
             ZoneStateMachine::HaltLoaded(halt_loaded) => {
+                abandoning_loaded = true;
                 let waiting = halt_loaded.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
                 self.storage().abandon_loaded_review();
             }
             ZoneStateMachine::HaltSigned(halt_signed) => {
+                abandoning_loaded = halt_signed.have_next_loaded;
                 let waiting = halt_signed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
                 self.storage().abandon_signed_review();
             }
             ZoneStateMachine::SigningFailed(signing_failed) => {
+                abandoning_loaded = signing_failed.have_next_loaded;
                 let waiting = signing_failed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
             }
@@ -450,6 +458,13 @@ impl<'a> ZoneHandle<'a> {
                 return Err(());
             }
         };
+
+        if abandoning_loaded {
+            // We abandoned a newly-loaded instance; enqueue a refresh so we can
+            // try fetching it again.
+            debug!("Enqueuing a refresh since a newly-loaded instance was abandoned");
+            self.loader().enqueue_refresh(false);
+        }
 
         Ok(())
     }
@@ -657,12 +672,24 @@ impl Signing {
     }
 
     fn signing_failed(self, err: SignerError) -> SigningFailed {
-        SigningFailed { err }
+        let Self {
+            prev_attempts: _,
+            have_next_loaded,
+        } = self;
+        SigningFailed {
+            have_next_loaded,
+            err,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct SigningFailed {
+    /// Whether a newly loaded instance is present.
+    ///
+    /// If this is `false`, we are only re-signing the current instance.
+    have_next_loaded: bool,
+
     err: SignerError,
 }
 
@@ -689,7 +716,11 @@ impl SignedReview {
     }
 
     fn hard_reject(self) -> HaltSigned {
-        HaltSigned {}
+        let Self {
+            prev_attempts: _,
+            have_next_loaded,
+        } = self;
+        HaltSigned { have_next_loaded }
     }
 
     fn soft_reject_and_retry(self) -> Signing {
@@ -709,7 +740,12 @@ impl SignedReview {
 }
 
 #[derive(Debug)]
-pub struct HaltSigned {}
+pub struct HaltSigned {
+    /// Whether a newly loaded instance is present.
+    ///
+    /// If this is `false`, we are only re-signing the current instance.
+    have_next_loaded: bool,
+}
 
 impl HaltSigned {
     fn override_rejection(self) -> Waiting {
