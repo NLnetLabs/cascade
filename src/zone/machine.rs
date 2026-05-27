@@ -360,15 +360,25 @@ impl<'a> ZoneHandle<'a> {
             panic!("cannot soft reject signed in this state");
         };
 
-        // TODO: We used to abandon the newly loaded instance (if any) here, but
-        // 1) this led to bugs elsewhere; 2) we should retain it and try signing
-        // again. But we should abandon the newly loaded instance *sometimes*.
-        // As long as the newly loaded instance is around, it will block
-        // refreshing signatures in the current published instance. We need to
-        // decide on a policy (e.g. give up after 3 re-signing attempts?).
+        if signed.prev_attempts >= 2 && signed.have_next_loaded {
+            // There have been two previous attempts to sign the newly-loaded
+            // instance, but all three attempts have failed. Abandon the newly
+            // loaded instance and enqueue a refresh in the zone loader.
 
-        transition.move_to(ZoneStateMachine::Signing(signed.soft_reject_and_retry()));
-        self.storage().abandon_signed_review_and_retry();
+            debug_assert!(
+                signed.prev_attempts == 2,
+                "the loaded instance should have been abandoned already"
+            );
+
+            transition.move_to(ZoneStateMachine::Waiting(signed.soft_reject_and_give_up()));
+            self.storage().abandon_signed_review();
+
+            self.loader().enqueue_refresh(false);
+        } else {
+            // Retain the loaded instance and re-try signing.
+            transition.move_to(ZoneStateMachine::Signing(signed.soft_reject_and_retry()));
+            self.storage().abandon_signed_review_and_retry();
+        }
     }
 
     pub(crate) fn hard_reject_signed(&mut self) {
@@ -550,11 +560,18 @@ impl Waiting {
     }
 
     fn start_sign_after_restore(self) -> Signing {
-        Signing {}
+        // TODO: I think this function is being removed?
+        Signing {
+            prev_attempts: 0,
+            have_next_loaded: true,
+        }
     }
 
     fn start_resign(self) -> Signing {
-        Signing {}
+        Signing {
+            prev_attempts: 0,
+            have_next_loaded: false,
+        }
     }
 }
 
@@ -576,7 +593,10 @@ pub struct LoadedReview {}
 
 impl LoadedReview {
     fn approve(self) -> Signing {
-        Signing {}
+        Signing {
+            prev_attempts: 0,
+            have_next_loaded: true,
+        }
     }
 
     fn soft_reject(self) -> Waiting {
@@ -593,7 +613,10 @@ pub struct HaltLoaded {}
 
 impl HaltLoaded {
     fn override_rejection(self) -> Signing {
-        Signing {}
+        Signing {
+            prev_attempts: 0,
+            have_next_loaded: true,
+        }
     }
 
     fn reset(self) -> Waiting {
@@ -602,11 +625,30 @@ impl HaltLoaded {
 }
 
 #[derive(Debug)]
-pub struct Signing {}
+pub struct Signing {
+    /// The number of previous consecutive attempts to sign the loaded instance.
+    ///
+    /// This is incremented if signing fails and is re-tried. Upon 3 attempts,
+    /// if there was a new loaded instance, it will be abandoned and a new load
+    /// operation will be enqueued.
+    prev_attempts: u64,
+
+    /// Whether a newly loaded instance is present.
+    ///
+    /// If this is `false`, we are only re-signing the current instance.
+    have_next_loaded: bool,
+}
 
 impl Signing {
     fn finish_signing(self) -> SignedReview {
-        SignedReview {}
+        let Self {
+            prev_attempts,
+            have_next_loaded,
+        } = self;
+        SignedReview {
+            prev_attempts,
+            have_next_loaded,
+        }
     }
 
     /// Abandon the signing operation (but not due to failure).
@@ -631,7 +673,15 @@ impl SigningFailed {
 }
 
 #[derive(Debug)]
-pub struct SignedReview {}
+pub struct SignedReview {
+    /// The number of previous consecutive attempts to sign the loaded instance.
+    prev_attempts: u64,
+
+    /// Whether a newly loaded instance is present.
+    ///
+    /// If this is `false`, we are only re-signing the current instance.
+    have_next_loaded: bool,
+}
 
 impl SignedReview {
     fn approve(self) -> Waiting {
@@ -643,10 +693,16 @@ impl SignedReview {
     }
 
     fn soft_reject_and_retry(self) -> Signing {
-        Signing {}
+        let Self {
+            prev_attempts,
+            have_next_loaded,
+        } = self;
+        Signing {
+            prev_attempts: prev_attempts + 1,
+            have_next_loaded,
+        }
     }
 
-    #[expect(dead_code)] // TODO: See 'ZoneStateMachine::soft_reject_signed()'.
     fn soft_reject_and_give_up(self) -> Waiting {
         Waiting {}
     }
