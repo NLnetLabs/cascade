@@ -360,8 +360,15 @@ impl<'a> ZoneHandle<'a> {
             panic!("cannot soft reject signed in this state");
         };
 
-        transition.move_to(ZoneStateMachine::Waiting(signed.soft_reject()));
-        self.storage().abandon_signed_review();
+        // TODO: We used to abandon the newly loaded instance (if any) here, but
+        // 1) this led to bugs elsewhere; 2) we should retain it and try signing
+        // again. But we should abandon the newly loaded instance *sometimes*.
+        // As long as the newly loaded instance is around, it will block
+        // refreshing signatures in the current published instance. We need to
+        // decide on a policy (e.g. give up after 3 re-signing attempts?).
+
+        transition.move_to(ZoneStateMachine::Signing(signed.soft_reject_and_retry()));
+        self.storage().abandon_signed_review_and_retry();
     }
 
     pub(crate) fn hard_reject_signed(&mut self) {
@@ -635,7 +642,12 @@ impl SignedReview {
         HaltSigned {}
     }
 
-    fn soft_reject(self) -> Waiting {
+    fn soft_reject_and_retry(self) -> Signing {
+        Signing {}
+    }
+
+    #[expect(dead_code)] // TODO: See 'ZoneStateMachine::soft_reject_signed()'.
+    fn soft_reject_and_give_up(self) -> Waiting {
         Waiting {}
     }
 }

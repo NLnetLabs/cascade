@@ -28,8 +28,8 @@ use std::{fmt, sync::Arc};
 use cascade_zonedata::{
     DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
     LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
-    SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
-    SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage,
+    SignedZoneCleaner, SignedZonePersisted, SignedZonePersister, SignedZoneRestored,
+    SignedZoneRestorer, SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage,
 };
 use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
@@ -493,6 +493,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
+    // TODO: See 'ZoneStateMachine::soft_reject_signed()'.
     pub fn abandon_signed_review(&mut self) {
         // Examine the current state.
         let (loaded_reviewer, signed_reviewer);
@@ -545,6 +546,61 @@ impl StorageZoneHandle<'_> {
             };
 
             handle.storage().start_cleanup(cleaner);
+
+            handle.state.storage.background_tasks.finish();
+        });
+    }
+
+    /// Give up on a signed instance undergoing review and retry signing.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn abandon_signed_review_and_retry(&mut self) {
+        // Examine the current state.
+        let signed_reviewer;
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::ReviewingSigned(s)) => {
+                // TODO: Specify the instance ID.
+                info!("The signed instance has been rejected; cleaning it up");
+
+                let new_s;
+                (new_s, signed_reviewer) = s.retry();
+                transition.move_to(ZoneDataStorage::CleanSignedPending(new_s));
+                self.state.storage.signed_review_soa =
+                    signed_reviewer.read().map(|r| r.soa().clone());
+            }
+
+            _ => panic!("The zone is not undergoing signer review"),
+        };
+
+        let span = trace_span!("reset_signed_review");
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        self.state.storage.background_tasks.spawn(span, async move {
+            trace!("Resetting the signed review server");
+            let old_signed_reviewer =
+                SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
+
+            // Examine the current state.
+            let mut state = zone.state.lock().unwrap();
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut state,
+                center: &center,
+            };
+            let cleaner = match transition(&mut handle.state.storage.machine) {
+                (transition, ZoneDataStorage::CleanSignedPending(s)) => {
+                    let (s, cleaner) = s.stop_review(old_signed_reviewer);
+                    transition.move_to(ZoneDataStorage::CleaningSigned(s));
+                    cleaner
+                }
+
+                _ => unreachable!("The zone was left in 'CleanSignedPending' state"),
+            };
+
+            handle.storage().start_signed_cleanup(cleaner);
 
             handle.state.storage.background_tasks.finish();
         });
@@ -708,6 +764,56 @@ impl StorageZoneHandle<'_> {
 
             // Notify the rest of Cascade that the storage is passive.
             handle.storage().on_passive();
+
+            handle.state.storage.background_tasks.finish();
+        });
+    }
+
+    /// Run a cleanup of signed zone data.
+    ///
+    /// A background task will be spawned to perform the provided zone cleaning
+    /// and transition to the next state.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn start_signed_cleanup(&mut self, cleaner: SignedZoneCleaner) {
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        let span = trace_span!("clean_signed");
+        self.state.storage.background_tasks.spawn_blocking(span, move || {
+            trace!("Cleaning the signed instance of the zone");
+
+            // Perform the cleaning.
+            let cleaned = cleaner.clean();
+
+            // Transition the state machine.
+            //
+            // NOTE: The outer function, which is spawning the background task,
+            // has a lock of the zone state. Thus, the following lock cannot be
+            // taken until the outer function terminates.
+            let mut state = zone.state.lock().unwrap();
+            let mut handle = ZoneHandle {
+                zone: &zone,
+                state: &mut state,
+                center: &center,
+            };
+
+            let builder = match transition(&mut handle.state.storage.machine) {
+                (transition, ZoneDataStorage::CleaningSigned(s)) => {
+                    let (s, builder) = s.mark_complete(cleaned);
+                    transition.move_to(ZoneDataStorage::Signing(s));
+                    builder
+                }
+
+                _ => unreachable!(
+                    "'ZoneDataStorage::CleaningSigned' is the only state where a 'SignedZoneCleaner' is available"
+                ),
+            };
+
+            // TODO: Re-start signing.
+            handle.signer().retry_sign(builder);
 
             handle.state.storage.background_tasks.finish();
         });

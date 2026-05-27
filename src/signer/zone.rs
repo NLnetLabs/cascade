@@ -237,6 +237,45 @@ impl SignerZoneHandle<'_> {
 
         true
     }
+
+    /// Re-try signing after a previous failure.
+    ///
+    /// If signing or signed review fails, and signing needs to be re-tried,
+    /// this will be called to initiate the new signing operation. `builder`
+    /// should originate from the zone storage after the signed instance is
+    /// rejected.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name)
+    )]
+    pub fn retry_sign(&mut self, builder: SignedZoneBuilder) {
+        info!("Re-trying a sign operation");
+
+        // A zone can have at most one 'SignedZoneBuilder' at a time. Because
+        // we have 'builder', we are guaranteed that no other signing operations
+        // are ongoing right now. A re-signing operation may be enqueued, but it
+        // has lower priority than this (for now).
+
+        assert!(self.state.signer.enqueued_new_sign.is_none());
+
+        // TODO: Keep state for a queue of pending (re-)signing operations, so
+        // that the number of simultaneous operations can be limited. At the
+        // moment, this queue is opaque and is handled within the asynchronous
+        // task.
+
+        let span = tracing::Span::none();
+        self.state.signer.ongoing.spawn(
+            span,
+            super::sign(
+                self.center.clone(),
+                self.zone.clone(),
+                builder,
+                // TODO: Find the old trigger.
+                SigningTrigger::Load,
+            ),
+        );
+    }
 }
 
 //----------- SignerState ------------------------------------------------------
