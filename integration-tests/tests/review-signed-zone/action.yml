@@ -41,9 +41,30 @@ runs:
         cp ${INTEGRATION_TEST_DIR}/policies/manual-signed-review.toml ${POLICY_DIR}/
         cascade policy reload
 
+    - name: Make a zonefile
+      run: |
+        tee example.test.zone <<'EOF'
+        $TTL 5 ; use a very short TTL for sped up keyset rolls
+        example.test.   IN SOA ns1.example.test. mail.example.test. (
+                           1          ; serial
+                          60          ; refresh (60 seconds)
+                          60          ; retry (60 seconds)
+                        3600          ; expire (1 hour)
+                           5          ; minimum (5 seconds)
+                        )
+        @           NS  example.test.
+        @           NS  ns1.example.test.
+        @           A   127.0.0.1
+        ns1         A   127.0.0.1
+
+        www         A   169.254.1.1
+        mail        MX  10 example.test.
+        text        TXT "Hello World!"
+        EOF
+
     - name: Add a zone using the new policy
       run: |
-        cascade zone add --policy manual-signed-review --source 127.0.0.1:1055 example.test
+        cascade zone add --policy manual-signed-review --source $PWD/example.test.zone example.test
 
     - name: Querying the zone at the loaded review server should succeed
       run: |
@@ -62,6 +83,10 @@ runs:
         EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
       run: |
         cascade zone reject --signed example.test ${EXPECTED_SERIAL}
+
+    - name: Allow time for re-sign to begin
+      run: |
+        sleep 5s
 
     - name: Querying the zone at the loaded review server should fail
       run: |
