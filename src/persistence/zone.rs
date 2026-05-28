@@ -250,16 +250,12 @@ impl ZonePersistenceHandle<'_> {
 fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
     // We can't use the persisted data so remove the paths from state and also
     // the corresponding files on disk.
-    let zone_state_dir = center.config.zone_state_dir.canonicalize().unwrap();
     for p in state
         .persisted_loaded_diff_paths
         .iter()
         .chain(state.persisted_signed_diff_paths.iter())
     {
-        if p.exists()
-            && let Ok(ref p) = p.canonicalize()
-            && p.starts_with(&zone_state_dir)
-        {
+        if p.exists() && p.starts_with(center.config.zone_state_dir.as_std_path()) {
             info!(
                 "Removing unusable persisted zone data file '{}'",
                 p.display()
