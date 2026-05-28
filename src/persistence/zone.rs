@@ -2,13 +2,15 @@
 
 use std::sync::Arc;
 
-use cascade_zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister};
+use cascade_zonedata::{
+    LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer,
+};
 use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{Zone, ZoneHandle, ZoneState, save_state_now},
 };
 
 //----------- ZonePersistenceHandle --------------------------------------------
@@ -65,39 +67,12 @@ impl ZonePersistenceHandle<'_> {
                     }
                     Ok(false) => {
                         // There was nothing to restore.
-                        let mut state = zone.state.lock().unwrap();
-                        let mut handle = ZoneHandle {
-                            zone: &zone,
-                            state: &mut state,
-                            center: &center,
-                        };
-                        handle.storage().abandon_loaded_restoration(restorer);
-                        handle.state.persistence.ongoing.finish();
-
-                        // In case this zone was signed in the past we have
-                        // to make sure that we don't attempt to sign it now,
-                        // as doing so will fail due to the lack of loaded
-                        // zone content.
-                        // TODO: Find a better way to prevent this issue
-                        // as changing the min_expiration timestamps is a
-                        // very indirect and non-obvious way of preventing
-                        // re-signing.
-                        state.min_expiration = None;
-                        state.next_min_expiration = None;
-
+                        abandon_loaded_restoration(&center, &zone, restorer);
                         return;
                     }
                     Err(err) => {
                         warn!("Abandoning loaded restoration: {err}");
-                        let mut state = zone.state.lock().unwrap();
-                        clear_persisted_zone_data(&center, &mut state);
-                        let mut handle = ZoneHandle {
-                            zone: &zone,
-                            state: &mut state,
-                            center: &center,
-                        };
-                        handle.storage().abandon_loaded_restoration(restorer);
-                        handle.state.persistence.ongoing.finish();
+                        abandon_loaded_restoration(&center, &zone, restorer);
                         return;
                     }
                 };
@@ -123,39 +98,12 @@ impl ZonePersistenceHandle<'_> {
                     }
                     Ok(false) => {
                         // There was nothing to restore.
-                        let mut state = zone.state.lock().unwrap();
-                        let mut handle = ZoneHandle {
-                            zone: &zone,
-                            state: &mut state,
-                            center: &center,
-                        };
-                        handle.storage().abandon_signed_restoration(restorer);
-                        handle.state.persistence.ongoing.finish();
-
-                        // In case this zone was signed in the past we have
-                        // to make sure that we don't attempt to sign it now,
-                        // as doing so will fail due to the lack of loaded
-                        // zone content.
-                        // TODO: Find a better way to prevent this issue
-                        // as changing the min_expiration timestamps is a
-                        // very indirect and non-obvious way of preventing
-                        // re-signing.
-                        state.min_expiration = None;
-                        state.next_min_expiration = None;
-
+                        abandon_signed_restoration(&center, &zone, restorer);
                         return;
                     }
                     Err(err) => {
                         warn!("Abandoning signed restoration: {err}");
-                        let mut state = zone.state.lock().unwrap();
-                        clear_persisted_zone_data(&center, &mut state);
-                        let mut handle = ZoneHandle {
-                            zone: &zone,
-                            state: &mut state,
-                            center: &center,
-                        };
-                        handle.storage().abandon_signed_restoration(restorer);
-                        handle.state.persistence.ongoing.finish();
+                        abandon_signed_restoration(&center, &zone, restorer);
                         return;
                     }
                 };
@@ -245,6 +193,57 @@ impl ZonePersistenceHandle<'_> {
                 handle.state.persistence.ongoing.finish();
             });
     }
+}
+
+fn abandon_loaded_restoration(
+    center: &Arc<Center>,
+    zone: &Arc<Zone>,
+    restorer: LoadedZoneRestorer,
+) {
+    reset_state_due_to_abandoned_restore(center, zone);
+    let mut state = zone.state.lock().unwrap();
+    let mut handle = ZoneHandle {
+        zone: zone,
+        state: &mut state,
+        center: center,
+    };
+    handle.storage().abandon_loaded_restoration(restorer);
+    handle.state.persistence.ongoing.finish();
+}
+
+fn abandon_signed_restoration(
+    center: &Arc<Center>,
+    zone: &Arc<Zone>,
+    restorer: SignedZoneRestorer,
+) {
+    reset_state_due_to_abandoned_restore(center, zone);
+    let mut state = zone.state.lock().unwrap();
+    let mut handle = ZoneHandle {
+        zone: &zone,
+        state: &mut state,
+        center: &center,
+    };
+    handle.storage().abandon_signed_restoration(restorer);
+    handle.state.persistence.ongoing.finish();
+}
+
+fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
+    {
+        let mut state = zone.state.lock().unwrap();
+        clear_persisted_zone_data(center, &mut state);
+
+        // In case this zone was signed in the past we have
+        // to make sure that we don't attempt to sign it now,
+        // as doing so will fail due to the lack of loaded
+        // zone content.
+        // TODO: Find a better way to prevent this issue
+        // as changing the min_expiration timestamps is a
+        // very indirect and non-obvious way of preventing
+        // re-signing.
+        state.min_expiration = None;
+        state.next_min_expiration = None;
+    }
+    save_state_now(center, zone);
 }
 
 fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
