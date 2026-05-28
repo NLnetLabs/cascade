@@ -94,9 +94,7 @@ pub fn restore_loaded(
             load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
                 apply_ixfr_event_to_loaded_data(&mut loaded_patcher, event);
             })
-            .map_err(|err| {
-                io::Error::other(format!("Loading diff '{loaded_source}' failed: {err}",))
-            })?;
+            .map_err(|err| io::Error::other(format!("Loading diff '{source}' failed: {err}",)))?;
 
         loaded_patcher.next_patchset().map_err(|err| {
             io::Error::other(format!("Internal error: Next patchset failed: {err}"))
@@ -207,9 +205,7 @@ pub fn restore_signed(
             load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
                 apply_ixfr_event_to_signed_data(&mut signed_patcher, event);
             })
-            .map_err(|err| {
-                io::Error::other(format!("Loading diff '{signed_source}' failed: {err}"))
-            })?;
+            .map_err(|err| io::Error::other(format!("Loading diff '{source}' failed: {err}")))?;
 
         signed_patcher.next_patchset().map_err(|err| {
             io::Error::other(format!("Internal error: Next patchset failed: {err}"))
