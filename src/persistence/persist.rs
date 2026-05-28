@@ -38,7 +38,7 @@ pub fn persist_loaded(
         // index which rises by one when persisted.
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
-        {
+        let destination = {
             let mut state = zone.state.lock().unwrap();
             let handle = ZoneHandle {
                 zone,
@@ -50,13 +50,41 @@ pub fn persist_loaded(
                 .config
                 .zone_state_dir
                 .join(format!("{}.loaded.{next_idx}", zone.name));
-            persist_to_file(destination.as_std_path(), persister.loaded_diff().clone());
+
             handle
                 .state
                 .persisted_loaded_diff_paths
-                .push(destination.into());
-        }
+                .push(destination.clone().into());
+
+            destination
+        };
+
+        // Update the set of persisted zone data file paths BEFORE writing
+        // the new file because if we crash/lose power between writing the new
+        // file and storing the updated set of paths:
+        //   - We would not know when restoring that a diff is missing.
+        //     This isn't ultimately a problem as we also would not ever
+        //     have served the updated zone from the publication server as
+        //     persistence has to complete before publication occurs.
+        //   - The new file would be unused but left behind on disk. It may
+        //     later be overwritten by a new diff but until then it would
+        //     be unused and also not removed by cleaning of diff files that
+        //     occurs if restoration fails, as the path would not be known
+        //     to us.
+
+        // TODO: Saving state first then writing the file could lead to a
+        // situation where a zone that was published consisting of a snapshot
+        // and N diffs would be discarded if the path to the N+1th diff was
+        // recorded in state and persisted but actually writing the N+1th
+        // diff file failed. On restore the file would be looked for and not
+        // found and all loaded and signed content including diffs would be
+        // discarded at that point. One way around this could be to track
+        // (e.g. using an Option field) that this path is in the process of
+        // being written but has not yet finished yet, and then on restore if
+        // the Option is Some the referred to path can just be deleted.
         save_state_now(center, zone);
+
+        persist_to_file(destination.as_std_path(), persister.loaded_diff().clone());
     }
 
     // Store the loaded diff in-memory for serving IXFR out.
@@ -119,7 +147,7 @@ pub fn persist_signed(
         // index which rises by one when persisted.
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
-        {
+        let destination = {
             let mut state = zone.state.lock().unwrap();
             let handle = ZoneHandle {
                 zone,
@@ -132,15 +160,42 @@ pub fn persist_signed(
                 .zone_state_dir
                 .join(format!("{}.signed.{next_idx}", zone.name));
 
-            // Write the diff to disk as a binary AXFR snapshot or binary IXFR
-            // diff.
-            persist_to_file(destination.as_std_path(), signed_diff.clone());
             handle
                 .state
                 .persisted_signed_diff_paths
-                .push(destination.into());
-        }
+                .push(destination.clone().into());
+
+            destination
+        };
+
+        // Update the set of persisted zone data file paths BEFORE writing
+        // the new file because if we crash/lose power between writing the new
+        // file and storing the updated set of paths:
+        //   - We would not know when restoring that a diff is missing.
+        //     This isn't ultimately a problem as we also would not ever
+        //     have served the updated zone from the publication server as
+        //     persistence has to complete before publication occurs.
+        //   - The new file would be unused but left behind on disk. It may
+        //     later be overwritten by a new diff but until then it would
+        //     be unused and also not removed by cleaning of diff files that
+        //     occurs if restoration fails, as the path would not be known
+        //     to us.
+
+        // TODO: Saving state first then writing the file could lead to a
+        // situation where a zone that was published consisting of a snapshot
+        // and N diffs would be discarded if the path to the N+1th diff was
+        // recorded in state and persisted but actually writing the N+1th
+        // diff file failed. On restore the file would be looked for and not
+        // found and all loaded and signed content including diffs would be
+        // discarded at that point. One way around this could be to track
+        // (e.g. using an Option field) that this path is in the process of
+        // being written but has not yet finished yet, and then on restore if
+        // the Option is Some the referred to path can just be deleted.
         save_state_now(center, zone);
+
+        // Write the diff to disk as a binary AXFR snapshot or binary IXFR
+        // diff.
+        persist_to_file(destination.as_std_path(), signed_diff.clone());
 
         // Store the diffs in-memory for serving IXFR out.
         //
