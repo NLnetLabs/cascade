@@ -233,8 +233,8 @@ fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) 
         clear_persisted_zone_data(center, &mut state);
 
         // In case this zone was signed in the past we have to make sure that
-        // any attempt to enqueue a signing operation will be skipped as doing
-        // so will fail due to the lack of loaded zone content.
+        // any attempt to enqueue a re-signing operation will be skipped as
+        // doing so will fail due to the lack of loaded zone content.
         // TODO: Find a better way to prevent this issue as changing the
         // min_expiration timestamps is a very indirect and non-obvious way of
         // preventing re-signing.
