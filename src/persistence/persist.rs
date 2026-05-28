@@ -78,6 +78,19 @@ pub fn persist_loaded(
         let mut state = zone.state.lock().unwrap();
 
         let loaded_only_diff = (persister.loaded_diff().clone(), DiffData::new().into());
+        trace!(
+            "Storing IXFR in-memory diff for SOA loaded serial -{:?}:+{:?}",
+            loaded_only_diff
+                .0
+                .removed_soa
+                .as_ref()
+                .map(|soa_rr| soa_rr.rdata.serial),
+            loaded_only_diff
+                .0
+                .added_soa
+                .as_ref()
+                .map(|soa_rr| soa_rr.rdata.serial),
+        );
         state.storage.diffs.push(loaded_only_diff);
     }
 
@@ -150,14 +163,46 @@ pub fn persist_signed(
 
             let mut state = zone.state.lock().unwrap();
 
-            // Discard any partial (loaded only without signed) diff, we will
-            // push a complete (loaded + signed) diff to the collection.
-            let _partial_diff = state.storage.diffs.pop();
+            // If we have a new signed diff to store because records in the
+            // loaded part of the zone changed, e.g. due to changes in the
+            // zone content or receipt of a changed DNSKEY set from the key
+            // manager, then the loaded diff will have been stored in-memory
+            // by loaded zone persistence, but the corresponding signed diff
+            // will not yet have been stored in-memory, we have to do that
+            // now. In this case we have to update the last stored in-memory
+            // diff. We drop the partial diff and push a replacement full
+            // diff instead.
+            //
+            // Alternatively if we have a new signed diff to store because
+            // records in the signed part of the zone changed, e.g. due to
+            // signature re-generation to ensure that existing signatures
+            // don't expire, then there will be no corresponding loaded diff
+            // yet in-memory. In this case we have to push an entirely new
+            // diff to the in-memory collection without dropping an existing
+            // diff first.
+
+            let mut action = "Storing new";
+            if let Some(potentially_partial_diff) = state.storage.diffs.last() {
+                if potentially_partial_diff.1.is_empty() {
+                    // Remove the partial diff, it will be replaced by a
+                    // complete diff.
+                    let _partial_diff = state.storage.diffs.pop();
+                    action = "Updating existing";
+                }
+            }
 
             let loaded_diff = loaded_diff.cloned().unwrap_or(DiffData::new().into());
             trace!(
-                "Storing IXFR diff for SOA serial {:?} -> {:?}",
+                "{action} IXFR in-memory diff for SOA loaded serial -{:?}:+{:?} -> signed serial -{:?}:+{:?}",
                 loaded_diff
+                    .removed_soa
+                    .as_ref()
+                    .map(|soa_rr| soa_rr.rdata.serial),
+                loaded_diff
+                    .added_soa
+                    .as_ref()
+                    .map(|soa_rr| soa_rr.rdata.serial),
+                signed_diff
                     .removed_soa
                     .as_ref()
                     .map(|soa_rr| soa_rr.rdata.serial),

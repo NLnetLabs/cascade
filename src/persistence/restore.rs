@@ -231,15 +231,52 @@ pub fn restore_signed(
                 // the signed diff already unexpectedly exists.
                 assert!(partial_diff.1.is_empty());
                 partial_diff.1 = signed_diff.into();
+                trace!(
+                    "Updated signed part of IXFR in-memory diff for SOA loaded serial -{:?}:+{:?} -> signed serial -{:?}:+{:?} from file '{signed_source}'",
+                    partial_diff
+                        .0
+                        .removed_soa
+                        .as_ref()
+                        .map(|soa_rr| soa_rr.rdata.serial),
+                    partial_diff
+                        .0
+                        .added_soa
+                        .as_ref()
+                        .map(|soa_rr| soa_rr.rdata.serial),
+                    partial_diff
+                        .1
+                        .removed_soa
+                        .as_ref()
+                        .map(|soa_rr| soa_rr.rdata.serial),
+                    partial_diff
+                        .1
+                        .added_soa
+                        .as_ref()
+                        .map(|soa_rr| soa_rr.rdata.serial),
+                );
             } else {
                 let loaded_diff = Arc::new(DiffData::new());
+                trace!(
+                    "Storing IXFR in-memory diff for SOA loaded serial -{:?}:+{:?} -> signed serial -{:?}:+{:?} from file '{signed_source}'",
+                    loaded_diff
+                        .removed_soa
+                        .as_ref()
+                        .map(|soa_rr| soa_rr.rdata.serial),
+                    loaded_diff
+                        .added_soa
+                        .as_ref()
+                        .map(|soa_rr| soa_rr.rdata.serial),
+                    signed_diff
+                        .removed_soa
+                        .as_ref()
+                        .map(|soa_rr| soa_rr.rdata.serial),
+                    signed_diff
+                        .added_soa
+                        .as_ref()
+                        .map(|soa_rr| soa_rr.rdata.serial),
+                );
                 state.storage.diffs.push((loaded_diff, signed_diff.into()));
             }
-
-            trace!(
-                "Stored signed diff for SOA serial {} from file '{signed_source}': serial {start_serial} -> {end_serial}",
-                soa.rdata.serial,
-            );
         }
 
         let start_serial: u32 = start_serial.into();
