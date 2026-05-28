@@ -254,6 +254,13 @@ pub struct SignerState {
     pub enqueued_resign: Option<EnqueuedResign>,
 }
 
+impl SignerState {
+    pub fn cancel_enqueued_signing_operations(&mut self) {
+        self.enqueued_new_sign = None;
+        self.enqueued_resign = None;
+    }
+}
+
 //----------- EnqueuedSign -----------------------------------------------------
 
 /// An enqueued sign of a zone.
