@@ -182,13 +182,13 @@ pub fn persist_signed(
             // diff first.
 
             let mut action = "Storing new";
-            if let Some(potentially_partial_diff) = state.storage.diffs.last() {
-                if potentially_partial_diff.1.is_empty() {
-                    // Remove the partial diff, it will be replaced by a
-                    // complete diff.
-                    let _partial_diff = state.storage.diffs.pop();
-                    action = "Updating existing";
-                }
+            if let Some(potentially_partial_diff) = state.storage.diffs.last()
+                && potentially_partial_diff.1.is_empty()
+            {
+                // Remove the partial diff, it will be replaced by a
+                // complete diff.
+                let _partial_diff = state.storage.diffs.pop();
+                action = "Updating existing";
             }
 
             let loaded_diff = loaded_diff.cloned().unwrap_or(DiffData::new().into());
