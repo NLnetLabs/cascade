@@ -190,8 +190,8 @@ impl ZonePersistenceHandle<'_> {
             .ongoing
             .spawn_blocking(span, move || {
                 debug!("Persisting the loaded instance");
-
                 let persisted = super::persist_loaded(&zone, &center, persister);
+                debug!("Persisting the loaded instance completed");
 
                 // NOTE: The outer function, which is spawning the background
                 // task, has a lock of the zone state. Thus, the following lock
@@ -227,8 +227,8 @@ impl ZonePersistenceHandle<'_> {
             .ongoing
             .spawn_blocking(span, move || {
                 debug!("Persisting the signed instance");
-
                 let persisted = super::persist_signed(&zone, &center, persister);
+                debug!("Persisting the signed instance completed");
 
                 // NOTE: The outer function, which is spawning the background
                 // task, has a lock of the zone state. Thus, the following lock
