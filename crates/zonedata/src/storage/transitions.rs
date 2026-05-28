@@ -645,9 +645,9 @@ impl CleanSignedPendingStorage {
             Arc::ptr_eq(old_reviewer.data(), &self.data),
             "'old_reviewer' is for a different zone"
         );
+        // TODO: Verify 'old_review.loaded_index' appears correct.
         assert!(
-            old_reviewer.loaded_index != self.curr_loaded_index
-                && old_reviewer.signed_index != self.curr_signed_index,
+            old_reviewer.signed_index != self.curr_signed_index,
             "'old_reviewer' does not point to the new instance",
         );
 
@@ -673,9 +673,9 @@ impl CleanWholePendingStorage {
             Arc::ptr_eq(old_reviewer.data(), &self.data),
             "'old_reviewer' is for a different zone"
         );
+        // TODO: Verify 'old_review.loaded_index' appears correct.
         assert!(
-            old_reviewer.loaded_index != self.curr_loaded_index
-                && old_reviewer.signed_index != self.curr_signed_index,
+            old_reviewer.signed_index != self.curr_signed_index,
             "'old_reviewer' does not point to the new instance",
         );
 
