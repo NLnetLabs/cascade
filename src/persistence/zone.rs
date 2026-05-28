@@ -203,9 +203,9 @@ fn abandon_loaded_restoration(
     reset_state_due_to_abandoned_restore(center, zone);
     let mut state = zone.state.lock().unwrap();
     let mut handle = ZoneHandle {
-        zone: zone,
+        zone,
         state: &mut state,
-        center: center,
+        center,
     };
     handle.storage().abandon_loaded_restoration(restorer);
     handle.state.persistence.ongoing.finish();
@@ -219,9 +219,9 @@ fn abandon_signed_restoration(
     reset_state_due_to_abandoned_restore(center, zone);
     let mut state = zone.state.lock().unwrap();
     let mut handle = ZoneHandle {
-        zone: &zone,
+        zone,
         state: &mut state,
-        center: &center,
+        center,
     };
     handle.storage().abandon_signed_restoration(restorer);
     handle.state.persistence.ongoing.finish();
