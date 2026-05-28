@@ -361,6 +361,10 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Waiting(signed.soft_reject()));
+
+        // TODO: This should be handled by 'Instances'.
+        self.state.next_min_expiration = None;
+
         self.storage().abandon_signed_review();
     }
 
@@ -422,10 +426,18 @@ impl<'a> ZoneHandle<'a> {
             ZoneStateMachine::HaltSigned(halt_signed) => {
                 let waiting = halt_signed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
+
+                // TODO: This should be handled by 'Instances'.
+                self.state.next_min_expiration = None;
+
                 self.storage().abandon_signed_review();
             }
             ZoneStateMachine::SigningFailed(signing_failed) => {
                 let waiting = signing_failed.reset();
+
+                // TODO: This should be handled by 'Instances'.
+                self.state.next_min_expiration = None;
+
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
             }
             _ => {
