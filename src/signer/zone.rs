@@ -110,12 +110,19 @@ impl SignerZoneHandle<'_> {
         // track instances of zones more explicitly in 'ZoneState' (the latter
         // will happen / has happened when integrating the zone server with the
         // zone data storage).
+        //
+        // TODO: Check if this comment is correct. The key manager triggers
+        // resigning the zone when the state of the key manager has changed.
+        // That does imply that resigning is needed. The incremental signer
+        // checks if something needs to be done. For this reason, ignore the
+        // re-signing request if no previous instance of the zone seems to
+        // exist. This can also be trigger by re-signing timers if no
+        // persistent state is available.
         if self
             .state
             .next_min_expiration
             .or(self.state.min_expiration)
             .is_none()
-            && trigger == ResigningTrigger::KEYS_CHANGED
         {
             debug!("Ignoring re-signing request; the zone has not been signed yet");
             return;

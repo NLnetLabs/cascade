@@ -465,7 +465,7 @@ impl<T> Setting<T> {
             Self { args: Some(_), .. } => SettingSource::Args,
             Self { env: Some(_), .. } => SettingSource::Env,
             Self { file: Some(_), .. } => SettingSource::File,
-            Self { default: _, .. } => SettingSource::Default,
+            _ => SettingSource::Default,
         }
     }
 }

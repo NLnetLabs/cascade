@@ -25,7 +25,7 @@ use crate::{
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{Zone, ZoneByPtr, ZoneHandle},
+    zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle},
 };
 
 mod server;
@@ -260,6 +260,13 @@ async fn refresh(
 
             // Cancel the load
             handle.abandon_load(builder);
+
+            state.record_event(
+                HistoricalEvent::LoadingFailed {
+                    reason: err.to_string(),
+                },
+                None,
+            );
         }
     }
 }
@@ -301,6 +308,22 @@ pub enum Source {
         /// The TSIG key for communicating with the server, if any.
         tsig_key: Option<Arc<tsig::Key>>,
     },
+}
+
+impl std::fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Source::None => f.write_str("none"),
+            Source::Zonefile { path } => write!(f, "zone file '{path}'"),
+            Source::Server { addr, tsig_key } => {
+                write!(f, "{addr}")?;
+                if let Some(tsig_key) = &tsig_key {
+                    write!(f, " with TSIG key '{}'", tsig_key.name())?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 //============ Metrics =========================================================
@@ -383,6 +406,9 @@ pub struct ActiveLoadMetrics {
     /// See [`LoadMetrics::num_loaded_bytes`].
     pub num_loaded_bytes: AtomicUsize,
 
+    /// The (approximate) number of bytes to load.
+    pub num_total_bytes: AtomicUsize,
+
     /// The (approximate) number of DNS records loaded thus far.
     ///
     /// See [`LoadMetrics::num_loaded_records`].
@@ -396,6 +422,7 @@ impl ActiveLoadMetrics {
             start: (Instant::now(), SystemTime::now()),
             source,
             num_loaded_bytes: AtomicUsize::new(0),
+            num_total_bytes: AtomicUsize::new(0),
             num_loaded_records: AtomicUsize::new(0),
         }
     }
@@ -437,6 +464,9 @@ pub enum RefreshError {
         remote_serial: Serial,
     },
 
+    /// A query for a SOA record failed.
+    QuerySoa(server::QuerySoaError),
+
     /// An IXFR from the server failed.
     Ixfr(server::IxfrError),
 
@@ -455,6 +485,7 @@ impl std::error::Error for RefreshError {
         match self {
             Self::OutdatedRemote { .. } => None,
             Self::LocalSerialChanged => None,
+            Self::QuerySoa(error) => Some(error),
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
             Self::Zonefile(error) => Some(error),
@@ -480,6 +511,9 @@ impl fmt::Display for RefreshError {
                     "Local serial changed while processing a refreshed zone. This will be fixed by a retry."
                 )
             }
+            RefreshError::QuerySoa(error) => {
+                write!(f, "could not retrieve the SOA record: {error}")
+            }
             RefreshError::Ixfr(error) => {
                 write!(f, "the IXFR failed: {error}")
             }
@@ -494,6 +528,12 @@ impl fmt::Display for RefreshError {
 }
 
 //--- Conversion
+
+impl From<server::QuerySoaError> for RefreshError {
+    fn from(v: server::QuerySoaError) -> Self {
+        Self::QuerySoa(v)
+    }
+}
 
 impl From<server::IxfrError> for RefreshError {
     fn from(v: server::IxfrError) -> Self {

@@ -6,7 +6,7 @@ use crate::policy::{KeyParameters, PolicyVersion};
 use crate::signer::ResigningTrigger;
 use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
-use crate::zone::{HistoricalEvent, ZoneHandle};
+use crate::zone::{HistoricalEvent, Zone, ZoneHandle};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
@@ -14,7 +14,6 @@ use core::time::Duration;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::rdata::dnssec::Timestamp;
-use domain::zonetree::StoredName;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env::{VarError, var};
@@ -92,12 +91,12 @@ impl KeyManager {
     pub async fn on_roll_key(
         &self,
         center: &Arc<Center>,
-        zone: Name<Bytes>,
+        zone: &Zone,
         roll_variant: KeyRollVariant,
         roll_cmd: KeyRollCommand,
     ) -> Result<(), String> {
         let center = center.clone();
-        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+        let mut cmd = Self::keyset_cmd(&center, zone.name.clone(), RecordingMode::Record);
 
         cmd.arg(match roll_variant {
             api::keyset::KeyRollVariant::Ksk => "ksk",
@@ -138,13 +137,13 @@ impl KeyManager {
     pub async fn on_remove_key(
         &self,
         center: &Arc<Center>,
-        zone: StoredName,
+        zone: &Zone,
         key: String,
         force: bool,
         continue_flag: bool,
     ) -> Result<(), String> {
         let center = center.clone();
-        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+        let mut cmd = Self::keyset_cmd(&center, zone.name.clone(), RecordingMode::Record);
 
         cmd.arg("remove-key").arg(key);
 
@@ -167,11 +166,11 @@ impl KeyManager {
     pub async fn on_get_key(
         &self,
         center: &Arc<Center>,
-        zone: StoredName,
+        zone: &Zone,
         key_type: String,
     ) -> Result<String, String> {
         let center = center.clone();
-        let mut cmd = Self::keyset_cmd(&center, zone, RecordingMode::Record);
+        let mut cmd = Self::keyset_cmd(&center, zone.name.clone(), RecordingMode::Record);
 
         cmd.arg("get").arg(key_type);
 
@@ -197,17 +196,17 @@ impl KeyManager {
         }
     }
 
-    pub async fn on_status(
-        &self,
-        center: &Arc<Center>,
-        zone: StoredName,
-    ) -> Result<String, String> {
+    pub async fn on_status(&self, center: &Arc<Center>, zone: &Zone) -> Result<String, String> {
         let center = center.clone();
-        let res = Self::keyset_cmd(&center, zone, RecordingMode::RecordOnlyOnWarningOrError)
-            .arg("status")
-            .arg("-v")
-            .output()
-            .await;
+        let res = Self::keyset_cmd(
+            &center,
+            zone.name.clone(),
+            RecordingMode::RecordOnlyOnWarningOrError,
+        )
+        .arg("status")
+        .arg("-v")
+        .output()
+        .await;
         match res {
             Err(KeySetCommandError { err, output, .. }) => {
                 // The dnst keyset status command failed.
@@ -233,7 +232,7 @@ impl KeyManager {
     pub fn on_zone_policy_changed(
         &self,
         center: &Arc<Center>,
-        name: StoredName,
+        zone: &Zone,
         old: Option<Arc<PolicyVersion>>,
         new: Arc<PolicyVersion>,
     ) {
@@ -246,12 +245,14 @@ impl KeyManager {
             return;
         }
 
+        let zone_name = zone.name.clone();
+
         tokio::spawn(async move {
             // Keep it simple, just send all config items to keyset even
             // if they didn't change.
-            let config_commands = policy_to_commands(&new);
+            let config_commands = policy_to_commands(&center, &new);
             for c in config_commands {
-                let mut cmd = Self::keyset_cmd(&center, name.clone(), RecordingMode::Record);
+                let mut cmd = Self::keyset_cmd(&center, zone_name.clone(), RecordingMode::Record);
                 cmd.arg("set");
 
                 for a in c {
@@ -381,7 +382,7 @@ impl KeyManager {
 
         // Pass `set` and `import` commands to `dnst keyset`.
         let config_commands = imports_to_commands(key_imports).into_iter().chain(
-            policy_to_commands(&policy.latest)
+            policy_to_commands(center, &policy.latest)
                 .into_iter()
                 .chain({
                     match var("CASCADE_FAKETIME") {
@@ -429,11 +430,11 @@ impl KeyManager {
     /// Create a keyset command with the config file for the given zone.
     fn keyset_cmd(
         center: &Arc<Center>,
-        name: StoredName,
+        zone_name: Name<Bytes>,
         recording_mode: RecordingMode,
     ) -> KeySetCommand {
         KeySetCommand::new(
-            name,
+            zone_name,
             center.clone(),
             center.config.keys_dir.clone(),
             center.config.dnst_binary_path.clone(),
@@ -687,7 +688,7 @@ macro_rules! strs {
     };
 }
 
-fn policy_to_commands(policy: &PolicyVersion) -> Vec<Vec<String>> {
+fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<String>> {
     let km = &policy.key_manager;
 
     let mut algorithm_cmd = vec!["algorithm".to_string()];
@@ -711,7 +712,30 @@ fn policy_to_commands(policy: &PolicyVersion) -> Vec<Vec<String>> {
 
     let seconds = |x| format!("{x}s");
 
-    vec![
+    let mut cmds = vec![];
+
+    if km
+        .publication_nameservers
+        .iter()
+        .any(|ns| ns.tsig_key_name.is_some())
+    {
+        let tsig_store_cmd = vec![
+            "tsig-store-path".to_string(),
+            center.config.tsig_store_path.as_str().to_string(),
+        ];
+        cmds.push(tsig_store_cmd);
+    }
+
+    let mut publication_nameservers_cmd = vec!["publication-nameservers".to_string()];
+    publication_nameservers_cmd.append(
+        &mut km
+            .publication_nameservers
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+    );
+
+    cmds.extend([
         strs!["use-csk", km.use_csk],
         algorithm_cmd,
         strs!["ksk-validity", validity(km.ksk_validity)],
@@ -757,7 +781,13 @@ fn policy_to_commands(policy: &PolicyVersion) -> Vec<Vec<String>> {
         strs!["ds-algorithm", km.ds_algorithm],
         strs!["default-ttl".to_string(), km.default_ttl.as_secs(),],
         strs!["autoremove", km.auto_remove],
-    ]
+        strs![
+            "autoremove-delay",
+            seconds(km.auto_remove_delay.as_secs() as u32)
+        ],
+        publication_nameservers_cmd,
+    ]);
+    cmds
 }
 
 //============ KMIP Credential Management ====================================
@@ -1093,7 +1123,7 @@ pub enum RecordingMode {
 
 pub struct KeySetCommand {
     cmd: Option<AsyncHistoricalCommand>,
-    name: StoredName,
+    name: Name<Bytes>,
     center: Arc<Center>,
     recording_mode: RecordingMode,
 }
@@ -1118,7 +1148,7 @@ impl From<KeySetCommandError> for String {
 
 impl KeySetCommand {
     pub fn new(
-        name: StoredName,
+        name: Name<Bytes>,
         center: Arc<Center>,
         #[allow(clippy::boxed_local)] keys_dir: Box<Utf8Path>,
         #[allow(clippy::boxed_local)] dnst_binary_path: Box<Utf8Path>,

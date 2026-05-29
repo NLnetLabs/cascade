@@ -7,15 +7,17 @@
 
 use std::sync::Arc;
 
-use crate::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data};
+use crate::{
+    DiffData, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data,
+};
 
 mod states;
 pub use states::{
     CleanLoadedPendingStorage, CleanSignedPendingStorage, CleanWholePendingStorage,
     CleaningSignedStorage, CleaningStorage, LoadingStorage, PassiveStorage,
-    PersistingLoadedStorage, PersistingSignedStorage, ReviewLoadedPendingStorage,
-    ReviewSignedPendingStorage, ReviewingLoadedStorage, ReviewingSignedStorage, SigningStorage,
-    SwitchingStorage,
+    PersistingLoadedStorage, PersistingSignedStorage, RestoringLoadedStorage,
+    RestoringSignedStorage, ReviewLoadedPendingStorage, ReviewSignedPendingStorage,
+    ReviewingLoadedStorage, ReviewingSignedStorage, SigningStorage, SwitchingStorage,
 };
 
 mod transitions;
@@ -30,6 +32,12 @@ mod transitions;
 /// it is designed to live in a (synchronous) mutex -- expensive operations on
 /// the zone are always achievable without `&mut` access.
 pub enum ZoneDataStorage {
+    /// The loaded instance of the zone is being restored.
+    RestoringLoaded(RestoringLoadedStorage),
+
+    /// The signed instance of the zone is being restored.
+    RestoringSigned(RestoringSignedStorage),
+
     /// The zone is passive.
     Passive(PassiveStorage),
 
@@ -85,36 +93,14 @@ pub enum ZoneDataStorage {
 
 impl ZoneDataStorage {
     /// Construct a new [`ZoneDataStorage`].
-    pub fn new() -> (Self, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer) {
-        // TODO: When Cascade starts up, it should check for existing instances
-        // on disk. This might require a separate initialization function.
-
+    pub fn new() -> (LoadedZoneRestorer, Self) {
         let data = Arc::new(Data::new());
-        let curr_unsigned_index = false;
-        let curr_signed_index = false;
 
-        let ureviewer = unsafe { LoadedZoneReviewer::new(data.clone(), curr_unsigned_index, None) };
+        let restorer = unsafe { LoadedZoneRestorer::new(data.clone()) };
 
-        let reviewer = unsafe {
-            SignedZoneReviewer::new(
-                data.clone(),
-                curr_unsigned_index,
-                curr_signed_index,
-                None,
-                None,
-            )
-        };
+        let storage = RestoringLoadedStorage { data };
 
-        let viewer =
-            unsafe { ZoneViewer::new(data.clone(), curr_unsigned_index, curr_signed_index) };
-
-        let storage = Self::Passive(PassiveStorage {
-            data,
-            curr_loaded_index: false,
-            curr_signed_index: false,
-        });
-
-        (storage, ureviewer, reviewer, viewer)
+        (restorer, Self::RestoringLoaded(storage))
     }
 
     /// Extract the current state of the [`ZoneDataStorage`].
@@ -131,6 +117,8 @@ impl ZoneDataStorage {
     /// This is intended for logging and debugging.
     pub const fn as_str(&self) -> &'static str {
         match self {
+            ZoneDataStorage::RestoringLoaded(_) => "RestoringLoaded",
+            ZoneDataStorage::RestoringSigned(_) => "RestoringSigned",
             ZoneDataStorage::Passive(_) => "Passive",
             ZoneDataStorage::Loading(_) => "Loading",
             ZoneDataStorage::Signing(_) => "Signing",
@@ -147,6 +135,29 @@ impl ZoneDataStorage {
             ZoneDataStorage::CleaningSigned(_) => "CleaningSigned",
             ZoneDataStorage::Switching(_) => "Switching",
             ZoneDataStorage::Poisoned => "Poisoned",
+        }
+    }
+
+    /// Get the current loaded diff, if any.
+    pub fn loaded_diff(&self) -> Option<Arc<DiffData>> {
+        match self {
+            ZoneDataStorage::ReviewLoadedPending(s) => Some(s.loaded_diff.clone()),
+            ZoneDataStorage::ReviewingLoaded(s) => Some(s.loaded_diff.clone()),
+            ZoneDataStorage::PersistingLoaded(s) => Some(s.loaded_diff.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the current signed diff, if any.
+    pub fn signed_diff(&self) -> Option<Arc<DiffData>> {
+        match self {
+            ZoneDataStorage::ReviewSignedPending(s) => Some(s.signed_diff.clone()),
+            ZoneDataStorage::ReviewingSigned(s) => Some(s.signed_diff.clone()),
+            ZoneDataStorage::PersistingSigned(_) => {
+                // PersistingSigned has no diff unlike PersistingLoaded
+                None
+            }
+            _ => None,
         }
     }
 }

@@ -42,11 +42,14 @@ Commands
 
 .. subcmd:: add
 
-   Register a new zone.
+   Add a new zone.
 
 .. subcmd:: remove
 
    Remove a zone.
+
+   .. note:: Once removed, downstream servers will no longer be able to fetch
+             the zone!
 
 .. subcmd:: list
 
@@ -83,10 +86,34 @@ Commands
 Options for :subcmd:`zone add`
 ------------------------------
 
-.. option:: --source <SOURCE>
+.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
 
-   The zone source can be an IP address (with or without port, defaults to port
-   53) or a file path.
+   The zone source can be the IP address of an upstream nameserver (with
+   or without port, defaults to port 53) or the path to a zone file locally
+   available to the ``cascaded`` daemon.
+
+   When specifying an upstream nameserver you may also optionally specify
+   the name of an :RFC:`8945` TSIG key that should be used to authenticate
+   communication with the upstream.
+
+   Zones sourced from an upstream nameserver will be automatically updated
+   if a new version is detected via a SOA query, either based on the zone's
+   SOA record timers, or in response to an :RFC:`1996` NOTIFY message from
+   the upstream.
+
+   Zones can also be manualy updated via :program:`cascade` :subcmd:`reload`.
+
+   For zones that have already been retrieved at least once via AXFR, subsequent
+   refreshes will attempt to use IXFR and fallback to AXFR if IXFR is not
+   available.
+
+   .. note:: When running :program:`cascade` :subcmd:`zone add` from a
+             different host than where the Cascade daemon is running, make
+             sure that the source (whether filesystem path or IP address) is
+             reachable by the Cascade daemon.
+
+   .. note:: If using a TSIG key the key must first be added to Cascade via
+             :program:`cascade` :subcmd:`tsig add`.
 
 .. option:: --policy <POLICY>
 

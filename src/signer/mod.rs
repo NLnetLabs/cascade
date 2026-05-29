@@ -25,11 +25,13 @@ use std::{
 use cascade_zonedata::SignedZoneBuilder;
 use tracing::error;
 
+use crate::units::zone_signer::SignerError;
 use crate::{
     center::Center,
     zone::{HistoricalEvent, Zone, ZoneHandle},
 };
 
+pub mod incremental;
 pub mod zone;
 
 //----------- sign() -----------------------------------------------------------
@@ -87,6 +89,20 @@ async fn sign(
             handle.finish_signing(built);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
+        }
+        Err(SignerError::NothingToDo) => {
+            handle.abandon_signing(builder);
+            status.status.finish(true);
+            status.current_action = "Nothing to do".to_string();
+        }
+        Err(SignerError::KeepSerialPolicyViolated) => {
+            // Also ignore Keep errors. We can ignore these errors for
+            // a while assuming the unsigned zone gets updated regularly.
+            // TODO: But if nothing happens for too long we should warn.
+            // Something in status would be good.
+            handle.abandon_signing(builder);
+            status.status.finish(true);
+            status.current_action = "Resign failed due to Keep policy".to_string();
         }
         Err(error) => {
             error!("Signing failed: {error}");
