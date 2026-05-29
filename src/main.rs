@@ -4,14 +4,14 @@ use cascaded::{
     daemon::{PreBindError, SocketProvider, daemonize},
     loader::Loader,
     manager::Manager,
+    persistence::{Persister, Restorer},
     policy,
-    units::{
-        key_manager::KeyManager,
-        zone_server::{Source, ZoneServer},
-        zone_signer::ZoneSigner,
-    },
+    server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
+    units::{key_manager::KeyManager, zone_signer::ZoneSigner},
+    zone::{Zone, ZoneByName},
 };
 use clap::{crate_authors, crate_description};
+use daemonbase::process::exit_signalled;
 use std::{collections::HashMap, fs::create_dir_all};
 use std::{
     io,
@@ -74,14 +74,83 @@ fn main() -> ExitCode {
     }
 
     // Load the global state file or build one from scratch.
-    let mut state = match center::State::init_from_file(&config) {
+    let mut zones = Default::default();
+    let mut policies = Default::default();
+    let state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
+        Ok(mut state) => {
+            info!(
+                "Loaded the global state file (from '{}')",
+                config.daemon.state_file.value()
+            );
+
+            // Load the TSIG store file.
+            match state.tsig_store.init_from_file(&config) {
+                Ok(()) => debug!("Loaded the TSIG store (from '{}')", config.tsig_store_path),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    debug!(
+                        "TSIG store file '{}' did not exist; it will be created",
+                        config.tsig_store_path
+                    );
+                }
+                Err(err) => {
+                    error!(
+                        "TSIG store file '{}' could not be read: {err}",
+                        config.tsig_store_path
+                    );
+                    return ExitCode::FAILURE;
+                }
+            }
+
+            // Restore pending policies.
+            state
+                .policies
+                .extend(policies.into_iter().map(|(name, spec)| {
+                    let policy = spec.parse(&name);
+                    (name, policy)
+                }));
+
+            // Restore pending zones.
+            for name in zones {
+                assert!(
+                    !state.zones.contains(&name),
+                    "Zone '{name}' was encountered twice"
+                );
+                let zone =
+                    match Zone::restore(&config, name, &mut state.policies, &state.tsig_store) {
+                        Ok(zone) => zone,
+                        Err(_) => return ExitCode::FAILURE,
+                    };
+                state.zones.insert(ZoneByName(Arc::new(zone)));
+            }
+
+            // Update policy.zones
+            for zone in &state.zones {
+                let zone_state = zone.0.state.lock().expect("zone state lock should work");
+                if let Some(ref policy) = zone_state.policy {
+                    let pol = state
+                        .policies
+                        .get_mut(&policy.name)
+                        .expect("zone policy should exist");
+                    pol.zones.insert(zone.0.name.clone());
+                }
+            }
+
+            state
+        }
+
         Err(err) => {
             if err.kind() != io::ErrorKind::NotFound {
-                error!("Could not load the state file: {err}");
+                error!(
+                    "State file '{}' could not be read: {err}",
+                    config.daemon.state_file.value()
+                );
                 return ExitCode::FAILURE;
             }
 
-            info!("State file not found; starting from scratch");
+            info!(
+                "State file '{}' did not exist; starting from scratch",
+                config.daemon.state_file.value()
+            );
 
             // Create required subdirectories (and their parents) if they don't
             // exist. This is only needed for directories to which we write files
@@ -107,11 +176,28 @@ fn main() -> ExitCode {
 
             let mut state = center::State::default();
 
+            // Load the TSIG store file.
+            match state.tsig_store.init_from_file(&config) {
+                Ok(()) => debug!("Loaded the TSIG store"),
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                    debug!("No TSIG store found; will create one");
+                }
+                Err(err) => {
+                    error!("Failed to load the TSIG store: {err}");
+                    return ExitCode::FAILURE;
+                }
+            }
+
             // Load all policies.
             let mut updates = Vec::new();
-            let res = policy::reload_all(&mut state.policies, &config, |name, _| {
-                updates.push(name.clone());
-            });
+            let res = policy::reload_all(
+                &mut state.policies,
+                &config,
+                &state.tsig_store,
+                |name, _| {
+                    updates.push(name.clone());
+                },
+            );
 
             if let Err(err) = res {
                 error!("Cascade couldn't load all policies: {err}");
@@ -138,30 +224,6 @@ fn main() -> ExitCode {
             // TODO: Fail if any zone state files exist.
             state
         }
-        Ok(mut state) => {
-            info!("Successfully loaded the global state file");
-
-            let zone_state_dir = &config.zone_state_dir;
-            let policies = &mut state.policies;
-            for zone in &state.zones {
-                let name = &zone.0.name;
-                let path = zone_state_dir.join(format!("{name}.db"));
-                let spec = match cascaded::zone::state::Spec::load(&path) {
-                    Ok(spec) => {
-                        debug!("Loaded state of zone '{name}' (from {path})");
-                        spec
-                    }
-                    Err(err) => {
-                        error!("Failed to load zone state '{name}' from '{path}': {err}");
-                        return ExitCode::FAILURE;
-                    }
-                };
-                let mut state = zone.0.state.lock().unwrap();
-                *state = spec.parse(&zone.0, policies);
-            }
-
-            state
-        }
     };
 
     if config.loader.review.servers.is_empty() {
@@ -174,20 +236,6 @@ fn main() -> ExitCode {
         warn!(
             "No review server configured for [signer.review], therefore no signed zone transfer available for review."
         );
-    }
-
-    // Load the TSIG store file.
-    //
-    // TODO: Track which TSIG keys are in use by zones.
-    match state.tsig_store.init_from_file(&config) {
-        Ok(()) => debug!("Loaded the TSIG store"),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            debug!("No TSIG store found; will create one");
-        }
-        Err(err) => {
-            error!("Failed to load the TSIG store: {err}");
-            return ExitCode::FAILURE;
-        }
     }
 
     // Bind to listen addresses before daemonizing.
@@ -207,13 +255,12 @@ fn main() -> ExitCode {
         logger,
         loader: Loader::new(),
         key_manager: KeyManager::new(),
-        unsigned_review_server: ZoneServer::new(Source::Unsigned),
-        signed_review_server: ZoneServer::new(Source::Signed),
-        publication_server: ZoneServer::new(Source::Published),
+        persister: Persister::new(),
+        restorer: Restorer::new(),
+        loaded_review_server: LoadedReviewServer::new(),
+        signed_review_server: SignedReviewServer::new(),
+        publication_server: PublicationServer::new(),
         signer: ZoneSigner::new(),
-        unsigned_zones: Default::default(),
-        signed_zones: Default::default(),
-        published_zones: Default::default(),
         resign_busy: Mutex::new(HashMap::new()),
     });
 
@@ -247,13 +294,16 @@ fn main() -> ExitCode {
             }
         };
 
-        let res = match tokio::signal::ctrl_c().await {
+        info!("Cascade is fully initialized.");
+
+        let res = match exit_signalled().await {
             Ok(_) => ExitCode::SUCCESS,
             Err(error) => {
                 error!("Listening for CTRL-C (SIGINT) failed: {error}");
                 ExitCode::FAILURE
             }
         };
+        info!("Shutting down");
 
         // All of Cascade's units have AbortOnDrop's in Manager, so all
         // background tasks will be stopped when Manager is dropped.
@@ -413,10 +463,10 @@ fn check_dnst_version(config: &Config) -> bool {
     };
 
     // Change this string and the match pattern to whatever version we require in the future
-    let required_version = ">0.1.0";
+    let required_version = ">0.2.0";
     let res = match (major, minor, patch) {
-        // major = 0; minor >= 1; patch = *
-        (0, 1.., ..) => true,
+        // major = 0; minor >= 2; patch = *
+        (0, 2.., ..) => true,
         _ => false,
     };
 

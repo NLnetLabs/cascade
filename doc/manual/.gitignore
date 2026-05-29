@@ -1,1 +1,3 @@
-build/
+build/doctrees/
+build/man/_static/
+build/html/

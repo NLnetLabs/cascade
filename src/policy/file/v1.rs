@@ -1,11 +1,13 @@
 //! Version 1 of the policy file.
 
+use std::time::Duration;
 use std::{
     fmt::{self, Display},
-    net::{AddrParseError, IpAddr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     str::FromStr,
 };
 
+use domain::tsig::KeyName;
 use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
@@ -15,7 +17,7 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
 use crate::{
     common::datetime::TimeSpan,
     policy::{
-        KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
+        self, KeyManagerPolicy, LoaderPolicy, NameserverCommsPolicy, OutboundPolicy, PolicyVersion,
         ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
     },
 };
@@ -42,6 +44,21 @@ const SIGNATURE_REMAIN_TIME: u32 = SIGNATURE_VALIDITY_TIME / 2;
 // one day should solve that problem and not introduce any
 // security risks. No official reference.
 const SIGNATURE_INCEPTION_OFFSET: u32 = 24 * 3600;
+
+// Try to find the right comprise between zones that hardly ever changes and
+// zones that are changed frequently. This should be a safe default, though
+// big zones that change frequently may set it to around 15 minutes to
+// avoid jitter in signing performance.
+const SIGNATURE_REFRESH_INTERVAL: u32 = 12 * 3600;
+
+// Assume it is fine if resigning a zone takes one day. This could be a lot
+// lower for small zones. For big zones it is balance between the time
+// the DNSKEY RRset contains an extra KSK and how disruptive it is to
+// sign more records.
+const KEY_ROLL_TIME: u32 = 24 * 3600;
+
+// When auto remove is enabled, remove old keys after one week.
+const AUTO_REMOVE_DELAY: u32 = 7 * 24 * 3600;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -94,7 +111,7 @@ impl Spec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct LoaderSpec {
     /// Reviewing loaded zones.
-    pub review: ReviewSpec,
+    pub review: Option<ReviewSpec>,
 }
 
 //--- Conversion
@@ -103,14 +120,14 @@ impl LoaderSpec {
     /// Parse from this specification.
     pub fn parse(self) -> LoaderPolicy {
         LoaderPolicy {
-            review: self.review.parse(),
+            review: self.review.map_or(Default::default(), |r| r.parse()),
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &LoaderPolicy) -> Self {
         Self {
-            review: ReviewSpec::build(&policy.review),
+            review: Some(ReviewSpec::build(&policy.review)),
         }
     }
 }
@@ -136,14 +153,24 @@ pub struct KeyManagerSpec {
     /// The DS hash algorithm.
     pub ds_algorithm: DsAlgorithm,
 
-    /// Automatically remove keys that are no long in use.
+    /// Automatically remove keys that are no longer in use.
     pub auto_remove: bool,
+
+    /// How long to wait before removing old keys.
+    pub auto_remove_delay: TimeSpan,
 
     /// How special DNS records are managed.
     pub records: KeyManagerRecordsSpec,
 
     /// How keys are generated.
     pub generation: KeyManagerGenerationSpec,
+
+    /// The upstream nameservers to use when checking for RRSIG propagation
+    /// during a key roll. The value is a list of strings. Each string has the following
+    /// syntax: `<IP-address>:<port>[^<tsig-key-name>].`
+    /// The port is mandatory. The TSIG key name is optional and the name
+    /// of the key is preceded by a caret character (`^`).
+    pub publication_nameservers: Vec<NameserverCommsSpec>,
 }
 
 //--- Conversion
@@ -239,6 +266,12 @@ impl KeyManagerSpec {
             default_ttl: self.records.ttl.as_ttl(),
             ds_algorithm: self.ds_algorithm,
             auto_remove: self.auto_remove,
+            auto_remove_delay: Duration::from_secs(self.auto_remove_delay.as_secs().into()),
+            publication_nameservers: self
+                .publication_nameservers
+                .into_iter()
+                .map(|v| v.parse())
+                .collect(),
         }
     }
 
@@ -270,6 +303,12 @@ impl KeyManagerSpec {
 
             ds_algorithm: policy.ds_algorithm.clone(),
             auto_remove: policy.auto_remove,
+            auto_remove_delay: TimeSpan::from_secs(policy.auto_remove_delay.as_secs() as u32),
+            publication_nameservers: policy
+                .publication_nameservers
+                .iter()
+                .map(NameserverCommsSpec::build)
+                .collect(),
 
             records: KeyManagerRecordsSpec {
                 ttl: TimeSpan::from_ttl(policy.default_ttl),
@@ -318,6 +357,8 @@ impl Default for KeyManagerSpec {
             algorithm: Default::default(),
             ds_algorithm: DsAlgorithm::Sha256,
             auto_remove: true,
+            auto_remove_delay: TimeSpan::from_secs(AUTO_REMOVE_DELAY),
+            publication_nameservers: Default::default(),
             records: Default::default(),
             generation: Default::default(),
         }
@@ -584,6 +625,13 @@ pub struct SignerSpec {
     /// generated, in seconds.
     pub signature_remain_time: TimeSpan,
 
+    /// How often should the signatures in the zone be checked and
+    /// updated. This generates a new version of the signed zone.
+    pub signature_refresh_interval: TimeSpan,
+
+    /// How long should it take to resign a zone during a ZSK or CSK roll.
+    pub key_roll_time: TimeSpan,
+
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialSpec,
 
@@ -604,6 +652,8 @@ impl SignerSpec {
             sig_inception_offset: self.signature_inception_offset.as_secs(),
             sig_validity_time: self.signature_lifetime.as_secs(),
             sig_remain_time: self.signature_remain_time.as_secs(),
+            signature_refresh_interval: self.signature_refresh_interval.as_secs(),
+            key_roll_time: self.key_roll_time.as_secs(),
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -616,6 +666,8 @@ impl SignerSpec {
             signature_inception_offset: TimeSpan::from_secs(policy.sig_inception_offset),
             signature_lifetime: TimeSpan::from_secs(policy.sig_validity_time),
             signature_remain_time: TimeSpan::from_secs(policy.sig_remain_time),
+            signature_refresh_interval: TimeSpan::from_secs(policy.signature_refresh_interval),
+            key_roll_time: TimeSpan::from_secs(policy.key_roll_time),
             denial: SignerDenialSpec::build(&policy.denial),
             review: ReviewSpec::build(&policy.review),
         }
@@ -630,6 +682,8 @@ impl Default for SignerSpec {
             signature_inception_offset: TimeSpan::from_secs(SIGNATURE_INCEPTION_OFFSET),
             signature_lifetime: TimeSpan::from_secs(SIGNATURE_VALIDITY_TIME),
             signature_remain_time: TimeSpan::from_secs(SIGNATURE_REMAIN_TIME),
+            signature_refresh_interval: TimeSpan::from_secs(SIGNATURE_REFRESH_INTERVAL),
+            key_roll_time: TimeSpan::from_secs(KEY_ROLL_TIME),
 
             denial: Default::default(),
 
@@ -773,13 +827,37 @@ impl SignerDenialSpec {
 
 /// Policy for reviewing loaded/signed zones.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
-pub struct ReviewSpec {
-    /// Whether review is required.
-    pub required: bool,
+#[serde(tag = "mode", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ReviewSpec {
+    /// Do not review
+    #[default]
+    Off,
 
-    /// A command hook for reviewing a new version of the zone.
-    pub cmd_hook: Option<String>,
+    /// Reset the pipeline on reject
+    #[serde(rename_all = "kebab-case")]
+    Manual {
+        #[serde(default)]
+        on_reject: OnReject,
+    },
+
+    /// Halt the pipeline on reject
+    #[serde(rename_all = "kebab-case")]
+    Script {
+        hook: String,
+        #[serde(default)]
+        on_reject: OnReject,
+    },
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnReject {
+    /// Reset the pipeline on reject
+    #[default]
+    Discard,
+
+    /// Halt the pipeline on reject
+    Halt,
 }
 
 //--- Conversion
@@ -787,17 +865,37 @@ pub struct ReviewSpec {
 impl ReviewSpec {
     /// Parse from this specification.
     pub fn parse(self) -> ReviewPolicy {
+        let (mode, on_reject) = match self {
+            ReviewSpec::Off => (policy::ReviewMode::Off, OnReject::Discard),
+            ReviewSpec::Manual { on_reject } => (policy::ReviewMode::Manual, on_reject),
+            ReviewSpec::Script { hook, on_reject } => {
+                (policy::ReviewMode::Script { hook }, on_reject)
+            }
+        };
         ReviewPolicy {
-            required: self.required,
-            cmd_hook: self.cmd_hook,
+            mode,
+            on_reject: match on_reject {
+                OnReject::Discard => policy::OnReject::Discard,
+                OnReject::Halt => policy::OnReject::Halt,
+            },
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ReviewPolicy) -> Self {
-        Self {
-            required: policy.required,
-            cmd_hook: policy.cmd_hook.clone(),
+        let map_on_reject = |r: &policy::OnReject| match r {
+            policy::OnReject::Discard => OnReject::Discard,
+            policy::OnReject::Halt => OnReject::Halt,
+        };
+        match policy.mode.clone() {
+            policy::ReviewMode::Off => ReviewSpec::Off,
+            policy::ReviewMode::Manual => ReviewSpec::Manual {
+                on_reject: map_on_reject(&policy.on_reject),
+            },
+            policy::ReviewMode::Script { hook } => ReviewSpec::Script {
+                hook,
+                on_reject: map_on_reject(&policy.on_reject),
+            },
         }
     }
 }
@@ -838,7 +936,7 @@ pub struct OutboundSpec {
     ///
     /// If empty, any nameserver may request XFR from us.
     #[serde(default = "empty_list")]
-    pub accept_xfr_requests_from: Vec<NameserverCommsSpec>,
+    pub accept_xfr_from: Vec<NameserverCommsSpec>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///
@@ -859,8 +957,8 @@ impl OutboundSpec {
     /// Parse from this specification.
     pub fn parse(self) -> OutboundPolicy {
         OutboundPolicy {
-            accept_xfr_requests_from: self
-                .accept_xfr_requests_from
+            accept_xfr_from: self
+                .accept_xfr_from
                 .into_iter()
                 .map(|v| v.parse())
                 .collect(),
@@ -871,8 +969,8 @@ impl OutboundSpec {
     /// Build into this specification.
     pub fn build(policy: &OutboundPolicy) -> Self {
         Self {
-            accept_xfr_requests_from: policy
-                .accept_xfr_requests_from
+            accept_xfr_from: policy
+                .accept_xfr_from
                 .iter()
                 .map(NameserverCommsSpec::build)
                 .collect(),
@@ -889,7 +987,10 @@ impl OutboundSpec {
 
 /// Policy for communicating with another namesever.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(untagged, expecting = "a string ('<IP>[:<PORT>]') or an inline table")]
+#[serde(
+    untagged,
+    expecting = "a string ('<IP>[:<PORT>][^<TSIG_KEY_NAME>]') or an inline table"
+)]
 pub enum NameserverCommsSpec {
     /// A simple notify specification.
     Simple(SimpleNameserverCommsSpec),
@@ -902,18 +1003,22 @@ pub enum NameserverCommsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ComplexNameserverCommsSpec {
-    /// The address to send NOTIFYs to.
+    /// The address to send NOTIFYs to or allow XFRs from.
     pub addr: SocketAddr,
-    // TODO: Support TSIG key names?
+
+    /// An optional TSIG key to sign and authenticate messages with.
+    pub tsig_key_name: Option<KeyName>,
 }
 
 /// Policy for communicating with another namesever.
 #[derive(Clone, Debug, DeserializeFromStr, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SimpleNameserverCommsSpec {
-    /// The address to send NOTIFYs to.
+    /// The address to send NOTIFYs to or allow XFRs from.
     pub addr: SocketAddr,
-    // TODO: Support TSIG key names?
+
+    /// An optional TSIG key to sign and authenticate messages with.
+    pub tsig_key_name: Option<KeyName>,
 }
 
 //--- Conversion
@@ -929,33 +1034,59 @@ impl NameserverCommsSpec {
 
     /// Build into this specification.
     pub fn build(policy: &NameserverCommsPolicy) -> Self {
-        Self::Complex(ComplexNameserverCommsSpec { addr: policy.addr })
+        Self::Complex(ComplexNameserverCommsSpec {
+            addr: policy.addr,
+            tsig_key_name: policy.tsig_key_name.clone(),
+        })
     }
 }
 
 impl SimpleNameserverCommsSpec {
     /// Parse from this specification.
     pub fn parse(self) -> NameserverCommsPolicy {
-        NameserverCommsPolicy { addr: self.addr }
+        NameserverCommsPolicy {
+            addr: self.addr,
+            tsig_key_name: self.tsig_key_name,
+        }
     }
 }
 
 impl ComplexNameserverCommsSpec {
     /// Parse from this specification.
     pub fn parse(self) -> NameserverCommsPolicy {
-        NameserverCommsPolicy { addr: self.addr }
+        NameserverCommsPolicy {
+            addr: self.addr,
+            tsig_key_name: self.tsig_key_name,
+        }
     }
 }
 
-/// Parse as an IpAddr (assuming port 53), or as a SocketAddr.
+/// Parse`<IP_ADDRESS>[:<PORT>][^<TSIG_KEY_NAME>]`
 impl FromStr for SimpleNameserverCommsSpec {
-    type Err = AddrParseError;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (s, tsig_key_name) = s.split_once('^').unwrap_or((s, ""));
+
+        let tsig_key_name = if !tsig_key_name.is_empty() {
+            Some(
+                KeyName::from_str(tsig_key_name)
+                    .map_err(|err| format!("Invalid TSIG key name '{tsig_key_name}': {err}"))?,
+            )
+        } else {
+            None
+        };
+
         let addr = IpAddr::from_str(s)
             .map(|ip| SocketAddr::new(ip, 53))
-            .or_else(|_| SocketAddr::from_str(s))?;
-        Ok(SimpleNameserverCommsSpec { addr })
+            .or_else(|_| {
+                SocketAddr::from_str(s)
+                    .map_err(|err| format!("Invalid socket address '{s}': {err}"))
+            })?;
+        Ok(SimpleNameserverCommsSpec {
+            addr,
+            tsig_key_name,
+        })
     }
 }
 
