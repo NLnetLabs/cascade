@@ -70,10 +70,36 @@ runs:
 
     - name: Query the zone at the unsigned preview server
       run: |
-        NUM_RRS=$(dig +noall +onesoa +answer @127.0.0.1 -p 4542 example.test AXFR | wc -l)
+        dig +noall +onesoa +answer @127.0.0.1 -p 4540 example.test AXFR &> example.test.zone.log
+
+        # Check that the received zone matches the included ZONEMD RR.
+        # FYI the ZONEMD RR was generated using ldns-signzone -z sha512 -Z example.test.zone
+        if ! ldns-verify-zone -Z example.test.zone.log 2>&1 | tee ldns-verify-unsigned-preview-zone.log; then
+          echo "::error:: the unsigned review zone failed the ldns-verify-zone check"
+          exit 1
+        fi
+
+        NUM_RRS=$(cat example.test.zone.log | wc -l)
+        if [[ ${NUM_RRS} -ne 506 ]]; then
+          echo "::error:: the unsigned review zone has the wrong number of records: ${NUM_RRS} != 506"
+          exit 1
+        fi
+
+    - name: Query the signed zone at the publication server
+      run: |
+        dig +noall +onesoa +answer @127.0.0.1 -p 4542 example.test AXFR &> example.test.zone.log
+
+        # Check that the zone is correctly signed.
+        # Note: Cascade doesn't support adding the ZONEMD RR to the signed zone so we don't check
+        # for that and don't expect it in the output.
+        if ! ldns-verify-zone example.test.zone.log 2>&1 | tee ldns-verify-published-zone.log; then
+          echo "::error:: the unsigned review zone failed the ldns-verify-zone check"
+          exit 1
+        fi
+
+        NUM_RRS=$(cat example.test.zone.log | wc -l)
         if [[ ${NUM_RRS} -ne 2016 ]]; then
           echo "::error:: the unsigned review zone has the wrong number of records: ${NUM_RRS} != 2016"
-          dig +short +noall +onesoa +answer @127.0.0.1 -p 4542 example.test AXFR > axfr.log
           exit 1
         fi
 
