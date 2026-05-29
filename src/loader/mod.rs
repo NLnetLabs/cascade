@@ -51,16 +51,27 @@ impl Loader {
 
     /// Initialize the loader, synchronously.
     pub fn init(center: &Arc<Center>, state: &mut State) {
-        // Enqueue refreshes for all known zones.
+        // Enqueue refreshes for all known upstream zones.
         for zone in &state.zones {
             let mut state = zone.0.state.lock().unwrap();
-            ZoneHandle {
-                zone: &zone.0,
-                state: &mut state,
-                center,
+            match state.loader.source {
+                Source::None => { /* Nothing to do */ }
+                Source::Zonefile { .. } => {
+                    // Don't enqueue a refresh for zones sourced from disk
+                    // as the operator may be in the middle of editing the
+                    // zonefile and thus we require zonefiles to be reloaded
+                    // explicitly via `cascade zone reload`.
+                }
+                Source::Server { .. } => {
+                    ZoneHandle {
+                        zone: &zone.0,
+                        state: &mut state,
+                        center,
+                    }
+                    .loader()
+                    .enqueue_refresh(false);
+                }
             }
-            .loader()
-            .enqueue_refresh(false);
         }
     }
 

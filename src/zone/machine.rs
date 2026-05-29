@@ -265,28 +265,6 @@ impl<'a> ZoneHandle<'a> {
         self.signer().enqueue_new_sign(builder);
     }
 
-    /// Begin signing a restored loaded instance.
-    ///
-    /// This is called when the zone is restored from persisted state, the data
-    /// for its last known loaded instance is restored successfully, but the
-    /// data for its last known signed instance could not be restored (or none
-    /// existed). It directly initiates signing.
-    pub(crate) fn start_sign_after_restore(
-        &mut self,
-        builder: cascade_zonedata::SignedZoneBuilder,
-    ) {
-        // Force the state machine to the signing state.
-        let (transition, state) = self.state.machine.transition();
-        let ZoneStateMachine::Waiting(waiting) = state else {
-            panic!("'start_sign_after_restore()' called when the zone was not passive");
-        };
-        transition.move_to(ZoneStateMachine::Signing(
-            waiting.start_sign_after_restore(),
-        ));
-
-        self.signer().enqueue_new_sign(builder);
-    }
-
     pub(crate) fn finish_signing(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
         let (transition, state) = self.state.machine.transition();
 
@@ -554,9 +532,9 @@ impl Waiting {
         Loading {}
     }
 
-    fn start_sign_after_restore(self) -> Signing {
-        Signing {}
-    }
+    // fn start_sign_after_restore(self) -> Signing {
+    //     Signing {}
+    // }
 
     fn start_resign(self) -> Signing {
         Signing {}

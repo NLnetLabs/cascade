@@ -475,6 +475,7 @@ pub struct LastPublishedZone {
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Progress {
     Waiting,
+    Restoring,
     Loading,
     LoadedReview,
     HaltLoaded,

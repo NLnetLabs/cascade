@@ -640,7 +640,7 @@ impl Zone {
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
         println!("");
-        print_status(zone.progress, &zone, &policy);
+        print_status(&zone, &policy);
 
         if zone.last_published.is_some() {
             println!("");
@@ -703,8 +703,11 @@ impl Zone {
     }
 }
 
-pub fn print_status(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
-    let progress = match zone.progress {
+pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
+    let current = zone.progress;
+
+    let progress = match current {
+        Progress::Restoring => "restoring",
         Progress::Waiting => "idle",
         Progress::Loading => "loading",
         Progress::LoadedReview => "waiting for loaded review",
@@ -717,7 +720,7 @@ pub fn print_status(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
 
     println!("status: {}{progress}{}", ansi::BLUE, ansi::RESET);
 
-    if current == Progress::Waiting {
+    if matches!(current, Progress::Waiting | Progress::Restoring) {
         return;
     }
 

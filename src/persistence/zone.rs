@@ -2,13 +2,15 @@
 
 use std::sync::Arc;
 
-use cascade_zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister};
-use tracing::{debug, info, trace, trace_span};
+use cascade_zonedata::{
+    LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer,
+};
+use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{Zone, ZoneHandle, ZoneState, save_state_now},
 };
 
 //----------- ZonePersistenceHandle --------------------------------------------
@@ -40,7 +42,7 @@ impl ZonePersistenceHandle<'_> {
     /// A background task will be spawned to restore the zone's data (for both
     /// the loaded and signed instances).
     #[tracing::instrument(
-        level = "trace",
+        level = "info",
         skip_all,
         fields(zone = %self.zone.name),
     )]
@@ -57,21 +59,20 @@ impl ZonePersistenceHandle<'_> {
                 // Try to restore the loaded instance.
                 let mut restorer = restorer;
                 let restored = match super::restore_loaded(&zone, &center, &mut restorer) {
-                    Ok(()) => restorer.finish().unwrap_or_else(|_| {
-                        unreachable!(
-                            "'restore_loaded()' always completes restoration on successful return"
-                        )
-                    }),
-                    Err(_) => {
-                        trace!("Abandoning loaded restoration");
-                        let mut state = zone.state.lock().unwrap();
-                        let mut handle = ZoneHandle {
-                            zone: &zone,
-                            state: &mut state,
-                            center: &center,
-                        };
-                        handle.storage().abandon_loaded_restoration(restorer);
-                        handle.state.persistence.ongoing.finish();
+                    Ok(true) => {
+                        // Data was restored. Use it.
+                        restorer.finish().unwrap_or_else(|_| {
+                            unreachable!("Loaded zone restoration should have built new zone data")
+                        })
+                    }
+                    Ok(false) => {
+                        // There was nothing to restore.
+                        abandon_loaded_restoration(&center, &zone, restorer);
+                        return;
+                    }
+                    Err(err) => {
+                        warn!("Abandoning loaded restoration: {err}");
+                        abandon_loaded_restoration(&center, &zone, restorer);
                         return;
                     }
                 };
@@ -89,27 +90,26 @@ impl ZonePersistenceHandle<'_> {
 
                 // Try to restore the signed instance.
                 let restored = match super::restore_signed(&zone, &center, &mut restorer) {
-                    Ok(()) => restorer.finish().unwrap_or_else(|_| {
-                        unreachable!(
-                            "'restore_signed()' always completes restoration on successful return"
-                        )
-                    }),
-                    Err(_) => {
-                        trace!("Abandoning signed restoration");
-                        let mut state = zone.state.lock().unwrap();
-                        let mut handle = ZoneHandle {
-                            zone: &zone,
-                            state: &mut state,
-                            center: &center,
-                        };
-                        handle.storage().abandon_signed_restoration(restorer);
-                        handle.state.persistence.ongoing.finish();
+                    Ok(true) => {
+                        // Data was restored. Use it.
+                        restorer.finish().unwrap_or_else(|_| {
+                            unreachable!("Signed zone restoration should have built new zone data")
+                        })
+                    }
+                    Ok(false) => {
+                        // There was nothing to restore.
+                        abandon_signed_restoration(&center, &zone, restorer);
+                        return;
+                    }
+                    Err(err) => {
+                        warn!("Abandoning signed restoration: {err}");
+                        abandon_signed_restoration(&center, &zone, restorer);
                         return;
                     }
                 };
 
-                info!("Restored the zone's persisted data");
                 let mut state = zone.state.lock().unwrap();
+                trace!("Restored diffs: {:?}", state.persisted_loaded_diff_paths);
                 let mut handle = ZoneHandle {
                     zone: &zone,
                     state: &mut state,
@@ -138,8 +138,8 @@ impl ZonePersistenceHandle<'_> {
             .ongoing
             .spawn_blocking(span, move || {
                 debug!("Persisting the loaded instance");
-
                 let persisted = super::persist_loaded(&zone, &center, persister);
+                debug!("Persisting the loaded instance completed");
 
                 // NOTE: The outer function, which is spawning the background
                 // task, has a lock of the zone state. Thus, the following lock
@@ -175,8 +175,8 @@ impl ZonePersistenceHandle<'_> {
             .ongoing
             .spawn_blocking(span, move || {
                 debug!("Persisting the signed instance");
-
                 let persisted = super::persist_signed(&zone, &center, persister);
+                debug!("Persisting the signed instance completed");
 
                 // NOTE: The outer function, which is spawning the background
                 // task, has a lock of the zone state. Thus, the following lock
@@ -193,6 +193,87 @@ impl ZonePersistenceHandle<'_> {
                 handle.state.persistence.ongoing.finish();
             });
     }
+}
+
+fn abandon_loaded_restoration(
+    center: &Arc<Center>,
+    zone: &Arc<Zone>,
+    restorer: LoadedZoneRestorer,
+) {
+    reset_state_due_to_abandoned_restore(center, zone);
+    let mut state = zone.state.lock().unwrap();
+    let mut handle = ZoneHandle {
+        zone,
+        state: &mut state,
+        center,
+    };
+    handle.storage().abandon_loaded_restoration(restorer);
+    handle.state.persistence.ongoing.finish();
+}
+
+fn abandon_signed_restoration(
+    center: &Arc<Center>,
+    zone: &Arc<Zone>,
+    restorer: SignedZoneRestorer,
+) {
+    reset_state_due_to_abandoned_restore(center, zone);
+    let mut state = zone.state.lock().unwrap();
+    let mut handle = ZoneHandle {
+        zone,
+        state: &mut state,
+        center,
+    };
+    handle.storage().abandon_signed_restoration(restorer);
+    handle.state.persistence.ongoing.finish();
+}
+
+fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
+    {
+        let mut state = zone.state.lock().unwrap();
+        clear_persisted_zone_data(center, &mut state);
+
+        // In case this zone was signed in the past we have to make sure that
+        // any attempt to enqueue a re-signing operation will be skipped as
+        // doing so will fail due to the lack of loaded zone content.
+        // TODO: Find a better way to prevent this issue as changing the
+        // min_expiration timestamps is a very indirect and non-obvious way of
+        // preventing re-signing.
+        state.min_expiration = None;
+        state.next_min_expiration = None;
+
+        // Also remove any already enqueued signing operation that is blocked
+        // by the ongoing restore as it will otherwise immediately start once
+        // the restore completes.
+        state.signer.cancel_enqueued_signing_operations();
+    }
+    save_state_now(center, zone);
+}
+
+fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
+    // We can't use the persisted data so remove the paths from state, remove
+    // the corresponding files on disk and remove any diffs that we loaded
+    // into memory.
+    for p in state
+        .persisted_loaded_diff_paths
+        .iter()
+        .chain(state.persisted_signed_diff_paths.iter())
+    {
+        if p.exists() && p.starts_with(center.config.zone_state_dir.as_std_path()) {
+            info!(
+                "Removing unusable persisted zone data file '{}'",
+                p.display()
+            );
+            if let Err(err) = std::fs::remove_file(p) {
+                warn!(
+                    "Failed to remove unusable persisted zone data file '{}': {err}",
+                    p.display()
+                );
+            }
+        }
+    }
+    state.persisted_loaded_diff_paths.clear();
+    state.persisted_signed_diff_paths.clear();
+    state.storage.diffs.clear();
 }
 
 //----------- PersistenceState -------------------------------------------------

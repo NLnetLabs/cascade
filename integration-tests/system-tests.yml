@@ -301,3 +301,18 @@ jobs:
           accept-xfr-from: ${{ matrix.accept-xfr-from }}
           downstream-expects-tsig: ${{ matrix.downstream-expects-tsig }}
           downstream-uses-tsig: ${{ matrix.downstream-uses-tsig }}
+
+  persist-zone:
+    name: Added zone should still exist after restart.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/persist-zone
+        with:
+          log-level: ${{ inputs.log-level }}
