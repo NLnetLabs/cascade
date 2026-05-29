@@ -1,9 +1,9 @@
 //! The configuration file.
 
-use std::{fmt, sync::Arc};
+use std::{fmt, io, sync::Arc};
 
 use camino::Utf8Path;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::Config;
 
@@ -12,7 +12,7 @@ pub mod v1;
 //----------- Spec -------------------------------------------------------------
 
 /// A configuration file.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "version")]
 pub enum Spec {
     /// The version 1 format.
@@ -35,6 +35,14 @@ impl Spec {
     pub fn load(path: &Utf8Path) -> Result<Self, FileError> {
         let text = std::fs::read_to_string(path)?;
         Ok(toml::from_str(&text)?)
+    }
+
+    /// Save the configuration file, formatting in a compact notation.
+    pub fn save_compact(&self, path: &Utf8Path) -> io::Result<()> {
+        let text = match self {
+            Self::V1(spec) => toml::to_string(spec).unwrap(),
+        };
+        std::fs::write(path, text)
     }
 }
 
