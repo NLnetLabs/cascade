@@ -6,6 +6,7 @@ example.test.   IN SOA ns1.example.test. mail.example.test. (
                    3600          ; expire (1 hour)
                       5          ; minimum (5 seconds)
                     )
+@           ZONEMD  2 1 2 7404f50a5a44f4ac577c1821ad86a0722ca2d47ed74ed70903a61cedda9e133015d334b89de86ab8a727fdc9e2513199581242f32738116865e048897cfd1153
 @           NS  example.test.
 @           NS  ns1.example.test.
 @           A   127.0.0.1
