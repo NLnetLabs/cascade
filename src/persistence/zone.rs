@@ -250,8 +250,9 @@ fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) 
 }
 
 fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
-    // We can't use the persisted data so remove the paths from state and also
-    // the corresponding files on disk.
+    // We can't use the persisted data so remove the paths from state, remove
+    // the corresponding files on disk and remove any diffs that we loaded
+    // into memory.
     for p in state
         .persisted_loaded_diff_paths
         .iter()
@@ -272,6 +273,7 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
     }
     state.persisted_loaded_diff_paths.clear();
     state.persisted_signed_diff_paths.clear();
+    state.storage.diffs.clear();
 }
 
 //----------- PersistenceState -------------------------------------------------
