@@ -26,6 +26,8 @@ RUN <<EOF
   apt-get install -y pkg-config libssl-dev
 
   apt-get install -y file
+
+  apt-get install -y ldnsutils
 EOF
 
 RUN <<EOF
