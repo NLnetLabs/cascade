@@ -67,4 +67,6 @@ tee -a "${workflow_file}" >/dev/null <<'EOF'
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/${job}
+        with:
+          log-level: ${{ inputs.log-level }}
 EOF
