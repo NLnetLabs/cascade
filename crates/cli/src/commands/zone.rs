@@ -631,8 +631,11 @@ impl Zone {
         if let Some(last) = &zone.last_published {
             println!("  loaded serial: {}", last.loaded_serial);
             println!("  signed serial: {}", last.signed_serial);
-            println!("  timestamp:     <TODO>");
-            println!("  size:          <TODO> records (<TODO>B)");
+            println!(
+                "  timestamp:     {}",
+                jiff::Timestamp::try_from(last.timestamp).unwrap()
+            );
+            println!("  size:          {} records", last.num_records);
         } else {
             println!("  <no versions published yet>");
         }

@@ -466,10 +466,9 @@ pub struct ZoneStatus {
 pub struct LastPublishedZone {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,
-    // TODO:
-    //  - time of publish
-    //  - number of records
-    //  - size in bytes
+    pub timestamp: SystemTime,
+    pub num_records: usize,
+    // TODO: size in bytes
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
