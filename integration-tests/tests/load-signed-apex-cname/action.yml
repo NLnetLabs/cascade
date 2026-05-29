@@ -36,7 +36,7 @@ runs:
       run: |
         timeout=10 # seconds
         start=$(date +%s)
-        until cascade zone status example.test | grep -q "Published version"; do
+        until cascade zone status example.test | grep -q "Published zone available"; do
           if (($(date +%s) > (start + timeout))); then
             cascade zone status example.test
             echo "timeout: zone status did not report published zone available" >&2
