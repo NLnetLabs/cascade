@@ -1,0 +1,192 @@
+
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: ''
+description: ''
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Demo.
+      run: |
+        wait() {
+          sleep 6s
+
+          # A 0.1 second sleep is handy when testing if a change has resulted
+          # in an error not. Comments out the sleep 6s above when using this.
+          # sleep 0.1s
+
+          # The following curl command was using during the live demo to allow
+          # the pace of the demo to be controlled externally using a clicker
+          # that updated the state of the web service contacted here. The service
+          # was only live during the demo and can no longer be used and remains
+          # only to show how an integration test could be controlled in order to
+          # be used as a live demo under the control of the presenter.
+          # while curl --retry 3 --connect-timeout 1 -s http://rusty.nlnetlabs.nl:5000/status | grep -q "0"; do sleep 1; done;
+        }
+        clear_previous_line() {
+          tput cuu1
+          tput el
+        }
+        clear_screen() {
+          clear
+          echo
+        }
+        wait_for_key_press() {
+          echo ">> PRESS KEY TO CONTINUE.."
+          wait
+          clear_previous_line
+        }
+        call() {
+          echo "$ $@" | sed -e "s|$PWD||g"
+          wait_for_key_press
+          "$@" ; rc=$?
+          echo ; echo ; wait_for_key_press
+          return $rc;
+        }
+        fastcall() {
+          echo "$ $@" | sed -e "s|$PWD||g"
+          "$@" ; rc=$?
+          echo ; echo ; wait_for_key_press
+          return $rc;
+        }
+
+        KEYS_DIR=$(integration-tests/scripts/get-default-path.sh keys-dir)
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        NSD_PRIMARY_PORT=1055
+        NSD_SECONDARY_PORT=1054
+        CASCADE_LOADED_REVIEW_PORT=4540
+        CASCADE_SIGNED_REVIEW_PORT=4541
+        CASCADE_PORT=4542
+        EXPECTED_SERIAL=$(date +'%Y%m%d00')
+
+        # This background shell was used during the live demo to send zone
+        # serial numbers from the various stages of the pipeline to a web
+        # service which could then be queried to render a pipeline showing the
+        # pipeline serial numbers visually.
+        # (
+        #   while true; do
+        #     NSD_PRIMARY_SERIAL=$(dig +short @127.0.0.1 -p ${NSD_PRIMARY_PORT} example-tsig.test SOA | awk '{print $3}')
+        #     curl -s http://rusty.nlnetlabs.nl:5000/nsd/primary/${NSD_PRIMARY_SERIAL} || true
+        #     NSD_SECONDARY_SERIAL=$(dig +short @127.0.0.1 -p ${NSD_SECONDARY_PORT} example-tsig.test SOA | awk '{print $3}')
+        #     curl -s http://rusty.nlnetlabs.nl:5000/nsd/secondary/${NSD_SECONDARY_SERIAL} &>/dev/null || true
+        #     CASCADE_LOADED_REVIEW_SERIAL=$(dig +short @127.0.0.1 -p ${CASCADE_LOADED_REVIEW_PORT} example-tsig.test SOA | awk '{print $3}')
+        #     curl -s http://rusty.nlnetlabs.nl:5000/cascade/loaded/${CASCADE_LOADED_REVIEW_SERIAL} &>/dev/null || true
+        #     CASCADE_SIGNED_REVIEW_SERIAL=$(dig +short @127.0.0.1 -p ${CASCADE_SIGNED_REVIEW_PORT} example-tsig.test SOA | awk '{print $3}')
+        #     curl -s http://rusty.nlnetlabs.nl:5000/cascade/signed/${CASCADE_SIGNED_REVIEW_SERIAL} &>/dev/null || true
+        #     CASCADE_PUBLISHED_SERIAL=$(dig +short @127.0.0.1 -p ${CASCADE_PORT} -y hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0= SOA example-tsig.test | grep -Eo "$(date +'%Y%m%d').." || true)
+        #     curl -s http://rusty.nlnetlabs.nl:5000/cascade/published/${CASCADE_PUBLISHED_SERIAL} &>/dev/null || true
+        #     sleep 1s
+        #   done
+        # ) &
+
+        clear_screen
+        fastcall cascade status
+        echo Verify NSD upstream and downstream are running..
+        echo dig +short @127.0.0.1 -p ${NSD_PRIMARY_PORT} version.bind TXT CH
+        echo dig +short @127.0.0.1 -p ${NSD_SECONDARY_PORT} version.bind TXT CH
+        dig +short @127.0.0.1 -p ${NSD_PRIMARY_PORT} version.bind TXT CH
+        dig +short @127.0.0.1 -p ${NSD_SECONDARY_PORT} version.bind TXT CH
+
+        clear_screen
+        echo Add the NSD upstream zone to Cascade.
+        fastcall cascade zone add --policy default --source "127.0.0.1:${NSD_PRIMARY_PORT}" example-tsig.test
+
+        echo "Verify that the zone was added successfully (hint: it wasn't)"
+        call cascade zone status example-tsig.test
+
+        clear_screen
+        echo "Let's remove the zone and re-add it this time using the TSIG key"
+        fastcall cascade zone remove example-tsig.test
+        fastcall cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+        fastcall cascade tsig list
+
+        clear_screen
+        echo "Configure Cascade to know about the YubiHSM 2 in Amsterdam (via Cascade HSM Bridge)"
+        call cascade hsm add --username 0 --password 0001password --insecure yubihsm 185.49.141.18
+
+        echo Create a Cascade policy with the settings we want
+        cascade template policy > "${POLICY_DIR}/tsig-hsm-1min-resign.toml"
+        echo sed -i -e 's/^signature-refresh-interval = "12h"/signature-refresh-interval = "60s"/' tsig-hsm-1min-resign.toml
+        echo sed -i -e 's/^send-notify-to = \[\]/send-notify-to = ["127.0.0.1:1054^tsig-key"]/' tsig-hsm-1min-resign.toml
+        echo sed -i -e 's/^accept-xfr-from = \[\]/accept-xfr-from = ["127.0.0.1^tsig-key"]/' tsig-hsm-1min-resign.toml
+        echo sed -i -e 's/^#hsm-server-id = \"softhsm"/hsm-server-id = "yubihsm"/' tsig-hsm-1min-resign.toml
+        sed -i -e 's/^signature-refresh-interval = "12h"/signature-refresh-interval = "60s"/' ${POLICY_DIR}/tsig-hsm-1min-resign.toml
+        sed -i -e 's/^send-notify-to = \[\]/send-notify-to = ["127.0.0.1:1054^tsig-key"]/' ${POLICY_DIR}/tsig-hsm-1min-resign.toml
+        sed -i -e 's/^accept-xfr-from = \[\]/accept-xfr-from = ["127.0.0.1^tsig-key"]/' ${POLICY_DIR}/tsig-hsm-1min-resign.toml
+        sed -i -e 's/^#hsm-server-id = \"softhsm"/hsm-server-id = "yubihsm"/' ${POLICY_DIR}/tsig-hsm-1min-resign.toml
+        call cascade policy reload
+
+        clear_screen
+        echo Try adding the zone again now that we have told Cascade to use the TSIG key
+        call cascade zone add --policy tsig-hsm-1min-resign --source "127.0.0.1:${NSD_PRIMARY_PORT}^tsig-key" example-tsig.test
+        call cascade tsig list
+        call cascade zone status example-tsig.test
+
+        clear_screen
+        call cascade zone status example-tsig.test --detailed
+
+        clear_screen
+        call dig +onesoa +noall +answer @127.0.0.1 -p ${CASCADE_LOADED_REVIEW_PORT} AXFR example-tsig.test
+        call dig +onesoa +noall +answer @127.0.0.1 -p ${CASCADE_SIGNED_REVIEW_PORT} AXFR example-tsig.test
+
+        clear_screen
+        call dig +onesoa +noall +answer @127.0.0.1 -p ${CASCADE_PORT} AXFR example-tsig.test
+        call dig +onesoa +noall +answer +additional @127.0.0.1 -p ${CASCADE_PORT} -y hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0= AXFR example-tsig.test
+        dig +onesoa +noall +answer @127.0.0.1 -p ${CASCADE_PORT} -y hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0= AXFR example-tsig.test > /tmp/t
+
+        clear_screen
+        echo edit the primary NSD zone altering an A record and the SOA serial
+        ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
+        ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example-tsig.test.primary-zone"
+        fastcall perl -pi -e 's/1          ; serial/12345      ; serial/' ${ZONE_FILE}
+        fastcall perl -pi -e 's/www         A   169.254.1.1/www         A   192.168.0.1/' ${ZONE_FILE}
+        echo "Tell NSD upstream to reload its zone"
+        ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example-tsig.test
+        sleep 5s
+
+        clear_screen
+        call cascade zone status example-tsig.test
+        # call dig @127.0.0.1 -p ${CASCADE_LOADED_REVIEW_PORT} +noall +answer -t IXFR=1 example-tsig.test
+        # call dig @127.0.0.1 -p ${CASCADE_SIGNED_REVIEW_PORT} +noall +answer -t IXFR=${EXPECTED_SERIAL} example-tsig.test
+        call dig +onesoa +noall +answer +additional @127.0.0.1 -p ${CASCADE_PORT} -y hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0= -t IXFR=${EXPECTED_SERIAL} example-tsig.test
+        call dig +onesoa +noall +answer +additional @127.0.0.1 -p ${CASCADE_PORT} -y hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0= -t IXFR=$(( EXPECTED_SERIAL + 1 )) example-tsig.test
+
+        clear_screen
+        call dig +onesoa +noall +answer @127.0.0.1 -p ${NSD_SECONDARY_PORT} AXFR example-tsig.test
+
+        clear_screen
+        dig +onesoa +noall +answer @127.0.0.1 -p ${NSD_SECONDARY_PORT} AXFR example-tsig.test >/tmp/t
+        call dnssec-verify -x -o example-tsig.test. /tmp/t
+        call ldns-verify-zone /tmp/t
+
+        clear_screen
+        call cascade zone history example-tsig.test
+
+        echo END OF DEMO
+        wait_for_key_press
+        # exit 1
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()
