@@ -497,6 +497,8 @@ impl HttpServer {
                 .map(|p| LastPublishedZone {
                     loaded_serial: p.loaded_serial,
                     signed_serial: p.signed_serial,
+                    num_records: p.num_records,
+                    timestamp: p.timestamp,
                 });
 
             let mut found_error = None;

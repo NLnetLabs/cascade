@@ -23,7 +23,7 @@
 //! such operations must wait. When the data storage becomes passive, it will
 //! call [`StorageZoneHandle::on_passive()`] to initiate enqueued operations.
 
-use std::{fmt, sync::Arc};
+use std::{fmt, sync::Arc, time::SystemTime};
 
 use cascade_zonedata::{
     DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
@@ -737,6 +737,12 @@ impl StorageZoneHandle<'_> {
         self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
         self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
 
+        // Compute the total number of records
+        let reader = viewer.read().unwrap();
+        let generated_records = reader.generated_records().len();
+        let loaded_records = reader.loaded().regular_records().len();
+        let num_records = 1 + generated_records + loaded_records;
+
         // Spawn a background task to update the publication server.
         let span = trace_span!("switch_publication_server");
         let zone = self.zone.clone();
@@ -766,29 +772,34 @@ impl StorageZoneHandle<'_> {
                 _ => unreachable!("just transitioned to 'Switching'"),
             };
 
+            let loaded_serial = Serial(
+                handle
+                    .state
+                    .storage
+                    .published_loaded_soa
+                    .as_ref()
+                    .unwrap()
+                    .rdata
+                    .serial
+                    .into(),
+            );
+            let signed_serial = Serial(
+                handle
+                    .state
+                    .storage
+                    .published_soa
+                    .as_ref()
+                    .unwrap()
+                    .rdata
+                    .serial
+                    .into(),
+            );
+            let timestamp = SystemTime::now();
             handle.state.last_published = Some(LastPublished {
-                loaded_serial: Serial(
-                    handle
-                        .state
-                        .storage
-                        .published_loaded_soa
-                        .as_ref()
-                        .unwrap()
-                        .rdata
-                        .serial
-                        .into(),
-                ),
-                signed_serial: Serial(
-                    handle
-                        .state
-                        .storage
-                        .published_soa
-                        .as_ref()
-                        .unwrap()
-                        .rdata
-                        .serial
-                        .into(),
-                ),
+                loaded_serial,
+                signed_serial,
+                timestamp,
+                num_records,
             });
 
             handle.finish_switch(cleaner);

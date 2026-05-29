@@ -344,10 +344,16 @@ impl Default for ZoneState {
 pub struct LastPublished {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,
-    // TODO:
-    //  - time of publish
-    //  - number of records
-    //  - size in bytes
+
+    /// Time of publication
+    pub timestamp: SystemTime,
+
+    /// Number of records in the signed zone
+    pub num_records: usize,
+    //
+    // TODO: add the size
+    // /// Size in bytes
+    // pub size: usize,
 }
 
 /// The state of an unsigned version of a zone.
