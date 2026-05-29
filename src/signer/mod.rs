@@ -23,7 +23,8 @@ use std::{
 };
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::error;
+use domain::rdata::dnssec::Timestamp;
+use tracing::{debug, error};
 
 use crate::units::zone_signer::SignerError;
 use crate::{
@@ -105,17 +106,37 @@ async fn sign(
 
             status.current_action = "Resign failed due to Keep policy".to_string();
 
-            let error =
-                "serial policy is \"keep\" but the serial of the loaded zone did not increase";
+            // TODO: Ideally, we wouldn't trigger resigning if the policy is keep,
+            // but currently we do, so we have to use a heuristic to determine whether
+            // this was a resign triggered by Cascade or a reload triggered by the user
+            // that erroneously did not have an incremented SOA.
+            //
+            // The heuristic is that we try to compute whether Cascade would
+            // have triggered a resign based on the min_expiration and the
+            // policy.
+            let Some(min_expiration) = handle.state.min_expiration else {
+                return;
+            };
+            let sig_remain_time = handle.state.policy.as_ref().unwrap().signer.sig_remain_time;
+            let now = Timestamp::now().into_int();
 
-            error!("Signing failed: {error}");
-            handle.state.record_event(
-                HistoricalEvent::SigningFailed {
-                    trigger: trigger.into(),
-                    reason: error.to_string(),
-                },
-                None, // TODO
-            );
+            if min_expiration.into_int().saturating_sub(sig_remain_time) > now {
+                // In this branch, Cascade wouldn't have triggered a resign, so
+                // it must be an issue with the loaded zone.
+                let error =
+                    "serial policy is \"keep\" but the serial of the loaded zone did not increase";
+
+                error!("Signing failed: {error}");
+                handle.state.record_event(
+                    HistoricalEvent::SigningFailed {
+                        trigger: trigger.into(),
+                        reason: error.to_string(),
+                    },
+                    None, // TODO
+                );
+            } else {
+                debug!("ignoring resign because the policy is keep");
+            }
         }
         Err(error) => {
             error!("Signing failed: {error}");
