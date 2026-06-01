@@ -40,7 +40,7 @@ runs:
         # passthrough to the NitroKey NetHSM PKCS#11 module.
         cascade-hsm-bridge --config "${INTEGRATION_TEST_DIR}/cascade-hsm-bridge.toml"
 
-    - name: Configure Cascade to use NetHSM
+    - name: Configure Cascade to use SoftHSM
       run: |
         cascade hsm add --insecure --username Cascade --password 1234 cascade-hsm-bridge 127.0.0.1
 
@@ -57,7 +57,12 @@ runs:
 
     - name: Query zone
       run: |
-        dig @127.0.0.1 -p 4542 example.test AXFR >dig-query.log
+        dig @127.0.0.1 -p 4542 example.test AXFR >dig-axfr.log
+        grep -q SOA dig-axfr.log
+
+    - name: Query the detailed key output of Cascade for KMIP IDs
+      run: |
+        cascade zone status --detailed example.test | grep -Fq 'kmip://'
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
