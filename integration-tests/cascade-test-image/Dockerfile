@@ -25,9 +25,6 @@ RUN <<EOF
   # OpenSSL (used by Cascade)
   apt-get install -y pkg-config libssl-dev
 
-  # JQ (used by NetHSM provisioning script)
-  apt-get install -y jq
-
   # OpenSC (for pkcs11-spy.so)
   apt-get install -y opensc
 
