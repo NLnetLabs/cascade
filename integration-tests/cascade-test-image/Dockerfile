@@ -25,6 +25,12 @@ RUN <<EOF
   # OpenSSL (used by Cascade)
   apt-get install -y pkg-config libssl-dev
 
+  # JQ (used by NetHSM provisioning script)
+  apt-get install -y jq
+
+  # OpenSC (for pkcs11-spy.so)
+  apt-get install -y opensc
+
   apt-get install -y file
 EOF
 
@@ -53,6 +59,20 @@ RUN <<EOF
   cargo install --debug --git https://github.com/nlnetlabs/dnst --rev 737a020 --root /root/cargo-debug --locked --bin=dnst dnst
   cargo install --git https://github.com/nlnetlabs/dnst --rev 737a020 --root /root/cargo-release --locked --bin=dnst dnst
 EOF
+
+RUN <<EOF
+  # Install cascade-hsm-bridge
+  cargo install --debug --git https://github.com/nlnetlabs/cascade-hsm-bridge --rev 1f529d10 --root /root/cargo-debug --locked
+  cargo install --git https://github.com/nlnetlabs/cascade-hsm-bridge --rev 1f529d10 --root /root/cargo-release --locked
+EOF
+
+RUN <<EOF
+  # Install and initialize SoftHSMv2
+  apt-get install -y libsofthsm2
+  softhsm2-util --init-token --label Cascade --pin 1234 --so-pin 1234 --free
+EOF
+
+ENV PATH="$PATH:/root/.local/bin"
 
 # Copy source files into container in case we need to build from source
 COPY etc/ /cascade/etc/
