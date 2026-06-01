@@ -206,13 +206,12 @@ impl<'a> ZoneHandle<'a> {
 
         let (transition, state) = self.state.machine.transition();
         let ZoneStateMachine::LoadedReview(loaded) = state else {
-            panic!("cannot soft reject loaded in this state");
+            panic!("cannot approve loaded in this state");
         };
         transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
 
-        // Persist the loaded instance while remaining in the 'LoadedReview'
-        // state. Once persistence is complete, 'begin_signing()' will be
-        // called, which will transition to the 'Signing' state.
+        // We move to the signing state and start persisting. The actual signing
+        // will be triggered by the zone storage when persisting is done.
         let persister = self.storage().accept_loaded();
         self.persistence().start_loaded_persistence(persister);
     }
@@ -351,9 +350,9 @@ impl<'a> ZoneHandle<'a> {
         };
         transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
 
-        // Persist the signed instance while remaining in the 'SignedReview'
-        // state. Once persistence is complete, 'switch()' will be called, which
-        // will transition to the 'Waiting' state.
+        // Persist the signed instance while we are already in the Waiting state.
+        // The state machine will only start a new operation when the zone storage
+        // is ready, so this is safe to do.
         let persister = self.storage().accept_signed();
         self.persistence().start_signed_persistence(persister);
     }
@@ -449,9 +448,8 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Signing(halt.override_rejection()));
 
-        // Persist the loaded instance while remaining in the 'LoadedReview'
-        // state. Once persistence is complete, 'begin_signing()' will be
-        // called, which will transition to the 'Signing' state.
+        // We move to the signing state and start persisting. The actual signing
+        // will be triggered by the zone storage when persisting is done.
         let persister = self.storage().accept_loaded();
         self.persistence().start_loaded_persistence(persister);
 
@@ -471,9 +469,9 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Waiting(halt_signed.override_rejection()));
 
-        // Persist the signed instance while remaining in the 'SignedReview'
-        // state. Once persistence is complete, 'switch()' will be called, which
-        // will transition to the 'Waiting' state.
+        // Persist the signed instance while we are already in the Waiting state.
+        // The state machine will only start a new operation when the zone storage
+        // is ready, so this is safe to do.
         let persister = self.storage().accept_signed();
         self.persistence().start_signed_persistence(persister);
 
