@@ -45,7 +45,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 - Incremental signing. ([#536] by @Philip-NLnetLabs)
 - Persist and restore zones. ([#550] by @ximon18)
 - Upstream and `dnst keyset` TSIG support. ([#564] by @ximon18)
-- TSIG downstream support. ([#587] by @ximon18)
+- TSIG downstream support and XFR in access control. ([#587] by @ximon18)
 - Add IXFR out support. ([#605] by @ximon18)
 - Add maintenance mode. ([#610] by @tertsdiepraam)
 - Soft halt. ([#616] by @tertsdiepraam)
