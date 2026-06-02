@@ -23,7 +23,6 @@ use std::{
 };
 
 use cascade_zonedata::SignedZoneBuilder;
-use domain::rdata::dnssec::Timestamp;
 use tracing::{debug, error};
 
 use crate::units::zone_signer::SignerError;
@@ -106,23 +105,9 @@ async fn sign(
 
             status.current_action = "Resign failed due to Keep policy".to_string();
 
-            // TODO: Ideally, we wouldn't trigger resigning if the policy is keep,
-            // but currently we do, so we have to use a heuristic to determine whether
-            // this was a resign triggered by Cascade or a reload triggered by the user
-            // that erroneously did not have an incremented SOA.
-            //
-            // The heuristic is that we try to compute whether Cascade would
-            // have triggered a resign based on the min_expiration and the
-            // policy.
-            let Some(min_expiration) = handle.state.min_expiration else {
-                return;
-            };
-            let sig_remain_time = handle.state.policy.as_ref().unwrap().signer.sig_remain_time;
-            let now = Timestamp::now().into_int();
-
-            if min_expiration.into_int().saturating_sub(sig_remain_time) > now {
-                // In this branch, Cascade wouldn't have triggered a resign, so
-                // it must be an issue with the loaded zone.
+            // If the sign operation was triggered by a load, the user forgot to increase the
+            // serial of the zone, so we should tell them about that by emitting an error.
+            if trigger == SigningTrigger::Load {
                 let error =
                     "serial policy is \"keep\" but the serial of the loaded zone did not increase";
 
@@ -162,7 +147,7 @@ async fn sign(
 // TODO: These may be subsumed by a more generic causality tracking system.
 
 /// The trigger for a (re-)signing operation.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SigningTrigger {
     /// A new instance of a zone has been loaded.
     Load,
