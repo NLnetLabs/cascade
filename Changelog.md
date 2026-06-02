@@ -31,11 +31,11 @@ hook functionality has been improved and extended.
 
 These changes were made to ensure that Cascade zone pipelines are always
 in a single deterministic state, achieved by switching from an event
-producer-consumer model to a state machine based model, which resolves
-many of the inconsistent state issues observed with the alpha series of
-releases. Storage of zone record data has also been restructured to decrease
-memory usage. Note that incremental signing has not yet been tuned and thus
-improvements in memory consuption are expected in future releases.
+producer-consumer model to a state machine based model, which resolves the
+inconsistent state issues observed with the alpha series of releases. Storage
+of zone record data has also been restructured to decrease memory usage.
+Note that incremental signing has not yet been tuned and thus improvements in
+memory consuption are expected in future releases.
 
 Read on for a (non-exhaustive) summary of what has changed.
 
