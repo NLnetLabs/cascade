@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "cascade"
-version = "0.1.0-alpha5"
+version = "0.1.0-beta1"
 dependencies = [
  "anstream",
  "camino",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "cascade-api"
-version = "0.1.0-alpha5"
+version = "0.1.0-beta1"
 dependencies = [
  "bytes",
  "camino",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "cascade-cfg"
-version = "0.1.0-alpha5"
+version = "0.1.0-beta1"
 dependencies = [
  "camino",
  "clap",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "cascade-zonedata"
-version = "0.1.0-alpha5"
+version = "0.1.0-beta1"
 dependencies = [
  "bytes",
  "domain",
@@ -259,7 +259,7 @@ dependencies = [
 
 [[package]]
 name = "cascaded"
-version = "0.1.0-alpha5"
+version = "0.1.0-beta1"
 dependencies = [
  "assert-json-diff",
  "axum",
@@ -506,8 +506,8 @@ dependencies = [
 
 [[package]]
 name = "domain"
-version = "0.12.0"
-source = "git+https://github.com/NLnetLabs/domain?branch=main#06d0c57543add91876359df9de7d11f0d02b9cb2"
+version = "0.12.1"
+source = "git+https://github.com/NLnetLabs/domain?branch=main#a8865eb57fd9efa8aeb2cc1425141417477120d7"
 dependencies = [
  "arc-swap",
  "bumpalo",
@@ -549,8 +549,8 @@ dependencies = [
 
 [[package]]
 name = "domain-macros"
-version = "0.12.0"
-source = "git+https://github.com/NLnetLabs/domain?branch=main#06d0c57543add91876359df9de7d11f0d02b9cb2"
+version = "0.12.1"
+source = "git+https://github.com/NLnetLabs/domain?branch=main#a8865eb57fd9efa8aeb2cc1425141417477120d7"
 dependencies = [
  "proc-macro2",
  "quote",
