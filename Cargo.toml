@@ -60,8 +60,6 @@ version = "4.5"
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain]
 version = "0.12.1"
-git = "https://github.com/NLnetLabs/domain"
-branch = "main"
 
 # 'domain-kmip' offers KMIP support for DNSSEC signatures.
 #
