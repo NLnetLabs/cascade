@@ -39,10 +39,6 @@ exhaustive list of every change made to Cascade.
 Feedback welcome at https://community.nlnetlabs.nl/, bug reports can be
 raised at https://github.com/NLnetLabs/cascade/issues.
 
-TODO: Add changes made in domain.
-TODO: Summarize policy and config changes.
-TODO: Summarize new CLI commands.
-
 ### New
 
 - Add initial prometheus metrics ([#405] by @mozzieongit)
