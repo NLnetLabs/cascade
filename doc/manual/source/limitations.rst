@@ -61,7 +61,7 @@ Improvements
 Missing features
 ++++++++++++++++
 
-The alpha release of Cascade is missing some of the features provided by
+The beta release of Cascade is missing some of the features provided by
 OpenDNSSEC that will be added in a future release:
 
 - File output.
