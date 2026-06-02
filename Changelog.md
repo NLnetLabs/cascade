@@ -14,48 +14,193 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-beta1 'TBD'
 
 Released yyyy-mm-dd.
 
+This is a breaking release, it is NOT backward compatible with 0.1.0-alpha5.
+
+Since alpha5 there have been major internal architectural changes, rewrites to
+most of the code and changes in the format of the Cascade runtime state files.
+The architecture from an end user perspective is however mostly unchanged,
+with the exception of the output of `cascade zone status` and that the review
+hook functionality has been improved and extended.
+
+These changes were made to ensure that Cascade zone pipelines are always
+in a single deterministic state, achieved by switching from an event
+producer-consumer model to a state machine based model, which resolves many
+of the inconsistent state issues observed with the alpha series of releases.
+Storage of zone record data has also been restructured to decrease memory
+usage (though the new incremental signing is not yet using the new storage).
+
+Read on for a summary of what has changed but note that this is not an
+exhaustive list of every change made to Cascade.
+
+Feedback welcome at https://community.nlnetlabs.nl/, bug reports can be
+raised at https://github.com/NLnetLabs/cascade/issues.
+
+TODO: Add changes made in domain.
+TODO: Summarize policy and config changes.
+TODO: Summarize new CLI commands.
+
 ### New
 
-- Add a CLI command to get the DS/DNSKEY/CDS RRset for a zone. ([#539])
+- Add initial prometheus metrics ([#405] by @mozzieongit)
+- Incremental signing. ([#536] by @Philip-NLnetLabs)
+- Persist and restore zones. ([#550] by @ximon18)
+- Upstream and `dnst keyset` TSIG support. ([#564] by @ximon18)
+- TSIG downstream support. ([#587 by @ximon18])
+- Add IXFR out support. ([#605] by @ximon18)
+- Add maintenance mode. ([#610] by @tertsdiepraam)
+- Soft halt. ([#616] by @tertsdiepraam)
+- Add `signature-refresh-interval` and `key-roll-time`. ([#623] by
+  @Philip-NLnetLabs)
+- Add `auto-remove-delay` policy option. ([#634] by @Philip-NLnetLabs)
+- Send current SOA as `unsecure hint` in the ANSWER section with a NOTIFY.
+  ([#670] by @ximon18)
 
 ### Bug fixes
 
-- A zone configured for unsigned review no longer fails to sign. ([#398] by
-  @ximon18)
+- Also promote zone to signable when review is approved. ([#398] by @ximon18)
 - Support using BIND as a secondary nameserver. ([#444] by @ximon18)
+- Trigger global state save on `zone add`. ([#496] by @mozzieongit)
+- Also include CDS and CDNSKEY RRsets. ([#566] by @Philip-NLnetLabs)
+- Switch to `exit_signalled` from `daemonbase` to also handle SIGTERM. ([#597]
+  by @Philip-NLnetLabs)
+- Ignore NOTIFY if the zone was sourced from a file. ([#644] by @ximon18)
 
 ### Other changes
 
-- Prefix cascaded `--help` output with a one line description of the
+- Added integration test framework ([#370] by @mozzieongit).
+  - Added tests using the new integration test framework.
+- An entirely rewritten zone loader. ([#402] by @tertsdiepram and @bal-e)
+- Add prometheus metrics. ([#405] by @mozzieongit)
+- Trigger global state save on zone add. ([#461] by @tertsdiepram)
+- Remove hello world HTTP / response. ([#559] by @ximon18)
+- Config: Remove `notify-listeners` config option and renumber the default
+  port numbers to close the resulting gap. ([#518] by @tertsdiepraam)
+- Logging: Enable axum tracing. ([#475] by @ximon18)
+- Logging: Log HTTP server listen addresses and mention remote control and
+  metrics. ([#489] by @mozzieongit)
+- CLI: Add git commit hash to version string. ([#468] by @mozzieongit)
+- CLI: Mark options at the root as global so they can be specified after
+  subcommands. ([#368] by @tertsdiepram)
+- CLI: Prefix `cascaded --help` output with a one line description of the
   application. ([#409] by @ximon18)
-- Improve integration tests framework. ([#401] by @mozzieongit)
-- Add the git commit hash to the version output. ([#468] by @mozzieongit)
+- CLI: Reduce client timeout to 30 seconds. ([#491] by @mozzieongit)
+- CLI: Use 'tracing_subscriber' for logging. (by @bal-e)
+- CLI: Improve CLI error messages on HTTP/TCP errors. (by @mozzieongit)
+- CLI: Report back what changes were made to logging and require at least one
+  option set. ([#503] by @mozzieongit)
+- CLI: Improve zone added CLI response based on user feedback. ([#521] by
+  @ximon18)
+- CLI: Improve CLI HTTP error messages. ([#490] by @mozzieongit)
+- CLI: Add a CLI command to get the DS/DNSKEY/CDS RRset for a zone. ([#539] by
+  @mozzieongit)
+- CLI: Status rework. ([#567] by @tertsdiepraam)
+- CLI: Add last error to zone status. ([#600] by @tertsdiepraam)
+- CLI: Report progress of zonefile loading. ([#602] by @tertsdiepraam)
+- CLI: Show TSIG key of source in output of CLI command `zone status`. ([#615]
+  by @ximon18)
+- CLI: Improve `zone history` for incremental signing. ([#660] by
+  @Philip-NLnetLabs)
+- Domain: Fix KeyPair for ED448. ([#domain-608] by @Philip-NLnetLabs)
+- Domain: Implement support for the RP record type. ([#domain-620] by @mozzieongit)
 
 ### Documentation improvements
 
-- Document that `--daemonize` changes CWD to /. ([#387] by @jpmens)
-- Add missing `cascade zone` argument documentation. ([#406] by @ximon18)
+- Add `--bin dnst` to keyset build from source docs. (by @mozzieongit)
+- "Integrating with a SmartCard-HSM" page. ([#191], [#246] and [#361] by
+  @jpmens)
+- "Integrating with a Nitrokey NetHSM" page. ([#365] by @jpmens)
 - Use a more appropriate `log-target` example file path. ([#411] by @ximon18)
-- Document the exit codes used by `--check-config`. ([#415] by @ximon18)
-- Specify both binary crates to build from source. ([#423] by @mozzieongit)
-- Add missing `README.md` in the generated RPM package. ([#428] by @ximon18)
+- Document stdout/err redirect to /dev/null on daemonize. (by @mozzieongit)
 
-[#387]: https://github.com/NLnetLabs/cascade/pull/387
+### Building / Packaging
+
+- Removed dependencies on 'async-trait', 'jiff' and 'syslog'. (by @bal-e)
+- README.md was installed by the RPM package but not by the DEB package.
+  ([#428] by @ximon18)
+- Add `http1` feature to axum to fix `cargo install` build. ([#473] by
+  @tertsdiepraam)
+- Implement panic hook to log panic message and backtrace to configured log
+  target. (by @mozzieongit)
+
+### Policy changes
+
+- New `key-manager.auto-remove-delay`.
+- New `key-manager.publication-nameservers`.
+- New `key-manager.signature-refresh-interval`.
+- New `key-manager.key-roll-time`.
+- `loader.review.required` replaced by `loader.review.mode`.
+- `loader.review.cmd-hook` renamed to `loader.review.hook`.
+- New `loader.review.on-reject`.
+- `signer.review.required` replaced by `signer.review.mode`.
+- `signer.review.cmd-hook` renamed to `signer.review.hook`.
+- New `signer.review.on-reject`.
+- New `server.outbound.accept-xfr-from`.
+
+### CLI changes
+
+- New `keyset get` subcommand.
+- New `tsig` subcommand.
+- New `zone override` subcommand.
+- New `zone reset` subcommand.
+- New `zone maintenance` subcommand.
+
+[#191]: https://github.com/NLnetLabs/cascade/pull/191
+[#246]: https://github.com/NLnetLabs/cascade/pull/246
+[#361]: https://github.com/NLnetLabs/cascade/pull/361
+[#365]: https://github.com/NLnetLabs/cascade/pull/365
+[#368]: https://github.com/NLnetLabs/cascade/pull/368
+[#370]: https://github.com/NLnetLabs/cascade/pull/370
 [#398]: https://github.com/NLnetLabs/cascade/pull/398
-[#401]: https://github.com/NLnetLabs/cascade/pull/401
-[#406]: https://github.com/NLnetLabs/cascade/pull/406
+[#402]: https://github.com/NLnetLabs/cascade/pull/402
+[#405]: https://github.com/NLnetLabs/cascade/pull/405
 [#409]: https://github.com/NLnetLabs/cascade/pull/409
 [#411]: https://github.com/NLnetLabs/cascade/pull/411
-[#415]: https://github.com/NLnetLabs/cascade/pull/415
-[#423]: https://github.com/NLnetLabs/cascade/pull/423
 [#428]: https://github.com/NLnetLabs/cascade/pull/428
 [#444]: https://github.com/NLnetLabs/cascade/pull/444
+[#461]: https://github.com/NLnetLabs/cascade/pull/461
 [#468]: https://github.com/NLnetLabs/cascade/pull/468
+[#473]: https://github.com/NLnetLabs/cascade/pull/473
+[#475]: https://github.com/NLnetLabs/cascade/pull/475
+[#489]: https://github.com/NLnetLabs/cascade/pull/489
+[#490]: https://github.com/NLnetLabs/cascade/pull/490
+[#491]: https://github.com/NLnetLabs/cascade/pull/491
+[#496]: https://github.com/NLnetLabs/cascade/pull/496
+[#503]: https://github.com/NLnetLabs/cascade/pull/503
+[#518]: https://github.com/NLnetLabs/cascade/pull/518
+[#521]: https://github.com/NLnetLabs/cascade/pull/521
+[#536]: https://github.com/NLnetLabs/cascade/pull/536
 [#539]: https://github.com/NLnetLabs/cascade/pull/539
+[#550]: https://github.com/NLnetLabs/cascade/pull/550
+[#555]: https://github.com/NLnetLabs/cascade/pull/555
+[#559]: https://github.com/NLnetLabs/cascade/pull/559
+[#564]: https://github.com/NLnetLabs/cascade/pull/564
+[#566]: https://github.com/NLnetLabs/cascade/pull/566
+[#567]: https://github.com/NLnetLabs/cascade/pull/567
+[#587]: https://github.com/NLnetLabs/cascade/pull/587
+[#597]: https://github.com/NLnetLabs/cascade/pull/597
+[#600]: https://github.com/NLnetLabs/cascade/pull/600
+[#602]: https://github.com/NLnetLabs/cascade/pull/602
+[#605]: https://github.com/NLnetLabs/cascade/pull/605
+[#610]: https://github.com/NLnetLabs/cascade/pull/610
+[#615]: https://github.com/NLnetLabs/cascade/pull/615
+[#616]: https://github.com/NLnetLabs/cascade/pull/616
+[#623]: https://github.com/NLnetLabs/cascade/pull/623
+[#634]: https://github.com/NLnetLabs/cascade/pull/634
+[#644]: https://github.com/NLnetLabs/cascade/pull/644
+[#660]: https://github.com/NLnetLabs/cascade/pull/660
+[#670]: https://github.com/NLnetLabs/cascade/pull/670
+
+[#domain-608]: https://github.com/NLnetLabs/domain/pull/608
+[#domain-620]: https://github.com/NLnetLabs/domain/pull/620
+
+### Acknowledgements
+
+Our continued thanks to @jpmens, @bortzmeyer, and @gryphius for trying out
+Cascade.
 
 ## 0.1.0-alpha5 'Colline de la Croix'
 
@@ -97,8 +242,6 @@ Our continued thanks to @jpmens, @bortzmeyer, and @gryphius for trying out
 Cascade.
 
 [#330]: https://github.com/NLnetLabs/cascade/pull/330
-[#330]: https://github.com/NLnetLabs/cascade/pull/330
-[#288]: https://github.com/NLnetLabs/cascade/pull/288
 [#355]: https://github.com/NLnetLabs/cascade/pull/355
 [#356]: https://github.com/NLnetLabs/cascade/pull/356
 [#357]: https://github.com/NLnetLabs/cascade/pull/357
