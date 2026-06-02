@@ -195,9 +195,8 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 
 ### Acknowledgements
 
-Our continued thanks to @jpmens, @bortzmeyer, and @gryphius for trying out
-Cascade.
-
+Our continued thanks to @jpmens, @bortzmeyer, @gryphius and also to @alarig,
+@ldc77shirt, @leoliang1987, @puzzle-it-nu and @Tachi107 for trying out Cascade.
 ## 0.1.0-alpha5 'Colline de la Croix'
 
 Released 2025-11-21.
