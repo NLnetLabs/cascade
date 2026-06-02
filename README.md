@@ -8,11 +8,18 @@
 
 Cascade is a friendly DNSSEC signing pipeline. 
 
-An [alpha release](https://github.com/NLnetLabs/cascade/releases) is
+A [beta release](https://github.com/NLnetLabs/cascade/releases) is
 available now, we encourage you to test it. Read our [comprehensive
 documentation](https://cascade.docs.nlnetlabs.nl/) to get started.
 If you find a bug, please create an 
 [issue on GitHub](https://github.com/NLnetLabs/cascade/issues).
+
+Cascade is a long-term project, with the same maintenance guarantees and
+[support policy](https://nlnetlabs.nl/support/software-support-policy/) as our
+other products, such as Unbound and Routinator. We offer [professional support
+services](https://nlnetlabs.nl/services/contracts/) with an SLA for Cascade,
+which include support, consultancy, migration assistance and early security
+notifications under NDA.
 
 If you have questions, suggestions or feature requests, don't hesitate to
 start a topic on our [Discourse](https://community.nlnetlabs.nl/c/cascade/10), 
