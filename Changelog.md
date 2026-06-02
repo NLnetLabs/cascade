@@ -14,7 +14,7 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## 0.1.0-beta1 'TBD'
+## 0.1.0-beta1 'Slàinte mhath'
 
 Released yyyy-mm-dd.
 
