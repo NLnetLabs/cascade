@@ -68,7 +68,6 @@ OpenDNSSEC that will be added in a future release:
 - Holding keys for use until a backup flag is set.
 - Sharing of keys between zones.
 - Passthrough mode.
-- Inbound XFR/NOTIFY access control.
 - Prefix based access control.
 - CAA record support.
 - Terminology differences, Cascade does not use the term "omnipresent" for
