@@ -144,9 +144,6 @@ script\ [1]_ as ``/usr/local/bin/cascade-review.sh``:
             dnssec-verify -q -o "${CASCADE_ZONE}" /dev/stdin
         fi
 
-.. versionadded:: 0.1.0-alpha2
-   Environment variables ``CASCADE_SERVER_IP`` and ``CASCADE_SERVER_PORT``.
-
 Next, we update the zone's policy to use the review script for both stages:
 
 .. code:: toml

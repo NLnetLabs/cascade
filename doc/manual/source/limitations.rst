@@ -7,10 +7,10 @@ Known Limitations
    be used with a proper secondary serving the signed zones to actual 
    clients.
 
-Expectations for the Alpha Release
+Expectations for the Beta Release
 ----------------------------------
 
-.. tip:: This page details what you can expect from Cascade in its alpha form.
+.. tip:: This page details what you can expect from Cascade in its beta form.
    Our goal is to gather operator feedback. Please :ref:`reach out <reach-out>`
    to us.
 
@@ -56,6 +56,7 @@ Improvements
 - No database.
 - No file based communication between daemons.
 - Finer grained control over and insight into key states.
+- Jitter is replaced with a deterministic algorithm for updating signatures.
 
 Missing features
 ++++++++++++++++
@@ -63,15 +64,10 @@ Missing features
 The alpha release of Cascade is missing some of the features provided by
 OpenDNSSEC that will be added in a future release:
 
-- Jitter support.
-- IXFR out.
 - File output.
-- Delay before automatic key deletion.
 - Holding keys for use until a backup flag is set.
 - Sharing of keys between zones.
 - Passthrough mode.
-- Incremental signing.
-- TSIG support.
 - Inbound XFR/NOTIFY access control.
 - Prefix based access control.
 - CAA record support.
