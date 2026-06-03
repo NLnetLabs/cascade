@@ -10,7 +10,7 @@ documentation = "https://cascade.docs.nlnetlabs.nl"
 repository = "https://github.com/NLnetLabs/cascade"
 license = "BSD-3-Clause"
 
-version = "0.1.0-alpha5"
+version = "0.1.0-beta1"
 rust-version = "1.88"
 edition = "2024"
 
@@ -59,9 +59,7 @@ version = "4.5"
 #
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain]
-version = "0.12.0"
-git = "https://github.com/NLnetLabs/domain"
-branch = "main"
+version = "0.12.1"
 
 # 'domain-kmip' offers KMIP support for DNSSEC signatures.
 #
@@ -113,19 +111,17 @@ version = "0.3.20"
 
 
 [dependencies]
+axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio", "tracing"] }
 bytes              = "1.0"
+crossbeam-utils    = "0.8"
 daemonbase         = { version = "0.1.5", features = ["tokio"] }
 futures            = "0.3.17"
 futures-util       = "0.3"
 serde              = { workspace = true, features = ["derive", "rc"] }
-axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio", "tracing"] }
-
-# From Rotonda
-crossbeam-utils    = "0.8"
+rayon = "1.10.0"
 serde_json         = "1.0"
 serde_with         = "3"
 url                = { version = "2.4", features = ["serde"] }
-rayon = "1.10.0"
 
 # Jiff is used by zone_signer for the DateCounter serial policy.
 jiff.workspace = true
@@ -244,6 +240,7 @@ assets = [
 ["README.md","usr/share/doc/cascade/","644"],
 ["doc/manual/build/man/cascade.1", "usr/share/man/man1/cascade.1", "644"],
 ["doc/manual/build/man/cascade-config.1", "usr/share/man/man1/cascade-config.1", "644"],
+["doc/manual/build/man/cascade-debug.1", "usr/share/man/man1/cascade-debug.1", "644"],
 ["doc/manual/build/man/cascade-health.1", "usr/share/man/man1/cascade-health.1", "644"],
 ["doc/manual/build/man/cascade-hsm.1", "usr/share/man/man1/cascade-hsm.1", "644"],
 ["doc/manual/build/man/cascade-tsig.1", "usr/share/man/man1/cascade-tsig.1", "644"],
@@ -265,7 +262,7 @@ extended-description = """\
 Cascade is a friendly DNSSEC signing solution, offering sensible defaults,
 controllability, observability and flexibility.
 """
-depends = "$auto, adduser, cascade-dnst"
+depends = "$auto, adduser, dnst"
 recommends = "cascade-hsm-bridge"
 section = "net"
 priority = "optional"
@@ -299,6 +296,7 @@ assets = [
 { source = "README.md", dest = "/usr/share/doc/cascade/README.md", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade.1", dest = "/usr/share/man/man1/cascade.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-config.1", dest = "/usr/share/man/man1/cascade-config.1", mode = "644", doc = true },
+{ source = "doc/manual/build/man/cascade-debug.1", dest = "/usr/share/man/man1/cascade-debug.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-health.1", dest = "/usr/share/man/man1/cascade-health.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-hsm.1", dest = "/usr/share/man/man1/cascade-hsm.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-tsig.1", dest = "/usr/share/man/man1/cascade-tsig.1", mode = "644", doc = true },
@@ -317,7 +315,7 @@ assets = [
 # ensure that the useradd tools are present by installing their respective packages
 [package.metadata.generate-rpm.requires]
 shadow-utils = "*"
-cascade-dnst = "*"
+dnst = "*"
 
 [package.metadata.generate-rpm.recommends]
 cascade-hsm-bridge = "*"

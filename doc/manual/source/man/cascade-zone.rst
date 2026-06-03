@@ -223,6 +223,8 @@ Options for :subcmd:`zone reject`
 Options for :subcmd:`zone override`
 -----------------------------------
 
+.. versionadded:: 0.1.0-beta1
+
 .. option:: <--unsigned|--signed>
 
    Whether the zone to override is at the unsigned or signed review stage.
@@ -246,6 +248,8 @@ Options for :subcmd:`zone status`
 
 Options for :subcmd:`zone reset`
 ---------------------------------
+
+.. versionadded:: 0.1.0-beta1
 
 .. option:: <NAME>
 

@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-beta1" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -276,6 +276,9 @@ The name of the zone to reject.
 The serial number of the zone to reject.
 .UNINDENT
 .SH OPTIONS FOR ZONE OVERRIDE
+.sp
+Added in version 0.1.0\-beta1.
+
 .INDENT 0.0
 .TP
 .B <\-\-unsigned|\-\-signed>
@@ -299,6 +302,9 @@ identifiers in use, as well as the new DNSKEY records during key rolls.
 The name of the zone to report the status of.
 .UNINDENT
 .SH OPTIONS FOR ZONE RESET
+.sp
+Added in version 0.1.0\-beta1.
+
 .INDENT 0.0
 .TP
 .B <NAME>

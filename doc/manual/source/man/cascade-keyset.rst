@@ -105,6 +105,8 @@ Options for :subcmd:`keyset remove-key`
 Arguments for :subcmd:`keyset get`
 -----------------------------------------
 
+.. versionadded:: 0.1.0-beta1
+
 .. option:: [RR]
 
    The RRset to print. ``ds``, ``dnskey``, or ``cds``.
