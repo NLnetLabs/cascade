@@ -779,6 +779,7 @@ fn print_load_phase(
         let total_size = receipt_report
             .as_ref()
             .and_then(|r| r.total_byte_count)
+            .filter(|r| *r > 0)
             .map_or("".into(), |bytes| {
                 let total_size = format_size(bytes, " ", "B");
                 format!(" / {total_size}")
