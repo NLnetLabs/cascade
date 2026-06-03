@@ -252,7 +252,7 @@ Updating
 
 .. danger::
 
-   In its current alpha version form Cascade will likely report errors if a
+   In its current beta version form Cascade will likely report errors if a
    newer version is started using existing state and policy files created by
    an older version.
 
