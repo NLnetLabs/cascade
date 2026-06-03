@@ -23,7 +23,7 @@ use std::{
 };
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::units::zone_signer::SignerError;
 use crate::{
@@ -102,7 +102,26 @@ async fn sign(
             // Something in status would be good.
             handle.abandon_signing(builder);
             status.status.finish(true);
+
             status.current_action = "Resign failed due to Keep policy".to_string();
+
+            // If the sign operation was triggered by a load, the user forgot to increase the
+            // serial of the zone, so we should tell them about that by emitting an error.
+            if trigger == SigningTrigger::Load {
+                let error =
+                    "serial policy is \"keep\" but the serial of the loaded zone did not increase";
+
+                error!("Signing failed: {error}");
+                handle.state.record_event(
+                    HistoricalEvent::SigningFailed {
+                        trigger: trigger.into(),
+                        reason: error.to_string(),
+                    },
+                    None, // TODO
+                );
+            } else {
+                debug!("ignoring resign because the policy is keep");
+            }
         }
         Err(error) => {
             error!("Signing failed: {error}");
@@ -128,7 +147,7 @@ async fn sign(
 // TODO: These may be subsumed by a more generic causality tracking system.
 
 /// The trigger for a (re-)signing operation.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SigningTrigger {
     /// A new instance of a zone has been loaded.
     Load,
