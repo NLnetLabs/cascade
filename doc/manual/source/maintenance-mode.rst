@@ -27,7 +27,6 @@ command:
 
 It can similarly be disabled with:
 
-
 .. code-block:: bash
 
 	cascade zone maintenance disabled <zone-name>
