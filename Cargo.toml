@@ -239,7 +239,7 @@ assets = [
 ["target/release/cascaded", "usr/bin/","755"],
 ["README.md","usr/share/doc/cascade/","644"],
 ["doc/manual/build/man/cascade.1", "usr/share/man/man1/cascade.1", "644"],
-["doc/manual/build/man/cascade-config.1", "usr/share/man/man1/cascade-config.1", "644"],
+["doc/manual/build/man/cascaded-config.1", "usr/share/man/man1/cascaded-config.1", "644"],
 ["doc/manual/build/man/cascade-debug.1", "usr/share/man/man1/cascade-debug.1", "644"],
 ["doc/manual/build/man/cascade-health.1", "usr/share/man/man1/cascade-health.1", "644"],
 ["doc/manual/build/man/cascade-hsm.1", "usr/share/man/man1/cascade-hsm.1", "644"],
