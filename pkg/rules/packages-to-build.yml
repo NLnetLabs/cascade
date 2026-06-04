@@ -24,7 +24,7 @@ test-image:
   # here, then 'included' entries will no longer overwrite each other because they alter a key that is present
   # in the original matrix. This is just how GitHub Actions matrix include rules work.
   - ""
-extra_build_args: "--config env.CASCADE_SKIP_VERSION_COMMIT=1"
+extra_build_args: '--config env.CASCADE_SKIP_VERSION_COMMIT="1"'
 include:
   - image: 'almalinux:9'
     systemd_service_unit_file: pkg/common/cascaded.s*
