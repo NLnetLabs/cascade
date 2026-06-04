@@ -26,6 +26,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`history` ``<NAME>``
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`maintenance` ``<enable|disable>`` ``<NAME>``
+
 Description
 -----------
 
@@ -254,6 +256,17 @@ Options for :subcmd:`zone reset`
 .. option:: <NAME>
 
    The name of the zone to reset the pipeline of.
+
+Options for :subcmd:`zone maintenance`
+--------------------------------------
+
+.. option:: <enable|disable>
+
+   Whether maintenance mode should be enabled or disabled.
+ 
+.. option:: <NAME>
+
+   The name of the zone to toggle maintenance mode of.
 
 See Also
 --------

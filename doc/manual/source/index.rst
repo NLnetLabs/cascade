@@ -104,6 +104,7 @@ Examples of things we're interested in:
    hsms
    review-hooks
    zone-transfers
+   maintenance-mode
 
 .. toctree::
    :maxdepth: 2
