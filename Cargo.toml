@@ -284,6 +284,7 @@ systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = 
 systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
 [package.metadata.generate-rpm]
+name = "cascade"
 # Use a shorter summary as rpmlint complains with E: summary-too-long.
 # Use an initial capital letter to satisfy rpmlinlt which complains with W: summary-not-capitalized
 summary = "Friendly DNSSEC signing solution"
