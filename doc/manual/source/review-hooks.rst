@@ -98,7 +98,7 @@ If it is configured to ``"discard"``, it will simply go back to the idle
 state as if the loading or signing operation didn't happen. This is the most
 fault-tolerant option.
 
-If it is instead set to ``"halt"`` then Cascade will stop doing any operations
+If it is instead set to ``"halt"`` then **Cascade will stop doing any operations**
 to the zone. This allows the operator to investigate the issue before Cascade
 continues. If the zone should be accepted anyway, the :command:`cascade zone
 override` command can be used to override the previous rejection. If the
