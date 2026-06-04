@@ -311,6 +311,16 @@ Updating
 
           sudo apt --only-upgrade install cascade
 
+       .. note: Earlier versions of the Cascade package installed a
+                Cascade-specific ``cascade-dnst`` package too. Since beta1
+                Cascade now depends on a standard ``dnst`` package. The older
+                package will not be removed automatically so you may wish to
+                remove it manually with the following command:
+
+                .. code-block:: text
+
+                   sudo apt remove cascade-dnst
+
    .. group-tab:: Ubuntu
 
        To update an existing Cascade installation, first update the 
@@ -333,6 +343,16 @@ Updating
 
           sudo apt --only-upgrade install cascade
 
+       .. note: Earlier versions of the Cascade package installed a
+                Cascade-specific ``cascade-dnst`` package too. Since beta1
+                Cascade now depends on a standard ``dnst`` package. The older
+                package will not be removed automatically so you may wish to
+                remove it manually with the following command:
+
+                .. code-block:: text
+
+                   sudo apt remove cascade-dnst
+
    .. group-tab:: RHEL
 
        To update an existing Cascade installation, you can use this
@@ -346,7 +366,17 @@ Updating
          
        .. code-block:: bash
          
-          sudo yum update -y cascade
+          sudo yum update cascade
+
+       .. note: Earlier versions of the Cascade package installed a
+                Cascade-specific ``cascade-dnst`` package too. Since beta1
+                Cascade now depends on a standard ``dnst`` package. The older
+                package will not be removed automatically so you may wish to
+                remove it manually with the following command:
+
+                .. code-block:: text
+
+                   sudo yum remove cascade-dnst
              
    .. group-tab:: Docker
 
