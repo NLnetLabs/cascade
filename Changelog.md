@@ -42,6 +42,16 @@ Read on for a (non-exhaustive) summary of what has changed.
 Feedback welcome at https://community.nlnetlabs.nl/, bug reports can be
 raised at https://github.com/NLnetLabs/cascade/issues.
 
+### Breaking changes
+
+- Alpha series state files are not readable by this release. State files will
+  therefore need to be deleted before running Cascade.
+- Cascade now requires `dnst` version 0.2.0 or higher, the cascade specific
+  `cascade-dnst` used by the alpha series lacks functionality required by
+  this beta release. Users must upgrade to the latest `dnst` release and
+  ensure that the `dnst-binary-path` config file setting points to the updated
+  `dnst` binary.
+
 ### New
 
 - Add initial prometheus metrics ([#405] by @mozzieongit)
@@ -76,6 +86,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 - Add prometheus metrics. ([#405] by @mozzieongit)
 - Trigger global state save on zone add. ([#461] by @tertsdiepram)
 - Remove hello world HTTP / response. ([#559] by @ximon18)
+- Require at least version 0.2.0 of `dnst`. (by @Philip-NLnetLabs)
 - Config: Remove `notify-listeners` config option and renumber the default
   port numbers to close the resulting gap. ([#518] by @tertsdiepraam)
 - Logging: Enable axum tracing. ([#475] by @ximon18)

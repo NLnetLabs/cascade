@@ -1,6 +1,17 @@
 Installation
 ============
 
+Prerequisites
+-------------
+
+To use Cascade a v0.2.0 version of :prgraom:`dnst` is required. The Cascade
+DEB and RPM packages automatically ensure that the appropriate version of
+:program:`dnst` is installed.
+
+To use automatic keyrolls (which are on by default) the Cascade host machine
+will need to have IPv6 connectivity if any of its nameservers or parent
+nameservers have AAAA records.
+
 Binary Packages
 ---------------
 
