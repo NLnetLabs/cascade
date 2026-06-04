@@ -312,10 +312,10 @@ Updating
           sudo apt --only-upgrade install cascade
 
        .. note: Earlier versions of the Cascade package installed a
-                Cascade-specific ``cascade-dnst`` package too. Since beta1
-                Cascade now depends on a standard ``dnst`` package. The older
-                package will not be removed automatically so you may wish to
-                remove it manually with the following command:
+                Cascade-specific ``cascade-dnst`` package too. Cascade beta1
+                now depends on a standard ``dnst`` package. The older package
+                will not be removed automatically so you may wish to remove it
+                manually with the following command:
 
                 .. code-block:: text
 
