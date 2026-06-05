@@ -213,7 +213,7 @@ dependencies = [
 
 [[package]]
 name = "cascade"
-version = "0.1.0-beta1"
+version = "0.1.0-beta2-dev"
 dependencies = [
  "anstream",
  "camino",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "cascade-api"
-version = "0.1.0-beta1"
+version = "0.1.0-beta2-dev"
 dependencies = [
  "bytes",
  "camino",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "cascade-cfg"
-version = "0.1.0-beta1"
+version = "0.1.0-beta2-dev"
 dependencies = [
  "camino",
  "clap",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "cascade-zonedata"
-version = "0.1.0-beta1"
+version = "0.1.0-beta2-dev"
 dependencies = [
  "bytes",
  "domain",
@@ -259,7 +259,7 @@ dependencies = [
 
 [[package]]
 name = "cascaded"
-version = "0.1.0-beta1"
+version = "0.1.0-beta2-dev"
 dependencies = [
  "assert-json-diff",
  "axum",
