@@ -14,6 +14,24 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Breaking changes
+
+### New
+
+### Bug fixes
+
+### Other changes
+
+### Documentation improvements
+
+### Known issues
+
+### Acknowledgements
+
 ## 0.1.0-beta1 'Slàinte mhath'
 
 Released 2026-06-05.
