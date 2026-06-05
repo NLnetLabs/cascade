@@ -277,9 +277,6 @@ systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = 
 [package.metadata.deb.variants.debian-bullseye]
 systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
-[package.metadata.deb.variants.ubuntu-focal]
-systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
-
 [package.metadata.deb.variants.ubuntu-jammy]
 systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
