@@ -4,7 +4,7 @@ Installation
 Prerequisites
 -------------
 
-To use Cascade a v0.2.0 version of :prgraom:`dnst` is required. The Cascade
+To use Cascade a v0.2.0 version of :program:`dnst` is required. The Cascade
 DEB and RPM packages automatically ensure that the appropriate version of
 :program:`dnst` is installed.
 
