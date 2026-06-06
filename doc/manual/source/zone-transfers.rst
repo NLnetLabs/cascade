@@ -2,20 +2,20 @@ Zone Transfers
 ==============
 
 Cascade is expected to be deployed between a hidden upstream nameserver and
-public downstream nameservers. The hidden upstream serves the unsigned zone,
-Cascade signs it, and serves it to downstream nameservers for publication
+public downstream nameserver. The hidden upstream serves the unsigned zone,
+Cascade signs it, and serves the signed zone to downstream nameservers for publication
 to consumers.
 
-Communication of changed zone records from upstream to downstream should
+Communication of changed zone records from upstream to downstream will
 be done via the network using the :RFC:`5936` (AXFR) and :RFC:`1995` (IXFR)
 protocols.
 
-Authentication of transfering parties can be done using :RFC:`8945` (TSIG)
+Authentication of transferring parties can be done using :RFC:`8945` (TSIG)
 keys, using a shared secret communicated out of band to the nameservers
 sending and receiving the zone records.
 
 Cascade supports timely discovery of zone changes by sending SOA queries to
-the upsream nameserver, either in response to an :RFC:`1996` NOTIFY message or
+the upstream nameserver, either in response to an :RFC:`1996` NOTIFY message or
 based on the zone's SOA timers.
 
 .. note:: Cascade also supports loading the zone from a file. However, if
@@ -42,8 +42,8 @@ Cascade can be instructed to authenticate the upstream nameserver by use of a
 TSIG key. The TSIG key to use must be provided to Cascade _before_ adding the
 zone. See :program:`cascade` :subcmd:`tsig add`.
 
-Using zone transfers with a downstream server
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Providing zone transfers to a downstream server
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 By default, Cascade allows downstream servers to access published zones by
 zone transfer, no configuration is needed.
