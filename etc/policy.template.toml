@@ -54,7 +54,7 @@ mode = "off"
 # A hook for reviewing a loaded zone.
 #
 # This command string will be executed in the user's shell when a new version of
-# a zone is loaded.  At the moment, it will only be run if 'required' is true.
+# a zone is loaded.
 #
 # It will receive the following information via environment variables:
 #
@@ -408,7 +408,7 @@ mode = "off"
 # A hook for reviewing a signed zone.
 #
 # This command string will be executed in the user's shell when a new version of
-# a zone is signed.  At the moment, it will only be run if 'required' is true.
+# a zone is signed.
 #
 # It will receive the following information via environment variables:
 #
