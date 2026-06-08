@@ -41,7 +41,7 @@ pub fn restore_loaded(
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<bool> {
     let mut state = zone.write(center);
-    if state.persisted_loaded_diff_paths.is_empty() {
+    if state.persistence.loaded_diff_paths.is_empty() {
         return io::Result::Ok(false);
     }
 
@@ -57,7 +57,7 @@ pub fn restore_loaded(
         .config
         .zone_state_dir
         .join(format!("{}.loaded.0", zone.name));
-    let count = state.persisted_loaded_diff_paths.len();
+    let count = state.persistence.loaded_diff_paths.len();
     let mut buf = Vec::<u8>::new();
     drop(state);
 
@@ -146,7 +146,7 @@ pub fn restore_signed(
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<bool> {
     let state = zone.read();
-    if state.persisted_signed_diff_paths.is_empty() {
+    if state.persistence.signed_diff_paths.is_empty() {
         return io::Result::Ok(false);
     }
 
@@ -159,7 +159,7 @@ pub fn restore_signed(
         .config
         .zone_state_dir
         .join(format!("{}.signed.0", zone.name));
-    let count = state.persisted_signed_diff_paths.len();
+    let count = state.persistence.signed_diff_paths.len();
     let mut buf = Vec::<u8>::new();
     drop(state);
 

@@ -1,6 +1,6 @@
 //! Zone-specific persistence management.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use cascade_zonedata::{
     LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer,
@@ -107,7 +107,7 @@ impl ZonePersistenceHandle<'_> {
                 let mut handle = zone.write_handle(&center);
                 trace!(
                     "Restored diffs: {:?}",
-                    handle.state.persisted_loaded_diff_paths
+                    handle.state.persistence.loaded_diff_paths
                 );
                 handle.storage().finish_signed_restoration(restored);
                 handle.state.persistence.ongoing.finish();
@@ -226,9 +226,10 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
     // the corresponding files on disk and remove any diffs that we loaded
     // into memory.
     for p in state
-        .persisted_loaded_diff_paths
+        .persistence
+        .loaded_diff_paths
         .iter()
-        .chain(state.persisted_signed_diff_paths.iter())
+        .chain(state.persistence.signed_diff_paths.iter())
     {
         if p.exists() && p.starts_with(center.config.zone_state_dir.as_std_path()) {
             info!(
@@ -243,8 +244,8 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
             }
         }
     }
-    state.persisted_loaded_diff_paths.clear();
-    state.persisted_signed_diff_paths.clear();
+    state.persistence.loaded_diff_paths.clear();
+    state.persistence.signed_diff_paths.clear();
     state.storage.diffs.clear();
 }
 
@@ -255,4 +256,14 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
 pub struct PersistenceState {
     /// Ongoing persist/restore operations.
     pub ongoing: BackgroundTasks,
+
+    /// Locations of persisted unsigned zone diffs to enable IXFR from
+    /// the upstream to resume on restart, and to enable a complete latest
+    /// unsigned version of the zone to be reconstituted.
+    pub loaded_diff_paths: Vec<PathBuf>,
+
+    /// Locations of persisted signed zone diffs to ensure IXFR out toward
+    /// downstreams is still possible after restart, and to enable a complete
+    /// latest signed version of the zone to be reconsituted.
+    pub signed_diff_paths: Vec<PathBuf>,
 }

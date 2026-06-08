@@ -40,7 +40,7 @@ pub fn persist_loaded(
         // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
-            let next_idx = handle.state.persisted_loaded_diff_paths.len();
+            let next_idx = handle.state.persistence.loaded_diff_paths.len();
             let destination = center
                 .config
                 .zone_state_dir
@@ -48,7 +48,8 @@ pub fn persist_loaded(
 
             handle
                 .state
-                .persisted_loaded_diff_paths
+                .persistence
+                .loaded_diff_paths
                 .push(destination.clone().into());
 
             destination
@@ -144,7 +145,7 @@ pub fn persist_signed(
         // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
-            let next_idx = handle.state.persisted_signed_diff_paths.len();
+            let next_idx = handle.state.persistence.signed_diff_paths.len();
             let destination = center
                 .config
                 .zone_state_dir
@@ -152,7 +153,8 @@ pub fn persist_signed(
 
             handle
                 .state
-                .persisted_signed_diff_paths
+                .persistence
+                .signed_diff_paths
                 .push(destination.clone().into());
 
             destination
