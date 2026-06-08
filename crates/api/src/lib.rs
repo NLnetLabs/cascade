@@ -284,7 +284,7 @@ impl fmt::Display for TsigRemoveError {
             TsigRemoveError::NotFound => write!(f, "no such TSIG key was found"),
             TsigRemoveError::InUseByZoneSource { using_zones } => write!(
                 f,
-                "the TSIG key cannot be removed as it used by the source of the following zones: {}",
+                "the TSIG key cannot be removed as it is used by the source of the following zones: {}",
                 using_zones
                     .iter()
                     .map(ToString::to_string)
@@ -293,7 +293,7 @@ impl fmt::Display for TsigRemoveError {
             ),
             TsigRemoveError::InUseByZoneOther { using_zones } => write!(
                 f,
-                "the TSIG key cannot be removed as it used by the following zones: {}",
+                "the TSIG key cannot be removed as it is used by the following zones: {}",
                 using_zones
                     .iter()
                     .map(ToString::to_string)
@@ -302,7 +302,7 @@ impl fmt::Display for TsigRemoveError {
             ),
             TsigRemoveError::InUseByPolicy { using_policies } => write!(
                 f,
-                "the TSIG key cannot be removed as it used used by the following policies: {}",
+                "the TSIG key cannot be removed as it is used by the following policies: {}",
                 using_policies
                     .iter()
                     .map(ToString::to_string)
