@@ -18,7 +18,7 @@ use domain_kmip::{
     ConnectionSettings, KeyUrl,
     dep::kmip::client::pool::{ConnectionManager, KmipConnError},
 };
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 use url::Url;
 
 use crate::{
@@ -119,6 +119,15 @@ impl ZoneSigningKeys {
 
             debug!("Successfully loaded key '{priv_url}' + '{pub_url}'");
             list.push(key);
+        }
+
+        debug!("Loaded {} signing key(s).", list.len());
+
+        // TODO: If signing is disabled for a zone should we then allow the
+        // unsigned zone to propagate through the pipeline?
+        if list.is_empty() {
+            error!("No applicable signing keys were found");
+            return Err(Box::new(LoadError::NoKeysFound));
         }
 
         Ok(Self { list })
