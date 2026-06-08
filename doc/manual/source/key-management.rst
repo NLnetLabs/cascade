@@ -125,7 +125,7 @@ do this, the key manager needs network access to those nameservers.
    :ref:`disable (part of) this functionality <automation-control>`. 
 
 To check the signatures in the zone, the key manager will issue an AXFR
-request to the primary nameserver listed in the SOA record of the zone to
+request to the primary nameserver listed in the SOA record of the zone or to
 a configurable nameserver with configurable TSIG keys for authentication.
 
 The automatic key roll checks have two limitations:
