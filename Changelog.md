@@ -21,7 +21,7 @@ Released yyyy-mm-dd.
 ### Breaking changes
 
 - Rename policy field `server.outbound.accept-xfr-from` to
-  `server.outbound.provide-xfr-to`.
+  `server.outbound.provide-xfr-to` ([#722] by @ximon18).
 
 ### New
 
@@ -46,6 +46,7 @@ feedback and contributions to the documentation.
 [#704]: https://github.com/NLnetLabs/cascade/pull/704
 [#711]: https://github.com/NLnetLabs/cascade/pull/711
 [#714]: https://github.com/NLnetLabs/cascade/pull/714
+[#722]: https://github.com/NLnetLabs/cascade/pull/722
 
 ## 0.1.0-beta1 'Slàinte mhath'
 
