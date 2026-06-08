@@ -164,7 +164,7 @@ fn print_policy(p: &PolicyInfo) {
     println!("  server:");
     println!("    outbound:");
     println!("      accept XFR from:");
-    print_nameserver_comms_policy(&p.server.outbound.accept_xfr_from);
+    print_nameserver_comms_policy(&p.server.outbound.provide_xfr_to);
     println!("      send NOTIFY to:");
     print_nameserver_comms_policy(&p.server.outbound.send_notify_to);
 }

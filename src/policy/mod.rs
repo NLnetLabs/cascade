@@ -218,7 +218,7 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
         .key_manager
         .publication_nameservers
         .iter()
-        .chain(policy.server.outbound.accept_xfr_from.iter())
+        .chain(policy.server.outbound.provide_xfr_to.iter())
         .chain(policy.server.outbound.send_notify_to.iter())
         .filter_map(|ns| ns.tsig_key_name.as_ref());
 
@@ -551,10 +551,10 @@ pub struct ServerPolicy {
 /// Policy for restricting to whom data may be sent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OutboundPolicy {
-    /// The set of nameservers from which SOA and XFR requests may be received.
+    /// The set of nameservers to which zone transfers may be provided.
     ///
-    /// If empty, any nameserver may request XFR from us.
-    pub accept_xfr_from: Vec<NameserverCommsPolicy>,
+    /// If empty, zone transfers will be provided to any nameserver.
+    pub provide_xfr_to: Vec<NameserverCommsPolicy>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///

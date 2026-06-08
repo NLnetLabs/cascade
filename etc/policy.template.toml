@@ -452,7 +452,7 @@ mode = "off"
 # If not specified, no NOTIFY messages will be sent.
 send-notify-to = []
 
-# The set of nameservers to accept zone transfer requests from.
+# The set of nameservers to provide zone transfers to.
 # 
 # Each nameserver must be specified as a string in the form:
 #
@@ -462,6 +462,8 @@ send-notify-to = []
 # Cascade TSIG key store and will be used to authenticate communication with
 # the nameserver.
 #
-# If not specified, zone transfer requests will be accepted from any
-# nameserver.
-accept-xfr-from = []
+# Zone transfer will be provided to any nameserver that initiates a transfer
+# request from one of the specified IP addresses.
+#
+# If not specified, zone transfers will be provided to any nameserver.
+provide-xfr-to = []
