@@ -40,7 +40,7 @@ pub fn restore_loaded(
     center: &Arc<Center>,
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<bool> {
-    let mut state = zone.state.lock().unwrap();
+    let mut state = zone.write(center);
     if state.persisted_loaded_diff_paths.is_empty() {
         return io::Result::Ok(false);
     }
@@ -106,7 +106,7 @@ pub fn restore_loaded(
 
         if let Some(diff) = restorer.take_diff() {
             // Store the loaded diff to be used as part of serving an IXFR.
-            let mut state = zone.state.lock().unwrap();
+            let mut state = zone.write(center);
             state
                 .storage
                 .diffs
@@ -145,7 +145,7 @@ pub fn restore_signed(
     center: &Arc<Center>,
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<bool> {
-    let state = zone.state.lock().unwrap();
+    let state = zone.read();
     if state.persisted_signed_diff_paths.is_empty() {
         return io::Result::Ok(false);
     }
@@ -216,7 +216,7 @@ pub fn restore_signed(
             .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
 
         if let Some(signed_diff) = restorer.take_diff() {
-            let mut state = zone.state.lock().unwrap();
+            let mut state = zone.write(center);
             // Get the diff pair (loaded diff and missing signed diff) that
             // this signed diff needs to be inserted into. If the signed diff
             // was caused by incremental signing then a loaded diff won't have

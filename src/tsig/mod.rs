@@ -294,8 +294,7 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
 
     // Is the TSIG key in use with a zone source?
     let using_zones = state.zones.iter().filter(|z| {
-        let zone_state = z.0.state.lock().unwrap();
-        matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
+        matches!(z.0.state.read().loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
     }).cloned().collect::<Vec<_>>();
 
     if !using_zones.is_empty() {

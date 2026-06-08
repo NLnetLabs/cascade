@@ -62,7 +62,7 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
-use crate::zone::{HistoricalEvent, Zone, ZoneHandle};
+use crate::zone::{HistoricalEvent, Zone, ZoneByName};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -341,8 +341,8 @@ impl ZoneSigner {
         let mut local_state = LocalState::new(zone)?;
 
         let policy = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = zone.state.lock().unwrap();
+            // Use a block to make sure that the lock is clearly dropped.
+            let zone_state = zone.read();
 
             zone_state.policy.clone().unwrap()
         };
@@ -770,7 +770,7 @@ impl ZoneSigner {
         );
 
         local_state.last_signature_refresh = UnixTime::now();
-        local_state.save(center, zone)?;
+        local_state.save(center, zone);
 
         Ok(())
     }
@@ -814,27 +814,25 @@ impl ZoneSigner {
 
         // Compute when to incrementally sign a zone again to refresh
         // signatures.
-        for zone in zones {
-            let zone = &zone.0;
+        for ZoneByName(zone) in zones {
             let zone_name = &zone.name;
 
-            let last_signature_refresh = {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let zone_state = zone.state.lock().unwrap();
-                zone_state.last_signature_refresh.clone()
-            };
+            let last_signature_refresh;
+            let signature_refresh_interval;
+            {
+                // Use a block to make sure that the lock is clearly dropped.
+                let zone_state = zone.read();
 
-            // Ensure that the Mutexes are locked only in this block;
-            let signature_refresh_interval = {
-                let zone_state = zone.state.lock().unwrap();
+                last_signature_refresh = zone_state.last_signature_refresh.clone();
+
                 // TODO: what if there is no policy?
-                zone_state
+                signature_refresh_interval = zone_state
                     .policy
                     .as_ref()
                     .unwrap()
                     .signer
-                    .signature_refresh_interval
-            };
+                    .signature_refresh_interval;
+            }
 
             let curr_refresh_time = last_signature_refresh.clone()
                 + Duration::from_secs(signature_refresh_interval as u64);
@@ -890,23 +888,22 @@ impl ZoneSigner {
             let zone = &zone.0;
             let zone_name = &zone.name;
 
-            let last_signature_refresh = {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let zone_state = zone.state.lock().unwrap();
-                zone_state.last_signature_refresh.clone()
-            };
+            let last_signature_refresh;
+            let signature_refresh_interval;
+            {
+                // Use a block to make sure that the lock is clearly dropped.
+                let zone_state = zone.read();
 
-            // Ensure that the Mutexes are locked only in this block;
-            let signature_refresh_interval = {
-                let zone_state = zone.state.lock().unwrap();
-                // What if there is no policy?
-                zone_state
+                last_signature_refresh = zone_state.last_signature_refresh.clone();
+
+                // TODO: what if there is no policy?
+                signature_refresh_interval = zone_state
                     .policy
                     .as_ref()
                     .unwrap()
                     .signer
-                    .signature_refresh_interval
-            };
+                    .signature_refresh_interval;
+            }
 
             let curr_refresh_time = last_signature_refresh.clone()
                 + Duration::from_secs(signature_refresh_interval as u64);
@@ -933,14 +930,9 @@ impl ZoneSigner {
                     let mut resign_busy = center.resign_busy.lock().expect("should not fail");
                     resign_busy.insert(zone_name.clone(), curr_refresh_time);
                 }
-                let mut state = zone.state.lock().unwrap();
-                ZoneHandle {
-                    zone,
-                    state: &mut state,
-                    center,
-                }
-                .signer()
-                .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
+                zone.write_handle(center)
+                    .signer()
+                    .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
             }
         }
     }
