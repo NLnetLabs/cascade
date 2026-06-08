@@ -23,8 +23,9 @@ pub enum ZoneCommand {
     Add {
         name: ZoneName,
 
-        /// The zone source can be an IP address (with or without port,
-        /// defaults to port 53) or a file path.
+        /// The source to obtain the zone content from:
+        /// `IP:[PORT][^TSIG_KEY_NAME]` (port defaults to 53) or the path to
+        /// a zone file locally available to the `cascaded` daemon.
         // TODO: allow supplying different tcp and/or udp port?
         #[arg(long = "source")]
         source: ZoneSource,
