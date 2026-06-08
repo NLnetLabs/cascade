@@ -591,8 +591,8 @@ The ``[server.outbound]`` section.
 
    The set of nameservers to provide zone transfers to.
 
-   If no nameservers are specified, zone transfer requests will be provided to
-   any nameserver.
+   If no nameservers are specified, zone transfers will be provided to any
+   nameserver.
    
    Each nameserver must be specified as a string in the form:
 

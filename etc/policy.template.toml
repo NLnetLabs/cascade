@@ -462,7 +462,7 @@ send-notify-to = []
 # Cascade TSIG key store and will be used to authenticate communication with
 # the nameserver.
 #
-# Zone transfer will be provided to any nameserver that initiates a transfer
+# Zone transfers will be provided to any nameserver that initiates a transfer
 # request from one of the specified IP addresses.
 #
 # If not specified, zone transfers will be provided to any nameserver.
