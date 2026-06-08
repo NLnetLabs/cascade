@@ -260,16 +260,56 @@ pub enum TsigRemoveError {
     /// The specified TSIG key name was not found in Cascade.
     NotFound,
 
-    /// The specified TSIG key cannot be removed as it is in use.
-    InUse,
+    /// The key is in use by one or more zones to authenticate communication
+    /// with upstream nameservers.
+    InUseByZoneSource {
+        using_zones: Vec<ZoneName>,
+    },
+
+    // The key is in use for a zone for some other reason.
+    InUseByZoneOther {
+        using_zones: Vec<ZoneName>,
+    },
+
+    // The key is in use by one or more policies to authenticate communication
+    // with downstream nameservers.
+    InUseByPolicy {
+        using_policies: Vec<Box<str>>,
+    },
 }
 
 impl fmt::Display for TsigRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            TsigRemoveError::NotFound => "no such TSIG key was found",
-            TsigRemoveError::InUse => "the TSIG key cannot be removed as it is in use",
-        })
+        match self {
+            TsigRemoveError::NotFound => write!(f, "no such TSIG key was found"),
+            TsigRemoveError::InUseByZoneSource { using_zones } => write!(
+                f,
+                "the TSIG key cannot be removed as it used by the source of the following zones: {}",
+                using_zones
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            TsigRemoveError::InUseByZoneOther { using_zones } => write!(
+                f,
+                "the TSIG key cannot be removed as it used by the following zones: {}",
+                using_zones
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            TsigRemoveError::InUseByPolicy { using_policies } => write!(
+                f,
+                "the TSIG key cannot be removed as it used used by the following policies: {}",
+                using_policies
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
     }
 }
 

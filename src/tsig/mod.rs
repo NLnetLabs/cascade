@@ -5,7 +5,12 @@ use std::{collections::hash_map, fmt, io, sync::Arc, time::Duration};
 use domain::tsig;
 use tracing::{debug, error, trace};
 
-use crate::{center::Center, config::Config, zone::ZoneByPtr};
+use crate::{
+    center::Center,
+    config::Config,
+    policy::PolicyVersion,
+    zone::{ZoneByName, ZoneByPtr},
+};
 
 pub mod file;
 
@@ -288,19 +293,21 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     }
 
     // Is the TSIG key in use with a zone source?
-    if state.zones.iter().any(|z| {
+    let using_zones = state.zones.iter().filter(|z| {
         let zone_state = z.0.state.lock().unwrap();
         matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
-    }) {
-        return Err(RemoveError::Used);
+    }).cloned().collect::<Vec<_>>();
+
+    if !using_zones.is_empty() {
+        return Err(RemoveError::InUseByZoneSource { using_zones });
     }
 
     // Is the TSIG key referenced by any active (not being deleted) policy?
-    let tsig_key_found = state
+    let using_policies = state
         .policies
         .values()
         .filter_map(|p| (!p.mid_deletion).then_some(&p.latest))
-        .any(|p| {
+        .filter(|p| {
             p.key_manager
                 .publication_nameservers
                 .iter()
@@ -315,11 +322,12 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
                     .send_notify_to
                     .iter()
                     .any(|acl| acl.tsig_key_name.as_ref() == Some(name))
-        });
+        })
+        .cloned()
+        .collect::<Vec<_>>();
 
-    if tsig_key_found {
-        // TODO: Indicate to the operator where the key is in use.
-        return Err(RemoveError::Used);
+    if !using_policies.is_empty() {
+        return Err(RemoveError::InUseByPolicy { using_policies });
     }
 
     // Delete the TSIG key. The TSIG key store has a set of zones that
@@ -331,9 +339,14 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     // happen?).
     match state.tsig_store.map.entry(name.clone()) {
         hash_map::Entry::Occupied(entry) => {
-            if !entry.get().zones.is_empty() {
-                // TODO: Indicate to the operator where the key is in use.
-                return Err(RemoveError::Used);
+            let zone_entry = entry.get();
+            if !zone_entry.zones.is_empty() {
+                let using_zones = zone_entry
+                    .zones
+                    .iter()
+                    .map(|z| ZoneByName(z.0.clone()))
+                    .collect::<Vec<_>>();
+                return Err(RemoveError::InUseByZoneOther { using_zones });
             }
             entry.remove_entry();
         }
@@ -390,13 +403,27 @@ impl fmt::Display for GenerateError {
 //----------- RemoveError ------------------------------------------------------
 
 /// An error removing a TSIG key.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum RemoveError {
     /// No such key exists.
     NotFound,
 
-    /// The key is in use.
-    Used,
+    /// The key is in use by one or more zones to authenticate communication
+    /// with upstream nameservers.
+    InUseByZoneSource {
+        using_zones: Vec<ZoneByName>,
+    },
+
+    // The key is in use for a zone for some other reason.
+    InUseByZoneOther {
+        using_zones: Vec<ZoneByName>,
+    },
+
+    // The key is in use by one or more policies to authenticate communication
+    // with downstream nameservers.
+    InUseByPolicy {
+        using_policies: Vec<Arc<PolicyVersion>>,
+    },
 }
 
 impl std::error::Error for RemoveError {}
@@ -405,7 +432,15 @@ impl fmt::Display for RemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RemoveError::NotFound => write!(f, "could not find the requested key"),
-            RemoveError::Used => write!(f, "the key is currently in use"),
+            RemoveError::InUseByZoneSource { .. } => {
+                write!(f, "the key is currently in use by one or more zone sources")
+            }
+            RemoveError::InUseByZoneOther { .. } => {
+                write!(f, "the key is currently in use by one or more zones")
+            }
+            RemoveError::InUseByPolicy { .. } => {
+                write!(f, "the key is currently in use by one or more policies")
+            }
         }
     }
 }

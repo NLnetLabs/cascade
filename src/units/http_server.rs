@@ -1266,7 +1266,19 @@ impl HttpServer {
             .map(|_| TsigRemoveResult)
             .map_err(|e| match e {
                 RemoveError::NotFound => TsigRemoveError::NotFound,
-                RemoveError::Used => TsigRemoveError::InUse,
+                RemoveError::InUseByZoneSource { using_zones } => {
+                    TsigRemoveError::InUseByZoneSource {
+                        using_zones: using_zones.iter().map(|z| z.0.name.clone()).collect(),
+                    }
+                }
+                RemoveError::InUseByZoneOther { using_zones } => {
+                    TsigRemoveError::InUseByZoneOther {
+                        using_zones: using_zones.iter().map(|z| z.0.name.clone()).collect(),
+                    }
+                }
+                RemoveError::InUseByPolicy { using_policies } => TsigRemoveError::InUseByPolicy {
+                    using_policies: using_policies.iter().map(|p| p.name.clone()).collect(),
+                },
             });
         Json(res)
     }
