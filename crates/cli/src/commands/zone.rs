@@ -23,8 +23,8 @@ pub enum ZoneCommand {
     Add {
         name: ZoneName,
 
-        /// The zone source can be an IP address (with or without port,
-        /// defaults to port 53) or a file path.
+        /// The source to obtain the zone content from:
+        /// IP:[PORT][^TSIG_KEY_NAME] or a file path.
         // TODO: allow supplying different tcp and/or udp port?
         #[arg(long = "source")]
         source: ZoneSource,
