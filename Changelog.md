@@ -29,6 +29,7 @@ Released yyyy-mm-dd.
 ### Documentation improvements
 
 - Fixes and improvements to the "Zone Transfers" page. ([#704] by @jpmens)
+- Corrections to the "Key Management" documentation page. ([#711] by @jpmens)
 - Note in CLI help that the source to zone add can include a TSIG key name.
   (#[714] by @ximon18)
 
@@ -40,6 +41,7 @@ Thanks once again to @jpmens for testing Cascade and providing valuable
 feedback and contributions to the documentation.
 
 [#704]: https://github.com/NLnetLabs/cascade/pull/704
+[#711]: https://github.com/NLnetLabs/cascade/pull/711
 [#714]: https://github.com/NLnetLabs/cascade/pull/714
 
 ## 0.1.0-beta1 'Slàinte mhath'
