@@ -5,7 +5,7 @@ Key Management
    the implementation in OpenDNSSEC and for example BIND. 
    
    The goal is that key rolls should always go through the same sequence of 
-   steps. As much as possible, we strive get all key rolls in a single mold.
+   steps. As much as possible, we strive to get all key rolls in a single mold.
    They will always follow the same pattern, while the details of a 
    :term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key 
    (ZSK)>` roll will be different.
@@ -114,7 +114,7 @@ when it is not needed.
 
 Automatic Key Rolls
 """""""""""""""""""
-  
+
 For automatic key rolls, the key manager will check the propagation of
 changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
 signatures to all nameservers of the zone or the parent zone. To be able to
@@ -125,9 +125,8 @@ do this, the key manager needs network access to those nameservers.
    :ref:`disable (part of) this functionality <automation-control>`. 
 
 To check the signatures in the zone, the key manager will issue an AXFR
-request to the primary nameserver listed in the SOA record of the zone. In
-the future we plan to make it possible to configure which nameserver should
-be used and which TSIG keys should be used for authentication.
+request to the primary nameserver listed in the SOA record of the zone or to
+a configurable nameserver with configurable TSIG keys for authentication.
 
 The automatic key roll checks have two limitations:
 
@@ -223,8 +222,8 @@ When set, the
 :option:`ksk|zsk|csk|algorithm.auto-start <ksk.auto-start = true>` booleans 
 direct the key manager to start a key roll when a relevant key has expired.
 
-A KSK or a ZSK key roll can start automatically if respectively a KSK or a
-ZSK has expired. A CSK roll can start automatically when a CSK has expired
+A KSK or a ZSK key roll can start automatically if the respective KSK or
+ZSK has expired. A CSK roll can start automatically when a CSK has expired,
 but also when a KSK or ZSK has expired and the new key will be a CSK.
 Finally, an algorithm roll can start automatically when the new algorithm is
 different from the one used by the existing keys and any key has expired.
