@@ -2,7 +2,7 @@ Zone Transfers
 ==============
 
 Cascade is expected to be deployed between a hidden upstream nameserver and
-public downstream nameserver. The hidden upstream serves the unsigned zone,
+public downstream nameservers. The hidden upstream serves the unsigned zone,
 Cascade signs it, and serves the signed zone to downstream nameservers for publication
 to consumers.
 
