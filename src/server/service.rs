@@ -201,7 +201,7 @@ mod compat {
         if let Some(acls) = zone_state
             .policy
             .as_ref()
-            .map(|p| &p.server.outbound.accept_xfr_from)
+            .map(|p| &p.server.outbound.provide_xfr_to)
         {
             // If at least one ACL was specified, enforce it.
             if !acls.is_empty() {

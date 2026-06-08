@@ -310,7 +310,7 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
                 .any(|ns| ns.tsig_key_name.as_ref() == Some(name))
                 || p.server
                     .outbound
-                    .accept_xfr_from
+                    .provide_xfr_to
                     .iter()
                     .any(|acl| acl.tsig_key_name.as_ref() == Some(name))
                 || p.server

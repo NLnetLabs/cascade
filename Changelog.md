@@ -20,6 +20,9 @@ Released yyyy-mm-dd.
 
 ### Breaking changes
 
+- Rename policy field `server.outbound.accept-xfr-from` to
+  `server.outbound.provide-xfr-to`.
+
 ### New
 
 ### Bug fixes

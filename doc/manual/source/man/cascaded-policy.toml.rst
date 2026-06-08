@@ -587,12 +587,12 @@ The ``[server.outbound]`` section.
    Cascade TSIG key store and will be used to authenticate communication with
    the nameserver.
 
-.. option:: accept-xfr-from = []
+.. option:: provide-xfr-to = []
 
-   The set of nameservers to accept zone transfer requests from.
+   The set of nameservers to provide zone transfers to.
 
-   If no nameservers are specified, zone transfer requests will be accepted
-   from any nameserver.
+   If no nameservers are specified, zone transfers will be provided to any
+   nameserver.
    
    Each nameserver must be specified as a string in the form:
 
