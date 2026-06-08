@@ -28,9 +28,16 @@ Released yyyy-mm-dd.
 
 ### Documentation improvements
 
+- Fixes and improvements to the "Zone Transfers" page. ([#704] by @jpmens)
+
 ### Known issues
 
 ### Acknowledgements
+
+Thanks once again to @jpmens for testing Cascade and providing valuable
+feedback and contributions to the documentation.
+
+[#704]: https://github.com/NLnetLabs/cascade/pull/704
 
 ## 0.1.0-beta1 'Slàinte mhath'
 
