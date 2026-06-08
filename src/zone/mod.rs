@@ -7,7 +7,7 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -40,6 +40,9 @@ pub use storage::{StorageState, StorageZoneHandle};
 pub mod machine;
 pub mod state;
 
+mod lock;
+pub use lock::{ReadableZoneState, WritableZoneState, ZoneStateLock};
+
 //----------- Zone -------------------------------------------------------------
 
 /// A zone.
@@ -50,10 +53,9 @@ pub struct Zone {
 
     /// The state of this zone.
     ///
-    /// This uses a mutex to ensure that all parts of the zone state are
-    /// consistent with each other, and that changes to the zone happen in a
-    /// single (sequentially consistent) order.
-    pub state: Mutex<ZoneState>,
+    /// The state is locked for consistency. For the underlying data, see
+    /// [`ZoneState`].
+    pub state: ZoneStateLock,
 
     /// Whether the zone was restored from the state file.
     ///
@@ -71,7 +73,7 @@ impl Zone {
     pub fn new(name: Name<Bytes>) -> Self {
         Self {
             name,
-            state: Default::default(),
+            state: ZoneStateLock::new(ZoneState::default()),
             restored: false,
         }
     }
@@ -117,9 +119,55 @@ impl Zone {
 
         Ok(Self {
             name,
-            state: Mutex::new(state),
+            state: ZoneStateLock::new(state),
             restored: true,
         })
+    }
+
+    /// Obtain a read lock over the zone state.
+    ///
+    /// A read lock which [deref]s to [`ZoneState`] is returned.
+    ///
+    /// The current thread is blocked until the read lock can be acquired.
+    ///
+    /// Prefer this to `self.state.read()`.
+    ///
+    /// [deref]: std::ops::Deref
+    pub fn read(&self) -> ReadableZoneState<'_> {
+        self.state.read()
+    }
+
+    /// Obtain a write lock and build a handle to the zone.
+    ///
+    /// An [`OwnedZoneHandle`] is returned, through which high-level zone
+    /// operations are available.
+    ///
+    /// The current thread is blocked until the write lock can be acquired.
+    ///
+    /// The state will be marked dirty; some time after the lock is released,
+    /// the (likely modified) state will be persisted to disk. To guarantee that
+    /// the state is persisted at a particular point, use [`save_state_now()`].
+    pub fn write_handle<'a>(self: &'a Arc<Self>, center: &'a Arc<Center>) -> OwnedZoneHandle<'a> {
+        OwnedZoneHandle {
+            zone: self,
+            state: self.write(center),
+            center,
+        }
+    }
+
+    /// Obtain a write lock over the zone state.
+    ///
+    /// Prefer [`Self::write_handle()`], as it returns a convenient zone handle.
+    ///
+    /// The current thread is blocked until the write lock can be acquired.
+    ///
+    /// The state will be marked dirty; some time after the lock is released,
+    /// the (likely modified) state will be persisted to disk. To guarantee that
+    /// the state is persisted at a particular point, use [`save_state_now()`].
+    pub fn write<'z>(self: &'z Arc<Self>, center: &Arc<Center>) -> WritableZoneState<'z> {
+        let mut writer = self.state.write_cleanly();
+        self.mark_dirty(&mut writer, center);
+        writer
     }
 }
 
@@ -139,6 +187,7 @@ pub struct ZoneHandle<'a> {
 
 impl ZoneHandle<'_> {
     /// Consider loader-specific operations.
+    #[must_use]
     pub const fn loader(&mut self) -> LoaderZoneHandle<'_> {
         LoaderZoneHandle {
             zone: self.zone,
@@ -148,6 +197,7 @@ impl ZoneHandle<'_> {
     }
 
     /// Consider signer-specific operations.
+    #[must_use]
     pub const fn signer(&mut self) -> SignerZoneHandle<'_> {
         SignerZoneHandle {
             zone: self.zone,
@@ -157,6 +207,7 @@ impl ZoneHandle<'_> {
     }
 
     /// Consider storage-specific operations.
+    #[must_use]
     pub const fn storage(&mut self) -> StorageZoneHandle<'_> {
         StorageZoneHandle {
             zone: self.zone,
@@ -166,10 +217,80 @@ impl ZoneHandle<'_> {
     }
 
     /// Consider data persistence specific operations.
+    #[must_use]
     pub const fn persistence(&mut self) -> ZonePersistenceHandle<'_> {
         ZonePersistenceHandle {
             zone: self.zone,
             state: self.state,
+            center: self.center,
+        }
+    }
+}
+
+//----------- OwnedZoneHandle --------------------------------------------------
+
+/// A [`ZoneHandle`] that owns a zone state write lock.
+///
+/// This is a convenience type. By owning the write lock, it can simplify
+/// construction of `ZoneHandle`s for quick uses.
+pub struct OwnedZoneHandle<'a> {
+    /// The zone being operated on.
+    pub zone: &'a Arc<Zone>,
+
+    /// The locked zone state.
+    pub state: WritableZoneState<'a>,
+
+    /// Cascade's global state.
+    pub center: &'a Arc<Center>,
+}
+
+impl OwnedZoneHandle<'_> {
+    /// Get the corresponding [`ZoneHandle`].
+    #[must_use]
+    pub fn get(&mut self) -> ZoneHandle<'_> {
+        ZoneHandle {
+            zone: self.zone,
+            state: &mut self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider loader-specific operations.
+    #[must_use]
+    pub fn loader(&mut self) -> LoaderZoneHandle<'_> {
+        LoaderZoneHandle {
+            zone: self.zone,
+            state: &mut self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider signer-specific operations.
+    #[must_use]
+    pub fn signer(&mut self) -> SignerZoneHandle<'_> {
+        SignerZoneHandle {
+            zone: self.zone,
+            state: &mut self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider storage-specific operations.
+    #[must_use]
+    pub fn storage(&mut self) -> StorageZoneHandle<'_> {
+        StorageZoneHandle {
+            zone: self.zone,
+            state: &mut self.state,
+            center: self.center,
+        }
+    }
+
+    /// Consider data persistence specific operations.
+    #[must_use]
+    pub fn persistence(&mut self) -> ZonePersistenceHandle<'_> {
+        ZonePersistenceHandle {
+            zone: self.zone,
+            state: &mut self.state,
             center: self.center,
         }
     }
@@ -587,7 +708,7 @@ impl Zone {
 
             // Load the actual zone contents.
             let spec = {
-                let mut state = zone.state.lock().unwrap();
+                let mut state = zone.state.write_cleanly();
                 let Some(_) = state.enqueued_save.take_if(|s| s.id() == tokio::task::id()) else {
                     // 'enqueued_save' does not match what we set, so somebody
                     // else set it to 'None' first.  Don't do anything.
@@ -619,7 +740,7 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
 
     // Load the actual zone contents.
     let spec = {
-        let mut state = zone.state.lock().unwrap();
+        let mut state = zone.state.write_cleanly();
 
         // If there was an enqueued save operation, stop it.
         if let Some(save) = state.enqueued_save.take() {

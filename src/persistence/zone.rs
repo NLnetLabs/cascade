@@ -79,13 +79,9 @@ impl ZonePersistenceHandle<'_> {
 
                 // Obtain the signed zone restorer.
                 let mut restorer = {
-                    let mut state = zone.state.lock().unwrap();
-                    let mut handle = ZoneHandle {
-                        zone: &zone,
-                        state: &mut state,
-                        center: &center,
-                    };
-                    handle.storage().finish_loaded_restoration(restored)
+                    zone.write_handle(&center)
+                        .storage()
+                        .finish_loaded_restoration(restored)
                 };
 
                 // Try to restore the signed instance.
@@ -108,13 +104,11 @@ impl ZonePersistenceHandle<'_> {
                     }
                 };
 
-                let mut state = zone.state.lock().unwrap();
-                trace!("Restored diffs: {:?}", state.persisted_loaded_diff_paths);
-                let mut handle = ZoneHandle {
-                    zone: &zone,
-                    state: &mut state,
-                    center: &center,
-                };
+                let mut handle = zone.write_handle(&center);
+                trace!(
+                    "Restored diffs: {:?}",
+                    handle.state.persisted_loaded_diff_paths
+                );
                 handle.storage().finish_signed_restoration(restored);
                 handle.state.persistence.ongoing.finish();
             });
@@ -144,15 +138,8 @@ impl ZonePersistenceHandle<'_> {
                 // NOTE: The outer function, which is spawning the background
                 // task, has a lock of the zone state. Thus, the following lock
                 // cannot be taken until the outer function terminates.
-                let mut state = zone.state.lock().unwrap();
-                let mut handle = ZoneHandle {
-                    zone: &zone,
-                    state: &mut state,
-                    center: &center,
-                };
-
-                handle.start_new_sign(persisted);
-
+                let mut handle = zone.write_handle(&center);
+                handle.get().start_new_sign(persisted);
                 handle.state.persistence.ongoing.finish();
             });
     }
@@ -181,14 +168,9 @@ impl ZonePersistenceHandle<'_> {
                 // NOTE: The outer function, which is spawning the background
                 // task, has a lock of the zone state. Thus, the following lock
                 // cannot be taken until the outer function terminates.
-                let mut state = zone.state.lock().unwrap();
-                let mut handle = ZoneHandle {
-                    zone: &zone,
-                    state: &mut state,
-                    center: &center,
-                };
+                let mut handle = zone.write_handle(&center);
 
-                handle.start_switch(persisted);
+                handle.get().start_switch(persisted);
 
                 handle.state.persistence.ongoing.finish();
             });
@@ -201,12 +183,7 @@ fn abandon_loaded_restoration(
     restorer: LoadedZoneRestorer,
 ) {
     reset_state_due_to_abandoned_restore(center, zone);
-    let mut state = zone.state.lock().unwrap();
-    let mut handle = ZoneHandle {
-        zone,
-        state: &mut state,
-        center,
-    };
+    let mut handle = zone.write_handle(center);
     handle.storage().abandon_loaded_restoration(restorer);
     handle.state.persistence.ongoing.finish();
 }
@@ -217,19 +194,14 @@ fn abandon_signed_restoration(
     restorer: SignedZoneRestorer,
 ) {
     reset_state_due_to_abandoned_restore(center, zone);
-    let mut state = zone.state.lock().unwrap();
-    let mut handle = ZoneHandle {
-        zone,
-        state: &mut state,
-        center,
-    };
+    let mut handle = zone.write_handle(center);
     handle.storage().abandon_signed_restoration(restorer);
     handle.state.persistence.ongoing.finish();
 }
 
 fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
     {
-        let mut state = zone.state.lock().unwrap();
+        let mut state = zone.write(center);
         clear_persisted_zone_data(center, &mut state);
 
         // In case this zone was signed in the past we have to make sure that

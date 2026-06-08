@@ -181,7 +181,7 @@ mod compat {
         zone: &ServedZone<V>,
         request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
     ) -> bool {
-        let zone_state = zone.handle.state.lock().unwrap();
+        let zone_state = zone.handle.read();
 
         if tracing::enabled!(Level::TRACE) {
             let tsig_key = request.metadata().as_ref().map(|key| key.name());
@@ -426,7 +426,7 @@ mod compat {
         }
 
         let diffs = {
-            let zone_state = zone.handle.state.lock().unwrap();
+            let zone_state = zone.handle.read();
 
             match mode {
                 ServiceMode::LoadedReview => {

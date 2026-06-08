@@ -5,7 +5,11 @@ use std::{collections::hash_map, fmt, io, sync::Arc, time::Duration};
 use domain::tsig;
 use tracing::{debug, error, trace};
 
-use crate::{center::Center, config::Config, zone::ZoneByPtr};
+use crate::{
+    center::Center,
+    config::Config,
+    zone::{ZoneByName, ZoneByPtr},
+};
 
 pub mod file;
 
@@ -288,9 +292,8 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     }
 
     // Is the TSIG key in use with a zone source?
-    if state.zones.iter().any(|z| {
-        let zone_state = z.0.state.lock().unwrap();
-        matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
+    if state.zones.iter().any(|ZoneByName(zone)| {
+        matches!(zone.read().loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
     }) {
         return Err(RemoveError::Used);
     }
