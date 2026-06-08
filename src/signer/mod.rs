@@ -32,6 +32,7 @@ use crate::{
 };
 
 pub mod incremental;
+pub mod keys;
 pub mod zone;
 
 //----------- sign() -----------------------------------------------------------
