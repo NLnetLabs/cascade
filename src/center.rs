@@ -118,12 +118,17 @@ pub async fn add_zone(
             cascade_api::ZoneSource::Server { addr, tsig_key } => {
                 let tsig_key = if let Some(key_name) = tsig_key {
                     // Lookup the key in the TSIG key store.
+                    trace!("Looking up TSIG key '{key_name}' in the TSIG key store");
                     let key = state
                         .tsig_store
                         .get_mut(&key_name)
                         .ok_or(ZoneAddError::NoSuchTsigKey)?;
 
                     // Record that this zone uses this key.
+                    trace!(
+                        "Recording that TSIG key '{key_name}' is used by zone '{}'",
+                        zone.name
+                    );
                     key.zones.insert(ZoneByPtr(zone.clone()));
 
                     let key = key.inner.clone();

@@ -27,6 +27,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tracing::trace;
 use tracing::{debug, error, info, warn};
 
 use crate::api;
@@ -1253,7 +1254,12 @@ impl HttpServer {
         let state = http_state.center.state.lock().unwrap();
 
         // Get the set of TSIG keys and related zones from the TSIG key store.
+        trace!("Iterating over TSIG key store entries");
         for (tsig_key_name, key) in state.tsig_store.map.iter() {
+            trace!(
+                " TSIG key '{tsig_key_name}' is associated with {} zones",
+                key.zones.len()
+            );
             let zone_names = key.zones.iter().map(|item| item.0.name.clone()).collect();
             tsig_key_info.insert(
                 tsig_key_name.clone(),
