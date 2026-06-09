@@ -149,8 +149,7 @@ loaded by Cascade.
    A hook for reviewing a loaded zone. This is a path to an executable.
 
    This command string will be executed in the user's shell when a new version
-   of a zone is loaded.  At the moment, it will only be run if ``required`` is
-   true.
+   of a zone is loaded.
 
    It will receive the following information via environment variables:
 
