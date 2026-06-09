@@ -32,9 +32,14 @@ Released yyyy-mm-dd.
 ### Documentation improvements
 
 - Fixes and improvements to the "Zone Transfers" page. ([#704] by @jpmens)
+- required=true no longer seems to exist, hence remove its mention from
+  comment. ([#708] by @jpmens)
 - Corrections to the "Key Management" documentation page. ([#711] by @jpmens)
 - Note in CLI help that the source to zone add can include a TSIG key name.
   (#[714] by @ximon18)
+- Fix position of colon ':' character in tsig add subcommand docs. ([#716] by
+  @ximon18)
+- Add inline table example to policy template. ([#720] by @jpmens)
 
 ### Known issues
 
@@ -44,8 +49,11 @@ Thanks once again to @jpmens for testing Cascade and providing valuable
 feedback and contributions to the documentation.
 
 [#704]: https://github.com/NLnetLabs/cascade/pull/704
+[#708]: https://github.com/NLnetLabs/cascade/pull/708
 [#711]: https://github.com/NLnetLabs/cascade/pull/711
 [#714]: https://github.com/NLnetLabs/cascade/pull/714
+[#716]: https://github.com/NLnetLabs/cascade/pull/716
+[#720]: https://github.com/NLnetLabs/cascade/pull/720
 [#722]: https://github.com/NLnetLabs/cascade/pull/722
 
 ## 0.1.0-beta1 'Slàinte mhath'
