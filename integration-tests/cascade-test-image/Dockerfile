@@ -69,8 +69,6 @@ RUN <<EOF
   softhsm2-util --init-token --label Cascade --pin 1234 --so-pin 1234 --free
 EOF
 
-ENV PATH="$PATH:/root/.local/bin"
-
 # Copy source files into container in case we need to build from source
 COPY etc/ /cascade/etc/
 COPY Cargo.toml Cargo.lock build.rs /cascade/
