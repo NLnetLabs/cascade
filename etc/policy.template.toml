@@ -458,6 +458,15 @@ send-notify-to = []
 #
 # `"<IP>[^<TSIG_KEY_NAME>]"`
 #
+# Nameservers may alternatively be specified as an inline table, in which case
+# PORT is mandatory but not checked other than its value must lie between 0
+# and 65535:
+#
+# `provide-xfr-to = [
+#        { addr = "<IP>:<PORT>", tsig-key-name = "<TSIG_KEY_NAME>" },
+#         ...
+# ]`
+#
 # If a TSIG key name is specified, a key by that name must exist in the
 # Cascade TSIG key store and will be used to authenticate communication with
 # the nameserver.
