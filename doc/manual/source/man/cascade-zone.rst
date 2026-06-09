@@ -26,6 +26,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`history` ``<NAME>``
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`maintenance` ``<enable|disable>`` ``<NAME>``
+
 Description
 -----------
 
@@ -223,6 +225,8 @@ Options for :subcmd:`zone reject`
 Options for :subcmd:`zone override`
 -----------------------------------
 
+.. versionadded:: 0.1.0-beta1
+
 .. option:: <--unsigned|--signed>
 
    Whether the zone to override is at the unsigned or signed review stage.
@@ -247,9 +251,22 @@ Options for :subcmd:`zone status`
 Options for :subcmd:`zone reset`
 ---------------------------------
 
+.. versionadded:: 0.1.0-beta1
+
 .. option:: <NAME>
 
    The name of the zone to reset the pipeline of.
+
+Options for :subcmd:`zone maintenance`
+--------------------------------------
+
+.. option:: <enable|disable>
+
+   Whether maintenance mode should be enabled or disabled.
+ 
+.. option:: <NAME>
+
+   The name of the zone to toggle maintenance mode of.
 
 See Also
 --------

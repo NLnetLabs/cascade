@@ -200,7 +200,7 @@ impl StorageZoneHandle<'_> {
             trace!("Updating the viewer in 'LoadedReviewServer'");
             let old_loaded_reviewer = LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
 
-            let mut state = zone.state.lock().unwrap();
+            let mut state = zone.write(&center);
 
             // Transition into the reviewing state.
             match transition(&mut state.storage.machine) {
@@ -225,7 +225,7 @@ impl StorageZoneHandle<'_> {
                 domain::base::Serial(serial.into()),
             );
 
-            state = zone.state.lock().unwrap();
+            state = zone.write(&center);
 
             state.storage.background_tasks.finish();
         });
@@ -436,7 +436,7 @@ impl StorageZoneHandle<'_> {
             trace!("Updating the viewer in 'SignedReviewServer'");
             let old_signed_reviewer = SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
 
-            let mut state = zone.state.lock().unwrap();
+            let mut state = zone.write(&center);
 
             // Transition into the reviewing state.
             match transition(&mut state.storage.machine) {
@@ -461,7 +461,7 @@ impl StorageZoneHandle<'_> {
                 domain::base::Serial(serial.into()),
             );
 
-            state = zone.state.lock().unwrap();
+            state = zone.write(&center);
 
             state.storage.background_tasks.finish()
         });
@@ -526,12 +526,7 @@ impl StorageZoneHandle<'_> {
                 LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
 
             // Examine the current state.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
+            let mut handle = zone.write_handle(&center);
             let cleaner = match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::CleanWholePending(s)) => {
                     let (s, cleaner) = s
@@ -686,12 +681,7 @@ impl StorageZoneHandle<'_> {
             // NOTE: The outer function, which is spawning the background task,
             // has a lock of the zone state. Thus, the following lock cannot be
             // taken until the outer function terminates.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
+            let mut handle = zone.write_handle(&center);
 
             match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::Cleaning(s)) => {
@@ -754,12 +744,7 @@ impl StorageZoneHandle<'_> {
             // NOTE: The outer function, which is spawning the background task,
             // has a lock of the zone state. Thus, the following lock cannot be
             // taken until the outer function terminates.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
+            let mut handle = zone.write_handle(&center);
 
             // Update the zone data storage state machine.
             let cleaner = match transition(&mut handle.state.storage.machine) {
@@ -802,7 +787,7 @@ impl StorageZoneHandle<'_> {
                 num_records,
             });
 
-            handle.finish_switch(cleaner);
+            handle.get().finish_switch(cleaner);
 
             handle.state.storage.background_tasks.finish();
         });
@@ -842,12 +827,7 @@ impl StorageZoneHandle<'_> {
                 LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
 
             // Examine the current state.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
+            let mut handle = zone.write_handle(&center);
             let cleaner = match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::CleanLoadedPending(s)) => {
                     let (s, cleaner) = s.stop_review(old_loaded_reviewer);
