@@ -25,6 +25,10 @@ you to :doc:`get to know Cascade <before-you-start>` and are eager to hear
 :ref:`your experiences <reach-out>` so we can improve every aspect. Please
 consider the current :doc:`limitations`.
 
+.. tip:: To see at a glance what's new in the beta1 release read our
+         `"Cascade: Start your engines!" <https://blog.nlnetlabs.nl/cascade-beta1-release/>`_
+         blog post.
+
 Cascade has the following design goals:
 
 Flexibility
