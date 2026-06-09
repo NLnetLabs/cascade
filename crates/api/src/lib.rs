@@ -466,15 +466,15 @@ pub struct ZoneStatus {
 pub struct LastPublishedZone {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,
-    // TODO:
-    //  - time of publish
-    //  - number of records
-    //  - size in bytes
+    pub timestamp: SystemTime,
+    pub num_records: usize,
+    // TODO: size in bytes
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Progress {
     Waiting,
+    Restoring,
     Loading,
     LoadedReview,
     HaltLoaded,
@@ -900,7 +900,7 @@ pub struct ServerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct OutboundPolicyInfo {
-    pub accept_xfr_from: Vec<NameserverCommsPolicyInfo>,
+    pub provide_xfr_to: Vec<NameserverCommsPolicyInfo>,
     pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
 }
 

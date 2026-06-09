@@ -50,10 +50,8 @@ use crate::units::key_manager::KmipServerCredentialsFileMode;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
-use crate::zone::HistoricalEvent;
-use crate::zone::HistoricalEventType;
-use crate::zone::ZoneHandle;
 use crate::zone::machine::ZoneStateMachine;
+use crate::zone::{HistoricalEvent, HistoricalEventType, ZoneByName};
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -218,11 +216,9 @@ impl HttpServer {
         let center = &state.center;
 
         // Determine which pipelines are halted.
-        for zone in center.state.lock().unwrap().zones.iter() {
-            if let Ok(zone_state) = zone.0.state.lock()
-                && let Some(err) = zone_state.machine.display_halted_reason()
-            {
-                halted_zones.push((zone.0.name.clone(), err.clone()))
+        for ZoneByName(zone) in center.state.lock().unwrap().zones.iter() {
+            if let Some(err) = zone.read().machine.display_halted_reason() {
+                halted_zones.push((zone.name.clone(), err.clone()))
             }
         }
 
@@ -322,15 +318,7 @@ impl HttpServer {
         let do_zone_reset = || {
             let zone = center::get_zone(&state.center, &name).ok_or(ZoneResetError::NoSuchZone)?;
 
-            let mut zone_state = zone.state.lock().unwrap();
-
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut zone_state,
-                center: &state.center,
-            };
-
-            match handle.try_reset() {
+            match zone.write_handle(&state.center).get().try_reset() {
                 Ok(_) => Ok(ZoneResetOutput {
                     zone: zone.name.clone(),
                 }),
@@ -390,7 +378,7 @@ impl HttpServer {
                 .0
                 .clone();
 
-            let zone_state = zone.state.lock().unwrap();
+            let zone_state = zone.read();
             halted_reason = zone_state.halted_reason();
 
             policy = zone_state
@@ -474,7 +462,13 @@ impl HttpServer {
                 .map(|r| Serial::from(u32::from(r.rdata.serial)));
 
             progress = match zone_state.machine {
-                ZoneStateMachine::Waiting(..) => Progress::Waiting,
+                ZoneStateMachine::Waiting(..) => {
+                    if zone_state.storage.is_restoring() {
+                        Progress::Restoring
+                    } else {
+                        Progress::Waiting
+                    }
+                }
                 ZoneStateMachine::Loading(..) => Progress::Loading,
                 ZoneStateMachine::LoadedReview(..) => Progress::LoadedReview,
                 ZoneStateMachine::HaltLoaded(..) => Progress::HaltLoaded,
@@ -491,6 +485,8 @@ impl HttpServer {
                 .map(|p| LastPublishedZone {
                     loaded_serial: p.loaded_serial,
                     signed_serial: p.signed_serial,
+                    num_records: p.num_records,
+                    timestamp: p.timestamp,
                 });
 
             let mut found_error = None;
@@ -617,7 +613,7 @@ impl HttpServer {
 
         // TODO: Report separate information for ongoing and completed loads.
         let receipt_report = {
-            let state = zone.state.lock().unwrap();
+            let state = zone.read();
             let active = state.loader.active_load_metrics.as_ref();
             let last = state.loader.last_load_metrics.as_ref();
             active
@@ -671,9 +667,9 @@ impl HttpServer {
             Some(zone) => zone,
             None => return Json(Err(ZoneHistoryError::ZoneDoesNotExist)),
         };
-        let zone_state = zone.state.lock().unwrap();
         Json(Ok(ZoneHistory {
-            history: zone_state
+            history: zone
+                .read()
                 .history
                 .iter()
                 .map(|i| i.clone().into())
@@ -752,15 +748,11 @@ impl HttpServer {
             let zone =
                 center::get_zone(&state.center, &name).ok_or(ZoneOverrideError::NoSuchZone)?;
 
-            let mut zone_state = zone.state.lock().unwrap();
-
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut zone_state,
-                center: &state.center,
-            };
-
-            match handle.try_override_loaded_reject() {
+            match zone
+                .write_handle(&state.center)
+                .get()
+                .try_override_loaded_reject()
+            {
                 Ok(_) => Ok(ZoneOverrideOutput {
                     review_stage: ZoneReviewStage::Unsigned,
                     zone: zone.name.clone(),
@@ -825,15 +817,11 @@ impl HttpServer {
             let zone =
                 center::get_zone(&state.center, &name).ok_or(ZoneOverrideError::NoSuchZone)?;
 
-            let mut zone_state = zone.state.lock().unwrap();
-
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut zone_state,
-                center: &state.center,
-            };
-
-            match handle.try_override_signed_reject() {
+            match zone
+                .write_handle(&state.center)
+                .get()
+                .try_override_signed_reject()
+            {
                 Ok(_) => Ok(ZoneOverrideOutput {
                     review_stage: ZoneReviewStage::Signed,
                     zone: zone.name.clone(),
@@ -867,7 +855,7 @@ impl HttpServer {
         let zone =
             center::get_zone(&state.center, &name).ok_or(ZoneMaintenanceModeError::NoSuchZone)?;
 
-        let mut zone_state = zone.state.lock().unwrap();
+        let mut zone_state = zone.write(&state.center);
 
         if zone_state.maintenance_mode == enable {
             return Err(ZoneMaintenanceModeError::AlreadyInThatState);
@@ -947,20 +935,16 @@ impl HttpServer {
                 .expect("we just reloaded these policies");
 
             for zone_name in &pol.zones {
-                let zone = state
+                let ZoneByName(zone) = state
                     .zones
                     .get(zone_name)
                     .expect("zones and policies are consistent");
 
-                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
-                state.policy = Some(pol.latest.clone());
+                zone.write(center).policy = Some(pol.latest.clone());
 
-                center.key_manager.on_zone_policy_changed(
-                    center,
-                    &zone.0,
-                    old.clone(),
-                    new.clone(),
-                );
+                center
+                    .key_manager
+                    .on_zone_policy_changed(center, zone, old.clone(), new.clone());
             }
         }
 
@@ -1032,8 +1016,8 @@ impl HttpServer {
         let p_outbound = &p.latest.server.outbound;
         let server = ServerPolicyInfo {
             outbound: OutboundPolicyInfo {
-                accept_xfr_from: p_outbound
-                    .accept_xfr_from
+                provide_xfr_to: p_outbound
+                    .provide_xfr_to
                     .iter()
                     .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
@@ -1301,7 +1285,7 @@ impl HttpServer {
                 .key_manager
                 .publication_nameservers
                 .iter()
-                .chain(policy.latest.server.outbound.accept_xfr_from.iter())
+                .chain(policy.latest.server.outbound.provide_xfr_to.iter())
                 .chain(policy.latest.server.outbound.send_notify_to.iter())
                 .filter_map(|acl| acl.tsig_key_name.as_ref())
                 .peekable();

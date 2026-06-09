@@ -101,6 +101,14 @@ fn main() -> ExitCode {
                 }
             }
 
+            // Restore pending policies.
+            state
+                .policies
+                .extend(policies.into_iter().map(|(name, spec)| {
+                    let policy = spec.parse(&name);
+                    (name, policy)
+                }));
+
             // Restore pending zones.
             for name in zones {
                 assert!(
@@ -115,23 +123,14 @@ fn main() -> ExitCode {
                 state.zones.insert(ZoneByName(Arc::new(zone)));
             }
 
-            // Restore pending policies.
-            state
-                .policies
-                .extend(policies.into_iter().map(|(name, spec)| {
-                    let policy = spec.parse(&name);
-                    (name, policy)
-                }));
-
             // Update policy.zones
-            for zone in &state.zones {
-                let zone_state = zone.0.state.lock().expect("zone state lock should work");
-                if let Some(ref policy) = zone_state.policy {
+            for ZoneByName(zone) in &state.zones {
+                if let Some(ref policy) = zone.read().policy {
                     let pol = state
                         .policies
                         .get_mut(&policy.name)
                         .expect("zone policy should exist");
-                    pol.zones.insert(zone.0.name.clone());
+                    pol.zones.insert(zone.name.clone());
                 }
             }
 
@@ -211,13 +210,13 @@ fn main() -> ExitCode {
                     .expect("we just reloaded these policies");
 
                 for zone_name in &pol.zones {
-                    let zone = state
+                    let ZoneByName(zone) = state
                         .zones
                         .get(zone_name)
                         .expect("zones and policies are consistent");
 
-                    let mut state = zone.0.state.lock().expect("lock isn't poisoned");
-                    state.policy = Some(pol.latest.clone());
+                    // TODO: Mark these zones dirty.
+                    zone.state.write_cleanly().policy = Some(pol.latest.clone());
                 }
             }
 
@@ -463,7 +462,7 @@ fn check_dnst_version(config: &Config) -> bool {
     };
 
     // Change this string and the match pattern to whatever version we require in the future
-    let required_version = ">0.2.0";
+    let required_version = ">=0.2.0";
     let res = match (major, minor, patch) {
         // major = 0; minor >= 2; patch = *
         (0, 2.., ..) => true,
