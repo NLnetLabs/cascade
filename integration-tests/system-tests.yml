@@ -1,0 +1,318 @@
+# This workflow is currently only for use with https://github.com/nektos/act
+# via the `act-wrapper` script at the root of this repository, which creates
+# a custom container with a freshly built cascade.
+#
+# Further documentation is in TESTING.md.
+#
+# TL;DR: `./act-wrapper --job your-test`
+#
+# ## Creating a new test
+#
+# You can use the test creation script to generate a new test:
+#
+# `integration-tests/scripts/add-test.sh <test-name> [<description>] [<PR>]`.
+#
+# It will add the stub job to this workflow file and create the action file for
+# the actual test in `integration-tests/tests/<test-name>` .
+
+# GitHub Actions environment variables are documented at
+# https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+
+name: System/Integration tests
+on:
+  # Triggering on PRs and arbitrary branch pushes is not enabled because most
+  # of the time this expensive test suite should not be run. Using this
+  # trigger allows explicitly running this test suite on a selected branch.
+  workflow_dispatch:
+    inputs:
+      build-profile:
+        description: Whether to build and test in debug mode or release mode.
+        required: false
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+      log-level:
+        description: The level of logging that Cascade should output.
+        required: false
+        default: debug
+        type: choice
+        options:
+          - error
+          - warning
+          - info
+          - debug
+          - trace
+
+env:
+  # Set this assignment to your choosing to set the cargo build verbosity
+  CARGO_TERM_VERBOSE: ${{ github.actor != 'nektos/act' }}
+  # CARGO_TERM_VERBOSE: true
+  RUST_BACKTRACE: 1
+
+defaults:
+  run:
+    # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+
+jobs:
+  test-release-version:
+    name: Example test with prepare environment and cascade --version (release)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/set-build-profile
+      with:
+        build-profile: release
+    - run: cascade --version
+    - run: file $(which cascade)
+
+  test-version:
+    name: Example test with prepare environment and cascade --version (debug)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/prepare-systest-env
+    - run: cascade --version
+    - run: file $(which cascade)
+
+  add-zone-query:
+    name: Add a zone, query the published zone
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/add-zone-query
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/402
+  load-zonefile:
+    name: Load a zone from a file, query the published zone
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/load-zonefile
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/398
+  review-unsigned-zone:
+    name: Add a zone, approve the unsigned zone, query the published zone
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/review-unsigned-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  review-unsigned-zone2:
+    name: Test that the review server has the original zone
+    runs-on: ubuntu-latest
+    strategy:
+      #max-parallel: 1
+      matrix:
+        rust: [stable]
+        test_idx: [1, 2]
+        key: ['Kexample.+015+02835.key']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/review-unsigned-zone2
+        with:
+          log-level: ${{ inputs.log-level }}
+          test_idx: ${{ matrix.test_idx }}
+          key: ${{ matrix.key }}
+
+  ixfr-in:
+    name: Receive a zone via IXFR from the NSD primary.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/ixfr-in
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  incremental-signing:
+    name: Test incremental signing.
+    runs-on: ubuntu-latest
+    strategy:
+      #max-parallel: 1
+      matrix:
+        rust: [stable]
+        zonemd: [''] #, 'zmd384']
+        policy: ['nsec', 'nsec3', 'nsec3-opt-out']
+        test_idx: [1, 2, 3, 5]
+        key: ['Kexample.+015+02835.key']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/incremental-signing
+        with:
+          log-level: ${{ inputs.log-level }}
+          zonemd: ${{ matrix.zonemd }}
+          policy: ${{ matrix.policy }}
+          test_idx: ${{ matrix.test_idx }}
+          key: ${{ matrix.key }}
+
+  incremental-signing-nsec-nsec3:
+    name: Test switching between NSEC and NSEC3
+    runs-on: ubuntu-latest
+    strategy:
+      #max-parallel: 1
+      matrix:
+        rust: [stable]
+        zonemd: [''] #, 'zmd384']
+        policy: ['nsec3/nsec', 'nsec3-opt-out/nsec', 'nsec/nsec3',
+                 'nsec3-opt-out/nsec3', 'nsec/nsec3-opt-out',
+                 'nsec3/nsec3-opt-out']
+        test_idx: [1, 2, 3]
+        key: ['Kexample.+015+02835.key']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/incremental-signing-nsec-nsec3
+        with:
+          log-level: ${{ inputs.log-level }}
+          zonemd: ${{ matrix.zonemd }}
+          policy: ${{ matrix.policy }}
+          test_idx: ${{ matrix.test_idx }}
+          key: ${{ matrix.key }}
+
+  notify-in-for-unknown-zone:
+    name: Receive a NOTIFY for a zone that is unknown to Cascade.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: release
+      - uses: ./integration-tests/tests/notify-in-for-unknown-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  remove-zone:
+    name: Add, sign and remove a zone.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/remove-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  all-rr-types:
+    name: Tests loading of all supported RR types.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/all-rr-types
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/564
+  upstream-tsig:
+    name: Use TSIG with an upstream nameserver.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        key-source: [cmdline, file]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/upstream-tsig
+        with:
+          log-level: ${{ inputs.log-level }}
+          key-source: ${{ matrix.key-source }}
+
+  downstream-tsig:
+    name: Using TSIG with downstream nameservers.
+    runs-on: ubuntu-latest
+    strategy:
+      # max-parallel: 1
+      fail-fast: true
+      matrix:
+        send-notify-to: [ '',  '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
+        provide-xfr-to: [ '', '127.0.0.1', '127.0.0.1^tsig-key' ]
+        downstream-expects-tsig: [ 0, 1 ]
+        downstream-uses-tsig: [ 0, 1 ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/downstream-tsig
+        with:
+          log-level: ${{ inputs.log-level }}
+          send-notify-to: ${{ matrix.send-notify-to }}
+          provide-xfr-to: ${{ matrix.provide-xfr-to }}
+          downstream-expects-tsig: ${{ matrix.downstream-expects-tsig }}
+          downstream-uses-tsig: ${{ matrix.downstream-uses-tsig }}
+
+  persist-zone:
+    name: Added zone should still exist after restart.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/persist-zone
+        with:
+          log-level: ${{ inputs.log-level }}

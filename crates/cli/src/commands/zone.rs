@@ -1,12 +1,12 @@
-use std::ops::ControlFlow;
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
-use camino::Utf8PathBuf;
-use futures_util::TryFutureExt;
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::ansi;
 use crate::api::*;
-use crate::client::{CascadeApiClient, format_http_error};
+use crate::client::CascadeApiClient;
 use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]
@@ -18,13 +18,14 @@ pub struct Zone {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum ZoneCommand {
-    /// Register a new zone
+    /// Add a new zone
     #[command(name = "add")]
     Add {
         name: ZoneName,
 
-        /// The zone source can be an IP address (with or without port,
-        /// defaults to port 53) or a file path.
+        /// The source to obtain the zone content from:
+        /// `IP:[PORT][^TSIG_KEY_NAME]` (port defaults to 53) or the path to
+        /// a zone file locally available to the `cascaded` daemon.
         // TODO: allow supplying different tcp and/or udp port?
         #[arg(long = "source")]
         source: ZoneSource,
@@ -81,6 +82,24 @@ pub enum ZoneCommand {
         serial: u32,
     },
 
+    /// Override a previous rejection
+    #[command(name = "override")]
+    Override {
+        /// Whether to approve an unsigned or signed version of the zone.
+        #[command(flatten)]
+        review_stage: ZoneReviewStage,
+
+        /// The name of the zone.
+        name: ZoneName,
+    },
+
+    /// Reset the pipeline for a halted zone
+    #[command(name = "reset")]
+    Reset {
+        /// The name  of the zone
+        zone: ZoneName,
+    },
+
     /// Reject a zone being reviewed.
     #[command(name = "reject")]
     Reject {
@@ -109,9 +128,25 @@ pub enum ZoneCommand {
     /// Get the history of a single zone
     #[command(name = "history")]
     History {
-        /// The zone toe report the history of.
+        /// The zone to report the history of.
         zone: ZoneName,
     },
+
+    /// Resume a paused zone pipeline
+    #[command(name = "maintenance")]
+    Maintenance {
+        /// Enable or disable maintenance mode.
+        #[command(subcommand)]
+        maintenance: Maintenance,
+    },
+}
+
+#[derive(Clone, Debug, clap::Subcommand)]
+pub enum Maintenance {
+    /// Enable maintenance mode; preventing new loading and signing operations.
+    Enable { zone: ZoneName },
+    /// Disable maintenance mode and resume normal operation.
+    Disable { zone: ZoneName },
 }
 
 /// The stage to review a zone at.
@@ -199,33 +234,31 @@ impl Zone {
                 }
 
                 let res: Result<ZoneAddResult, ZoneAddError> = client
-                    .post("zone/add")
-                    .json(&ZoneAdd {
-                        name,
-                        source,
-                        policy,
-                        key_imports,
-                    })
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                    .post_json_with(
+                        "zone/add",
+                        &ZoneAdd {
+                            name,
+                            source: source.try_into()?,
+                            policy,
+                            key_imports,
+                        },
+                    )
+                    .await?;
 
                 match res {
                     Ok(res) => {
-                        println!("Added zone {}", res.name);
+                        println!(
+                            "Zone {} scheduled for loading, use 'cascade zone status {}' to see the status.",
+                            res.name, res.name
+                        );
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to add zone: {e}")),
                 }
             }
             ZoneCommand::Remove { name } => {
-                let res: Result<ZoneRemoveResult, ZoneRemoveError> = client
-                    .post(&format!("zone/{name}/remove"))
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<ZoneRemoveResult, ZoneRemoveError> =
+                    client.post_json(&format!("zone/{name}/remove")).await?;
 
                 match res {
                     Ok(res) => {
@@ -236,12 +269,7 @@ impl Zone {
                 }
             }
             ZoneCommand::List => {
-                let response: ZonesListResult = client
-                    .get("zone/")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let response: ZonesListResult = client.get_json("zone/").await?;
 
                 for zone_name in response.zones {
                     println!("{}", zone_name);
@@ -250,12 +278,7 @@ impl Zone {
             }
             ZoneCommand::Reload { zone } => {
                 let url = format!("zone/{zone}/reload");
-                let res: Result<ZoneReloadResult, ZoneReloadError> = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<ZoneReloadResult, ZoneReloadError> = client.post_json(&url).await?;
 
                 match res {
                     Ok(res) => {
@@ -263,6 +286,47 @@ impl Zone {
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to reload zone: {e}")),
+                }
+            }
+            ZoneCommand::Reset { zone } => {
+                let url = format!("zone/{zone}/reset");
+                let result: ZoneResetResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(ZoneResetOutput { zone }) => {
+                        println!("Reset the pipeline for zone '{zone}'");
+                        Ok(())
+                    }
+                    Err(err) => Err(format!("Could not reset zone '{zone}': {err}")),
+                }
+            }
+            ZoneCommand::Override { name, review_stage } => {
+                let stage = match review_stage {
+                    ZoneReviewStage {
+                        unsigned: true,
+                        signed: false,
+                    } => "unsigned",
+                    ZoneReviewStage {
+                        unsigned: false,
+                        signed: true,
+                    } => "signed",
+                    _ => unreachable!(),
+                };
+
+                let url = format!("zone/{name}/{stage}/override");
+                let result: ZoneOverrideResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(ZoneOverrideOutput {
+                        zone,
+                        review_stage: _,
+                    }) => {
+                        println!("Overridden {stage} review for '{zone}'");
+                        Ok(())
+                    }
+                    Err(err) => Err(format!(
+                        "Could not override review for zone '{name}': {err}"
+                    )),
                 }
             }
             ZoneCommand::Approve {
@@ -283,12 +347,7 @@ impl Zone {
                 };
 
                 let url = format!("/zone/{name}/{stage}/{serial}/approve");
-                let result: ZoneReviewResult = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let result: ZoneReviewResult = client.post_json(&url).await?;
 
                 match result {
                     Ok(ZoneReviewOutput {}) => {
@@ -321,12 +380,7 @@ impl Zone {
                 };
 
                 let url = format!("/zone/{name}/{stage}/{serial}/reject");
-                let result: ZoneReviewResult = client
-                    .post(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let result: ZoneReviewResult = client.post_json(&url).await?;
 
                 match result {
                     Ok(ZoneReviewOutput {}) => {
@@ -343,12 +397,7 @@ impl Zone {
             }
             ZoneCommand::Status { zone, detailed } => {
                 let url = format!("zone/{}/status", zone);
-                let response: Result<ZoneStatus, ZoneStatusError> = client
-                    .get(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let response: Result<ZoneStatus, ZoneStatusError> = client.get_json(&url).await?;
 
                 match response {
                     Ok(status) => Self::print_zone_status(client, status, detailed).await,
@@ -359,12 +408,7 @@ impl Zone {
             }
             ZoneCommand::History { zone } => {
                 let url = format!("zone/{}/history", zone);
-                let response: Result<ZoneHistory, ZoneHistoryError> = client
-                    .get(&url)
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+                let response: Result<ZoneHistory, ZoneHistoryError> = client.get_json(&url).await?;
 
                 match response {
                     Ok(response) => {
@@ -377,6 +421,8 @@ impl Zone {
                                 None => "-".to_string(),
                             };
                             let what = match &history_item.event {
+                                HistoricalEvent::StartedLoad => "Started load".to_string(),
+                                HistoricalEvent::StartedResign => "Started resign".to_string(),
                                 HistoricalEvent::Added => "Zone added".to_string(),
                                 HistoricalEvent::Removed => "Zone removed".to_string(),
                                 HistoricalEvent::PolicyChanged => "Policy changed".to_string(),
@@ -388,14 +434,24 @@ impl Zone {
                                     format!(
                                         "Signing succeeded (triggered by {})",
                                         match trigger {
-                                            SigningTrigger::ExternallyModifiedKeySetState =>
-                                                "externally modified keyset state",
-                                            SigningTrigger::SignatureExpiration =>
-                                                "pending signature expiration",
-                                            SigningTrigger::ZoneChangesApproved =>
-                                                "unsigned zone review approved",
-                                            SigningTrigger::KeySetModifiedAfterCron =>
-                                                "keyset cron modified keyset state",
+                                            SigningTrigger::Load => "loading a new instance",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: false,
+                                            }) => "a change in signing keys",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: true,
+                                            }) => "signatures needing refresh",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: true,
+                                            }) =>
+                                                "a change in signing keys and signatures needing refresh",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: false,
+                                            }) => "<unknown>",
                                         }
                                     )
                                 }
@@ -403,14 +459,24 @@ impl Zone {
                                     format!(
                                         "Signing failed (triggered by {}): {reason}",
                                         match trigger {
-                                            SigningTrigger::ExternallyModifiedKeySetState =>
-                                                "externally modified keyset state",
-                                            SigningTrigger::SignatureExpiration =>
-                                                "pending signature expiration",
-                                            SigningTrigger::ZoneChangesApproved =>
-                                                "signed zone review approved",
-                                            SigningTrigger::KeySetModifiedAfterCron =>
-                                                "keyset cron modified keyset state",
+                                            SigningTrigger::Load => "loading a new instance",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: false,
+                                            }) => "a change in signing keys",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: true,
+                                            }) => "signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: true,
+                                                sigs_need_refresh: true,
+                                            }) =>
+                                                "a change in signing keys and signatures nearing expiration",
+                                            SigningTrigger::Resign(ResigningTrigger {
+                                                keys_changed: false,
+                                                sigs_need_refresh: false,
+                                            }) => "<unknown>",
                                         }
                                     )
                                 }
@@ -430,6 +496,12 @@ impl Zone {
                                         ZoneReviewStatus::Rejected => "rejected",
                                     }
                                 ),
+                                HistoricalEvent::UnsignedHookFailed { err, .. } => {
+                                    format!("Could not execute loaded review hook: {err}",)
+                                }
+                                HistoricalEvent::SignedHookFailed { err, .. } => {
+                                    format!("Could not execute signed review hook: {err}",)
+                                }
                                 HistoricalEvent::KeySetCommand {
                                     cmd,
                                     elapsed,
@@ -456,6 +528,7 @@ impl Zone {
                                         elapsed.as_secs()
                                     )
                                 }
+                                HistoricalEvent::LoadingFailed { reason } => reason.clone(),
                             };
                             println!("{when} {serial:10} {what}");
                         }
@@ -464,6 +537,54 @@ impl Zone {
                     Err(ZoneHistoryError::ZoneDoesNotExist) => {
                         Err(format!("zone `{zone}` does not exist"))
                     }
+                }
+            }
+            ZoneCommand::Maintenance { maintenance } => {
+                let (name, state) = match &maintenance {
+                    Maintenance::Enable { zone } => (zone, "enable"),
+                    Maintenance::Disable { zone } => (zone, "disable"),
+                };
+                let url = format!("/zone/{name}/maintenance/{state}");
+                let result: ZoneMaintenanceModeResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(_) => {
+                        if let Maintenance::Enable { .. } = maintenance {
+                            println!(
+                                "Maintenance mode for zone `{name}` is now {}enabled{}",
+                                ansi::BOLD,
+                                ansi::RESET
+                            );
+                            println!("");
+                            println!(
+                                "Cascade will no longer automatically start new loading and signing operations"
+                            );
+                            println!(
+                                "Run {}`cascade zone maintenance stop {name}`{} to resume automatic operation",
+                                ansi::BLUE,
+                                ansi::RESET,
+                            );
+                        } else {
+                            println!(
+                                "Maintenance mode for zone `{name}` is now {}disabled{}",
+                                ansi::BOLD,
+                                ansi::RESET
+                            );
+                            println!("");
+                            println!(
+                                "Cascade will automatically start new loading and signing operations when appropriate."
+                            );
+                        }
+                        Ok(())
+                    }
+                    Err(err) => match err {
+                        ZoneMaintenanceModeError::NoSuchZone => {
+                            Err(format!("zone `{name}` does not exist"))
+                        }
+                        ZoneMaintenanceModeError::AlreadyInThatState => Err(format!(
+                            "maintenance mode for zone `{name}` was already {state}d"
+                        )),
+                    },
                 }
             }
         }
@@ -476,12 +597,7 @@ impl Zone {
     ) -> Result<(), String> {
         // Fetch the policy for the zone.
         let url = format!("policy/{}", zone.policy);
-        let response: Result<PolicyInfo, PolicyInfoError> = client
-            .get(&url)
-            .send()
-            .and_then(|r| r.json())
-            .await
-            .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+        let response: Result<PolicyInfo, PolicyInfoError> = client.get_json(&url).await?;
 
         let policy = response.map_err(|_| {
             format!(
@@ -490,35 +606,84 @@ impl Zone {
             )
         })?;
 
-        // Determine progress
-        let progress = determine_progress(&zone, &policy);
+        println!("zone:   {}", zone.name);
+        println!("policy: {}", zone.policy);
+        println!("source: {}", zone.source);
+
+        let loader_review = match &policy.loader.review.mode {
+            ReviewPolicyMode::Off => "off",
+            ReviewPolicyMode::Script { hook } => &format!("script `{hook}`"),
+            ReviewPolicyMode::Manual => "manual",
+        };
+
+        let signer_review = match &policy.signer.review.mode {
+            ReviewPolicyMode::Off => "off",
+            ReviewPolicyMode::Script { hook } => &format!("script `{hook}`"),
+            ReviewPolicyMode::Manual => "manual",
+        };
+
+        println!("");
+        println!("review");
+        println!("  loaded: {loader_review}");
+        println!("  signed: {signer_review}");
+        println!("");
+
+        println!("last published");
+        if let Some(last) = &zone.last_published {
+            println!("  loaded serial: {}", last.loaded_serial);
+            println!("  signed serial: {}", last.signed_serial);
+            println!(
+                "  timestamp:     {}",
+                jiff::Timestamp::try_from(last.timestamp).unwrap()
+            );
+            println!("  size:          {} records", last.num_records);
+        } else {
+            println!("  <no versions published yet>");
+        }
 
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
-        progress.print(&zone, &policy);
+        println!("");
+        print_status(&zone, &policy);
 
-        // If the pipeline is halted, show that.
-        match zone.pipeline_mode {
-            PipelineMode::Running => { /* Nothing to do */ }
-            PipelineMode::SoftHalt(err) => {
-                println!(
-                    "{}\u{78} An error occurred that prevents further processing of this zone version:{}",
-                    ansi::RED,
-                    ansi::RESET
-                );
-                println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
-            }
-            PipelineMode::HardHalt(err) => {
-                println!(
-                    "{}\u{78} The pipeline for this zone is hard halted due to a serious error:{}",
-                    ansi::RED,
-                    ansi::RESET
-                );
-                println!("{}\u{78} {err}{}", ansi::RED, ansi::RESET);
+        if zone.last_published.is_some() {
+            println!("");
+            println!("Published zone available at:");
+            for addr in zone.publish_addr {
+                println!("  - {addr}")
             }
         }
 
+        if let Some(error) = zone.error {
+            println!("");
+            println!("An error occurred during the last operation:");
+            println!("  {}ERROR: {error}{}", ansi::RED, ansi::RESET);
+            println!(
+                "  Run {}`cascade zone history {}`{} for more information.",
+                ansi::BLUE,
+                zone.name,
+                ansi::RESET
+            );
+        }
+
+        if zone.maintenance_mode {
+            println!("");
+            println!(
+                "{}WARNING: This zone is in maintenance mode{}",
+                ansi::YELLOW,
+                ansi::RESET
+            );
+            println!("  Cascade will not automatically start new loading and signing operations");
+            println!(
+                "  Run {}`cascade zone maintenance disable {}`{} to resume normal operation",
+                ansi::BLUE,
+                zone.name,
+                ansi::RESET
+            );
+        }
+
         if detailed {
+            println!("");
             println!("DNSSEC keys:");
             for key in zone.keys {
                 match key.key_type {
@@ -542,448 +707,274 @@ impl Zone {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Progress {
-    WaitingForChanges,
-    ChangesReceived,
-    AtUnsignedReview,
-    WaitingToSign,
-    Signing,
-    Signed,
-    SigningFailed,
-    AtSignedReview,
-    Published,
+pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
+    let current = zone.progress;
+
+    let progress = match current {
+        Progress::Restoring => "restoring",
+        Progress::Waiting => "idle",
+        Progress::Loading => "loading",
+        Progress::LoadedReview => "waiting for loaded review",
+        Progress::HaltLoaded => "halted after loaded review",
+        Progress::Signing => "signing",
+        Progress::SigningFailed => "signing failed",
+        Progress::SignedReview => "waiting for siged review",
+        Progress::HaltSigned => "halted after signed review",
+    };
+
+    println!("status: {}{progress}{}", ansi::BLUE, ansi::RESET);
+
+    if matches!(current, Progress::Waiting | Progress::Restoring) {
+        return;
+    }
+
+    print_load_phase(current, zone.unsigned_serial, &zone.receipt_report);
+    print_loaded_review_phase(
+        &zone.name,
+        zone.unsigned_serial,
+        policy,
+        current,
+        &zone.unsigned_review_addr,
+    );
+    print_sign_phase(
+        current,
+        zone.unsigned_serial,
+        zone.signed_serial,
+        &zone.signing_report,
+    );
+    print_signed_review_phase(
+        &zone.name,
+        zone.signed_serial,
+        policy,
+        current,
+        &zone.signed_review_addr,
+    );
+    print_publish_phase();
 }
 
-fn determine_progress(zone: &ZoneStatus, policy: &PolicyInfo) -> Progress {
-    match zone.stage {
-        ZoneStage::Unsigned => match (&zone.receipt_report, zone.unsigned_review_status) {
-            (None, _) => Progress::WaitingForChanges,
-            (Some(_), None) => Progress::ChangesReceived,
-            (Some(_), Some(TimestampedZoneReviewStatus { status, .. })) => {
-                match status {
-                    ZoneReviewStatus::Pending | ZoneReviewStatus::Rejected => {
-                        Progress::AtUnsignedReview
-                    }
-                    ZoneReviewStatus::Approved => {
-                        // After reviewing comes signing, and if we're not stuck at
-                        // reviewing then we must be somewhere in signing.
-                        let Some(signing_report) = &zone.signing_report else {
-                            return Progress::WaitingToSign;
-                        };
-                        match &signing_report.stage_report {
-                            SigningStageReport::Requested(_) => Progress::WaitingToSign,
-                            SigningStageReport::InProgress(_) => Progress::Signing,
-                            SigningStageReport::Finished(s) => match s.succeeded {
-                                true => Progress::Signed,
-                                false => Progress::SigningFailed,
-                            },
-                        }
-                    }
-                }
-            }
-        },
-        ZoneStage::Signed => {
-            if !policy.signer.review.required {
-                let Some(signing_report) = &zone.signing_report else {
-                    return Progress::WaitingToSign;
-                };
-                match &signing_report.stage_report {
-                    SigningStageReport::Requested(_) => Progress::WaitingToSign,
-                    SigningStageReport::InProgress(_) => Progress::Signing,
-                    SigningStageReport::Finished(_) => Progress::Signed,
-                }
-            } else {
-                // After reviewing comes publication, and if we're not at the
-                // published stage then with review enabled we must still be
-                // at the review stage.
-                Progress::AtSignedReview
-            }
-        }
-        ZoneStage::Published => Progress::Published,
-    }
-}
-
-impl std::fmt::Display for Progress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Progress::WaitingForChanges => f.write_str("Waiting for changes"),
-            Progress::ChangesReceived => f.write_str("Changes received"),
-            Progress::AtUnsignedReview => f.write_str("At unsigned review"),
-            Progress::WaitingToSign => f.write_str("Waiting to sign"),
-            Progress::Signing => f.write_str("Signing"),
-            Progress::Signed => f.write_str("Signed"),
-            Progress::SigningFailed => f.write_str("Signing failed"),
-            Progress::AtSignedReview => f.write_str("At signed review"),
-            Progress::Published => f.write_str("Published"),
-        }
-    }
-}
-
-impl Progress {
-    pub fn print(&self, zone: &ZoneStatus, policy: &PolicyInfo) {
-        println!(
-            "Status report for zone '{}' using policy '{}'",
-            zone.name, policy.name
-        );
-
-        let mut p = Progress::WaitingForChanges;
-        loop {
-            match p {
-                Progress::WaitingForChanges => self.print_waiting_for_changes(zone),
-                Progress::ChangesReceived => self.print_zone_received(zone),
-                Progress::AtUnsignedReview => self.print_pending_unsigned_review(zone, policy),
-                Progress::WaitingToSign => self.print_waiting_to_sign(zone),
-                Progress::Signing => self.print_signing(zone),
-                Progress::Signed => self.print_signed(zone, true),
-                Progress::SigningFailed => self.print_signed(zone, false),
-                Progress::AtSignedReview => self.print_pending_signed_review(zone, policy),
-                Progress::Published => self.print_published(zone),
-            }
-            match p.next(*self) {
-                ControlFlow::Continue(next_p) => p = next_p,
-                ControlFlow::Break(()) => break,
-            }
-        }
-    }
-
-    fn next(&self, max: Progress) -> ControlFlow<(), Progress> {
-        let next = match self {
-            Progress::WaitingForChanges => Progress::ChangesReceived,
-            Progress::ChangesReceived => Progress::AtUnsignedReview,
-            Progress::AtUnsignedReview => Progress::WaitingToSign,
-            Progress::WaitingToSign => Progress::Signing,
-            Progress::Signing => Progress::Signed,
-            Progress::Signed => Progress::AtSignedReview,
-            Progress::SigningFailed => return ControlFlow::Break(()),
-            Progress::AtSignedReview => Progress::Published,
-            Progress::Published => return ControlFlow::Break(()),
-        };
-
-        if next > max {
-            return ControlFlow::Break(());
-        }
-
-        ControlFlow::Continue(next)
-    }
-
-    fn print_waiting_for_changes(&self, zone: &ZoneStatus) {
-        let done = *self > Progress::WaitingForChanges;
-        let waiting_waited = match done {
-            true => "Waited",
-            false => "Waiting",
-        };
-        println!(
-            "{} {} for a new version of the {} zone",
-            status_icon(done),
-            waiting_waited,
-            zone.name
-        );
-
-        // TODO: When complete, show how long we waited.
-    }
-
-    fn print_zone_received(&self, zone: &ZoneStatus) {
-        // TODO: we have no indication of whether a zone is currently being
-        // received or not, we can only say if it was received after the fact.
-        // Print how receival of the zone went.
-        let Some(report) = &zone.receipt_report else {
-            // This shouldn't happen.
-            println!(
-                "{}\u{78} The receipt report for this zone is unavailable.{}",
-                ansi::RED,
-                ansi::RESET
-            );
-            return;
-        };
-
-        let (loading_fetching, loaded_fetched, filesystem_network) = match zone.source {
-            ZoneSource::None => unreachable!(),
-            ZoneSource::Zonefile { .. } => ("Loading", "Loaded", "filesystem"),
-            ZoneSource::Server { .. } => ("Fetching", "Fetched", "network"),
-        };
-
-        match report.finished_at {
-            None => {
-                println!("{} {loading_fetching} ..", status_icon(false),);
-
-                println!(
-                    "  {loaded_fetched} {} and parsed {} in {} seconds",
-                    format_size(report.byte_count, " ", "B"),
-                    format_size(report.record_count, "", " records"),
-                    SystemTime::now()
-                        .duration_since(report.started_at)
-                        .unwrap()
-                        .as_secs()
-                );
-            }
-            Some(finished_at) => {
-                println!(
-                    "{} Loaded {}",
-                    status_icon(true),
-                    serial_to_string(zone.unsigned_serial),
-                );
-
-                println!("  Loaded at {}", to_rfc3339_ago(report.finished_at));
-
-                println!(
-                    "  {loaded_fetched} {} and {} from the {filesystem_network} in {} seconds",
-                    format_size(report.byte_count, " ", "B"),
-                    format_size(report.record_count, "", " records"),
-                    finished_at
-                        .duration_since(report.started_at)
-                        .unwrap()
-                        .as_secs()
-                );
-            }
-        }
-    }
-
-    fn print_pending_unsigned_review(&self, zone: &ZoneStatus, policy: &PolicyInfo) {
-        if !policy.loader.review.required {
-            println!(
-                "{} Auto approving signing of {}, no checks enabled in policy.",
-                status_icon(true),
-                serial_to_string(zone.unsigned_serial),
-            );
+fn print_load_phase(
+    current: Progress,
+    unsigned_serial: Option<Serial>,
+    receipt_report: &Option<ZoneLoaderReport>,
+) {
+    if current < Progress::Loading {
+        println!("  {Pending} load");
+    } else if current > Progress::Loading {
+        let unsigned_serial = serial_to_string(unsigned_serial);
+        println!("  {Done} load (serial: {unsigned_serial})");
+    } else {
+        let short_serial = if let Some(unsigned_serial) = unsigned_serial {
+            format!(" (serial: {unsigned_serial})")
         } else {
-            let done = *self > Progress::AtUnsignedReview;
-            let waiting_waited = match done {
-                true => "Waited",
-                false => "Waiting",
-            };
-            println!(
-                "{} {} for approval to sign {}",
-                status_icon(done),
-                waiting_waited,
-                serial_to_string(zone.unsigned_serial),
-            );
-            if !done {
-                Self::print_review_hook(done, &policy.loader.review.cmd_hook, zone, true);
-            }
-            // TODO: When complete, show how long we waited.
-        }
-    }
-
-    fn print_waiting_to_sign(&self, zone: &ZoneStatus) {
-        println!(
-            "{} Approval received to sign {}, signing requested",
-            status_icon(*self > Progress::WaitingToSign),
-            serial_to_string(zone.unsigned_serial)
-        );
-    }
-
-    fn print_signing(&self, zone: &ZoneStatus) {
-        if *self >= Progress::Signed {
-            return;
-        }
-
-        println!(
-            "{} Signing {}",
-            status_icon(*self > Progress::Signing),
-            serial_to_string(zone.unsigned_serial)
-        );
-        Self::print_signing_progress(zone);
-    }
-
-    fn print_signed(&self, zone: &ZoneStatus, succeeded: bool) {
-        let (signed_failed, icon) = match succeeded {
-            true => ("Signed", status_icon(true)),
-            false => (
-                "Signing failed",
-                format!("{}\u{78}{}", ansi::RED, ansi::RESET),
-            ),
+            "".into()
         };
-        println!(
-            "{icon} {signed_failed} {} as {}",
-            serial_to_string(zone.unsigned_serial),
-            serial_to_string(zone.signed_serial)
+        let unsigned_serial = serial_to_string(unsigned_serial);
+        let start_time = to_rfc3339_ago(
+            receipt_report.as_ref().map(|r| r.started_at),
+            "<not started yet>",
         );
 
-        Self::print_signing_progress(zone);
+        let v = receipt_report.as_ref().map_or(0, |r| r.byte_count);
+        let bytes = format_size(v, " ", "B");
 
-        if *self == Progress::Signed
-            && let Some(addr) = zone.signed_review_addr
+        let total_size = receipt_report
+            .as_ref()
+            .and_then(|r| r.total_byte_count)
+            .filter(|r| *r > 0)
+            .map_or("".into(), |bytes| {
+                let total_size = format_size(bytes, " ", "B");
+                format!(" / {total_size}")
+            });
+
+        let percentage = if let Some(r) = receipt_report
+            && let Some(t) = r.total_byte_count
+            && t > 0
         {
-            println!("  Signed zone available on {addr}");
-        }
-    }
-
-    fn print_pending_signed_review(&self, zone: &ZoneStatus, policy: &PolicyInfo) {
-        if !policy.signer.review.required {
-            println!(
-                "{} Auto approving publication of {}, no checks enabled in policy.",
-                status_icon(true),
-                serial_to_string(zone.signed_serial)
-            );
+            let b = r.byte_count as f64;
+            let t = t as f64;
+            let n = 100.0 * b / t;
+            format!(" ({n:.0}%)")
         } else {
-            let done = *self > Progress::AtSignedReview;
-            let waiting_waited = match done {
-                true => "Waited",
-                false => "Waiting",
-            };
-            println!(
-                "{} {} for approval to publish {}",
-                status_icon(*self > Progress::AtSignedReview),
-                waiting_waited,
-                serial_to_string(zone.signed_serial),
-            );
-            if !done {
-                Self::print_review_hook(done, &policy.signer.review.cmd_hook, zone, false);
-            }
-        }
-    }
+            "".into()
+        };
 
-    fn print_published(&self, zone: &ZoneStatus) {
-        println!(
-            "{} Published {}",
-            status_icon(true),
-            serial_to_string(zone.published_serial),
-        );
-        if *self == Progress::Published {
-            println!("  Published zone available on {}", zone.publish_addr);
-        }
-    }
-
-    fn print_review_hook(done: bool, cmd_hook: &Option<String>, zone: &ZoneStatus, unsigned: bool) {
-        match cmd_hook {
-            Some(path) => println!("  Configured to invoke {path}"),
-            None => {
-                if !done {
-                    let zone_name = &zone.name;
-                    let (zone_type, zone_serial) = match unsigned {
-                        true => ("unsigned", zone.unsigned_serial),
-                        false => ("signed", zone.signed_serial),
-                    };
-                    println!("\u{0021} Zone will be held until manually approved");
-                    if let Some(zone_serial) = zone_serial {
-                        println!(
-                            "  Approve with: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
-                        );
-                        println!(
-                            "  Reject with:  cascade zone reject --{zone_type} {zone_name} {zone_serial}"
-                        );
-                    }
-                } else {
-                    println!("  Zone was held until manually approved");
-                }
-            }
-        }
-    }
-
-    fn print_signing_progress(zone: &ZoneStatus) {
-        if let Some(report) = &zone.signing_report {
-            match &report.stage_report {
-                SigningStageReport::Requested(r) => {
-                    println!(
-                        "  Signing requested at {}",
-                        to_rfc3339_ago(Some(r.requested_at))
-                    );
-                }
-                SigningStageReport::InProgress(r) => {
-                    println!(
-                        "  Signing requested at {}",
-                        to_rfc3339_ago(Some(r.requested_at))
-                    );
-                    println!(
-                        "  Signing started at {}",
-                        to_rfc3339_ago(Some(r.started_at))
-                    );
-                    if let (Some(unsigned_rr_count), Some(walk_time), Some(sort_time)) =
-                        (r.unsigned_rr_count, r.walk_time, r.sort_time)
-                    {
-                        println!(
-                            "  Collected {} in {}, sorted in {}",
-                            format_size(unsigned_rr_count, "", " records"),
-                            format_duration(walk_time),
-                            format_duration(sort_time)
-                        );
-                    }
-                    if let (Some(denial_rr_count), Some(denial_time)) =
-                        (r.denial_rr_count, r.denial_time)
-                    {
-                        println!(
-                            "  Generated {} in {}",
-                            format_size(denial_rr_count, "", " NSEC(3) records"),
-                            format_duration(denial_time)
-                        );
-                    }
-                    if let (Some(rrsig_count), Some(rrsig_time)) = (r.rrsig_count, r.rrsig_time) {
-                        println!(
-                            "  Generated {} in {} ({} sig/s)",
-                            format_size(rrsig_count, "", " signatures"),
-                            format_duration(rrsig_time),
-                            rrsig_count / (rrsig_time.as_secs() as usize)
-                        );
-                    }
-                    if let (Some(rrsig_count), Some(insertion_time)) =
-                        (r.rrsig_count, r.insertion_time)
-                    {
-                        println!(
-                            "  Inserted signatures in {} ({} sig/s)",
-                            format_duration(insertion_time),
-                            rrsig_count / (insertion_time.as_secs() as usize)
-                        );
-                    }
-                    if let Some(threads_used) = r.threads_used {
-                        println!("  Using {threads_used} threads to generate signatures");
-                    }
-                }
-                SigningStageReport::Finished(r) => {
-                    println!(
-                        "  Signing requested at {}",
-                        to_rfc3339_ago(Some(r.requested_at))
-                    );
-                    println!(
-                        "  Signing started at {}",
-                        to_rfc3339_ago(Some(r.started_at))
-                    );
-                    println!(
-                        "  Signing finished at {}",
-                        to_rfc3339_ago(Some(r.finished_at))
-                    );
-                    println!(
-                        "  Collected {} in {}, sorted in {}",
-                        format_size(r.unsigned_rr_count, "", " records"),
-                        format_duration(r.walk_time),
-                        format_duration(r.sort_time)
-                    );
-                    println!(
-                        "  Generated {} in {}",
-                        format_size(r.denial_rr_count, "", " NSEC(3) records"),
-                        format_duration(r.denial_time)
-                    );
-                    println!(
-                        "  Generated {} in {} ({} sig/s)",
-                        format_size(r.rrsig_count, "", " signatures"),
-                        format_duration(r.rrsig_time),
-                        r.rrsig_count
-                            .checked_div(r.rrsig_time.as_secs() as usize)
-                            .unwrap_or(r.rrsig_count),
-                    );
-                    println!(
-                        "  Inserted signatures in {} ({} sig/s)",
-                        format_duration(r.insertion_time),
-                        r.rrsig_count
-                            .checked_div(r.insertion_time.as_secs() as usize)
-                            .unwrap_or(r.rrsig_count),
-                    );
-                    println!(
-                        "  Took {} in total, using {} threads",
-                        format_duration(r.total_time),
-                        r.threads_used
-                    );
-                }
-            }
-            println!("  Current action: {}", report.current_action);
-        }
+        println!("  {Ongoing} load{short_serial}");
+        println!("  |   serial: {unsigned_serial}");
+        println!("  |   start time: {start_time}");
+        println!("  |   progress: {bytes}{total_size}{percentage}");
+        println!("  |");
     }
 }
 
-fn status_icon(done: bool) -> String {
-    match done {
-        true => format!("{}\u{2714}{}", ansi::GREEN, ansi::RESET), // tick ✔
-        false => format!("{}\u{2022}{}", ansi::YELLOW, ansi::RESET), // bullet •
+fn print_loaded_review_phase(
+    zone: &ZoneName,
+    serial: Option<Serial>,
+    policy: &PolicyInfo,
+    current: Progress,
+    addrs: &[SocketAddr],
+) {
+    use ansi::{BLUE, DIM, RED, RESET, YELLOW};
+
+    if let ReviewPolicyMode::Off = policy.loader.review.mode {
+        println!("  {Pending} {DIM}review loaded zone (disabled){RESET}");
+        return;
+    }
+
+    if current < Progress::LoadedReview {
+        println!("  {Pending} review loaded zone");
+    } else if current == Progress::LoadedReview {
+        if let ReviewPolicyMode::Script { hook } = &policy.loader.review.mode {
+            println!("  {Ongoing} review loaded zone");
+            println!("  |   {BLUE}automatic zone review in progress{RESET}");
+            println!("  |   review hook: \"{hook}\"",);
+            println!("  |");
+        } else {
+            let serial = serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
+            println!("  {Stopped} review loaded zone");
+            println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            if addrs.is_empty() {
+                println!("  |   {RED}no loaded review addresses were specified{RESET}");
+            } else {
+                println!("  |   loaded zone is available at:");
+                for addr in addrs {
+                    println!("  |     - {addr}");
+                }
+            }
+            println!("  |   possible actions:");
+            println!("  |     {BLUE}cascade zone approve --unsigned {zone} {serial}{RESET}");
+            println!("  |     {BLUE}cascade zone reject --unsigned {zone} {serial}{RESET}");
+            println!("  |");
+        }
+    } else if current == Progress::HaltLoaded {
+        println!("  {Error} review loaded zone");
+        println!("  |   {RED}ERROR: zone was rejected{RESET}");
+        println!("  |   possible actions:");
+        println!("  |     {BLUE}cascade zone override {zone}{RESET}",);
+        println!("  |     {BLUE}cascade zone reset {zone}{RESET}",);
+        println!("  |");
+    } else {
+        println!("  {Done} review loaded zone");
+    }
+}
+
+fn print_sign_phase(
+    current: Progress,
+    unsigned_serial: Option<Serial>,
+    signed_serial: Option<Serial>,
+    signing_report: &Option<SigningReport>,
+) {
+    if current < Progress::Signing {
+        println!("  {Pending} sign");
+    } else if current > Progress::Signing {
+        let signed_serial = serial_to_string(signed_serial);
+        println!("  {Done} sign (serial: {signed_serial})");
+    } else {
+        let start_time = match &signing_report.as_ref().map(|r| &r.stage_report) {
+            None => None,
+            Some(SigningStageReport::InProgress(r)) => Some(r.started_at),
+            Some(SigningStageReport::Requested(_)) => None,
+            Some(SigningStageReport::Finished(r)) => Some(r.started_at),
+        };
+        let unsigned_serial = serial_to_string(unsigned_serial);
+
+        let short_signed_serial = if let Some(signed_serial) = signed_serial {
+            format!(" (serial: {signed_serial})")
+        } else {
+            "".into()
+        };
+        let signed_serial = serial_to_string(signed_serial);
+        println!("  {Ongoing} sign{short_signed_serial}");
+        println!("  |   loaded serial: {unsigned_serial}");
+        println!("  |   signed serial: {signed_serial}");
+        println!(
+            "  |   start time: {}",
+            to_rfc3339_ago(start_time, "<not started yet>")
+        );
+        println!("  |");
+    }
+}
+
+fn print_signed_review_phase(
+    zone: &ZoneName,
+    signed_serial: Option<Serial>,
+    policy: &PolicyInfo,
+    current: Progress,
+    addrs: &[SocketAddr],
+) {
+    use ansi::{BLUE, DIM, RED, RESET, YELLOW};
+
+    if let ReviewPolicyMode::Off = policy.signer.review.mode {
+        println!("  {Pending} {DIM}review signed zone (disabled){RESET}");
+        return;
+    }
+
+    if current < Progress::SignedReview {
+        println!("  {Pending} review signed zone");
+    } else if current == Progress::SignedReview {
+        if let ReviewPolicyMode::Script { hook } = &policy.signer.review.mode {
+            println!("  {Ongoing} review signed zone");
+            println!("  |   {YELLOW}automatic zone review in progress{RESET}");
+            println!("  |   review hook: \"{hook}\"",);
+        } else {
+            let serial = signed_serial.map_or_else(|| "<SERIAL>".into(), |s| s.to_string());
+            println!("  {Stopped} review signed zone");
+            println!("  |   {YELLOW}zone must be reviewed manually{RESET}");
+            if addrs.is_empty() {
+                println!("  |   {RED}no signed review addresses were specified{RESET}");
+            } else {
+                println!("  |   signed zone is available at:");
+                for addr in addrs {
+                    println!("  |     - {addr}");
+                }
+            }
+            println!("  |   possible actions:");
+            println!("  |     {BLUE}cascade zone approve --signed {zone} {serial}{RESET}");
+            println!("  |     {BLUE}cascade zone reject --signed {zone} {serial}{RESET}");
+            println!("  |");
+        }
+    } else if current == Progress::HaltSigned {
+        println!("  {Error} review signed zone");
+        println!("  |   {RED}ERROR: zone was rejected{RESET}");
+        println!("  |   possible actions:");
+        println!("  |     {BLUE}cascade zone override {zone}{RESET}");
+        println!("  |     {BLUE}cascade zone reset {zone}{RESET}");
+        println!("  |");
+    } else {
+        println!("  {Done} review signed zone");
+    }
+}
+
+fn print_publish_phase() {
+    println!("  {Pending} publish");
+}
+
+enum Icon {
+    /// Operation had not yet been started
+    Pending,
+    /// Operation is ongoing
+    Ongoing,
+    /// Operation is waiting for user input
+    Stopped,
+    /// Operation has succeeded
+    Done,
+    /// Operation has errored
+    Error,
+}
+
+use Icon::{Done, Error, Ongoing, Pending, Stopped};
+
+impl std::fmt::Display for Icon {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ansi::{BLUE, DIM, GREEN, RED, RESET, YELLOW};
+        let (color, character) = match self {
+            Self::Done => (GREEN, '\u{2714}'),     // tick ✔
+            Self::Ongoing => (BLUE, '\u{25CF}'),   // black circle ●
+            Self::Stopped => (YELLOW, '\u{25A0}'), // black square ■
+            Self::Pending => (DIM, '\u{25CB}'),    // white circle ○
+            Self::Error => (RED, '\u{2A2F}'),      // cross ⨯
+        };
+        let s = format!("{color}{character}{RESET}");
+        f.write_str(&s)
     }
 }
 
@@ -997,12 +988,12 @@ fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
 
 fn serial_to_string(serial: Option<Serial>) -> String {
     match serial {
-        Some(serial) => format!("version {serial}"),
-        None => "<serial number not yet known>".to_string(),
+        Some(serial) => format!("{serial}"),
+        None => "<not yet known>".to_string(),
     }
 }
 
-fn to_rfc3339_ago(v: Option<SystemTime>) -> String {
+fn to_rfc3339_ago(v: Option<SystemTime>, default: &str) -> String {
     match v {
         Some(v) => {
             let now = jiff::Zoned::now().round(jiff::Unit::Second).unwrap();
@@ -1019,7 +1010,7 @@ fn to_rfc3339_ago(v: Option<SystemTime>) -> String {
                 .unwrap();
             format!("{} ({span:#} ago)", now.datetime())
         }
-        None => "Not yet finished".to_string(),
+        None => default.to_string(),
     }
 }
 
@@ -1031,6 +1022,7 @@ fn to_rfc3339(v: SystemTime) -> String {
         .to_string()
 }
 
+#[expect(dead_code)]
 fn format_duration(duration: Duration) -> String {
     format!(
         "{:#}",
@@ -1067,4 +1059,83 @@ fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {
             })
         })
         .collect()
+}
+
+//------------ ZoneSource ----------------------------------------------------
+
+const DEFAULT_NS_PORT: u16 = 53;
+
+/// How to load the contents of a zone.
+#[derive(Debug, Clone)]
+pub enum ZoneSource {
+    /// Don't load the zone at all.
+    None,
+
+    /// From a zonefile on disk.
+    Zonefile {
+        /// The path to the zonefile.
+        path: Box<Utf8Path>,
+    },
+
+    /// From a DNS server via XFR.
+    Server {
+        /// The address of the server.
+        addr: SocketAddr,
+
+        /// The name of a TSIG key, if any.
+        tsig_key: Option<String>,
+    },
+}
+
+/// Support parsing of `-source` command line arguments.
+///
+/// Supported forms:
+///   - `<IP>[:<PORT>][^<TSIG_KEY_NAME>]`
+///   - `<PATH/TO/ZONE/FILE/TO/LOAD>`
+impl From<&str> for ZoneSource {
+    fn from(s: &str) -> Self {
+        // Split out any provided TSIG key from the rest of the
+        // source argument.
+        let (s, tsig_key) = s.split_once('^').unwrap_or((s, ""));
+
+        let tsig_key = if !tsig_key.is_empty() {
+            Some(tsig_key.to_string())
+        } else {
+            None
+        };
+
+        if let Ok(addr) = s.parse::<SocketAddr>() {
+            ZoneSource::Server { addr, tsig_key }
+        } else if let Ok(addr) = s.parse::<IpAddr>() {
+            ZoneSource::Server {
+                addr: SocketAddr::new(addr, DEFAULT_NS_PORT),
+                tsig_key,
+            }
+        } else {
+            ZoneSource::Zonefile {
+                path: Utf8PathBuf::from(s).into_boxed_path(),
+            }
+        }
+    }
+}
+
+impl TryFrom<ZoneSource> for cascade_api::ZoneSource {
+    type Error = String;
+
+    fn try_from(source: ZoneSource) -> Result<Self, Self::Error> {
+        Ok(match source {
+            ZoneSource::None => cascade_api::ZoneSource::None,
+            ZoneSource::Zonefile { path } => cascade_api::ZoneSource::Zonefile { path },
+            ZoneSource::Server { addr, tsig_key } => {
+                let tsig_key = if let Some(tsig_key) = tsig_key {
+                    Some(TsigKeyName::from_str(&tsig_key).map_err(|err| {
+                        format!("TSIG key name '{tsig_key}' is not a valid domain name: {err}")
+                    })?)
+                } else {
+                    None
+                };
+                cascade_api::ZoneSource::Server { addr, tsig_key }
+            }
+        })
+    }
 }

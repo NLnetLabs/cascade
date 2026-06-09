@@ -75,6 +75,53 @@ systemd features used instead.
 
             cascaded --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
 
+Interacting with Cascade
+------------------------
+
+Cascade consists of two parts: the :program:`cascaded` daemon which runs
+continuously, receiving, signing and publishing zone records, and the
+:program:`cascade` CLI (command-line interface) tool which can be used to
+inspect and control Cascade.
+
+Using the CLI we can see that on first start Cascade has no policies and
+no zones:
+
+.. code-block:: bash
+
+   $ cascade status
+   Signing queue:
+     The signing queue is currently empty.
+
+   $ cascade policy list
+
+   $ cascade zone list
+
+.. Note:: The program:`cascade` CLI connects via HTTPS to the
+   :program:`cascaded` daemon. By default it connects to 127.0.0.1:4539.
+   You can override this by passing ``--server <IP>:<PORT>`` to connect to
+   a Cascade daemon running on another machine.
+
+The :program:`cascade` CLI is the primary means of interacting with the
+:program:`cascaded` daemon.
+
+For monitoring purposes Cascade supports `Prometheus <https://prometheus.io/>`_
+which when combined with other tools such as `Grafana <https://grafana.com/grafana/>`_
+and `Alertmanager <https://prometheus.io/docs/alerting/latest/alertmanager/>`_
+enable visual insight into the behaviour of Cascade and early warning of
+unexpected situations.
+
+Additionally, while normally not needed, the CLI and the daemon produce logs
+which can be inspected and if needed can be made more verbose. The CLI logs
+to the terminal while the daemon typically logs to syslog or to a file. Both
+the CLI and the daemon take a ``--log-level`` argument which can be used to
+adjust the verbosity of the produced log output. It is also possible to use
+the CLI to adjust the verbosity of an already running daemon, for example:
+
+.. code-block:: bash
+
+   $ cascade debug change-logging --level debug
+   Changed log-level to: debug
+
 .. _defining-policy:
 
 Defining Policy
@@ -83,11 +130,6 @@ Defining Policy
 After configuring Cascade, you can begin adding zones. Cascade supports zones
 sourced from a local file or fetched from another nameserver using XFR 
 :term:`zone transfers <Zone transfer>`.
-
-.. Note:: The current version of Cascade does not yet support TSIG 
-   authenticated XFR nor can it pass through a signed zone intact. Any DNSSEC
-   records will be stripped from the zone before signing. We expect to add 
-   support for these features soon.
 
 Zones take a lot of their settings from policy. Policies allow easy re-use of
 settings across multiple zones and control things like whether or not zones
@@ -144,26 +186,30 @@ For example:
 
 .. code-block:: text
 
-    Status report for zone 'example.com' using policy 'default'
-    ✔ Waited for a new version of the example.com zone
-    ✔ Loaded version 1
-      Loaded at 2025-09-30T12:00:05+00:00 (2s ago)
-      Loaded 596 B from the filesystem in 0 seconds
-    ✔ Auto approving signing of version 1, no checks enabled in policy.
-    ✔ Approval received to sign version 1, signing requested
-    ✔ Signed version 1 as version 2025093001
-      Signed at 2025-09-30T12:00:06+00:00 (1s ago)
-      Signed 3 records in 0s
-    ✔ Auto approving publication of version 2025093001, no checks enabled in policy.
-    ✔ Published version 2025093001
-      Published zone available on 127.0.0.1:4543
+    zone:   example.com
+    policy: default
+    source: /path/to/zonefile/example.txt
+
+    review
+      loaded: off
+      signed: off
+
+    last published
+      loaded serial: 2001062501
+      signed serial: 2026050600
+      timestamp:     2026-06-02T12:53:10.158779414Z
+      size:          10 records
+
+    status: idle
+
+    Published zone available at 127.0.0.1:4542
 
 From the above you can see that the signed zone can be retrieved from
-``127.0.0.1:4543`` using a DNS client, e.g.:
+``127.0.0.1:4542`` using a DNS client, e.g.:
 
 .. code-block:: bash
 
-    dig @127.0.0.1 -p 4543 AXFR example.com
+    dig @127.0.0.1 -p 4542 AXFR example.com
 
 If you have the BIND `dnssec-verify
 <https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_
@@ -171,7 +217,7 @@ tool installed, you can check that the zone is correctly DNSSEC signed:
 
 .. code-block:: bash
 
-   $ dig @127.0.0.1 -p 4543 example.com AXFR | dnssec-verify -o example.com /dev/stdin
+   $ dig @127.0.0.1 -p 4542 example.com AXFR | dnssec-verify -o example.com /dev/stdin
    Loading zone 'example.com' from file '/dev/stdin'
 
    Verifying the zone using the following algorithms:

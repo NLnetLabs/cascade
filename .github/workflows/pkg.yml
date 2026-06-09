@@ -24,7 +24,7 @@ jobs:
       # normal channel rather than the "-proposed" channel). This repository
       # is used during the package testing phase and is needed so that when
       # the newly built Cascade package is installed that its dependencies,
-      # dnst and kmip2pkcs11, can be resolved. This is because those
+      # dnst and cascade-hsm-bridge, can be resolved. This is because those
       # dependencies are at the time of writing not yet published in the main
       # channel but only in the "-proposed" channel.
       package_test_always_add_repo: true

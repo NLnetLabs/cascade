@@ -1,5 +1,27 @@
 # Testing Cascade
 
+## Table of Content
+
+- [Unit tests](#unit-tests)
+- [Integration/System testing with `act`](#integrationsystem-testing-with-act)
+  - [TL;DR](#tldr)
+  - [Creating a test](#creating-a-test)
+  - [Running single jobs/tests](#running-single-jobstests)
+  - [Overriding the build profile to use](#overriding-the-build-profile-to-use)
+  - [Overriding the log level to use](#overriding-the-log-level-to-use)
+  - [Network requirement (why --network default)](#network-requirement-why---network-default)
+  - [Limitations](#limitations)
+    - [No init or systemd](#no-init-or-systemd)
+    - [All nameservers on the same address](#all-nameservers-on-the-same-address)
+  - [Managing act's verbosity](#managing-acts-verbosity)
+  - [Running act with Podman](#running-act-with-podman)
+  - [Miscellaneous notes](#miscellaneous-notes)
+  - [Docker dependencies](#docker-dependencies)
+  - [Provided nameservers and zones](#provided-nameservers-and-zones)
+  - [Monitoring resource usage](#monitoring-resource-usage)
+
+---
+
 ## Unit tests
 
 Unit tests can be run as usual for Rust projects using `cargo test`:
@@ -8,26 +30,59 @@ Unit tests can be run as usual for Rust projects using `cargo test`:
 1. `cargo test --no-default-features`
 1. `cargo test --all-features`
 
+
 ## Integration/System testing with `act`
 
-The GitHub Action workflow in `.github/workflows/system-tests.yml` is primarily
-for use with https://github.com/nektos/act and has been tested using the full
-image (`catthehacker/ubuntu:full-latest`).
+The GitHub Action workflow in `integration-tests/system-tests.yml` is currently
+only for use with https://github.com/nektos/act via the `act-wrapper` script at
+the root of this repository, which creates a custom container with a freshly
+built cascade.
+
 
 ### TL;DR
 
-Run all tests with:
+Run all tests with: `./act-wrapper`
 
-- Docker: `act --network default -W .github/workflows/system-tests.yml`
-- Podman: `act --network podman -W .github/workflows/system-tests.yml`
+Run a single test with: `./act-wrapper --job your-test`
 
-Run a single test with:
+Create a new test with:
 
-- Docker: `act --network default -W .github/workflows/system-tests.yml --job your-test`
-- Podman: `act --network podman -W .github/workflows/system-tests.yml --job your-test`
+- `./integration-tests/scripts/add-test.sh your-test "Your test name"`
 
-Optionally start a standalone artifact server to deduplicate compilation
-between tests (see below, "Standalone artifact server...").
+
+### Creating a test
+
+The workflow file `integration-tests/system-tests.yml` only contains "stub"
+runners for the tests, with the tests themselves being written in actions in
+`integration-tests/tests/`.
+
+You can easily generate the scaffolding for a test with the script
+`./integration-tests/scripts/add-test.sh <job-name> "<test name/description>" [<PR-number>]`.
+
+The test environment provides a few nameservers and zones for use in tests
+(see section [Provided Nameservers and Zones](#provided-nameservers-and-zones)).
+
+
+### Running single jobs/tests
+
+You can run single jobs with act using the `--job` option. However, if the job
+has the `needs` option set to depend on other jobs, those jobs will always be run
+before.
+
+
+### Overriding the build profile to use
+
+By default tests are run using debug profile builds of the Cascade binaries.
+Except for tests that explicitly choose the debug or release build profile, the
+build profile used can be overridden by invoking `./act-wrapper` with argument
+`--input build-profile=XXX` where XXX must be one of debug or release.
+
+
+### Overriding the log level to use
+
+By default Cascade is configured to log at debug level. You can change this by
+invoking `./act-wrapper` with argument `--input log-level=XXX` where XXX must
+be one of error, warning, info, debug or trace.
 
 ### Network requirement (why --network default)
 
@@ -40,53 +95,10 @@ need to specify a different container network to use. Docker and Podman each
 provide default networks (not to be confused with act's default network
 selection, which is Docker/Podman's `host` network). Docker's default
 network is called `default`, while Podman's default network is called `podman`.
-Therefore, you need to use `act --network default` on Docker, and `act
---network podman` on Podman.
-
-### Standalone artifact server for use with --network (optional)
-
-In a non-host network, act cannot access its own artifact server (that would be
-started using the `--artifact-server-path` option). Therefore, Jannik has
-hacked together a standalone artifact server binary that uses the existing act
-artifact server code (https://github.com/mozzieongit/act). You can run that
-server in a separate container on the same network (see the README of
-https://github.com/mozzieongit/act) and have act use that artifact server.
-
-Using an artifact server is optional. Using an artifact server enables the
-testing workflow to only build Cascade and dnst once (see "Building from
-source..." below), upload the generated binaries as artifacts, and download
-them for use in each test job.
-
-If you are not using an artifact server, you will get error messages like
-below, which you can ignore. The test jobs will continue as normal and build
-Cascade and dnst from source at the start of each test job. You might want to
-disable a job's dependency on the `build` job while running your tests to
-remove the then unnecessary build step.
-
-```
-[System/Integration tests/Build the project for use by the later tests]   ❗  ::error::Failed to CreateArtifact: Unable to make request: EHOSTUNREACH%0AIf you are using self-hosted runners, please make sure your runner has access to all GitHub endpoints: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners#communication-between-self-hosted-runners-and-github
-[System/Integration tests/Build the project for use by the later tests] Failed but continue next step
-[System/Integration tests/Build the project for use by the later tests]   ❌  Failure - Main Upload built binaries [4.19147036s]
-```
-
-
-### Building from source (once or always)
-
-The `build` job builds the project and uploads the target directory as an
-artifact for use by the other jobs to deduplicate the compilation step.
-If fetching the pre-built fails in the other jobs, they will just build them
-from source. This means that the workflow is still usable without an artifact
-server.
-
-### Running single jobs/tests
-
-You can run single jobs with act using the `--job` option. However, if the job
-has the `needs` option set to depend on other jobs, those jobs will always be run
-before. If you want to test/debug your test without always re-building the
-source, you could comment out the `needs: build` option, build once using `act ...
---job build` and then use `act ... --job your-test` to only run your test. If
-there is no artifact server available, the code will still always be built from
-source.
+Therefore, the `act-wrapper` automatically sets the `--network` option for
+`act`. If you want to use a different network than the default one, you can
+simply run `act-wrapper --network <your-network>` and it will override the
+default network set by the `act-wrapper`.
 
 
 ### Limitations
@@ -130,33 +142,90 @@ of text printed you can:
   using `unbuffer` from the `expect` package; left as an excercise for the
   user)
 
-### Example test job
 
-```yml
-  job-name:
-    name: Run tests with resolvers/nameservers
-    runs-on: ${{ matrix.os }}
-    needs: build
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable] # see build job
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    - name: Prepare the system test environment
-      uses: ./.github/actions/prepare-systest-env
+### Running act with Podman
+
+act uses Docker. If you want to use Podman instead, you will need to enable the
+Podman daemon and set the DOCKER_HOST variable accordingly. If you are using
+rootless Podman, you will likely need to run `systemctl --user enable --now
+podman.socket` and set `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock`
+in your shell's rc file (e.g. `.bashrc`). With that set, all docker programs
+will use Podman as their backend instead of the Docker daemon. Additionally,
+you will need to make sure that `docker` is in your path. As you are using
+Podman, you can create a symlink, which instructs Podman to act in a Docker
+compatibility mode: `sudo ln -s "$(which podman)" /usr/local/bin/docker`
+
+
+### Miscellaneous notes
+
+- By default, tests are run using a debug build for both Cascade and dnst.
+  - This can be changed per test using the `set-build-profile` action:
+    ```
+    - uses: ./.github/actions/set-build-profile
       with:
-        artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
-    # - name: Only download/build the binaries without setting up the test environment
-    #   uses: ./.github/actions/download-or-build
-    #   with:
-    #     artifact-name: ${{ format('cascade_{0}_{1}_{2}', github.sha, matrix.os, matrix.rust) }}
-    - name: Setup and start the cascade daemon
-      uses: ./.github/actions/setup-and-start-cascade
-    - run: target/debug/cascade --version
-    ### RUN YOUR TESTS HERE
-    # # Optional, the container gets cleaned up anyway (at least in act)
-    # - name: Stop the setup
-    #   run: scripts/manage-test-environment.sh stop
-```
+        build-profile: release
+    ```
+- `cascade`, `cascaded`, and `dnst` are added to the `$PATH`.
+- By default, cascade is configured to use the directory:
+  `${GITHUB_WORKSPACE}/cascade-dir`
+- The default paths for configuration files can be fetched using the
+  `integration-tests/scripts/get-default-path.sh` script (this script is
+  intended to be used from the default working directory of the test job; aka
+  do not `cd` somewhere, or the reported paths will be wrong).
+- The workflow action `.github/actions/setup-and-start-cascade` also generates
+  a default policy with `cascade template policy`.
+- If you encounter the error `bash: /root/cargo-debug/bin/cascaded: cannot
+  execute: required file not found`, you can run `./act-wrapper +build-inside
+  ...` to build cascade inside of the container build step. This lacks the
+  benefit of cargo's build caching, but works around the issue until it is
+  properly fixed.
+
+
+### Docker dependencies
+
+When using Docker to run the integration tests, you need to make sure that the
+`docker-buildx` plugin is installed, otherwise Docker will complain about
+unknown flags.
+
+### Provided nameservers and zones
+
+The test environment provides a number of nameservers (a primary NSD,
+a secondary NSD, Bind, and the resolver Unbound) and the zone `example.test.`
+and it's parent `test.`.
+
+Unbound is used as the system's stub resolver forwarding most queries to Quad9
+or Cloudflare. Queries to `test.` are redirected to Bind on port 1053 and
+queries to `example.test.` are redirected to the secondary NSD instance on
+port 1054.
+
+Bind is configured as an authoritative for the zone `test.` and is used to
+enable updating the zone `test.` during a test, e.g. with `dnst update`, to
+update the DS RR for `example.test.`, without having to fiddle with modifying
+the zonefile (but you still can). (Currently, the zone `test.` is not signed,
+which is ok for the current implementation of `dnst keyset`, but this may need
+to change in the future.)
+
+Both NSD instances are configured as authoritative for `example.test.`.
+The primary NSD loads the zone from a zonefile and provides AXFR and IXFR to
+anyone with IP `127.0.0.1`. The secondary NSD is configured to transfer the
+zone from Cascade (currently always using AXFR). Both NSD instances allow
+notifies from `127.0.0.1`.
+
+### Monitoring resource usage
+
+Using `./act-wrapper +stats-report </path/to/write/report.csv>` or
+`./act-wrapper +stats-graph </path/to/write/report.png>` will generate a
+report on approximate resource usage covering the period of the execution
+of the tests, as CSV raw data and/or as a PNG formatted graph.
+
+Measured resources are CPU and memory, as reported by the `docker stats`
+command.
+
+Note that this is only intended to be used when a single test is run at once,
+i.e. when using --job XXX or --concurrent-jobs 1. If there are containers
+running prior to execution of the tests attempting to use `+stats-report` or
+`+stats-graph` or if multiple lines of statistics are output by `docker stats`
+(i.e. for more than one active container) an error will be output as the
+numbers are assumed to be for a single active container at a time.
+
+Graph generation requires that you have the `gnuplot` tool installed.

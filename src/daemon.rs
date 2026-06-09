@@ -7,12 +7,14 @@
 //! user once the privileged access is no longer required.
 use std::{
     collections::BTreeMap,
+    fmt::Write,
     net::{SocketAddr, TcpListener, UdpSocket},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use camino::Utf8Path;
 use daemonbase::process::{EnvSockets, EnvSocketsError, Process};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::config::{DaemonConfig, GroupId, UserId};
 
@@ -53,10 +55,43 @@ pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
     let mut process = Process::from_config(daemon_config);
 
     if *config.daemonize.value() {
+        // When daemonize is true, stdout and stderr will be redirected to
+        // /dev/null. That means that panic messages would be cast into the
+        // void. This has resulted in us missing panics in e.g. the
+        // integration tests. Here we override the panic hook to attempt
+        // writing to the configured logging target (which can only be a file
+        // or syslog). If we cannot write to the logging target, we don't know
+        // where else to write (other than uncommon locations), so we don't
+        // try to recover if we cannot write to the log-target. The process
+        // will get taken down in any case. If we panic in the panic hook
+        // below, rust will catch that and dump the core, ending the process
+        // too.
+        std::panic::set_hook(Box::new(move |info| {
+            panic_hook_log_error(info);
+            // Take down the whole process if a thread panics.
+            std::process::exit(101);
+        }));
+
         debug!("Becoming daemon process");
         if process.setup_daemon(true).is_err() {
             return Err("Failed to become daemon process: unknown error".to_string());
         }
+    } else {
+        // If cascade doesn't daemonize, also override the default panic hook
+        // to catch panics with panic = "unwind". When panic = "abort", the
+        // process would be taken down by default, but doing it here doesn't
+        // hurt. We log the panic message to the log-target, and call the
+        // default panic hook that prints the panic message to stderr, which
+        // is the expected behaviour of rust programs running in the
+        // foreground.
+        let prev_panic_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            panic_hook_log_error(info);
+            prev_panic_hook(info);
+
+            // Take down the whole process if a thread panics.
+            std::process::exit(101);
+        }));
     }
 
     if let Some((user, group)) = &config.identity {
@@ -67,6 +102,83 @@ pub fn daemonize(config: &DaemonConfig) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn panic_hook_log_error(info: &std::panic::PanicHookInfo<'_>) {
+    static FIRST_PANIC: AtomicBool = AtomicBool::new(true);
+
+    // Make sure only one thread can print a panic message to avoid
+    // interleaved panic outputs. If a second thread panics at the
+    // same time, it won't call process::exit to allow the first
+    // thread to log the panic message. This should never happen, but
+    // who knows...
+    if FIRST_PANIC.swap(false, Ordering::Relaxed) {
+        // Create a buffer for the panic message to avoid other
+        // threads printing trace logs into the middle of our panic
+        // message.
+        let mut buf = String::new();
+
+        let thread = std::thread::current();
+        let name = thread.name().unwrap_or("<unnamed>");
+        let thread_id = thread.id();
+        let process_id = std::process::id();
+        // Print the ThreadId with Debug because it doesn't implement
+        // Display and as_u64 is unstable. While the ThreadId doesn't
+        // tell us much currently, that might change in the future if
+        // we change the logging format for example.
+        let ids_text = format!("(ProcessId({process_id}), {thread_id:?})");
+
+        // Write thread and panic location info
+        if let Some(loc) = info.location() {
+            let file = loc.file();
+            let line = loc.line();
+            let col = loc.column();
+            // String never returns an error for write_str.
+            let _ = write!(
+                buf,
+                "thread '{name}' {ids_text} panicked at {file}:{line}:{col}: "
+            );
+        } else {
+            // String never returns an error for write_str.
+            let _ = write!(
+                buf,
+                "thread '{name}' {ids_text} panicked at <unknown location>: "
+            );
+        }
+
+        // The payload_as_str function is only stabilized in Rust
+        // 1.91.0. Therefore, we use the old method for now. The
+        // payload is only a Box<dyn Any> if someone calls panic_any.
+        if let Some(s) = info.payload().downcast_ref::<&str>() {
+            buf.push_str(s);
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            buf.push_str(s);
+        } else {
+            buf.push_str("Box<dyn Any>");
+        }
+
+        // The backtrace is only usable when panic = "unwind". On "abort" the
+        // backtrace only contains the panic hook itself.
+        #[cfg(panic = "unwind")]
+        {
+            use std::backtrace::{Backtrace, BacktraceStatus};
+            // Capture and print a backtrace if enabled.
+            let backtrace = Backtrace::capture();
+            match backtrace.status() {
+                BacktraceStatus::Disabled => {
+                    buf.push_str("\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace");
+                }
+                BacktraceStatus::Captured => {
+                    let _ = writeln!(buf, "\n{backtrace}");
+                }
+                _ => {}
+            }
+        }
+
+        // Use tracing::error to log the created panic message to the
+        // configured log target.
+        error!("{}", buf);
+    }
 }
 
 fn into_daemon_path(p: Box<Utf8Path>) -> daemonbase::config::ConfigPath {
@@ -163,16 +275,16 @@ impl SocketProvider {
     /// Create an empty provider.
     ///
     /// Attempts to take/pop tcp/udp will fail until either
-    /// [`init_from_env()`], [`pre_bind_udp()`] or [`pre_bind_tcp()`] have
-    /// been called to add at least one socket to the set managed by this
-    /// provider.
+    /// [`Self::init_from_env()`], [`Self::pre_bind_udp()`] or
+    /// [`Self::pre_bind_tcp()`] have been called to add at least one socket to
+    /// the set managed by this provider.
     pub fn new() -> Self {
         Default::default()
     }
 
     /// Capture socket file descriptors from environment variables.
     ///
-    /// Uses the following environment variables per [`sd_listen_fds()``]:
+    /// Uses the following environment variables per [`sd_listen_fds()`]:
     ///   - LISTEN_PID: Must match our own PID.
     ///   - LISTEN_FDS: The number of FDs being passed to the application.
     ///
@@ -180,10 +292,10 @@ impl SocketProvider {
     /// be determined, will be captured by this function. Other socket file
     /// descriptors will be ignored.
     ///
-    /// If needed one can restrict the set of number of file descriptors
-    /// to be obtained from the environment to a maximum via the
-    /// [`max_fds_to_process`] argument, which may be useful if expecting a
-    /// fixed number or not intending to bind an excessive number of sockets.
+    /// If needed one can restrict the set of number of file descriptors to be
+    /// obtained from the environment to a maximum via the `max_fds_to_process`
+    /// argument, which may be useful if expecting a fixed number or not
+    /// intending to bind an excessive number of sockets.
     ///
     /// [`sd_listen_fds()`]: https://www.man7.org/linux/man-pages/man3/sd_listen_fds.3.html#NOTES
     pub fn init_from_env(&mut self, max_fds_to_process: Option<usize>) {
@@ -252,8 +364,9 @@ impl SocketProvider {
     /// Returns the first available UDP socket from those received via the
     /// environment or registered directly.
     ///
-    /// Available sockets are those received via [`init_from_env()`] or
-    /// [`pre_bind`] and not yet removed via [`pop_udp()`] or [`take_udp()`].
+    /// Available sockets are those received via [`Self::init_from_env()`] or
+    /// [`Self::pre_bind_udp()`] and not yet removed via [`Self::pop_udp()`] or
+    /// [`Self::take_udp()`].
     ///
     /// Returns None if no more UDP sockets are available.
     pub fn pop_udp(&mut self) -> Option<tokio::net::UdpSocket> {
@@ -279,8 +392,9 @@ impl SocketProvider {
     /// Returns the first available TCP socket from those received via the
     /// environment or registered directly.
     ///
-    /// Available sockets are those received via [`init_from_env()`] or
-    /// [`pre_bind`] and not yet removed via [`pop_tcp()`] or [`take_tcp()`].
+    /// Available sockets are those received via [`Self::init_from_env()`] or
+    /// [`Self::pre_bind_tcp()`] and not yet removed via [`Self::pop_tcp()`] or
+    /// [`Self::take_tcp()`].
     ///
     /// Returns None if no more TCP sockets are available.
     pub fn pop_tcp(&mut self) -> Option<tokio::net::TcpListener> {

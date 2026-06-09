@@ -1,0 +1,43 @@
+[package]
+name = "cascade-zonedata"
+description = "Zone storage for Cascade."
+
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+readme = "README.md"
+
+
+# --- Features -----------------------------------------------------------------
+
+[features]
+
+default = ["bytes"]
+
+# Support conversions to and from 'bytes' based 'old-base' record types.
+# TODO: Remove once Cascade uses new-base record types everywhere.
+bytes = ["dep:bytes", "domain/bytes"]
+
+
+# --- Dependencies -------------------------------------------------------------
+
+[dependencies]
+
+# The zone storage needs a way to represent DNS records.  'domain' is a
+# general-purpose library offering those types, that we use across Cascade.
+[dependencies.domain]
+workspace = true
+features = ["unstable-new"]
+
+# 'domain's 'old-base' often relies on 'bytes' for storage. We need to use it
+# to support conversions, because 'domain' doesn't re-export its dependency.
+[dependencies.bytes]
+optional = true
+version = "1.0"

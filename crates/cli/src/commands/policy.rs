@@ -1,4 +1,4 @@
-use futures_util::TryFutureExt;
+use cascade_api::ReviewPolicyMode;
 
 use crate::{
     ansi,
@@ -7,7 +7,7 @@ use crate::{
         PolicyListResult, PolicyReloadError, ReviewPolicyInfo, SignerDenialPolicyInfo,
         SignerSerialPolicyInfo,
     },
-    client::{CascadeApiClient, format_http_error},
+    client::CascadeApiClient,
     println,
 };
 
@@ -36,24 +36,15 @@ impl Policy {
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             PolicyCommand::List => {
-                let res: PolicyListResult = client
-                    .get("policy/")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: PolicyListResult = client.get_json("policy/").await?;
 
                 for policy in res.policies {
                     println!("{policy}");
                 }
             }
             PolicyCommand::Show { name } => {
-                let res: Result<PolicyInfo, PolicyInfoError> = client
-                    .get(&format!("policy/{name}"))
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<PolicyInfo, PolicyInfoError> =
+                    client.get_json(&format!("policy/{name}")).await?;
 
                 let p = match res {
                     Ok(p) => p,
@@ -65,12 +56,8 @@ impl Policy {
                 print_policy(&p);
             }
             PolicyCommand::Reload => {
-                let res: Result<PolicyChanges, PolicyReloadError> = client
-                    .post("policy/reload")
-                    .send()
-                    .and_then(|r| r.json())
-                    .await
-                    .map_err(format_http_error)?;
+                let res: Result<PolicyChanges, PolicyReloadError> =
+                    client.post_json("policy/reload").await?;
 
                 let res = match res {
                     Ok(res) => res,
@@ -146,11 +133,14 @@ fn print_policy(p: &PolicyInfo) {
 
     fn print_review(r: &ReviewPolicyInfo) {
         println!("    review:");
-        println!("      required: {}", r.required);
-        println!(
-            "      cmd_hook: {}",
-            r.cmd_hook.as_ref().cloned().unwrap_or("<none>".into())
-        );
+        match &r.mode {
+            ReviewPolicyMode::Off => println!("      mode: off"),
+            ReviewPolicyMode::Manual => println!("      mode: manual"),
+            ReviewPolicyMode::Script { hook } => {
+                println!("      mode: script");
+                println!("      hook: {hook}")
+            }
+        }
     }
 
     fn print_nameserver_comms_policy(n: &[NameserverCommsPolicyInfo]) {
@@ -173,8 +163,8 @@ fn print_policy(p: &PolicyInfo) {
     print_review(&p.signer.review);
     println!("  server:");
     println!("    outbound:");
-    println!("      accept XFR requests from:");
-    print_nameserver_comms_policy(&p.server.outbound.accept_xfr_requests_from);
+    println!("      provide XFR to:");
+    print_nameserver_comms_policy(&p.server.outbound.provide_xfr_to);
     println!("      send NOTIFY to:");
     print_nameserver_comms_policy(&p.server.outbound.send_notify_to);
 }

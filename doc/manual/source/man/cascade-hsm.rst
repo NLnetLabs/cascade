@@ -4,25 +4,24 @@ cascade hsm
 Synopsis
 --------
 
-:program:`cascade hsm` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` hsm ``<COMMAND>``
 
-:program:`cascade hsm` ``[OPTIONS]`` :subcmd:`add` ``<SERVER_ID>`` ``<IP_HOST_OR_FQDN>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` hsm :subcmd:`add` ``<SERVER_ID>`` ``<IP_HOST_OR_FQDN>``
 
-:program:`cascade hsm` ``[OPTIONS]`` :subcmd:`show` ``<SERVER_ID>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` hsm :subcmd:`show` ``<SERVER_ID>``
 
-:program:`cascade hsm` ``[OPTIONS]`` :subcmd:`list`
+:program:`cascade` ``[GLOBAL OPTIONS]`` hsm :subcmd:`list`
 
 Description
 -----------
 
-Manage HSM's.
+Manage the configuration of Hardware Security Modules (HSMs) in Cascade
 
-Options
--------
+Global Options
+--------------
 
-.. option:: -h, --help
-
-   Print the help text (short summary with ``-h``, long help with ``--help``).
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 Commands
 --------
@@ -62,7 +61,7 @@ Arguments for :subcmd:`hsm add`
 
       An identifier to refer to the KMIP server by.
 
-      This identifier is used with other ``cascade hsm`` commands and Cascade
+      This identifier is used with other ``cascade`` commands and Cascade
       policy files. The identifier serves several purposes:
 
       1. To make it easy at a glance to recognize which KMIP server a given key
@@ -106,16 +105,16 @@ Client Credentials:
 
           Optional username to authenticate to the KMIP server as.
 
-          Note: When using the Cascade ``kmip2pkcs11`` tool the username
-          set here will be used as the label of the PKCS#11 token to login
-          to.
+          Note: When using the Cascade ``cascade-hsm-bridge`` tool the
+          username set here will be used as the label of the PKCS#11 token to
+          login to.
 
 .. option:: --password <PASSWORD>
 
           Optional password to authenticate to the KMIP server with.
 
-          Note: When using the Cascdee ``kmip2pkcs11`` tool the password
-          set here will be used as the PKCS#11 PIN to login with.
+          Note: When using the Cascdee ``cascade-hsm-bridge`` tool the
+          password set here will be used as the PKCS#11 PIN to login with.
 
 Client Certificate Authentication:
 ++++++++++++++++++++++++++++++++++
@@ -209,5 +208,5 @@ https://cascade.docs.nlnetlabs.nl
 **cascaded**\ (1)
     :doc:`cascaded`
 
-**kmip2pkcs11**\ (1)
-    KMIP to PKCS#11 relay documentation
+**cascade-hsm-bridge**\ (1)
+    KMIP to PKCS#11 bridge documentation

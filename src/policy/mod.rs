@@ -2,17 +2,18 @@
 
 use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
+use std::time::Duration;
 use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
 use camino::Utf8PathBuf;
 use domain::base::Name;
 use domain::base::Ttl;
+use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
-use crate::center::Change;
-use crate::zone::ZoneByName;
+use crate::tsig::TsigStore;
 use crate::{api::PolicyReloadError, config::Config};
 
 pub mod file;
@@ -38,34 +39,98 @@ pub struct Policy {
 
 //--- Loading / Saving
 
-impl Policy {
-    /// Reload this policy.
-    #[allow(clippy::mutable_key_type)]
-    pub fn reload(
-        &mut self,
-        config: &Config,
-        zones: &foldhash::HashSet<ZoneByName>,
-        on_change: impl FnMut(Change),
-    ) -> io::Result<()> {
-        // TODO: Carefully consider how 'config.policy_dir' and the path last
-        // loaded from are synchronized.
-
-        let path = config.policy_dir.join(format!("{}.toml", self.latest.name));
-        file::Spec::load(&path)?.parse_into(self, zones, on_change);
-        Ok(())
-    }
+pub enum PolicyChange {
+    Removed(Arc<PolicyVersion>),
+    Updated {
+        old: Arc<PolicyVersion>,
+        new: Arc<PolicyVersion>,
+    },
+    Added(Arc<PolicyVersion>),
 }
 
 /// Reload all policies.
-#[allow(clippy::mutable_key_type)]
+///
+/// Any changes are reported via the `on_change` callback.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
 pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
-    zones: &foldhash::HashSet<ZoneByName>,
     config: &Config,
-    mut on_change: impl FnMut(Change),
+    tsig_store: &TsigStore,
+    mut on_change: impl FnMut(&Box<str>, PolicyChange),
 ) -> Result<(), PolicyReloadError> {
-    // TODO: This function is not atomic: it may have effects even if it fails.
+    let new_versions = load_all(policies, config, tsig_store)?;
 
+    let mut new_policies = foldhash::HashMap::default();
+
+    for (name, new_version) in new_versions {
+        if let Some(mut pol) = policies.remove(&name) {
+            if *pol.latest == new_version {
+                new_policies.insert(name, pol);
+            } else {
+                let new = Arc::new(new_version);
+                let old = std::mem::replace(&mut pol.latest, new.clone());
+                (on_change)(&name, PolicyChange::Updated { old, new });
+
+                new_policies.insert(name, pol);
+            }
+        } else {
+            let new = Arc::new(new_version);
+            (on_change)(&name, PolicyChange::Added(new.clone()));
+
+            new_policies.insert(
+                name,
+                Policy {
+                    latest: new,
+                    mid_deletion: false,
+                    zones: Default::default(),
+                },
+            );
+        }
+    }
+
+    // Traverse policies whose files were not found.
+    for (name, policy) in policies.drain() {
+        // If any zones are using this policy, keep it.
+        if !policy.zones.is_empty() {
+            error!(
+                "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
+            );
+            let prev = new_policies.insert(name, policy);
+            assert!(
+                prev.is_none(),
+                "'new_policies' and 'policies' are disjoint sets"
+            );
+        } else {
+            info!("Forgetting now-removed policy '{name}'");
+            (on_change)(
+                &policy.latest.name,
+                PolicyChange::Removed(policy.latest.clone()),
+            );
+        }
+    }
+
+    // Update the set of policies.
+    *policies = new_policies;
+
+    Ok(())
+}
+
+/// Load all the policies based on the path to the config
+///
+/// The current policies are used for logging purposes so we can log whether
+/// a policy is new, updated, unchanged or removed.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
+pub fn load_all(
+    policies: &foldhash::HashMap<Box<str>, Policy>,
+    config: &Config,
+    tsig_store: &TsigStore,
+) -> Result<foldhash::HashMap<Box<str>, PolicyVersion>, PolicyReloadError> {
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
     let mut new_policies = foldhash::HashMap::<_, _>::default();
@@ -123,42 +188,132 @@ pub fn reload_all(
         let name = path
             .file_stem()
             .expect("this path points to a readable file, so it must have a file name");
-        let policy = if let Some(mut policy) = policies.remove(name) {
-            spec.parse_into(&mut policy, zones, &mut on_change);
-            policy
+
+        let policy = spec.parse(name);
+
+        check_policy(&policy, tsig_store)?;
+        if policies.contains_key(name) {
+            info!("Reloaded policy '{name}'");
         } else {
             info!("Loaded new policy '{name}'");
-            let policy = spec.parse(name);
-            (on_change)(Change::PolicyAdded(policy.latest.clone()));
-            policy
-        };
+        }
 
         // Record the new policy.
         let prev = new_policies.insert(name.into(), policy);
         assert!(prev.is_none(), "there is at most one policy per path");
     }
 
-    // Traverse policies whose files were not found.
-    for (name, policy) in policies.drain() {
-        // If any zones are using this policy, keep it.
-        if !policy.zones.is_empty() {
-            error!(
-                "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
-            );
-            let prev = new_policies.insert(name, policy);
-            assert!(
-                prev.is_none(),
-                "'new_policies' and 'policies' are disjoint sets"
-            );
-        } else {
-            info!("Forgetting now-removed policy '{name}'");
-            (on_change)(Change::PolicyRemoved(policy.latest));
-        }
+    Ok(new_policies)
+}
+
+/// Perform a semantic check on the loaded policy.
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::result_large_err)]
+fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
+    // Check the publication nameservers for the key manager. Any TSIG key
+    // that is part of those nameservers has to exist in the TSIG key store.
+    let tsig_names = policy
+        .key_manager
+        .publication_nameservers
+        .iter()
+        .chain(policy.server.outbound.provide_xfr_to.iter())
+        .chain(policy.server.outbound.send_notify_to.iter())
+        .filter_map(|ns| ns.tsig_key_name.as_ref());
+
+    for tsig_name in tsig_names {
+        tsig_store
+            .get(tsig_name)
+            .ok_or(PolicyReloadError::NoSuchTsigKey(tsig_name.clone()))?;
     }
 
-    // Update the set of policies.
-    *policies = new_policies;
+    // Check signer policy.
 
+    // sig_validity_time
+    //
+    // The maximum sig_validity_time is determined by what we can put in
+    // the expiration time. Expiration time is effectively a 32-bit signed
+    // value. So sig_validity_time has to be less then 0x8000_0000. To
+    // give ourselves some headroom, set the limit to 0x4000_0000.
+    if policy.signer.sig_validity_time >= 0x4000_0000 {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-lifetime {} too big (>= 0x4000_0000)",
+            policy.signer.sig_validity_time
+        )));
+    }
+
+    // The minimum value of sig_validity_time is bounded by sig_remain_time
+    // and signature_refresh_interval. We get to this later.
+
+    // sig_remain_time
+    //
+    // The effective lifetime of a signature is
+    // sig_validity_time - sig_remain_time. This needs to be greater than
+    // zero. So the maximum value of sig_remain_time is bounded by
+    // sig_validity_time. We will check this later.
+    //
+    // Ideally, sig_remain_time should be larger than the maximum TTL
+    // to make sure that old signatures are removed from caches before
+    // they expire. We don't have a maximum TTL value. So what the signer
+    // does is add the TTL of an RRset to sig_remain_time to determine
+    // if a signature needs to be refreshed. For this reason, the lower bound
+    // of sig_remain_time is zero. However, this does not leave any margin
+    // for error.
+
+    // signature_refresh_interval
+    //
+    // The maximum is again bounded by sig_validity_time.
+    //
+    // Each signature_refresh_interval seconds, the signer will generate a
+    // new version of the zone with some refreshed signatures. For this reason,
+    // signature_refresh_interval should not be too low. Enforce a lower
+    // bound of 60 seconds to avoid accidentally generating new zone versions
+    // at a high rate.
+    if policy.signer.signature_refresh_interval < 60 {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-refresh-interval {} too small (< 60)",
+            policy.signer.signature_refresh_interval
+        )));
+    }
+
+    // Check if everything fits together. The effective lifetime of a
+    // signature is sig_validity_time - sig_remain_time. This needs to be
+    // greater than zero. We need to take TTL into account. Assume a reasonable
+    // TTL of one hour (3600 seconds). So now we have
+    // sig_validity_time - sig_remain_time - 3600 > 0.
+    // We sign every signature_refresh_interval so we need to take that into
+    // account. Which gives:
+    // sig_validity_time - sig_remain_time - 3600 - signature_refresh_interval > 0
+    // Which can be written as:
+    // sig_validity_time > sig_remain_time + 3600 + signature_refresh_interval
+    //
+    // If an RRset has a high TTL such that
+    // sig_remain_time + TTL + signature_refresh_interval >= sig_validity_time
+    // then the signature will be refreshed every signature_refresh_interval
+    // and an error will be logged. In extreme cases, i.e. when
+    // TTL + signature_refresh_interval > sig_validity_time
+    // then validation errors may happen due to caching. However, this only
+    // affects RRsets with too high TTLs. The rest of the zone will be
+    // unaffected.
+    if policy.signer.sig_validity_time
+        <= policy.signer.sig_remain_time + 3600 + policy.signer.signature_refresh_interval
+    {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-lifetime ({}) too small (<= signature-remain-time ({}) + room for TTL (3600) + signature-refresh-interval ({}))",
+            policy.signer.sig_validity_time,
+            policy.signer.sig_remain_time,
+            policy.signer.signature_refresh_interval
+        )));
+    }
+
+    // key_roll_time
+    //
+    // If the value is too high then the key roll never completes. It is not
+    // clear if there is a sensible upper bound.
+    //
+    // It is fine to set this value to zero, the key roll will just complete
+    // the next time the refresh timer expires.
     Ok(())
 }
 
@@ -247,8 +402,14 @@ pub struct KeyManagerPolicy {
     /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
     pub default_ttl: Ttl,
 
-    /// Automatically remove keys that are no long in use.
+    /// Automatically remove keys that are no longer in use.
     pub auto_remove: bool,
+
+    /// Remove keys after this amount of time.
+    pub auto_remove_delay: Duration,
+
+    /// Nameservers to check for RRSIG propagation during a key roll.
+    pub publication_nameservers: Vec<NameserverCommsPolicy>,
 }
 
 //----------- SignerPolicy -----------------------------------------------------
@@ -275,6 +436,13 @@ pub struct SignerPolicy {
 
     /// How long before expiration a new signature has to be generated.
     pub sig_remain_time: u32,
+
+    /// How often to refresh some amount of signatures to make resigning
+    /// smoother.
+    pub signature_refresh_interval: u32,
+
+    /// How long should it take to resign a zone during a ZSK or CSK roll.
+    pub key_roll_time: u32,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicy,
@@ -345,20 +513,28 @@ pub enum SignerDenialPolicy {
 //----------- ReviewPolicy -----------------------------------------------------
 
 /// Policy for reviewing loaded/signed zones.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ReviewPolicy {
-    /// Whether review is required.
-    ///
-    /// If this is `false`, zones under this policy will not wait for external
-    /// approval of new versions when they are loaded / signed.
-    pub required: bool,
+    pub mode: ReviewMode,
 
-    /// A command hook for reviewing a new version of the zone.
-    ///
-    /// When a new loaded / signed version of the zone is prepared, this hook
-    /// (if [`Some`]) will be spawned to verify the zone.  If review is required
-    /// and the hook fails, the zone will not be propagated.
-    pub cmd_hook: Option<String>,
+    pub on_reject: OnReject,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ReviewMode {
+    #[default]
+    Off,
+    Manual,
+    Script {
+        hook: String,
+    },
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum OnReject {
+    #[default]
+    Discard,
+    Halt,
 }
 
 //----------- ServerPolicy -----------------------------------------------------
@@ -375,10 +551,10 @@ pub struct ServerPolicy {
 /// Policy for restricting to whom data may be sent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OutboundPolicy {
-    /// The set of nameservers from which SOA and XFR requests may be received.
+    /// The set of nameservers to which zone transfers may be provided.
     ///
-    /// If empty, any nameserver may request XFR from us.
-    pub accept_xfr_requests_from: Vec<NameserverCommsPolicy>,
+    /// If empty, zone transfers will be provided to any nameserver.
+    pub provide_xfr_to: Vec<NameserverCommsPolicy>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///
@@ -388,36 +564,38 @@ pub struct OutboundPolicy {
     pub send_notify_to: Vec<NameserverCommsPolicy>,
 }
 
-//----------- InboundPolicy ---------------------------------------------------
-
-/// Policy for restricting from whom data may be received.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InboundPolicy {
-    /// The set of nameservers to which SOA and XFR requests should be sent.
-    ///
-    /// If empty, the nameserver from which the zone was received will be
-    /// contacted.
-    pub send_xfr_requests_to: Vec<NameserverCommsPolicy>,
-
-    /// The set of nameservers from which may NOTIFY messages may be received.
-    ///
-    /// If empty, the nameserver from which the zone was received will be
-    /// allowed to send us NOTIFY messages.
-    pub accept_notify_messages_from: Vec<NameserverCommsPolicy>,
-}
-
 //----------- NameserverCommsPolicy -------------------------------------------
 
 /// Policy for communicating with another namesever.
+///
+/// This type serves a dual purpose:
+///   - For outbound communication it specifies the address and port of the
+///     nameserver to contact, and optionally a TSIG key that should be used
+///     to sign outbound requests. When used for this purpose the address and
+///     port are mandatory.
+///   - For inbound communication this type is intended to support the access
+///     control use case, acting as a white list entry. When used for this
+///     purpose typically a port is not specified as the sending port that
+///     will be used by the client cannot be known in advance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NameserverCommsPolicy {
     /// The address to send to/receive from.
     ///
-    /// For sending the port MUST NOT be zero.
-    ///
     /// TODO: Support IP prefixes?
     pub addr: SocketAddr,
-    // TODO: Support TSIG key names?
+
+    /// An optional TSIG key to sign and authenticate messages with.
+    pub tsig_key_name: Option<KeyName>,
+}
+
+impl Display for NameserverCommsPolicy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.addr)?;
+        if let Some(tsig_key_name) = &self.tsig_key_name {
+            write!(f, "^{tsig_key_name}")?;
+        }
+        Ok(())
+    }
 }
 
 //----------- KeyParameters ---------------------------------------------------

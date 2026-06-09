@@ -49,8 +49,8 @@ Cascade consists of three main components and an optional fourth:
   :doc:`key management <key-management>` of Cascade, including automation of
   key rolls. It is invoked as needed by the :program:`cascaded` daemon. 
 
-- The *optional* :program:`kmip2pkcs11` daemon, which is only required when
-  using a PKCS#11 compatible :doc:`HSM <hsms>`. 
+- The *optional* :program:`cascade-hsm-bridge` daemon, which is only required
+  when using a PKCS#11 compatible :doc:`HSM <hsms>`.
 
 Supported Inputs/Outputs
 ------------------------
@@ -58,10 +58,10 @@ Supported Inputs/Outputs
 Cascade supports:
   - Receiving zone data via AXFR or IXFR :term:`zone transfers <Zone
     transfer>`, or from on-disk files.
-  - Publishing data via AXFR.
+  - Publishing data via AXFR or IXFR.
 
-Publishing data via IXFR is coming soon. On-disk files, while not supported
-directly, could be achieved by XFR of the signed zone to an on-disk file.
+On-disk files, while not supported
+directly, could be achieved by AXFR of the signed zone to an on-disk file.
 
 .. important:: Fully automatic key rolls are enabled by default. For this to 
    work, Cascade requires access to all nameservers of the zone and the 
