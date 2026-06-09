@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+
+set -e
+
+function usage {
+	echo "The act wrapper script."
+	echo
+	echo "This script first builds the container image for running the tests"
+	echo "with a freshly compiled Cascade, before executing act with"
+	echo "the provided arguments."
+	echo
+	echo "If you want to skip the build step and run act with the latest"
+	echo "available version of the cascade test runner image you can use:"
+	echo
+	echo "'$0 +nobuild <act-args>'"
+	echo
+	echo "If you want to build cascade within the container build, use:"
+	echo
+	echo "'$0 +build-inside <act-args>'"
+	echo
+	echo "If you want to produce a report of approximate CPU and memory usage"
+	echo "over time use:"
+	echo
+	echo "'$0 +stats-report </path/to/write/report.csv>'"
+	echo
+	echo "To create a PNG graph of the usage use: (requires gnuplot)"
+	echo "Note: If +stats-report is not used, a temporary file will be used"
+	echo "to capture resource usage in CSV format."
+	echo
+	echo "'$0 +stats-graph </path/to/write/report.png>'"
+	echo
+	echo "NOTE: '+XXX' arguments must be the first arguments to act-wrapper, and can be combined."
+	echo
+	echo "Inputs that can be provided via --input:"
+	echo "	--input build-profile=debug|release"
+	echo "	--input log-level=error|warn|info|debug|trace"
+}
+
+if [[ "$1" =~ ^-h|--help$ ]]; then
+	usage
+	exit
+fi
+
+# Change to the directory where this script lies
+cd "$(dirname "$0")"
+
+# Make sure that this script is located at the root of this repository
+test -d .github
+test -d integration-tests
+test -d src
+test -f Cargo.toml
+
+MSRV=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[]|select(.name=="cascade")|.rust_version')
+
+if docker context list --help | grep -qi "podman"; then
+	DOCKER_IS_PODMAN=true
+fi
+
+# The Dockerfile uses the SHELL instruction, which is not supported by OCI images
+if [[ "$DOCKER_IS_PODMAN" == true ]]; then
+	args=(--format docker)
+	act_args=(--network podman)
+else
+	args=()
+	act_args=(--network default)
+fi
+
+while [[ "$1" =~ ^\+ ]]; do
+	case "$1" in
+		+build-inside)
+			args+=(--build-arg REBUILD_INSIDE=true)
+			build_inside=true
+			;;
+		+nobuild)
+			no_build=true
+			;;
+		+stats-report)
+			docker_stats=true
+			shift
+			docker_stats_path="$1"
+			;;
+		+stats-graph)
+			docker_stats_graph=true
+			shift
+			docker_stats_graph_path="$1"
+			;;
+		*)
+			echo >&2 "ERROR: Unrecognized + argument: $1"
+			usage
+			exit
+		 ;;
+	esac
+	shift
+done
+
+if [[ "$no_build" != true ]]; then
+	if [[ "$build_inside" != true ]]; then
+		cargo build
+		cargo build --release
+	fi
+
+	docker buildx build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-tests-runner --build-arg MSRV=$MSRV "${args[@]}"
+	echo "Built Cascade integration test runner based on local repository."
+fi
+
+if [[ "$docker_stats_graph" == true && "$docker_stats" != true ]]; then
+	docker_stats=true
+	docker_stats_path=$(mktemp)
+fi
+
+if [[ "$docker_stats" == true ]]; then
+	# Only collect docker stats if no other Docker containers are already running.
+	NUM_DOCKER_CONTAINERS_RUNNING=$(docker ps -q | wc -l)
+	if [[ "${NUM_DOCKER_CONTAINERS_RUNNING}" -gt 0 ]]; then
+		echo >&2 "ERROR: Can only collect Docker statistics reliably if there are no other containers running."
+		exit 1
+	fi
+
+	echo "Logging Docker approximate CPU and memory usage to '${docker_stats_path}'."
+
+	# Delete previous report file.
+	[ -f "${docker_stats_path}" ] && rm "${docker_stats_path}"
+
+	# Capture usage via docker stats in the background.
+	(
+		echo "Timestamp,CPU %,Memory Usage Bytes" >> "${docker_stats_path}"
+		while true; do
+			NOW=$(date +"%s")
+
+			# Convert XiB values (KiB, MiB, GiB) to their bytes equivalent using
+			# 'numfmt'. numfmt understands Ki, Mi, Gi, but not the trailing 'B' so
+			# we strip that out.
+			RAW=$(docker stats --format "${NOW}, {{.CPUPerc}}, {{.MemUsage}}" --no-stream)
+
+			# Don't attempt to monitor usage by multiple containers at once, this
+			# functionality is only intended for the simple case of a single test
+			# running inside a single container.
+			NUM_LINES=$(echo "${RAW}" | wc -l)
+			if [[ "${NUM_LINES}" -gt 1 ]]; then
+				# We will detect below that this process has unexpectedly terminated.
+				exit 1
+			fi
+
+			# Skip empty lines.
+			if [[ "${RAW}" != "" && $RAW != *"--"* ]]; then
+				TIMESTAMP=$(echo "${RAW}" | cut -d ',' -f 1)
+				CPU=$(echo "${RAW}" | cut -d ',' -f 2)
+				MEMORY=$(echo "${RAW}" | cut -d ',' -f 3)
+				MEMORY_CURRENT_BYTES=$(echo "${MEMORY}" | cut -d '/' -f 1 | tr -d 'B' | numfmt --from=auto || echo "0")
+				FORMATTED="${TIMESTAMP}, ${CPU}, ${MEMORY_CURRENT_BYTES}"
+				echo "${FORMATTED}" >>"${docker_stats_path}"
+			fi
+		done
+	) &
+
+	# Note the PID of the background shell so that we can stop it after act
+	# finishes running.
+	STATS_PID=$!
+	echo "Docker stats being collected by PID ${STATS_PID}."
+fi
+
+# Use -C to make the integration-tests the working directory as this makes
+# the startup time of each test much faster due to reducing the amount of data
+# that the invoked `docker cp` command copies. Unfortunately neither act nor
+# `docker cp` respect .gitignore or .dockerignore or have any other way I have
+# found to achieve the same result.
+echo "Running tests"
+act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -C integration-tests -W system-tests.yml "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
+
+# Stop the docker stats collection process, if needed.
+if [[ "$docker_stats" == true ]]; then
+	if kill "$STATS_PID" &>/dev/null; then
+		STATS_OKAY=true
+	else
+		echo >&2 "ERROR: Usage statistics could not be collected, perhaps because more than one test was running at once?"
+		rm "${docker_stats_path}" || true
+	fi
+fi
+
+# Generate a gnuplot graph of the stats data, if requested, if stats are
+# available and if the executed tests succeeded.
+if [[ "${docker_stats_graph}" == true && "${STATS_OKAY}" == true && "${ACT_EXIT_CODE}" -eq 0 ]]; then
+	if ! command -v gnuplot &>/dev/null; then
+		echo >&2 "ERROR: Skipping resource usage graph generation: gnuplot not available."
+	else
+		# Include the git ref in the chart.
+		GIT_VER=$(git describe --long --dirty)
+
+		# Get the CPU info.
+		CPU_INFO="$(grep 'model name' /proc/cpuinfo | head -n 1 | cut -d ':' -f 2)"
+
+		NUM_LINES=$(wc -l "${docker_stats_path}" | awk '{print $1}')
+		if [[ "${NUM_LINES}" -gt 1 ]]; then
+			echo "Generating usage graph in ${docker_stats_graph_path}"
+
+			# Generate the gnuplot control script.	
+			GNUPLOT_SCRIPT=$(cat <<EOF
+set locale "en_GB.UTF-8"
+set terminal png size 2048,1536
+set datafile separator ','
+set title "Cascade ${GIT_VER}\n{/*0.75 $*}\n{/*0.75 ${CPU_INFO}"
+set timefmt "%s"
+set xdata time
+set format x "%H:%M:%S"
+set format y2 "%.1b %B"
+set ytics nomirror
+set y2tics
+# Tell gnuplot to initially determine labels from the first line of CSV data
+# but then override the labels it will use. This is done to get gnuplot to not
+# treat the first line of CSV as data while still having different CSV column
+# headers than the labels to be used in the graph.
+set key autotitle columnhead
+set xlabel "Time"
+set ylabel "CPU %"
+set y2label "Memory"
+plot "${docker_stats_path}" using 1:2 with lines title "CPU %", '' using 1:3 with lines axis x1y2 title "Memory"
+EOF
+			)
+
+			# Invoke gnuplot to generate the graph.
+			echo "${GNUPLOT_SCRIPT}" | gnuplot -c /dev/stdin > "${docker_stats_graph_path}"
+		fi
+	fi
+fi
+
+if docker container ls --format '{{.Names}}' --all | grep -q "^act-"; then
+	echo "NOTE: act seemingly failed to clean up all containers it created."
+	echo "You may wish to check and clean up lingering containers"
+fi
+
+exit "${ACT_EXIT_CODE}"

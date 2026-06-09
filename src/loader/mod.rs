@@ -5,271 +5,427 @@
 //! DNS server, etc.) that will be monitored for changes.
 
 use std::{
-    cmp::Ordering,
     fmt,
     net::SocketAddr,
-    sync::{Arc, MutexGuard},
+    sync::{
+        Arc,
+        atomic::{self, AtomicUsize},
+    },
+    time::{Duration, Instant, SystemTime},
 };
 
 use camino::Utf8Path;
+use cascade_api::ZoneReloadError;
+use cascade_zonedata::LoadedZoneBuilder;
 use domain::{new::base::Serial, tsig};
-use tracing::{debug, trace};
+use tracing::{debug, error, info};
 
 use crate::{
-    center::{Center, Change},
-    manager::{ApplicationCommand, Terminated},
+    center::{Center, State},
+    common::scheduler::Scheduler,
+    loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{
-        LoaderState, Zone, ZoneContents, ZoneState, contents,
-        loader::{LoaderMetrics, Source},
-    },
+    zone::{HistoricalEvent, Zone, ZoneByName, ZoneByPtr},
 };
 
-mod refresh;
 mod server;
+pub mod zone;
 mod zonefile;
-
-pub use refresh::RefreshMonitor;
 
 //----------- Loader -----------------------------------------------------------
 
-/// The loader.
+/// The zone loader.
+#[derive(Debug)]
 pub struct Loader {
-    /// The refresh monitor.
-    pub refresh_monitor: RefreshMonitor,
-
-    /// A sender for updates from the loader.
-    pub center: Arc<Center>,
+    /// A scheduler for SOA timer based zone refreshes.
+    refresh_scheduler: Scheduler<ZoneByPtr>,
 }
 
 impl Loader {
     /// Construct a new [`Loader`].
-    pub fn launch(center: Arc<Center>) -> Arc<Self> {
-        let this = Arc::new(Self {
-            refresh_monitor: RefreshMonitor::new(),
-            center,
-        });
+    pub fn new() -> Self {
+        Self {
+            refresh_scheduler: Scheduler::new(),
+        }
+    }
 
-        {
-            let state = this.center.state.lock().unwrap();
-
-            for zone in &state.zones {
-                this.enqueue_refresh(&zone.0);
+    /// Initialize the loader, synchronously.
+    pub fn init(center: &Arc<Center>, state: &mut State) {
+        // Enqueue refreshes for all known upstream zones.
+        for ZoneByName(zone) in &state.zones {
+            let mut handle = zone.write_handle(center);
+            match handle.state.loader.source {
+                Source::None => { /* Nothing to do */ }
+                Source::Zonefile { .. } => {
+                    // Don't enqueue a refresh for zones sourced from disk
+                    // as the operator may be in the middle of editing the
+                    // zonefile and thus we require zonefiles to be reloaded
+                    // explicitly via `cascade zone reload`.
+                }
+                Source::Server { .. } => {
+                    handle.loader().enqueue_refresh(false);
+                }
             }
         }
-
-        this
     }
 
     /// Drive this [`Loader`].
-    pub fn run(self: &Arc<Self>) -> AbortOnDrop {
-        let this = self.clone();
+    pub fn run(center: Arc<Center>) -> AbortOnDrop {
         AbortOnDrop::from(tokio::spawn(async move {
-            this.refresh_monitor.run(&this).await
+            center
+                .loader
+                .refresh_scheduler
+                .run(|_time, ZoneByPtr(zone)| {
+                    // Enqueue a (soft) refresh for the zone.
+                    zone.write_handle(&center).loader().enqueue_refresh(false);
+                })
+                .await
         }))
     }
 
-    pub async fn on_command(self: &Arc<Self>, cmd: ApplicationCommand) -> Result<(), Terminated> {
-        debug!("Received cmd: {cmd:?}");
-        match cmd {
-            ApplicationCommand::Changed(change) => {
-                match change {
-                    // This event is also fired at zone add so we don't need
-                    // a specific case for that.
-                    Change::ZoneSourceChanged(name) => {
-                        let zone =
-                            crate::center::get_zone(&self.center, &name).expect("zone exists");
-                        self.enqueue_refresh(&zone);
-                        Ok(())
-                    }
-                    Change::ZoneRemoved(name) => {
-                        // We have to get the reference to the zone from our refresh monitor
-                        // because it doesn't exist in center.zones anymore!
-                        // Ideally, the ZoneRemoved command would pass the zone as Arc<Zone>
-                        // instead of just giving the same. That would make this more performant.
-                        if let Some(zone) = self
-                            .refresh_monitor
-                            .scheduled
-                            .lock()
-                            .unwrap()
-                            .iter()
-                            .find(|z| z.zone.0.name == name)
-                        {
-                            self.disable(&zone.zone.0);
-                        }
-                        Ok(())
-                    }
-                    _ => Ok(()), // ignore other changes
-                }
-            }
-            ApplicationCommand::RefreshZone { zone_name } => {
-                let zone = crate::center::get_zone(&self.center, &zone_name).expect("zone exists");
-                let mut state = zone.state.lock().expect("lock is not poisoned");
-                LoaderState::enqueue_refresh(&mut state, &zone, false, self);
-                Ok(())
-            }
-            ApplicationCommand::ReloadZone { zone_name } => {
-                let zone = crate::center::get_zone(&self.center, &zone_name).expect("zone exists");
-                let mut state = zone.state.lock().expect("lock is not poisoned");
-                LoaderState::enqueue_refresh(&mut state, &zone, true, self);
-                Ok(())
-            }
-            _ => panic!("Got an unexpected command!"),
+    pub fn on_refresh_zone(&self, center: &Arc<Center>, zone: &Arc<Zone>) {
+        zone.write_handle(center).loader().enqueue_refresh(false);
+    }
+
+    pub fn on_reload_zone(
+        &self,
+        center: &Arc<Center>,
+        zone: &Arc<Zone>,
+    ) -> Result<(), ZoneReloadError> {
+        let mut handle = zone.write_handle(center);
+        if let Some(reason) = handle.state.halted_reason() {
+            return Err(ZoneReloadError::ZoneHalted(reason));
         }
+        if let Source::None = handle.state.loader.source {
+            return Err(ZoneReloadError::ZoneWithoutSource);
+        }
+        handle.loader().enqueue_refresh(true);
+        Ok(())
     }
+}
 
-    fn enqueue_refresh(self: &Arc<Self>, zone: &Arc<Zone>) {
-        let mut state = zone.state.lock().unwrap();
-        LoaderState::enqueue_refresh(&mut state, zone, false, self);
-    }
-
-    fn disable(self: &Arc<Self>, zone: &Arc<Zone>) {
-        let mut state = zone.state.lock().unwrap();
-        state.loader.source = Source::None;
-        LoaderState::enqueue_refresh(&mut state, zone, true, self);
+impl Default for Loader {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 //----------- refresh() --------------------------------------------------------
 
-/// Refresh a zone from DNS server.
-///
-/// The DNS server will be queried for the latest version of the zone; if a
-/// local copy of this version is not already available, it will be loaded.
-/// Where possible, an incremental zone transfer will be used to communicate
-/// more efficiently.
-pub async fn refresh_server<'z>(
-    metrics: &LoaderMetrics,
-    zone: &'z Arc<Zone>,
-    addr: &std::net::SocketAddr,
-    tsig_key: &Option<Arc<domain::tsig::Key>>,
-    latest: Option<Arc<ZoneContents>>,
-) -> (
-    Result<Option<Serial>, RefreshError>,
-    Option<MutexGuard<'z, ZoneState>>,
+/// Refresh a zone.
+#[tracing::instrument(
+    level = "debug",
+    skip_all,
+    fields(zone = %zone.name, source = ?source),
+)]
+async fn refresh(
+    zone: Arc<Zone>,
+    source: Source,
+    refresh: EnqueuedRefresh,
+    mut builder: LoadedZoneBuilder,
+    center: Arc<Center>,
+    metrics: Arc<ActiveLoadMetrics>,
 ) {
-    trace!("Refreshing {:?} from server {addr:?}", zone.name);
+    info!("Refreshing {:?}", zone.name);
+    let force = refresh == EnqueuedRefresh::Reload;
 
-    let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-
-    let result = server::refresh(metrics, zone, addr, tsig_key, latest).await;
-
-    let new_contents = match result {
-        // The local copy is up-to-date.
-        Ok(None) => return (Ok(None), None),
-
-        // The local copy is outdated.
-        Ok(Some(new_contents)) => Arc::new(new_contents),
-
-        // An error occurred.
-        Err(error) => return (Err(error), None),
-    };
-
-    // Integrate the results with the zone state.
-    let remote_serial = new_contents.soa.rdata.serial;
-
-    // Lock the zone state.
-    let mut lock = zone.state.lock().unwrap();
-
-    // If no previous version of the zone exists (or if the zone
-    // contents have been cleared since the start of the refresh),
-    // insert the remote copy directly.
-    let Some(contents) = &mut lock.contents else {
-        lock.contents = Some(new_contents);
-
-        return (Ok(Some(remote_serial)), Some(lock));
-    };
-
-    // Compare the _current_ latest version of the zone against the
-    // remote.
-    let local_serial = contents.soa.rdata.serial;
-    match local_serial.partial_cmp(&remote_serial) {
-        Some(Ordering::Less) => {}
-
-        Some(Ordering::Equal) => {
-            // The local copy was updated externally, and is now
-            // up-to-date with respect to the remote copy.  Stop.
-            return (Ok(None), Some(lock));
+    // Perform the source-specific reload into the zone contents.
+    let result = match source {
+        Source::None => Ok(false),
+        Source::Zonefile { path } => {
+            // Zonefile loading is a synchronous process, so it is executing on
+            // its own blocking task. It cannot borrow 'builder', so 'builder'
+            // is moved and returned by value.
+            let zone = zone.clone();
+            let metrics = metrics.clone();
+            let result;
+            (builder, result) = tokio::task::spawn_blocking(move || {
+                let result = zonefile::load(&zone, &path, &mut builder, &metrics);
+                (builder, result)
+            })
+            .await
+            .unwrap();
+            result.map(|()| true).map_err(Into::into)
         }
+        Source::Server { addr, tsig_key } if force => {
+            let tsig_key = tsig_key.as_deref().cloned();
+            server::axfr(&zone, &addr, tsig_key, &mut builder, &metrics)
+                .await
+                .map(|()| true)
+                .map_err(Into::into)
+        }
+        Source::Server { addr, tsig_key } => {
+            let tsig_key = tsig_key.as_deref().cloned();
+            server::refresh(&zone, &addr, tsig_key, &mut builder, &metrics).await
+        }
+    };
 
-        Some(Ordering::Greater) | None => {
-            // The local copy was updated externally, and is now more
-            // recent than the remote copy.  While it is possible the remote
-            // copy has also been updated, we will assume it's unchanged,
-            // and report that the remote has become outdated.
-            return (
-                Err(RefreshError::OutdatedRemote {
-                    local_serial,
-                    remote_serial,
-                }),
-                Some(lock),
-            );
+    let mut handle = zone.write_handle(&center);
+
+    // Finalize the load metrics.
+    let start_time = metrics.start.0;
+    handle.state.loader.active_load_metrics = None;
+    handle.state.loader.last_load_metrics = Some(metrics.finish());
+
+    // Update the SOA refresh timer state.
+    //
+    // NOTE: Zonefiles don't use the SOA refresh timers. They are only
+    // (re)loaded by user request.
+    if matches!(handle.state.loader.source, Source::Server { .. }) {
+        // Load the SOA.
+        let soa = if matches!(result, Ok(true)) {
+            Some(builder.next().unwrap().soa().clone())
+        } else {
+            builder.curr().map(|r| r.soa().clone())
+        };
+
+        let refresh_timer = &mut handle.state.loader.refresh_timer;
+        let refresh_monitor = &center.loader.refresh_scheduler;
+        if result.is_ok() {
+            refresh_timer.schedule_refresh(&zone, start_time, soa.as_ref(), refresh_monitor);
+        } else {
+            refresh_timer.schedule_retry(&zone, start_time, soa.as_ref(), refresh_monitor);
         }
     }
 
-    *contents = new_contents;
-    (Ok(Some(remote_serial)), Some(lock))
+    // Clean up the background task.
+    let task = handle
+        .state
+        .loader
+        .refreshes
+        .ongoing
+        .take()
+        .expect("The loader task is set correctly");
+    assert_eq!(
+        task.handle.id(),
+        tokio::task::id(),
+        "A different loader task is registered"
+    );
+
+    // Process the result of the reload.
+    match result {
+        Ok(false) => {
+            debug!(
+                zone = %zone.name,
+                "The zone is up-to-date"
+            );
+
+            // Cancel the load
+            handle.get().abandon_load(builder);
+        }
+
+        Ok(true) => {
+            let soa = builder.next().unwrap().soa().clone();
+
+            debug!(
+                zone = %zone.name,
+                serial = ?soa.rdata.serial,
+                "Loaded a new instance of the zone"
+            );
+
+            // Inform the zone storage of completion; it will initiate unsigned
+            // review automatically.
+            let built = builder.finish().unwrap_or_else(|_| {
+                unreachable!("source-specific loading succeeded and must have filled 'builder'")
+            });
+
+            handle.get().finish_load(built);
+        }
+
+        Err(err) => {
+            error!(
+                zone = %zone.name,
+                "Could not load the zone: {err}"
+            );
+
+            // Cancel the load
+            handle.get().abandon_load(builder);
+
+            handle.state.record_event(
+                HistoricalEvent::LoadingFailed {
+                    reason: err.to_string(),
+                },
+                None,
+            );
+        }
+    }
 }
 
-//----------- reload() ---------------------------------------------------------
+//----------- Source -----------------------------------------------------------
 
-/// Reload a zone.
+/// The source of a zone.
+#[derive(Clone, Debug, Default)]
+pub enum Source {
+    /// The lack of a source.
+    ///
+    /// The zone will not be loaded from any external source.  This is the
+    /// default state for new zones.
+    #[default]
+    None,
+
+    /// A zonefile on disk.
+    ///
+    /// The specified path should point to a regular file (possibly through
+    /// symlinks, as per OS limitations) containing the contents of the zone in
+    /// the conventional "DNS zonefile" format.
+    ///
+    /// In addition to the default zone refresh triggers, the zonefile will also
+    /// be monitored for changes (through OS-specific mechanisms), and will be
+    /// refreshed when a change is detected.
+    Zonefile {
+        /// The path to the zonefile.
+        path: Box<Utf8Path>,
+    },
+
+    /// A DNS server.
+    ///
+    /// The specified server will be queried for the contents of the zone using
+    /// incremental and authoritative zone transfers (IXFRs and AXFRs).
+    Server {
+        /// The address of the server.
+        addr: SocketAddr,
+
+        /// The TSIG key for communicating with the server, if any.
+        tsig_key: Option<Arc<tsig::Key>>,
+    },
+}
+
+impl std::fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Source::None => f.write_str("none"),
+            Source::Zonefile { path } => write!(f, "zone file '{path}'"),
+            Source::Server { addr, tsig_key } => {
+                write!(f, "{addr}")?;
+                if let Some(tsig_key) = &tsig_key {
+                    write!(f, " with TSIG key '{}'", tsig_key.name())?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+//============ Metrics =========================================================
+
+//----------- LoadMetrics ------------------------------------------------------
+
+/// Metrics for a (completed) zone load.
 ///
-/// The complete contents of the zone will be loaded from the source, without
-/// relying on the local copy at all.  If this results in a new version of the
-/// zone, it is registered in the zone storage; otherwise, the loaded data is
-/// compared to the local copy of the same zone version.  If an inconsistency is
-/// detected, an error is returned, and the zone storage is unchanged.
-pub async fn reload_server<'z>(
-    metrics: &LoaderMetrics,
-    zone: &'z Arc<Zone>,
-    addr: &SocketAddr,
-    tsig_key: &Option<Arc<tsig::Key>>,
-) -> (
-    Result<Option<Serial>, RefreshError>,
-    Option<MutexGuard<'z, ZoneState>>,
-) {
-    let tsig_key = tsig_key.as_ref().map(|k| (**k).clone());
-    let result = server::axfr(metrics, zone, addr, tsig_key)
-        .await
-        .map_err(RefreshError::Axfr);
+/// Every refresh (i.e. load) of a zone is paired with [`LoadMetrics`]. It's
+/// important to note that not _all_ refreshes lead to new zone instances. A
+/// refresh can also report up-to-date or fail.
+///
+/// This is built from [`ActiveLoadMetrics::finish()`].
+#[derive(Clone, Debug)]
+pub struct LoadMetrics {
+    /// When the load began.
+    ///
+    /// All actions/requests relating to the load will begin after this time.
+    pub start: SystemTime,
 
-    let contents = match result {
-        Ok(contents) => Arc::new(contents),
-        Err(error) => return (Err(error), None),
-    };
+    /// When the load ended.
+    ///
+    /// All actions/requests relating to the load will finish before this time.
+    pub end: SystemTime,
 
-    let serial = contents.soa.rdata.serial;
+    /// How long the load took.
+    ///
+    /// This should be preferred over `end - start`, as they are affected by
+    /// discontinuous changes to the system clock. This duration is measured
+    /// using a monotonic clock.
+    pub duration: Duration,
 
-    // Lock the zone state.
-    let mut lock = zone.state.lock().unwrap();
-    lock.contents = Some(contents);
+    /// The source loaded from.
+    pub source: Source,
 
-    (Ok(Some(serial)), Some(lock))
+    /// The (approximate) number of bytes loaded.
+    ///
+    /// This may include network overhead (e.g. TCP/UDP/IP headers, DNS message
+    /// headers, extraneous DNS records). If multiple network requests are
+    /// performed (e.g. IXFR before falling back to AXFR), it may include counts
+    /// from previous requests. It should be treated as a measure of effort, not
+    /// information about the new instance of the zone being built.
+    pub num_loaded_bytes: usize,
+
+    /// The (approximate) number of DNS records loaded.
+    ///
+    /// When loading from a DNS server, this count may include deleted records,
+    /// delimiting SOA records, and additional-section records (e.g. DNS
+    /// COOKIEs). If multiple network requests are performed (e.g. IXFR before
+    /// falling back to AXFR), it may include counts from earlier requests. It
+    /// should be treated as a measure of effort, not information about the new
+    /// instance of the zone being built.
+    pub num_loaded_records: usize,
 }
 
-pub async fn load_zonefile<'z>(
-    metrics: &LoaderMetrics,
-    zone: &'z Arc<Zone>,
-    path: &Utf8Path,
-) -> (
-    Result<Option<Serial>, RefreshError>,
-    Option<MutexGuard<'z, ZoneState>>,
-) {
-    let result = zonefile::load(metrics, zone, path).map_err(RefreshError::Zonefile);
+//----------- ActiveLoadMetrics ------------------------------------------------
 
-    let contents = match result {
-        Ok(contents) => Arc::new(contents),
-        Err(error) => return (Err(error), None),
-    };
+/// Metrics for an active zone load.
+///
+/// An instance of [`ActiveLoadMetrics`] is available when a load (refresh or
+/// reload of a particular zone) is ongoing. It can be used to report statistics
+/// about the ongoing load (e.g. on queries for Cascade's status).
+///
+/// When the load completes, [`Self::finish()`] will convert it into
+/// [`LoadMetrics`]. [`ActiveLoadMetrics`] has a subset of its fields.
+#[derive(Debug)]
+pub struct ActiveLoadMetrics {
+    /// When the load began.
+    ///
+    /// See [`LoadMetrics::start`].
+    pub start: (Instant, SystemTime),
 
-    let serial = contents.soa.rdata.serial;
+    /// The source being loaded from.
+    ///
+    /// See [`LoadMetrics::source`].
+    pub source: Source,
 
-    // Lock the zone state.
-    let mut lock = zone.state.lock().unwrap();
-    lock.contents = Some(contents);
+    /// The (approximate) number of bytes loaded thus far.
+    ///
+    /// See [`LoadMetrics::num_loaded_bytes`].
+    pub num_loaded_bytes: AtomicUsize,
 
-    (Ok(Some(serial)), Some(lock))
+    /// The (approximate) number of bytes to load.
+    pub num_total_bytes: AtomicUsize,
+
+    /// The (approximate) number of DNS records loaded thus far.
+    ///
+    /// See [`LoadMetrics::num_loaded_records`].
+    pub num_loaded_records: AtomicUsize,
+}
+
+impl ActiveLoadMetrics {
+    /// Begin (the metrics for) a new load.
+    pub fn begin(source: Source) -> Self {
+        Self {
+            start: (Instant::now(), SystemTime::now()),
+            source,
+            num_loaded_bytes: AtomicUsize::new(0),
+            num_total_bytes: AtomicUsize::new(0),
+            num_loaded_records: AtomicUsize::new(0),
+        }
+    }
+
+    /// Finish this load.
+    ///
+    /// This does not take `self` by value; observers of the load may still be
+    /// using it, so it is hard to take back ownership of it synchronously.
+    pub fn finish(&self) -> LoadMetrics {
+        // It is expected that the caller was the loader, and so was responsible
+        // for setting the atomic variables being read here; there should not be
+        // any need for synchronization.
+
+        let end = (Instant::now(), SystemTime::now());
+        LoadMetrics {
+            start: self.start.1,
+            end: end.1,
+            duration: end.0.duration_since(self.start.0),
+            source: self.source.clone(),
+            num_loaded_bytes: self.num_loaded_bytes.load(atomic::Ordering::Relaxed),
+            num_loaded_records: self.num_loaded_records.load(atomic::Ordering::Relaxed),
+        }
+    }
 }
 
 //============ Errors ==========================================================
@@ -288,6 +444,9 @@ pub enum RefreshError {
         remote_serial: Serial,
     },
 
+    /// A query for a SOA record failed.
+    QuerySoa(server::QuerySoaError),
+
     /// An IXFR from the server failed.
     Ixfr(server::IxfrError),
 
@@ -296,12 +455,6 @@ pub enum RefreshError {
 
     /// The zonefile could not be loaded.
     Zonefile(zonefile::Error),
-
-    /// An IXFR's diff was internally inconsistent.
-    MergeIxfr(contents::MergeError),
-
-    /// An IXFR's diff was not consistent with the local copy.
-    ForwardIxfr(contents::ForwardError),
 
     /// While we were processing a refresh another refresh or reload happened, changing the serial
     LocalSerialChanged,
@@ -312,11 +465,10 @@ impl std::error::Error for RefreshError {
         match self {
             Self::OutdatedRemote { .. } => None,
             Self::LocalSerialChanged => None,
+            Self::QuerySoa(error) => Some(error),
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
             Self::Zonefile(error) => Some(error),
-            Self::MergeIxfr(error) => Some(error),
-            Self::ForwardIxfr(error) => Some(error),
         }
     }
 }
@@ -339,6 +491,9 @@ impl fmt::Display for RefreshError {
                     "Local serial changed while processing a refreshed zone. This will be fixed by a retry."
                 )
             }
+            RefreshError::QuerySoa(error) => {
+                write!(f, "could not retrieve the SOA record: {error}")
+            }
             RefreshError::Ixfr(error) => {
                 write!(f, "the IXFR failed: {error}")
             }
@@ -348,20 +503,17 @@ impl fmt::Display for RefreshError {
             RefreshError::Zonefile(error) => {
                 write!(f, "the zonefile could not be loaded: {error}")
             }
-            RefreshError::MergeIxfr(error) => {
-                write!(f, "the IXFR was internally inconsistent: {error}")
-            }
-            RefreshError::ForwardIxfr(error) => {
-                write!(
-                    f,
-                    "the IXFR was inconsistent with the local zone contents: {error}"
-                )
-            }
         }
     }
 }
 
 //--- Conversion
+
+impl From<server::QuerySoaError> for RefreshError {
+    fn from(v: server::QuerySoaError) -> Self {
+        Self::QuerySoa(v)
+    }
+}
 
 impl From<server::IxfrError> for RefreshError {
     fn from(v: server::IxfrError) -> Self {
@@ -375,14 +527,8 @@ impl From<server::AxfrError> for RefreshError {
     }
 }
 
-impl From<contents::MergeError> for RefreshError {
-    fn from(v: contents::MergeError) -> Self {
-        Self::MergeIxfr(v)
-    }
-}
-
-impl From<contents::ForwardError> for RefreshError {
-    fn from(v: contents::ForwardError) -> Self {
-        Self::ForwardIxfr(v)
+impl From<zonefile::Error> for RefreshError {
+    fn from(v: zonefile::Error) -> Self {
+        Self::Zonefile(v)
     }
 }

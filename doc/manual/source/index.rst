@@ -20,7 +20,7 @@ Cascade
 A friendly, stand-alone :doc:`DNSSEC <intro>` signing solution designed to
 communicate what it's doing and is easy to interact with. 
 
-Cascade is currently in the **alpha** development phase. We would love for
+Cascade is currently in the **beta** development phase. We would love for
 you to :doc:`get to know Cascade <before-you-start>` and are eager to hear
 :ref:`your experiences <reach-out>` so we can improve every aspect. Please
 consider the current :doc:`limitations`.
@@ -64,6 +64,9 @@ sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
 channel on the `DNS OARC Mattermost 
 server <https://www.dns-oarc.net/oarc/services/chat>`_, or
 mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
+Or if you want to discuss operational experiences, if you have feedback or
+if you want to request a feature, please use the
+`NLnet Labs Community Forum <https://community.nlnetlabs.nl/c/cascade/10/>`_.
 
 Examples of things we're interested in:
 
@@ -100,6 +103,8 @@ Examples of things we're interested in:
    key-management
    hsms
    review-hooks
+   zone-transfers
+   maintenance-mode
 
 .. toctree::
    :maxdepth: 2
@@ -112,8 +117,16 @@ Examples of things we're interested in:
 .. toctree::
    :maxdepth: 2
    :hidden:
-   :caption: Integrations
-   :name: toc-integrations
+   :caption: Nameserver Integrations
+   :name: toc-nameserver-integrations
+
+   nsd
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: HSM Integrations
+   :name: toc-hsm-integrations
 
    softhsm
    thales
@@ -161,9 +174,10 @@ Examples of things we're interested in:
    man/cascade-policy
    man/cascade-status
    man/cascade-template
+   man/cascade-tsig
    man/cascade-zone
-   kmip2pkcs11 Daemon <https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/man/kmip2pkcs11.html>
-   kmip2pkcs11 Configuration File Format <https://cascade.docs.nlnetlabs.nl/projects/kmip2pkcs11/en/latest/man/kmip2pkcs11-config.toml.html>
+   cascade-hsm-bridge Daemon <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge.html>
+   cascade-hsm-bridge Configuration File Format <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge-config.toml.html>
    ods2cascade <https://cascade.docs.nlnetlabs.nl/projects/ods2cascade/>
 
 .. ^ need to work around lack of intersphinx links in toctree by creating a hyperlink

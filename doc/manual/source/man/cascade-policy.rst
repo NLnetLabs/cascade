@@ -4,25 +4,24 @@ cascade policy
 Synopsis
 --------
 
-:program:`cascade policy` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` policy ``<COMMAND>``
 
-:program:`cascade policy` ``[OPTIONS]`` :subcmd:`list`
+:program:`cascade` ``[GLOBAL OPTIONS]`` policy :subcmd:`list`
 
-:program:`cascade policy` ``[OPTIONS]`` :subcmd:`show` ``<NAME>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` policy :subcmd:`show` ``<NAME>``
 
-:program:`cascade policy` ``[OPTIONS]`` :subcmd:`reload`
+:program:`cascade` ``[GLOBAL OPTIONS]`` policy :subcmd:`reload`
 
 Description
 -----------
 
 Manage Cascade's policies.
 
-Options
--------
+Global Options
+--------------
 
-.. option:: -h, --help
-
-   Print the help text (short summary with ``-h``, long help with ``--help``).
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 Commands
 --------

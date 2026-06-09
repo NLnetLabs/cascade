@@ -1,12 +1,14 @@
 cascade debug
 =============
 
+.. versionadded:: 0.1.0-beta1
+.. 
 Synopsis
 --------
 
-:program:`cascade debug` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` debug ``<COMMAND>``
 
-:program:`cascade debug` ``[OPTIONS]`` :subcmd:`change-logging` ``[OPTIONS]``
+:program:`cascade` ``[GLOBAL OPTIONS]`` debug :subcmd:`change-logging` ``[OPTIONS]``
 
 Description
 -----------
@@ -15,12 +17,11 @@ Debug / troubleshoot Cascade.  The sub-commands here are tools for analyzing
 Cascade when lower-level problems occur.  It should be combined with analysis of
 Cascade's log files.
 
-Options
--------
+Global Options
+--------------
 
-.. option:: -h, --help
-
-   Print the help text (short summary with ``-h``, long help with ``--help``).
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 Commands
 --------

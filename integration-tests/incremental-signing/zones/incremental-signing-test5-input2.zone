@@ -1,0 +1,26 @@
+; Apex changes -- Check if apex changes are handled properly.
+
+@ IN SOA ns hostmaster 23456 3600 3600 86400 3600
+
+; A zone should have an NS record.
+@ NS ns1
+
+; Two TXT records, one of them changes.
+	TXT	"stable TXT record"
+	TXT	"Version 2 of the TXT record"
+
+; A record that picks up another
+	A	192.0.2.0
+	A	192.0.3.0
+
+; AAAA records where one gets removed
+	AAAA    2001:db8::
+
+; MX records get removed
+
+; TLSA records get added
+	TLSA	3 0 1 (EFDDF0D915C7BDC5782C0881E1B2A95AD099FBDD06D7B1F779
+		       82D9364338D955)
+	TLSA	3 1 1 (8755CDAA8FE24EF16CC0F2C918063185E433FAAF1415664911
+		       D9E30A924138C4)
+

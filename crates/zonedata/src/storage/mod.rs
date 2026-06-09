@@ -1,0 +1,189 @@
+//! The top-level control of zone data.
+//!
+//! This module provides [`ZoneDataStorage`], which defines a state machine
+//! around the data of a zone and its progression as new instances are built.
+//! Each state (i.e. variant of the [`ZoneDataStorage`] enum) is defined by a
+//! dedicated type.
+
+use std::sync::Arc;
+
+use crate::{
+    DiffData, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data,
+};
+
+mod states;
+pub use states::{
+    CleanLoadedPendingStorage, CleanSignedPendingStorage, CleanWholePendingStorage,
+    CleaningSignedStorage, CleaningStorage, LoadingStorage, PassiveStorage,
+    PersistingLoadedStorage, PersistingSignedStorage, RestoringLoadedStorage,
+    RestoringSignedStorage, ReviewLoadedPendingStorage, ReviewSignedPendingStorage,
+    ReviewingLoadedStorage, ReviewingSignedStorage, SigningStorage, SwitchingStorage,
+};
+
+mod transitions;
+
+//----------- ZoneDataStorage --------------------------------------------------
+
+/// Storage for the data of a zone.
+///
+/// [`ZoneDataStorage`] is the top-level type defining the storage of zone data.
+/// It is a state machine, describing how new instances of the zone are built,
+/// reviewed, and switched to. While it requires `&mut` access to be modified,
+/// it is designed to live in a (synchronous) mutex -- expensive operations on
+/// the zone are always achievable without `&mut` access.
+///
+/// ```text
+/// ╔═══════════════════╗ finish  ╔═══════════════════╗ finish  
+/// ║  RestoringLoaded  ╠═════════▶  RestoringSigned  ╠════════╗  
+/// ╚══╤════════════════╝         ╚══╤════════════════╝        ║  
+///    │ abandon                     │ abandon                 ║  
+/// ┌──▼─────────────────────────────▼─────────────────────────▼─────────┐
+/// │                            Passive                                 │
+/// └─────────╥────────────────────────────────────────────────────────▲─┘
+///           ║                                                        │ mark_complete
+/// ┌─────────║──────────────────────────────────────────────────────────┐               ╔═════════════╗   start   ╔════════════════════╗                               approve                                                         
+/// │         ║                  Cleaning                                <═══════════════║  Switching  <═══════════║  PersistingSigned  <═══════════════════════════════════════════════════════════════════▲
+/// └─────────║──────▲─────────────────────────────────────────────────▲─┘               ╚═════════════╝           ╚════════════════════╝                                                                   ║                                                
+///           ║      │                                                 │  stop_review                                                                                                                       ║
+///           ║      │                                            ┌─────────────────────┐       stop_review        ┌────────────────────┐                     give_up                                       ║                                                                                                                     
+///      load ║      │ give_up                                    │  CleanLoadedPending <──────────────────────────│  CleanWholePending <─────────────────────────────────────────────────────┐             ║                                                                                                                                         
+///           ║      │                                            └────▲────────────────┘                          └────────────────────┘                                                     │             ║                                                                                                                     
+///           ▼      │                                                 │ give_up                                                                                                              │             ║
+///        ╔═════════╧═╗ finish ╔══════════════════════════╗ start ╔═══════════════════╗ approve ╔════════════════════╗ complete ╔══▼═════════════╗ finish ╔═══════════════════════╗ start ╔══════════════════╗
+///        ║  Loading  ╠════════▶  ReviewingLoadedPending  ╠═══════▶  ReviewingLoaded  ╠═════════▶  PersistingLoaded  ╠══════════▶    Signing     ╠════════▶  ReviewSignedPending  ╠═══════▶  ReviewingSigned ║
+///        ╚═══════════╝        ╚══════════════════════════╝       ╚═══════════════════╝         ╚════════════════════╝          ╚══╤═════════▲═══╝        ╚═══════════════════════╝       ╚════════╤═════════╝
+///                                                                                                                           retry │         │ complete                                      retry │
+///                                                                                                                              ┌──▼─────────┴────┐              stop_review            ┌──────────▼──────────┐
+///                                                                                                                              │  CleaningSigned <─────────────────────────────────────│  CleanSignedPending │
+///                                                                                                                              └─────────────────┘                                     └─────────────────────┘
+/// ```
+pub enum ZoneDataStorage {
+    /// The loaded instance of the zone is being restored.
+    RestoringLoaded(RestoringLoadedStorage),
+
+    /// The signed instance of the zone is being restored.
+    RestoringSigned(RestoringSignedStorage),
+
+    /// The zone is passive.
+    Passive(PassiveStorage),
+
+    /// A new instance is being loaded.
+    Loading(LoadingStorage),
+
+    /// A new instance is being signed.
+    Signing(SigningStorage),
+
+    /// A loaded instance is pending review.
+    ReviewLoadedPending(ReviewLoadedPendingStorage),
+
+    /// A signed instance is pending review.
+    ReviewSignedPending(ReviewSignedPendingStorage),
+
+    /// A loaded instance is being reviewed.
+    ReviewingLoaded(ReviewingLoadedStorage),
+
+    /// A signed instance is being reviewed.
+    ReviewingSigned(ReviewingSignedStorage),
+
+    /// A loaded instance is being persisted.
+    PersistingLoaded(PersistingLoadedStorage),
+
+    /// A signed instance is being persisted.
+    PersistingSigned(PersistingSignedStorage),
+
+    /// A loaded instance is waiting to be cleaned.
+    CleanLoadedPending(CleanLoadedPendingStorage),
+
+    /// A signed instance is waiting to be cleaned.
+    CleanSignedPending(CleanSignedPendingStorage),
+
+    /// A loaded and signed instance are waiting to be cleaned.
+    CleanWholePending(CleanWholePendingStorage),
+
+    /// An instance is being cleaned.
+    Cleaning(CleaningStorage),
+
+    /// A signed instance is being cleaned.
+    CleaningSigned(CleaningSignedStorage),
+
+    /// A new instance is being switched to.
+    Switching(SwitchingStorage),
+
+    /// The state is poisoned.
+    ///
+    /// This is a utility state. It allows moving out of the enum from an `&mut`
+    /// reference, so that state transitions can be computed by value. If this
+    /// state is unexpectedly observed, an implementation error has occurred.
+    Poisoned,
+}
+
+impl ZoneDataStorage {
+    /// Construct a new [`ZoneDataStorage`].
+    pub fn new() -> (LoadedZoneRestorer, Self) {
+        let data = Arc::new(Data::new());
+
+        let restorer = unsafe { LoadedZoneRestorer::new(data.clone()) };
+
+        let storage = RestoringLoadedStorage { data };
+
+        (restorer, Self::RestoringLoaded(storage))
+    }
+
+    /// Extract the current state of the [`ZoneDataStorage`].
+    ///
+    /// `self` is replaced with [`Self::Poisoned`]. After a state transition,
+    /// the new state should be written back. If the intermediate poisoned state
+    /// can be observed, it is an implementation error.
+    pub const fn take(&mut self) -> Self {
+        core::mem::replace(self, Self::Poisoned)
+    }
+
+    /// Return the current state as a string.
+    ///
+    /// This is intended for logging and debugging.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            ZoneDataStorage::RestoringLoaded(_) => "RestoringLoaded",
+            ZoneDataStorage::RestoringSigned(_) => "RestoringSigned",
+            ZoneDataStorage::Passive(_) => "Passive",
+            ZoneDataStorage::Loading(_) => "Loading",
+            ZoneDataStorage::Signing(_) => "Signing",
+            ZoneDataStorage::ReviewLoadedPending(_) => "ReviewLoadedPending",
+            ZoneDataStorage::ReviewSignedPending(_) => "ReviewSignedPending",
+            ZoneDataStorage::ReviewingLoaded(_) => "ReviewingLoaded",
+            ZoneDataStorage::ReviewingSigned(_) => "ReviewingSigned",
+            ZoneDataStorage::PersistingLoaded(_) => "PersistingLoaded",
+            ZoneDataStorage::PersistingSigned(_) => "PersistingSigned",
+            ZoneDataStorage::CleanLoadedPending(_) => "CleanLoadedPending",
+            ZoneDataStorage::CleanSignedPending(_) => "CleanSignedPending",
+            ZoneDataStorage::CleanWholePending(_) => "CleanWholePending",
+            ZoneDataStorage::Cleaning(_) => "Cleaning",
+            ZoneDataStorage::CleaningSigned(_) => "CleaningSigned",
+            ZoneDataStorage::Switching(_) => "Switching",
+            ZoneDataStorage::Poisoned => "Poisoned",
+        }
+    }
+
+    /// Get the current loaded diff, if any.
+    pub fn loaded_diff(&self) -> Option<Arc<DiffData>> {
+        match self {
+            ZoneDataStorage::ReviewLoadedPending(s) => Some(s.loaded_diff.clone()),
+            ZoneDataStorage::ReviewingLoaded(s) => Some(s.loaded_diff.clone()),
+            ZoneDataStorage::PersistingLoaded(s) => Some(s.loaded_diff.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the current signed diff, if any.
+    pub fn signed_diff(&self) -> Option<Arc<DiffData>> {
+        match self {
+            ZoneDataStorage::ReviewSignedPending(s) => Some(s.signed_diff.clone()),
+            ZoneDataStorage::ReviewingSigned(s) => Some(s.signed_diff.clone()),
+            ZoneDataStorage::PersistingSigned(_) => {
+                // PersistingSigned has no diff unlike PersistingLoaded
+                None
+            }
+            _ => None,
+        }
+    }
+}

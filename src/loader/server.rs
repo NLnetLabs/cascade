@@ -1,17 +1,20 @@
 //! Loading zones from DNS servers.
 
 use std::{
-    cmp::Ordering,
     fmt,
-    iter::Peekable,
-    mem,
     net::SocketAddr,
     sync::{Arc, atomic::Ordering::Relaxed},
 };
 
 use bytes::Bytes;
+use cascade_zonedata::OldRecord;
+use cascade_zonedata::{
+    LoadedZoneBuilder, LoadedZonePatcher, LoadedZoneReplacer, PatchError, ReplaceError, SoaRecord,
+};
+use domain::base::MessageBuilder as OldBaseMessageBuilder;
+use domain::base::Rtype;
 use domain::{
-    base::iana::Rcode,
+    base::{iana::Rcode, wire::FormError},
     net::{
         client::{
             self,
@@ -24,27 +27,23 @@ use domain::{
     },
     new::{
         base::{
-            CanonicalRecordData, HeaderFlags, Message, MessageItem, QClass, QType, Question,
-            RClass, RType, Record, Serial,
+            HeaderFlags, Message, MessageItem, QClass, QType, Question, RClass, RType, Record,
+            Serial,
             build::MessageBuilder,
             name::{Name, NameCompressor, RevNameBuf},
             wire::{AsBytes, ParseBytes, ParseBytesZC, ParseError},
         },
         rdata::RecordData,
     },
-    rdata::ZoneRecordData,
+    rdata::AllRecordData,
     tsig,
     utils::dst::UnsizedCopy,
     zonetree::types::ZoneUpdate,
 };
 use tokio::net::TcpStream;
-use tracing::trace;
+use tracing::{debug, trace};
 
-use crate::zone::{
-    Zone,
-    contents::{self, RegularRecord, SoaRecord, ZoneContents},
-    loader::LoaderMetrics,
-};
+use crate::{loader::ActiveLoadMetrics, zone::Zone};
 
 use super::RefreshError;
 
@@ -52,56 +51,45 @@ use super::RefreshError;
 
 /// Refresh a zone from a DNS server.
 ///
-/// See [`super::refresh()`].
+/// The DNS server will be queried for the latest version of the zone; if a
+/// local copy of this version is not already available, it will be loaded.
+/// Where possible, an incremental zone transfer will be used to communicate
+/// more efficiently.
+///
+/// Returns `true` if a new instance of the zone was loaded.
+#[tracing::instrument(
+    level = "trace",
+    skip_all,
+    fields(zone = %zone.name, addr = ?addr),
+)]
 pub async fn refresh(
-    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    latest: Option<Arc<ZoneContents>>,
-) -> Result<Option<ZoneContents>, RefreshError> {
-    let Some(latest) = latest else {
-        trace!("Attempting an AXFR against {addr:?} for {:?}", zone.name);
+    builder: &mut LoadedZoneBuilder,
+    metrics: &ActiveLoadMetrics,
+) -> Result<bool, RefreshError> {
+    debug!("Refreshing {:?} from server {addr:?}", zone.name);
 
+    if let Some(curr) = builder.curr() {
+        // Check the SOA record upfront.
+        let new_soa = query_soa(zone, addr, tsig_key.clone()).await?;
+
+        if *curr.soa() == new_soa {
+            // The local copy of the zone appears to be up-to-date.
+            return Ok(false);
+        }
+    }
+
+    if builder.curr().is_none() {
         // Fetch the whole zone.
-        let remote = axfr(metrics, zone, addr, tsig_key).await?;
+        axfr(zone, addr, tsig_key, builder, metrics).await?;
 
-        return Ok(Some(remote));
+        return Ok(true);
     };
 
-    trace!("Attempting an IXFR against {addr:?} for {:?}", zone.name);
-
     // Fetch the zone relative to the latest local copy.
-    match ixfr(metrics, zone, addr, tsig_key, &latest.soa).await? {
-        Ixfr::UpToDate => {
-            // The local copy is up-to-date.
-            Ok(None)
-        }
-
-        Ixfr::OutdatedRemote(remote_serial) => {
-            // The remote copy is outdated.
-            Err(RefreshError::OutdatedRemote {
-                local_serial: latest.soa.rdata.serial,
-                remote_serial,
-            })
-        }
-
-        Ixfr::Compressed(compressed) => {
-            // Coalesce the diffs together.
-            let mut compressed = compressed.into_iter();
-            let initial = compressed.next().unwrap();
-            let compressed = compressed.try_fold(initial, |mut whole, sub| {
-                whole.merge_from_next(&sub).map(|()| whole)
-            })?;
-
-            // Forward the local copy through the compressed diffs.
-            let remote = latest.forward(&compressed)?;
-
-            Ok(Some(remote))
-        }
-
-        Ixfr::Uncompressed(remote) => Ok(Some(remote)),
-    }
+    Ok(ixfr(zone, addr, tsig_key, builder, metrics).await?)
 }
 
 //----------- ixfr() -----------------------------------------------------------
@@ -109,161 +97,59 @@ pub async fn refresh(
 /// Perform an incremental zone transfer.
 ///
 /// The server is queried for the diff between the version of the zone indicated
-/// by the provided SOA record, and the latest version known to the server.  The
+/// by the provided SOA record, and the latest version known to the server. The
 /// diff is transformed into a compressed representation of the _local_ version
-/// of the zone.  If the local version is identical to the server's version,
-/// [`None`] is returned.
+/// of the zone.
+///
+/// Returns `true` if a new instance of the zone was loaded.
+#[tracing::instrument(
+    level = "trace",
+    skip_all,
+    fields(zone = %zone.name, addr = ?addr),
+)]
 pub async fn ixfr(
-    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-    local_soa: &SoaRecord,
-) -> Result<Ixfr, IxfrError> {
-    let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
+    builder: &mut LoadedZoneBuilder,
+    metrics: &ActiveLoadMetrics,
+) -> Result<bool, IxfrError> {
+    debug!("Attempting an IXFR");
+
+    let local_soa = builder.curr().unwrap().soa().clone();
 
     // Prepare the IXFR query message.
-    let mut buffer = [0u8; 1024];
-    let mut compressor = NameCompressor::default();
-    let mut builder = MessageBuilder::new(
-        &mut buffer,
-        &mut compressor,
-        0u16.into(),
-        *HeaderFlags::default().set_qr(false),
-    );
-    builder
-        .push_question(&Question {
-            qname: zone_name,
-            // TODO: 'QType::IXFR'.
-            qtype: QType { code: 251.into() },
-            qclass: QClass::IN,
-        })
-        .unwrap();
-    builder.push_authority(local_soa).unwrap();
-    let message = Bytes::copy_from_slice(builder.finish().as_bytes());
-    let message =
-        domain::base::Message::from_octets(message).expect("'Message' is at least 12 bytes long");
+    let message = OldBaseMessageBuilder::new_bytes();
+    let mut message = message.question();
+    message.push((zone.name.clone(), Rtype::IXFR)).unwrap();
+    let mut message = message.authority();
+    let old_soa: OldRecord = local_soa.clone().into();
+    message.push(old_soa).unwrap();
 
-    // If UDP is supported, try it before TCP.
-    // Prepare a UDP client.
-    let udp_conn = client::protocol::UdpConnect::new(*addr);
-    let client = client::dgram::Connection::new(udp_conn);
-
-    // Attempt the IXFR, possibly with TSIG.
-    let response = if let Some(tsig_key) = &tsig_key {
-        let client = client::tsig::Connection::new(tsig_key.clone(), client);
-        let request = RequestMessage::new(message.clone()).unwrap();
-        client.send_request(request).get_response().await?
-    } else {
-        let request = RequestMessage::new(message.clone()).unwrap();
-        client.send_request(request).get_response().await?
-    };
-
-    // If the server does not support IXFR, fall back to an AXFR.
-    if response.header().rcode() == Rcode::NOTIMP {
-        // Query the server for its SOA record only.
-        let remote_soa = query_soa(zone, addr, tsig_key.clone()).await?;
-
-        match local_soa.rdata.serial.partial_cmp(&remote_soa.rdata.serial) {
-            Some(Ordering::Less) => {
-                // Perform a full AXFR.
-                return Ok(Ixfr::Uncompressed(
-                    axfr(metrics, zone, addr, tsig_key).await?,
-                ));
-            }
-
-            // The local copy is up-to-date.
-            Some(Ordering::Equal) => return Ok(Ixfr::UpToDate),
-
-            // The remote copy is outdated.
-            _ => return Ok(Ixfr::OutdatedRemote(remote_soa.rdata.serial)),
-        }
-    }
-
-    // Process the transfer data.
-    let mut interpreter = XfrResponseInterpreter::new();
-    metrics
-        .byte_count
-        .fetch_add(response.as_slice().len(), Relaxed);
-    let mut updates = interpreter.interpret_response(response)?.peekable();
-
-    match updates.peek() {
-        Some(Ok(ZoneUpdate::DeleteAllRecords)) => {
-            // This is an AXFR.
-            let _ = updates.next().unwrap();
-            let mut all = Vec::new();
-            let Some(soa) = process_axfr(metrics, &mut all, updates)? else {
-                // Fail: UDP-based IXFR returned a partial AXFR.
-                return Err(IxfrError::IncompleteResponse);
-            };
-
-            assert!(interpreter.is_finished());
-            let all = all.into_boxed_slice();
-            let contents = ZoneContents { soa, all };
-            return Ok(Ixfr::Uncompressed(contents));
-        }
-
-        Some(Ok(ZoneUpdate::BeginBatchDelete(_))) => {
-            // This is an IXFR.
-            let mut versions = Vec::new();
-            let mut this_soa = None;
-            let mut next_soa = None;
-            let mut all_this = Vec::new();
-            let mut all_next = Vec::new();
-            process_ixfr(
-                metrics,
-                &mut versions,
-                &mut this_soa,
-                &mut next_soa,
-                &mut all_this,
-                &mut all_next,
-                updates,
-            )?;
-            if interpreter.is_finished() {
-                return Ok(Ixfr::Compressed(versions));
-            } else {
-                // Fail: UDP-based IXFR returned a partial IXFR
-                return Err(IxfrError::IncompleteResponse);
-            }
-        }
-
-        // NOTE: 'domain' currently reports 'None' for a single-SOA IXFR,
-        // apparently assuming it means the local copy is up-to-date.  But
-        // this misses two other possibilities:
-        // - The remote copy is older than the local copy.
-        // - The IXFR was too big for UDP.
-        None => {
-            // Assume the remote copy is identical to to the local copy.
-            return Ok(Ixfr::UpToDate);
-        }
-
-        // NOTE: The XFR response interpreter will not return this right
-        // now; it needs to be modified to report single-SOA IXFRs here.
-        Some(Ok(ZoneUpdate::Finished(record))) => {
-            let ZoneRecordData::Soa(soa) = record.data() else {
-                unreachable!("'ZoneUpdate::Finished' must hold a SOA");
-            };
-
-            metrics.record_count.fetch_add(1, Relaxed);
-
-            let serial = Serial::from(soa.serial().into_int());
-            match local_soa.rdata.serial.partial_cmp(&serial) {
-                // The transfer may have been too big for UDP; fall back to
-                // a TCP-based IXFR.
-                Some(Ordering::Less) => {}
-
-                // The local copy is up-to-date.
-                Some(Ordering::Equal) => return Ok(Ixfr::UpToDate),
-
-                // The remote copy is outdated.
-                _ => return Ok(Ixfr::OutdatedRemote(serial)),
-            }
-        }
-
-        _ => unreachable!(),
-    }
-
-    // UDP didn't pan out; attempt a TCP-based IXFR.
+    /*
+        // New base:
+        let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
+        let mut buffer = [0u8; 1024];
+        let mut compressor = NameCompressor::default();
+        let mut msgbuilder = MessageBuilder::new(
+            &mut buffer,
+            &mut compressor,
+            0u16.into(),
+            *HeaderFlags::default().set_qr(false),
+        );
+        msgbuilder
+            .push_question(&Question {
+                qname: zone_name,
+                // TODO: 'QType::IXFR'.
+                qtype: QType { code: 251.into() },
+                qclass: QClass::IN,
+            })
+            .unwrap();
+        msgbuilder.push_authority(&local_soa).unwrap();
+        let message = Bytes::copy_from_slice(msgbuilder.finish().as_bytes());
+        let message =
+            domain::base::Message::from_octets(message).expect("'Message' is at least 12 bytes long");
+    */
 
     // Prepare a TCP client.
     let tcp_conn = TcpStream::connect(*addr)
@@ -300,37 +186,55 @@ pub async fn ixfr(
 
     // If the server does not support IXFR, fall back to an AXFR.
     if initial.header().rcode() == Rcode::NOTIMP {
-        // Query the server for its SOA record only.
-        let remote_soa = query_soa(zone, addr, tsig_key.clone()).await?;
+        trace!("The server does not support IXFR, falling back to AXFR");
 
-        match local_soa.rdata.serial.partial_cmp(&remote_soa.rdata.serial) {
-            Some(Ordering::Less) => {
-                // Perform a full AXFR.
-                return Ok(Ixfr::Uncompressed(
-                    axfr(metrics, zone, addr, tsig_key).await?,
-                ));
-            }
+        axfr(zone, addr, tsig_key, builder, metrics).await?;
+        return Ok(true);
+    }
 
+    // Check for common short-circuit cases.
+    //
+    // 'domain::net::server' does not properly account for a single-SOA IXFR
+    // response over TCP, and resolving it would require changing the interface.
+    // So we manually parse that case here.
+    if initial.header_counts().ancount() == 1 {
+        let record = initial
+            .answer()
+            .map_err(|err| IxfrError::XfrIter(xfr::protocol::IterationError::ParseError(err)))?
+            .into_records()
+            .next()
+            .unwrap()
+            .map_err(|err| IxfrError::XfrIter(xfr::protocol::IterationError::ParseError(err)))?;
+        let AllRecordData::Soa(soa) = record.data() else {
+            // Valid single-answer IXFR responses only provide a SOA.
+            return Err(IxfrError::XfrIter(
+                xfr::protocol::IterationError::ParseError(domain::base::wire::ParseError::Form(
+                    FormError::new("a single-answer IXFR response should have a SOA record"),
+                )),
+            ));
+        };
+
+        let serial = Serial::from(soa.serial().into_int());
+        if local_soa.rdata.serial == serial {
             // The local copy is up-to-date.
-            Some(Ordering::Equal) => return Ok(Ixfr::UpToDate),
-
-            // The remote copy is outdated.
-            _ => return Ok(Ixfr::OutdatedRemote(remote_soa.rdata.serial)),
+            return Ok(false);
+        } else {
+            // The server says the local copy is up-to-date, but it's not.
+            return Err(IxfrError::InconsistentUpToDate);
         }
     }
 
     let mut bytes = initial.as_slice().len();
-    let mut updates = interpreter.interpret_response(initial)?.peekable();
+    let mut updates = interpreter.interpret_response(initial)?;
 
-    match updates.peek().unwrap() {
-        Ok(ZoneUpdate::DeleteAllRecords) => {
+    match updates.next().unwrap()? {
+        ZoneUpdate::DeleteAllRecords => {
             // This is an AXFR.
-            let _ = updates.next().unwrap();
-            let mut all = Vec::new();
+            let mut writer = builder.replace().unwrap();
 
             // Process the response messages.
             let soa = loop {
-                if let Some(soa) = process_axfr(metrics, &mut all, updates)? {
+                if let Some(soa) = process_axfr(&mut writer, updates, metrics)? {
                     break soa;
                 } else {
                     // Retrieve the next message.
@@ -339,36 +243,29 @@ pub async fn ixfr(
                         .await?
                         .ok_or(IxfrError::IncompleteResponse)?;
                     bytes += message.as_slice().len();
-                    updates = interpreter.interpret_response(message)?.peekable();
+                    updates = interpreter.interpret_response(message)?;
                 }
             };
 
             assert!(interpreter.is_finished());
-            let all = all.into_boxed_slice();
-            let contents = ZoneContents { soa, all };
-            metrics.byte_count.fetch_add(bytes, Relaxed);
-            Ok(Ixfr::Uncompressed(contents))
+            writer.set_soa(soa)?;
+            writer.apply()?;
+            metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
+            Ok(true)
         }
 
-        Ok(ZoneUpdate::BeginBatchDelete(_)) => {
+        ZoneUpdate::BeginBatchDelete(soa) => {
             // This is an IXFR.
-            let mut versions = Vec::new();
-            let mut this_soa = None;
-            let mut next_soa = None;
-            let mut all_this = Vec::new();
-            let mut all_next = Vec::new();
+            let mut writer = builder.patch().unwrap();
+
+            // Work-around for #493: pre-process the current SOA as
+            // process_ixfr() assumes it will receive it when fetching the
+            // next record but it has already been consumed.
+            writer.remove_soa(soa.into())?;
 
             // Process the response messages.
             loop {
-                process_ixfr(
-                    metrics,
-                    &mut versions,
-                    &mut this_soa,
-                    &mut next_soa,
-                    &mut all_this,
-                    &mut all_next,
-                    updates,
-                )?;
+                process_ixfr(&mut writer, updates, metrics)?;
 
                 if interpreter.is_finished() {
                     break;
@@ -379,151 +276,52 @@ pub async fn ixfr(
                         .await?
                         .ok_or(IxfrError::IncompleteResponse)?;
                     bytes += message.as_slice().len();
-                    updates = interpreter.interpret_response(message)?.peekable();
+                    updates = interpreter.interpret_response(message)?;
                 }
             }
 
-            metrics.byte_count.fetch_add(bytes, Relaxed);
+            metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
             assert!(interpreter.is_finished());
-            Ok(Ixfr::Compressed(versions))
-        }
 
-        Ok(ZoneUpdate::Finished(record)) => {
-            let ZoneRecordData::Soa(soa) = record.data() else {
-                unreachable!("'ZoneUpdate::Finished' must hold a SOA");
-            };
-
-            let serial = Serial::from(soa.serial().into_int());
-            match local_soa.rdata.serial.partial_cmp(&serial) {
-                // The local copy is up-to-date.
-                Some(Ordering::Equal) => Ok(Ixfr::UpToDate),
-
-                // The server says the local copy is up-to-date, but it's not.
-                Some(Ordering::Less) => Err(IxfrError::InconsistentUpToDate),
-
-                // The remote copy is outdated.
-                Some(Ordering::Greater) | None => Ok(Ixfr::OutdatedRemote(serial)),
-            }
+            writer.apply()?;
+            Ok(true)
         }
 
         _ => unreachable!(),
     }
 }
 
-/// The output from [`ixfr()`].
-pub enum Ixfr {
-    /// The local copy is up-to-date.
-    ///
-    /// The local copy's SOA version matches that of the remote copy.
-    /// This _should_ mean that the two copies will have the same contents.
-    UpToDate,
-
-    /// The remote copy is outdated.
-    ///
-    /// The local copy's SOA version exceeds that of the remote copy.
-    OutdatedRemote(Serial),
-
-    /// A sequence of compressed diffs.
-    ///
-    /// The local copy was outdated with respect to the remote copy.  The
-    /// history of zone changes between the two is returned as a sequence of
-    /// compressed zone versions, from earliest (the local copy) to newest (the
-    /// remote copy).
-    Compressed(Vec<contents::Compressed>),
-
-    /// An uncompressed representation of a new zone.
-    ///
-    /// The local copy was outdated with respect to the remote copy.  The remote
-    /// copy has been transferred in its entirety, in an uncompressed state.  A
-    /// compressed representation of the local copy can be built from this.
-    Uncompressed(ZoneContents),
-}
-
 /// Process an IXFR message.
 fn process_ixfr(
-    metrics: &LoaderMetrics,
-    versions: &mut Vec<contents::Compressed>,
-    this_soa: &mut Option<SoaRecord>,
-    next_soa: &mut Option<SoaRecord>,
-    only_this: &mut Vec<RegularRecord>,
-    only_next: &mut Vec<RegularRecord>,
-    updates: Peekable<XfrZoneUpdateIterator<'_, '_>>,
+    writer: &mut LoadedZonePatcher,
+    updates: XfrZoneUpdateIterator<'_, '_>,
+    metrics: &ActiveLoadMetrics,
 ) -> Result<(), IxfrError> {
     for update in updates {
-        metrics.record_count.fetch_add(1, Relaxed);
+        metrics.num_loaded_records.fetch_add(1, Relaxed);
         match update? {
-            ZoneUpdate::BeginBatchDelete(record) => {
-                // If there was a previous zone version, write it out.
-                assert!(this_soa.is_some() == next_soa.is_some());
-                if let Some((soa, next_soa)) = this_soa.take().zip(next_soa.take()) {
-                    // Sort the contents of the batch addition.
-                    only_next.sort_unstable();
-
-                    let only_this = mem::take(only_this).into_boxed_slice();
-                    let only_next = mem::take(only_next).into_boxed_slice();
-                    versions.push(contents::Compressed {
-                        soa,
-                        next_soa,
-                        only_this,
-                        only_next,
-                    });
-                }
-
-                assert!(this_soa.is_none());
-                assert!(next_soa.is_none());
-                assert!(only_this.is_empty());
-                assert!(only_next.is_empty());
-
-                *this_soa = Some(record.into());
+            ZoneUpdate::BeginBatchDelete(soa) => {
+                // A previous deletion-addition set (i.e. a complete diff) has
+                // been finished, and a new one is starting.
+                writer.next_patchset()?;
+                writer.remove_soa(soa.into())?;
             }
 
             ZoneUpdate::DeleteRecord(record) => {
-                assert!(this_soa.is_some());
-                assert!(next_soa.is_none());
-
-                only_this.push(record.into());
+                writer.remove(record.into())?;
             }
 
-            ZoneUpdate::BeginBatchAdd(record) => {
-                assert!(this_soa.is_some());
-                assert!(next_soa.is_none());
-                assert!(only_next.is_empty());
-
-                // Sort the contents of the batch deletion.
-                only_this.sort_unstable_by(|l, r| {
-                    (&l.rname, l.rtype)
-                        .cmp(&(&r.rname, r.rtype))
-                        .then_with(|| l.rdata.cmp_canonical(&r.rdata))
-                });
-
-                *next_soa = Some(record.into());
+            ZoneUpdate::BeginBatchAdd(soa) => {
+                writer.add_soa(soa.into())?;
             }
 
             ZoneUpdate::AddRecord(record) => {
-                assert!(this_soa.is_some());
-                assert!(next_soa.is_some());
-
-                only_next.push(record.into());
+                writer.add(record.into())?;
             }
 
-            ZoneUpdate::Finished(record) => {
-                assert!(this_soa.is_some());
-                assert!(next_soa.is_some());
-
-                assert!(*next_soa == Some(record.into()));
-
-                // Sort the contents of the batch addition.
-                only_next.sort_unstable();
-
-                let only_this = mem::take(only_this).into_boxed_slice();
-                let only_next = mem::take(only_next).into_boxed_slice();
-                versions.push(contents::Compressed {
-                    soa: this_soa.take().unwrap(),
-                    next_soa: next_soa.take().unwrap(),
-                    only_this,
-                    only_next,
-                });
-
+            ZoneUpdate::Finished(_soa) => {
+                // Finish this last set of deletions and additions.
+                writer.next_patchset()?;
                 break;
             }
 
@@ -537,24 +335,32 @@ fn process_ixfr(
 //----------- axfr() -----------------------------------------------------------
 
 /// Perform an authoritative zone transfer.
+#[tracing::instrument(
+    level = "trace",
+    skip_all,
+    fields(zone = %zone.name, addr = ?addr),
+)]
 pub async fn axfr(
-    metrics: &LoaderMetrics,
     zone: &Arc<Zone>,
     addr: &SocketAddr,
     tsig_key: Option<tsig::Key>,
-) -> Result<ZoneContents, AxfrError> {
+    builder: &mut LoadedZoneBuilder,
+    metrics: &ActiveLoadMetrics,
+) -> Result<(), AxfrError> {
+    debug!("Attempting an AXFR");
+
     let zone_name: &Name = ParseBytes::parse_bytes(zone.name.as_slice()).unwrap();
 
     // Prepare the AXFR query message.
     let mut buffer = [0u8; 512];
     let mut compressor = NameCompressor::default();
-    let mut builder = MessageBuilder::new(
+    let mut msgbuilder = MessageBuilder::new(
         &mut buffer,
         &mut compressor,
         0u16.into(),
         *HeaderFlags::default().set_qr(false),
     );
-    builder
+    msgbuilder
         .push_question(&Question {
             qname: zone_name,
             // TODO: 'QType::AXFR'.
@@ -562,7 +368,7 @@ pub async fn axfr(
             qclass: QClass::IN,
         })
         .unwrap();
-    let message = Bytes::copy_from_slice(builder.finish().as_bytes());
+    let message = Bytes::copy_from_slice(msgbuilder.finish().as_bytes());
     let message =
         domain::base::Message::from_octets(message).expect("'Message' is at least 12 bytes long");
 
@@ -599,15 +405,17 @@ pub async fn axfr(
         .await?
         .ok_or(AxfrError::IncompleteResponse)?;
 
-    let mut bytes = initial.as_slice().len();
-    let mut updates = interpreter.interpret_response(initial)?.peekable();
+    metrics
+        .num_loaded_bytes
+        .fetch_add(initial.as_slice().len(), Relaxed);
+    let mut updates = interpreter.interpret_response(initial)?;
 
     assert!(updates.next().unwrap()? == ZoneUpdate::DeleteAllRecords);
-    let mut all = Vec::new();
+    let mut writer = builder.replace().unwrap();
 
     // Process the response messages.
     let soa = loop {
-        if let Some(soa) = process_axfr(metrics, &mut all, updates)? {
+        if let Some(soa) = process_axfr(&mut writer, updates, metrics)? {
             break soa;
         } else {
             // Retrieve the next message.
@@ -615,41 +423,34 @@ pub async fn axfr(
                 .get_response()
                 .await?
                 .ok_or(AxfrError::IncompleteResponse)?;
-            bytes += message.as_slice().len();
-            updates = interpreter.interpret_response(message)?.peekable();
+            metrics
+                .num_loaded_bytes
+                .fetch_add(message.as_slice().len(), Relaxed);
+            updates = interpreter.interpret_response(message)?;
         }
     };
 
     assert!(interpreter.is_finished());
-    let all = all.into_boxed_slice();
-
-    metrics.byte_count.fetch_add(bytes, Relaxed);
-
-    Ok(ZoneContents { soa, all })
+    writer.set_soa(soa)?;
+    writer.apply()?;
+    Ok(())
 }
 
 /// Process an AXFR message.
 fn process_axfr(
-    metrics: &LoaderMetrics,
-    all: &mut Vec<RegularRecord>,
-    updates: Peekable<XfrZoneUpdateIterator<'_, '_>>,
+    writer: &mut LoadedZoneReplacer,
+    updates: XfrZoneUpdateIterator<'_, '_>,
+    metrics: &ActiveLoadMetrics,
 ) -> Result<Option<SoaRecord>, AxfrError> {
     // Process the updates.
     for update in updates {
-        metrics.record_count.fetch_add(1, Relaxed);
+        metrics.num_loaded_records.fetch_add(1, Relaxed);
         match update? {
             ZoneUpdate::AddRecord(record) => {
-                all.push(record.into());
+                writer.add(record.into())?;
             }
 
             ZoneUpdate::Finished(record) => {
-                // Sort the zone contents.
-                all.sort_unstable_by(|l, r| {
-                    (&l.rname, l.rtype)
-                        .cmp(&(&r.rname, r.rtype))
-                        .then_with(|| l.rdata.cmp_canonical(&r.rdata))
-                });
-
                 return Ok(Some(record.into()));
             }
 
@@ -747,9 +548,6 @@ pub async fn query_soa(
     if rname != zone_name {
         return Err(QuerySoaError::MismatchedResponse);
     }
-    let None = parser.next() else {
-        return Err(QuerySoaError::MismatchedResponse);
-    };
 
     Ok(SoaRecord(Record {
         rname: zone_name.unsized_copy_into(),
@@ -784,7 +582,7 @@ pub enum IxfrError {
     /// An incomplete response was received.
     IncompleteResponse,
 
-    /// An inconsistent [`Ixfr::UpToDate`] response was received.
+    /// An inconsistent IXFR up-to-date response was received.
     InconsistentUpToDate,
 
     /// A query for a SOA record failed.
@@ -792,6 +590,9 @@ pub enum IxfrError {
 
     /// An AXFR related error occurred.
     Axfr(AxfrError),
+
+    /// The zone data could not be written.
+    Write(PatchError),
 }
 
 impl std::error::Error for IxfrError {
@@ -805,6 +606,7 @@ impl std::error::Error for IxfrError {
             IxfrError::InconsistentUpToDate => None,
             IxfrError::QuerySoa(error) => Some(error),
             IxfrError::Axfr(error) => Some(error),
+            IxfrError::Write(error) => Some(error),
         }
     }
 }
@@ -828,6 +630,9 @@ impl fmt::Display for IxfrError {
             ),
             IxfrError::QuerySoa(error) => write!(f, "could not query for the SOA record: {error}"),
             IxfrError::Axfr(error) => write!(f, "the fallback AXFR failed: {error}"),
+            IxfrError::Write(error) => {
+                write!(f, "could not write the zone data: {error}")
+            }
         }
     }
 }
@@ -864,6 +669,18 @@ impl From<AxfrError> for IxfrError {
     }
 }
 
+impl From<PatchError> for IxfrError {
+    fn from(error: PatchError) -> Self {
+        Self::Write(error)
+    }
+}
+
+impl From<ReplaceError> for IxfrError {
+    fn from(error: ReplaceError) -> Self {
+        Self::Axfr(AxfrError::Write(error))
+    }
+}
+
 //----------- AxfrError --------------------------------------------------------
 
 /// An error when performing an authoritative zone transfer.
@@ -883,6 +700,9 @@ pub enum AxfrError {
 
     /// An incomplete response was received.
     IncompleteResponse,
+
+    /// The zone data could not be written.
+    Write(ReplaceError),
 }
 
 impl std::error::Error for AxfrError {
@@ -893,6 +713,7 @@ impl std::error::Error for AxfrError {
             AxfrError::Xfr(_) => None,
             AxfrError::XfrIter(_) => None,
             AxfrError::IncompleteResponse => None,
+            AxfrError::Write(error) => Some(error),
         }
     }
 }
@@ -911,6 +732,9 @@ impl fmt::Display for AxfrError {
             }
             AxfrError::IncompleteResponse => {
                 write!(f, "the server's response appears to be incomplete")
+            }
+            AxfrError::Write(error) => {
+                write!(f, "could not write the zone data: {error}")
             }
         }
     }
@@ -933,6 +757,12 @@ impl From<xfr::protocol::Error> for AxfrError {
 impl From<xfr::protocol::IterationError> for AxfrError {
     fn from(value: xfr::protocol::IterationError) -> Self {
         Self::XfrIter(value)
+    }
+}
+
+impl From<ReplaceError> for AxfrError {
+    fn from(error: ReplaceError) -> Self {
+        Self::Write(error)
     }
 }
 

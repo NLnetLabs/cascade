@@ -1,0 +1,43 @@
+[package]
+name = "cascade-cfg"
+description = "Configuring Cascade."
+
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+readme = "README.md"
+
+
+# --- Dependencies -------------------------------------------------------------
+
+[dependencies]
+
+# The user can specify filesystem paths to Cascade.  Paths need to be
+# represented in a platform-independent way, ruling out 'std::path::Path'.
+# 'camino' offers UTF-8-only paths that match this requirement.
+[dependencies.camino]
+workspace = true
+features = ["serde1"]
+
+# 'clap' is used for defining and parsing command-line arguments.
+[dependencies.clap]
+workspace = true
+features = ["wrap_help"]
+
+# 'foldhash' offers fast, non-cryptographic hash tables.
+[dependencies.foldhash]
+workspace = true
+
+# 'serde' and 'toml' are used for parsing TOML configuration files.
+[dependencies.serde]
+workspace = true
+features = ["derive"]
+[dependencies.toml]
+workspace = true

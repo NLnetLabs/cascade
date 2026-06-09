@@ -9,7 +9,7 @@ use super::client::CascadeApiClient;
 use super::commands::Command;
 
 #[derive(Clone, Debug, Parser)]
-#[command(version, disable_help_subcommand = true)]
+#[command(version = env!("CASCADE_BUILD_VERSION"), disable_help_subcommand = true)]
 pub struct Args {
     /// The cascade server instance to connect to
     #[arg(

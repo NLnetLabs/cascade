@@ -4,15 +4,15 @@ Cascade CLI
 Synopsis
 --------
 
-:program:`cascade` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` ``<COMMAND>``
 
 Description
 -----------
 
 **cascade** is the CLI to the :doc:`cascaded`.
 
-Options
--------
+Global Options
+--------------
 
 .. option:: -s, --server <IP:PORT>
 
@@ -55,6 +55,10 @@ Commands
 
           Execute manual key roll or key removal commands.
 
+        :doc:`cascade-tsig <cascade-tsig>`\ (1)
+
+          Manage TSIG keys.
+
         :doc:`cascade-hsm <cascade-hsm>`\ (1)
 
           Manage HSMs.
@@ -80,6 +84,9 @@ Commands
 
     **cascade-keyset**\ (1)
         Execute manual key roll or key removal commands.
+
+    **cascade-tsig**\ (1)
+        Manage TSIG keys.
 
     **cascade-hsm**\ (1)
         Manage HSMs.
