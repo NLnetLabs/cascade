@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use cascade_zonedata::{OldRecord, SoaRecord};
 use domain::base::iana::{Class, Opcode};
 use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
 use domain::net::client::dgram::Connection;
@@ -38,8 +39,7 @@ use crate::policy::{NameserverCommsPolicy, OnReject, ReviewMode};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
 use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneHandle,
-    ZoneVersionReviewState,
+    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneVersionReviewState,
 };
 
 /// The source of a zone server.
@@ -182,9 +182,9 @@ impl ZoneServer {
 
         let svc = service;
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
-        let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = CookiesMiddlewareSvc::with_random_secret(svc);
         let svc = EdnsMiddlewareSvc::new(svc);
+        let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
         let svc = Arc::new(svc);
 
@@ -220,17 +220,19 @@ impl ZoneServer {
         info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.",);
 
         // Move next_min_expiration to min_expiration, and determine policy.
-        let policy = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let mut zone_state = zone.state.lock().unwrap();
+        let (policy, soa) = {
+            // Use a block to make sure that the lock is clearly dropped.
+            let mut zone_state = zone.write(center);
 
             // Save as next_min_expiration. After the signed zone is approved
             // this value should be move to min_expiration.
             zone_state.min_expiration = zone_state.next_min_expiration;
             zone_state.next_min_expiration = None;
-            zone.mark_dirty(&mut zone_state, center);
 
-            zone_state.policy.clone()
+            (
+                zone_state.policy.clone(),
+                zone_state.storage.signed_review_soa.clone().unwrap(),
+            )
         };
 
         // Send NOTIFY if configured to do so.
@@ -251,7 +253,7 @@ impl ZoneServer {
                     .iter()
                     .filter(|s| s.addr.port() != 0);
 
-                send_notify_to_addrs(zone_name.clone(), addrs, center);
+                send_notify_to_addrs(zone_name.clone(), soa.clone(), addrs, center);
             }
         }
     }
@@ -270,7 +272,7 @@ impl ZoneServer {
         };
 
         let review = {
-            let zone_state = zone.state.lock().unwrap();
+            let zone_state = zone.read();
             let policy = zone_state.policy.as_ref().unwrap();
             match self.source {
                 Source::Unsigned => policy.loader.review.clone(),
@@ -321,7 +323,7 @@ impl ZoneServer {
         // not all components use these fields yet.  For now, they need to be
         // created over here -- hence 'or_insert_with()'.
         {
-            let mut zone_state = zone.state.lock().unwrap();
+            let mut zone_state = zone.write(center);
             match self.source {
                 Source::Unsigned => {
                     zone_state
@@ -457,7 +459,7 @@ impl ZoneServer {
                 );
 
                 {
-                    let mut zone_state = zone.state.lock().unwrap();
+                    let mut zone_state = zone.write(center);
                     match self.source {
                         Source::Unsigned => {
                             zone_state.record_event(
@@ -494,24 +496,12 @@ impl ZoneServer {
         zone_serial: Serial,
     ) {
         let _ = zone_serial; // TODO
-        let mut state = zone.state.lock().unwrap();
-        ZoneHandle {
-            zone,
-            state: &mut state,
-            center,
-        }
-        .approve_loaded();
+        zone.write_handle(center).get().approve_loaded();
     }
 
     fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
         {
-            let mut state = zone.state.lock().unwrap();
-            ZoneHandle {
-                zone,
-                state: &mut state,
-                center,
-            }
-            .approve_signed();
+            zone.write_handle(center).get().approve_signed();
         }
 
         // Send a message to the zone signer to trigger a re-scan of
@@ -561,7 +551,7 @@ impl ZoneServer {
         match self.source {
             Source::Unsigned => {
                 {
-                    let mut zone_state = zone.state.lock().unwrap();
+                    let mut zone_state = zone.write(center);
                     let Some(version) = zone_state.unsigned.get_mut(&zone_serial) else {
                         // 'on_seek_approval_for_zone_cmd()' should have created
                         // this.  Since it doesn't exist, the zone is not under
@@ -594,23 +584,14 @@ impl ZoneServer {
                         "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
                     );
 
-                    let mut state = zone.state.lock().unwrap();
-                    match state.policy.as_ref().unwrap().loader.review.on_reject {
+                    let mut handle = zone.write_handle(center);
+                    let policy = handle.state.policy.as_ref().unwrap();
+                    match policy.loader.review.on_reject {
                         OnReject::Discard => {
-                            ZoneHandle {
-                                zone,
-                                state: &mut state,
-                                center,
-                            }
-                            .soft_reject_loaded();
+                            handle.get().soft_reject_loaded();
                         }
                         OnReject::Halt => {
-                            ZoneHandle {
-                                zone,
-                                state: &mut state,
-                                center,
-                            }
-                            .hard_reject_loaded();
+                            handle.get().hard_reject_loaded();
                         }
                     }
                 }
@@ -618,7 +599,7 @@ impl ZoneServer {
 
             Source::Signed => {
                 {
-                    let mut zone_state = zone.state.lock().unwrap();
+                    let mut zone_state = zone.write(center);
                     let Some(version) = zone_state.signed.get_mut(&zone_serial) else {
                         // 'on_seek_approval_for_zone_cmd()' should have created
                         // this.  Since it doesn't exist, the zone is not under
@@ -648,24 +629,14 @@ impl ZoneServer {
                     error!(
                         "Signed zone '{zone_name}' with serial {zone_serial} has been rejected."
                     );
-                    // TODO: Whether to soft or hard reject should be part of the policy
-                    let mut state = zone.state.lock().unwrap();
-                    match state.policy.as_ref().unwrap().signer.review.on_reject {
+                    let mut handle = zone.write_handle(center);
+                    let policy = handle.state.policy.as_ref().unwrap();
+                    match policy.signer.review.on_reject {
                         OnReject::Discard => {
-                            ZoneHandle {
-                                zone,
-                                state: &mut state,
-                                center,
-                            }
-                            .soft_reject_signed();
+                            handle.get().soft_reject_signed();
                         }
                         OnReject::Halt => {
-                            ZoneHandle {
-                                zone,
-                                state: &mut state,
-                                center,
-                            }
-                            .hard_reject_signed();
+                            handle.get().hard_reject_signed();
                         }
                     }
                 }
@@ -745,10 +716,36 @@ impl Notifiable for LoaderNotifier {
             // able to learn the used TSIG key.
             let center = &self.center;
             if let Some(zone) = crate::center::get_zone(center, apex_name) {
-                info!("Instructing zone loader to refresh zone '{apex_name}");
-                center.loader.on_refresh_zone(center, &zone);
+                // Don't allow NOTIFY to trigger re-signing of a zone loaded
+                // from disk because the operator may be in the middle
+                // of editing the file and thus the zone may not be ready
+                // to reload. Zones sourced from files should be reloaded
+                // explicitly using the `cascade zone reload` CLI command.
+                // Also ignore NOTIFY for a zone that has no source at all.
+
+                // Clone the source so that we don't hold the zone state lock
+                // when calling on_refresh_zone().
+                let zone_source = zone.read().loader.source.clone();
+                match zone_source {
+                    crate::loader::Source::Server { .. } => {
+                        info!("Instructing zone loader to refresh zone '{apex_name}");
+                        center.loader.on_refresh_zone(center, &zone);
+                    }
+
+                    crate::loader::Source::Zonefile { .. } => {
+                        warn!(
+                            "Ignoring NOTIFY for zone '{apex_name}': zone source is not an upstream nameserver"
+                        );
+                    }
+
+                    crate::loader::Source::None => {
+                        warn!("Ignoring NOTIFY for zone '{apex_name}': zone has no source")
+                    }
+                }
             } else {
-                warn!("Ignoring NOTIFY for unknown zone '{apex_name}'");
+                warn!(
+                    "Ignoring NOTIFY for zone '{apex_name}': zone is not registered with Cascade"
+                );
             }
         }
 
@@ -758,6 +755,7 @@ impl Notifiable for LoaderNotifier {
 
 pub fn send_notify_to_addrs<'a>(
     apex_name: StoredName,
+    soa: SoaRecord,
     notify_set: impl Iterator<Item = &'a NameserverCommsPolicy>,
     center: &Arc<Center>,
 ) {
@@ -771,6 +769,13 @@ pub fn send_notify_to_addrs<'a>(
     msg.header_mut().set_opcode(Opcode::NOTIFY);
     let mut msg = msg.question();
     msg.push((apex_name, Rtype::SOA)).unwrap();
+
+    // Include the current zone SOA as an RFC 1996 "unsecure hint" (see
+    // section 3.7) to the receiving nameserver so that it can choose to avoid
+    // sending a SOA query if it deems that it has this version of the zone
+    // already.
+    let mut msg = msg.answer();
+    msg.push(OldRecord::from(soa)).unwrap();
 
     for nameserver in notify_set {
         let dgram_config = dgram_config.clone();

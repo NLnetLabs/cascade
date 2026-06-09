@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-KEYSET" "1" "Apr 30, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-KEYSET" "1" "Jan 01, 2026" "0.1.0-beta1" "Cascade"
 .SH NAME
 cascade-keyset \- Execute manual key roll or key removal commands
 .SH SYNOPSIS
@@ -129,6 +129,9 @@ Force a key to be removed even if the key is not stale.
 Continue when removing the underlying keys fails.
 .UNINDENT
 .SH ARGUMENTS FOR KEYSET GET
+.sp
+Added in version 0.1.0\-beta1.
+
 .INDENT 0.0
 .TP
 .B [RR]
@@ -160,7 +163,7 @@ Cascade online documentation
 \fBcascaded\fP(1)
 \fI\%Cascade Daemon\fP
 .TP
-\fBcascade\-dnst\-keyset\fP(1)
+\fBdnst\-keyset\fP(1)
 Further documentation of the key roll commands (and more)
 .UNINDENT
 .SH AUTHOR

@@ -120,6 +120,23 @@ impl std::fmt::Display for ZoneOverrideError {
     }
 }
 
+//----------- ZoneOverride -----------------------------------------------------
+
+/// The result of a `zone maintenance start/stop` command.
+pub type ZoneMaintenanceModeResult = Result<ZoneMaintenanceModeOutput, ZoneMaintenanceModeError>;
+
+/// The output of a `zone maintenance start/stop` command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneMaintenanceModeOutput {
+    pub zone: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneMaintenanceModeError {
+    NoSuchZone,
+    AlreadyInThatState,
+}
+
 //----------- ChangeLogging ----------------------------------------------------
 
 /// Change how Cascade logs information.
@@ -428,19 +445,20 @@ pub struct ZoneStatus {
     pub policy: String,
     pub last_published: Option<LastPublishedZone>,
     pub progress: Progress,
+    pub maintenance_mode: bool,
     pub keys: Vec<KeyInfo>,
     pub key_status: String,
     pub error: Option<String>,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
-    pub unsigned_review_addr: Option<SocketAddr>,
+    pub unsigned_review_addr: Vec<SocketAddr>,
     pub signed_serial: Option<Serial>,
     pub signed_review_status: Option<TimestampedZoneReviewStatus>,
-    pub signed_review_addr: Option<SocketAddr>,
+    pub signed_review_addr: Vec<SocketAddr>,
     pub signing_report: Option<SigningReport>,
     pub published_serial: Option<Serial>,
-    pub publish_addr: SocketAddr,
+    pub publish_addr: Vec<SocketAddr>,
     pub halted_reason: Option<String>,
 }
 
@@ -448,15 +466,15 @@ pub struct ZoneStatus {
 pub struct LastPublishedZone {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,
-    // TODO:
-    //  - time of publish
-    //  - number of records
-    //  - size in bytes
+    pub timestamp: SystemTime,
+    pub num_records: usize,
+    // TODO: size in bytes
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Progress {
     Waiting,
+    Restoring,
     Loading,
     LoadedReview,
     HaltLoaded,
@@ -744,6 +762,9 @@ impl fmt::Display for ZoneReloadError {
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
+    pub loaded_review_addrs: Vec<SocketAddr>,
+    pub signed_review_addrs: Vec<SocketAddr>,
+    pub server_addrs: Vec<SocketAddr>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -779,6 +800,7 @@ pub struct KeyMsg {
 pub enum PolicyReloadError {
     Io(Utf8PathBuf, String),
     NoSuchTsigKey(TsigKeyName),
+    BadValue(String),
 }
 
 impl Display for PolicyReloadError {
@@ -786,6 +808,7 @@ impl Display for PolicyReloadError {
         match self {
             PolicyReloadError::Io(p, e) => write!(f, "{p}: {e}"),
             PolicyReloadError::NoSuchTsigKey(k) => write!(f, "no TSIG key with name '{k}' exists"),
+            PolicyReloadError::BadValue(e) => write!(f, "bad value in policy variable: {e}"),
         }
     }
 }
@@ -877,7 +900,7 @@ pub struct ServerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct OutboundPolicyInfo {
-    pub accept_xfr_from: Vec<NameserverCommsPolicyInfo>,
+    pub provide_xfr_to: Vec<NameserverCommsPolicyInfo>,
     pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
 }
 

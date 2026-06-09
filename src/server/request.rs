@@ -139,7 +139,6 @@ pub enum ZoneRequestKind {
     Axfr,
 
     /// An IXFR request.
-    #[expect(dead_code)]
     Ixfr {
         /// The SOA record known to the client.
         known_soa: Record<(), Soa<Box<Name>>>,

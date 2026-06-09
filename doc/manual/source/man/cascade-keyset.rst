@@ -105,6 +105,8 @@ Options for :subcmd:`keyset remove-key`
 Arguments for :subcmd:`keyset get`
 -----------------------------------------
 
+.. versionadded:: 0.1.0-beta1
+
 .. option:: [RR]
 
    The RRset to print. ``ds``, ``dnskey``, or ``cds``.
@@ -131,5 +133,5 @@ https://cascade.docs.nlnetlabs.nl
 **cascaded**\ (1)
     :doc:`cascaded`
 
-**cascade-dnst-keyset**\ (1)
+**dnst-keyset**\ (1)
     Further documentation of the key roll commands (and more)

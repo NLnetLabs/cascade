@@ -2,6 +2,8 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::time::Duration;
 
 use camino::Utf8Path;
 use domain::base::{Rtype, Serial, Ttl};
@@ -14,7 +16,7 @@ use crate::loader::Source;
 use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
 use crate::tsig::TsigStore;
-use crate::zone::HistoryItem;
+use crate::zone::{HistoryItem, LastPublished};
 use crate::{
     policy::{
         KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
@@ -36,6 +38,9 @@ pub struct Spec {
     /// The full details of the policy are stored here, as there may be a newer
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
+
+    /// Metadata related to the last published zone version.
+    pub last_published: Option<LastPublished>,
 
     /// The source of the zone.
     pub source: ZoneLoadSourceSpec,
@@ -90,6 +95,16 @@ pub struct Spec {
 
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
+
+    /// Locations of persisted unsigned zone diffs to enable IXFR from
+    /// the upstream to resume on restart, and to enable a complete latest
+    /// unsigned version of the zone to be reconstituted.
+    pub persisted_loaded_diffs: Vec<PathBuf>,
+
+    /// Locations of persisted signed zone diffs to ensure IXFR out toward
+    /// downstreams is still possible after restart, and to enable a complete
+    /// latest signed version of the zone to be reconsituted.
+    pub persisted_signed_diffs: Vec<PathBuf>,
 }
 
 //--- Conversion
@@ -99,6 +114,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
+            last_published: zone.last_published.clone(),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
@@ -109,6 +125,8 @@ impl Spec {
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
             history: zone.history.clone(),
+            persisted_loaded_diffs: zone.persisted_loaded_diff_paths.clone(),
+            persisted_signed_diffs: zone.persisted_signed_diff_paths.clone(),
         }
     }
 }
@@ -245,8 +263,11 @@ pub struct KeyManagerPolicySpec {
     /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
     default_ttl: Ttl,
 
-    /// Automatically remove keys that are no long in use.
+    /// Automatically remove keys that are no longer in use.
     auto_remove: bool,
+
+    /// Remove old keys after this amount of time.
+    auto_remove_delay: u64,
 
     /// Nameservers to check for RRSIG propagation during a key roll.
     publication_nameservers: Vec<NameserverCommsSpec>,
@@ -277,6 +298,7 @@ impl KeyManagerPolicySpec {
             ds_algorithm: self.ds_algorithm,
             default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
+            auto_remove_delay: Duration::from_secs(self.auto_remove_delay),
             publication_nameservers: self
                 .publication_nameservers
                 .into_iter()
@@ -307,6 +329,7 @@ impl KeyManagerPolicySpec {
             ds_algorithm: policy.ds_algorithm.clone(),
             default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
+            auto_remove_delay: policy.auto_remove_delay.as_secs(),
             publication_nameservers: policy
                 .publication_nameservers
                 .iter()

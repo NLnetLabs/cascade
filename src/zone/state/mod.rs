@@ -84,6 +84,7 @@ impl Spec {
         match self {
             Self::V1(v1::Spec {
                 policy,
+                last_published,
                 source,
                 min_expiration,
                 next_min_expiration,
@@ -94,6 +95,8 @@ impl Spec {
                 last_signature_refresh,
                 previous_serial,
                 history,
+                persisted_loaded_diffs,
+                persisted_signed_diffs,
             }) => {
                 let loader = LoaderState {
                     source: source
@@ -113,6 +116,7 @@ impl Spec {
 
                 Ok(ZoneState {
                     policy,
+                    last_published,
                     min_expiration,
                     next_min_expiration,
                     apex_remove,
@@ -123,6 +127,8 @@ impl Spec {
                     previous_serial,
                     loader,
                     history,
+                    persisted_loaded_diff_paths: persisted_loaded_diffs,
+                    persisted_signed_diff_paths: persisted_signed_diffs,
                     ..Default::default()
                 })
             }

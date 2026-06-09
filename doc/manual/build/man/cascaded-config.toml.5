@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-CONFIG.TOML" "5" "Apr 30, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADED-CONFIG.TOML" "5" "Jan 01, 2026" "0.1.0-beta1" "Cascade"
 .SH NAME
 cascaded-config.toml \- Cascade configuration file
 .sp
@@ -55,7 +55,7 @@ tsig\-store\-path = \(dq/var/lib/cascade/tsig\-keys.db\(dq
 kmip\-credentials\-store\-path = \(dq/var/lib/cascade/kmip/credentials.db\(dq
 keys\-dir = \(dq/var/lib/cascade/keys\(dq
 kmip\-server\-state\-dir = \(dq/var/lib/cascade/kmip\(dq
-dnst\-binary\-path = \(dq/usr/libexec/cascade/cascade\-dnst\(dq
+dnst\-binary\-path = \(dqdnst\(dq
 
 [daemon]
 log\-level = \(dqinfo\(dq
@@ -165,13 +165,12 @@ can be backed up and restored in the event of filesystem corruption.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B dnst\-binary\-path = \(dq/usr/libexec/cascade/cascade\-dnst\(dq
+.B dnst\-binary\-path = \(dqdnst\(dq
 The path to the dnst binary Cascade should use.
 .sp
-Cascade relies on a Cascade specific verison of the (not yet officially
-released) \fBdnst\fP program (<\X'tty: link https://github.com/NLnetLabs/dnst'\fI\%https://github.com/NLnetLabs/dnst\fP\X'tty: link'>) in order
-to perform DNSSEC key management.  You can specify an absolute path here, or
-just \fBdnst\fP if it is in $PATH.
+Cascade relies on a separate tool called \fBdnst\fP
+(\X'tty: link https://github.com/NLnetLabs/dnst'\fI\%https://github.com/NLnetLabs/dnst\fP\X'tty: link') to perform DNSSEC key management.  You
+can specify an absolute path here, or just \fBdnst\fP if it is in $PATH.
 .UNINDENT
 .SS Settings relevant to any daemon program.
 .sp

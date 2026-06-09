@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
+use std::time::Duration;
 use std::{fs, io, sync::Arc};
 
 use bytes::Bytes;
@@ -217,7 +218,7 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
         .key_manager
         .publication_nameservers
         .iter()
-        .chain(policy.server.outbound.accept_xfr_from.iter())
+        .chain(policy.server.outbound.provide_xfr_to.iter())
         .chain(policy.server.outbound.send_notify_to.iter())
         .filter_map(|ns| ns.tsig_key_name.as_ref());
 
@@ -226,6 +227,93 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
             .get(tsig_name)
             .ok_or(PolicyReloadError::NoSuchTsigKey(tsig_name.clone()))?;
     }
+
+    // Check signer policy.
+
+    // sig_validity_time
+    //
+    // The maximum sig_validity_time is determined by what we can put in
+    // the expiration time. Expiration time is effectively a 32-bit signed
+    // value. So sig_validity_time has to be less then 0x8000_0000. To
+    // give ourselves some headroom, set the limit to 0x4000_0000.
+    if policy.signer.sig_validity_time >= 0x4000_0000 {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-lifetime {} too big (>= 0x4000_0000)",
+            policy.signer.sig_validity_time
+        )));
+    }
+
+    // The minimum value of sig_validity_time is bounded by sig_remain_time
+    // and signature_refresh_interval. We get to this later.
+
+    // sig_remain_time
+    //
+    // The effective lifetime of a signature is
+    // sig_validity_time - sig_remain_time. This needs to be greater than
+    // zero. So the maximum value of sig_remain_time is bounded by
+    // sig_validity_time. We will check this later.
+    //
+    // Ideally, sig_remain_time should be larger than the maximum TTL
+    // to make sure that old signatures are removed from caches before
+    // they expire. We don't have a maximum TTL value. So what the signer
+    // does is add the TTL of an RRset to sig_remain_time to determine
+    // if a signature needs to be refreshed. For this reason, the lower bound
+    // of sig_remain_time is zero. However, this does not leave any margin
+    // for error.
+
+    // signature_refresh_interval
+    //
+    // The maximum is again bounded by sig_validity_time.
+    //
+    // Each signature_refresh_interval seconds, the signer will generate a
+    // new version of the zone with some refreshed signatures. For this reason,
+    // signature_refresh_interval should not be too low. Enforce a lower
+    // bound of 60 seconds to avoid accidentally generating new zone versions
+    // at a high rate.
+    if policy.signer.signature_refresh_interval < 60 {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-refresh-interval {} too small (< 60)",
+            policy.signer.signature_refresh_interval
+        )));
+    }
+
+    // Check if everything fits together. The effective lifetime of a
+    // signature is sig_validity_time - sig_remain_time. This needs to be
+    // greater than zero. We need to take TTL into account. Assume a reasonable
+    // TTL of one hour (3600 seconds). So now we have
+    // sig_validity_time - sig_remain_time - 3600 > 0.
+    // We sign every signature_refresh_interval so we need to take that into
+    // account. Which gives:
+    // sig_validity_time - sig_remain_time - 3600 - signature_refresh_interval > 0
+    // Which can be written as:
+    // sig_validity_time > sig_remain_time + 3600 + signature_refresh_interval
+    //
+    // If an RRset has a high TTL such that
+    // sig_remain_time + TTL + signature_refresh_interval >= sig_validity_time
+    // then the signature will be refreshed every signature_refresh_interval
+    // and an error will be logged. In extreme cases, i.e. when
+    // TTL + signature_refresh_interval > sig_validity_time
+    // then validation errors may happen due to caching. However, this only
+    // affects RRsets with too high TTLs. The rest of the zone will be
+    // unaffected.
+    if policy.signer.sig_validity_time
+        <= policy.signer.sig_remain_time + 3600 + policy.signer.signature_refresh_interval
+    {
+        return Err(PolicyReloadError::BadValue(format!(
+            "signature-lifetime ({}) too small (<= signature-remain-time ({}) + room for TTL (3600) + signature-refresh-interval ({}))",
+            policy.signer.sig_validity_time,
+            policy.signer.sig_remain_time,
+            policy.signer.signature_refresh_interval
+        )));
+    }
+
+    // key_roll_time
+    //
+    // If the value is too high then the key roll never completes. It is not
+    // clear if there is a sensible upper bound.
+    //
+    // It is fine to set this value to zero, the key roll will just complete
+    // the next time the refresh timer expires.
     Ok(())
 }
 
@@ -314,8 +402,11 @@ pub struct KeyManagerPolicy {
     /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
     pub default_ttl: Ttl,
 
-    /// Automatically remove keys that are no long in use.
+    /// Automatically remove keys that are no longer in use.
     pub auto_remove: bool,
+
+    /// Remove keys after this amount of time.
+    pub auto_remove_delay: Duration,
 
     /// Nameservers to check for RRSIG propagation during a key roll.
     pub publication_nameservers: Vec<NameserverCommsPolicy>,
@@ -460,10 +551,10 @@ pub struct ServerPolicy {
 /// Policy for restricting to whom data may be sent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OutboundPolicy {
-    /// The set of nameservers from which SOA and XFR requests may be received.
+    /// The set of nameservers to which zone transfers may be provided.
     ///
-    /// If empty, any nameserver may request XFR from us.
-    pub accept_xfr_from: Vec<NameserverCommsPolicy>,
+    /// If empty, zone transfers will be provided to any nameserver.
+    pub provide_xfr_to: Vec<NameserverCommsPolicy>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///

@@ -12,7 +12,7 @@ case $1 in
     cascaded --version
 
     echo -e "\nDNST VERSION:"
-    /usr/libexec/cascade/cascade-dnst --version
+    dnst --version
 
     echo -e "\nCASCADED CONF:"
     cat /etc/cascade/config.toml

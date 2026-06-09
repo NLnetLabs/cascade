@@ -23,7 +23,7 @@ Example
     kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
     keys-dir = "/var/lib/cascade/keys"
     kmip-server-state-dir = "/var/lib/cascade/kmip"
-    dnst-binary-path = "/usr/libexec/cascade/cascade-dnst"
+    dnst-binary-path = "dnst"
 
     [daemon]
     log-level = "info"
@@ -124,14 +124,13 @@ Global Options
    internal implementation details.  It should not be modified manually, but it
    can be backed up and restored in the event of filesystem corruption.
 
-.. option:: dnst-binary-path = "/usr/libexec/cascade/cascade-dnst"
+.. option:: dnst-binary-path = "dnst"
 
    The path to the dnst binary Cascade should use.
 
-   Cascade relies on a Cascade specific verison of the (not yet officially
-   released) ``dnst`` program (<https://github.com/NLnetLabs/dnst>) in order
-   to perform DNSSEC key management.  You can specify an absolute path here, or
-   just ``dnst`` if it is in $PATH.
+   Cascade relies on a separate tool called ``dnst``
+   (https://github.com/NLnetLabs/dnst) to perform DNSSEC key management.  You
+   can specify an absolute path here, or just ``dnst`` if it is in $PATH.
 
 
 

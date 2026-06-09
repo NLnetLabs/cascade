@@ -118,9 +118,7 @@ pub fn record_zone_event(
     event: HistoricalEvent,
     serial: Option<Serial>,
 ) {
-    let mut zone_state = zone.state.lock().unwrap();
-    zone_state.record_event(event, serial);
-    zone.mark_dirty(&mut zone_state, center);
+    zone.write_handle(center).state.record_event(event, serial);
 }
 
 //----------- Error ------------------------------------------------------------

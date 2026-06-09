@@ -131,11 +131,6 @@ After configuring Cascade, you can begin adding zones. Cascade supports zones
 sourced from a local file or fetched from another nameserver using XFR 
 :term:`zone transfers <Zone transfer>`.
 
-.. Note:: The current version of Cascade does not yet support TSIG 
-   authenticated XFR nor can it pass through a signed zone intact. Any DNSSEC
-   records will be stripped from the zone before signing. We expect to add 
-   support for these features soon.
-
 Zones take a lot of their settings from policy. Policies allow easy re-use of
 settings across multiple zones and control things like whether or not zones
 should be reviewed and how, what DNSSEC settings should be used to sign the
@@ -191,19 +186,23 @@ For example:
 
 .. code-block:: text
 
-    Status report for zone 'example.com' using policy 'default'
-    ✔ Waited for a new version of the example.com zone
-    ✔ Loaded version 1
-      Loaded at 2025-09-30T12:00:05+00:00 (2s ago)
-      Loaded 596 B from the filesystem in 0 seconds
-    ✔ Auto approving signing of version 1, no checks enabled in policy.
-    ✔ Approval received to sign version 1, signing requested
-    ✔ Signed version 1 as version 2025093001
-      Signed at 2025-09-30T12:00:06+00:00 (1s ago)
-      Signed 3 records in 0s
-    ✔ Auto approving publication of version 2025093001, no checks enabled in policy.
-    ✔ Published version 2025093001
-      Published zone available on 127.0.0.1:4542
+    zone:   example.com
+    policy: default
+    source: /path/to/zonefile/example.txt
+
+    review
+      loaded: off
+      signed: off
+
+    last published
+      loaded serial: 2001062501
+      signed serial: 2026050600
+      timestamp:     2026-06-02T12:53:10.158779414Z
+      size:          10 records
+
+    status: idle
+
+    Published zone available at 127.0.0.1:4542
 
 From the above you can see that the signed zone can be retrieved from
 ``127.0.0.1:4542`` using a DNS client, e.g.:

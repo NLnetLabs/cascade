@@ -138,8 +138,7 @@ impl RestoringSignedStorage {
         LoadedZoneReviewer,
         SignedZoneReviewer,
         ZoneViewer,
-        SignedZoneBuilder,
-        SigningStorage,
+        PassiveStorage,
     ) {
         assert!(
             Arc::ptr_eq(restorer.data(), &self.data),
@@ -147,11 +146,11 @@ impl RestoringSignedStorage {
         );
 
         restorer.clear();
-
         let Self {
             data,
-            curr_loaded_index,
+            curr_loaded_index: _,
         } = self;
+        let curr_loaded_index = false;
         let curr_signed_index = false;
 
         let loaded_reviewer =
@@ -166,18 +165,14 @@ impl RestoringSignedStorage {
             )
         };
         let viewer = unsafe { ZoneViewer::new(data.clone(), curr_loaded_index, curr_signed_index) };
-        let builder = unsafe {
-            SignedZoneBuilder::new(data.clone(), curr_loaded_index, !curr_signed_index, None)
-        };
 
-        let storage = SigningStorage {
+        let storage = PassiveStorage {
             data,
             curr_loaded_index,
             curr_signed_index,
-            loaded_diff: None,
         };
 
-        (loaded_reviewer, signed_reviewer, viewer, builder, storage)
+        (loaded_reviewer, signed_reviewer, viewer, storage)
     }
 }
 
@@ -645,9 +640,9 @@ impl CleanSignedPendingStorage {
             Arc::ptr_eq(old_reviewer.data(), &self.data),
             "'old_reviewer' is for a different zone"
         );
+        // TODO: Verify 'old_review.loaded_index' appears correct.
         assert!(
-            old_reviewer.loaded_index != self.curr_loaded_index
-                && old_reviewer.signed_index != self.curr_signed_index,
+            old_reviewer.signed_index != self.curr_signed_index,
             "'old_reviewer' does not point to the new instance",
         );
 
@@ -673,9 +668,9 @@ impl CleanWholePendingStorage {
             Arc::ptr_eq(old_reviewer.data(), &self.data),
             "'old_reviewer' is for a different zone"
         );
+        // TODO: Verify 'old_review.loaded_index' appears correct.
         assert!(
-            old_reviewer.loaded_index != self.curr_loaded_index
-                && old_reviewer.signed_index != self.curr_signed_index,
+            old_reviewer.signed_index != self.curr_signed_index,
             "'old_reviewer' does not point to the new instance",
         );
 

@@ -197,6 +197,11 @@ impl LoadedZoneRestorer {
             .find(|inst| inst.soa.is_some())
             .map(LoadedZoneReader::new)
     }
+
+    /// The diff from the preceding loaded instance to the current one.
+    pub fn take_diff(&mut self) -> Option<Box<DiffData>> {
+        self.diff.take()
+    }
 }
 
 impl LoadedZoneRestorer {
@@ -326,7 +331,7 @@ impl SignedZoneRestorer {
         // SAFETY: As per the caller, 'loaded[loaded_index]' will not be
         // modified for the lifetime of 'self', and so is sound to access
         // immutably.
-        let curr_loaded = unsafe { &*self.data.signed[self.loaded_index as usize].get() };
+        let curr_loaded = unsafe { &*self.data.loaded[self.loaded_index as usize].get() };
 
         // SAFETY: As per the caller, 'signed[index]' will not be accessed
         // elsewhere for the lifetime of 'self', and so is sound to access
@@ -424,6 +429,20 @@ impl SignedZoneRestorer {
     pub fn clear(&mut self) {
         // Initialize the absolute data.
 
+        // SAFETY: As per the caller, 'loaded[index]' will not be
+        // accessed elsewhere for the lifetime of 'self', and so is sound to
+        // access mutably.
+        let next = unsafe { &mut *self.data.loaded[self.index as usize].get() };
+        next.soa = None;
+        next.records.clear();
+
+        // SAFETY: As per the caller, 'loaded[!index]' will not be
+        // accessed elsewhere for the lifetime of 'self', and so is sound to
+        // access mutably.
+        let curr = unsafe { &mut *self.data.loaded[!self.index as usize].get() };
+        curr.soa = None;
+        curr.records.clear();
+
         // SAFETY: As per the caller, 'signed[index]' will not be
         // accessed elsewhere for the lifetime of 'self', and so is sound to
         // access mutably.
@@ -468,6 +487,11 @@ impl SignedZoneRestorer {
             .into_iter()
             .find(|inst| inst.soa.is_some())
             .map(|inst| SignedZoneReader::new(curr_loaded, inst))
+    }
+
+    /// The diff from the preceding signed instance to the current one.
+    pub fn take_diff(&mut self) -> Option<Box<DiffData>> {
+        self.diff.take()
     }
 }
 

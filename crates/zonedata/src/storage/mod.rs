@@ -7,7 +7,9 @@
 
 use std::sync::Arc;
 
-use crate::{LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data};
+use crate::{
+    DiffData, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer, data::Data,
+};
 
 mod states;
 pub use states::{
@@ -29,6 +31,32 @@ mod transitions;
 /// reviewed, and switched to. While it requires `&mut` access to be modified,
 /// it is designed to live in a (synchronous) mutex -- expensive operations on
 /// the zone are always achievable without `&mut` access.
+///
+/// ```text
+/// ╔═══════════════════╗ finish  ╔═══════════════════╗ finish  
+/// ║  RestoringLoaded  ╠═════════▶  RestoringSigned  ╠════════╗  
+/// ╚══╤════════════════╝         ╚══╤════════════════╝        ║  
+///    │ abandon                     │ abandon                 ║  
+/// ┌──▼─────────────────────────────▼─────────────────────────▼─────────┐
+/// │                            Passive                                 │
+/// └─────────╥────────────────────────────────────────────────────────▲─┘
+///           ║                                                        │ mark_complete
+/// ┌─────────║──────────────────────────────────────────────────────────┐               ╔═════════════╗   start   ╔════════════════════╗                               approve                                                         
+/// │         ║                  Cleaning                                <═══════════════║  Switching  <═══════════║  PersistingSigned  <═══════════════════════════════════════════════════════════════════▲
+/// └─────────║──────▲─────────────────────────────────────────────────▲─┘               ╚═════════════╝           ╚════════════════════╝                                                                   ║                                                
+///           ║      │                                                 │  stop_review                                                                                                                       ║
+///           ║      │                                            ┌─────────────────────┐       stop_review        ┌────────────────────┐                     give_up                                       ║                                                                                                                     
+///      load ║      │ give_up                                    │  CleanLoadedPending <──────────────────────────│  CleanWholePending <─────────────────────────────────────────────────────┐             ║                                                                                                                                         
+///           ║      │                                            └────▲────────────────┘                          └────────────────────┘                                                     │             ║                                                                                                                     
+///           ▼      │                                                 │ give_up                                                                                                              │             ║
+///        ╔═════════╧═╗ finish ╔══════════════════════════╗ start ╔═══════════════════╗ approve ╔════════════════════╗ complete ╔══▼═════════════╗ finish ╔═══════════════════════╗ start ╔══════════════════╗
+///        ║  Loading  ╠════════▶  ReviewingLoadedPending  ╠═══════▶  ReviewingLoaded  ╠═════════▶  PersistingLoaded  ╠══════════▶    Signing     ╠════════▶  ReviewSignedPending  ╠═══════▶  ReviewingSigned ║
+///        ╚═══════════╝        ╚══════════════════════════╝       ╚═══════════════════╝         ╚════════════════════╝          ╚══╤═════════▲═══╝        ╚═══════════════════════╝       ╚════════╤═════════╝
+///                                                                                                                           retry │         │ complete                                      retry │
+///                                                                                                                              ┌──▼─────────┴────┐              stop_review            ┌──────────▼──────────┐
+///                                                                                                                              │  CleaningSigned <─────────────────────────────────────│  CleanSignedPending │
+///                                                                                                                              └─────────────────┘                                     └─────────────────────┘
+/// ```
 pub enum ZoneDataStorage {
     /// The loaded instance of the zone is being restored.
     RestoringLoaded(RestoringLoadedStorage),
@@ -133,6 +161,29 @@ impl ZoneDataStorage {
             ZoneDataStorage::CleaningSigned(_) => "CleaningSigned",
             ZoneDataStorage::Switching(_) => "Switching",
             ZoneDataStorage::Poisoned => "Poisoned",
+        }
+    }
+
+    /// Get the current loaded diff, if any.
+    pub fn loaded_diff(&self) -> Option<Arc<DiffData>> {
+        match self {
+            ZoneDataStorage::ReviewLoadedPending(s) => Some(s.loaded_diff.clone()),
+            ZoneDataStorage::ReviewingLoaded(s) => Some(s.loaded_diff.clone()),
+            ZoneDataStorage::PersistingLoaded(s) => Some(s.loaded_diff.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the current signed diff, if any.
+    pub fn signed_diff(&self) -> Option<Arc<DiffData>> {
+        match self {
+            ZoneDataStorage::ReviewSignedPending(s) => Some(s.signed_diff.clone()),
+            ZoneDataStorage::ReviewingSigned(s) => Some(s.signed_diff.clone()),
+            ZoneDataStorage::PersistingSigned(_) => {
+                // PersistingSigned has no diff unlike PersistingLoaded
+                None
+            }
+            _ => None,
         }
     }
 }

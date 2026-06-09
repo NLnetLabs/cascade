@@ -23,12 +23,12 @@ use std::{
 };
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::units::zone_signer::SignerError;
 use crate::{
     center::Center,
-    zone::{HistoricalEvent, Zone, ZoneHandle},
+    zone::{HistoricalEvent, Zone},
 };
 
 pub mod incremental;
@@ -75,23 +75,18 @@ async fn sign(
     .unwrap();
 
     let mut status = status.write().unwrap();
-    let mut state = zone.state.lock().unwrap();
-    let mut handle = ZoneHandle {
-        zone: &zone,
-        state: &mut state,
-        center: &center,
-    };
+    let mut handle = zone.write_handle(&center);
     handle.state.signer.ongoing.finish();
 
     match result {
         Ok(()) => {
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
-            handle.finish_signing(built);
+            handle.get().finish_signing(built);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
         }
         Err(SignerError::NothingToDo) => {
-            handle.abandon_signing(builder);
+            handle.get().abandon_signing(builder);
             status.status.finish(true);
             status.current_action = "Nothing to do".to_string();
         }
@@ -100,13 +95,32 @@ async fn sign(
             // a while assuming the unsigned zone gets updated regularly.
             // TODO: But if nothing happens for too long we should warn.
             // Something in status would be good.
-            handle.abandon_signing(builder);
+            handle.get().abandon_signing(builder);
             status.status.finish(true);
+
             status.current_action = "Resign failed due to Keep policy".to_string();
+
+            // If the sign operation was triggered by a load, the user forgot to increase the
+            // serial of the zone, so we should tell them about that by emitting an error.
+            if trigger == SigningTrigger::Load {
+                let error =
+                    "serial policy is \"keep\" but the serial of the loaded zone did not increase";
+
+                error!("Signing failed: {error}");
+                handle.state.record_event(
+                    HistoricalEvent::SigningFailed {
+                        trigger: trigger.into(),
+                        reason: error.to_string(),
+                    },
+                    None, // TODO
+                );
+            } else {
+                debug!("ignoring resign because the policy is keep");
+            }
         }
         Err(error) => {
             error!("Signing failed: {error}");
-            handle.signing_failed(builder, error.clone());
+            handle.get().signing_failed(builder, error.clone());
             status.status.finish(false);
             status.current_action = "Aborted".to_string();
 
@@ -128,7 +142,7 @@ async fn sign(
 // TODO: These may be subsumed by a more generic causality tracking system.
 
 /// The trigger for a (re-)signing operation.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SigningTrigger {
     /// A new instance of a zone has been loaded.
     Load,

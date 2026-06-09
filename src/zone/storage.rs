@@ -23,10 +23,10 @@
 //! such operations must wait. When the data storage becomes passive, it will
 //! call [`StorageZoneHandle::on_passive()`] to initiate enqueued operations.
 
-use std::{fmt, sync::Arc};
+use std::{fmt, sync::Arc, time::SystemTime};
 
 use cascade_zonedata::{
-    LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
+    DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
     LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
     SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
     SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage,
@@ -200,7 +200,7 @@ impl StorageZoneHandle<'_> {
             trace!("Updating the viewer in 'LoadedReviewServer'");
             let old_loaded_reviewer = LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
 
-            let mut state = zone.state.lock().unwrap();
+            let mut state = zone.write(&center);
 
             // Transition into the reviewing state.
             match transition(&mut state.storage.machine) {
@@ -225,7 +225,7 @@ impl StorageZoneHandle<'_> {
                 domain::base::Serial(serial.into()),
             );
 
-            state = zone.state.lock().unwrap();
+            state = zone.write(&center);
 
             state.storage.background_tasks.finish();
         });
@@ -436,7 +436,7 @@ impl StorageZoneHandle<'_> {
             trace!("Updating the viewer in 'SignedReviewServer'");
             let old_signed_reviewer = SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
 
-            let mut state = zone.state.lock().unwrap();
+            let mut state = zone.write(&center);
 
             // Transition into the reviewing state.
             match transition(&mut state.storage.machine) {
@@ -461,7 +461,7 @@ impl StorageZoneHandle<'_> {
                 domain::base::Serial(serial.into()),
             );
 
-            state = zone.state.lock().unwrap();
+            state = zone.write(&center);
 
             state.storage.background_tasks.finish()
         });
@@ -526,12 +526,7 @@ impl StorageZoneHandle<'_> {
                 LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
 
             // Examine the current state.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
+            let mut handle = zone.write_handle(&center);
             let cleaner = match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::CleanWholePending(s)) => {
                     let (s, cleaner) = s
@@ -633,18 +628,16 @@ impl StorageZoneHandle<'_> {
 
     /// Abandon the ongoing signed-instance restore.
     ///
-    /// Any intermediate zone data for the signed instance is wiped. The
-    /// restored loaded instance is preserved. The zone is moved to the signing
-    /// state. It is registered against Cascade's zone servers and a signing
-    /// operation is enqueued.
+    /// Any intermediate zone data is cleared and the zone is moved to the
+    /// passive state. It is registered against Cascade's zone servers.
     pub fn abandon_signed_restoration(&mut self, restorer: SignedZoneRestorer) {
         // Examine the current state.
-        let (loaded_reviewer, signed_reviewer, viewer, builder);
+        let (loaded_reviewer, signed_reviewer, viewer);
         match transition(&mut self.state.storage.machine) {
             (transition, ZoneDataStorage::RestoringSigned(s)) => {
                 let new_s;
-                (loaded_reviewer, signed_reviewer, viewer, builder, new_s) = s.abandon(restorer);
-                transition.move_to(ZoneDataStorage::Signing(new_s));
+                (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
+                transition.move_to(ZoneDataStorage::Passive(new_s));
             }
 
             _ => unreachable!(
@@ -657,8 +650,8 @@ impl StorageZoneHandle<'_> {
         SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
         PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
 
-        // Initiate a new signing operation.
-        self.zone().start_sign_after_restore(builder);
+        // Send a notification that the state machine is now passive.
+        self.on_passive();
     }
 }
 
@@ -688,12 +681,7 @@ impl StorageZoneHandle<'_> {
             // NOTE: The outer function, which is spawning the background task,
             // has a lock of the zone state. Thus, the following lock cannot be
             // taken until the outer function terminates.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
+            let mut handle = zone.write_handle(&center);
 
             match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::Cleaning(s)) => {
@@ -739,6 +727,12 @@ impl StorageZoneHandle<'_> {
         self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
         self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
 
+        // Compute the total number of records
+        let reader = viewer.read().unwrap();
+        let generated_records = reader.generated_records().len();
+        let loaded_records = reader.loaded().regular_records().len();
+        let num_records = 1 + generated_records + loaded_records;
+
         // Spawn a background task to update the publication server.
         let span = trace_span!("switch_publication_server");
         let zone = self.zone.clone();
@@ -750,12 +744,7 @@ impl StorageZoneHandle<'_> {
             // NOTE: The outer function, which is spawning the background task,
             // has a lock of the zone state. Thus, the following lock cannot be
             // taken until the outer function terminates.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
+            let mut handle = zone.write_handle(&center);
 
             // Update the zone data storage state machine.
             let cleaner = match transition(&mut handle.state.storage.machine) {
@@ -768,32 +757,37 @@ impl StorageZoneHandle<'_> {
                 _ => unreachable!("just transitioned to 'Switching'"),
             };
 
+            let loaded_serial = Serial(
+                handle
+                    .state
+                    .storage
+                    .published_loaded_soa
+                    .as_ref()
+                    .unwrap()
+                    .rdata
+                    .serial
+                    .into(),
+            );
+            let signed_serial = Serial(
+                handle
+                    .state
+                    .storage
+                    .published_soa
+                    .as_ref()
+                    .unwrap()
+                    .rdata
+                    .serial
+                    .into(),
+            );
+            let timestamp = SystemTime::now();
             handle.state.last_published = Some(LastPublished {
-                loaded_serial: Serial(
-                    handle
-                        .state
-                        .storage
-                        .published_loaded_soa
-                        .as_ref()
-                        .unwrap()
-                        .rdata
-                        .serial
-                        .into(),
-                ),
-                signed_serial: Serial(
-                    handle
-                        .state
-                        .storage
-                        .published_soa
-                        .as_ref()
-                        .unwrap()
-                        .rdata
-                        .serial
-                        .into(),
-                ),
+                loaded_serial,
+                signed_serial,
+                timestamp,
+                num_records,
             });
 
-            handle.finish_switch(cleaner);
+            handle.get().finish_switch(cleaner);
 
             handle.state.storage.background_tasks.finish();
         });
@@ -833,12 +827,7 @@ impl StorageZoneHandle<'_> {
                 LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
 
             // Examine the current state.
-            let mut state = zone.state.lock().unwrap();
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut state,
-                center: &center,
-            };
+            let mut handle = zone.write_handle(&center);
             let cleaner = match transition(&mut handle.state.storage.machine) {
                 (transition, ZoneDataStorage::CleanLoadedPending(s)) => {
                     let (s, cleaner) = s.stop_review(old_loaded_reviewer);
@@ -925,6 +914,16 @@ pub struct StorageState {
     // current i.e. published zone instance.
     pub published_loaded_soa: Option<SoaRecord>,
 
+    /// Diffs from one serial to another. Each diff consists of changes in the
+    /// loaded part and changes in the signed part.
+    ///
+    /// A loaded diff is not available if the zone was re-signed due to
+    /// changes in signing key or to refresh expiring signatures.
+    ///
+    /// A signed diff is not available if the zone has been re-loaded and has
+    /// not yet been signed, e.g. is held at review or signing is in-progress.
+    pub diffs: Vec<(Arc<DiffData>, Arc<DiffData>)>,
+
     /// Ongoing background tasks.
     ///
     /// When the zone data needs to be cleaned or persisted, a background task
@@ -944,8 +943,27 @@ impl StorageState {
             signed_review_soa: None,
             published_soa: None,
             published_loaded_soa: None,
+            diffs: Default::default(),
             background_tasks: Default::default(),
         }
+    }
+
+    /// Is this zone currently being restored from persistent storage?
+    pub fn is_restoring(&self) -> bool {
+        matches!(
+            self.machine,
+            ZoneDataStorage::RestoringLoaded(_) | ZoneDataStorage::RestoringSigned(_)
+        )
+    }
+
+    /// Get the current loaded diff, if any.
+    pub fn current_loaded_diff(&self) -> Option<Arc<DiffData>> {
+        self.machine.loaded_diff()
+    }
+
+    /// Get the current signed diff, if any.
+    pub fn current_signed_diff(&self) -> Option<Arc<DiffData>> {
+        self.machine.signed_diff()
     }
 }
 

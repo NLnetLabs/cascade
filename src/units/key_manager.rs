@@ -6,7 +6,7 @@ use crate::policy::{KeyParameters, PolicyVersion};
 use crate::signer::ResigningTrigger;
 use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
-use crate::zone::{HistoricalEvent, Zone, ZoneHandle};
+use crate::zone::{HistoricalEvent, Zone};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
@@ -493,14 +493,9 @@ impl KeyManager {
                     }
                 };
                 let _ = ks_info.insert(zone.name.clone(), new_info);
-                let mut state = zone.state.lock().unwrap();
-                ZoneHandle {
-                    zone,
-                    state: &mut state,
-                    center,
-                }
-                .signer()
-                .enqueue_resign(ResigningTrigger::KEYS_CHANGED);
+                zone.write_handle(center)
+                    .signer()
+                    .enqueue_resign(ResigningTrigger::KEYS_CHANGED);
                 continue;
             }
 
@@ -538,14 +533,9 @@ impl KeyManager {
                         // signer.
                         // let new_info = get_keyset_info(&state_path);
                         let _ = ks_info.insert(zone.name.clone(), new_info);
-                        let mut state = zone.state.lock().unwrap();
-                        ZoneHandle {
-                            zone,
-                            state: &mut state,
-                            center,
-                        }
-                        .signer()
-                        .enqueue_resign(ResigningTrigger::KEYS_CHANGED);
+                        zone.write_handle(center)
+                            .signer()
+                            .enqueue_resign(ResigningTrigger::KEYS_CHANGED);
                         continue;
                     }
 
@@ -781,6 +771,10 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
         strs!["ds-algorithm", km.ds_algorithm],
         strs!["default-ttl".to_string(), km.default_ttl.as_secs(),],
         strs!["autoremove", km.auto_remove],
+        strs![
+            "autoremove-delay",
+            seconds(km.auto_remove_delay.as_secs() as u32)
+        ],
         publication_nameservers_cmd,
     ]);
     cmds
