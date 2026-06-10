@@ -70,16 +70,7 @@ impl SignerZoneHandle<'_> {
         // moment, this queue is opaque and is handled within the asynchronous
         // task.
 
-        let span = tracing::Span::none();
-        self.state.signer.ongoing.spawn(
-            span,
-            super::sign(
-                self.center.clone(),
-                self.zone.clone(),
-                builder,
-                SigningTrigger::Load,
-            ),
-        );
+        self.start_op(builder, SigningTrigger::Load);
     }
 
     /// Enqueue a re-signing operation for the zone.
@@ -152,16 +143,7 @@ impl SignerZoneHandle<'_> {
 
             assert!(self.state.signer.enqueued_new_sign.is_none());
 
-            let span = tracing::Span::none();
-            self.state.signer.ongoing.spawn(
-                span,
-                super::sign(
-                    self.center.clone(),
-                    self.zone.clone(),
-                    builder,
-                    SigningTrigger::Resign(trigger),
-                ),
-            );
+            self.start_op(builder, SigningTrigger::Resign(trigger));
         } else {
             // TODO: Track expiration time in 'SignerState'.
             let expiration_time = self
@@ -224,18 +206,21 @@ impl SignerZoneHandle<'_> {
         // add the operation to the queue before starting the re-sign. If the
         // queue is too full to start the operation yet, leave it enqueued.
 
+        self.start_op(builder, SigningTrigger::Resign(trigger));
+
+        true
+    }
+
+    /// Start a signing operation immediately.
+    fn start_op(&mut self, builder: SignedZoneBuilder, trigger: SigningTrigger) {
+        // The current logging span is nested fairly deep within the logic for
+        // initiating signing operations, and does not really matter for the
+        // actual signing function. Start with an empty logging context.
         let span = tracing::Span::none();
         self.state.signer.ongoing.spawn(
             span,
-            super::sign(
-                self.center.clone(),
-                self.zone.clone(),
-                builder,
-                SigningTrigger::Resign(trigger),
-            ),
+            super::sign(self.center.clone(), self.zone.clone(), builder, trigger),
         );
-
-        true
     }
 }
 
