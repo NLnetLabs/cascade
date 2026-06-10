@@ -978,10 +978,20 @@ impl std::fmt::Display for Icon {
     }
 }
 
+/// Format a size in a human-readable way
+///
+/// Shows one decimal point if the size is small enough for that to make sense
+/// (e.g. below 10KB).
 fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
     match v {
-        n if n > 1_000_000 => format!("{}{spacer}M{suffix}", n / 1_000_000),
-        n if n > 1_000 => format!("{}{spacer}K{suffix}", n / 1_000),
+        n if n > 10_000_000 => format!("{}{spacer}M{suffix}", n / 1_000_000),
+        n if n > 1_000_000 => format!(
+            "{}.{}{spacer}M{suffix}",
+            n / 1_000_000,
+            (n % 1_000_000) / 100_000
+        ),
+        n if n > 10_000 => format!("{}{spacer}K{suffix}", n / 1_000),
+        n if n > 1_000 => format!("{}.{}{spacer}K{suffix}", n / 1_000, (n % 1_000) / 100),
         n => format!("{n}{spacer}{suffix}"),
     }
 }
