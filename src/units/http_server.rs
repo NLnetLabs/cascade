@@ -1016,8 +1016,8 @@ impl HttpServer {
         let p_outbound = &p.latest.server.outbound;
         let server = ServerPolicyInfo {
             outbound: OutboundPolicyInfo {
-                accept_xfr_from: p_outbound
-                    .accept_xfr_from
+                provide_xfr_to: p_outbound
+                    .provide_xfr_to
                     .iter()
                     .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
@@ -1285,7 +1285,7 @@ impl HttpServer {
                 .key_manager
                 .publication_nameservers
                 .iter()
-                .chain(policy.latest.server.outbound.accept_xfr_from.iter())
+                .chain(policy.latest.server.outbound.provide_xfr_to.iter())
                 .chain(policy.latest.server.outbound.send_notify_to.iter())
                 .filter_map(|acl| acl.tsig_key_name.as_ref())
                 .peekable();

@@ -22,7 +22,7 @@ pub enum TsigCommand {
     Add {
         /// The name of the TSIG key to add.
         ///
-        /// Can also be in the form `[algorithm]:keyname:secret`.
+        /// Can also be in the form `[algorithm:]keyname:secret`.
         name: String,
 
         /// The TSIG algorithm to use.

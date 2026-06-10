@@ -54,7 +54,7 @@ mode = "off"
 # A hook for reviewing a loaded zone.
 #
 # This command string will be executed in the user's shell when a new version of
-# a zone is loaded.  At the moment, it will only be run if 'required' is true.
+# a zone is loaded.
 #
 # It will receive the following information via environment variables:
 #
@@ -408,7 +408,7 @@ mode = "off"
 # A hook for reviewing a signed zone.
 #
 # This command string will be executed in the user's shell when a new version of
-# a zone is signed.  At the moment, it will only be run if 'required' is true.
+# a zone is signed.
 #
 # It will receive the following information via environment variables:
 #
@@ -449,19 +449,32 @@ mode = "off"
 # Cascade TSIG key store and will be used to authenticate communication with
 # the nameserver.
 #
+# PORT defaults to 53.
+#
 # If not specified, no NOTIFY messages will be sent.
-send-notify-to = []
+#send-notify-to = ["127.0.0.1", "127.0.0.1:53", "127.0.0.1^my-tsig-key"]
 
-# The set of nameservers to accept zone transfer requests from.
+# The set of nameservers to provide zone transfers to.
 # 
 # Each nameserver must be specified as a string in the form:
 #
 # `"<IP>[^<TSIG_KEY_NAME>]"`
 #
+# Nameservers may alternatively be specified as an inline table, in which case
+# PORT is mandatory but not checked other than its value must lie between 0
+# and 65535:
+#
+# `provide-xfr-to = [
+#        { addr = "<IP>:<PORT>", tsig-key-name = "<TSIG_KEY_NAME>" },
+#         ...
+# ]`
+#
 # If a TSIG key name is specified, a key by that name must exist in the
 # Cascade TSIG key store and will be used to authenticate communication with
 # the nameserver.
 #
-# If not specified, zone transfer requests will be accepted from any
-# nameserver.
-accept-xfr-from = []
+# Zone transfers will be provided to any nameserver that initiates a transfer
+# request from one of the specified IP addresses.
+#
+# If not specified, zone transfers will be provided to any nameserver.
+#provide-xfr-to = ["127.0.0.1", "127.0.0.1^my-tsig-key"]
