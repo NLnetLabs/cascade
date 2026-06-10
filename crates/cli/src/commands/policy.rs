@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
 use cascade_api::{
-    KeyManagerPolicyInfo, LoaderPolicyInfo, ReviewPolicyMode, ServerPolicyInfo, SignerPolicyInfo,
+    AutoConfigPolicyInfo, KeyManagerPolicyInfo, LoaderPolicyInfo, ReviewPolicyMode,
+    ServerPolicyInfo, SignerPolicyInfo,
 };
 
 use crate::{
@@ -170,34 +171,30 @@ fn print_key_manager_policy(
     // TODO: we should probably condense this information a lot or hide unnecessary details. For example, only
     // show CSK info when `use_csk` is `true`.
     println!("  key manager:");
-    println!("    hsm server: {}", or_none(hsm_server_id));
-    println!("    use csk: {use_csk}");
-    println!("    ds algorithm: {ds_algorithm}");
-    println!("    auto-remove: {auto_remove}");
-    println!("    auto-remove delay: {}s", auto_remove_delay.as_secs());
+    println!("    HSM server: {}", or_none(hsm_server_id));
+    println!("    DS algorithm: {ds_algorithm}");
+    if *auto_remove {
+        println!(
+            "    auto-remove: true (delay {}s)",
+            auto_remove_delay.as_secs()
+        );
+    } else {
+        println!("    auto-remove: false",);
+    }
     println!("    algorithm: {algorithm}");
-    println!("      auto-start: {}", auto_algorithm.start);
-    println!("      auto-report: {}", auto_algorithm.report);
-    println!("      auto-expire: {}", auto_algorithm.expire);
-    println!("      auto-done: {}", auto_algorithm.done);
-    println!("    ksk:");
-    println!("      validity: {}", or_none(ksk_validity));
-    println!("      auto-start: {}", auto_ksk.start);
-    println!("      auto-report: {}", auto_ksk.report);
-    println!("      auto-expire: {}", auto_ksk.expire);
-    println!("      auto-done: {}", auto_ksk.done);
-    println!("    zsk:");
-    println!("      validity: {}", or_none(zsk_validity));
-    println!("      auto-start: {}", auto_zsk.start);
-    println!("      auto-report: {}", auto_zsk.report);
-    println!("      auto-expire: {}", auto_zsk.expire);
-    println!("      auto-done: {}", auto_zsk.done);
-    println!("    csk:");
-    println!("      validity: {}", or_none(csk_validity));
-    println!("      auto-start: {}", auto_csk.start);
-    println!("      auto-report: {}", auto_csk.report);
-    println!("      auto-expire: {}", auto_csk.expire);
-    println!("      auto-done: {}", auto_csk.done);
+    print_auto_flags(auto_algorithm);
+    if *use_csk {
+        println!("    CSK:");
+        println!("      validity: {}s", or_none(csk_validity));
+        print_auto_flags(auto_csk);
+    } else {
+        println!("    KSK:");
+        println!("      validity: {}s", or_none(ksk_validity));
+        print_auto_flags(auto_ksk);
+        println!("    ZSK:");
+        println!("      validity: {}s", or_none(zsk_validity));
+        print_auto_flags(auto_zsk);
+    }
     println!("    records:");
     println!("      TTL: {default_ttl}s");
     println!("      DNSKEY:");
@@ -218,6 +215,27 @@ fn print_key_manager_policy(
             println!("     - {ns}")
         }
     }
+}
+
+fn print_auto_flags(auto: &AutoConfigPolicyInfo) {
+    print!("      auto flags:");
+    if !auto.start && !auto.report && !auto.expire && !auto.done {
+        println!(" <none>");
+        return;
+    }
+    if auto.start {
+        print!(" start");
+    }
+    if auto.report {
+        print!(" report");
+    }
+    if auto.expire {
+        print!(" expire");
+    }
+    if auto.done {
+        print!(" done");
+    }
+    println!();
 }
 
 fn print_signer_policy(
@@ -251,9 +269,9 @@ fn print_signer_policy(
     println!("    serial policy: {serial_policy}");
     println!("    signature inception offset: {sig_inception_offset}s");
     println!("    signature validity offset: {sig_validity_offset}s");
-    println!("    signature remain time: {sig_remain_time}");
-    println!("    signature refresh interval: {signature_refresh_interval}");
-    println!("    key roll time: {key_roll_time}");
+    println!("    signature remain time: {sig_remain_time}s");
+    println!("    signature refresh interval: {signature_refresh_interval}s");
+    println!("    key roll time: {key_roll_time}s");
     println!("    denial: {denial}");
     print_review(review);
 }
@@ -274,11 +292,18 @@ fn print_server_policy(
 }
 
 fn print_review(ReviewPolicyInfo { mode, on_reject }: &ReviewPolicyInfo) {
-    println!("    review:");
+    print!("    review:");
     match mode {
-        ReviewPolicyMode::Off => println!("      mode: off"),
-        ReviewPolicyMode::Manual => println!("      mode: manual"),
+        ReviewPolicyMode::Off => {
+            println!(" off");
+            return;
+        }
+        ReviewPolicyMode::Manual => {
+            println!("");
+            println!("      mode: manual");
+        }
         ReviewPolicyMode::Script { hook } => {
+            println!("");
             println!("      mode: script");
             println!("      hook: {hook}")
         }
