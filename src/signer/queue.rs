@@ -56,6 +56,23 @@ impl SigningQueue {
         }
     }
 
+    /// The set concurrency limit.
+    #[must_use]
+    pub const fn concurrency_limit(&self) -> NonZeroUsize {
+        self.concurrency_limit
+    }
+
+    /// Export a list of all zones in the queue.
+    ///
+    /// This can be used for reporting on Cascade's status. The first `N` zones,
+    /// where `N` is [`Self::concurrency_limit()`], are actively being signed
+    /// (or are about to be signed); the remainder are waiting to be signed.
+    #[must_use]
+    pub fn export(&self) -> Vec<Arc<Zone>> {
+        let zones = self.zones.lock().unwrap_or_else(handle_poison);
+        zones.iter().cloned().collect()
+    }
+
     /// Enqueue signing for a zone.
     ///
     /// If the queue has capacity, a [`SigningPermit`] is returned immediately.

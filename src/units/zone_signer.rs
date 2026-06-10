@@ -50,8 +50,8 @@ use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::incremental::{LocalState, sign_incrementally};
-use crate::signer::status::{SigningStatusPerZone, ZoneSigningStatus};
 use crate::signer::queue::SigningQueue;
+use crate::signer::status::{SigningStatusPerZone, ZoneSigningStatus};
 use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
