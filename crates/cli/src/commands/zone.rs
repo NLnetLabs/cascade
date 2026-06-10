@@ -996,6 +996,22 @@ fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::format_size;
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(945, " ", "B"), "945 B");
+        assert_eq!(format_size(9450, " ", "B"), "9.4 KB");
+        assert_eq!(format_size(94500, " ", "B"), "94 KB");
+        assert_eq!(format_size(945000, " ", "B"), "945 KB");
+        assert_eq!(format_size(9450000, " ", "B"), "9.4 MB");
+        assert_eq!(format_size(94500000, " ", "B"), "94 MB");
+        assert_eq!(format_size(94500000, " ", "B"), "945 MB");
+    }
+}
+
 fn serial_to_string(serial: Option<Serial>) -> String {
     match serial {
         Some(serial) => format!("{serial}"),
