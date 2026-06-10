@@ -770,6 +770,7 @@ impl ZoneSigner {
             let curr_refresh_time = last_signature_refresh.clone()
                 + Duration::from_secs(signature_refresh_interval as u64);
 
+            // TODO: Add a dedicated method on `UnixTime` for this.
             let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
 
             trace!("Computing next re-sign time for {zone_name}: {refresh_time:?}");
@@ -823,6 +824,7 @@ impl ZoneSigner {
             let curr_refresh_time = last_signature_refresh.clone()
                 + Duration::from_secs(signature_refresh_interval as u64);
 
+            // TODO: Add a dedicated method on `UnixTime` for this.
             let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
 
             if refresh_time >= now {
