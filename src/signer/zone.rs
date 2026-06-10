@@ -1,13 +1,19 @@
 //! Zone-specific signing state.
 
-use std::{sync::Arc, time::SystemTime};
+use std::{
+    sync::{Arc, RwLock},
+    time::SystemTime,
+};
 
 use cascade_zonedata::SignedZoneBuilder;
 use tracing::{debug, info};
 
 use crate::{
     center::Center,
-    signer::{ResigningTrigger, SigningTrigger},
+    signer::{
+        ResigningTrigger, SigningTrigger,
+        status::{SigningStatusPerZone, ZoneSigningStatus},
+    },
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState},
 };
@@ -213,14 +219,26 @@ impl SignerZoneHandle<'_> {
 
     /// Start a signing operation immediately.
     fn start_op(&mut self, builder: SignedZoneBuilder, trigger: SigningTrigger) {
+        let status = Arc::new(RwLock::new(SigningStatusPerZone {
+            current_action: "Initiating signing".into(),
+            status: ZoneSigningStatus::new(),
+        }));
+
         // The current logging span is nested fairly deep within the logic for
         // initiating signing operations, and does not really matter for the
         // actual signing function. Start with an empty logging context.
         let span = tracing::Span::none();
         self.state.signer.ongoing.spawn(
             span,
-            super::sign(self.center.clone(), self.zone.clone(), builder, trigger),
+            super::sign(
+                self.center.clone(),
+                self.zone.clone(),
+                builder,
+                trigger,
+                status.clone(),
+            ),
         );
+        self.state.signer.active_signing_status = Some(status);
     }
 }
 
@@ -237,6 +255,11 @@ pub struct SignerState {
 
     /// An enqueued re-signing operation, if any.
     pub enqueued_resign: Option<EnqueuedResign>,
+
+    /// Status for an active signing operation, if any.
+    //
+    // TODO: Embed in a state machine.
+    pub active_signing_status: Option<Arc<RwLock<SigningStatusPerZone>>>,
 }
 
 impl SignerState {
