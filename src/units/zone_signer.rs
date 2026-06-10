@@ -259,10 +259,10 @@ impl ZoneSigner {
         let mut report = vec![];
         let zone_signer_status = &self.signer_status;
         let q = zone_signer_status.zones_being_signed.read().unwrap();
-        for q_item in q.iter().rev() {
+        for (zone, q_item) in q.iter().rev() {
             if let Some(stage_report) = self.mk_signing_report(q_item.clone()) {
                 report.push(SigningQueueReport {
-                    zone_name: q_item.read().unwrap().zone.name.clone(),
+                    zone_name: zone.name.clone(),
                     signing_report: stage_report,
                 });
             }
@@ -1004,7 +1004,8 @@ struct ZoneSignerStatus {
     //
     // TODO: Separate out signing request queuing from signing statistics
     // tracking.
-    zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<SigningStatusPerZone>>>>>,
+    #[allow(clippy::type_complexity)] // TODO: Finish removing `ZoneSignerStatus`
+    zones_being_signed: Arc<RwLock<VecDeque<(Arc<Zone>, Arc<RwLock<SigningStatusPerZone>>)>>>,
 
     // Sign each zone only once at a time.
     zone_semaphores: Arc<RwLock<HashMap<Name<Bytes>, Arc<Semaphore>>>>,
@@ -1027,9 +1028,9 @@ impl ZoneSignerStatus {
         self.dump_queue();
 
         let zones_being_signed = self.zones_being_signed.read().unwrap();
-        for q_item in zones_being_signed.iter().rev() {
+        for (zone, q_item) in zones_being_signed.iter().rev() {
             let readable_q_item = q_item.read().unwrap();
-            if Arc::ptr_eq(&readable_q_item.zone, wanted_zone)
+            if Arc::ptr_eq(zone, wanted_zone)
                 && !matches!(readable_q_item.status, ZoneSigningStatus::Aborted)
             {
                 return Some(q_item.clone());
@@ -1041,20 +1042,20 @@ impl ZoneSignerStatus {
     fn dump_queue(&self) {
         if tracing::event_enabled!(Level::DEBUG) {
             let zones_being_signed = self.zones_being_signed.read().unwrap();
-            for q_item in zones_being_signed.iter().rev() {
+            for (zone, q_item) in zones_being_signed.iter().rev() {
                 let q_item = q_item.read().unwrap();
                 match q_item.status {
                     ZoneSigningStatus::Requested(_) => {
-                        debug!("[ZS]: Queue item: {} => requested", q_item.zone.name)
+                        debug!("[ZS]: Queue item: {} => requested", zone.name)
                     }
                     ZoneSigningStatus::InProgress(_) => {
-                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone.name)
+                        debug!("[ZS]: Queue item: {} => in-progress", zone.name)
                     }
                     ZoneSigningStatus::Finished(_) => {
-                        debug!("[ZS]: Queue item: {} => finished", q_item.zone.name)
+                        debug!("[ZS]: Queue item: {} => finished", zone.name)
                     }
                     ZoneSigningStatus::Aborted => {
-                        debug!("[ZS]: Queue item: {} => aborted", q_item.zone.name)
+                        debug!("[ZS]: Queue item: {} => aborted", zone.name)
                     }
                 };
             }
@@ -1077,14 +1078,13 @@ impl ZoneSignerStatus {
         let zone_name = &zone.name;
         debug!("SIGNER[{zone_name}]: Adding to the queue");
         let status = Arc::new(RwLock::new(SigningStatusPerZone {
-            zone: zone.clone(),
             current_action: "Waiting for any existing signing operation for this zone to finish"
                 .to_string(),
             status: ZoneSigningStatus::new(),
         }));
         {
             let mut zones_being_signed = self.zones_being_signed.write().unwrap();
-            zones_being_signed.push_back(status.clone());
+            zones_being_signed.push_back((zone.clone(), status.clone()));
         }
 
         let approx_q_size = SIGNING_QUEUE_SIZE - self.queue_semaphore.available_permits() + 1;
@@ -1120,7 +1120,7 @@ impl ZoneSignerStatus {
         if zones_being_signed.len() == zones_being_signed.capacity() {
             // Discard oldest.
             let signing_status = zones_being_signed.pop_front();
-            if let Some(signing_status) = signing_status {
+            if let Some((_zone, signing_status)) = signing_status {
                 // Old items in the queue should have reached a final state,
                 // either finished or aborted. If not, something is wrong with
                 // the queueing logic.

@@ -1,6 +1,6 @@
 //! Tracking the status of zone signing.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use serde::Serialize;
 use tokio::time::Instant;
@@ -8,10 +8,8 @@ use tokio::time::Instant;
 use crate::util::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
-use crate::zone::Zone;
 
 pub struct SigningStatusPerZone {
-    pub zone: Arc<Zone>,
     pub current_action: String,
     pub status: ZoneSigningStatus,
 }
