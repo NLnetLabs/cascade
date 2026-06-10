@@ -14,7 +14,7 @@
 - git add Cargo.toml Cargo.lock Changelog.md pkg/rules/packages-to-build.yml doc/manual/build/man/*.*
 - git commit
 - git push
-- in GH UI invoke the packaging workklow on the release branch
+- in GH UI invoke the packaging workflow on the release branch
 - make a PR for the branch and mention the workflow run URL in the descrption
 - review the PR and ensure the workflow succeeds
 - merge the release branch to main
