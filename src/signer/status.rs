@@ -9,13 +9,14 @@ use crate::util::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
 
+#[derive(Debug)]
 pub struct SigningStatusPerZone {
     pub current_action: String,
     pub status: ZoneSigningStatus,
 }
 
 // TODO: Why does this need to be serialized?
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone, Debug, Serialize)]
 pub enum ZoneSigningStatus {
     Requested(RequestedStatus),
 
@@ -69,7 +70,7 @@ impl std::fmt::Display for ZoneSigningStatus {
     }
 }
 
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone, Debug, Serialize)]
 pub struct RequestedStatus {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub requested_at: tokio::time::Instant,
@@ -84,7 +85,7 @@ impl RequestedStatus {
     }
 }
 
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone, Debug, Serialize)]
 pub struct InProgressStatus {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub requested_at: tokio::time::Instant,
@@ -128,7 +129,7 @@ impl InProgressStatus {
     }
 }
 
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone, Debug, Serialize)]
 pub struct FinishedStatus {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub requested_at: tokio::time::Instant,
