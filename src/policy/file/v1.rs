@@ -932,11 +932,11 @@ impl ServerSpec {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct OutboundSpec {
-    /// The set of nameservers from which SOA and XFR requests may be received.
+    /// The set of nameservers to which zone transfers may be provided.
     ///
-    /// If empty, any nameserver may request XFR from us.
+    /// If empty, zone transfers will be provided to any nameserver.
     #[serde(default = "empty_list")]
-    pub accept_xfr_from: Vec<NameserverCommsSpec>,
+    pub provide_xfr_to: Vec<NameserverCommsSpec>,
 
     /// The set of nameservers to which NOTIFY messages should be sent.
     ///
@@ -957,11 +957,7 @@ impl OutboundSpec {
     /// Parse from this specification.
     pub fn parse(self) -> OutboundPolicy {
         OutboundPolicy {
-            accept_xfr_from: self
-                .accept_xfr_from
-                .into_iter()
-                .map(|v| v.parse())
-                .collect(),
+            provide_xfr_to: self.provide_xfr_to.into_iter().map(|v| v.parse()).collect(),
             send_notify_to: self.send_notify_to.into_iter().map(|v| v.parse()).collect(),
         }
     }
@@ -969,8 +965,8 @@ impl OutboundSpec {
     /// Build into this specification.
     pub fn build(policy: &OutboundPolicy) -> Self {
         Self {
-            accept_xfr_from: policy
-                .accept_xfr_from
+            provide_xfr_to: policy
+                .provide_xfr_to
                 .iter()
                 .map(NameserverCommsSpec::build)
                 .collect(),

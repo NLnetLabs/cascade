@@ -23,8 +23,9 @@ pub enum ZoneCommand {
     Add {
         name: ZoneName,
 
-        /// The zone source can be an IP address (with or without port,
-        /// defaults to port 53) or a file path.
+        /// The source to obtain the zone content from:
+        /// `IP:[PORT][^TSIG_KEY_NAME]` (port defaults to 53) or the path to
+        /// a zone file locally available to the `cascaded` daemon.
         // TODO: allow supplying different tcp and/or udp port?
         #[arg(long = "source")]
         source: ZoneSource,
@@ -631,8 +632,11 @@ impl Zone {
         if let Some(last) = &zone.last_published {
             println!("  loaded serial: {}", last.loaded_serial);
             println!("  signed serial: {}", last.signed_serial);
-            println!("  timestamp:     <TODO>");
-            println!("  size:          <TODO> records (<TODO>B)");
+            println!(
+                "  timestamp:     {}",
+                jiff::Timestamp::try_from(last.timestamp).unwrap()
+            );
+            println!("  size:          {} records", last.num_records);
         } else {
             println!("  <no versions published yet>");
         }
@@ -640,7 +644,7 @@ impl Zone {
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
         println!("");
-        print_status(zone.progress, &zone, &policy);
+        print_status(&zone, &policy);
 
         if zone.last_published.is_some() {
             println!("");
@@ -703,8 +707,11 @@ impl Zone {
     }
 }
 
-pub fn print_status(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
-    let progress = match zone.progress {
+pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
+    let current = zone.progress;
+
+    let progress = match current {
+        Progress::Restoring => "restoring",
         Progress::Waiting => "idle",
         Progress::Loading => "loading",
         Progress::LoadedReview => "waiting for loaded review",
@@ -717,7 +724,7 @@ pub fn print_status(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
 
     println!("status: {}{progress}{}", ansi::BLUE, ansi::RESET);
 
-    if current == Progress::Waiting {
+    if matches!(current, Progress::Waiting | Progress::Restoring) {
         return;
     }
 
@@ -773,6 +780,7 @@ fn print_load_phase(
         let total_size = receipt_report
             .as_ref()
             .and_then(|r| r.total_byte_count)
+            .filter(|r| *r > 0)
             .map_or("".into(), |bytes| {
                 let total_size = format_size(bytes, " ", "B");
                 format!(" / {total_size}")
@@ -780,6 +788,7 @@ fn print_load_phase(
 
         let percentage = if let Some(r) = receipt_report
             && let Some(t) = r.total_byte_count
+            && t > 0
         {
             let b = r.byte_count as f64;
             let t = t as f64;

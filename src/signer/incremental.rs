@@ -44,10 +44,11 @@ use crate::center::Center;
 use crate::manager::record_zone_event;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::SigningTrigger;
+use crate::signer::status::SigningStatusPerZone;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
-    KeyPair, KeySetState, MinTimestamp, PassThroughMode, SignerError, SigningStatusPerZone,
-    ZoneSigner, faketime_or_now, load_keys,
+    KeyPair, KeySetState, MinTimestamp, PassThroughMode, SignerError, ZoneSigner, faketime_or_now,
+    load_keys,
 };
 use crate::zone::{HistoricalEvent, Zone};
 
@@ -80,14 +81,7 @@ pub fn sign_incrementally(
     let keyset_state: KeySetState = serde_json::from_str(&state)
         .map_err(|e| SignerError::SigningError(format!("loading keyset state failed: {e}")))?;
 
-    let policy;
-    {
-        let zone_state = zone
-            .state
-            .lock()
-            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
-        policy = zone_state.policy.clone().expect("should be there");
-    };
+    let policy = zone.read().policy.clone().unwrap();
 
     let use_nsec3 = matches!(policy.signer.denial, SignerDenialPolicy::NSec3 { .. });
 
@@ -231,7 +225,7 @@ pub fn sign_incrementally(
             .map(|s| domain::base::Serial(s.into())),
     );
 
-    ws.local_state.save(&ws.center, &ws.zone)?;
+    ws.local_state.save(&ws.center, &ws.zone);
 
     Ok(())
 }
@@ -2285,10 +2279,7 @@ pub struct LocalState {
 
 impl LocalState {
     pub fn new(zone: &Arc<Zone>) -> Result<Self, SignerError> {
-        let zone_state = zone
-            .state
-            .lock()
-            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
+        let zone_state = zone.read();
 
         Ok(Self {
             apex_remove: zone_state.apex_remove.clone(),
@@ -2301,47 +2292,19 @@ impl LocalState {
         })
     }
 
-    pub fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) -> Result<(), SignerError> {
-        let mut modified = false;
+    pub fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) {
+        // TODO: The state is always marked as dirty. We could avoid marking it
+        // as dirty in case we detect a modification has not happened. We should
+        // evaluate whether this is worthwhile.
+        let mut zone_state = zone.write(center);
 
-        let mut zone_state = zone
-            .state
-            .lock()
-            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
-
-        if self.apex_remove != zone_state.apex_remove {
-            zone_state.apex_remove = self.apex_remove;
-            modified = true;
-        }
-        if self.apex_extra != zone_state.apex_extra {
-            zone_state.apex_extra = self.apex_extra;
-            modified = true;
-        }
-        if self.last_signature_refresh != zone_state.last_signature_refresh {
-            zone_state.last_signature_refresh = self.last_signature_refresh;
-            modified = true;
-        }
-        if self.key_tags != zone_state.key_tags {
-            zone_state.key_tags = self.key_tags;
-            modified = true;
-        }
-        if self.key_roll != zone_state.key_roll {
-            zone_state.key_roll = self.key_roll;
-            modified = true;
-        }
-        if self.previous_serial != zone_state.previous_serial {
-            zone_state.previous_serial = self.previous_serial;
-            modified = true;
-        }
-        if self.next_min_expiration != zone_state.next_min_expiration {
-            zone_state.next_min_expiration = self.next_min_expiration;
-            modified = true;
-        }
-
-        if modified {
-            zone.mark_dirty(&mut zone_state, center);
-        }
-        Ok(())
+        zone_state.apex_remove = self.apex_remove;
+        zone_state.apex_extra = self.apex_extra;
+        zone_state.last_signature_refresh = self.last_signature_refresh;
+        zone_state.key_tags = self.key_tags;
+        zone_state.key_roll = self.key_roll;
+        zone_state.previous_serial = self.previous_serial;
+        zone_state.next_min_expiration = self.next_min_expiration;
     }
 }
 

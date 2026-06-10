@@ -1,13 +1,19 @@
 //! Zone-specific signing state.
 
-use std::{sync::Arc, time::SystemTime};
+use std::{
+    sync::{Arc, RwLock},
+    time::SystemTime,
+};
 
 use cascade_zonedata::SignedZoneBuilder;
 use tracing::{debug, info};
 
 use crate::{
     center::Center,
-    signer::{ResigningTrigger, SigningTrigger},
+    signer::{
+        ResigningTrigger, SigningTrigger,
+        status::{SigningStatusPerZone, ZoneSigningStatus},
+    },
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState},
 };
@@ -70,16 +76,7 @@ impl SignerZoneHandle<'_> {
         // moment, this queue is opaque and is handled within the asynchronous
         // task.
 
-        let span = tracing::Span::none();
-        self.state.signer.ongoing.spawn(
-            span,
-            super::sign(
-                self.center.clone(),
-                self.zone.clone(),
-                builder,
-                SigningTrigger::Load,
-            ),
-        );
+        self.start_op(builder, SigningTrigger::Load);
     }
 
     /// Enqueue a re-signing operation for the zone.
@@ -152,16 +149,7 @@ impl SignerZoneHandle<'_> {
 
             assert!(self.state.signer.enqueued_new_sign.is_none());
 
-            let span = tracing::Span::none();
-            self.state.signer.ongoing.spawn(
-                span,
-                super::sign(
-                    self.center.clone(),
-                    self.zone.clone(),
-                    builder,
-                    SigningTrigger::Resign(trigger),
-                ),
-            );
+            self.start_op(builder, SigningTrigger::Resign(trigger));
         } else {
             // TODO: Track expiration time in 'SignerState'.
             let expiration_time = self
@@ -224,16 +212,7 @@ impl SignerZoneHandle<'_> {
         // add the operation to the queue before starting the re-sign. If the
         // queue is too full to start the operation yet, leave it enqueued.
 
-        let span = tracing::Span::none();
-        self.state.signer.ongoing.spawn(
-            span,
-            super::sign(
-                self.center.clone(),
-                self.zone.clone(),
-                builder,
-                SigningTrigger::Resign(trigger),
-            ),
-        );
+        self.start_op(builder, SigningTrigger::Resign(trigger));
 
         true
     }
@@ -264,6 +243,20 @@ impl SignerZoneHandle<'_> {
         // moment, this queue is opaque and is handled within the asynchronous
         // task.
 
+        // TODO: Find the old trigger.
+        self.start_op(builder, SigningTrigger::Load);
+    }
+
+    /// Start a signing operation immediately.
+    fn start_op(&mut self, builder: SignedZoneBuilder, trigger: SigningTrigger) {
+        let status = Arc::new(RwLock::new(SigningStatusPerZone {
+            current_action: "Initiating signing".into(),
+            status: ZoneSigningStatus::new(),
+        }));
+
+        // The current logging span is nested fairly deep within the logic for
+        // initiating signing operations, and does not really matter for the
+        // actual signing function. Start with an empty logging context.
         let span = tracing::Span::none();
         self.state.signer.ongoing.spawn(
             span,
@@ -271,10 +264,11 @@ impl SignerZoneHandle<'_> {
                 self.center.clone(),
                 self.zone.clone(),
                 builder,
-                // TODO: Find the old trigger.
-                SigningTrigger::Load,
+                trigger,
+                status.clone(),
             ),
         );
+        self.state.signer.active_signing_status = Some(status);
     }
 }
 
@@ -291,6 +285,18 @@ pub struct SignerState {
 
     /// An enqueued re-signing operation, if any.
     pub enqueued_resign: Option<EnqueuedResign>,
+
+    /// Status for an active signing operation, if any.
+    //
+    // TODO: Embed in a state machine.
+    pub active_signing_status: Option<Arc<RwLock<SigningStatusPerZone>>>,
+}
+
+impl SignerState {
+    pub fn cancel_enqueued_signing_operations(&mut self) {
+        self.enqueued_new_sign = None;
+        self.enqueued_resign = None;
+    }
 }
 
 //----------- EnqueuedSign -----------------------------------------------------

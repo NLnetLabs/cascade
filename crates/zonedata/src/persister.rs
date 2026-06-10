@@ -10,6 +10,7 @@ use crate::{Data, DiffData, LoadedZoneReader, SignedZoneReader};
 ///
 /// A [`LoadedZonePersister`] persists a newly-approved loaded instance of a
 /// zone to disk.
+#[must_use]
 pub struct LoadedZonePersister {
     /// The underlying data.
     data: Arc<Data>,
@@ -88,6 +89,7 @@ impl LoadedZonePersister {
 ///
 /// A [`SignedZonePersister`] persists a newly-approved signed instance of a
 /// zone to disk.
+#[must_use]
 pub struct SignedZonePersister {
     /// The underlying data.
     data: Arc<Data>,

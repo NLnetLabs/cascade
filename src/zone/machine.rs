@@ -206,9 +206,14 @@ impl<'a> ZoneHandle<'a> {
             None, // TODO
         );
 
-        // Persist the loaded instance while remaining in the 'LoadedReview'
-        // state. Once persistence is complete, 'begin_signing()' will be
-        // called, which will transition to the 'Signing' state.
+        let (transition, state) = self.state.machine.transition();
+        let ZoneStateMachine::LoadedReview(loaded) = state else {
+            panic!("cannot approve loaded in this state");
+        };
+        transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
+
+        // We move to the signing state and start persisting. The actual signing
+        // will be triggered by the zone storage when persisting is done.
         let persister = self.storage().accept_loaded();
         self.persistence().start_loaded_persistence(persister);
     }
@@ -253,39 +258,7 @@ impl<'a> ZoneHandle<'a> {
 impl<'a> ZoneHandle<'a> {
     /// Begin signing a new approved and persisted loaded instance.
     pub(crate) fn start_new_sign(&mut self, persisted: cascade_zonedata::LoadedZonePersisted) {
-        // NOTE: The underlying state machine does not track persistence, so we
-        // only transition out of 'LoadedReview' once persistence is complete.
-        let (transition, state) = self.state.machine.transition();
-        let ZoneStateMachine::LoadedReview(loaded) = state else {
-            unreachable!(
-                "A 'LoadedZonePersisted' can only exist when the zone is in loader review"
-            );
-        };
-        transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
-
         let builder = self.storage().start_new_sign(persisted);
-        self.signer().enqueue_new_sign(builder);
-    }
-
-    /// Begin signing a restored loaded instance.
-    ///
-    /// This is called when the zone is restored from persisted state, the data
-    /// for its last known loaded instance is restored successfully, but the
-    /// data for its last known signed instance could not be restored (or none
-    /// existed). It directly initiates signing.
-    pub(crate) fn start_sign_after_restore(
-        &mut self,
-        builder: cascade_zonedata::SignedZoneBuilder,
-    ) {
-        // Force the state machine to the signing state.
-        let (transition, state) = self.state.machine.transition();
-        let ZoneStateMachine::Waiting(waiting) = state else {
-            panic!("'start_sign_after_restore()' called when the zone was not passive");
-        };
-        transition.move_to(ZoneStateMachine::Signing(
-            waiting.start_sign_after_restore(),
-        ));
-
         self.signer().enqueue_new_sign(builder);
     }
 
@@ -341,9 +314,16 @@ impl<'a> ZoneHandle<'a> {
             None, // TODO
         );
 
-        // Persist the signed instance while remaining in the 'SignedReview'
-        // state. Once persistence is complete, 'switch()' will be called, which
-        // will transition to the 'Waiting' state.
+        // Move to the 'Waiting' state.
+        let (transition, state) = self.state.machine.transition();
+        let ZoneStateMachine::SignedReview(signed) = state else {
+            panic!("The zone must be in signer review")
+        };
+        transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
+
+        // Persist the signed instance while we are already in the Waiting state.
+        // The state machine will only start a new operation when the zone storage
+        // is ready, so this is safe to do.
         let persister = self.storage().accept_signed();
         self.persistence().start_signed_persistence(persister);
     }
@@ -373,6 +353,10 @@ impl<'a> ZoneHandle<'a> {
             );
 
             transition.move_to(ZoneStateMachine::Waiting(signed.soft_reject_and_give_up()));
+
+            // TODO: This should be handled by 'Instances'.
+            self.state.next_min_expiration = None;
+
             self.storage().abandon_signed_review();
 
             self.loader().enqueue_refresh(false);
@@ -405,24 +389,11 @@ impl<'a> ZoneHandle<'a> {
 impl<'a> ZoneHandle<'a> {
     /// Begin switching to an approved instance of the zone.
     pub(crate) fn start_switch(&mut self, persisted: cascade_zonedata::SignedZonePersisted) {
-        // Make sure the current state is 'SignedReview'.
-        assert!(
-            matches!(self.state.machine, ZoneStateMachine::SignedReview(_)),
-            "A 'SignedZonePersisted' exists but the zone is not in signer review"
-        );
-
         self.storage().start_switch(persisted);
     }
 
     /// Finish switching to a new instance of the zone.
     pub(crate) fn finish_switch(&mut self, cleaner: cascade_zonedata::ZoneCleaner) {
-        // Move to the 'Waiting' state.
-        let (transition, state) = self.state.machine.transition();
-        let ZoneStateMachine::SignedReview(signed) = state else {
-            panic!("The zone must be in signer review")
-        };
-        transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
-
         self.storage().start_cleanup(cleaner);
     }
 }
@@ -446,11 +417,19 @@ impl<'a> ZoneHandle<'a> {
                 abandoning_loaded = halt_signed.have_next_loaded;
                 let waiting = halt_signed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
+
+                // TODO: This should be handled by 'Instances'.
+                self.state.next_min_expiration = None;
+
                 self.storage().abandon_signed_review();
             }
             ZoneStateMachine::SigningFailed(signing_failed) => {
                 abandoning_loaded = signing_failed.have_next_loaded;
                 let waiting = signing_failed.reset();
+
+                // TODO: This should be handled by 'Instances'.
+                self.state.next_min_expiration = None;
+
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
             }
             _ => {
@@ -482,7 +461,10 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Signing(halt.override_rejection()));
 
-        self.storage().accept_loaded();
+        // We move to the signing state and start persisting. The actual signing
+        // will be triggered by the zone storage when persisting is done.
+        let persister = self.storage().accept_loaded();
+        self.persistence().start_loaded_persistence(persister);
 
         Ok(())
     }
@@ -500,7 +482,11 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Waiting(halt_signed.override_rejection()));
 
-        self.storage().accept_signed();
+        // Persist the signed instance while we are already in the Waiting state.
+        // The state machine will only start a new operation when the zone storage
+        // is ready, so this is safe to do.
+        let persister = self.storage().accept_signed();
+        self.persistence().start_signed_persistence(persister);
 
         Ok(())
     }
@@ -574,13 +560,12 @@ impl Waiting {
         Loading {}
     }
 
-    fn start_sign_after_restore(self) -> Signing {
-        // TODO: I think this function is being removed?
-        Signing {
-            prev_attempts: 0,
-            have_next_loaded: true,
-        }
-    }
+    // fn start_sign_after_restore(self) -> Signing {
+    //     Signing {
+    //         prev_attempts: 0,
+    //         have_next_loaded: true,
+    //     }
+    // }
 
     fn start_resign(self) -> Signing {
         Signing {

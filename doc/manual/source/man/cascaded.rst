@@ -83,9 +83,6 @@ Files
 /var/lib/cascade/keys
     Default directory for on-disk zone keys
 
-/usr/libexec/cascade/cascade-dnst
-    Default (Cascade-specific) dnst binary for use by Cascade
-
 /var/lib/cascade/kmip/credentials.db
     Default file for KMIP credentials
 
