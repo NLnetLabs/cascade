@@ -812,7 +812,6 @@ impl StorageZoneHandle<'_> {
                 ),
             };
 
-            // TODO: Re-start signing.
             handle.signer().retry_sign(builder);
 
             handle.state.storage.background_tasks.finish();
