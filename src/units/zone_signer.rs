@@ -53,15 +53,13 @@ use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::incremental::{LocalState, sign_incrementally};
+use crate::signer::status::{SigningStatusPerZone, ZoneSigningStatus};
 use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
     KmipClientCredentialsFile, KmipServerCredentialsFileMode, mk_dnst_keyset_state_file_path,
 };
-use crate::util::{
-    AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
-    serialize_opt_duration_as_secs,
-};
+use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, Zone, ZoneByName};
 
 // Re-signing zones before signatures expire works as follows:
@@ -995,176 +993,9 @@ impl std::fmt::Debug for ZoneSigner {
     }
 }
 
-//------------ ZoneSigningStatus ---------------------------------------------
-
-#[derive(Copy, Clone, Serialize)]
-pub struct RequestedStatus {
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    requested_at: tokio::time::Instant,
-}
-
-impl RequestedStatus {
-    fn new() -> Self {
-        Self {
-            requested_at: Instant::now(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Serialize)]
-pub struct InProgressStatus {
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    requested_at: tokio::time::Instant,
-    zone_serial: domain::base::Serial,
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    started_at: tokio::time::Instant,
-    unsigned_rr_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    walk_time: Option<Duration>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    sort_time: Option<Duration>,
-    denial_rr_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    denial_time: Option<Duration>,
-    rrsig_count: Option<usize>,
-    rrsig_reused_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    rrsig_time: Option<Duration>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    total_time: Option<Duration>,
-    threads_used: Option<usize>,
-}
-
-impl InProgressStatus {
-    fn new(requested_status: RequestedStatus, zone_serial: NewBaseSerial) -> Self {
-        Self {
-            requested_at: requested_status.requested_at,
-            zone_serial: domain::base::Serial(zone_serial.into()),
-            started_at: Instant::now(),
-            unsigned_rr_count: None,
-            walk_time: None,
-            sort_time: None,
-            denial_rr_count: None,
-            denial_time: None,
-            rrsig_count: None,
-            rrsig_reused_count: None,
-            rrsig_time: None,
-            total_time: None,
-            threads_used: None,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Serialize)]
-pub struct FinishedStatus {
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    requested_at: tokio::time::Instant,
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    started_at: tokio::time::Instant,
-    zone_serial: domain::base::Serial,
-    unsigned_rr_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    walk_time: Duration,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    sort_time: Duration,
-    denial_rr_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    denial_time: Duration,
-    rrsig_count: usize,
-    rrsig_reused_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    rrsig_time: Duration,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    total_time: Duration,
-    threads_used: usize,
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    finished_at: tokio::time::Instant,
-    succeeded: bool,
-}
-
-impl FinishedStatus {
-    fn new(in_progress_status: InProgressStatus, succeeded: bool) -> Self {
-        Self {
-            requested_at: in_progress_status.requested_at,
-            zone_serial: in_progress_status.zone_serial,
-            started_at: Instant::now(),
-            unsigned_rr_count: in_progress_status.unsigned_rr_count.unwrap_or_default(),
-            walk_time: in_progress_status.walk_time.unwrap_or_default(),
-            sort_time: in_progress_status.sort_time.unwrap_or_default(),
-            denial_rr_count: in_progress_status.denial_rr_count.unwrap_or_default(),
-            denial_time: in_progress_status.denial_time.unwrap_or_default(),
-            rrsig_count: in_progress_status.rrsig_count.unwrap_or_default(),
-            rrsig_reused_count: in_progress_status.rrsig_reused_count.unwrap_or_default(),
-            rrsig_time: in_progress_status.rrsig_time.unwrap_or_default(),
-            total_time: in_progress_status.total_time.unwrap_or_default(),
-            threads_used: in_progress_status.threads_used.unwrap_or_default(),
-            finished_at: Instant::now(),
-            succeeded,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Serialize)]
-pub enum ZoneSigningStatus {
-    Requested(RequestedStatus),
-
-    InProgress(InProgressStatus),
-
-    Finished(FinishedStatus),
-
-    Aborted,
-}
-
-impl ZoneSigningStatus {
-    fn new() -> Self {
-        Self::Requested(RequestedStatus::new())
-    }
-
-    fn start(&mut self, zone_serial: NewBaseSerial) -> Result<(), ()> {
-        match *self {
-            ZoneSigningStatus::Requested(s) => {
-                *self = Self::InProgress(InProgressStatus::new(s, zone_serial));
-                Ok(())
-            }
-            ZoneSigningStatus::Aborted
-            | ZoneSigningStatus::InProgress(_)
-            | ZoneSigningStatus::Finished(_) => Err(()),
-        }
-    }
-
-    pub fn finish(&mut self, succeeded: bool) {
-        match *self {
-            ZoneSigningStatus::Requested(_) => {
-                *self = Self::Aborted;
-            }
-            ZoneSigningStatus::InProgress(status) => {
-                *self = Self::Finished(FinishedStatus::new(status, succeeded))
-            }
-            ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted => { /* Nothing to do */ }
-        }
-    }
-}
-
-impl std::fmt::Display for ZoneSigningStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ZoneSigningStatus::Requested(_) => f.write_str("Requested"),
-            ZoneSigningStatus::InProgress(_) => f.write_str("InProgress"),
-            ZoneSigningStatus::Finished(_) => f.write_str("Finished"),
-            ZoneSigningStatus::Aborted => f.write_str("Aborted"),
-        }
-    }
-}
-
 //------------ ZoneSignerStatus ----------------------------------------------
 
 const SIGNING_QUEUE_SIZE: usize = 100;
-
-pub struct SigningStatusPerZone {
-    pub zone: Arc<Zone>,
-    pub current_action: String,
-    pub status: ZoneSigningStatus,
-}
 
 struct ZoneSignerStatus {
     // Maps zone names to signing status, keeping records of previous signing.

@@ -44,10 +44,11 @@ use crate::center::Center;
 use crate::manager::record_zone_event;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::SigningTrigger;
+use crate::signer::status::SigningStatusPerZone;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
-    KeyPair, KeySetState, MinTimestamp, PassThroughMode, SignerError, SigningStatusPerZone,
-    ZoneSigner, faketime_or_now, load_keys,
+    KeyPair, KeySetState, MinTimestamp, PassThroughMode, SignerError, ZoneSigner, faketime_or_now,
+    load_keys,
 };
 use crate::zone::{HistoricalEvent, Zone};
 

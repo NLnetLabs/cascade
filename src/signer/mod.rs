@@ -32,6 +32,7 @@ use crate::{
 };
 
 pub mod incremental;
+pub mod status;
 pub mod zone;
 
 //----------- sign() -----------------------------------------------------------
