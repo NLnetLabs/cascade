@@ -45,7 +45,7 @@ use tokio::time::Instant;
 use tracing::{Level, debug, error, info, trace, warn};
 use url::Url;
 
-use crate::api::{SigningQueueReport, SigningReport};
+use crate::api::SigningQueueReport;
 use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
@@ -188,18 +188,15 @@ impl ZoneSigner {
         Ok(public_key_info)
     }
 
-    pub fn on_signing_report(&self, zone: &Arc<Zone>) -> Option<SigningReport> {
-        self.signer_status
-            .get(zone)
-            .and_then(|status| status.read().unwrap().mk_signing_report())
-    }
-
     pub fn on_queue_report(&self, _center: &Arc<Center>) -> Vec<SigningQueueReport> {
         let mut report = vec![];
         let zone_signer_status = &self.signer_status;
         let q = zone_signer_status.zones_being_signed.read().unwrap();
-        for (zone, q_item) in q.iter().rev() {
-            if let Some(stage_report) = q_item.read().unwrap().mk_signing_report() {
+        for (zone, _q_item) in q.iter().rev() {
+            let zone_state = zone.read();
+            if let Some(status) = &zone_state.signer.active_signing_status
+                && let Some(stage_report) = status.read().unwrap().mk_signing_report()
+            {
                 report.push(SigningQueueReport {
                     zone_name: zone.name.clone(),
                     signing_report: stage_report,
@@ -961,21 +958,6 @@ impl ZoneSignerStatus {
             zone_semaphores: Default::default(),
             queue_semaphore: Arc::new(Semaphore::new(SIGNING_QUEUE_SIZE)),
         }
-    }
-
-    pub fn get(&self, wanted_zone: &Arc<Zone>) -> Option<Arc<RwLock<SigningStatusPerZone>>> {
-        self.dump_queue();
-
-        let zones_being_signed = self.zones_being_signed.read().unwrap();
-        for (zone, q_item) in zones_being_signed.iter().rev() {
-            let readable_q_item = q_item.read().unwrap();
-            if Arc::ptr_eq(zone, wanted_zone)
-                && !matches!(readable_q_item.status, ZoneSigningStatus::Aborted)
-            {
-                return Some(q_item.clone());
-            }
-        }
-        None
     }
 
     fn dump_queue(&self) {
