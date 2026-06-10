@@ -12,7 +12,7 @@ use cascaded::{
 };
 use clap::{crate_authors, crate_description};
 use daemonbase::process::exit_signalled;
-use std::{collections::HashMap, fs::create_dir_all};
+use std::fs::create_dir_all;
 use std::{
     io,
     process::ExitCode,
@@ -260,7 +260,6 @@ fn main() -> ExitCode {
         signed_review_server: SignedReviewServer::new(),
         publication_server: PublicationServer::new(),
         signer: ZoneSigner::new(),
-        resign_busy: Mutex::new(HashMap::new()),
     });
 
     // Set up the rayon threadpool

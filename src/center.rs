@@ -1,6 +1,5 @@
 //! Cascade's central command.
 
-use std::collections::HashMap;
 use std::{
     fmt, io,
     sync::{Arc, Mutex},
@@ -10,7 +9,6 @@ use std::{
 use bytes::Bytes;
 use cascade_api::{TsigAddError, TsigAddResult};
 use domain::base::Name;
-use domain::dnssec::sign::keys::keyset::UnixTime;
 use tracing::{debug, error, info, trace};
 
 use crate::api::KeyImport;
@@ -70,9 +68,6 @@ pub struct Center {
 
     /// The server for published instances of zones.
     pub publication_server: PublicationServer,
-
-    /// Zones currently being re-signed.
-    pub resign_busy: Mutex<HashMap<Name<Bytes>, UnixTime>>,
 }
 
 //--- Actions

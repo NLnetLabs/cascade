@@ -62,8 +62,10 @@ use crate::util::{
     AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
     serialize_opt_duration_as_secs,
 };
+use crate::zone::machine::ZoneStateMachine;
 use crate::zone::{HistoricalEvent, Zone, ZoneByName};
 
+// TODO: This comment is outdated in several ways.
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
 //   zones, take the min_expiration field for state, and subtract the remain
@@ -812,57 +814,48 @@ impl ZoneSigner {
             state.zones.clone()
         };
 
+        trace!("Computing global next re-sign time");
+
         // Compute when to incrementally sign a zone again to refresh
         // signatures.
         for ZoneByName(zone) in zones {
             let zone_name = &zone.name;
+            trace!("Computing next re-sign time for {zone_name}");
 
-            let last_signature_refresh;
-            let signature_refresh_interval;
-            {
-                // Use a block to make sure that the lock is clearly dropped.
-                let zone_state = zone.read();
+            let zone_state = zone.read();
 
-                last_signature_refresh = zone_state.last_signature_refresh.clone();
+            let Some(policy) = &zone_state.policy else {
+                trace!("Ignoring {zone_name}, it has no policy");
+                continue;
+            };
 
-                // TODO: what if there is no policy?
-                signature_refresh_interval = zone_state
-                    .policy
-                    .as_ref()
-                    .unwrap()
-                    .signer
-                    .signature_refresh_interval;
+            // If the zone is undergoing some operation already, don't factor it
+            // into the signing time. It will be (or is already being) resigned.
+            if !matches!(zone_state.machine, ZoneStateMachine::Waiting(_)) {
+                trace!("Ignoring {zone_name}, it is busy");
+                continue;
             }
 
+            // Compute when the zone's signatures need to be refreshed next.
+            //
+            // TODO: Stop storing durations and timestamps as 'u32's.
+            let last_signature_refresh = zone_state.last_signature_refresh.clone();
+            let signature_refresh_interval = policy.signer.signature_refresh_interval;
             let curr_refresh_time = last_signature_refresh.clone()
                 + Duration::from_secs(signature_refresh_interval as u64);
 
-            // Start a new block to make sure the mutex is released.
-            {
-                let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_refresh_time = resign_busy.get(zone_name);
-                if let Some(saved_refresh_time) = opt_refresh_time {
-                    if *saved_refresh_time == curr_refresh_time {
-                        // This zone is busy.
-                        trace!("[ZS]: resign: zone {zone_name} is busy");
-                        continue;
-                    }
-
-                    // Zone has been resigned. Remove this entry.
-                    resign_busy.remove(zone_name);
-                }
-            }
-
+            // TODO: This does *not* look very Y2038-safe.
             let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
 
-            min_time = if let Some(time) = min_time {
-                Some(min(time, refresh_time))
-            } else {
-                Some(refresh_time)
-            };
+            trace!("Computing next re-sign time for {zone_name}: {refresh_time:?}");
+
+            min_time = Some(min_time.map_or(refresh_time, |t| min(t, refresh_time)));
         }
+
+        trace!("Global next re-sign time: {min_time:?}");
+
         min_time.map(|t| {
-            // We need to go from SystemTime to Tokio Instant, is there a
+            // TODO: We need to go from SystemTime to Tokio Instant, is there a
             // better way?
 
             // We are computing a timeout value. If the timeout is in the
@@ -884,57 +877,52 @@ impl ZoneSigner {
             state.zones.clone()
         };
 
-        for zone in zones {
-            let zone = &zone.0;
+        trace!("Looking for zones needing re-signing");
+
+        for ZoneByName(zone) in zones {
             let zone_name = &zone.name;
+            trace!("Considering re-sign for {zone_name}");
 
-            let last_signature_refresh;
-            let signature_refresh_interval;
-            {
-                // Use a block to make sure that the lock is clearly dropped.
-                let zone_state = zone.read();
+            let zone_state = zone.read();
 
-                last_signature_refresh = zone_state.last_signature_refresh.clone();
+            let Some(policy) = &zone_state.policy else {
+                trace!("Ignoring {zone_name}, it has no policy");
+                continue;
+            };
 
-                // TODO: what if there is no policy?
-                signature_refresh_interval = zone_state
-                    .policy
-                    .as_ref()
-                    .unwrap()
-                    .signer
-                    .signature_refresh_interval;
+            // If the zone is undergoing some operation already, it doesn't
+            // need to be scheduled for re-signing.
+            if !matches!(zone_state.machine, ZoneStateMachine::Waiting(_)) {
+                trace!("Ignoring {zone_name}, it is busy");
+                continue;
             }
 
+            // Compute when the zone's signatures need to be refreshed next.
+            //
+            // TODO: Stop storing durations and timestamps as 'u32's.
+            let last_signature_refresh = zone_state.last_signature_refresh.clone();
+            let signature_refresh_interval = policy.signer.signature_refresh_interval;
             let curr_refresh_time = last_signature_refresh.clone()
                 + Duration::from_secs(signature_refresh_interval as u64);
 
-            // Start a new block to make sure the mutex is released.
-            {
-                let resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_refresh_time = resign_busy.get(zone_name);
-                if let Some(saved_refresh_time) = opt_refresh_time
-                    && *saved_refresh_time == curr_refresh_time
-                {
-                    // This zone is busy.
-                    continue;
-                }
+            // TODO: This does *not* look very Y2038-safe.
+            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
+
+            if refresh_time >= now {
+                trace!("Ignoring {zone_name}, it does not need re-signing yet");
             }
 
-            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time.clone());
+            trace!(
+                "Initiating re-signing of {zone_name} (should have been re-signed at {refresh_time:?})"
+            );
 
-            if refresh_time < now {
-                trace!("[ZS]: re-signing: request signing of zone {zone_name}");
-
-                // Start a new block to make sure the mutex is released.
-                {
-                    let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                    resign_busy.insert(zone_name.clone(), curr_refresh_time);
-                }
-                zone.write_handle(center)
-                    .signer()
-                    .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
-            }
+            std::mem::drop(zone_state);
+            zone.write_handle(center)
+                .signer()
+                .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
         }
+
+        trace!("Done initiating re-signing operations");
     }
 }
 
