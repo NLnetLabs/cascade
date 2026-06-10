@@ -45,10 +45,7 @@ use tokio::time::Instant;
 use tracing::{Level, debug, error, info, trace, warn};
 use url::Url;
 
-use crate::api::{
-    SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
-    SigningRequestedReport, SigningStageReport,
-};
+use crate::api::{SigningQueueReport, SigningReport};
 use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
@@ -191,68 +188,10 @@ impl ZoneSigner {
         Ok(public_key_info)
     }
 
-    fn mk_signing_report(
-        &self,
-        status: Arc<RwLock<SigningStatusPerZone>>,
-    ) -> Option<SigningReport> {
-        let status = status.read().unwrap();
-        let now = Instant::now();
-        let now_t = SystemTime::now();
-        let stage_report = match status.status {
-            ZoneSigningStatus::Requested(s) => {
-                Some(SigningStageReport::Requested(SigningRequestedReport {
-                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                }))
-            }
-            ZoneSigningStatus::InProgress(s) => {
-                Some(SigningStageReport::InProgress(SigningInProgressReport {
-                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                    zone_serial: domain::base::Serial(s.zone_serial.into()),
-                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
-                    unsigned_rr_count: s.unsigned_rr_count,
-                    walk_time: s.walk_time,
-                    sort_time: s.sort_time,
-                    denial_rr_count: s.denial_rr_count,
-                    denial_time: s.denial_time,
-                    rrsig_count: s.rrsig_count,
-                    rrsig_reused_count: s.rrsig_reused_count,
-                    rrsig_time: s.rrsig_time,
-                    total_time: s.total_time,
-                    threads_used: s.threads_used,
-                }))
-            }
-            ZoneSigningStatus::Finished(s) => {
-                Some(SigningStageReport::Finished(SigningFinishedReport {
-                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                    zone_serial: domain::base::Serial(s.zone_serial.into()),
-                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
-                    unsigned_rr_count: s.unsigned_rr_count,
-                    walk_time: s.walk_time,
-                    sort_time: s.sort_time,
-                    denial_rr_count: s.denial_rr_count,
-                    denial_time: s.denial_time,
-                    rrsig_count: s.rrsig_count,
-                    rrsig_reused_count: s.rrsig_reused_count,
-                    rrsig_time: s.rrsig_time,
-                    total_time: s.total_time,
-                    threads_used: s.threads_used,
-                    finished_at: now_t.checked_sub(now.duration_since(s.finished_at))?,
-                    succeeded: s.succeeded,
-                }))
-            }
-            ZoneSigningStatus::Aborted => None,
-        };
-
-        stage_report.map(|stage_report| SigningReport {
-            current_action: status.current_action.clone(),
-            stage_report,
-        })
-    }
-
     pub fn on_signing_report(&self, zone: &Arc<Zone>) -> Option<SigningReport> {
         self.signer_status
             .get(zone)
-            .and_then(|status| self.mk_signing_report(status))
+            .and_then(|status| status.read().unwrap().mk_signing_report())
     }
 
     pub fn on_queue_report(&self, _center: &Arc<Center>) -> Vec<SigningQueueReport> {
@@ -260,7 +199,7 @@ impl ZoneSigner {
         let zone_signer_status = &self.signer_status;
         let q = zone_signer_status.zones_being_signed.read().unwrap();
         for (zone, q_item) in q.iter().rev() {
-            if let Some(stage_report) = self.mk_signing_report(q_item.clone()) {
+            if let Some(stage_report) = q_item.read().unwrap().mk_signing_report() {
                 report.push(SigningQueueReport {
                     zone_name: zone.name.clone(),
                     signing_report: stage_report,

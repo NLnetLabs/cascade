@@ -1,7 +1,11 @@
 //! Tracking the status of zone signing.
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
+use cascade_api::{
+    SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
+    SigningStageReport,
+};
 use serde::Serialize;
 use tokio::time::Instant;
 
@@ -13,6 +17,62 @@ use crate::util::{
 pub struct SigningStatusPerZone {
     pub current_action: String,
     pub status: ZoneSigningStatus,
+}
+
+impl SigningStatusPerZone {
+    pub fn mk_signing_report(&self) -> Option<SigningReport> {
+        let now = Instant::now();
+        let now_t = SystemTime::now();
+        let stage_report = match self.status {
+            ZoneSigningStatus::Requested(s) => {
+                Some(SigningStageReport::Requested(SigningRequestedReport {
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
+                }))
+            }
+            ZoneSigningStatus::InProgress(s) => {
+                Some(SigningStageReport::InProgress(SigningInProgressReport {
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
+                    zone_serial: domain::base::Serial(s.zone_serial.into()),
+                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
+                    unsigned_rr_count: s.unsigned_rr_count,
+                    walk_time: s.walk_time,
+                    sort_time: s.sort_time,
+                    denial_rr_count: s.denial_rr_count,
+                    denial_time: s.denial_time,
+                    rrsig_count: s.rrsig_count,
+                    rrsig_reused_count: s.rrsig_reused_count,
+                    rrsig_time: s.rrsig_time,
+                    total_time: s.total_time,
+                    threads_used: s.threads_used,
+                }))
+            }
+            ZoneSigningStatus::Finished(s) => {
+                Some(SigningStageReport::Finished(SigningFinishedReport {
+                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
+                    zone_serial: domain::base::Serial(s.zone_serial.into()),
+                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
+                    unsigned_rr_count: s.unsigned_rr_count,
+                    walk_time: s.walk_time,
+                    sort_time: s.sort_time,
+                    denial_rr_count: s.denial_rr_count,
+                    denial_time: s.denial_time,
+                    rrsig_count: s.rrsig_count,
+                    rrsig_reused_count: s.rrsig_reused_count,
+                    rrsig_time: s.rrsig_time,
+                    total_time: s.total_time,
+                    threads_used: s.threads_used,
+                    finished_at: now_t.checked_sub(now.duration_since(s.finished_at))?,
+                    succeeded: s.succeeded,
+                }))
+            }
+            ZoneSigningStatus::Aborted => None,
+        };
+
+        stage_report.map(|stage_report| SigningReport {
+            current_action: self.current_action.clone(),
+            stage_report,
+        })
+    }
 }
 
 // TODO: Why does this need to be serialized?
