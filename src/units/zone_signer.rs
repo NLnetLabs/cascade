@@ -51,6 +51,7 @@ use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::incremental::{LocalState, sign_incrementally};
 use crate::signer::status::{SigningStatusPerZone, ZoneSigningStatus};
+use crate::signer::queue::SigningQueue;
 use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::http_server::KmipServerState;
 use crate::units::key_manager::{
@@ -85,6 +86,9 @@ pub struct ZoneSigner {
     /// A live view of the next scheduled global resigning time.
     next_resign_time_tx: watch::Sender<Option<tokio::time::Instant>>,
     next_resign_time_rx: watch::Receiver<Option<tokio::time::Instant>>,
+
+    /// The signing queue.
+    pub queue: SigningQueue,
 }
 
 impl ZoneSigner {
@@ -92,6 +96,7 @@ impl ZoneSigner {
     pub fn new() -> Self {
         let max_concurrent_operations = 1;
         let (next_resign_time_tx, next_resign_time_rx) = watch::channel(None);
+        let queue = SigningQueue::new(max_concurrent_operations.try_into().unwrap());
 
         Self {
             max_concurrent_operations,
@@ -100,6 +105,7 @@ impl ZoneSigner {
             kmip_servers: Default::default(),
             next_resign_time_tx,
             next_resign_time_rx,
+            queue,
         }
     }
 

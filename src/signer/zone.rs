@@ -12,7 +12,7 @@ use crate::{
     center::Center,
     signer::{
         ResigningTrigger, SigningTrigger,
-        queue::SigningQueueLock,
+        queue::{SigningPending, SigningPermit, SigningQueueLock},
         status::{SigningStatusPerZone, ZoneSigningStatus},
     },
     util::BackgroundTasks,
@@ -68,16 +68,26 @@ impl SignerZoneHandle<'_> {
         // A zone can have at most one 'SignedZoneBuilder' at a time. Because
         // we have 'builder', we are guaranteed that no other signing operations
         // are ongoing right now. A re-signing operation may be enqueued, but it
-        // has lower priority than this (for now).
+        // has lower priority than this (TODO: for now).
 
         assert!(self.state.signer.enqueued_new_sign.is_none());
 
-        // TODO: Keep state for a queue of pending (re-)signing operations, so
-        // that the number of simultaneous operations can be limited. At the
-        // moment, this queue is opaque and is handled within the asynchronous
-        // task.
+        // Try to get a spot in the signing queue.
+        match self
+            .center
+            .signer
+            .queue
+            .enqueue(self.zone.clone(), &builder)
+        {
+            Ok(permit) => {
+                self.start_op(builder, SigningTrigger::Load, permit);
+            }
 
-        self.start_op(builder, SigningTrigger::Load);
+            Err(pending) => {
+                // Save the operation for later.
+                self.state.signer.enqueued_new_sign = Some(EnqueuedSign { builder, pending })
+            }
+        }
     }
 
     /// Enqueue a re-signing operation for the zone.
@@ -141,15 +151,11 @@ impl SignerZoneHandle<'_> {
             .state
             .next_min_expiration
             .or(self.state.min_expiration)
-            .expect("checked for a published/upcoming signed instance")
+            .unwrap_or_else(|| panic!("re-sign enqueued but the zone has not been signed"))
             .to_system_time(SystemTime::now());
 
-        // TODO: Keep state for a queue of pending (re-)signing operations, so
-        // that the number of simultaneous operations can be limited. At the
-        // moment, this queue is opaque and is handled within the asynchronous
-        // task.
-
-        // Try to initiate the re-sign immediately.
+        // Make sure a published instance exists.
+        // Then, try to obtain a `SignedZoneBuilder` so building can begin.
         if self.state.min_expiration.is_some()
             && let Some(builder) = self.zone().try_start_resign()
         {
@@ -159,10 +165,33 @@ impl SignerZoneHandle<'_> {
 
             assert!(self.state.signer.enqueued_new_sign.is_none());
 
-            self.start_op(builder, SigningTrigger::Resign(trigger));
+            // Try to get a spot in the signing queue.
+            match self
+                .center
+                .signer
+                .queue
+                .enqueue(self.zone.clone(), &builder)
+            {
+                Ok(permit) => {
+                    // Start signing immediately.
+                    self.start_op(builder, SigningTrigger::Resign(trigger), permit);
+                }
+
+                Err(pending) => {
+                    // Give up and save the operation for later.
+                    self.state.signer.enqueued_resign = Some(EnqueuedResign {
+                        builder: Some(builder),
+                        pending: Some(pending),
+                        trigger,
+                        expiration_time,
+                    });
+                }
+            }
         } else {
+            // Give up and save the operation for later.
             self.state.signer.enqueued_resign = Some(EnqueuedResign {
                 builder: None,
+                pending: None,
                 trigger,
                 expiration_time,
             });
@@ -192,8 +221,9 @@ impl SignerZoneHandle<'_> {
         // Load the one enqueued re-sign operation, if it exists.
         let Some(EnqueuedResign {
             builder,
+            pending,
             trigger,
-            expiration_time: _, // TODO
+            expiration_time,
         }) = self.state.signer.enqueued_resign.take()
         else {
             // A re-sign is not enqueued, nothing to do.
@@ -203,6 +233,10 @@ impl SignerZoneHandle<'_> {
         // As mentioned above, 'SignedZoneBuilder' cannot exist when the zone
         // data storage is in the passive state.
         assert!(builder.is_none());
+        assert!(
+            pending.is_none(),
+            "`pending` can only exist when `builder` exists"
+        );
 
         // Since the zone data storage is passive, there is no upcoming instance
         // of the zone. If a published signed instance does not exist either,
@@ -223,12 +257,27 @@ impl SignerZoneHandle<'_> {
             .try_start_resign()
             .expect("the zone data storage is passive");
 
-        // TODO: Once an explicit queue of signing operations has been
-        // implemented (for limiting the number of simultaneous operations),
-        // add the operation to the queue before starting the re-sign. If the
-        // queue is too full to start the operation yet, leave it enqueued.
-
-        self.start_op(builder, SigningTrigger::Resign(trigger));
+        // Add the zone to the signing queue.
+        match self
+            .center
+            .signer
+            .queue
+            .enqueue(self.zone.clone(), &builder)
+        {
+            Ok(permit) => {
+                // Start signing immediately.
+                self.start_op(builder, SigningTrigger::Resign(trigger), permit);
+            }
+            Err(pending) => {
+                // Save the pending operation back in state.
+                self.state.signer.enqueued_resign = Some(EnqueuedResign {
+                    builder: Some(builder),
+                    pending: Some(pending),
+                    trigger,
+                    expiration_time,
+                });
+            }
+        }
 
         true
     }
@@ -244,11 +293,55 @@ impl SignerZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     pub fn accept_queue_permit(&mut self, lock: &mut SigningQueueLock<'_>) {
-        todo!()
+        if let Some(op) = self.state.signer.enqueued_new_sign.take() {
+            let EnqueuedSign { builder, pending } = op;
+            let permit = self.center.signer.queue.accept(pending, lock);
+
+            self.start_op(builder, SigningTrigger::Load, permit);
+        } else if let Some(op) = self.state.signer.enqueued_resign.take() {
+            let EnqueuedResign {
+                builder,
+                pending,
+                trigger,
+                expiration_time: _, // TODO
+            } = op;
+
+            let Some(pending) = pending else {
+                panic!("The zone did not have an enqueued signing operation");
+            };
+            let Some(builder) = builder else {
+                unreachable!("`pending` must only exist when `builder` exists");
+            };
+            let permit = self.center.signer.queue.accept(pending, lock);
+
+            self.start_op(builder, SigningTrigger::Resign(trigger), permit);
+        }
+    }
+
+    /// Cancel enqueued signing operations.
+    pub fn cancel_enqueued_signing_operations(&mut self) {
+        // NOTE: This method is called while a `{Loaded,Signed}ZoneRestorer` is
+        // held, so `SignedZoneBuilder`s cannot exist.
+
+        // An enqueued new-sign would have a `SignedZoneBuilder`, which cannot
+        // exist at this stage.
+        assert!(self.state.signer.enqueued_new_sign.is_none());
+
+        if let Some(op) = self.state.signer.enqueued_resign.take() {
+            // NOTE: Even if `op` exists, it should not contain a builder at
+            // this stage, and `op.pending` only exists iff `op.builder` exists.
+            assert!(op.builder.is_none());
+            assert!(op.pending.is_none());
+        }
     }
 
     /// Start a signing operation immediately.
-    fn start_op(&mut self, builder: SignedZoneBuilder, trigger: SigningTrigger) {
+    fn start_op(
+        &mut self,
+        builder: SignedZoneBuilder,
+        trigger: SigningTrigger,
+        permit: SigningPermit,
+    ) {
         let status = Arc::new(RwLock::new(SigningStatusPerZone {
             current_action: "Initiating signing".into(),
             status: ZoneSigningStatus::new(),
@@ -265,6 +358,7 @@ impl SignerZoneHandle<'_> {
                 self.zone.clone(),
                 builder,
                 trigger,
+                permit,
                 status.clone(),
             ),
         );
@@ -292,13 +386,6 @@ pub struct SignerState {
     pub active_signing_status: Option<Arc<RwLock<SigningStatusPerZone>>>,
 }
 
-impl SignerState {
-    pub fn cancel_enqueued_signing_operations(&mut self) {
-        self.enqueued_new_sign = None;
-        self.enqueued_resign = None;
-    }
-}
-
 //----------- EnqueuedSign -----------------------------------------------------
 
 /// An enqueued sign of a zone.
@@ -306,6 +393,12 @@ impl SignerState {
 pub struct EnqueuedSign {
     /// The zone builder.
     pub builder: SignedZoneBuilder,
+
+    /// The zone's position in the signing queue.
+    ///
+    /// If the zone can be signed immediately (i.e. a [`SigningPermit`] is
+    /// received instead of a [`SigningPending`]), it should be.
+    pub pending: SigningPending,
 }
 
 //----------- EnqueuedResign ---------------------------------------------------
@@ -320,6 +413,14 @@ pub struct EnqueuedResign {
     /// Even if the builder is obtained, the operation might not be ready
     /// to start.
     pub builder: Option<SignedZoneBuilder>,
+
+    /// The zone's position in the signing queue.
+    ///
+    /// This must be [`Some`] exactly when [`Self::builder`] is [`Some`]; that
+    /// is, re-signing cannot be enqueued until a builder is available. If the
+    /// zone can be re-signed immediately (i.e. a [`SigningPermit`] is received
+    /// instead of a [`SigningPending`]), it should be.
+    pub pending: Option<SigningPending>,
 
     /// The trigger causing this operation.
     pub trigger: ResigningTrigger,

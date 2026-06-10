@@ -29,7 +29,10 @@ use crate::{
     center::Center,
     zone::{HistoricalEvent, Zone},
 };
-use crate::{signer::status::SigningStatusPerZone, units::zone_signer::SignerError};
+use crate::{
+    signer::queue::SigningPermit, signer::status::SigningStatusPerZone,
+    units::zone_signer::SignerError,
+};
 
 pub mod incremental;
 pub mod queue;
@@ -59,6 +62,7 @@ async fn sign(
     zone: Arc<Zone>,
     mut builder: SignedZoneBuilder,
     trigger: SigningTrigger,
+    permit: SigningPermit,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
     let (_status, _permits) = center.signer.wait_to_sign(&zone).await;
@@ -80,6 +84,7 @@ async fn sign(
     let mut status = status.write().unwrap();
     let mut handle = zone.write_handle(&center);
     handle.state.signer.ongoing.finish();
+    center.signer.queue.finish(permit, &center);
     // TODO: Remove `status` from `handle.state.signer.active_signing_status`?
 
     match result {
