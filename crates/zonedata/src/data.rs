@@ -55,7 +55,7 @@ pub struct InstanceData {
 
     /// All other records.
     ///
-    /// Records are sorted in DNSSEC canonical order. The SOA record is not
+    /// Records are sorted in DNSSEC canonical order. The SOA record **is**
     /// included.
     pub records: Vec<RegularRecord>,
 }

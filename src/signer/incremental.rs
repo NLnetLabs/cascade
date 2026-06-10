@@ -639,6 +639,9 @@ impl WorkSpace<'_> {
                 // just remove all if there is more than one.
                 for r in old_rrs {
                     let r: SoaRecord = r.clone().into();
+                    self.patch.remove(r.clone().into()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to remove soa {r:?}: {e}"))
+                    })?;
                     self.patch.remove_soa(r.clone()).map_err(|e| {
                         SignerError::PatchFailed(format!("unable to remove soa {r:?}: {e}"))
                     })?;
@@ -685,6 +688,9 @@ impl WorkSpace<'_> {
                 // just add all if there is more than one.
                 for r in new_rrs {
                     let r: SoaRecord = r.clone().into();
+                    self.patch.add(r.clone().into()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to add soa {r:?}: {e}"))
+                    })?;
                     self.patch.add_soa(r.clone()).map_err(|e| {
                         SignerError::PatchFailed(format!("unable to add soa {r:?}: {e}"))
                     })?;
@@ -1621,8 +1627,6 @@ impl IncrementalSigningState {
         // Collect records for a
         // name/RRtype and store a complete RRset in a btree.
         let mut records = Vec::<Record<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>>::new();
-
-        records.push(Into::<OldParsedRecord>::into(reader.soa().clone()).flatten_into());
 
         for entry in reader.regular_records() {
             let record: OldParsedRecord = entry.clone().into();
