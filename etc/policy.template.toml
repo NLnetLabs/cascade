@@ -449,8 +449,10 @@ mode = "off"
 # Cascade TSIG key store and will be used to authenticate communication with
 # the nameserver.
 #
+# PORT defaults to 53.
+#
 # If not specified, no NOTIFY messages will be sent.
-send-notify-to = []
+#send-notify-to = ["127.0.0.1", "127.0.0.1:53", "127.0.0.1^my-tsig-key"]
 
 # The set of nameservers to provide zone transfers to.
 # 
@@ -475,4 +477,4 @@ send-notify-to = []
 # request from one of the specified IP addresses.
 #
 # If not specified, zone transfers will be provided to any nameserver.
-provide-xfr-to = []
+#provide-xfr-to = ["127.0.0.1", "127.0.0.1^my-tsig-key"]
