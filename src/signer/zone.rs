@@ -351,17 +351,12 @@ impl SignerZoneHandle<'_> {
         // initiating signing operations, and does not really matter for the
         // actual signing function. Start with an empty logging context.
         let span = tracing::Span::none();
-        self.state.signer.ongoing.spawn(
-            span,
-            super::sign(
-                self.center.clone(),
-                self.zone.clone(),
-                builder,
-                trigger,
-                permit,
-                status.clone(),
-            ),
-        );
+        self.state.signer.ongoing.spawn_blocking(span, {
+            let center = self.center.clone();
+            let zone = self.zone.clone();
+            let status = status.clone();
+            move || super::sign(center, zone, builder, trigger, permit, status)
+        });
         self.state.signer.active_signing_status = Some(status);
     }
 }

@@ -57,7 +57,7 @@ pub mod zone;
     skip_all,
     fields(zone = %zone.name, ?trigger),
 )]
-async fn sign(
+fn sign(
     center: Arc<Center>,
     zone: Arc<Zone>,
     mut builder: SignedZoneBuilder,
@@ -65,21 +65,9 @@ async fn sign(
     permit: SigningPermit,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
-    let (_status, _permits) = center.signer.wait_to_sign(&zone).await;
-
-    let (result, builder) = tokio::task::spawn_blocking({
-        let center = center.clone();
-        let zone = zone.clone();
-        let status = status.clone();
-        move || {
-            let result = center
-                .signer
-                .sign_zone(&center, &zone, &mut builder, trigger, status);
-            (result, builder)
-        }
-    })
-    .await
-    .unwrap();
+    let result = center
+        .signer
+        .sign_zone(&center, &zone, &mut builder, trigger, status.clone());
 
     let mut status = status.write().unwrap();
     let mut handle = zone.write_handle(&center);
