@@ -12,6 +12,7 @@ use crate::{
     center::Center,
     signer::{
         ResigningTrigger, SigningTrigger,
+        queue::SigningQueueLock,
         status::{SigningStatusPerZone, ZoneSigningStatus},
     },
     util::BackgroundTasks,
@@ -230,6 +231,20 @@ impl SignerZoneHandle<'_> {
         self.start_op(builder, SigningTrigger::Resign(trigger));
 
         true
+    }
+
+    /// Accept a signing queue permit.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the zone does not have an enqueued signing operation.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn accept_queue_permit(&mut self, lock: &mut SigningQueueLock<'_>) {
+        todo!()
     }
 
     /// Start a signing operation immediately.

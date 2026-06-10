@@ -32,6 +32,7 @@ use crate::{
 use crate::{signer::status::SigningStatusPerZone, units::zone_signer::SignerError};
 
 pub mod incremental;
+pub mod queue;
 pub mod status;
 pub mod zone;
 
