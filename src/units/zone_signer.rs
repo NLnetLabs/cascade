@@ -1,5 +1,5 @@
 use std::cmp::{Ordering, min};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::env::{self, VarError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -40,12 +40,11 @@ use rayon::iter::{
 };
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
+use tokio::sync::watch;
 use tokio::time::Instant;
-use tracing::{Level, debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
-use crate::api::SigningQueueReport;
 use crate::center::Center;
 use crate::manager::{Terminated, record_zone_event};
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
@@ -77,10 +76,6 @@ use crate::zone::{HistoricalEvent, Zone, ZoneByName};
 //------------ ZoneSigner ----------------------------------------------------
 
 pub struct ZoneSigner {
-    // TODO: Discuss whether this semaphore is necessary.
-    max_concurrent_operations: usize,
-    concurrent_operation_permits: Arc<Semaphore>,
-    signer_status: ZoneSignerStatus,
     pub kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
 
     /// A live view of the next scheduled global resigning time.
@@ -99,9 +94,6 @@ impl ZoneSigner {
         let queue = SigningQueue::new(max_concurrent_operations.try_into().unwrap());
 
         Self {
-            max_concurrent_operations,
-            concurrent_operation_permits: Arc::new(Semaphore::new(max_concurrent_operations)),
-            signer_status: ZoneSignerStatus::new(),
             kmip_servers: Default::default(),
             next_resign_time_tx,
             next_resign_time_rx,
@@ -194,24 +186,6 @@ impl ZoneSigner {
         Ok(public_key_info)
     }
 
-    pub fn on_queue_report(&self, _center: &Arc<Center>) -> Vec<SigningQueueReport> {
-        let mut report = vec![];
-        let zone_signer_status = &self.signer_status;
-        let q = zone_signer_status.zones_being_signed.read().unwrap();
-        for (zone, _q_item) in q.iter().rev() {
-            let zone_state = zone.read();
-            if let Some(status) = &zone_state.signer.active_signing_status
-                && let Some(stage_report) = status.read().unwrap().mk_signing_report()
-            {
-                report.push(SigningQueueReport {
-                    zone_name: zone.name.clone(),
-                    signing_report: stage_report,
-                });
-            }
-        }
-        report
-    }
-
     pub fn on_publish_signed_zone(&self, center: &Arc<Center>) {
         trace!("[ZS]: a zone is published, recompute next time to re-sign");
         let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
@@ -222,43 +196,6 @@ impl ZoneSigner {
         // react to changes in policy, for example, whether NSEC is used
         // or NSEC3.
         let _ = self.next_resign_time_tx.send(Some(Instant::now()));
-    }
-
-    /// Enqueue a zone for signing, waiting until it can begin.
-    pub async fn wait_to_sign(
-        &self,
-        zone: &Arc<Zone>,
-    ) -> (Arc<RwLock<SigningStatusPerZone>>, [OwnedSemaphorePermit; 3]) {
-        let zone_name = &zone.name;
-        info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
-
-        self.signer_status.dump_queue();
-
-        let (q_size, q_permit, zone_permit, status) = {
-            let signer_status = &self.signer_status;
-            // TODO: Propagate the error properly.
-            signer_status
-                .enqueue(zone)
-                .await
-                .unwrap_or_else(|err| panic!("{err}"))
-        };
-
-        let num_ops_in_progress =
-            self.max_concurrent_operations - self.concurrent_operation_permits.available_permits();
-        info!(
-            "[ZS]: Waiting to start signing operation for zone '{zone_name}': {num_ops_in_progress} signing operations are in progress and {} operations are queued ahead of us.",
-            q_size - 1
-        );
-
-        let permit = self
-            .concurrent_operation_permits
-            .clone()
-            .acquire_owned()
-            .await
-            .unwrap();
-
-        // TODO: Why do we need three different permits?
-        (status, [q_permit, zone_permit, permit])
     }
 
     pub fn sign_zone(
@@ -934,140 +871,6 @@ fn parse_nsec3_config(opt_out: bool) -> GenerateNsec3Config<Bytes, MultiThreaded
 impl std::fmt::Debug for ZoneSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZoneSigner").finish()
-    }
-}
-
-//------------ ZoneSignerStatus ----------------------------------------------
-
-const SIGNING_QUEUE_SIZE: usize = 100;
-
-struct ZoneSignerStatus {
-    // Maps zone names to signing status, keeping records of previous signing.
-    // Use VecDeque for its ability to act as a ring buffer: check size, if
-    // at max desired capacity pop_front(), then in both cases push_back().
-    //
-    // TODO: Separate out signing request queuing from signing statistics
-    // tracking.
-    #[allow(clippy::type_complexity)] // TODO: Finish removing `ZoneSignerStatus`
-    zones_being_signed: Arc<RwLock<VecDeque<(Arc<Zone>, Arc<RwLock<SigningStatusPerZone>>)>>>,
-
-    // Sign each zone only once at a time.
-    zone_semaphores: Arc<RwLock<HashMap<Name<Bytes>, Arc<Semaphore>>>>,
-
-    queue_semaphore: Arc<Semaphore>,
-}
-
-impl ZoneSignerStatus {
-    pub fn new() -> Self {
-        Self {
-            zones_being_signed: Arc::new(std::sync::RwLock::new(VecDeque::with_capacity(
-                SIGNING_QUEUE_SIZE,
-            ))),
-            zone_semaphores: Default::default(),
-            queue_semaphore: Arc::new(Semaphore::new(SIGNING_QUEUE_SIZE)),
-        }
-    }
-
-    fn dump_queue(&self) {
-        if tracing::event_enabled!(Level::DEBUG) {
-            let zones_being_signed = self.zones_being_signed.read().unwrap();
-            for (zone, q_item) in zones_being_signed.iter().rev() {
-                let q_item = q_item.read().unwrap();
-                match q_item.status {
-                    ZoneSigningStatus::Requested(_) => {
-                        debug!("[ZS]: Queue item: {} => requested", zone.name)
-                    }
-                    ZoneSigningStatus::InProgress(_) => {
-                        debug!("[ZS]: Queue item: {} => in-progress", zone.name)
-                    }
-                    ZoneSigningStatus::Finished(_) => {
-                        debug!("[ZS]: Queue item: {} => finished", zone.name)
-                    }
-                    ZoneSigningStatus::Aborted => {
-                        debug!("[ZS]: Queue item: {} => aborted", zone.name)
-                    }
-                };
-            }
-        }
-    }
-
-    /// Enqueue a zone for signing.
-    pub async fn enqueue(
-        &self,
-        zone: &Arc<Zone>,
-    ) -> Result<
-        (
-            usize,
-            OwnedSemaphorePermit,
-            OwnedSemaphorePermit,
-            Arc<RwLock<SigningStatusPerZone>>,
-        ),
-        SignerError,
-    > {
-        let zone_name = &zone.name;
-        debug!("SIGNER[{zone_name}]: Adding to the queue");
-        let status = Arc::new(RwLock::new(SigningStatusPerZone {
-            current_action: "Waiting for any existing signing operation for this zone to finish"
-                .to_string(),
-            status: ZoneSigningStatus::new(),
-        }));
-        {
-            let mut zones_being_signed = self.zones_being_signed.write().unwrap();
-            zones_being_signed.push_back((zone.clone(), status.clone()));
-        }
-
-        let approx_q_size = SIGNING_QUEUE_SIZE - self.queue_semaphore.available_permits() + 1;
-        debug!("SIGNER[{zone_name}]: Approx queue size = {approx_q_size}");
-
-        debug!("SIGNER[{zone_name}]: Acquiring zone permit");
-        let zone_semaphore = self
-            .zone_semaphores
-            .write()
-            .unwrap()
-            .entry(zone_name.clone())
-            .or_insert(Arc::new(Semaphore::new(1)))
-            .clone();
-        let zone_permit = zone_semaphore.acquire_owned().await.map_err(|_| {
-            SignerError::InternalError("Cannot acquire the zone semaphore".to_string())
-        })?;
-        debug!("SIGNER[{zone_name}]: Zone permit acquired");
-
-        status.write().unwrap().current_action = "Waiting for a signing queue slot".to_string();
-
-        debug!("SIGNER: Acquiring queue permit");
-        let queue_permit = self
-            .queue_semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| SignerError::SignerNotReady)?;
-        debug!("SIGNER[{zone_name}]: Queue permit acquired");
-
-        // If we were able to acquire a permit that means that a signing operation completed
-        // and so we are safe to remove one item from the ring buffer.
-        let mut zones_being_signed = self.zones_being_signed.write().unwrap();
-        if zones_being_signed.len() == zones_being_signed.capacity() {
-            // Discard oldest.
-            let signing_status = zones_being_signed.pop_front();
-            if let Some((_zone, signing_status)) = signing_status {
-                // Old items in the queue should have reached a final state,
-                // either finished or aborted. If not, something is wrong with
-                // the queueing logic.
-                if !matches!(
-                    signing_status.read().unwrap().status,
-                    ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted
-                ) {
-                    return Err(SignerError::InternalError(
-                        "Signing queue not in the expected state".to_string(),
-                    ));
-                }
-            }
-        }
-
-        status.write().unwrap().current_action = "Queued for signing".to_string();
-
-        debug!("SIGNER[{zone_name}]: Enqueuing complete.");
-        Ok((approx_q_size, queue_permit, zone_permit, status))
     }
 }
 
