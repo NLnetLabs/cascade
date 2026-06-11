@@ -152,10 +152,6 @@ pub fn restore_signed(
     // unsigned integer number and loads that file plus N more, where the
     // final number in the path is replaced by the previous number plus one
     // each time.
-    // let signed_source = center
-    //     .config
-    //     .zone_state_dir
-    //     .join(format!("{}.signed.0", zone.name));
     let paths = state.persistence.signed_diff_paths.clone();
     trace!("Restoring from paths: {paths:?}");
     let signed_source = paths[0].0.as_path();
