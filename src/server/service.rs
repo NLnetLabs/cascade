@@ -406,13 +406,6 @@ mod compat {
         // Remember the latest SOA.
         let new_soa = viewer.soa().clone();
 
-        // https://datatracker.ietf.org/doc/html/rfc1995#section-4
-        // 4. Response Format
-        //    "If incremental zone transfer is not available, the entire zone
-        //     is returned.  The first and the last RR of the response is the
-        //     SOA record of the zone. I.e. the behavior is the same as an
-        //     AXFR response except the query type is IXFR."
-
         // https://datatracker.ietf.org/doc/html/rfc1995#section-2
         // 2. Brief Description of the Protocol
         //   "If an IXFR query with the same or newer version number than that
@@ -465,8 +458,8 @@ mod compat {
         if tracing::enabled!(Level::DEBUG) {
             let zone_state = zone.handle.read();
             debug!(
-                "IXFR out: client has serial {} for zone {}",
-                client_soa.serial, zone.handle.name
+                "IXFR out: client has serial {} for zone {}, server has {}",
+                client_soa.serial, zone.handle.name, our_soa_serial,
             );
             debug!(
                 "IXFR out: server has {} loaded diffs and {} signed diffs for zone {}",
@@ -491,7 +484,25 @@ mod compat {
             }
         }
 
-        if diffs.is_empty() {
+        // https://datatracker.ietf.org/doc/html/rfc1995#section-4
+        // 4. Response Format
+        //    "If incremental zone transfer is not available, the entire zone
+        //     is returned.  The first and the last RR of the response is the
+        //     SOA record of the zone. I.e. the behavior is the same as an
+        //     AXFR response except the query type is IXFR."
+        if diffs.is_empty() ||
+            // The starting diff SOA serial must match that of the client
+            diffs
+                .first()
+                .unwrap()
+                .1
+                .removed_soa
+                .as_ref()
+                .map(|s| &s.rdata.serial)
+                != Some(&client_soa.serial)
+            // The ending diff SOA serial must match that of the zone
+            || diffs.last().unwrap().1.added_soa.as_ref().map(|s| s.rdata.serial) != Some(viewer.soa().rdata.serial)
+        {
             debug!(
                 "Falling back from IXFR to AXFR because no diff is available for zone '{}' from serial {}",
                 zone.handle.name, client_soa.serial,
