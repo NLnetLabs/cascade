@@ -117,7 +117,10 @@ impl Spec {
 
                 let persistence = PersistenceState {
                     loaded_diff_paths: persisted_loaded_diffs,
-                    signed_diff_paths: persisted_signed_diffs,
+                    signed_diff_paths: persisted_signed_diffs
+                        .into_iter()
+                        .map(|(d, s)| (d, s.map(|s| domain::new::base::Serial::from(s.0))))
+                        .collect(),
                     ..Default::default()
                 };
 

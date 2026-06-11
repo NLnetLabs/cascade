@@ -430,22 +430,22 @@ mod compat {
 
             match mode {
                 ServiceMode::LoadedReview => {
-                    let mut diffs = Vec::with_capacity(1);
                     if let Some(loaded_diff) = zone_state.storage.current_loaded_diff() {
-                        let empty_signed_diff = Arc::new(DiffData::new());
-                        diffs.push((loaded_diff, empty_signed_diff));
+                        vec![(loaded_diff, DiffData::new().into())]
+                    } else {
+                        vec![]
                     }
-                    diffs
                 }
                 ServiceMode::SignedReview => {
-                    let mut diffs = Vec::with_capacity(1);
-                    if let Some(signed_diff) = zone_state.storage.current_signed_diff() {
-                        let empty_loaded_diff = Arc::new(DiffData::new());
-                        diffs.push((empty_loaded_diff, signed_diff));
+                    match (
+                        zone_state.storage.current_loaded_diff(),
+                        zone_state.storage.current_signed_diff(),
+                    ) {
+                        (Some(loaded_diff), Some(signed_diff)) => vec![(loaded_diff, signed_diff)],
+                        _ => vec![],
                     }
-                    diffs
                 }
-                ServiceMode::Publication => zone_state.storage.diffs.clone(),
+                ServiceMode::Publication => zone_state.storage.diffs.get(client_soa.serial),
             }
         };
 
@@ -463,60 +463,35 @@ mod compat {
         // messages.
 
         if tracing::enabled!(Level::DEBUG) {
-            debug!("IXFR out: client serial: {}", client_soa.serial);
+            let zone_state = zone.handle.read();
             debug!(
-                "IXFR out: {} diffs available for zone {}:",
-                diffs.len(),
+                "IXFR out: client has serial {} for zone {}",
+                client_soa.serial, zone.handle.name
+            );
+            debug!(
+                "IXFR out: server has {} loaded diffs and {} signed diffs for zone {}",
+                zone_state.storage.diffs.num_loaded_diffs(),
+                zone_state.storage.diffs.num_signed_diffs(),
                 zone.handle.name
             );
-            for (i, (loaded_diff, signed_diff)) in diffs.iter().enumerate() {
-                debug!(
-                    "IXFR out: Diff #{i}: loaded serial -{:?}+{:?} => signed serial -{:?}+{:?}, loaded -{}+{}, signed -{}+{}",
-                    loaded_diff
-                        .removed_soa
-                        .as_ref()
-                        .map(|soa_rr| soa_rr.0.rdata.serial),
-                    loaded_diff
-                        .added_soa
-                        .as_ref()
-                        .map(|soa_rr| soa_rr.0.rdata.serial),
-                    signed_diff
-                        .removed_soa
-                        .as_ref()
-                        .map(|soa_rr| soa_rr.0.rdata.serial),
-                    signed_diff
-                        .added_soa
-                        .as_ref()
-                        .map(|soa_rr| soa_rr.0.rdata.serial),
-                    loaded_diff.removed_records.len(),
-                    loaded_diff.added_records.len(),
-                    signed_diff.removed_records.len(),
-                    signed_diff.added_records.len(),
+            trace!("IXFR diffs available:\n{}", zone_state.storage.diffs);
+            trace!("IXFR diffs selected:");
+            for (i, (loaded, signed)) in diffs.iter().enumerate() {
+                trace!(
+                    "Selected: #{i}: loaded diff: -{:?}+{:?} (-{}+{} records), signed diff: -{:?}+{:?} (-{}+{} records)",
+                    loaded.removed_soa.as_ref().map(|s| s.rdata.serial),
+                    loaded.added_soa.as_ref().map(|s| s.rdata.serial),
+                    loaded.removed_records.len(),
+                    loaded.added_records.len(),
+                    signed.removed_soa.as_ref().map(|s| s.rdata.serial),
+                    signed.added_soa.as_ref().map(|s| s.rdata.serial),
+                    signed.removed_records.len(),
+                    signed.added_records.len(),
                 );
             }
         }
 
-        // Find the diff, if we have it, that removes the SOA serial number
-        // that the client currently has. That will be the start of the diff
-        // that we need to serve. The SOA serial has to match the one seen
-        // by the client, i.e. we need to know if the client requested the
-        // IXFR from a loaded review server and thus the client SOA serial
-        // should be matched against a loaded SOA serial, or if the client
-        // requested the IXFR from a signed review or publication server in
-        // which case the client SOA serial should be matched against a signed
-        // SOA serial.
-        let start_idx = {
-            diffs.iter().position(|(loaded_diff, signed_diff)| {
-                let d = if mode == ServiceMode::LoadedReview {
-                    loaded_diff
-                } else {
-                    signed_diff
-                };
-                d.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
-            })
-        };
-
-        let Some(start_idx) = start_idx else {
+        if diffs.is_empty() {
             debug!(
                 "Falling back from IXFR to AXFR because no diff is available for zone '{}' from serial {}",
                 zone.handle.name, client_soa.serial,
@@ -557,9 +532,7 @@ mod compat {
             let mut last_removed_soa = None;
             let mut last_added_soa = None;
 
-            for (i, (loaded_diff, signed_diff)) in diffs[start_idx..].iter().enumerate() {
-                let abs_idx = start_idx + i;
-
+            for (i, (loaded_diff, signed_diff)) in diffs.iter().enumerate() {
                 // Select the appropriate diff as the SOA source to use.
                 let soa_source_diff = if mode == ServiceMode::LoadedReview {
                     loaded_diff
@@ -593,7 +566,7 @@ mod compat {
                     && let Some(last_removed_soa) = last_removed_soa
                     && removed_soa == last_removed_soa
                 {
-                    trace!("Skipping unchanged loaded diff #{abs_idx}.");
+                    trace!("Skipping unchanged loaded diff #{i}.");
                     continue;
                 }
 
@@ -605,12 +578,11 @@ mod compat {
                 }
 
                 if tracing::enabled!(Level::TRACE) {
-                    trace_diff_pair(abs_idx, loaded_diff, signed_diff);
+                    trace_diff_pair(i, loaded_diff, signed_diff);
                 }
 
-                trace!("Serving diff #{abs_idx} for loaded review server IXFR out",);
-
                 if mode == ServiceMode::LoadedReview {
+                    trace!("Serving diff #{i} for loaded review server IXFR out");
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
                     rrs.extend(soa_source_diff.removed_records.clone());
@@ -619,6 +591,11 @@ mod compat {
                     rrs.push(added_soa.clone().into());
                     rrs.extend(soa_source_diff.added_records.clone());
                 } else {
+                    if mode == ServiceMode::SignedReview {
+                        trace!("Serving diff #{i} for signed review server IXFR out");
+                    } else {
+                        trace!("Serving diff #{i} for publication server IXFR out");
+                    }
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
                     rrs.extend(loaded_diff.removed_records.clone());
@@ -681,8 +658,7 @@ mod compat {
     fn trace_diff_pair(diff_idx: usize, loaded_diff: &Arc<DiffData>, signed_diff: &Arc<DiffData>) {
         fn trace_diff(prefix: &str, diff_idx: usize, d: &Arc<DiffData>) {
             trace!(
-                "{prefix} diff #{}: {:?}->{:?}: {:?}->{:?}",
-                diff_idx,
+                "{prefix} diff #{diff_idx}: {:?}->{:?}: {:?}->{:?}",
                 d.removed_soa.as_ref().map(|s| s.rdata.serial),
                 d.added_soa.as_ref().map(|s| s.rdata.serial),
                 d.removed_records
