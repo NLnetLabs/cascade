@@ -268,23 +268,31 @@ pub struct PersistenceState {
     /// downstreams is still possible after restart, and to enable a complete
     /// latest signed version of the zone to be reconsituted. For each path
     /// we also remember the associated loaded zone serial otherwise we lose
-    /// track of which loaded serial the signed diff relates to.
-    // TODO: Split out the path to the snapshot from the paths to the diffs
-    // as only the diffs should have a serial stored with them, and it should
-    // not be optional.
+    /// track of which loaded serial the signed diff relates to. Only signed
+    /// diffs triggered by a change in the loaded zone actually has an
+    /// associated loaded diff serial.
     pub signed_diff_paths: Vec<(PathBuf, Option<Serial>)>,
 }
 
 //----------- IxfrZoneDiffs --------------------------------------------------
 
-/// The set of diffs for a single zone, to be used to serve IXFR responses to
-/// clients.
+/// The set of diffs for a single zone, to be used to serve IXFR responses
+/// from the publication server to clients.
+///
+/// Note: These diffs are not currently used to serve IXFR responses from
+/// review servers to clients as during review the current diff is already
+/// available to the review server via the current state of the zone storage
+/// state machine.
 ///
 /// A new diff is added to this set once the loaded or signed change to the
 /// zone is approved at a pipeline review stage.
 ///
-/// Diffs are stored as a loaded and signed pair which can be in one of the
-/// following states:
+/// Loaded and signed diffs are stored separetely, as they are produced
+/// separately. In order to reply to an IXFR request both the signed diff
+/// and the loaded diff that corresponds to it, if any, are needed. There is
+/// therefore a relationship between signed diffs and loaded diffs.
+///
+/// Diffs are added at three separate moments in the zone pipeline lifecycle:
 ///
 /// - loaded diff without signed diff: a change to the loaded part of the zone
 ///   was approved but the pipeline has not yet progressed as far as changing
@@ -293,8 +301,7 @@ pub struct PersistenceState {
 /// - loaded diff and signed diff: a change to the loaded part of the zone
 ///   was approved and the pipeline progressed to also updating the signed part
 ///   of the zone to correspond to the loaded zone changes and those signed
-///   changes were also approved. This is recorded by updating an existing
-///   loaded diff without signed diff entry in the collection of diffs.
+///   changes were also approved.
 ///
 /// - signed diff without loaded diff: a change to the signed part of the zone
 ///   was approved without any change to the loaded part of the zone, e.g.
@@ -303,24 +310,49 @@ pub struct PersistenceState {
 ///   be regenerated.
 ///
 /// The diffs should form a continuous chain, with one diff moving from SOA
-/// serial N to N+1 and the next diff moving from N+1 to N+2.
+/// serial N to N+1 and the next diff moving from N+1 to N+2. The chain should
+/// begin at the SOA serial that the client currently has, and continue up to
+/// and including the SOA serial of the latest published version of the zone.
 ///
-/// Can be fairly cheaply cloned which does involve the cost of cloning the
-/// inner Vec but does not require creating actual copies of the diff data
-/// because each diff is stored internally as an Arc<DiffData>.
-#[derive(Clone, Default)]
+/// For signed diffs finding the right diff to serve is easy as the SOA
+/// serial of the signed zone corresponds to the SOA serial provided by the
+/// client. For loaded diffs however they contain the loaded serial number
+/// which may differ to that of the signed serial number (not in the case of
+/// 'keep' serial policy however). As we receive the loaded and signed diffs
+/// at different moments in the zone pipeline lifecycle we need to keep track
+/// when receiving a signed diff of which loaded SOA serial the signed diff
+/// relates to, so that we can later serve them together.
+#[derive(Default)]
 pub struct IxfrZoneDiffs {
     /// Diffs in the loaded part of the zone from one serial number to
-    /// another. Indexed by the serial number of the loaded zone the
-    /// diff belongs to.
+    /// another. Indexed by the serial number being removed from the loaded
+    /// zone the diff belongs to.
     loaded_diffs: BTreeMap<u32, Arc<DiffData>>,
 
     /// Diffs in the signed part of the zone from one serial number to
-    /// another, along with the serial number of the loaded diff they
-    /// correspond to (if any, as a re-signed zone has no corresponding change
-    /// in the loaded zone). Indexed by the serial number of the signed zone
-    /// the diff belongs to.
-    signed_diffs: BTreeMap<u32, (Arc<DiffData>, Option<u32>)>,
+    /// another, along with the serial number being removed from the
+    /// loaded diff they correspond to (if any, as a re-signed zone has no
+    /// corresponding change in the loaded zone). Indexed by the serial number
+    /// being removed from the the signed zone the diff belongs to.
+    signed_diffs: BTreeMap<u32, RelatedSignedDiff>,
+}
+
+struct RelatedSignedDiff {
+    /// The signed diff.
+    diff: Arc<DiffData>,
+
+    /// The removed serial number of the loaded diff that this signed diff
+    /// relates to, if any.
+    related_loaded_serial: Option<u32>,
+}
+
+impl RelatedSignedDiff {
+    fn new(diff: Arc<DiffData>, loaded_serial: Option<Serial>) -> Self {
+        Self {
+            diff,
+            related_loaded_serial: loaded_serial.map(Into::into),
+        }
+    }
 }
 
 impl IxfrZoneDiffs {
@@ -351,17 +383,18 @@ impl IxfrZoneDiffs {
     pub fn store_signed_diff(&mut self, loaded_serial: Option<Serial>, diff: Arc<DiffData>) {
         let from_serial = diff.removed_soa.as_ref().map(|s| s.rdata.serial).unwrap();
         let to_serial = diff.added_soa.as_ref().map(|s| s.rdata.serial).unwrap();
-        let old = self
-            .signed_diffs
-            .insert(from_serial.into(), (diff, loaded_serial.map(|s| s.into())));
+        let related_diff = RelatedSignedDiff::new(diff, loaded_serial);
+        let old = self.signed_diffs.insert(from_serial.into(), related_diff);
         log_stored_diff("signed", old.is_some(), from_serial, to_serial);
     }
 
     pub fn get(&self, from_serial: Serial) -> Vec<(Arc<DiffData>, Arc<DiffData>)> {
         let mut diffs = vec![];
+
         let mut wanted_from: u32 = from_serial.into();
-        while let Some((signed_diff, loaded_serial)) = self.signed_diffs.get(&wanted_from) {
-            let loaded_diff = if let Some(loaded_serial) = loaded_serial {
+        while let Some(signed_related_diff) = self.signed_diffs.get(&wanted_from) {
+            let loaded_diff = if let Some(loaded_serial) = signed_related_diff.related_loaded_serial
+            {
                 self.loaded_diffs
                     .get(&loaded_serial)
                     .cloned()
@@ -372,9 +405,21 @@ impl IxfrZoneDiffs {
                 // use an empty diff
                 Default::default()
             };
-            wanted_from = signed_diff.added_soa.as_ref().unwrap().rdata.serial.into();
-            diffs.push((loaded_diff, signed_diff.clone()));
+
+            // Update wanted_from so that on the next iteration of the loop we
+            // fetch the diff that removes the SOA serial that this diff adds.
+            wanted_from = signed_related_diff
+                .diff
+                .added_soa
+                .as_ref()
+                .unwrap()
+                .rdata
+                .serial
+                .into();
+
+            diffs.push((loaded_diff, signed_related_diff.diff.clone()));
         }
+
         diffs
     }
 }
@@ -392,7 +437,10 @@ impl std::fmt::Display for IxfrZoneDiffs {
             )?;
         }
 
-        for (i, (key, (diff, loaded_serial))) in self.signed_diffs.iter().enumerate() {
+        for (i, (key, related_signed_diff)) in self.signed_diffs.iter().enumerate() {
+            let diff = &related_signed_diff.diff;
+            let loaded_serial = &related_signed_diff.related_loaded_serial;
+
             let from = diff.removed_soa.as_ref().map(|s| s.rdata.serial);
             let to = diff.added_soa.as_ref().map(|s| s.rdata.serial);
             writeln!(
