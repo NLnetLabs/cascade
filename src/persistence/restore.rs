@@ -164,7 +164,7 @@ pub fn restore_signed(
     drop(state);
 
     // Process the initial "signed" AXFR wire format dump.
-    let (soa, records) = load_axfr_wire_dump(&signed_source, &mut buf).map_err(|err| {
+    let (soa, records) = load_axfr_wire_dump(signed_source, &mut buf).map_err(|err| {
         io::Error::other(format!(
             "Loading snapshot from '{}' failed: {err}",
             signed_source.display()

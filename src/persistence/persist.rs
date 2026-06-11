@@ -110,9 +110,8 @@ pub fn persist_signed(
     if !persister.signed_diff().is_empty() {
         let loaded_diff = persister.loaded_diff();
         let signed_diff = persister.signed_diff();
-        let loaded_serial = loaded_diff
-            .map(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial))
-            .flatten();
+        let loaded_serial =
+            loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
 
         // Determine the path to write to and update the record of written
         // paths here as we don't want to give responsibility for working with
