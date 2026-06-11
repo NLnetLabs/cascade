@@ -297,25 +297,41 @@ impl ZoneServer {
         };
 
         let zone_name = &zone.name;
-        if let ReviewMode::Off = review.mode {
-            // Approve immediately.
-            match self.source {
-                Source::Unsigned => {
-                    info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
-                    self.on_unsigned_zone_approved(center, zone, zone_serial);
+        match review.mode {
+            ReviewMode::Off => {
+                // Approve immediately.
+                match self.source {
+                    Source::Unsigned => {
+                        info!("[{unit_name}]: Adding '{zone_name}' to the set of signable zones.");
+                        self.on_unsigned_zone_approved(center, zone, zone_serial);
+                    }
+                    Source::Signed => {
+                        self.on_signed_zone_approved(center, zone, zone_serial);
+                    }
+                    Source::Published => unreachable!(),
                 }
-                Source::Signed => {
-                    self.on_signed_zone_approved(center, zone, zone_serial);
-                }
-                Source::Published => unreachable!(),
+                return None;
             }
-
-            return None;
+            ReviewMode::Manual => {
+                info!(
+                    "[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}."
+                );
+                info!(
+                    "[{unit_name}] Manual review required; use the CLI to approve or reject the zone"
+                );
+                info!(
+                    "[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
+                );
+                info!(
+                    "[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}"
+                );
+            }
+            ReviewMode::Script { .. } => {
+                info!(
+                    "[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}."
+                );
+            }
         };
-
-        info!(
-            "[{unit_name}]: Seeking approval for {zone_type} zone '{zone_name}' at serial {zone_serial}."
-        );
 
         // Mark this version of the zone as pending approval.
         //
@@ -350,35 +366,17 @@ impl ZoneServer {
 
         record_zone_event(center, zone, pending_event, Some(zone_serial));
 
-        if ReviewMode::Off == review.mode
-            || ReviewMode::Manual == review.mode
-            || review_server.is_none()
-        {
-            match (review_server, review.mode) {
-                (None, ReviewMode::Script { .. }) => warn!(
-                    "[{unit_name}] Review required, but no review server configured; use the CLI to approve or reject the zone"
-                ),
-                (None, _) => warn!(
-                    "[{unit_name}] Review required, but neither a review server nor a review hook is set; use the CLI to approve or reject the zone"
-                ),
-                (Some(_), ReviewMode::Off | ReviewMode::Manual) => {
-                    info!("[{unit_name}] No review hook set; waiting for manual review")
-                }
-                (Some(_), ReviewMode::Script { .. }) => unreachable!(),
-            }
-            info!(
-                "[{unit_name}]: Approve with command: cascade zone approve --{zone_type} {zone_name} {zone_serial}"
-            );
-            info!(
-                "[{unit_name}]: Reject with command: cascade zone reject --{zone_type} {zone_name} {zone_serial}"
+        let ReviewMode::Script { hook } = review.mode else {
+            // The only other case is ReviewMode::Manual, in which case we don't
+            // need to do anything here anymore.
+            return None;
+        };
+        let Some(review_server) = review_server else {
+            warn!(
+                "[{unit_name}]: No review server has been specified, so the review script won't be executed. Approve or reject with the CLI instead."
             );
             return None;
-        }
-
-        let ReviewMode::Script { hook } = review.mode else {
-            panic!()
         };
-        let review_server = review_server.unwrap();
 
         // TODO: Windows support?
         // TODO: Set 'CASCADE_UNSIGNED_SERIAL' and 'CASCADE_UNSIGNED_SERVER'.

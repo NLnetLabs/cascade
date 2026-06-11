@@ -978,11 +978,38 @@ impl std::fmt::Display for Icon {
     }
 }
 
+/// Format a size in a human-readable way
+///
+/// Shows one decimal point if the size is small enough for that to make sense
+/// (e.g. below 10KB).
 fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
+    let v = v as f64;
+
+    const M: f64 = 1_000_000.0;
+    const K: f64 = 1_000.0;
+
     match v {
-        n if n > 1_000_000 => format!("{}{spacer}M{suffix}", n / 1_000_000),
-        n if n > 1_000 => format!("{}{spacer}K{suffix}", n / 1_000),
+        n if n > 10.0 * M => format!("{:.0}{spacer}M{suffix}", n / M),
+        n if n > M => format!("{:.1}{spacer}M{suffix}", n / M),
+        n if n > 10.0 * K => format!("{:.0}{spacer}K{suffix}", n / K),
+        n if n > K => format!("{:.1}{spacer}K{suffix}", n / K),
         n => format!("{n}{spacer}{suffix}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_size;
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(945, " ", "B"), "945 B");
+        assert_eq!(format_size(9450, " ", "B"), "9.4 KB");
+        assert_eq!(format_size(94500, " ", "B"), "94 KB");
+        assert_eq!(format_size(945000, " ", "B"), "945 KB");
+        assert_eq!(format_size(9450000, " ", "B"), "9.4 MB");
+        assert_eq!(format_size(94500000, " ", "B"), "94 MB");
+        assert_eq!(format_size(945000000, " ", "B"), "945 MB");
     }
 }
 

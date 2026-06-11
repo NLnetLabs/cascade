@@ -361,6 +361,7 @@ impl HttpServer {
         let zone;
         let halted_reason;
         let progress;
+        let signing_report;
         let unsigned_serial;
         let signed_serial;
         let published_serial;
@@ -477,6 +478,17 @@ impl HttpServer {
                 ZoneStateMachine::SignedReview(..) => Progress::SignedReview,
                 ZoneStateMachine::HaltSigned(..) => Progress::HaltSigned,
                 ZoneStateMachine::Poisoned => unreachable!(),
+            };
+
+            // Query signing status
+            signing_report = if progress >= Progress::SignedReview {
+                zone_state
+                    .signer
+                    .active_signing_status
+                    .as_ref()
+                    .and_then(|s| s.read().unwrap().mk_signing_report())
+            } else {
+                None
             };
 
             last_published = zone_state
@@ -602,14 +614,6 @@ impl HttpServer {
                 );
             }
         }
-
-        // Query signing status
-        let signing_report = if progress >= Progress::SignedReview {
-            let center = &state.center;
-            center.signer.on_signing_report(&zone)
-        } else {
-            None
-        };
 
         // TODO: Report separate information for ongoing and completed loads.
         let receipt_report = {
