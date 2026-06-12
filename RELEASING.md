@@ -17,6 +17,7 @@
 - in GH UI invoke the packaging workflow on the release branch
 - make a PR for the branch and mention the workflow run URL in the descrption
 - review the PR and ensure the workflow succeeds
+- dog food: upgrade packages.nlnetlabs.nl
 - merge the release branch to main
 
 # Merge and release
@@ -41,5 +42,8 @@
 - make a PR for the branch
 - review the PR and ensure the workflow succeeds
 - merge the prep-for-dev branch to main
+
+# Final steps
+- Upgrade cascade.nlnetlabs.nl
 
 TODO: Add crates.io related publishing steps.
