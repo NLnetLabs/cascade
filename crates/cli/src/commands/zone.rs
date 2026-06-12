@@ -7,7 +7,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::ansi;
 use crate::api::*;
 use crate::client::CascadeApiClient;
-use crate::println;
+use crate::{eprintln, println};
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Zone {
@@ -270,6 +270,10 @@ impl Zone {
             }
             ZoneCommand::List => {
                 let response: ZonesListResult = client.get_json("zone/").await?;
+
+                if response.zones.is_empty() {
+                    eprintln!("No zones to show");
+                }
 
                 for zone_name in response.zones {
                     println!("{}", zone_name);
