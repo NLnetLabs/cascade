@@ -53,7 +53,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 
 ### Acknowledgements
 
-Thanks once again to @jpmens for testing Cascade and providing valuable
+Thanks to @jpmens and @gryphius for testing Cascade and providing valuable
 feedback and contributions to the documentation.
 
 [#704]: https://github.com/NLnetLabs/cascade/pull/704
