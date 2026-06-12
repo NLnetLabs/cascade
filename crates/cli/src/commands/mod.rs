@@ -66,8 +66,13 @@ impl Command {
         match self {
             Self::Debug(cmd) => cmd.execute(client).await,
             Self::Health => {
-                client.get_json::<()>("health").await?;
-                println!("Ok");
+                let health = client.get_json::<cascade_api::Health>("health").await?;
+                if health.healthy {
+                    println!("Ok");
+                } else {
+                    // This path is unreachable in practice at the moment.
+                    println!("Something's wrong!")
+                }
                 Ok(())
             }
             Self::Zone(zone) => zone.execute(client).await,
