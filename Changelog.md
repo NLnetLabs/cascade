@@ -27,6 +27,9 @@ Released yyyy-mm-dd.
 
 ### Bug fixes
 
+- Fix an issue where TTL was ignored when determining whether an
+  RRset changed and had to be resigned ([#806]).
+
 ### Other changes
 
 ### Documentation improvements
@@ -55,6 +58,7 @@ feedback and contributions to the documentation.
 [#716]: https://github.com/NLnetLabs/cascade/pull/716
 [#720]: https://github.com/NLnetLabs/cascade/pull/720
 [#722]: https://github.com/NLnetLabs/cascade/pull/722
+[#806]: https://github.com/NLnetLabs/cascade/pull/806
 
 ## 0.1.0-beta1 'Slàinte mhath'
 
