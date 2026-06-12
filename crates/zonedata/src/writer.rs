@@ -64,6 +64,8 @@ impl<'d> LoadedZoneReplacer<'d> {
     }
 
     /// Set the SOA record.
+    ///
+    /// A copy of the record **must** be added as a regular record too.
     pub fn set_soa(&mut self, soa: SoaRecord) -> Result<(), ReplaceError> {
         if self.next.soa.is_some() {
             return Err(ReplaceError::MultipleSoas);
@@ -81,9 +83,9 @@ impl<'d> LoadedZoneReplacer<'d> {
 
     /// Set all records.
     ///
-    /// The given [`Vec`] will replace all the records in the instance, except
-    /// for the SOA record (which must be set via [`Self::set_soa()`]). The
-    /// records must be sorted.
+    /// The given [`Vec`] will replace all the records in the instance,
+    /// including the SOA record; but a copy of the SOA record **must** be set
+    /// via [`Self::set_soa()`]. The records must be sorted.
     pub fn set_records(&mut self, records: Vec<RegularRecord>) -> Result<(), ReplaceError> {
         self.next.records = records;
         Ok(())
@@ -170,6 +172,8 @@ impl<'d> LoadedZonePatcher<'d> {
     }
 
     /// Remove the previous SOA record.
+    ///
+    /// A copy of the record **must** be removed as a regular record too.
     pub fn remove_soa(&mut self, soa: SoaRecord) -> Result<(), PatchError> {
         if self.immediate.removed_soa.is_some() {
             return Err(PatchError::Inconsistency);
@@ -180,6 +184,8 @@ impl<'d> LoadedZonePatcher<'d> {
     }
 
     /// Add the new SOA record.
+    ///
+    /// A copy of the record **must** be added as a regular record too.
     pub fn add_soa(&mut self, soa: SoaRecord) -> Result<(), PatchError> {
         if self.immediate.added_soa.is_some() {
             return Err(PatchError::MultipleSoasAdded);
@@ -341,6 +347,8 @@ impl<'d> SignedZoneReplacer<'d> {
     }
 
     /// Set the SOA record.
+    ///
+    /// A copy of the record **must** be added as a regular record too.
     pub fn set_soa(&mut self, soa: SoaRecord) -> Result<(), ReplaceError> {
         if self.next.soa.is_some() {
             return Err(ReplaceError::MultipleSoas);
@@ -358,9 +366,9 @@ impl<'d> SignedZoneReplacer<'d> {
 
     /// Set all records.
     ///
-    /// The given [`Vec`] will replace all the records in the instance, except
-    /// for the SOA record (which must be set via [`Self::set_soa()`]). The
-    /// records must be sorted.
+    /// The given [`Vec`] will replace all the records in the instance,
+    /// including the SOA record; but a copy of the SOA record **must** be set
+    /// via [`Self::set_soa()`]. The records must be sorted.
     pub fn set_records(&mut self, records: Vec<RegularRecord>) -> Result<(), ReplaceError> {
         self.next.records = records;
         Ok(())
@@ -538,6 +546,8 @@ impl<'d> SignedZonePatcher<'d> {
     }
 
     /// Remove the previous SOA record.
+    ///
+    /// A copy of the record **must** be removed as a regular record too.
     pub fn remove_soa(&mut self, soa: SoaRecord) -> Result<(), PatchError> {
         if self.immediate.removed_soa.is_some() {
             return Err(PatchError::Inconsistency);
@@ -548,6 +558,8 @@ impl<'d> SignedZonePatcher<'d> {
     }
 
     /// Add the new SOA record.
+    ///
+    /// A copy of the record **must** be added as a regular record too.
     pub fn add_soa(&mut self, soa: SoaRecord) -> Result<(), PatchError> {
         if self.immediate.added_soa.is_some() {
             return Err(PatchError::MultipleSoasAdded);

@@ -248,6 +248,7 @@ pub async fn ixfr(
             };
 
             assert!(interpreter.is_finished());
+            writer.add(soa.clone().into())?;
             writer.set_soa(soa)?;
             writer.apply()?;
             metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
@@ -261,6 +262,7 @@ pub async fn ixfr(
             // Work-around for #493: pre-process the current SOA as
             // process_ixfr() assumes it will receive it when fetching the
             // next record but it has already been consumed.
+            writer.remove(soa.clone().into())?;
             writer.remove_soa(soa.into())?;
 
             // Process the response messages.
@@ -304,6 +306,7 @@ fn process_ixfr(
                 // A previous deletion-addition set (i.e. a complete diff) has
                 // been finished, and a new one is starting.
                 writer.next_patchset()?;
+                writer.remove(soa.clone().into())?;
                 writer.remove_soa(soa.into())?;
             }
 
@@ -312,6 +315,7 @@ fn process_ixfr(
             }
 
             ZoneUpdate::BeginBatchAdd(soa) => {
+                writer.add(soa.clone().into())?;
                 writer.add_soa(soa.into())?;
             }
 
@@ -431,6 +435,7 @@ pub async fn axfr(
     };
 
     assert!(interpreter.is_finished());
+    writer.add(soa.clone().into())?;
     writer.set_soa(soa)?;
     writer.apply()?;
     Ok(())

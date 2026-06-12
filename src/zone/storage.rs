@@ -730,8 +730,8 @@ impl StorageZoneHandle<'_> {
         // Compute the total number of records
         let reader = viewer.read().unwrap();
         let generated_records = reader.generated_records().len();
-        let loaded_records = reader.loaded().regular_records().len();
-        let num_records = 1 + generated_records + loaded_records;
+        let loaded_records = reader.loaded().regular_records().len() - 1;
+        let num_records = generated_records + loaded_records;
 
         // Spawn a background task to update the publication server.
         let span = trace_span!("switch_publication_server");
