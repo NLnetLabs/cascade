@@ -344,6 +344,7 @@ impl ZoneSigner {
             soa.rdata.serial = serial;
             soa
         };
+        new_records.push(new_soa.clone().into());
 
         info!(
             "[ZS]: Serials for zone '{zone_name}': last signed={previous_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
@@ -375,9 +376,10 @@ impl ZoneSigner {
         status.write().unwrap().current_action = "Collecting records to sign".to_string();
         debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
-        // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
             .unsigned_records()
+            .filter(|r| r.rname != new_soa.rname || r.rtype != new_soa.rtype)
+            .cloned()
             .map(OldRecord::from)
             .collect::<Vec<_>>();
         records.push(new_soa.clone().into());
