@@ -6,7 +6,7 @@ use cascade_api::{
 };
 
 use crate::client::CascadeApiClient;
-use crate::println;
+use crate::{eprintln, println};
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Tsig {
@@ -169,6 +169,10 @@ impl Tsig {
             // List the set of TSIG keys known to Cascade.
             TsigCommand::List => {
                 let response: TsigListResult = client.get_json("tsig/").await?;
+
+                if response.tsig_key_info.is_empty() {
+                    eprintln!("No TSIG keys to show");
+                }
 
                 for (tsig_key_name, key_info) in response.tsig_key_info {
                     // For each TSIG key also list the zones and policies that
