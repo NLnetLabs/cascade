@@ -46,7 +46,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
   comment. ([#708] by @jpmens)
 - Corrections to the "Key Management" documentation page. ([#711] by @jpmens)
 - Note in CLI help that the source to zone add can include a TSIG key name.
-  (#[714] by @ximon18)
+  ([#714] by @ximon18)
 - Fix position of colon ':' character in tsig add subcommand docs. ([#716] by
   @ximon18)
 - Add inline table example to policy template. ([#720] by @jpmens)
