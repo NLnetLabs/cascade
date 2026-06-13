@@ -331,3 +331,18 @@ jobs:
       - uses: ./integration-tests/tests/persist-zone
         with:
           log-level: ${{ inputs.log-level }}
+
+  sign-using-a-hsm:
+    name: Sign using a HSM.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/sign-using-a-hsm
+        with:
+          log-level: ${{ inputs.log-level }}
