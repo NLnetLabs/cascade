@@ -260,55 +260,30 @@ pub enum TsigRemoveError {
     /// The specified TSIG key name was not found in Cascade.
     NotFound,
 
-    /// The key is in use by one or more zones to authenticate communication
-    /// with upstream nameservers.
-    InUseByZoneSource {
-        using_zones: Vec<ZoneName>,
-    },
-
-    // The key is in use for a zone for some other reason.
-    InUseByZoneOther {
-        using_zones: Vec<ZoneName>,
-    },
-
-    // The key is in use by one or more policies to authenticate communication
-    // with downstream nameservers.
-    InUseByPolicy {
-        using_policies: Vec<Box<str>>,
-    },
+    /// The specified TSIG key cannot be removed as it is in use.
+    InUse(Vec<TsigKeyUsageReference>),
 }
 
-impl fmt::Display for TsigRemoveError {
+/// Supporting details for TsigRemoveError::InUse.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum TsigKeyUsageReference {
+    /// The TSIG key is referenced by the source of the named zone.
+    ZoneSource(ZoneName),
+
+    /// The TSIG key is in use by the named zone for some other reason.
+    ZoneOther(ZoneName),
+
+    /// The TSIG key is referenced by one or more settings in the named
+    /// policy.
+    Policy(Box<str>),
+}
+
+impl fmt::Display for TsigKeyUsageReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TsigRemoveError::NotFound => write!(f, "no such TSIG key was found"),
-            TsigRemoveError::InUseByZoneSource { using_zones } => write!(
-                f,
-                "the TSIG key cannot be removed as it is used by the source of the following zones: {}",
-                using_zones
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            TsigRemoveError::InUseByZoneOther { using_zones } => write!(
-                f,
-                "the TSIG key cannot be removed as it is used by the following zones: {}",
-                using_zones
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            TsigRemoveError::InUseByPolicy { using_policies } => write!(
-                f,
-                "the TSIG key cannot be removed as it is used by the following policies: {}",
-                using_policies
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+            TsigKeyUsageReference::ZoneSource(name) => write!(f, "the source of the '{name}' zone"),
+            TsigKeyUsageReference::ZoneOther(name) => write!(f, "zone '{name}'"),
+            TsigKeyUsageReference::Policy(name) => write!(f, "policy '{name}"),
         }
     }
 }

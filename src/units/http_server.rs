@@ -1246,19 +1246,22 @@ impl HttpServer {
             .map(|_| TsigRemoveResult)
             .map_err(|e| match e {
                 RemoveError::NotFound => TsigRemoveError::NotFound,
-                RemoveError::InUseByZoneSource { using_zones } => {
-                    TsigRemoveError::InUseByZoneSource {
-                        using_zones: using_zones.iter().map(|z| z.0.name.clone()).collect(),
-                    }
-                }
-                RemoveError::InUseByZoneOther { using_zones } => {
-                    TsigRemoveError::InUseByZoneOther {
-                        using_zones: using_zones.iter().map(|z| z.0.name.clone()).collect(),
-                    }
-                }
-                RemoveError::InUseByPolicy { using_policies } => TsigRemoveError::InUseByPolicy {
-                    using_policies: using_policies.iter().map(|p| p.name.clone()).collect(),
-                },
+                RemoveError::InUse(usage_references) => TsigRemoveError::InUse(
+                    usage_references
+                        .into_iter()
+                        .map(|usage| match usage {
+                            tsig::UsageReference::ZoneSource(zone) => {
+                                TsigKeyUsageReference::ZoneSource(zone.0.name.clone())
+                            }
+                            tsig::UsageReference::ZoneOther(zone) => {
+                                TsigKeyUsageReference::ZoneOther(zone.0.name.clone())
+                            }
+                            tsig::UsageReference::Policy(policy) => {
+                                TsigKeyUsageReference::Policy(policy.name.clone())
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                ),
             });
         Json(res)
     }
