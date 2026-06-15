@@ -71,7 +71,7 @@ impl Command {
                     println!("Ok");
                 } else {
                     // This path is unreachable in practice at the moment.
-                    println!("Something's wrong!")
+                    println!("The Cascade daemon is reachable but reports itself as unhealthy.");
                 }
                 Ok(())
             }
