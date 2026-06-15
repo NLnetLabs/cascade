@@ -764,6 +764,11 @@ pub struct Health {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Info {
+    pub version: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
