@@ -38,7 +38,9 @@ use crate::{
     center::Center,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{HistoricalEvent, LastPublished, Zone, ZoneHandle, ZoneState},
+    zone::{
+        HistoricalEvent, LastPublished, Zone, ZoneHandle, ZoneState, machine::ZoneStateMachine,
+    },
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -860,6 +862,12 @@ impl StorageZoneHandle<'_> {
         // TODO: Check whether resigning is needed. It has higher priority than
         // loading a new instance.
 
+        // Ensure a new operation can be started.
+        let ZoneStateMachine::Waiting(_) = &self.state.machine else {
+            trace!("Ignoring `on_passive()` because the pipeline is busy");
+            return;
+        };
+
         if self.zone().loader().start_pending() {
             // The zone is no longer passive.
             return;
@@ -867,7 +875,7 @@ impl StorageZoneHandle<'_> {
 
         if self.zone().signer().start_pending() {
             // The zone is no longer passive.
-            // return;
+            //return;
         }
     }
 }

@@ -405,11 +405,16 @@ impl<'a> ZoneHandle<'a> {
             }
             ZoneStateMachine::SigningFailed(signing_failed) => {
                 let waiting = signing_failed.reset();
+                transition.move_to(ZoneStateMachine::Waiting(waiting));
 
                 // TODO: This should be handled by 'Instances'.
                 self.state.next_min_expiration = None;
 
-                transition.move_to(ZoneStateMachine::Waiting(waiting));
+                // The signing operation has already been abandoned, so the zone
+                // data storage is already passive. Its call to `on_passive()`
+                // was ignored because the zone state machine was busy at the
+                // time. Call it again now.
+                self.storage().on_passive();
             }
             _ => {
                 transition.move_to(state);
