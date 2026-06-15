@@ -8,7 +8,7 @@ use crate::{
         SignerSerialPolicyInfo,
     },
     client::CascadeApiClient,
-    println,
+    eprintln, println,
 };
 
 #[derive(Clone, Debug, clap::Args)]
@@ -37,6 +37,10 @@ impl Policy {
         match self.command {
             PolicyCommand::List => {
                 let res: PolicyListResult = client.get_json("policy/").await?;
+
+                if res.policies.is_empty() {
+                    eprintln!("No policies to show");
+                }
 
                 for policy in res.policies {
                     println!("{policy}");
