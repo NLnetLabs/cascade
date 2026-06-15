@@ -14,6 +14,37 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+Feedback welcome at https://community.nlnetlabs.nl/, bug reports can be
+raised at https://github.com/NLnetLabs/cascade/issues.
+
+### Breaking changes
+
+
+### New
+
+
+### Bug fixes
+
+
+### Other changes
+
+
+### Documentation improvements
+
+
+### Known issues
+
+
+### Acknowledgements
+
+Thanks to @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
+valuable feedback!
+
+
 ## 0.1.0-beta2 'Donde comen dos, comen tres'
 
 Released 2026-06-12.
@@ -38,6 +69,8 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 ### Bug fixes
 
 - Ignore re-signing without a published signed instance ([#795] by @bal-e)
+- Account for TTL-only changes in incremental re-signing ([#803] by
+  @Philip-NLnetLabs)
 
 ### Documentation improvements
 
@@ -65,6 +98,7 @@ feedback and contributions to the documentation.
 [#722]: https://github.com/NLnetLabs/cascade/pull/722
 [#794]: https://github.com/NLnetLabs/cascade/pull/794
 [#795]: https://github.com/NLnetLabs/cascade/pull/795
+[#803]: https://github.com/NLnetLabs/cascade/pull/803
 
 ## 0.1.0-beta1 'Slàinte mhath'
 
