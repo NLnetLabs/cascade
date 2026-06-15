@@ -57,6 +57,7 @@ use crate::units::key_manager::{
     KmipClientCredentialsFile, KmipServerCredentialsFileMode, mk_dnst_keyset_state_file_path,
 };
 use crate::util::AbortOnDrop;
+use crate::zone::machine::ZoneStateMachine;
 use crate::zone::{HistoricalEvent, Zone, ZoneByName};
 
 // TODO: This comment is outdated in several ways.
@@ -761,6 +762,12 @@ impl ZoneSigner {
                 trace!("Ignoring {zone_name}, it has no policy");
                 continue;
             };
+
+            // If the zone is undergoing signing already, don't factor it in.
+            if matches!(zone_state.machine, ZoneStateMachine::Signing(_)) {
+                trace!("Ignoring {zone_name}, it is already (re-)signing");
+                continue;
+            }
 
             // Compute when the zone's signatures need to be refreshed next.
             //
