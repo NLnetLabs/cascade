@@ -33,6 +33,7 @@ pub struct Args {
         short = 's',
         long = "server",
         value_name = "IP:PORT",
+        env = "CASCADE_DAEMON",
         default_value = "127.0.0.1:4539",
         global = true
     )]
