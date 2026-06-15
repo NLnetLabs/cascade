@@ -98,8 +98,9 @@ no zones:
 
 .. Note:: The program:`cascade` CLI connects via HTTPS to the
    :program:`cascaded` daemon. By default it connects to 127.0.0.1:4539.
-   You can override this by passing ``--server <IP>:<PORT>`` to connect to
-   a Cascade daemon running on another machine.
+   You can override this by passing ``--server <IP>:<PORT>`` or by defining
+   an environment variable ``CASCADE_DAEMON="<IP>:<PORT>"`` to connect to a
+   Cascade daemon running on another machine or port.
 
 The :program:`cascade` CLI is the primary means of interacting with the
 :program:`cascaded` daemon.
