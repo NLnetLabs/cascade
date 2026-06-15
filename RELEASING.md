@@ -17,7 +17,8 @@
 - in GH UI invoke the packaging workflow on the release branch
 - make a PR for the branch and mention the workflow run URL in the descrption
 - review the PR and ensure the workflow succeeds
-- dog food: upgrade cascade.nlnetlabs.nl
+- dog food: upgrade cascade.nlnetlabs.nl using a package attached as an output artifact to
+  the workflow run
 - merge the release branch to main
 
 # Merge and release
@@ -44,6 +45,9 @@
 - merge the prep-for-dev branch to main
 
 # Final steps
-- Upgrade cascade.nlnetlabs.nl
+- Upgrade cascade.nlnetlabs.nl to the now published released package.
+  - This shouldn't involve any actual changes as it should be the same package as was
+    already upgraded using a workflow output artifact above, but does check that the
+    package is actually available on packages.nlnetlabs.nl as expected
 
 TODO: Add crates.io related publishing steps.
