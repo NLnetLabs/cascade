@@ -313,8 +313,9 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
         .unwrap_or_default();
 
     // Find references to the TSIG key in zone source settings. While we
-    // search, remove any unknown references to the zone for which we find
-    // specific references to the zone.
+    // search, forget any vague unknown references to the zone for which we
+    // can instead offer a specific reference of the key to a point-of-usage
+    // to the user.
     let mut refs = state
         .zones
         .iter()
