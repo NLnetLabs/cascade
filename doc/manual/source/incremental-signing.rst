@@ -1,59 +1,60 @@
 Incremental Signing
 ===================
 
-.. note:: This page documents how Cascade's incremental signer works, so that
-   you can understand what to expect from its output, and how the associated
-   settings will affect it. 
+This page documents how Cascade's incremental signer works, so that you can
+understand what to expect from its output, and how the associated settings will
+affect it.
    
-   Note that Cascade does *not* use a jitter-based mechanism (as one would
-   find in OpenDNSSEC) for spreading out the re-signing of records. Read on to
-   understand Cascade's "re-signing window" mechanism.
+Note that Cascade does *not* use a jitter-based mechanism (as one would find
+in OpenDNSSEC) for spreading out the re-signing of records. It uses a different
+mechanism to achieve this, a "re-signing schedule"; read on to learn more.
 
 Context
 -------
 
-Cascade can sign your zone in two modes: full signing and incremental signing.
-Full signing unconditionally signs every record in the loaded zone, even if
-some of those records had valid signatures. Incremental signing will examine
-previously generated signatures and only sign records that are missing
-signatures or whose signatures need updating. Incremental signing is more
-complicated than full signing, but it has two benefits:
+Cascade can sign zones in either of two modes: full signing and incremental
+signing. It will automatically choose one. Full signing unconditionally signs
+every record in the loaded zone, even if some of those records had valid
+signatures. Incremental signing will examine previously generated signatures
+and only sign records that are missing signatures or whose signatures need
+updating. Incremental signing is more complicated than full signing, but it has
+two benefits:
 
-1. It greatly reduces the number of signatures that need to be generated. This
-   is important for performance, especially if an :term:`HSM <Hardware Security
-   Module (HSM)>` is used.
+1. It can reuse existing signatures, significantly reducing the number of
+   cryptographic signatures it needs to generate. This is important for
+   performance, especially if an :term:`HSM <Hardware Security Module (HSM)>`
+   is used.
 
 2. It greatly reduces the number of records that change in the signed zone.
-   With full signing, every change to the loaded zone would result in brand
-   new signatures for *every* record. With incremental signing, small changes
-   in the loaded zone will translate to small changes in the signed zone. This
-   reduces the size of :term:`IXFRs <Incremental Zone Transfers (IXFRs)>`,
-   improving network latency and bandwidth for propagating the zone.
+   Full signing results in new signatures for *every* record. With incremental
+   signing, small changes in the loaded zone will translate to small changes
+   in the signed zone. This reduces the size of :term:`IXFRs <Incremental Zone
+   Transfers (IXFRs)>`.
 
 Cascade uses full signing for the first time it signs a zone, as it does not
 know of any previous signatures. After the initial signing operation, a signed
 copy of the zone will always be available, so Cascade will only use incremental
-signing. In the future, we may add support for forcing the use of the full
-signer even if a signed copy of the zone is available.
+signing.
 
 Key Rollovers
 -------------
 
 Cascade has a key manager, which can direct the signer to change the set of
 keys it signs the zone with. With full signing, this is relatively simple:
-all signatures will be re-generated using the new set of signing keys. But for
+all signatures will be re-generated using the new set of signing keys. For
 the reasons discussed above, this is suboptimal. Thus, the incremental signer
 supports performing key rollovers over a period of time, where it will gradually
 update the signatures of all the records in the zone. Re-signing is performed
 such that the zone is always DNSSEC valid; for most key rollovers, this implies
-signing all records with an additional key, and once the new signatures have
-propagated, removing signatures with a previous key.
+adding new keys to the `DNSKEY` record, (incrementally) replacing signatures
+with old keys for signatures with new keys, and removing old keys from `DNSKEY`.
 
-The incremental signer follows the same procedure whether a key rollover is
-occurring or not. Internally, it will first determine which signatures need
-updating, and then calculate when they should be updated. If a key rollover
-is occurring, it will mark signatures signed with the previous set of keys to
-be updated.
+Regardless of whether a key roll is occurring, the incremental signer starts by
+re-generating signatures that are expiring or whose underlying data (the RRset
+signed) has changed. In case a key roll is occurring, these signatures are
+generated with the new set of keys. Afterwards, the signer will consider other
+signatures that were signed with the previous set of keys, and update some of
+them.
 
 Algorithm
 ---------
@@ -81,13 +82,13 @@ re-generated immediately. The rest will be sorted into a *re-signing schedule*,
 which is a deterministic way to spread out incremental signing work. They will
 be sorted by ascending order of expiry, and then by DNSSEC canonical order. The
 first ``N`` such signatures will be re-generated, where ``N`` is chosen so that
-re-signing will complete within a certain period of time.
+re-signing of the entire zone will complete within a certain period of time.
 
-Finally, the ongoing key rollover (if any) is handled. If the key rollover has
-taken longer than planned, it will be completed immediately. Otherwise, another
-re-signing schedule will be constructed. The signatures pending updates will
-be sorted in DNSSEC canonical order and the first ``N`` such signatures will
-be re-generated.
+Finally, the ongoing key rollover (if any) is handled. If the key rollover
+has taken longer than planned, it will be completed immediately. Otherwise,
+all the signatures in the zone are sorted in DNSSEC canonical order, and among
+the first ``N`` of those, signatures still using the previous set of keys are
+re-generated.
 
 Configuration
 -------------
