@@ -38,6 +38,8 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 ### Bug fixes
 
 - Ignore re-signing without a published signed instance ([#795] by @bal-e)
+- Account for TTL-only changes in incremental re-signing ([#803] by
+  @Philip-NLnetLabs)
 
 ### Documentation improvements
 
@@ -65,6 +67,7 @@ feedback and contributions to the documentation.
 [#722]: https://github.com/NLnetLabs/cascade/pull/722
 [#794]: https://github.com/NLnetLabs/cascade/pull/794
 [#795]: https://github.com/NLnetLabs/cascade/pull/795
+[#803]: https://github.com/NLnetLabs/cascade/pull/803
 
 ## 0.1.0-beta1 'Slàinte mhath'
 
