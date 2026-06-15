@@ -302,17 +302,12 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     let mut unknown_refs = state
         .tsig_store
         .map
-        .get(name)
-        .and_then(|key_info| {
-            Some(
-                key_info
+        .get(name).map(|key_info| key_info
                     .zones
                     .iter()
                     .cloned()
                     .map(|z| ZoneByName(z.0.clone()))
-                    .collect::<HashSet<_>>(),
-            )
-        })
+                    .collect::<HashSet<_>>())
         .unwrap_or_default();
 
     // Find references to the TSIG key in zone source settings. While we
