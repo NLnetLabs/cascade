@@ -297,8 +297,8 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     // removing it.
 
     // Collect the TSIG store references for which we have no way of saying
-    // why it is in use. We will prefer adding explicit references where
-    // possible.
+    // why it is in use. We will remove these in favour of explicit references
+    // where possible.
     let mut unknown_refs = state
         .tsig_store
         .map
