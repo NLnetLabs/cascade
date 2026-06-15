@@ -307,7 +307,7 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
             key_info
                 .zones
                 .iter()
-                .map(|z| ZoneByName(z.0.clone()))
+                .map(|z| z.0.name.clone())
                 .collect::<HashSet<_>>()
         })
         .unwrap_or_default();
@@ -326,7 +326,12 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
             )
         })
         .inspect(|&referenced_zone| {
-            let _ = unknown_refs.remove(referenced_zone);
+            // Lookup the zone by name because:
+            //   a) if using ZoneByName Clippy complains about a mutable key
+            //   b) if Arc<Zone> can't be put in HashSet as it is not Eq.
+            //   c) it is duplicate zone names that we want to avoid reporting
+            //      to the end user.
+            let _ = unknown_refs.remove(&referenced_zone.0.name);
         })
         .cloned()
         .map(UsageReference::ZoneSource)
