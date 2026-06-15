@@ -1236,8 +1236,19 @@ fn imports_to_commands(key_imports: &[KeyImport]) -> Vec<Vec<String>> {
                     "import", key_type, "kmip", server, public_id, private_id, algorithm, flags
                 ]
             }
-            KeyImport::File(FileKeyImport { key_type, path }) => {
-                strs!["import", key_type, "file", path]
+            KeyImport::File(FileKeyImport {
+                key_type,
+                public_key_path,
+                private_key_path,
+            }) => {
+                strs![
+                    "import",
+                    key_type,
+                    "file",
+                    public_key_path,
+                    "--private-key",
+                    private_key_path
+                ]
             }
         })
         .collect()

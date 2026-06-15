@@ -190,7 +190,8 @@ pub enum KeyImport {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct FileKeyImport {
     pub key_type: KeyType,
-    pub path: Utf8PathBuf,
+    pub public_key_path: Utf8PathBuf,
+    pub private_key_path: Utf8PathBuf,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
