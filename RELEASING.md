@@ -17,7 +17,7 @@
 - in GH UI invoke the packaging workflow on the release branch
 - make a PR for the branch and mention the workflow run URL in the descrption
 - review the PR and ensure the workflow succeeds
-- dog food: upgrade packages.nlnetlabs.nl
+- dog food: upgrade cascade.nlnetlabs.nl
 - merge the release branch to main
 
 # Merge and release
