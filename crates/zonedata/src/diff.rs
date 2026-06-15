@@ -33,14 +33,16 @@ pub struct DiffData {
 
     /// Removed regular records.
     ///
-    /// These records are present in the base, but not in the target. They do
-    /// not include the SOA record. They are sorted in DNSSEC canonical order.
+    /// These records are present in the base, but not in the target. They
+    /// **also** include the removed SOA record. They are sorted in DNSSEC
+    /// canonical order.
     pub removed_records: Vec<RegularRecord>,
 
     /// Added regular records.
     ///
-    /// These records are present in the target, but not in the base. They do
-    /// not include the SOA record. They are sorted in DNSSEC canonical order.
+    /// These records are present in the target, but not in the base. They
+    /// **also** include the added SOA record. They are sorted in DNSSEC
+    /// canonical order.
     pub added_records: Vec<RegularRecord>,
 }
 

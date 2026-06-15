@@ -19,19 +19,20 @@
 
 use std::{
     ops::{BitOr, BitOrAssign},
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use cascade_zonedata::SignedZoneBuilder;
 use tracing::{debug, error};
 
-use crate::units::zone_signer::SignerError;
 use crate::{
     center::Center,
     zone::{HistoricalEvent, Zone},
 };
+use crate::{signer::status::SigningStatusPerZone, units::zone_signer::SignerError};
 
 pub mod incremental;
+pub mod status;
 pub mod zone;
 
 //----------- sign() -----------------------------------------------------------
@@ -57,8 +58,9 @@ async fn sign(
     zone: Arc<Zone>,
     mut builder: SignedZoneBuilder,
     trigger: SigningTrigger,
+    status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
-    let (status, _permits) = center.signer.wait_to_sign(&zone).await;
+    let (_status, _permits) = center.signer.wait_to_sign(&zone).await;
 
     let (result, builder) = tokio::task::spawn_blocking({
         let center = center.clone();
@@ -77,6 +79,7 @@ async fn sign(
     let mut status = status.write().unwrap();
     let mut handle = zone.write_handle(&center);
     handle.state.signer.ongoing.finish();
+    // TODO: Remove `status` from `handle.state.signer.active_signing_status`?
 
     match result {
         Ok(()) => {

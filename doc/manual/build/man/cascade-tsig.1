@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-TSIG" "1" "Jan 01, 2026" "0.1.0-beta1" "Cascade"
+.TH "CASCADE-TSIG" "1" "Jan 01, 2026" "0.1.0-beta2" "Cascade"
 .SH NAME
 cascade-tsig \- Manage TSIG keys
 .sp
@@ -92,7 +92,7 @@ or if the key is still referenced by other configuration.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B [<ALGORITHM>]:<TSIG_KEY_NAME>:<SECRET>
+.B [<ALGORITHM>:]<TSIG_KEY_NAME>:<SECRET>
 The name of the TSIG key to add, or a complete TSIG key specification.
 .sp
 TSIG key names must be valid domain names.

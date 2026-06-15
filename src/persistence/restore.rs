@@ -71,6 +71,7 @@ pub fn restore_loaded(
     ))?;
     loaded_replacer.set_soa(soa.clone()).unwrap();
     loaded_replacer.set_records(records).unwrap();
+    loaded_replacer.add(soa.clone().into()).unwrap();
     loaded_replacer.apply().unwrap();
     trace!(
         "Restored loaded snapshot for SOA serial {} for zone '{}' from file '{loaded_source}'",
@@ -175,6 +176,7 @@ pub fn restore_signed(
     ))?;
     signed_replacer.set_soa(soa.clone()).unwrap();
     signed_replacer.set_records(records).unwrap();
+    signed_replacer.add(soa.clone().into()).unwrap();
     signed_replacer.apply().unwrap();
     trace!(
         "Restored signed snapshot for SOA serial {} for zone '{}' from file '{signed_source}'",
@@ -498,9 +500,15 @@ enum IxfrEvent {
 
 fn apply_ixfr_event_to_loaded_data(patcher: &mut LoadedZonePatcher<'_>, event: IxfrEvent) {
     match event {
-        IxfrEvent::Remove(r) if r.rtype == RType::SOA => patcher.remove_soa(r.into()).unwrap(),
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
+            patcher.remove(r.clone()).unwrap();
+            patcher.remove_soa(r.into()).unwrap();
+        }
         IxfrEvent::Remove(r) => patcher.remove(r).unwrap(),
-        IxfrEvent::Add(r) if r.rtype == RType::SOA => patcher.add_soa(r.into()).unwrap(),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
+            patcher.add(r.clone()).unwrap();
+            patcher.add_soa(r.into()).unwrap()
+        }
         IxfrEvent::Add(r) => patcher.add(r).unwrap(),
         IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
     }
@@ -508,9 +516,15 @@ fn apply_ixfr_event_to_loaded_data(patcher: &mut LoadedZonePatcher<'_>, event: I
 
 fn apply_ixfr_event_to_signed_data(patcher: &mut SignedZonePatcher<'_>, event: IxfrEvent) {
     match event {
-        IxfrEvent::Remove(r) if r.rtype == RType::SOA => patcher.remove_soa(r.into()).unwrap(),
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
+            patcher.remove(r.clone()).unwrap();
+            patcher.remove_soa(r.into()).unwrap();
+        }
         IxfrEvent::Remove(r) => patcher.remove(r).unwrap(),
-        IxfrEvent::Add(r) if r.rtype == RType::SOA => patcher.add_soa(r.into()).unwrap(),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
+            patcher.add(r.clone()).unwrap();
+            patcher.add_soa(r.into()).unwrap()
+        }
         IxfrEvent::Add(r) => patcher.add(r).unwrap(),
         IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
     }

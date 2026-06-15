@@ -940,7 +940,7 @@ pub struct ServerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct OutboundPolicyInfo {
-    pub accept_xfr_from: Vec<NameserverCommsPolicyInfo>,
+    pub provide_xfr_to: Vec<NameserverCommsPolicyInfo>,
     pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
 }
 

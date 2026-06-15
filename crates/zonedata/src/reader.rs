@@ -54,52 +54,27 @@ impl<'d> LoadedZoneReader<'d> {
 
     /// Regular records in the zone.
     ///
-    /// Records are sorted in DNSSEC canonical order. The SOA record **is not**
+    /// Records are sorted in DNSSEC canonical order. The SOA record **is**
     /// included.
     pub const fn regular_records(&self) -> &'d [RegularRecord] {
         self.instance.records.as_slice()
-    }
-
-    /// All records in the zone.
-    ///
-    /// Records are sorted in DNSSEC canonical order. The SOA record **is**
-    /// included.
-    pub fn all_records(&self) -> impl Iterator<Item = RegularRecord> + Send + use<'d> {
-        let (soa, records) = (self.soa(), self.regular_records());
-        let soa = RegularRecord::from(soa.clone());
-
-        // Find the position to insert the SOA record.
-        let pos = records
-            .iter()
-            .position(|r| soa <= *r)
-            .unwrap_or(records.len());
-
-        records[..pos]
-            .iter()
-            .cloned()
-            .chain([soa])
-            .chain(records[pos..].iter().cloned())
     }
 
     /// The unsigned records in the zone.
     ///
     /// DNSSEC related records that would be produced by Cascade's signer (e.g.
     /// RRSIGs, NSEC/NSEC3, etc.) are stripped. The records are sorted in DNSSEC
-    /// canonical order. The SOA record **is not** included.
-    pub fn unsigned_records(&self) -> impl Iterator<Item = RegularRecord> + Send + use<'d> {
+    /// canonical order. The SOA record **is** included.
+    pub fn unsigned_records(&self) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d> {
         // Filter out records that would be generated during signing.
         //
         // TODO: 'RType::{CDS, CDNSKEY, ZONEMD}'.
-        self.instance
-            .records
-            .iter()
-            .filter(|r| {
-                !matches!(
-                    r.rtype,
-                    RType::NSEC | RType::NSEC3 | RType::NSEC3PARAM | RType::DNSKEY | RType::RRSIG
-                ) && !matches!(r.rtype.code.get(), 59 | 60 | 63)
-            })
-            .cloned()
+        self.instance.records.iter().filter(|&r| {
+            !matches!(
+                r.rtype,
+                RType::NSEC | RType::NSEC3 | RType::NSEC3PARAM | RType::DNSKEY | RType::RRSIG
+            ) && !matches!(r.rtype.code.get(), 59 | 60 | 63)
+        })
     }
 }
 
@@ -166,7 +141,7 @@ impl<'d> SignedZoneReader<'d> {
 
     /// All records generated during signing.
     ///
-    /// Records are sorted in DNSSEC canonical order. The SOA record is not
+    /// Records are sorted in DNSSEC canonical order. The SOA record **is**
     /// included.
     pub const fn generated_records(&self) -> &'d [RegularRecord] {
         self.signed_instance.records.as_slice()
@@ -182,18 +157,18 @@ impl<'d> SignedZoneReader<'d> {
     /// Records are sorted in DNSSEC canonical order. Only records also present
     /// in the signed instance are included (the loaded SOA record, and loaded
     /// DNSKEY, RRSIG, CDS, CDNSKEY, ZONEMD records are excluded).
-    pub fn loaded_records(&self) -> impl Iterator<Item = RegularRecord> + Send + use<'d> {
-        LoadedZoneReader::new(self.loaded_instance).unsigned_records()
+    pub fn loaded_records(&self) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d> {
+        let soa = self.soa();
+        LoadedZoneReader::new(self.loaded_instance)
+            .unsigned_records()
+            .filter(|&r| r.rname != soa.rname || r.rtype != soa.rtype)
     }
 
     /// All records in the zone.
     ///
-    /// Records are **unsorted**. The SOA record and records from the loaded
-    /// instance **are** included.
-    pub fn all_records(&self) -> impl Iterator<Item = RegularRecord> + Send + use<'d> {
-        [self.soa().clone().into()]
-            .into_iter()
-            .chain(self.loaded_records())
-            .chain(self.generated_records().iter().cloned())
+    /// Records are **unsorted**. The SOA record (of the signed instance) **is**
+    /// included; unsigned records from the loaded instance **are** included.
+    pub fn all_records(&self) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d> {
+        self.generated_records().iter().chain(self.loaded_records())
     }
 }
