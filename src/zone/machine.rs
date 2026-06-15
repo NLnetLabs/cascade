@@ -106,11 +106,14 @@ impl<'a> ZoneHandle<'a> {
             return None;
         }
 
-        // It's important that we first check the storage here instead of the
-        // zone state machine. The reason is that while the zone state machine
-        // is in the waiting state, the storage might still be persisting or
-        // cleaning the zone and we shouldn't start a new operation if that's
-        // the case.
+        let ZoneStateMachine::Waiting(_) = &self.state.machine else {
+            info!("Could not start load since an operation is in progress on the zone.");
+            return None;
+        };
+
+        // The zone state machine may be in the waiting state, but the storage
+        // might still be persisting or cleaning the zone, and we shouldn't
+        // start a new operation if that's the case.
         let Some(builder) = self.storage().start_load() else {
             info!("Could not start load since an operation is in progress on the zone.");
             return None;
@@ -118,9 +121,7 @@ impl<'a> ZoneHandle<'a> {
 
         let (transition, state) = self.state.machine.transition();
         let ZoneStateMachine::Waiting(waiting) = state else {
-            panic!(
-                "The storage was in the passive state but the state machine wasn't in the waiting state"
-            );
+            unreachable!("already checked that the state machine is `Waiting`")
         };
 
         transition.move_to(ZoneStateMachine::Loading(waiting.start_load()));
@@ -137,11 +138,14 @@ impl<'a> ZoneHandle<'a> {
             return None;
         }
 
-        // It's important that we first check the storage here instead of the
-        // zone state machine. The reason is that while the zone state machine
-        // is in the waiting state, the storage might still be persisting or
-        // cleaning the zone and we shouldn't start a new operation if that's
-        // the case.
+        let ZoneStateMachine::Waiting(_) = &self.state.machine else {
+            info!("Could not start load since an operation is in progress on the zone.");
+            return None;
+        };
+
+        // The zone state machine may be in the waiting state, but the storage
+        // might still be persisting or cleaning the zone, and we shouldn't
+        // start a new operation if that's the case.
         let Some(builder) = self.storage().start_resign() else {
             info!("Could not start resign since an operation is in progress on the zone.");
             return None;
