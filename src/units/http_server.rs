@@ -189,8 +189,8 @@ impl HttpServer {
     }
 
     /// If this endpoint responds, the daemon is considered healthy.
-    async fn health() -> Json<()> {
-        Json(())
+    async fn health() -> Json<api::Health> {
+        Json(Health { healthy: true })
     }
 
     async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {

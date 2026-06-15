@@ -759,6 +759,11 @@ impl fmt::Display for ZoneReloadError {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Health {
+    pub healthy: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
