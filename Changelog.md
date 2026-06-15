@@ -14,6 +14,37 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+Feedback welcome at https://community.nlnetlabs.nl/, bug reports can be
+raised at https://github.com/NLnetLabs/cascade/issues.
+
+### Breaking changes
+
+
+### New
+
+
+### Bug fixes
+
+
+### Other changes
+
+
+### Documentation improvements
+
+
+### Known issues
+
+
+### Acknowledgements
+
+Thanks to @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
+valuable feedback!
+
+
 ## 0.1.0-beta2 'Donde comen dos, comen tres'
 
 Released 2026-06-12.
