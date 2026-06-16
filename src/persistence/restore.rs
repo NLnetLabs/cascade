@@ -262,10 +262,7 @@ pub fn restore_signed(
     let mut state = zone.write(center);
     for (loaded_serial, diff) in diffs_to_store {
         // Store the signed diff to be used as part of serving an IXFR.
-        state
-            .storage
-            .diffs
-            .store_signed_diff(loaded_serial, diff);
+        state.storage.diffs.store_signed_diff(loaded_serial, diff);
     }
 
     info!(
