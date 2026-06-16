@@ -1,13 +1,19 @@
 //! Zone-specific signing state.
 
-use std::{sync::Arc, time::SystemTime};
+use std::{
+    sync::{Arc, RwLock},
+    time::SystemTime,
+};
 
 use cascade_zonedata::SignedZoneBuilder;
 use tracing::{debug, info};
 
 use crate::{
     center::Center,
-    signer::{ResigningTrigger, SigningTrigger},
+    signer::{
+        ResigningTrigger, SigningTrigger,
+        status::{SigningStatusPerZone, ZoneSigningStatus},
+    },
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState},
 };
@@ -70,16 +76,7 @@ impl SignerZoneHandle<'_> {
         // moment, this queue is opaque and is handled within the asynchronous
         // task.
 
-        let span = tracing::Span::none();
-        self.state.signer.ongoing.spawn(
-            span,
-            super::sign(
-                self.center.clone(),
-                self.zone.clone(),
-                builder,
-                SigningTrigger::Load,
-            ),
-        );
+        self.start_op(builder, SigningTrigger::Load);
     }
 
     /// Enqueue a re-signing operation for the zone.
@@ -99,25 +96,34 @@ impl SignerZoneHandle<'_> {
     )]
     pub fn enqueue_resign(&mut self, trigger: ResigningTrigger) {
         // TODO: The key manager can call 'enqueue_resign()' even when the zone
-        // has not been signed. The re-signing request is ignored if no previous
-        // signed instance of the zone seems to exist. Ideally, the key manager
-        // would check the current signed instance of the zone itself, and check
-        // that it really needs re-signing (i.e. that the signing keys used for
-        // building that instance are different from the latest ones).
+        // has not been signed. So we need to ignore some (but not all) calls
+        // to 'enqueue_resign()'. Ideally, the key manager would check the
+        // current signed instance of the zone itself, and check that it really
+        // needs re-signing (i.e. that the signing keys used for building that
+        // instance are different from the latest ones).
         //
-        // TODO: Explicitly track whether a signed instance exists. Maybe the
-        // zone data storage can report it via a method on 'PassiveStorage'? Or
-        // track instances of zones more explicitly in 'ZoneState' (the latter
-        // will happen / has happened when integrating the zone server with the
-        // zone data storage).
+        // TODO: Stop relying on `{next_,}min_expiration` to tell us about the
+        // published and upcoming instances of the zone.
+        //
+        // TODO: Verify that `min_expiration` is set to `None` when Cascade is
+        // starting up and trying to restoring zones from the disk.
+        //
+        // If a published instance of the zone exists, we definitely want to
+        // re-sign it. If a published instance of the zone does not exist, but
+        // an upcoming signed instance does, we should try re-signing it too.
+        // But before re-signing is actually initiated, we will verify that
+        // the upcoming instance was accepted and published (and ignore the
+        // re-signing request otherwise).
         if self
             .state
-            .next_min_expiration
-            .or(self.state.min_expiration)
+            .min_expiration
+            .or(self.state.next_min_expiration)
             .is_none()
-            && trigger == ResigningTrigger::KEYS_CHANGED
         {
-            debug!("Ignoring re-signing request; the zone has not been signed yet");
+            debug!(
+                "Ignoring re-signing request; \
+                there is no published or upcoming signed instance to re-sign"
+            );
             return;
         }
 
@@ -129,8 +135,13 @@ impl SignerZoneHandle<'_> {
             return;
         }
 
-        // Try to obtain a 'SignedZoneBuilder' so building can begin.
-        let builder = self.zone().storage().start_resign();
+        // TODO: Track expiration time in 'SignerState'.
+        let expiration_time = self
+            .state
+            .next_min_expiration
+            .or(self.state.min_expiration)
+            .expect("checked for a published/upcoming signed instance")
+            .to_system_time(SystemTime::now());
 
         // TODO: Keep state for a queue of pending (re-)signing operations, so
         // that the number of simultaneous operations can be limited. At the
@@ -138,32 +149,17 @@ impl SignerZoneHandle<'_> {
         // task.
 
         // Try to initiate the re-sign immediately.
-        if let Some(builder) = builder {
+        if self.state.min_expiration.is_some()
+            && let Some(builder) = self.zone().try_start_resign()
+        {
             // A zone can have at most one 'SignedZoneBuilder' at a time.
             // Because we have 'builder', we are guaranteed that no other
             // signing operations are ongoing right now.
 
             assert!(self.state.signer.enqueued_new_sign.is_none());
 
-            let span = tracing::Span::none();
-            self.state.signer.ongoing.spawn(
-                span,
-                super::sign(
-                    self.center.clone(),
-                    self.zone.clone(),
-                    builder,
-                    SigningTrigger::Resign(trigger),
-                ),
-            );
+            self.start_op(builder, SigningTrigger::Resign(trigger));
         } else {
-            // TODO: Track expiration time in 'SignerState'.
-            let expiration_time = self
-                .state
-                .next_min_expiration
-                .or(self.state.min_expiration)
-                .unwrap_or_else(|| panic!("re-sign enqueued but the zone has not been signed"))
-                .to_system_time(SystemTime::now());
-
             self.state.signer.enqueued_resign = Some(EnqueuedResign {
                 builder: None,
                 trigger,
@@ -174,18 +170,18 @@ impl SignerZoneHandle<'_> {
 
     /// Start a pending enqueued re-sign.
     ///
-    /// This should be called when the zone data storage is in the passive
+    /// This should be called when the zone state machine is in the waiting
     /// state. If a re-sign has been enqueued, it will be initiated (making the
     /// data storage busy), and `true` will be returned.
     ///
     /// This method cannot initiate enqueued new-signing operations (see
     /// [`Self::enqueue_new_sign()`]); when a new-signing operation is enqueued,
-    /// it includes a [`SignedZoneBuilder`], which prevents the data storage
-    /// from being passive.
+    /// it includes a [`SignedZoneBuilder`], which prevents the zone state
+    /// from being waiting.
     ///
     /// ## Panics
     ///
-    /// Panics if the data storage is not in the passive state.
+    /// Panics if the zone is not in the waiting state.
     pub fn start_pending(&mut self) -> bool {
         // An enqueued or ongoing signing operation holds a 'SignedZoneBuilder',
         // which prevents the zone data storage from being passive. This method
@@ -207,10 +203,23 @@ impl SignerZoneHandle<'_> {
         // data storage is in the passive state.
         assert!(builder.is_none());
 
+        // Since the zone data storage is passive, there is no upcoming instance
+        // of the zone. If a published signed instance does not exist either,
+        // there is nothing to re-sign, and we should just abandon the existing
+        // re-signing operation.
+        if self.state.min_expiration.is_none() {
+            debug!(
+                ?trigger,
+                "Dropping previously enqueued re-signing request; \
+                there is no published or upcoming signed instance of the zone"
+            );
+
+            return false;
+        }
+
         let builder = self
             .zone()
-            .storage()
-            .start_resign()
+            .try_start_resign()
             .expect("the zone data storage is passive");
 
         // TODO: Once an explicit queue of signing operations has been
@@ -218,6 +227,21 @@ impl SignerZoneHandle<'_> {
         // add the operation to the queue before starting the re-sign. If the
         // queue is too full to start the operation yet, leave it enqueued.
 
+        self.start_op(builder, SigningTrigger::Resign(trigger));
+
+        true
+    }
+
+    /// Start a signing operation immediately.
+    fn start_op(&mut self, builder: SignedZoneBuilder, trigger: SigningTrigger) {
+        let status = Arc::new(RwLock::new(SigningStatusPerZone {
+            current_action: "Initiating signing".into(),
+            status: ZoneSigningStatus::new(),
+        }));
+
+        // The current logging span is nested fairly deep within the logic for
+        // initiating signing operations, and does not really matter for the
+        // actual signing function. Start with an empty logging context.
         let span = tracing::Span::none();
         self.state.signer.ongoing.spawn(
             span,
@@ -225,11 +249,11 @@ impl SignerZoneHandle<'_> {
                 self.center.clone(),
                 self.zone.clone(),
                 builder,
-                SigningTrigger::Resign(trigger),
+                trigger,
+                status.clone(),
             ),
         );
-
-        true
+        self.state.signer.active_signing_status = Some(status);
     }
 }
 
@@ -246,6 +270,18 @@ pub struct SignerState {
 
     /// An enqueued re-signing operation, if any.
     pub enqueued_resign: Option<EnqueuedResign>,
+
+    /// Status for an active signing operation, if any.
+    //
+    // TODO: Embed in a state machine.
+    pub active_signing_status: Option<Arc<RwLock<SigningStatusPerZone>>>,
+}
+
+impl SignerState {
+    pub fn cancel_enqueued_signing_operations(&mut self) {
+        self.enqueued_new_sign = None;
+        self.enqueued_resign = None;
+    }
 }
 
 //----------- EnqueuedSign -----------------------------------------------------

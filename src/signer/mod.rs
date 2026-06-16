@@ -19,17 +19,20 @@
 
 use std::{
     ops::{BitOr, BitOrAssign},
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use cascade_zonedata::SignedZoneBuilder;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::{
-    center::{Center, halt_zone},
-    zone::{HistoricalEvent, Zone, ZoneHandle},
+    center::Center,
+    zone::{HistoricalEvent, Zone},
 };
+use crate::{signer::status::SigningStatusPerZone, units::zone_signer::SignerError};
 
+pub mod incremental;
+pub mod status;
 pub mod zone;
 
 //----------- sign() -----------------------------------------------------------
@@ -55,8 +58,9 @@ async fn sign(
     zone: Arc<Zone>,
     mut builder: SignedZoneBuilder,
     trigger: SigningTrigger,
+    status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
-    let (status, _permits) = center.signer.wait_to_sign(&zone).await;
+    let (_status, _permits) = center.signer.wait_to_sign(&zone).await;
 
     let (result, builder) = tokio::task::spawn_blocking({
         let center = center.clone();
@@ -73,24 +77,53 @@ async fn sign(
     .unwrap();
 
     let mut status = status.write().unwrap();
-    let mut state = zone.state.lock().unwrap();
-    let mut handle = ZoneHandle {
-        zone: &zone,
-        state: &mut state,
-        center: &center,
-    };
+    let mut handle = zone.write_handle(&center);
     handle.state.signer.ongoing.finish();
+    // TODO: Remove `status` from `handle.state.signer.active_signing_status`?
 
     match result {
         Ok(()) => {
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
-            handle.storage().finish_sign(built);
+            handle.get().finish_signing(built);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
         }
+        Err(SignerError::NothingToDo) => {
+            handle.get().abandon_signing(builder);
+            status.status.finish(true);
+            status.current_action = "Nothing to do".to_string();
+        }
+        Err(SignerError::KeepSerialPolicyViolated) => {
+            // Also ignore Keep errors. We can ignore these errors for
+            // a while assuming the unsigned zone gets updated regularly.
+            // TODO: But if nothing happens for too long we should warn.
+            // Something in status would be good.
+            handle.get().abandon_signing(builder);
+            status.status.finish(true);
+
+            status.current_action = "Resign failed due to Keep policy".to_string();
+
+            // If the sign operation was triggered by a load, the user forgot to increase the
+            // serial of the zone, so we should tell them about that by emitting an error.
+            if trigger == SigningTrigger::Load {
+                let error =
+                    "serial policy is \"keep\" but the serial of the loaded zone did not increase";
+
+                error!("Signing failed: {error}");
+                handle.state.record_event(
+                    HistoricalEvent::SigningFailed {
+                        trigger: trigger.into(),
+                        reason: error.to_string(),
+                    },
+                    None, // TODO
+                );
+            } else {
+                debug!("ignoring resign because the policy is keep");
+            }
+        }
         Err(error) => {
             error!("Signing failed: {error}");
-            handle.storage().abandon_sign(builder);
+            handle.get().signing_failed(builder, error.clone());
             status.status.finish(false);
             status.current_action = "Aborted".to_string();
 
@@ -101,11 +134,6 @@ async fn sign(
                 },
                 None, // TODO
             );
-
-            std::mem::drop(state);
-
-            // TODO: Inline.
-            halt_zone(&center, &zone, true, &error.to_string());
         }
     }
 }
@@ -117,7 +145,7 @@ async fn sign(
 // TODO: These may be subsumed by a more generic causality tracking system.
 
 /// The trigger for a (re-)signing operation.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SigningTrigger {
     /// A new instance of a zone has been loaded.
     Load,

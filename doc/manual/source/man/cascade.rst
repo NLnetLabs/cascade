@@ -4,19 +4,20 @@ Cascade CLI
 Synopsis
 --------
 
-:program:`cascade` ``[OPTIONS]`` ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` ``<COMMAND>``
 
 Description
 -----------
 
 **cascade** is the CLI to the :doc:`cascaded`.
 
-Options
--------
+Global Options
+--------------
 
 .. option:: -s, --server <IP:PORT>
 
-   The cascade server instance to connect to [default: 127.0.0.1:4539].
+   The Cascade server instance to connect to. This option takes priority
+   over the ``CASCADE_DAEMON`` environment variable. [default: 127.0.0.1:4539]
 
 .. option:: --log-level <LEVEL>
 
@@ -29,8 +30,14 @@ Options
 
 .. option:: -V, --version
 
-   Print version.
+   Print client version.
 
+Environment Variables
+---------------------
+
+.. envvar:: CASCADE_DAEMON
+
+   The Cascade server instance to connect to.
 
 Commands
 --------
@@ -54,6 +61,10 @@ Commands
         :doc:`cascade-keyset <cascade-keyset>`\ (1)
 
           Execute manual key roll or key removal commands.
+
+        :doc:`cascade-tsig <cascade-tsig>`\ (1)
+
+          Manage TSIG keys.
 
         :doc:`cascade-hsm <cascade-hsm>`\ (1)
 
@@ -80,6 +91,9 @@ Commands
 
     **cascade-keyset**\ (1)
         Execute manual key roll or key removal commands.
+
+    **cascade-tsig**\ (1)
+        Manage TSIG keys.
 
     **cascade-hsm**\ (1)
         Manage HSMs.

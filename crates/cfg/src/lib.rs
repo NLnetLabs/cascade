@@ -74,7 +74,7 @@ impl Default for Config {
             zone_state_dir: "/var/lib/cascade/zone-state".into(),
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
-            dnst_binary_path: "/usr/libexec/cascade/cascade-dnst".into(),
+            dnst_binary_path: "dnst".into(),
             kmip_credentials_store_path: "/var/lib/cascade/kmip/credentials.db".into(),
             kmip_server_state_dir: "/var/lib/cascade/kmip".into(),
             remote_control: Default::default(),
@@ -258,9 +258,6 @@ impl std::fmt::Display for GroupId {
 /// Configuration for the zone loader.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LoaderConfig {
-    /// Where to listen for zone update notifications.
-    pub notify_listeners: Vec<SocketConfig>,
-
     /// Configuration for reviewing loaded zones.
     pub review: ReviewConfig,
 }
@@ -468,7 +465,7 @@ impl<T> Setting<T> {
             Self { args: Some(_), .. } => SettingSource::Args,
             Self { env: Some(_), .. } => SettingSource::Env,
             Self { file: Some(_), .. } => SettingSource::File,
-            Self { default: _, .. } => SettingSource::Default,
+            _ => SettingSource::Default,
         }
     }
 }

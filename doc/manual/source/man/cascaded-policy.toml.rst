@@ -32,13 +32,13 @@ policy files, then update Cascade with ``cascade policy reload``.  Note that:
 Example
 -------
 
-.. code-block:: text
+.. code-block:: toml
 
     version = "v1"
 
     [loader]
     [loader.review]
-    required = false
+    mode = "off"
 
     [key-manager]
     ksk.validity = "365d"
@@ -62,6 +62,8 @@ Example
     algorithm.auto-done = true
     ds-algorithm = "SHA256"
     auto-remove = true
+    auto-remove-delay = "7d"
+    publication-nameservers = []
 
     [key-manager.records]
     ttl = "1h"
@@ -81,12 +83,14 @@ Example
     signature-inception-offset = "1d"
     signature-lifetime = "2w"
     signature-remain-time = "1w"
+    signature-refresh-interval = "12h"
+    key-roll-time = "24h"
 
     [signer.denial]
     type = "nsec"
 
     [signer.review]
-    required = false
+    mode = "off"
 
     [server.outbound]
     send-notify-to = []
@@ -125,24 +129,27 @@ The ``[loader.review]`` section.
 Review offers an opportunity to perform external checks on the zone contents
 loaded by Cascade.
 
-.. option:: required = false
+.. option:: mode = "off"
 
-   Whether review is required.
+   The mode for loader review.
 
-   If this is ``true``, a loaded version of a zone will not be signed or
-   published until it is approved.  If it is ``false``, loaded zones will be
-   signed immediately.  At the moment, the review hook will only be run if this
-   is set to true.
+   This can be one of the following values:
+   
+    - ``"off"`` will disable review
+    - ``"manual"`` will enable manual review via the CLI.
+    - ``"script"`` will enable automatic review via a hook. The ``hook`` field
+      must be specified in this case.
+
+   The default value is ``"off"``.
 
 .. _policy-loaded-review-cmd:
 
-.. option:: cmd-hook = ""
+.. option:: hook = ""
 
    A hook for reviewing a loaded zone. This is a path to an executable.
 
    This command string will be executed in the user's shell when a new version
-   of a zone is loaded.  At the moment, it will only be run if ``required`` is
-   true.
+   of a zone is loaded.
 
    It will receive the following information via environment variables:
 
@@ -160,6 +167,18 @@ loaded by Cascade.
    accessible to Cascade (i.e. after it has dropped privileges). Its exit code
    will determine whether the zone is approved or not.
 
+.. option:: on-reject = "discard"
+
+   What to do when a zone is rejected by review.
+  
+   This field can only be specified if ``mode`` is either ``"manual"`` or
+   ``"script"`` and can have one of the following values:
+  
+    - ``"discard"`` will discard the rejected zone and go back to an idle state
+    - ``"halt"`` will halt the pipeline until an operator either resets the pipeline
+      or overrides the rejection.
+  
+   The default value is ``"discard"``.
 
 DNSSEC key management.
 ++++++++++++++++++++++
@@ -254,9 +273,32 @@ The ``[key-manager]`` section.
 
    Whether to automatically remove expired keys.
 
-   If this is set, expired keys will be removed automatically (by deleting the
-   files for on-disk keys or removing it from the HSM).
+   If this option is set, expired keys will be removed automatically (by
+   deleting the files for on-disk keys or removing it from the HSM).
 
+.. option:: auto-remove-delay = "7d"
+
+    Delay after which expired keys will be removed when auto-remove is true.
+
+    An integer value is interpreted as seconds. A string is interpreted as
+    time string with a number followed by a unit (i.e. "s", "m", "h", "d",
+    or "w").
+
+.. option:: publication-nameservers = []
+
+   The set of nameservers to use when checking for RRSIG propagation during a
+   key roll.
+
+   Each nameserver must be specified as a string in the form:
+  
+     ``"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"``
+  
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+  
+   If no nameservers are specified, the nameserver specified by the SOA MNAME
+   field will be checked.
 
 The management of DNS records by the key manager.
 +++++++++++++++++++++++++++++++++++++++++++++++++
@@ -433,6 +475,34 @@ zone) are signed by the key manager, rather than the zone signer; see the
    string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
    ``d``, or ``w``).
 
+.. option:: signature-refresh-interval = "12h"
+
+   Refresh period to prevent signatures from expiring. Each period, Cascade
+   will refresh some number of signatures. This way the work to refresh all
+   signatures is spread out over time. The effective lifetime of a signature
+   is signature-lifetime - signature-remain-time. Each period roughly a
+   fraction of all signatures that is equal to signature-refresh-interval
+   divided by the effective signature lifetime will be refreshed.
+
+   signature-refresh-interval should be a lot smaller than
+   signature-remain-time to make sure that signatures are refreshed in time.
+   If this is not the case then in extreme cases, signatures could expire.
+
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
+
+.. option:: key-roll-time = "24h"
+
+   To avoid resigning the entire zone at once during a ZSK or CSK roll,
+   generating signatures with the new key can be spread out over time.
+   New signatures are generated at intervals controlled by
+   signature-refresh-interval.
+
+   An integer value is interpreted as seconds. A string is interpreted as a time
+   string consisting of a number followed by a unit (i.e. ``s``, ``m``, ``h``,
+   ``d``, or ``w``).
+
 How denial-of-existence records are generated.
 ++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -444,8 +514,8 @@ The ``[signer.denial]`` section.
 
    Supported options:
 
-   - ``nsec``: Use NSEC records (RFC 4034).
-   - ``nsec3``: Use NSEC3 records (RFC 5155).
+   - ``nsec``: Use NSEC records (:RFC:`4034`).
+   - ``nsec3``: Use NSEC3 records (:RFC:`5155`).
 
 .. option:: opt-out = false
 
@@ -506,11 +576,26 @@ The ``[server.outbound]`` section.
 
    The set of nameservers to which NOTIFY messages should be sent.
 
-   If empty, no NOTIFY messages will be sent.
+   If no nameservers are specified, no NOTIFY messages will be sent.
 
-   A collection of ``IP:[port]``, defaulting to port 53 when not specified, e.g.:
-   ``send-notify-to = ["[::1]:53"]``
+   Each nameserver must be specified as a string in the form:
 
+   `"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"`
+
+   If a TSIG key name is specified, a key by that name must exist in the
+   Cascade TSIG key store and will be used to authenticate communication with
+   the nameserver.
+
+.. option:: provide-xfr-to = []
+
+   The set of nameservers to provide zone transfers to.
+
+   If no nameservers are specified, zone transfers will be provided to any
+   nameserver.
+   
+   Each nameserver must be specified as a string in the form:
+
+   `"<IP>[^<TSIG_KEY_NAME>]"`
 
 Files
 -----

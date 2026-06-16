@@ -46,7 +46,7 @@ impl LoaderZoneHandle<'_> {
     /// A (soft) refresh will be initiated via [`Self::enqueue_refresh()`].
     pub fn set_source(&mut self, source: Source) {
         info!(
-            "Setting source of zone '{}' from '{:?}' to '{source:?}'",
+            "Setting source of zone '{}' from '{}' to '{source}'",
             self.zone.name, self.state.loader.source
         );
 
@@ -54,8 +54,6 @@ impl LoaderZoneHandle<'_> {
 
         self.state
             .record_event(HistoricalEvent::SourceChanged, None);
-
-        self.zone.mark_dirty(self.state, self.center);
 
         self.enqueue_refresh(false);
     }
@@ -103,7 +101,7 @@ impl LoaderZoneHandle<'_> {
         }
 
         // Initiate the load immediately, if the data storage is not busy.
-        if let Some(builder) = self.zone().storage().start_load() {
+        if let Some(builder) = self.zone().try_start_load() {
             self.start(refresh, builder);
         } else {
             // Enqueue the load so it can be executed later.
@@ -129,9 +127,8 @@ impl LoaderZoneHandle<'_> {
 
         let builder = self
             .zone()
-            .storage()
-            .start_load()
-            .expect("the zone data storage is passive");
+            .try_start_load()
+            .expect("the zone state is waiting");
         self.start(refresh, builder);
         true
     }

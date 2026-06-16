@@ -6,7 +6,7 @@ cascade status
 Synopsis
 --------
 
-:program:`cascade status`
+:program:`cascade` ``[GLOBAL OPTIONS]`` status
 
 Description
 -----------
@@ -14,6 +14,11 @@ Description
 Displays an at-a-glance status report for Cascade indicating what it is
 currently doing and noting any issues that require operator action.
 
+Global Options
+--------------
+
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 See Also
 --------

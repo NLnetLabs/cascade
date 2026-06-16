@@ -30,7 +30,7 @@ use crate::{
     loader::zone::EnqueuedRefresh,
     metrics::{MetricsCollection, XfrLabels, ZoneLabel},
     util::AbortOnDrop,
-    zone::{Zone, ZoneByPtr, ZoneHandle},
+    zone::{HistoricalEvent, Zone, ZoneByName, ZoneByPtr},
 };
 
 mod server;
@@ -98,16 +98,21 @@ impl Loader {
 
     /// Initialize the loader, synchronously.
     pub fn init(center: &Arc<Center>, state: &mut State) {
-        // Enqueue refreshes for all known zones.
-        for zone in &state.zones {
-            let mut state = zone.0.state.lock().unwrap();
-            ZoneHandle {
-                zone: &zone.0,
-                state: &mut state,
-                center,
+        // Enqueue refreshes for all known upstream zones.
+        for ZoneByName(zone) in &state.zones {
+            let mut handle = zone.write_handle(center);
+            match handle.state.loader.source {
+                Source::None => { /* Nothing to do */ }
+                Source::Zonefile { .. } => {
+                    // Don't enqueue a refresh for zones sourced from disk
+                    // as the operator may be in the middle of editing the
+                    // zonefile and thus we require zonefiles to be reloaded
+                    // explicitly via `cascade zone reload`.
+                }
+                Source::Server { .. } => {
+                    handle.loader().enqueue_refresh(false);
+                }
             }
-            .loader()
-            .enqueue_refresh(false);
         }
     }
 
@@ -117,30 +122,16 @@ impl Loader {
             center
                 .loader
                 .refresh_scheduler
-                .run(|_time, zone| {
+                .run(|_time, ZoneByPtr(zone)| {
                     // Enqueue a (soft) refresh for the zone.
-                    let mut state = zone.0.state.lock().unwrap();
-                    ZoneHandle {
-                        zone: &zone.0,
-                        state: &mut state,
-                        center: &center,
-                    }
-                    .loader()
-                    .enqueue_refresh(false);
+                    zone.write_handle(&center).loader().enqueue_refresh(false);
                 })
                 .await
         }))
     }
 
     pub fn on_refresh_zone(&self, center: &Arc<Center>, zone: &Arc<Zone>) {
-        let mut state = zone.state.lock().expect("lock is not poisoned");
-        ZoneHandle {
-            zone,
-            state: &mut state,
-            center,
-        }
-        .loader()
-        .enqueue_refresh(false);
+        zone.write_handle(center).loader().enqueue_refresh(false);
     }
 
     pub fn on_reload_zone(
@@ -148,20 +139,14 @@ impl Loader {
         center: &Arc<Center>,
         zone: &Arc<Zone>,
     ) -> Result<(), ZoneReloadError> {
-        let mut zone_state = zone.state.lock().expect("lock is not poisoned");
-        if let Some(reason) = zone_state.halted(true) {
+        let mut handle = zone.write_handle(center);
+        if let Some(reason) = handle.state.halted_reason() {
             return Err(ZoneReloadError::ZoneHalted(reason));
         }
-        if let Source::None = zone_state.loader.source {
+        if let Source::None = handle.state.loader.source {
             return Err(ZoneReloadError::ZoneWithoutSource);
         }
-        ZoneHandle {
-            zone,
-            state: &mut zone_state,
-            center,
-        }
-        .loader()
-        .enqueue_refresh(true);
+        handle.loader().enqueue_refresh(true);
         Ok(())
     }
 }
@@ -232,31 +217,28 @@ async fn refresh(
         }
     };
 
-    let mut state = zone.state.lock().unwrap();
-    let mut handle = ZoneHandle {
-        zone: &zone,
-        state: &mut state,
-        center: &center,
-    };
+    let mut handle = zone.write_handle(&center);
 
     // Finalize the load metrics.
     let start_time = metrics.start.0;
     handle.state.loader.active_load_metrics = None;
     handle.state.loader.last_load_metrics = Some(metrics.finish());
 
-    let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
     let zone_label = ZoneLabel {
         zone: zone.name.clone().into(),
     };
-    // Copy generated loader metrics to prometheus metrics
-    prometheus_metrics
-        .zone_loaded_last_bytes
-        .get_or_create(&zone_label)
-        .set(loader_metrics.num_loaded_bytes as i64);
-    prometheus_metrics
-        .zone_loaded_last_records
-        .get_or_create(&zone_label)
-        .set(loader_metrics.num_loaded_records as i64);
+    {
+        let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
+        // Copy generated loader metrics to prometheus metrics
+        prometheus_metrics
+            .zone_loaded_last_bytes
+            .get_or_create(&zone_label)
+            .set(loader_metrics.num_loaded_bytes as i64);
+        prometheus_metrics
+            .zone_loaded_last_records
+            .get_or_create(&zone_label)
+            .set(loader_metrics.num_loaded_records as i64);
+    }
 
     // Update the SOA refresh timer state.
     //
@@ -301,8 +283,8 @@ async fn refresh(
                 "The zone is up-to-date"
             );
 
-            // Cancel the load from the perspective of zone storage.
-            handle.storage().abandon_load(builder);
+            // Cancel the load
+            handle.get().abandon_load(builder);
         }
 
         Ok(true) => {
@@ -313,6 +295,8 @@ async fn refresh(
                 serial = ?soa.rdata.serial,
                 "Loaded a new instance of the zone"
             );
+
+            let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
 
             // Copy generated loader metrics to prometheus metrics
             prometheus_metrics
@@ -330,7 +314,7 @@ async fn refresh(
                 unreachable!("source-specific loading succeeded and must have filled 'builder'")
             });
 
-            handle.storage().finish_load(built);
+            handle.get().finish_load(built);
         }
 
         Err(err) => {
@@ -339,8 +323,15 @@ async fn refresh(
                 "Could not load the zone: {err}"
             );
 
-            // Cancel the load from the perspective of zone storage.
-            handle.storage().abandon_load(builder);
+            // Cancel the load
+            handle.get().abandon_load(builder);
+
+            handle.state.record_event(
+                HistoricalEvent::LoadingFailed {
+                    reason: err.to_string(),
+                },
+                None,
+            );
         }
     }
 }
@@ -382,6 +373,22 @@ pub enum Source {
         /// The TSIG key for communicating with the server, if any.
         tsig_key: Option<Arc<tsig::Key>>,
     },
+}
+
+impl std::fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Source::None => f.write_str("none"),
+            Source::Zonefile { path } => write!(f, "zone file '{path}'"),
+            Source::Server { addr, tsig_key } => {
+                write!(f, "{addr}")?;
+                if let Some(tsig_key) = &tsig_key {
+                    write!(f, " with TSIG key '{}'", tsig_key.name())?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 //============ Metrics =========================================================
@@ -464,6 +471,9 @@ pub struct ActiveLoadMetrics {
     /// See [`LoadMetrics::num_loaded_bytes`].
     pub num_loaded_bytes: AtomicUsize,
 
+    /// The (approximate) number of bytes to load.
+    pub num_total_bytes: AtomicUsize,
+
     /// The (approximate) number of DNS records loaded thus far.
     ///
     /// See [`LoadMetrics::num_loaded_records`].
@@ -477,6 +487,7 @@ impl ActiveLoadMetrics {
             start: (Instant::now(), SystemTime::now()),
             source,
             num_loaded_bytes: AtomicUsize::new(0),
+            num_total_bytes: AtomicUsize::new(0),
             num_loaded_records: AtomicUsize::new(0),
         }
     }
@@ -539,6 +550,9 @@ pub enum RefreshError {
         remote_serial: Serial,
     },
 
+    /// A query for a SOA record failed.
+    QuerySoa(server::QuerySoaError),
+
     /// An IXFR from the server failed.
     Ixfr(server::IxfrError),
 
@@ -557,6 +571,7 @@ impl std::error::Error for RefreshError {
         match self {
             Self::OutdatedRemote { .. } => None,
             Self::LocalSerialChanged => None,
+            Self::QuerySoa(error) => Some(error),
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
             Self::Zonefile(error) => Some(error),
@@ -582,6 +597,9 @@ impl fmt::Display for RefreshError {
                     "Local serial changed while processing a refreshed zone. This will be fixed by a retry."
                 )
             }
+            RefreshError::QuerySoa(error) => {
+                write!(f, "could not retrieve the SOA record: {error}")
+            }
             RefreshError::Ixfr(error) => {
                 write!(f, "the IXFR failed: {error}")
             }
@@ -596,6 +614,12 @@ impl fmt::Display for RefreshError {
 }
 
 //--- Conversion
+
+impl From<server::QuerySoaError> for RefreshError {
+    fn from(v: server::QuerySoaError) -> Self {
+        Self::QuerySoa(v)
+    }
+}
 
 impl From<server::IxfrError> for RefreshError {
     fn from(v: server::IxfrError) -> Self {

@@ -41,8 +41,13 @@ pub fn load(
     // Parse all the records, extracting the SOA. We always read the whole zone.
     while let Some(record) = parse_record(&mut buf, zone, &mut reader)? {
         metrics.num_loaded_records.fetch_add(1, Relaxed);
+        metrics
+            .num_loaded_bytes
+            .store(reader.current_offset(), Relaxed);
+
         match record {
             Parsed::Soa(soa) => {
+                writer.add(soa.clone().into())?;
                 writer.set_soa(soa)?;
             }
             Parsed::Record(record) => writer.add(record)?,
@@ -68,9 +73,7 @@ fn make_reader(
 
     let file_len = file.metadata().map_err(Error::Open)?.len();
 
-    metrics
-        .num_loaded_bytes
-        .fetch_add(file_len as usize, Relaxed);
+    metrics.num_total_bytes.store(file_len as usize, Relaxed);
 
     let mut zone_file = inplace::Zonefile::with_capacity(file_len as usize).writer();
 
@@ -186,7 +189,7 @@ impl fmt::Display for Error {
                 write!(f, "the zonefile does not contain a SOA record")
             }
             Error::Write(ReplaceError::MultipleSoas) => {
-                write!(f, "the zonefile contain multiple SOA records")
+                write!(f, "the zonefile contains multiple SOA records")
             }
         }
     }

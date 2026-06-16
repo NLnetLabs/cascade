@@ -1,9 +1,9 @@
 ; Test 1 -- Check diff creation
 
 ; Set the serial number of the second version to 23456.
-@ IN SOA ns hostmaster 23456 3600 3600 86400 3600
+@ 3600 IN SOA ns hostmaster 23456 3600 3600 86400 3600
 
-; A Zone should have an NS record.
+; A zone should have an NS record.
 @ NS ns1
 
 ; Test for diff generation. This is not DNSSEC specific, it can also be used
@@ -16,9 +16,12 @@ a.modify                A       192.0.2.1
 aaaa.modify             AAAA    2001:db8::1
 txt.modify              TXT     "Modified zone"
 
+; Test whether just changing the TTL gets signed properly.
+ttl.modify	600	TXT	"Only the TTL changes"
+
 ; A delegation to be able to create RRsets that are not authoritative in this
-; zone.
-not-auth		NS	ns
+; zone. Set TTL explictly to deal with ttl.modify having a different TTL.
+not-auth	3600	NS	ns
 
 ; A collection of non-authoritative RRsets that will be modified.
 cname.modify.not-auth   CNAME   cname-target2

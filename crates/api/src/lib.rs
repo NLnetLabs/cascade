@@ -1,5 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::{Duration, SystemTime};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -8,8 +9,6 @@ use serde::{Deserialize, Serialize};
 pub use domain::base::Serial;
 
 pub mod dep;
-
-const DEFAULT_AXFR_PORT: u16 = 53;
 
 //----------- ZoneName ---------------------------------------------------------
 
@@ -68,6 +67,76 @@ impl std::fmt::Display for ZoneReviewError {
     }
 }
 
+//----------- ZoneReset --------------------------------------------------------
+
+/// The result of a `zone reset` command.
+pub type ZoneResetResult = Result<ZoneResetOutput, ZoneResetError>;
+
+/// The output of a `zone reset` command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneResetOutput {
+    pub zone: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneResetError {
+    NoSuchZone,
+    NotHalted,
+}
+
+impl std::fmt::Display for ZoneResetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoSuchZone => f.write_str("No such zone"),
+            Self::NotHalted => f.write_str("Zone is not halted"),
+        }
+    }
+}
+
+//----------- ZoneOverride -----------------------------------------------------
+
+/// The result of a `zone override` command.
+pub type ZoneOverrideResult = Result<ZoneOverrideOutput, ZoneOverrideError>;
+
+/// The output of a `zone override` command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneOverrideOutput {
+    pub zone: ZoneName,
+    pub review_stage: ZoneReviewStage,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneOverrideError {
+    NoSuchZone,
+    NotRejected,
+}
+
+impl std::fmt::Display for ZoneOverrideError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoSuchZone => f.write_str("No such zone"),
+            Self::NotRejected => f.write_str("Zone has not been rejected"),
+        }
+    }
+}
+
+//----------- ZoneOverride -----------------------------------------------------
+
+/// The result of a `zone maintenance start/stop` command.
+pub type ZoneMaintenanceModeResult = Result<ZoneMaintenanceModeOutput, ZoneMaintenanceModeError>;
+
+/// The output of a `zone maintenance start/stop` command.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneMaintenanceModeOutput {
+    pub zone: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneMaintenanceModeError {
+    NoSuchZone,
+    AlreadyInThatState,
+}
+
 //----------- ChangeLogging ----------------------------------------------------
 
 /// Change how Cascade logs information.
@@ -121,7 +190,8 @@ pub enum KeyImport {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct FileKeyImport {
     pub key_type: KeyType,
-    pub path: Utf8PathBuf,
+    pub public_key_path: Utf8PathBuf,
+    pub private_key_path: Utf8PathBuf,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -133,6 +203,97 @@ pub struct KmipKeyImport {
     pub algorithm: String,
     pub flags: String,
 }
+
+//----------- TsigKeyName -----------------------------------------------------
+
+/// The name of a TSIG key.
+pub type TsigKeyName = domain::base::Name<domain::dep::octseq::Array<255>>;
+
+//----------- TsigAdd ---------------------------------------------------------
+
+/// Add a TSIG key to Cascade.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigAdd {
+    /// The name of the TSIG key to add.
+    pub name: TsigKeyName,
+
+    /// The algorithm of the TSIG key.
+    pub alg: TsigAlgorithm,
+
+    /// The base64 encoded key material bytes.
+    pub secret: String,
+}
+
+/// The successful result of adding a TSIG key to Cascade.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigAddResult;
+
+/// An error result indicating why an attempt to add a TSIG key to Cascade
+/// failed.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum TsigAddError {
+    /// A TSIG key by the given name already exists in Cascade.
+    AlreadyExists,
+
+    /// The provided TSIG key secret was not correctly base64 encoded.
+    InvalidBase64Secret,
+}
+
+impl Display for TsigAddError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TsigAddError::AlreadyExists => write!(f, "TSIG key already exists"),
+            TsigAddError::InvalidBase64Secret => write!(f, "invalid TSIG base64 encoded secret"),
+        }
+    }
+}
+
+//------------ TsigRemove ----------------------------------------------------
+
+/// The successful result of removing a TSIG key from Cascade.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigRemoveResult;
+
+/// An error result indicating why an attempt to remove a TSIG key from
+/// Cascade failed.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum TsigRemoveError {
+    /// The specified TSIG key name was not found in Cascade.
+    NotFound,
+
+    /// The specified TSIG key cannot be removed as it is in use.
+    InUse,
+}
+
+impl fmt::Display for TsigRemoveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            TsigRemoveError::NotFound => "no such TSIG key was found",
+            TsigRemoveError::InUse => "the TSIG key cannot be removed as it is in use",
+        })
+    }
+}
+
+//------------ TsigListResult ------------------------------------------------
+
+/// The successful result of listing TSIG Cascade keys known to Cascade.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigListResult {
+    /// The set of TSIG keys known to Cascade plus information about each key.
+    pub tsig_key_info: HashMap<TsigKeyName, TsigKeyInfo>,
+}
+
+/// Information about a single listed TSIG key.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TsigKeyInfo {
+    /// The set of zones with which this TSIG key is used.
+    pub zone_names: HashSet<ZoneName>,
+
+    /// The set of policies with which this TSIG key is used.
+    pub policy_names: HashSet<String>,
+}
+
+//----------- ZoneAdd --------------------------------------------------------
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneAdd {
@@ -153,6 +314,7 @@ pub enum ZoneAddError {
     AlreadyExists,
     NoSuchPolicy,
     PolicyMidDeletion,
+    NoSuchTsigKey,
     Other(String),
 }
 
@@ -162,6 +324,7 @@ impl fmt::Display for ZoneAddError {
             Self::AlreadyExists => "a zone of this name already exists",
             Self::NoSuchPolicy => "no policy with that name exists",
             Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::NoSuchTsigKey => "no TSIG key with that name exists",
             Self::Other(reason) => reason,
         })
     }
@@ -187,6 +350,10 @@ impl fmt::Display for ZoneRemoveError {
 
 /// How to load the contents of a zone.
 #[derive(Deserialize, Serialize, Debug, Clone)]
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::large_enum_variant)]
 pub enum ZoneSource {
     /// Don't load the zone at all.
     None,
@@ -203,10 +370,7 @@ pub enum ZoneSource {
         addr: SocketAddr,
 
         /// The name of a TSIG key, if any.
-        tsig_key: Option<String>,
-
-        /// The XFR status of the zone.
-        xfr_status: ZoneRefreshStatus,
+        tsig_key: Option<TsigKeyName>,
     },
 }
 
@@ -232,28 +396,12 @@ impl Display for ZoneSource {
         match self {
             ZoneSource::None => f.write_str("<none>"),
             ZoneSource::Zonefile { path } => path.fmt(f),
-            ZoneSource::Server { addr, .. } => addr.fmt(f),
-        }
-    }
-}
-
-impl From<&str> for ZoneSource {
-    fn from(s: &str) -> Self {
-        if let Ok(addr) = s.parse::<SocketAddr>() {
-            ZoneSource::Server {
-                addr,
-                tsig_key: None,
-                xfr_status: Default::default(),
-            }
-        } else if let Ok(addr) = s.parse::<IpAddr>() {
-            ZoneSource::Server {
-                addr: SocketAddr::new(addr, DEFAULT_AXFR_PORT),
-                tsig_key: None,
-                xfr_status: Default::default(),
-            }
-        } else {
-            ZoneSource::Zonefile {
-                path: Utf8PathBuf::from(s).into_boxed_path(),
+            ZoneSource::Server { addr, tsig_key } => {
+                write!(f, "{addr}")?;
+                if let Some(tsig_key) = &tsig_key {
+                    write!(f, " with TSIG key '{tsig_key}'")?;
+                }
+                Ok(())
             }
         }
     }
@@ -296,20 +444,45 @@ pub struct ZoneStatus {
     pub name: ZoneName,
     pub source: ZoneSource,
     pub policy: String,
-    pub stage: ZoneStage,
+    pub last_published: Option<LastPublishedZone>,
+    pub progress: Progress,
+    pub maintenance_mode: bool,
     pub keys: Vec<KeyInfo>,
     pub key_status: String,
+    pub error: Option<String>,
     pub receipt_report: Option<ZoneLoaderReport>,
     pub unsigned_serial: Option<Serial>,
     pub unsigned_review_status: Option<TimestampedZoneReviewStatus>,
-    pub unsigned_review_addr: Option<SocketAddr>,
+    pub unsigned_review_addr: Vec<SocketAddr>,
     pub signed_serial: Option<Serial>,
     pub signed_review_status: Option<TimestampedZoneReviewStatus>,
-    pub signed_review_addr: Option<SocketAddr>,
+    pub signed_review_addr: Vec<SocketAddr>,
     pub signing_report: Option<SigningReport>,
     pub published_serial: Option<Serial>,
-    pub publish_addr: SocketAddr,
-    pub pipeline_mode: PipelineMode,
+    pub publish_addr: Vec<SocketAddr>,
+    pub halted_reason: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct LastPublishedZone {
+    pub loaded_serial: Serial,
+    pub signed_serial: Serial,
+    pub timestamp: SystemTime,
+    pub num_records: usize,
+    // TODO: size in bytes
+}
+
+#[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Progress {
+    Waiting,
+    Restoring,
+    Loading,
+    LoadedReview,
+    HaltLoaded,
+    Signing,
+    SigningFailed,
+    SignedReview,
+    HaltSigned,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -317,6 +490,7 @@ pub struct ZoneLoaderReport {
     pub started_at: SystemTime,
     pub finished_at: Option<SystemTime>,
     pub byte_count: usize,
+    pub total_byte_count: Option<usize>,
     pub record_count: usize,
 }
 
@@ -425,6 +599,26 @@ impl Display for KeyType {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum TsigAlgorithm {
+    HmacSha1,
+    HmacSha256,
+    HmacSha384,
+    HmacSha512,
+}
+
+impl Display for TsigAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TsigAlgorithm::HmacSha1 => "hmac-sha1",
+            TsigAlgorithm::HmacSha256 => "hmac-sha256",
+            TsigAlgorithm::HmacSha384 => "hmac-sha384",
+            TsigAlgorithm::HmacSha512 => "hmac-sha512",
+        }
+        .fmt(f)
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneHistory {
     pub history: Vec<HistoryItem>,
@@ -456,6 +650,8 @@ pub struct HistoryItem {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum HistoricalEventType {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -465,12 +661,16 @@ pub enum HistoricalEventType {
     SigningFailed,
     UnsignedZoneReview,
     SignedZoneReview,
+    UnsignedHookFailed,
+    SignedHookFailed,
     KeySetCommand,
     KeySetError,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum HistoricalEvent {
+    StartedLoad,
+    StartedResign,
     Added,
     Removed,
     PolicyChanged,
@@ -489,6 +689,12 @@ pub enum HistoricalEvent {
     SignedZoneReview {
         status: ZoneReviewStatus,
     },
+    UnsignedHookFailed {
+        err: String,
+    },
+    SignedHookFailed {
+        err: String,
+    },
     KeySetCommand {
         cmd: String,
         warning: Option<String>,
@@ -498,6 +704,9 @@ pub enum HistoricalEvent {
         cmd: String,
         err: String,
         elapsed: Duration,
+    },
+    LoadingFailed {
+        reason: String,
     },
 }
 
@@ -551,10 +760,17 @@ impl fmt::Display for ZoneReloadError {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Health {
+    pub healthy: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
-    pub soft_halted_zones: Vec<(ZoneName, String)>,
-    pub hard_halted_zones: Vec<(ZoneName, String)>,
+    pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
+    pub loaded_review_addrs: Vec<SocketAddr>,
+    pub signed_review_addrs: Vec<SocketAddr>,
+    pub server_addrs: Vec<SocketAddr>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -583,14 +799,23 @@ pub struct KeyMsg {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
+// to avoid the conversions that would be needed if Name<Bytes> were to be
+// used instead.
+#[allow(clippy::large_enum_variant)]
 pub enum PolicyReloadError {
     Io(Utf8PathBuf, String),
+    NoSuchTsigKey(TsigKeyName),
+    BadValue(String),
 }
 
 impl Display for PolicyReloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let PolicyReloadError::Io(p, e) = self;
-        format!("{p}: {e}").fmt(f)
+        match self {
+            PolicyReloadError::Io(p, e) => write!(f, "{p}: {e}"),
+            PolicyReloadError::NoSuchTsigKey(k) => write!(f, "no TSIG key with name '{k}' exists"),
+            PolicyReloadError::BadValue(e) => write!(f, "bad value in policy variable: {e}"),
+        }
     }
 }
 
@@ -626,8 +851,21 @@ pub struct KeyManagerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ReviewPolicyInfo {
-    pub required: bool,
-    pub cmd_hook: Option<String>,
+    pub mode: ReviewPolicyMode,
+    pub on_reject: ReviewPolicyOnReject,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ReviewPolicyMode {
+    Off,
+    Manual,
+    Script { hook: String },
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ReviewPolicyOnReject {
+    Discard,
+    Halt,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -668,7 +906,7 @@ pub struct ServerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct OutboundPolicyInfo {
-    pub accept_xfr_requests_from: Vec<NameserverCommsPolicyInfo>,
+    pub provide_xfr_to: Vec<NameserverCommsPolicyInfo>,
     pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
 }
 

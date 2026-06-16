@@ -23,7 +23,7 @@ Example
     kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
     keys-dir = "/var/lib/cascade/keys"
     kmip-server-state-dir = "/var/lib/cascade/kmip"
-    dnst-binary-path = "/usr/libexec/cascade/cascade-dnst"
+    dnst-binary-path = "dnst"
 
     [daemon]
     log-level = "info"
@@ -36,19 +36,18 @@ Example
     servers = ["127.0.0.1:4539", "[::1]:4539"]
 
     [loader]
-    notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
 
     [loader.review]
-    servers = ["127.0.0.1:4541", "[::1]:4541"]
+    servers = ["127.0.0.1:4540", "[::1]:4540"]
 
     [signer]
     [signer.review]
-    servers = ["127.0.0.1:4542", "[::1]:4542"]
+    servers = ["127.0.0.1:4541", "[::1]:4541"]
 
     [key-manager]
 
     [server]
-    servers = ["127.0.0.1:4543", "[::1]:4543"]
+    servers = ["127.0.0.1:4542", "[::1]:4542"]
 
 Options
 -------
@@ -125,14 +124,13 @@ Global Options
    internal implementation details.  It should not be modified manually, but it
    can be backed up and restored in the event of filesystem corruption.
 
-.. option:: dnst-binary-path = "/usr/libexec/cascade/cascade-dnst"
+.. option:: dnst-binary-path = "dnst"
 
    The path to the dnst binary Cascade should use.
 
-   Cascade relies on a Cascade specific verison of the (not yet officially
-   released) ``dnst`` program (<https://github.com/NLnetLabs/dnst>) in order
-   to perform DNSSEC key management.  You can specify an absolute path here, or
-   just ``dnst`` if it is in $PATH.
+   Cascade relies on a separate tool called ``dnst``
+   (https://github.com/NLnetLabs/dnst) to perform DNSSEC key management.  You
+   can specify an absolute path here, or just ``dnst`` if it is in $PATH.
 
 
 
@@ -259,29 +257,15 @@ The ``[remote-control]`` section.
 How zones are loaded.
 +++++++++++++++++++++
 
-The ``[loader]`` section.
-
-.. option:: notify-listeners = ["127.0.0.1:4540", "[::1]:4540"]
-
-   Where to listen for zone change notifications.
-
-   A DNS server will be bound to these addresses.  If a DNS NOTIFY message for
-   a known zone is received there, the zone will be reloaded appropriately.
-
-   Unless explicitly specified (e.g. ``udp://localhost:4540``), each address will
-   be served over UDP and TCP.  An empty array will disable listening entirely.
-
-   These sockets may be bound by systemd and passed into Cascade.  If systemd
-   does not provide them, Cascade will bind them itself (and will do so before
-   dropping privileges, if that is enabled).
-
+The ``[loader]`` section. (This only includes the ``[loader.review]`` section
+below, for now).
 
 How loaded zones are reviewed.
 ++++++++++++++++++++++++++++++
 
 The ``[loader.review]`` section.
 
-.. option:: servers = ["127.0.0.1:4541", "[::1]:4541"]
+.. option:: servers = ["127.0.0.1:4540", "[::1]:4540"]
 
    Where to serve loaded zones for review.
 
@@ -289,7 +273,7 @@ The ``[loader.review]`` section.
    of all loaded zones.  This can be used to verify the consistency of these
    zones.
 
-   Unless explicitly specified (e.g. ``udp://localhost:4541``), each address will
+   Unless explicitly specified (e.g. ``udp://localhost:4540``), each address will
    be served over UDP and TCP.  An empty array will disable serving entirely.
 
    These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -308,7 +292,7 @@ How signed zones are reviewed.
 
 The ``[signer.review]`` section.
 
-.. option:: servers = ["127.0.0.1:4542", "[::1]:4542"]
+.. option:: servers = ["127.0.0.1:4541", "[::1]:4541"]
 
    Where to serve signed zones for review.
 
@@ -316,7 +300,7 @@ The ``[signer.review]`` section.
    of all signed (but not necessarily published) zones.  This can be used to
    check the correctness of the signer.
 
-   Unless explicitly specified (e.g. ``udp://localhost:4542``), each address will
+   Unless explicitly specified (e.g. ``udp://localhost:4541``), each address will
    be served over UDP and TCP.  An empty array will disable serving entirely.
 
    These sockets may be bound by systemd and passed into Cascade.  If systemd
@@ -335,14 +319,14 @@ How zones are published.
 
 The ``[server]`` section.
 
-.. option:: servers = ["127.0.0.1:4543", "[::1]:4543"]
+.. option:: servers = ["127.0.0.1:4542", "[::1]:4542"]
 
    Where to serve published zones.
 
    A DNS server will be bound to these addresses, and will serve the contents
    of all published zones.  This is the final output from Cascade.
 
-   Unless explicitly specified (e.g. ``udp://localhost:4543``), each address will
+   Unless explicitly specified (e.g. ``udp://localhost:4542``), each address will
    be served over UDP and TCP.  At least one address must be specified.
 
    These sockets may be bound by systemd and passed into Cascade.  If systemd

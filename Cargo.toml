@@ -10,7 +10,7 @@ documentation = "https://cascade.docs.nlnetlabs.nl"
 repository = "https://github.com/NLnetLabs/cascade"
 license = "BSD-3-Clause"
 
-version = "0.1.0-alpha5"
+version = "0.1.0-beta3-dev"
 rust-version = "1.88"
 edition = "2024"
 
@@ -59,9 +59,7 @@ version = "4.5"
 #
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain]
-version = "0.11.1"
-git = "https://github.com/NLnetLabs/domain"
-branch = "main"
+version = "0.12.1"
 
 # 'domain-kmip' offers KMIP support for DNSSEC signatures.
 #
@@ -95,7 +93,7 @@ version = "1.0"
 #
 # It is used throughout the Rust ecosystem and is maintained accordingly.
 [workspace.dependencies.toml]
-version = "0.9"
+version = "1.1.2"
 
 # 'tokio' is an async runtime, particularly suited for networking.
 #
@@ -113,21 +111,17 @@ version = "0.3.20"
 
 
 [dependencies]
-arc-swap           = "1.7.0"
+axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio", "tracing"] }
 bytes              = "1.0"
-daemonbase         = "0.1.4"
+crossbeam-utils    = "0.8"
+daemonbase         = { version = "0.1.5", features = ["tokio"] }
 futures            = "0.3.17"
 futures-util       = "0.3"
-octseq             = { version = "0.5.2", default-features = false }
 serde              = { workspace = true, features = ["derive", "rc"] }
-axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio", "tracing"] }
-
-# From Rotonda
-crossbeam-utils    = "0.8"
+rayon = "1.10.0"
 serde_json         = "1.0"
 serde_with         = "3"
 url                = { version = "2.4", features = ["serde"] }
-rayon = "1.10.0"
 
 # Jiff is used by zone_signer for the DateCounter serial policy.
 jiff.workspace = true
@@ -245,9 +239,10 @@ assets = [
 ["target/release/cascaded", "usr/bin/","755"],
 ["README.md","usr/share/doc/cascade/","644"],
 ["doc/manual/build/man/cascade.1", "usr/share/man/man1/cascade.1", "644"],
-["doc/manual/build/man/cascade-config.1", "usr/share/man/man1/cascade-config.1", "644"],
+["doc/manual/build/man/cascade-debug.1", "usr/share/man/man1/cascade-debug.1", "644"],
 ["doc/manual/build/man/cascade-health.1", "usr/share/man/man1/cascade-health.1", "644"],
 ["doc/manual/build/man/cascade-hsm.1", "usr/share/man/man1/cascade-hsm.1", "644"],
+["doc/manual/build/man/cascade-tsig.1", "usr/share/man/man1/cascade-tsig.1", "644"],
 ["doc/manual/build/man/cascade-keyset.1", "usr/share/man/man1/cascade-keyset.1", "644"],
 ["doc/manual/build/man/cascade-policy.1", "usr/share/man/man1/cascade-policy.1", "644"],
 ["doc/manual/build/man/cascade-status.1", "usr/share/man/man1/cascade-status.1", "644"],
@@ -266,7 +261,7 @@ extended-description = """\
 Cascade is a friendly DNSSEC signing solution, offering sensible defaults,
 controllability, observability and flexibility.
 """
-depends = "$auto, adduser, cascade-dnst"
+depends = "$auto, adduser, dnst"
 recommends = "cascade-hsm-bridge"
 section = "net"
 priority = "optional"
@@ -282,13 +277,11 @@ systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = 
 [package.metadata.deb.variants.debian-bullseye]
 systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
-[package.metadata.deb.variants.ubuntu-focal]
-systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
-
 [package.metadata.deb.variants.ubuntu-jammy]
 systemd-units = { unit-name = "cascaded", unit-scripts = "pkg/common", enable = false, usr-merge = false }
 
 [package.metadata.generate-rpm]
+name = "cascade"
 # Use a shorter summary as rpmlint complains with E: summary-too-long.
 # Use an initial capital letter to satisfy rpmlinlt which complains with W: summary-not-capitalized
 summary = "Friendly DNSSEC signing solution"
@@ -299,9 +292,10 @@ assets = [
 { source = "target/rpm/cascaded.socket", dest = "/usr/lib/systemd/system/cascaded.socket", mode = "644" },
 { source = "README.md", dest = "/usr/share/doc/cascade/README.md", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade.1", dest = "/usr/share/man/man1/cascade.1", mode = "644", doc = true },
-{ source = "doc/manual/build/man/cascade-config.1", dest = "/usr/share/man/man1/cascade-config.1", mode = "644", doc = true },
+{ source = "doc/manual/build/man/cascade-debug.1", dest = "/usr/share/man/man1/cascade-debug.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-health.1", dest = "/usr/share/man/man1/cascade-health.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-hsm.1", dest = "/usr/share/man/man1/cascade-hsm.1", mode = "644", doc = true },
+{ source = "doc/manual/build/man/cascade-tsig.1", dest = "/usr/share/man/man1/cascade-tsig.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-keyset.1", dest = "/usr/share/man/man1/cascade-keyset.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-policy.1", dest = "/usr/share/man/man1/cascade-policy.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-status.1", dest = "/usr/share/man/man1/cascade-status.1", mode = "644", doc = true },
@@ -317,7 +311,7 @@ assets = [
 # ensure that the useradd tools are present by installing their respective packages
 [package.metadata.generate-rpm.requires]
 shadow-utils = "*"
-cascade-dnst = "*"
+dnst = "*"
 
 [package.metadata.generate-rpm.recommends]
 cascade-hsm-bridge = "*"

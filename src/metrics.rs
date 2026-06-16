@@ -21,6 +21,8 @@ use prometheus_client::metrics::info::Info;
 use prometheus_client::registry::{Metric, Registry, Unit};
 
 use crate::center::Center;
+use crate::zone::ZoneByName;
+use crate::zone::machine::ZoneStateMachine;
 
 // Further metrics to track?:
 // - last time batching operation for zone signing succeeded (push to central metrics collection)
@@ -106,55 +108,61 @@ impl MetricsCollection {
         let zones_configured: i64;
         let mut zones_loaded: i64 = 0;
         let mut zones_active: i64 = 0;
-        let zones_unsigned: i64;
-        let zones_signed: i64;
-        let zones_waiting: i64;
-        let zones_published: i64;
+        let mut zones_unsigned: i64 = 0;
+        let mut zones_signed: i64 = 0;
+        let mut zones_published: i64 = 0;
 
         // Using Family::clear() to delete all metrics and label sets
         metrics.zones_halted.clear();
         {
-            zones_unsigned = center.unsigned_zones.load().as_ref().iter_zones().count() as i64;
-            zones_signed = center.signed_zones.load().as_ref().iter_zones().count() as i64;
-            zones_waiting = center.signable_zones.load().as_ref().iter_zones().count() as i64;
-            zones_published = center.published_zones.load().as_ref().iter_zones().count() as i64;
             let state = center.state.lock().unwrap();
             // We won't have 2^63 zones in cascade
             zones_configured = state.zones.len() as i64;
 
-            for zone in &state.zones {
-                let zone = zone.0.clone();
-                let zone_state = zone.state.lock().unwrap();
+            for ZoneByName(zone) in &state.zones {
+                let zone_state = zone.state.read();
 
-                // Don't count a zone that doesn't have a source
-                if matches!(zone_state.loader.source, crate::loader::Source::None) {
-                    continue;
-                } else {
+                if !matches!(zone_state.loader.source, crate::loader::Source::None) {
                     zones_loaded += 1;
                 }
 
-                match zone_state.pipeline_mode {
-                    crate::zone::PipelineMode::Running => {
-                        zones_active += 1;
+                // Check whether an instance has been published.
+                // TODO: Use a more appropriate check.
+                if zone_state.min_expiration.is_some() {
+                    zones_published += 1;
+                    zones_signed += 1;
+                    zones_unsigned += 1;
+                } else {
+                    match zone_state.machine {
+                        ZoneStateMachine::Waiting(_) | ZoneStateMachine::Loading(_) => {}
+
+                        ZoneStateMachine::LoadedReview(_)
+                        | ZoneStateMachine::HaltLoaded(_)
+                        | ZoneStateMachine::Signing(_) => {
+                            zones_unsigned += 1;
+                        }
+
+                        ZoneStateMachine::SigningFailed(_)
+                        | ZoneStateMachine::SignedReview(_)
+                        | ZoneStateMachine::HaltSigned(_) => {
+                            zones_signed += 1;
+                            zones_unsigned += 1;
+                        }
+
+                        ZoneStateMachine::Poisoned => unreachable!(),
                     }
-                    crate::zone::PipelineMode::SoftHalt(_) => {
-                        metrics
-                            .zones_halted
-                            .get_or_create(&ZoneHaltMode {
-                                zone: StoredName(zone.name.clone()),
-                                mode: HaltMode::SoftHalt,
-                            })
-                            .inc();
-                    }
-                    crate::zone::PipelineMode::HardHalt(_) => {
-                        metrics
-                            .zones_halted
-                            .get_or_create(&ZoneHaltMode {
-                                zone: StoredName(zone.name.clone()),
-                                mode: HaltMode::HardHalt,
-                            })
-                            .inc();
-                    }
+                }
+
+                if zone_state.machine.is_halted() {
+                    metrics
+                        .zones_halted
+                        .get_or_create(&ZoneHaltMode {
+                            zone: StoredName(zone.name.clone()),
+                            mode: HaltMode::HardHalt,
+                        })
+                        .inc();
+                } else {
+                    zones_active += 1;
                 }
             }
         }
@@ -164,7 +172,6 @@ impl MetricsCollection {
         metrics.zones_active.set(zones_active);
         metrics.zones_unsigned.set(zones_unsigned);
         metrics.zones_signed.set(zones_signed);
-        metrics.zones_waiting.set(zones_waiting);
         metrics.zones_published.set(zones_published);
 
         // u64::MAX milliseconds is around 585_000_000 years
@@ -294,7 +301,6 @@ pub struct ZoneHaltMode {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
 pub enum HaltMode {
-    SoftHalt,
     HardHalt,
 }
 
@@ -332,9 +338,8 @@ struct StateMetrics {
     zones_loaded: Gauge,
     zones_active: Gauge,
     zones_unsigned: Gauge,
+    // TODO: Track how many zones are waiting to be signed.
     zones_signed: Gauge,
-    /// Zones waiting in signing queue
-    zones_waiting: Gauge,
     zones_published: Gauge,
     zones_halted: Family<ZoneHaltMode, Gauge>,
 }
@@ -365,11 +370,6 @@ impl StateMetrics {
             "zones_signed",
             "Number of signed zones",
             self.zones_signed.clone(),
-        );
-        reg.register(
-            "zones_waiting",
-            "Number of zones waiting to be signed",
-            self.zones_waiting.clone(),
         );
         reg.register(
             "zones_published",

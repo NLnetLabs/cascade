@@ -49,6 +49,7 @@ env:
   # Set this assignment to your choosing to set the cargo build verbosity
   CARGO_TERM_VERBOSE: ${{ github.actor != 'nektos/act' }}
   # CARGO_TERM_VERBOSE: true
+  RUST_BACKTRACE: 1
 
 defaults:
   run:
@@ -130,6 +131,26 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
+  review-unsigned-zone2:
+    name: Test that the review server has the original zone
+    runs-on: ubuntu-latest
+    strategy:
+      #max-parallel: 1
+      matrix:
+        rust: [stable]
+        test_idx: [1, 2]
+        key: ['Kexample.+015+02835.key']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/review-unsigned-zone2
+        with:
+          log-level: ${{ inputs.log-level }}
+          test_idx: ${{ matrix.test_idx }}
+          key: ${{ matrix.key }}
+
   ixfr-in:
     name: Receive a zone via IXFR from the NSD primary.
     runs-on: ubuntu-latest
@@ -142,6 +163,8 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/ixfr-in
+        with:
+          log-level: ${{ inputs.log-level }}
 
   incremental-signing:
     name: Test incremental signing.
@@ -152,7 +175,7 @@ jobs:
         rust: [stable]
         zonemd: [''] #, 'zmd384']
         policy: ['nsec', 'nsec3', 'nsec3-opt-out']
-        test_idx: [1, 2, 3]
+        test_idx: [1, 2, 3, 5]
         key: ['Kexample.+015+02835.key']
     steps:
       - uses: actions/checkout@v4
@@ -167,8 +190,34 @@ jobs:
           test_idx: ${{ matrix.test_idx }}
           key: ${{ matrix.key }}
 
+  incremental-signing-nsec-nsec3:
+    name: Test switching between NSEC and NSEC3
+    runs-on: ubuntu-latest
+    strategy:
+      #max-parallel: 1
+      matrix:
+        rust: [stable]
+        zonemd: [''] #, 'zmd384']
+        policy: ['nsec3/nsec', 'nsec3-opt-out/nsec', 'nsec/nsec3',
+                 'nsec3-opt-out/nsec3', 'nsec/nsec3-opt-out',
+                 'nsec3/nsec3-opt-out']
+        test_idx: [1, 2, 3]
+        key: ['Kexample.+015+02835.key']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/incremental-signing-nsec-nsec3
+        with:
+          log-level: ${{ inputs.log-level }}
+          zonemd: ${{ matrix.zonemd }}
+          policy: ${{ matrix.policy }}
+          test_idx: ${{ matrix.test_idx }}
+          key: ${{ matrix.key }}
+
   notify-in-for-unknown-zone:
-    name: 
+    name: Receive a NOTIFY for a zone that is unknown to Cascade.
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -183,7 +232,7 @@ jobs:
           log-level: ${{ inputs.log-level }}
 
   remove-zone:
-    name: 
+    name: Add, sign and remove a zone.
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -194,5 +243,106 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/remove-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  all-rr-types:
+    name: Tests loading of all supported RR types.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/all-rr-types
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/pull/564
+  upstream-tsig:
+    name: Use TSIG with an upstream nameserver.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        key-source: [cmdline, file]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/upstream-tsig
+        with:
+          log-level: ${{ inputs.log-level }}
+          key-source: ${{ matrix.key-source }}
+
+  downstream-tsig:
+    name: Using TSIG with downstream nameservers.
+    runs-on: ubuntu-latest
+    strategy:
+      # max-parallel: 1
+      fail-fast: true
+      matrix:
+        send-notify-to: [ '',  '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
+        provide-xfr-to: [ '', '127.0.0.1', '127.0.0.1^tsig-key' ]
+        downstream-expects-tsig: [ 0, 1 ]
+        downstream-uses-tsig: [ 0, 1 ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/downstream-tsig
+        with:
+          log-level: ${{ inputs.log-level }}
+          send-notify-to: ${{ matrix.send-notify-to }}
+          provide-xfr-to: ${{ matrix.provide-xfr-to }}
+          downstream-expects-tsig: ${{ matrix.downstream-expects-tsig }}
+          downstream-uses-tsig: ${{ matrix.downstream-uses-tsig }}
+
+  review-signed-zone:
+    name: Review signed zone.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/review-signed-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+      
+  persist-zone:
+    name: Added zone should still exist after restart.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/persist-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  sign-using-a-hsm:
+    name: Sign using a HSM.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/sign-using-a-hsm
         with:
           log-level: ${{ inputs.log-level }}

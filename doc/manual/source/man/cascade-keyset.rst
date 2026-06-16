@@ -4,27 +4,22 @@ cascade keyset
 Synopsis
 --------
 
-.. :program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` ``<ROLL TYPE>`` ``<ROLL COMMAND>`` ``[OPTIONS]``
+:program:`cascade` ``[GLOBAL OPTIONS]`` keyset ``<ZONE>`` :subcmd:`ksk|zsk|csk|algorithm` ``[OPTIONS]`` ``<COMMAND>``
 
-:program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` :subcmd:`ksk|zsk|csk|algorithm` ``<ROLL COMMAND>`` ``[OPTIONS]``
+:program:`cascade` ``[GLOBAL OPTIONS]`` keyset ``<ZONE>`` :subcmd:`remove-key` ``[OPTIONS]`` ``<KEY>``
 
-.. :program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` ``<COMMAND>`` ``[OPTIONS]``
-
-:program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` :subcmd:`remove-key` ``[OPTIONS]`` ``<KEY>``
-
-:program:`cascade keyset` ``[OPTIONS]`` ``<ZONE>`` :subcmd:`get` ``[RR]``
+:program:`cascade` ``[GLOBAL OPTIONS]`` keyset ``<ZONE>`` :subcmd:`get` ``[RR]``
 
 Description
 -----------
 
 Execute manual key roll or key removal commands.
 
-Options
--------
+Global Options
+--------------
 
-.. option:: -h, --help
-
-   Print the help text (short summary with ``-h``, long help with ``--help``).
+See :doc:`cascade` for information about global options supported by every CLI
+command.
 
 Commands
 --------
@@ -110,6 +105,8 @@ Options for :subcmd:`keyset remove-key`
 Arguments for :subcmd:`keyset get`
 -----------------------------------------
 
+.. versionadded:: 0.1.0-beta1
+
 .. option:: [RR]
 
    The RRset to print. ``ds``, ``dnskey``, or ``cds``.
@@ -136,5 +133,5 @@ https://cascade.docs.nlnetlabs.nl
 **cascaded**\ (1)
     :doc:`cascaded`
 
-**cascade-dnst-keyset**\ (1)
+**dnst-keyset**\ (1)
     Further documentation of the key roll commands (and more)

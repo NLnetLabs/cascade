@@ -27,47 +27,59 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Feb 25, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-beta3-dev" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fB<COMMAND>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fB<COMMAND>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%remove\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%remove\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%list\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%list\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reload\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reload\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%override\fP \fB<\-\-unsigned|\-\-signed>\fP \fB<NAME>\fP
 .sp
-\fBcascade zone\fP \fB[OPTIONS]\fP \fI\%history\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reset\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%history\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBmaintenance\fP \fB<enable|disable>\fP \fB<NAME>\fP
 .SH DESCRIPTION
 .sp
 Manage Cascade\(aqs zones.
-.SH OPTIONS
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
-.UNINDENT
+.SH GLOBAL OPTIONS
+.sp
+See \fI\%Cascade CLI\fP for information about global options supported by every CLI
+command.
 .SH COMMANDS
 .INDENT 0.0
 .TP
 .B add
-Register a new zone.
+Add a new zone.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B remove
 Remove a zone.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+Once removed, downstream servers will no longer be able to fetch
+the zone!
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -91,8 +103,18 @@ Reject a zone being reviewed.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B override
+Override a previous rejection of a zone review.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B status
 Get the status of a single zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B reset
+Reset the pipeline for a zone to get it out of a halted state.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -102,9 +124,43 @@ Get the history of a single zone.
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0
 .TP
-.B \-\-source <SOURCE>
-The zone source can be an IP address (with or without port, defaults to port
-53) or a file path.
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+The zone source can be the IP address of an upstream nameserver (with
+or without port, defaults to port 53) or the path to a zone file locally
+available to the \fBcascaded\fP daemon.
+.sp
+When specifying an upstream nameserver you may also optionally specify
+the name of an \X'tty: link https://datatracker.ietf.org/doc/html/rfc8945.html'\fI\%RFC 8945\fP\X'tty: link' TSIG key that should be used to authenticate
+communication with the upstream.
+.sp
+Zones sourced from an upstream nameserver will be automatically updated
+if a new version is detected via a SOA query, either based on the zone\(aqs
+SOA record timers, or in response to an \X'tty: link https://datatracker.ietf.org/doc/html/rfc1996.html'\fI\%RFC 1996\fP\X'tty: link' NOTIFY message from
+the upstream.
+.sp
+Zones can also be manualy updated via \fBcascade\fP \fI\%reload\fP\&.
+.sp
+For zones that have already been retrieved at least once via AXFR, subsequent
+refreshes will attempt to use IXFR and fallback to AXFR if IXFR is not
+available.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+When running \fBcascade\fP \fBzone add\fP from a
+different host than where the Cascade daemon is running, make
+sure that the source (whether filesystem path or IP address) is
+reachable by the Cascade daemon.
+.UNINDENT
+.UNINDENT
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+If using a TSIG key the key must first be added to Cascade via
+\fBcascade\fP \fBtsig add\fP\&.
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -127,30 +183,33 @@ This needs to be a file path accessible by the Cascade daemon.
 .B \-\-import\-ksk\-file <IMPORT_KSK_FILE>
 Import a key pair as a KSK.
 .sp
-The file path needs to be the public key file of the KSK. The private key
-file name is derived from the public key file. Key files are not
-actually copied from the specified paths and must remain accessible
-to the server.
+The file path needs to either be a public key file of the KSK with
+extension .key, or a private key file of the KSK with extension .private.
+The path to the other half of the key will be derived by replacing .key
+with .private or vice versa. Key files are not actually copied from the
+specified paths and must remain accessible to the server.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-import\-zsk\-file <IMPORT_ZSK_FILE>
 Import a key pair as a ZSK.
 .sp
-The file path needs to be the public key file of the ZSK. The private key
-file name is derived from the public key file. Key files are not
-actually copied from the specified paths and must remain accessible
-to the server.
+The file path needs to either be a public key file of the ZSK with
+extension .key, or a private key file of the ZSK with extension .private.
+The path to the other half of the key will be derived by replacing .key
+with .private or vice versa. Key files are not actually copied from the
+specified paths and must remain accessible to the server.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-import\-csk\-file <IMPORT_CSK_FILE>
 Import a key pair as a CSK.
 .sp
-The file path needs to be the public key file of the CSK. The private key
-file name is derived from the public key file. Key files are not
-actually copied from the specified paths and must remain accessible
-to the server.
+The file path needs to either be a public key file of the CSK with
+extension .key, or a private key file of the CSK with extension .private.
+The path to the other half of the key will be derived by replacing .key
+with .private or vice versa. Key files are not actually copied from the
+specified paths and must remain accessible to the server.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -221,6 +280,20 @@ The name of the zone to reject.
 .B <SERIAL>
 The serial number of the zone to reject.
 .UNINDENT
+.SH OPTIONS FOR ZONE OVERRIDE
+.sp
+Added in version 0.1.0\-beta1.
+
+.INDENT 0.0
+.TP
+.B <\-\-unsigned|\-\-signed>
+Whether the zone to override is at the unsigned or signed review stage.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to override.
+.UNINDENT
 .SH OPTIONS FOR ZONE STATUS
 .INDENT 0.0
 .TP
@@ -232,6 +305,26 @@ identifiers in use, as well as the new DNSKEY records during key rolls.
 .TP
 .B <NAME>
 The name of the zone to report the status of.
+.UNINDENT
+.SH OPTIONS FOR ZONE RESET
+.sp
+Added in version 0.1.0\-beta1.
+
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to reset the pipeline of.
+.UNINDENT
+.SH OPTIONS FOR ZONE MAINTENANCE
+.INDENT 0.0
+.TP
+.B <enable|disable>
+Whether maintenance mode should be enabled or disabled.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to toggle maintenance mode of.
 .UNINDENT
 .SH SEE ALSO
 .INDENT 0.0

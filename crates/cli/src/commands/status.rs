@@ -1,7 +1,9 @@
+use std::net::SocketAddr;
+
 use crate::ansi;
 use crate::api::{KeyMsg, KeyStatusResult, KeysPerZone, ServerStatusResult, SigningStageReport};
 use crate::client::CascadeApiClient;
-use crate::{eprintln, println};
+use crate::println;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Status {
@@ -59,20 +61,32 @@ impl Status {
             None => {
                 let response: ServerStatusResult = client.get_json("/status").await?;
 
-                if !response.hard_halted_zones.is_empty() {
-                    eprintln!("The following zones are hard halted due to a serious problem:");
-                    for (zone_name, err) in response.hard_halted_zones {
-                        eprintln!("   {}\u{78}{} {zone_name}: {err}", ansi::RED, ansi::RESET);
+                let print_addrs = |addrs: &[SocketAddr]| {
+                    if addrs.is_empty() {
+                        println!(" <none>");
+                    } else {
+                        println!();
                     }
-                    eprintln!();
-                }
+                    for addr in addrs {
+                        println!("    - {addr}");
+                    }
+                };
 
-                if !response.soft_halted_zones.is_empty() {
-                    eprintln!("The following zones are halted due to resolvable issues:");
-                    for (zone_name, err) in response.soft_halted_zones {
-                        eprintln!("   {}\u{78}{} {zone_name}: {err}", ansi::RED, ansi::RESET);
+                println!("Serving zones at the following addresses:");
+                print!("  Loaded review:");
+                print_addrs(&response.loaded_review_addrs);
+                print!("  Signed review: ");
+                print_addrs(&response.signed_review_addrs);
+                print!("  Server: ");
+                print_addrs(&response.server_addrs);
+                println!();
+
+                if !response.halted_zones.is_empty() {
+                    println!("The following zones are halted:");
+                    for (zone_name, err) in response.halted_zones {
+                        println!("   {}\u{78}{} {zone_name}: {err}", ansi::RED, ansi::RESET);
                     }
-                    eprintln!();
+                    println!();
                 }
 
                 println!("Signing queue:");

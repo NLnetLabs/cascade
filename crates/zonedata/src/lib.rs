@@ -180,6 +180,11 @@ pub use persister::{
     LoadedZonePersisted, LoadedZonePersister, SignedZonePersisted, SignedZonePersister,
 };
 
+mod restorer;
+pub use restorer::{
+    LoadedZoneRestored, LoadedZoneRestorer, SignedZoneRestored, SignedZoneRestorer,
+};
+
 mod data;
 use data::{Data, InstanceData};
 
@@ -315,6 +320,31 @@ impl Deref for SoaRecord {
 impl DerefMut for SoaRecord {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl From<SoaRecord> for RegularRecord {
+    fn from(record: SoaRecord) -> Self {
+        let mut bytes = vec![0u8; record.0.built_bytes_size()];
+        record.0.build_bytes(&mut bytes).unwrap();
+        let record = domain::new::base::Record::parse_bytes(&bytes)
+            .expect("'Record' serializes records correctly")
+            .transform(|name: RevNameBuf| name.unsized_copy_into(), |data| data);
+        RegularRecord(record)
+    }
+}
+
+impl From<RegularRecord> for SoaRecord {
+    fn from(record: RegularRecord) -> Self {
+        let mut bytes = vec![0u8; record.0.built_bytes_size()];
+        record.0.build_bytes(&mut bytes).unwrap();
+        let record = domain::new::base::Record::parse_bytes(&bytes)
+            .expect("'Record' serializes records correctly")
+            .transform(
+                |name: RevNameBuf| name.unsized_copy_into(),
+                |data: Soa<NameBuf>| data.map_names(|name| name.unsized_copy_into()),
+            );
+        SoaRecord(record)
     }
 }
 

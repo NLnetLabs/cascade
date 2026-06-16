@@ -10,13 +10,15 @@ do
 		case "$zonemd" in
 		'')
 			policy="$m"
+			ref_part=''
 		;;
 		zmd384)
 			policy="$m-$zonemd"
+			ref_part=".$zonemd"
 		;;
 		esac
 
-		for test in 1 2 3
+		for test in 1 2 3 5
 		do
 			cp zones/incremental-signing-test${test}-input1.zone example.in
 			$CASCADE zone add --source $PWD/example.in --policy $policy example --import-csk-file $KEY
@@ -51,7 +53,7 @@ do
 				    exit 1
 				}
 
-			cp reference-output/incremental-signing-test${test}-input2.zone.${m}.signed.sorted reference.output.sorted
+			cp reference-output/incremental-signing-test${test}-input2.zone.${m}${ref_part}.signed.sorted reference.output.sorted
 			dig @127.0.0.1 -p 8053 example axfr |
 			    egrep -v '^;|^$' | sort -u > output.sorted
 			diff -w -u output.sorted reference.output.sorted

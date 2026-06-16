@@ -54,7 +54,7 @@ if [[ -n "$pr" ]]; then
   echo "  # Added for https://github.com/NLnetLabs/cascade/pull/$pr" >> "$workflow_file"
 fi
 
-tee -a "${workflow_file}" >/dev/null <<EOF
+tee -a "${workflow_file}" >/dev/null <<'EOF'
   ${job}:
     name: $description
     runs-on: ubuntu-latest
@@ -63,5 +63,10 @@ tee -a "${workflow_file}" >/dev/null <<EOF
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/${job}
+        with:
+          log-level: ${{ inputs.log-level }}
 EOF

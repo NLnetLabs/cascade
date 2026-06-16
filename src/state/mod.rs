@@ -5,11 +5,16 @@ use std::{
     io::{self, BufReader},
 };
 
+use bytes::Bytes;
 use camino::Utf8Path;
+use domain::base::Name;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 
-use crate::center::{Center, State};
+use crate::{
+    center::{Center, State},
+    policy::Policy,
+};
 
 pub mod v1;
 
@@ -53,9 +58,26 @@ pub enum Spec {
 
 impl Spec {
     /// Parse from this specification.
-    pub fn parse_into(self, state: &mut State) {
+    ///
+    /// `zones` will be set to the names of zones that need to be loaded.
+    /// `policies` will be set to the set of policies from the global state
+    /// file, that need to be parsed and inserted in the state.
+    pub fn parse(
+        self,
+        zones: &mut foldhash::HashSet<Name<Bytes>>,
+        policies: &mut foldhash::HashMap<Box<str>, PolicySpec>,
+    ) -> State {
         match self {
-            Self::V1(spec) => spec.parse_into(state),
+            Self::V1(mut spec) => {
+                // Extract and write out 'zones' and 'policies'.
+                *zones = std::mem::take(&mut spec.zones);
+                *policies = std::mem::take(&mut spec.policies)
+                    .into_iter()
+                    .map(|(k, v)| (k, PolicySpec::V1(v)))
+                    .collect();
+
+                spec.parse()
+            }
         }
     }
 
@@ -83,5 +105,24 @@ impl Spec {
 
         let text = serde_json::to_string(self)?;
         crate::util::write_file(path, text.as_bytes())
+    }
+}
+
+//----------- PolicySpec -------------------------------------------------------
+
+/// A policy serialized in global state.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "version")]
+pub enum PolicySpec {
+    /// The version 1 format.
+    V1(v1::PolicySpec),
+}
+
+impl PolicySpec {
+    /// Parse from this specification.
+    pub fn parse(self, name: &str) -> Policy {
+        match self {
+            Self::V1(spec) => spec.parse(name),
+        }
     }
 }

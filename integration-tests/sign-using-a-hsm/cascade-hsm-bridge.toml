@@ -1,0 +1,17 @@
+version = "v1"
+
+[pkcs11]
+# Use PKCS11 Spy from the OpenSC project to connect to nethsm-pkcs11.so
+# so that we can log all of the PKCS#11 calls made by Cascade-HSM-Bridge.
+# The PKCS11SPY environment variable should be set to point to
+# nethsm-pkcs11.so.
+# See: https://github.com/OpenSC/OpenSC/wiki/Using-OpenSC#pkcs-11-spy
+lib-path = "/usr/lib/x86_64-linux-gnu/pkcs11-spy.so"
+
+[server]
+addr = "127.0.0.1:5696"
+
+[daemon]
+log-level = "debug"
+log-target = { type = "file", path = "./cascade-hsm-bridge.log" }
+daemonize = true
