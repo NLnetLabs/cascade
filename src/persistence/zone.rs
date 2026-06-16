@@ -1,6 +1,10 @@
 //! Zone-specific persistence management.
 
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use cascade_zonedata::{
     DiffData, LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer,
@@ -108,7 +112,7 @@ impl ZonePersistenceHandle<'_> {
                 let mut handle = zone.write_handle(&center);
                 trace!(
                     "Restored diffs: {:?}",
-                    handle.state.persistence.loaded_diff_paths
+                    handle.state.persistence.loaded_diffs
                 );
                 handle.storage().finish_signed_restoration(restored);
                 handle.state.persistence.ongoing.finish();
@@ -226,35 +230,39 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
     // We can't use the persisted data so remove the paths from state, remove
     // the corresponding files on disk and remove any diffs that we loaded
     // into memory.
-    for p in state.persistence.loaded_diff_paths.iter().chain(
-        state
-            .persistence
-            .signed_diff_paths
-            .iter()
-            .map(|(p, _serial)| p),
-    ) {
-        if p.exists() && p.starts_with(center.config.zone_state_dir.as_std_path()) {
+    for file_info in state
+        .persistence
+        .loaded_diffs
+        .diff_infos
+        .iter()
+        .chain(state.persistence.signed_diffs.diff_infos.iter())
+    {
+        if file_info.path.exists()
+            && file_info
+                .path
+                .starts_with(center.config.zone_state_dir.as_std_path())
+        {
             info!(
                 "Removing unusable persisted zone data file '{}'",
-                p.display()
+                file_info.path.display()
             );
-            if let Err(err) = std::fs::remove_file(p) {
+            if let Err(err) = std::fs::remove_file(&file_info.path) {
                 warn!(
                     "Failed to remove unusable persisted zone data file '{}': {err}",
-                    p.display()
+                    file_info.path.display()
                 );
             }
         }
     }
-    state.persistence.loaded_diff_paths.clear();
-    state.persistence.signed_diff_paths.clear();
+    state.persistence.loaded_diffs.clear();
+    state.persistence.signed_diffs.clear();
     state.storage.diffs.clear();
 }
 
 //----------- PersistenceState -----------------------------------------------
 
 /// State related to data persistence for a zone.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PersistenceState {
     /// Ongoing persist/restore operations.
     pub ongoing: BackgroundTasks,
@@ -262,7 +270,7 @@ pub struct PersistenceState {
     /// Locations of persisted unsigned zone diffs to enable IXFR from
     /// the upstream to resume on restart, and to enable a complete latest
     /// unsigned version of the zone to be reconstituted.
-    pub loaded_diff_paths: Vec<PathBuf>,
+    pub loaded_diffs: PersistedDiffManager,
 
     /// Locations of persisted signed zone diffs to ensure IXFR out toward
     /// downstreams is still possible after restart, and to enable a complete
@@ -271,7 +279,176 @@ pub struct PersistenceState {
     /// track of which loaded serial the signed diff relates to. Only signed
     /// diffs triggered by a change in the loaded zone actually has an
     /// associated loaded diff serial.
-    pub signed_diff_paths: Vec<(PathBuf, Option<Serial>)>,
+    pub signed_diffs: PersistedDiffManager,
+}
+
+impl Default for PersistenceState {
+    fn default() -> Self {
+        Self {
+            loaded_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Loaded),
+            signed_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Signed),
+            ongoing: Default::default(),
+        }
+    }
+}
+
+//----------- PersistedDiffRecordSource --------------------------------------
+
+/// The source of the persisted diff records.
+#[derive(Clone, Copy, Debug)]
+pub enum PersistedDiffRecordSource {
+    Loaded,
+    Signed,
+}
+
+//----------- PersistedDiffManager -------------------------------------------
+
+/// Metadata about a related collection of persisted zone data files.
+#[derive(Clone, Debug)]
+pub struct PersistedDiffManager {
+    /// Which kind of data are we storing, loaded or signed?
+    record_source: PersistedDiffRecordSource,
+
+    /// The index value to use when constructing the next file name to write
+    /// to.
+    next_idx: usize,
+
+    /// The collection of persisted data file paths in this set.
+    diff_infos: BTreeSet<PersistedDiffFileInfo>,
+}
+
+impl PersistedDiffManager {
+    pub fn new(record_source: PersistedDiffRecordSource) -> Self {
+        Self::from_parts(record_source, 0, Default::default())
+    }
+
+    pub fn from_parts(
+        record_source: PersistedDiffRecordSource,
+        next_idx: usize,
+        diff_infos: BTreeSet<PersistedDiffFileInfo>,
+    ) -> Self {
+        Self {
+            record_source,
+            next_idx,
+            diff_infos,
+        }
+    }
+
+    pub fn push(
+        &mut self,
+        zone: &Arc<Zone>,
+        center: &Arc<Center>,
+        loaded_serial: Option<Serial>,
+        signed_serial: Option<Serial>,
+    ) -> PathBuf {
+        let zone_name = &zone.name;
+        let data_file_type = match self.record_source {
+            PersistedDiffRecordSource::Loaded => "loaded",
+            PersistedDiffRecordSource::Signed => "signed",
+        };
+
+        let path = center
+            .config
+            .zone_state_dir
+            .join(format!("{zone_name}.{data_file_type}.{}", self.next_idx))
+            .into_std_path_buf();
+        let file_info = PersistedDiffFileInfo {
+            path: path.clone(),
+            loaded_serial,
+            signed_serial,
+        };
+
+        assert!(self.diff_infos.insert(file_info));
+
+        // replace with strict_add() once our MSRV reaches 1.91.0.
+        assert_ne!(self.next_idx, usize::MAX);
+        self.next_idx += 1;
+
+        path
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.diff_infos.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.diff_infos.clear();
+        self.next_idx = 0;
+    }
+
+    pub fn next_idx(&self) -> usize {
+        self.next_idx
+    }
+
+    pub fn diffs(&self) -> &BTreeSet<PersistedDiffFileInfo> {
+        &self.diff_infos
+    }
+}
+
+//----------- PersistedZoneDataFileInfo --------------------------------------
+
+/// Information about a single persisted zone data file.
+#[derive(Clone, Debug)]
+pub struct PersistedDiffFileInfo {
+    /// The location on disk where the zone data file exists.
+    path: PathBuf,
+
+    /// The loaded serial number that the data file relates to.
+    ///
+    /// This can be None for a signed diff resulting from changes only to the
+    /// signed zone.
+    loaded_serial: Option<Serial>,
+
+    /// The signed serial number that the data file relates to.
+    ///
+    /// This can be none for a loaded diff.
+    signed_serial: Option<Serial>,
+}
+
+impl PersistedDiffFileInfo {
+    pub fn new(
+        path: PathBuf,
+        loaded_serial: Option<Serial>,
+        signed_serial: Option<Serial>,
+    ) -> Self {
+        Self {
+            path,
+            loaded_serial,
+            signed_serial,
+        }
+    }
+
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+
+    pub fn loaded_serial(&self) -> Option<Serial> {
+        self.loaded_serial
+    }
+
+    pub fn signed_serial(&self) -> Option<Serial> {
+        self.signed_serial
+    }
+}
+
+impl PartialEq for PersistedDiffFileInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+    }
+}
+
+impl Eq for PersistedDiffFileInfo {}
+
+impl PartialOrd for PersistedDiffFileInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PersistedDiffFileInfo {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.path.cmp(&other.path)
+    }
 }
 
 //----------- IxfrZoneDiffs --------------------------------------------------

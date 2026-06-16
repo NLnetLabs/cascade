@@ -41,19 +41,12 @@ pub fn persist_loaded(
         // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
-            let next_idx = handle.state.persistence.loaded_diff_paths.len();
-            let destination = center
-                .config
-                .zone_state_dir
-                .join(format!("{}.loaded.{next_idx}", zone.name));
-
+            let loaded_serial = loaded_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
             handle
                 .state
                 .persistence
-                .loaded_diff_paths
-                .push(destination.clone().into());
-
-            destination
+                .loaded_diffs
+                .push(zone, center, loaded_serial, None)
         };
 
         // Update the set of persisted zone data file paths BEFORE writing
@@ -81,7 +74,7 @@ pub fn persist_loaded(
         // the Option is Some the referred to path can just be deleted.
         save_state_now(center, zone);
 
-        persist_to_file(destination.as_std_path(), loaded_diff.clone());
+        persist_to_file(&destination, loaded_diff.clone());
 
         if loaded_diff.removed_soa.is_some() && loaded_diff.removed_soa != loaded_diff.added_soa {
             let mut handle = zone.write_handle(center);
@@ -122,19 +115,12 @@ pub fn persist_signed(
         // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
-            let next_idx = handle.state.persistence.signed_diff_paths.len();
-            let destination = center
-                .config
-                .zone_state_dir
-                .join(format!("{}.signed.{next_idx}", zone.name));
-
+            let signed_serial = signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
             handle
                 .state
                 .persistence
-                .signed_diff_paths
-                .push((destination.clone().into(), loaded_serial));
-
-            destination
+                .signed_diffs
+                .push(zone, center, loaded_serial, signed_serial)
         };
 
         // Update the set of persisted zone data file paths BEFORE writing
@@ -164,7 +150,7 @@ pub fn persist_signed(
 
         // Write the diff to disk as a binary AXFR snapshot or binary IXFR
         // diff.
-        persist_to_file(destination.as_std_path(), signed_diff.clone());
+        persist_to_file(&destination, signed_diff.clone());
 
         // Store the diffs in-memory for serving IXFR out.
         //
