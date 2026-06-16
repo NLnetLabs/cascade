@@ -1064,9 +1064,9 @@ fn key_file_imports(
     Ok(key_imports)
 }
 
-// This is not done as impl TryFrom<Utf8PathBuf> for FileKeyImport as
-// Utf8PathBuf is not defined in this crate and Rust doesn't allow impl for a
-// type defined in another crate.
+// This is not done as impl TryFrom<Utf8PathBuf> for FileKeyImport as neither
+// Utf8PathBuf nor FileKeyImport are not defined in this crate and Rust
+// doesn't allow impl for a type defined in another crate.
 fn expand_key_path(key_file_path: Utf8PathBuf, key_type: KeyType) -> Result<FileKeyImport, String> {
     // Is the given path to a .key file or a .private file? We need both
     // so generate the other one from the one given. Note that we don't
