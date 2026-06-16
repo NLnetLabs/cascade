@@ -139,7 +139,7 @@ pub fn restore_loaded(
     let mut state = zone.write(center);
     for diff in diffs_to_store {
         // Store the loaded diff to be used as part of serving an IXFR.
-        state.storage.diffs.store_loaded_diff(diff.into());
+        state.storage.diffs.store_loaded_diff(diff);
     }
 
     info!(
@@ -239,7 +239,7 @@ pub fn restore_signed(
             .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
 
         if let Some(diff) = restorer.take_diff() {
-            diffs_to_store.push((loaded_serial.clone(), diff.into()));
+            diffs_to_store.push((*loaded_serial, diff.into()));
             trace!(
                 "Extracted IXFR signed diff for SOA serial {} from file '{}': serial {start_serial} -> {end_serial}",
                 soa.rdata.serial,
@@ -265,7 +265,7 @@ pub fn restore_signed(
         state
             .storage
             .diffs
-            .store_signed_diff(loaded_serial, diff.into());
+            .store_signed_diff(loaded_serial, diff);
     }
 
     info!(
