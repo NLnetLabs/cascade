@@ -29,6 +29,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 
 ### Bug fixes
 
+- Prevent a crash when re-signing fails ([#821] by @bal-e)
 
 ### Other changes
 
@@ -44,6 +45,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 Thanks to @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
 valuable feedback!
 
+[#821]: https://github.com/NLnetLabs/cascade/pull/821
 
 ## 0.1.0-beta2 'Donde comen dos, comen tres'
 
