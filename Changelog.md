@@ -23,28 +23,39 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 
 ### Breaking changes
 
+- Return some proper JSON for the health API endpoint. ([#810] by
+  @tertsdiepraam)
 
 ### New
 
+- Print a message in list commands when no items can be shown. ([#807] by
+  @tertsdiepraam)
+- Add `CASCADE_DAEMON` env var for the CLI. ([#817] by @tertsdiepraam)
+- Support importing keys by private key path as well as public key path.
+  ([#820] by @ximon18)
 
 ### Bug fixes
 
-- Prevent a crash when re-signing fails ([#821] by @bal-e)
+- Prevent a crash when re-signing fails. ([#821] by @bal-e)
 
 ### Other changes
 
-
 ### Documentation improvements
 
+- Add the word client to `--version`. ([#814] by @tertsdiepraam)
 
 ### Known issues
-
 
 ### Acknowledgements
 
 Thanks to @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
 valuable feedback!
 
+[#807]: https://github.com/NLnetLabs/cascade/pull/807
+[#810]: https://github.com/NLnetLabs/cascade/pull/810
+[#814]: https://github.com/NLnetLabs/cascade/pull/814
+[#817]: https://github.com/NLnetLabs/cascade/pull/817
+[#820]: https://github.com/NLnetLabs/cascade/pull/820
 [#821]: https://github.com/NLnetLabs/cascade/pull/821
 
 ## 0.1.0-beta2 'Donde comen dos, comen tres'
@@ -61,17 +72,17 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 ### Breaking changes
 
 - Rename policy field `server.outbound.accept-xfr-from` to
-  `server.outbound.provide-xfr-to` ([#722] by @ximon18).
+  `server.outbound.provide-xfr-to`. ([#722] by @ximon18).
 
 ### New
 
 - Add an extra decimal digit to formatted numbers like "4KB" in
-  `cascade zone status` output ([#794] by @tertsdiepraam)
+  `cascade zone status` output. ([#794] by @tertsdiepraam)
 
 ### Bug fixes
 
-- Ignore re-signing without a published signed instance ([#795] by @bal-e)
-- Account for TTL-only changes in incremental re-signing ([#803] by
+- Ignore re-signing without a published signed instance. ([#795] by @bal-e)
+- Account for TTL-only changes in incremental re-signing. ([#803] by
   @Philip-NLnetLabs)
 
 ### Documentation improvements
