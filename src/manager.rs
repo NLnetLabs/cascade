@@ -98,6 +98,10 @@ impl Manager {
         debug!("Starting the publication server");
         handles.extend(PublicationServer::run(&center, &mut socket_provider)?);
 
+        // Spawn catalog reconciliation tasks.
+        debug!("Starting catalog reconciliation");
+        crate::catalog::CatalogManager::init(&center);
+
         // TODO: Register any `Manager` metrics here, before giving the metrics to `HttpServer`.
 
         // Spawn the remote-control server.

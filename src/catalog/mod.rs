@@ -15,13 +15,159 @@
 //!
 //! [catalog zone]: https://datatracker.ietf.org/doc/html/rfc9432
 
+use std::sync::Arc;
 use std::vec::Vec;
 
 use bytes::Bytes;
 use domain::base::Name;
 use domain::catalog::{Catalog, CatalogMember};
+use tracing::info;
 
 use crate::api;
+use crate::center::Center;
+
+pub mod reconcile;
+pub mod runtime;
+pub mod transfer;
+
+pub use self::runtime::CatalogManager;
+
+//----------- Actions --------------------------------------------------------
+
+/// Registers a new catalog zone.
+///
+/// The catalog must be transferred from a primary; its members are added and
+/// removed automatically as the catalog zone changes.
+pub fn add_catalog(center: &Arc<Center>, add: api::CatalogAdd) -> Result<(), api::CatalogAddError> {
+    {
+        let mut state = center.state.lock().unwrap();
+
+        // A catalog must not clash with an existing catalog or zone.
+        if state.catalogs.contains_key(&add.name) || state.zones.contains(&add.name) {
+            return Err(api::CatalogAddError::AlreadyExists);
+        }
+
+        // A catalog must be transferred from a primary.
+        let api::ZoneSource::Server { tsig_key, .. } = &add.source else {
+            return Err(api::CatalogAddError::Other(
+                "a catalog must be transferred from a primary server".into(),
+            ));
+        };
+
+        // Validate referenced policies.
+        check_policy(&state, &add.default_policy)?;
+        for group in &add.groups {
+            check_policy(&state, &group.policy)?;
+        }
+
+        // Validate referenced TSIG keys.
+        check_tsig_key(&state, tsig_key.as_ref())?;
+        for group in &add.groups {
+            if let Some(api::ZoneSource::Server { tsig_key, .. }) = &group.source {
+                check_tsig_key(&state, tsig_key.as_ref())?;
+            }
+        }
+
+        let config = CatalogConfig::new(
+            add.name.clone(),
+            add.source,
+            add.default_policy.into(),
+            add.groups
+                .into_iter()
+                .map(|group| CatalogGroupConfig {
+                    group: group.group,
+                    policy: group.policy.into(),
+                    source: group.source,
+                })
+                .collect(),
+            add.produced_catalog,
+        );
+
+        state.catalogs.insert(config.name.clone(), config);
+        state.mark_dirty(center);
+    }
+
+    CatalogManager::start(center, add.name.clone());
+    info!("Added catalog '{}'", add.name);
+    Ok(())
+}
+
+/// Removes a registered catalog and all of the member zones it manages.
+pub fn remove_catalog(
+    center: &Arc<Center>,
+    name: &Name<Bytes>,
+) -> Result<(), api::CatalogRemoveError> {
+    let members = {
+        let mut state = center.state.lock().unwrap();
+        let config = state
+            .catalogs
+            .remove(name)
+            .ok_or(api::CatalogRemoveError::NotFound)?;
+        state.mark_dirty(center);
+        config.members
+    };
+
+    // Stop the reconciliation task.
+    CatalogManager::stop(center, name);
+
+    // Remove the member zones managed by this catalog.
+    for member in members {
+        if let Err(err) = crate::center::remove_zone_forced(center, member.clone()) {
+            tracing::warn!(
+                "Could not remove catalog '{name}' member zone '{member}': \
+                 {err}"
+            );
+        }
+    }
+
+    info!("Removed catalog '{name}'");
+    Ok(())
+}
+
+/// Lists all registered catalogs.
+pub fn list_catalogs(center: &Arc<Center>) -> api::CatalogListResult {
+    let state = center.state.lock().unwrap();
+    let catalogs = state
+        .catalogs
+        .values()
+        .map(|config| {
+            let mut members: Vec<Name<Bytes>> = config.members.iter().cloned().collect();
+            members.sort_by_key(|name| name.to_string());
+            api::CatalogInfo {
+                name: config.name.clone(),
+                default_policy: config.default_policy.to_string(),
+                members,
+                produced_catalog: config.produced_catalog.clone(),
+            }
+        })
+        .collect();
+    api::CatalogListResult { catalogs }
+}
+
+/// Checks that a policy exists and is not being deleted.
+fn check_policy(state: &crate::center::State, policy: &str) -> Result<(), api::CatalogAddError> {
+    let policy = state
+        .policies
+        .get(policy)
+        .ok_or(api::CatalogAddError::NoSuchPolicy)?;
+    if policy.mid_deletion {
+        return Err(api::CatalogAddError::PolicyMidDeletion);
+    }
+    Ok(())
+}
+
+/// Checks that a referenced TSIG key, if any, exists.
+fn check_tsig_key(
+    state: &crate::center::State,
+    tsig_key: Option<&api::TsigKeyName>,
+) -> Result<(), api::CatalogAddError> {
+    if let Some(name) = tsig_key
+        && state.tsig_store.get(name).is_none()
+    {
+        return Err(api::CatalogAddError::NoSuchTsigKey);
+    }
+    Ok(())
+}
 
 //----------- CatalogConfig --------------------------------------------------
 

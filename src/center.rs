@@ -50,6 +50,9 @@ pub struct Center {
     /// The zone loader.
     pub loader: Loader,
 
+    /// The catalog reconciliation manager.
+    pub catalog_manager: crate::catalog::CatalogManager,
+
     /// The zone signer.
     pub signer: ZoneSigner,
 

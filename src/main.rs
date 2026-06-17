@@ -253,6 +253,7 @@ fn main() -> ExitCode {
         config,
         logger,
         loader: Loader::new(),
+        catalog_manager: cascaded::catalog::CatalogManager::new(),
         key_manager: KeyManager::new(),
         persister: Persister::new(),
         restorer: Restorer::new(),
