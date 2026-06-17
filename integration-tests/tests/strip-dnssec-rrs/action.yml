@@ -1,7 +1,7 @@
 # Making reusable composite actions documented at
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'strip-dnssec-rrs'
-description: 'Add a zone containing DNSSEC RRs and verify that they are not included in the signed zone'
+description: 'Sign using an already signed input zone.'
 runs:
   using: "composite"
   steps:
