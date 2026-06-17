@@ -346,3 +346,20 @@ jobs:
       - uses: ./integration-tests/tests/sign-using-a-hsm
         with:
           log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/issues/105
+  strip-dnssec-rrs:
+    name: Sign using an already signed input zone.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/strip-dnssec-rrs
+        with:
+          log-level: ${{ inputs.log-level }}
