@@ -251,6 +251,7 @@ man_pages = [
     ('man/cascade-debug', 'cascade-debug', 'Debug / troubleshoot Cascade', author, 1),
     ('man/cascade-health', 'cascade-health', 'Check the health of Cascade', author, 1),
     ('man/cascade-tsig', 'cascade-tsig', 'Manage TSIG keys', author, 1),
+    ('man/cascade-catalog', 'cascade-catalog', 'Manage catalog zones', author, 1),
     ('man/cascade-hsm', 'cascade-hsm', 'Manage HSMs', author, 1),
     ('man/cascade-keyset', 'cascade-keyset', 'Execute manual key roll or key removal commands', author, 1),
     ('man/cascade-policy', 'cascade-policy', 'Manage policies', author, 1),

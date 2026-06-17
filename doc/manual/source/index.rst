@@ -108,6 +108,7 @@ Examples of things we're interested in:
    hsms
    review-hooks
    zone-transfers
+   catalog-zones
    maintenance-mode
 
 .. toctree::
@@ -180,6 +181,7 @@ Examples of things we're interested in:
    man/cascade-template
    man/cascade-tsig
    man/cascade-zone
+   man/cascade-catalog
    cascade-hsm-bridge Daemon <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge.html>
    cascade-hsm-bridge Configuration File Format <https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/man/cascade-hsm-bridge-config.toml.html>
 
