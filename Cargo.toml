@@ -317,4 +317,4 @@ dnst = "*"
 cascade-hsm-bridge = "*"
 
 [patch.crates-io]
-domain = { path = "../domain" }
+domain = { git = "https://github.com/NLnetLabs/domain.git", branch = "simplify-migration-from-old-to-new-base" }
