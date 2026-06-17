@@ -1,0 +1,95 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Register a catalog zone, sign and serve its member'
+description: 'Register a catalog zone, sign and serve its member'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Register the catalog zone served by the NSD primary
+      run: |
+        cascade catalog add \
+          --source 127.0.0.1:1055 \
+          --default-policy default \
+          catalog.test
+
+    - name: The catalog's member zone should be discovered and managed
+      run: |
+        timeout=20 # seconds
+        start=$(date +%s)
+        until cascade zone list | grep -q "member.test"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: catalog member.test was not added"
+            cascade catalog list
+            cascade zone list
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: The member zone should be signed and published
+      run: |
+        timeout=20 # seconds
+        start=$(date +%s)
+        until cascade zone status member.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status member.test
+            echo "::error:: timeout: member.test was not published"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: The published member zone should be served and signed
+      run: |
+        dig @127.0.0.1 -p 4542 member.test AXFR > dig-query.log
+        grep -F "Hello Catalog Member" dig-query.log
+        grep -qi "RRSIG" dig-query.log
+
+    - name: The catalog listing should show the managed member
+      run: |
+        cascade catalog list | grep -F "member.test"
+
+    - name: A catalog-managed zone cannot be removed manually
+      run: |
+        cascade zone remove member.test &> remove.log && exit 1
+        grep -F "managed by a catalog" remove.log
+
+    - name: Removing the catalog removes its member zones
+      run: |
+        cascade catalog remove catalog.test
+
+        timeout=20 # seconds
+        start=$(date +%s)
+        until ! cascade zone list | grep -q "member.test"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: member.test was not removed with the catalog"
+            cascade zone list
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

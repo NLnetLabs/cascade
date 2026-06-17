@@ -379,6 +379,14 @@ zone:
 zone:
   name: example-tsig.test
   include-pattern: primary-tsig
+
+zone:
+  name: catalog.test
+  include-pattern: primary
+
+zone:
+  name: member.test
+  include-pattern: primary
 EOF
 
 tee "${base_dir}/nsd-primary/zones/example.test.primary-zone" <<'EOF' >&2
@@ -417,6 +425,39 @@ ns1         A   127.0.0.1
 www         A   169.254.1.1
 mail        MX  10 example-tsig.test.
 text        TXT "Hello TSIG World!"
+EOF
+
+# An RFC 9432 catalog zone listing 'member.test' as its sole member.
+tee "${base_dir}/nsd-primary/zones/catalog.test.primary-zone" <<'EOF' >&2
+$TTL 5 ; use a very short TTL for sped up catalog reconciliation
+catalog.test.   IN SOA invalid. invalid. (
+                      1          ; serial
+                     60          ; refresh (60 seconds)
+                     60          ; retry (60 seconds)
+                   3600          ; expire (1 hour)
+                      5          ; minimum (5 seconds)
+                    )
+@                       NS  invalid.
+version.catalog.test.   TXT "2"
+m1.zones.catalog.test.  PTR member.test.
+EOF
+
+tee "${base_dir}/nsd-primary/zones/member.test.primary-zone" <<'EOF' >&2
+$TTL 5 ; use a very short TTL for sped up keyset rolls
+member.test.   IN SOA ns1.member.test. mail.member.test. (
+                      1          ; serial
+                     60          ; refresh (60 seconds)
+                     60          ; retry (60 seconds)
+                   3600          ; expire (1 hour)
+                      5          ; minimum (5 seconds)
+                    )
+@           NS  member.test.
+@           NS  ns1.member.test.
+@           A   127.0.0.1
+ns1         A   127.0.0.1
+
+www         A   169.254.1.1
+text        TXT "Hello Catalog Member!"
 EOF
 
 }

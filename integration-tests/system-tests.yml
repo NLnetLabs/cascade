@@ -363,3 +363,18 @@ jobs:
       - uses: ./integration-tests/tests/strip-dnssec-rrs
         with:
           log-level: ${{ inputs.log-level }}
+
+  catalog-zone:
+    name: Register a catalog zone, sign and serve its member.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/catalog-zone
+        with:
+          log-level: ${{ inputs.log-level }}
