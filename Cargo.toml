@@ -58,6 +58,11 @@ version = "4.5"
 # 'domain' is a general-purpose library for DNS.
 #
 # It is maintained by us (NLnet Labs).
+#
+# NOTE: Cascade currently relies on the `unstable-catalog` feature which is
+# not yet part of a published 'domain' release. Until that lands upstream,
+# the `[patch.crates-io]` section below redirects 'domain' to a local
+# checkout. Revert that patch once a release with `unstable-catalog` exists.
 [workspace.dependencies.domain]
 version = "0.12.1"
 
@@ -182,6 +187,7 @@ features = [
     "openssl",
     "tokio-stream",
     "tsig",
+    "unstable-catalog",
     "unstable-client-transport",
     "unstable-crypto-sign",
     "unstable-new",
@@ -229,6 +235,15 @@ workspace = true
 
 [dev-dependencies]
 assert-json-diff = "2.0"
+
+
+# --- Patches ------------------------------------------------------------------
+
+# Temporary: use a local 'domain' checkout providing the `unstable-catalog`
+# feature. See the note on `[workspace.dependencies.domain]` above. Remove
+# this once `unstable-catalog` is available in a published 'domain' release.
+[patch.crates-io]
+domain = { path = "../domain" }
 
 
 # --- Packaging ----------------------------------------------------------------
