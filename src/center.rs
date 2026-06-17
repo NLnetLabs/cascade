@@ -246,7 +246,22 @@ async fn register_zone(
 }
 
 /// Remove a zone.
+///
+/// This refuses to remove zones that are managed by a catalog; such zones are
+/// only removed when they leave their catalog (see [`remove_zone_forced`]).
 pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
+    if let Some(zone) = get_zone(center, &name)
+        && zone.read().catalog.is_some()
+    {
+        return Err(ZoneRemoveError::CatalogManaged);
+    }
+    remove_zone_forced(center, name)
+}
+
+/// Remove a zone, even if it is managed by a catalog.
+///
+/// This is used by the catalog reconciler when a member leaves its catalog.
+pub fn remove_zone_forced(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
     let mut state = center.state.lock().unwrap();
     let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?.0;
 
@@ -352,6 +367,13 @@ pub struct State {
     ///
     /// Like global configuration, these are only reloaded on user request.
     pub policies: foldhash::HashMap<Box<str>, Policy>,
+
+    /// Registered catalog zones.
+    ///
+    /// Each catalog is transferred from a primary, and its membership is used
+    /// to automatically add and remove member zones. Catalogs are keyed by
+    /// their apex name.
+    pub catalogs: foldhash::HashMap<Name<Bytes>, crate::catalog::CatalogConfig>,
 
     /// The TSIG key store.
     ///
@@ -479,6 +501,8 @@ impl From<ZoneAddError> for api::ZoneAddError {
 pub enum ZoneRemoveError {
     /// No such name could be found.
     NotFound,
+    /// The zone is managed by a catalog and cannot be removed manually.
+    CatalogManaged,
 }
 
 impl std::error::Error for ZoneRemoveError {}
@@ -487,6 +511,9 @@ impl fmt::Display for ZoneRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
+            Self::CatalogManaged => {
+                "the zone is managed by a catalog and cannot be removed manually"
+            }
         })
     }
 }
@@ -495,6 +522,7 @@ impl From<ZoneRemoveError> for api::ZoneRemoveError {
     fn from(value: ZoneRemoveError) -> Self {
         match value {
             ZoneRemoveError::NotFound => Self::NotFound,
+            ZoneRemoveError::CatalogManaged => Self::CatalogManaged,
         }
     }
 }

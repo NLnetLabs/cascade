@@ -307,6 +307,13 @@ pub struct ZoneState {
     /// The policy (version) used by the zone.
     pub policy: Option<Arc<PolicyVersion>>,
 
+    /// The catalog zone that manages this zone, if any.
+    ///
+    /// When set, this zone was added automatically from the named catalog
+    /// zone. Such zones cannot be removed or reconfigured manually; they are
+    /// managed entirely through their catalog.
+    pub catalog: Option<Name<Bytes>>,
+
     /// Whether the zone is in maintenance mode
     ///
     /// Maintenance mode means that Cascade won't start loading and signing
@@ -437,6 +444,7 @@ impl Default for ZoneState {
         Self {
             machine: Default::default(),
             policy: Default::default(),
+            catalog: Default::default(),
             maintenance_mode: Default::default(),
             last_published: Default::default(),
             enqueued_save: Default::default(),

@@ -338,12 +338,17 @@ pub struct ZoneRemoveResult {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ZoneRemoveError {
     NotFound,
+    /// The zone is managed by a catalog and cannot be removed manually.
+    CatalogManaged,
 }
 
 impl fmt::Display for ZoneRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
+            Self::CatalogManaged => {
+                "the zone is managed by a catalog and cannot be removed manually"
+            }
         })
     }
 }

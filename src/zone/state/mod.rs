@@ -86,6 +86,7 @@ impl Spec {
                 policy,
                 last_published,
                 source,
+                catalog,
                 min_expiration,
                 next_min_expiration,
                 apex_remove,
@@ -116,6 +117,7 @@ impl Spec {
 
                 Ok(ZoneState {
                     policy,
+                    catalog,
                     last_published,
                     min_expiration,
                     next_min_expiration,

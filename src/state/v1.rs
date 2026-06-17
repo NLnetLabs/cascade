@@ -34,6 +34,10 @@ pub struct Spec {
 
     /// Policies.
     pub policies: foldhash::HashMap<Box<str>, PolicySpec>,
+
+    /// Registered catalog zones, keyed by apex name.
+    #[serde(default)]
+    pub catalogs: foldhash::HashMap<Name<Bytes>, CatalogSpec>,
 }
 
 //--- Conversion
@@ -44,15 +48,15 @@ impl Spec {
     /// [`Self::zones`] and [`Self::policies`] are ignored; these should be
     /// extracted from `self` before calling this function.
     pub fn parse(self) -> State {
-        let Self {
-            // The caller will extract 'zones' and 'policies' beforehand.
-            zones: _,
-            policies: _,
-            // TODO: More fields.
-        };
-
-        // TODO: Initialize fields from 'Spec'.
-        State::default()
+        // The caller will have extracted 'zones' and 'policies' beforehand.
+        State {
+            catalogs: self
+                .catalogs
+                .into_iter()
+                .map(|(name, spec)| (name, spec.parse()))
+                .collect(),
+            ..State::default()
+        }
     }
 
     /// Build this state specification.
@@ -64,6 +68,107 @@ impl Spec {
                 .iter()
                 .map(|(name, policy)| (name.clone(), PolicySpec::build(policy)))
                 .collect(),
+            catalogs: state
+                .catalogs
+                .iter()
+                .map(|(name, catalog)| (name.clone(), CatalogSpec::build(catalog)))
+                .collect(),
+        }
+    }
+}
+
+//----------- CatalogSpec ------------------------------------------------------
+
+/// A registered catalog zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CatalogSpec {
+    /// The apex name of the catalog zone.
+    pub name: Name<Bytes>,
+
+    /// How the catalog zone itself is transferred.
+    pub source: cascade_api::ZoneSource,
+
+    /// The policy applied to members without a matching group mapping.
+    pub default_policy: Box<str>,
+
+    /// Per-group configuration overrides.
+    pub groups: Vec<CatalogGroupSpec>,
+
+    /// The apex name of the catalog zone produced downstream, if any.
+    pub produced_catalog: Option<Name<Bytes>>,
+
+    /// The member zones currently managed on behalf of this catalog.
+    #[serde(default)]
+    pub members: foldhash::HashSet<Name<Bytes>>,
+}
+
+//--- Conversion
+
+impl CatalogSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> crate::catalog::CatalogConfig {
+        crate::catalog::CatalogConfig {
+            name: self.name,
+            source: self.source,
+            default_policy: self.default_policy,
+            groups: self
+                .groups
+                .into_iter()
+                .map(CatalogGroupSpec::parse)
+                .collect(),
+            produced_catalog: self.produced_catalog,
+            members: self.members,
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(catalog: &crate::catalog::CatalogConfig) -> Self {
+        Self {
+            name: catalog.name.clone(),
+            source: catalog.source.clone(),
+            default_policy: catalog.default_policy.clone(),
+            groups: catalog.groups.iter().map(CatalogGroupSpec::build).collect(),
+            produced_catalog: catalog.produced_catalog.clone(),
+            members: catalog.members.clone(),
+        }
+    }
+}
+
+//----------- CatalogGroupSpec -------------------------------------------------
+
+/// A per-group configuration override for a catalog.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CatalogGroupSpec {
+    /// The value of the member `group` property this mapping applies to.
+    pub group: String,
+
+    /// The policy applied to members in this group.
+    pub policy: Box<str>,
+
+    /// An optional override for the source of member zones in this group.
+    pub source: Option<cascade_api::ZoneSource>,
+}
+
+//--- Conversion
+
+impl CatalogGroupSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> crate::catalog::CatalogGroupConfig {
+        crate::catalog::CatalogGroupConfig {
+            group: self.group,
+            policy: self.policy,
+            source: self.source,
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(group: &crate::catalog::CatalogGroupConfig) -> Self {
+        Self {
+            group: group.group.clone(),
+            policy: group.policy.clone(),
+            source: group.source.clone(),
         }
     }
 }

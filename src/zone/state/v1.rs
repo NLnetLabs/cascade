@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use bytes::Bytes;
 use camino::Utf8Path;
 use domain::base::{Rtype, Serial, Ttl};
 use domain::dep::octseq::Array;
@@ -44,6 +45,10 @@ pub struct Spec {
 
     /// The source of the zone.
     pub source: ZoneLoadSourceSpec,
+
+    /// The catalog zone that manages this zone, if any.
+    #[serde(default)]
+    pub catalog: Option<Name<Bytes>>,
 
     /// The minimum expiration time in the signed zone we are serving from
     /// the publication server.
@@ -116,6 +121,7 @@ impl Spec {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
             last_published: zone.last_published.clone(),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
+            catalog: zone.catalog.clone(),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
             apex_remove: zone.apex_remove.clone(),
