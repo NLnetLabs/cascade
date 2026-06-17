@@ -144,12 +144,15 @@
 //!   structure as the records they sign. While the signature material cannot
 //!   be optimized, many of the other fields can be deduplicated.
 
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::{
     cmp, fmt,
     iter::Peekable,
     ops::{Deref, DerefMut},
 };
 
+use domain::new::base::compat::Ttl;
 use domain::{
     base::{ToName, name::FlattenInto},
     new::{
@@ -158,7 +161,7 @@ use domain::{
             name::{Name, NameBuf, RevName, RevNameBuf},
             wire::{BuildBytes, ParseBytes},
         },
-        rdata::{BoxedRecordData, Soa},
+        rdata::{BoxedRecordData, RecordData, Soa},
     },
     utils::dst::UnsizedCopy,
 };
@@ -216,6 +219,20 @@ pub type OldRecord = domain::base::Record<OldName, OldRecordData>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RegularRecord(pub domain::new::base::Record<Box<RevName>, BoxedRecordData>);
 
+// Compatibility with domain old base. Maybe these need to be added to
+// Record as well.
+impl RegularRecord {
+    pub fn data(&self) -> RecordData<'_, &Name> {
+        self.0.rdata.get()
+    }
+    pub fn owner(&self) -> &RevName {
+        self.0.rname.as_ref()
+    }
+    pub fn ttl(&self) -> Ttl {
+        self.0.ttl
+    }
+}
+
 impl PartialOrd for RegularRecord {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
@@ -241,6 +258,15 @@ impl Deref for RegularRecord {
 impl DerefMut for RegularRecord {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl Hash for RegularRecord {
+    fn hash<H>(&self, h: &mut H)
+    where
+        H: Hasher,
+    {
+        self.0.hash(h);
     }
 }
 

@@ -315,3 +315,6 @@ dnst = "*"
 
 [package.metadata.generate-rpm.recommends]
 cascade-hsm-bridge = "*"
+
+[patch.crates-io]
+domain = { path = "../domain" }
