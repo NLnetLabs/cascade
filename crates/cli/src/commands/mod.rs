@@ -1,5 +1,6 @@
 //! The commands of _cascade_.
 
+pub mod catalog;
 pub mod debug;
 pub mod hsm;
 pub mod keyset;
@@ -26,6 +27,10 @@ pub enum Command {
     /// Manage zones
     #[command(name = "zone")]
     Zone(self::zone::Zone),
+
+    /// Manage catalog zones
+    #[command(name = "catalog")]
+    Catalog(self::catalog::Catalog),
 
     /// Get the status of different systems
     #[command(name = "status")]
@@ -76,6 +81,7 @@ impl Command {
                 Ok(())
             }
             Self::Zone(zone) => zone.execute(client).await,
+            Self::Catalog(catalog) => catalog.execute(client).await,
             Self::Status(status) => status.execute(client).await,
             Self::Policy(policy) => policy.execute(client).await,
             Self::KeySet(keyset) => keyset.execute(client).await,

@@ -105,6 +105,10 @@ impl HttpServer {
             .route("/tsig/", get(Self::tsig_key_list))
             .route("/tsig/add", post(Self::tsig_key_add))
             .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
+            .route("/catalog/", get(Self::catalog_list))
+            .route("/catalog/add", post(Self::catalog_add))
+            .route("/catalog/{name}/remove", post(Self::catalog_remove))
+            .route("/catalog/{name}/reload", post(Self::catalog_reload))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
@@ -308,6 +312,48 @@ impl HttpServer {
                 .map(|_| ZoneRemoveResult { name })
                 .map_err(|e| e.into()),
         )
+    }
+
+    async fn catalog_add(
+        State(state): State<Arc<HttpServer>>,
+        Json(add): Json<CatalogAdd>,
+    ) -> Json<Result<CatalogAddResult, CatalogAddError>> {
+        let name = add.name.clone();
+        Json(crate::catalog::add_catalog(&state.center, add).map(|()| CatalogAddResult { name }))
+    }
+
+    async fn catalog_remove(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<Result<CatalogRemoveResult, CatalogRemoveError>> {
+        Json(
+            crate::catalog::remove_catalog(&state.center, &name)
+                .map(|()| CatalogRemoveResult { name }),
+        )
+    }
+
+    async fn catalog_reload(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<Result<CatalogRemoveResult, CatalogRemoveError>> {
+        // Reuse the remove result/error shape: reload only fails if the
+        // catalog is unknown.
+        let exists = state
+            .center
+            .state
+            .lock()
+            .unwrap()
+            .catalogs
+            .contains_key(&name);
+        if !exists {
+            return Json(Err(CatalogRemoveError::NotFound));
+        }
+        crate::catalog::CatalogManager::reload(&state.center, &name);
+        Json(Ok(CatalogRemoveResult { name }))
+    }
+
+    async fn catalog_list(State(state): State<Arc<HttpServer>>) -> Json<CatalogListResult> {
+        Json(crate::catalog::list_catalogs(&state.center))
     }
 
     async fn zone_reset(
