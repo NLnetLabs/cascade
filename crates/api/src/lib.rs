@@ -349,7 +349,7 @@ impl fmt::Display for ZoneRemoveError {
 }
 
 /// How to load the contents of a zone.
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 // Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
 // to avoid the conversions that would be needed if Name<Bytes> were to be
 // used instead.
@@ -372,6 +372,127 @@ pub enum ZoneSource {
         /// The name of a TSIG key, if any.
         tsig_key: Option<TsigKeyName>,
     },
+}
+
+//----------- CatalogAdd -----------------------------------------------------
+
+/// Register a catalog zone.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CatalogAdd {
+    /// The apex name of the catalog zone.
+    pub name: ZoneName,
+
+    /// How the catalog zone itself is transferred.
+    ///
+    /// Member zones are, by default, transferred from the same primary as the
+    /// catalog zone (when this is a [`ZoneSource::Server`]).
+    pub source: ZoneSource,
+
+    /// The policy applied to members that have no matching group mapping.
+    pub default_policy: String,
+
+    /// Per-group configuration overrides.
+    pub groups: Vec<CatalogGroup>,
+
+    /// The apex name of the catalog zone to produce downstream, if any.
+    ///
+    /// When set, Cascade serves a catalog zone of this name that mirrors the
+    /// members it manages for this catalog, so that downstream secondaries can
+    /// automatically transfer the signed member zones.
+    pub produced_catalog: Option<ZoneName>,
+}
+
+/// A per-group configuration override for a catalog.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CatalogGroup {
+    /// The value of the member `group` property this mapping applies to.
+    pub group: String,
+
+    /// The policy applied to members in this group.
+    pub policy: String,
+
+    /// An optional override for the source of member zones in this group.
+    ///
+    /// When absent, members in this group are transferred from the catalog's
+    /// own primary.
+    pub source: Option<ZoneSource>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CatalogAddResult {
+    pub name: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum CatalogAddError {
+    /// A catalog or zone of the same name already exists.
+    AlreadyExists,
+    /// A referenced policy does not exist.
+    NoSuchPolicy,
+    /// A referenced policy is being deleted.
+    PolicyMidDeletion,
+    /// A referenced TSIG key does not exist.
+    NoSuchTsigKey,
+    /// Some other error occurred.
+    Other(String),
+}
+
+impl fmt::Display for CatalogAddError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::AlreadyExists => "a catalog of this name already exists",
+            Self::NoSuchPolicy => "no policy with that name exists",
+            Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::NoSuchTsigKey => "no TSIG key with that name exists",
+            Self::Other(reason) => reason,
+        })
+    }
+}
+
+//----------- CatalogList ----------------------------------------------------
+
+/// The result of listing catalogs.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CatalogListResult {
+    /// Information about each registered catalog, keyed by catalog name.
+    pub catalogs: Vec<CatalogInfo>,
+}
+
+/// Information about a single registered catalog.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CatalogInfo {
+    /// The apex name of the catalog zone.
+    pub name: ZoneName,
+
+    /// The default policy applied to members without a group mapping.
+    pub default_policy: String,
+
+    /// The member zones currently managed by this catalog.
+    pub members: Vec<ZoneName>,
+
+    /// The apex name of the catalog zone produced downstream, if any.
+    pub produced_catalog: Option<ZoneName>,
+}
+
+//----------- CatalogRemove --------------------------------------------------
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct CatalogRemoveResult {
+    pub name: ZoneName,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum CatalogRemoveError {
+    /// No catalog of that name was found.
+    NotFound,
+}
+
+impl fmt::Display for CatalogRemoveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NotFound => "no such catalog was found",
+        })
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Deserialize, Serialize)]

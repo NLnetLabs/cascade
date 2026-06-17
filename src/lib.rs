@@ -3,6 +3,7 @@
 pub use cascade_api as api;
 pub use cascade_cfg as config;
 
+pub mod catalog;
 pub mod center;
 pub mod common;
 pub mod daemon;
