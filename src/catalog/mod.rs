@@ -26,6 +26,7 @@ use tracing::info;
 use crate::api;
 use crate::center::Center;
 
+pub mod produce;
 pub mod reconcile;
 pub mod runtime;
 pub mod transfer;

@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use domain::base::Name;
+use domain::zonetree::Zone;
 use tokio::sync::Notify;
 use tracing::{debug, error};
 
@@ -28,6 +29,10 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(60);
 pub struct CatalogManager {
     /// The running tasks, keyed by catalog apex name.
     tasks: Mutex<foldhash::HashMap<Name<Bytes>, CatalogTask>>,
+
+    /// The most recently generated produced catalog zones, keyed by produced
+    /// catalog apex name.
+    produced: Mutex<foldhash::HashMap<Name<Bytes>, Zone>>,
 }
 
 /// A running catalog reconciliation task.
@@ -86,6 +91,27 @@ impl CatalogManager {
         if let Some(task) = center.catalog_manager.tasks.lock().unwrap().get(apex) {
             task.reload.notify_one();
         }
+    }
+
+    /// Stores the latest generated produced catalog zone.
+    pub fn set_produced(center: &Arc<Center>, apex: Name<Bytes>, zone: Zone) {
+        center
+            .catalog_manager
+            .produced
+            .lock()
+            .unwrap()
+            .insert(apex, zone);
+    }
+
+    /// Returns the latest generated produced catalog zone, if any.
+    pub fn produced_zone(center: &Arc<Center>, apex: &Name<Bytes>) -> Option<Zone> {
+        center
+            .catalog_manager
+            .produced
+            .lock()
+            .unwrap()
+            .get(apex)
+            .cloned()
     }
 }
 

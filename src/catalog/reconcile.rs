@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use domain::base::{Name, Ttl};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::api;
 use crate::center::{self, Center, ZoneAddError};
@@ -63,6 +63,30 @@ pub async fn reconcile(center: &Arc<Center>, apex: &Name<Bytes>) -> Result<Ttl, 
     // Remove member zones that have left the catalog.
     for name in diff.to_remove {
         remove_member(center, apex, name);
+    }
+
+    // Generate the downstream catalog zone, if one is configured.
+    if let Some(produced_apex) = &snapshot.produced_catalog {
+        match super::produce::produce_zone(
+            produced_apex,
+            &transferred.catalog,
+            transferred.refresh,
+            transferred.retry,
+        ) {
+            Ok(zone) => {
+                super::CatalogManager::set_produced(center, produced_apex.clone(), zone);
+                debug!(
+                    "Generated produced catalog '{produced_apex}' from \
+                     catalog '{apex}'"
+                );
+            }
+            Err(err) => {
+                error!(
+                    "Could not generate produced catalog '{produced_apex}' \
+                     from catalog '{apex}': {err}"
+                );
+            }
+        }
     }
 
     Ok(transferred.refresh)
