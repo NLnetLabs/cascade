@@ -1,14 +1,14 @@
 //! Persisting zone data.
 
 use std::{
-    fs::File,
-    io::{BufWriter, ErrorKind, Write},
+    io::{BufWriter, Write},
     path::Path,
     sync::Arc,
 };
 
 use cascade_zonedata::{
-    DiffData, LoadedZonePersisted, LoadedZonePersister, SignedZonePersisted, SignedZonePersister,
+    DiffData, LoadedZonePersisted, LoadedZonePersister, RegularRecord, SignedZonePersisted,
+    SignedZonePersister, SoaRecord,
 };
 
 use domain::new::base::wire::{BuildBytes, TruncationError};
@@ -37,8 +37,6 @@ pub fn persist_loaded(
         // ZoneState to the persistence crate. Accumulate a set of diffs per
         // unsigned and signed zone, each stored at a path one suffixed by an
         // index which rises by one when persisted.
-        // TODO: Don't keep an unlimited number of diffs.
-        // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
             let loaded_serial = loaded_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
@@ -106,13 +104,6 @@ pub fn persist_signed(
         let loaded_serial =
             loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
 
-        // Determine the path to write to and update the record of written
-        // paths here as we don't want to give responsibility for working with
-        // ZoneState to the persistence crate. Accumulate a set of diffs per
-        // unsigned and signed zone, each stored at a path one suffixed by an
-        // index which rises by one when persisted.
-        // TODO: Don't keep an unlimited number of diffs.
-        // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
             let signed_serial = signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
@@ -173,6 +164,20 @@ pub fn persist_signed(
 
             let mut handle = zone.write_handle(center);
 
+            // Purge in-memory diffs if needed before adding a new one.
+            if let Some(max_diffs) = handle
+                .state
+                .policy
+                .as_ref()
+                .map(|p| p.server.outbound.max_diffs)
+            {
+                trace!(
+                    "Discarding in-memory diffs to max {max_diffs} for zone '{}'",
+                    zone.name
+                );
+                handle.state.storage.diffs.discard_excess_diffs(max_diffs);
+            }
+
             // If we have a new signed diff to store because records in the
             // loaded part of the zone changed, e.g. due to changes in the
             // zone content or receipt of a changed DNSKEY set from the key
@@ -204,39 +209,50 @@ pub fn persist_signed(
 
 //------------ persist_to_file() ----------------------------------------------
 
-fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
-    // Write the diff in AXFR / IXFR wire format to disk.
-    let f = match File::create_new(destination) {
-        Ok(f) => f,
-        Err(err) if err.kind() == ErrorKind::AlreadyExists => {
-            // This is not expected. When persisting the zone data to a file
-            // we save Cascade zone state "now" so that the persisted paths in
-            // use are known on next restart, so we should know this path was
-            // in use and be attempting to write to a different non-existing
-            // path. If for some reason zone state was not persisted after the
-            // persisted zone data file was created, e.g. a power outage in
-            // combination with a change to persistence logic compared to how
-            // it is at the time of writing so that zone state was not ensured
-            // to be persisted before proceeding, that could cause this.
-            warn!(
-                "Overwriting existing persisted zone data file at '{}'.",
-                destination.display()
-            );
-            File::create(destination).unwrap_or_else(|err| {
-                panic!(
-                    "Failed to persist zone data to '{}': {err}",
-                    destination.display()
-                );
-            })
-        }
-        Err(err) => {
+pub fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
+    persist_to_file_from_parts(
+        destination,
+        diff.removed_soa.clone(),
+        diff.added_soa.clone().unwrap(),
+        diff.removed_records.iter().cloned(),
+        diff.added_records.iter().cloned(),
+    );
+}
+
+// TODO: It would be nice to take the records by reference.
+pub fn persist_to_file_from_parts<
+    I: Iterator<Item = RegularRecord>,
+    J: Iterator<Item = RegularRecord>,
+>(
+    destination: &Path,
+    removed_soa: Option<SoaRecord>,
+    added_soa: SoaRecord,
+    removed_records: I,
+    added_records: J,
+) {
+    // Atomic writing based on crate::util::write_file().
+    let dir = destination
+        .parent()
+        .expect("'destination' must be a file, so it must have a parent");
+    std::fs::create_dir_all(dir).unwrap_or_else(|err| {
+        panic!(
+            "Failed to persist zone data to '{}': {err}",
+            destination.display()
+        );
+    });
+
+    // Obtain a temporary file in the same directory.
+    let tmp_file = tempfile::Builder::new()
+        .tempfile_in(dir)
+        .unwrap_or_else(|err| {
             panic!(
                 "Failed to persist zone data to '{}': {err}",
                 destination.display()
             );
-        }
-    };
-    let mut f = BufWriter::new(f);
+        });
+
+    // Write the diff in AXFR / IXFR wire format to disk.
+    let mut f = BufWriter::new(tmp_file);
 
     let mut buf = vec![0u8; 1024];
 
@@ -272,8 +288,6 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
         writer.write_all(&buf[0..num_bytes_to_write]).unwrap();
     }
 
-    let added_soa = diff.added_soa.clone().unwrap();
-
     // IXFR format has the form:
     //   - New SOA
     //   - Old SOA
@@ -289,43 +303,73 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
     //
     // Write AXFR if no records were deleted by the diff, else write IXFR.
 
+    let mut n_rrs_removed = 0;
+    let mut n_rr_added = 0;
+
+    trace!(
+        "persist_to_file: Writing initial SOA: {}",
+        added_soa.rdata.serial
+    );
     write_rr(&mut buf, &added_soa, &mut f);
 
     // Start deleted records block by writing the old SOA, if any.
-    if let Some(removed_soa) = &diff.removed_soa {
+    if let Some(removed_soa) = &removed_soa {
+        trace!(
+            "persist_to_file: Writing IXFR diff sequence start: removed SOA: {}",
+            removed_soa.rdata.serial
+        );
         write_rr(&mut buf, removed_soa, &mut f);
+        n_rrs_removed += 1;
 
         // Write the deleted records.
-        for r in &diff.removed_records {
-            write_rr(&mut buf, r, &mut f);
+        for r in removed_records {
+            trace!(
+                "persist_to_file: Writing IXFR diff sequence RR: {:?}",
+                r.rtype
+            );
+            write_rr(&mut buf, &r, &mut f);
+            n_rrs_removed += 1;
         }
 
         // Start added records block by writing the new SOA
+        trace!(
+            "persist_to_file: Writing IXFR diff sequence continuation: added SOA: {}",
+            added_soa.rdata.serial
+        );
         write_rr(&mut buf, &added_soa, &mut f);
     }
 
     // Write the added records.
-    for r in &diff.added_records {
-        write_rr(&mut buf, r, &mut f);
+    for r in added_records {
+        trace!(
+            "persist_to_file: Writing IXFR diff sequence RR: {:?}",
+            r.rtype
+        );
+        write_rr(&mut buf, &r, &mut f);
+        n_rr_added += 1;
     }
 
     // Finish the AXFR/IXFR by writing the new SOA again
+    trace!(
+        "persist_to_file: Writing final SOA: {}",
+        added_soa.rdata.serial
+    );
     write_rr(&mut buf, &added_soa, &mut f);
+    n_rr_added += 1;
+
+    // Replace the target path with the temporary file.
+    let tmp_file = f.into_inner().unwrap();
+    let _ = tmp_file.persist(destination).unwrap_or_else(|err| {
+        panic!(
+            "Failed to persist zone data to '{}': {err}",
+            destination.display()
+        );
+    });
 
     trace!(
-        "Persisted zone to file '{}': SOA {:?} -> {:?}: {} records removed, {} records added",
+        "Persisted zone to file '{}': SOA {:?} -> {:?}: {n_rrs_removed} records removed, {n_rr_added} records added",
         destination.display(),
-        diff.removed_soa.as_ref().map(|v| v.rdata.serial),
-        diff.added_soa.as_ref().map(|v| v.rdata.serial),
-        if !diff.removed_records.is_empty() {
-            diff.removed_records.len() + 1
-        } else {
-            0
-        },
-        if !diff.added_records.is_empty() {
-            diff.added_records.len() + 1
-        } else {
-            0
-        },
+        removed_soa.as_ref().map(|v| v.rdata.serial),
+        added_soa.rdata.serial,
     );
 }

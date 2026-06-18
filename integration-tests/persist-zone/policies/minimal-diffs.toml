@@ -481,7 +481,7 @@ mode = "off"
 
 # The maximum number of sequences of differential information (diffs) that
 # the server may store per zone in order to respond to RFC 1995 Incremental
-# Zone Transfer (IXFR) requests.
+# Zone Transfer (IXFR) requests. Defaults to 5 diffs per zone.
 #
 # Diffs are persisted so that they can be restored on restart of the Cascade
 # daemon.
@@ -493,15 +493,10 @@ mode = "off"
 #
 # Persisted diffs are discarded lazily to reduce the impact of persisted diff
 # compaction. The number of persisted diffs may therefore temporarily exceed
-# the limit specified here until purging of persisted diffs next occurs. Lazy
-# purging of persisted diffs will be skipped for zones that are in maintenance
-# mode.
+# the limit specified here until purging of persisted diffs next occurs.
 #
 # Note that while RFC 1955 section 5 suggests that diffs be purged based on
 # total IXFR response size and/or if older than the SOA expire period, Cascade
 # does not currently implement this behaviour. Cascade also currently has no
 # support for RFC 1995 section 6 condensation of multiple versions.
-#
-# The default is to limits diffs to 5 per zone. If set to 0 storage of diffs
-# will be disabled.
-#max-diffs = 5
+max-diffs = 0

@@ -944,7 +944,16 @@ impl HttpServer {
                     .get(zone_name)
                     .expect("zones and policies are consistent");
 
-                zone.write(center).policy = Some(pol.latest.clone());
+                // Discard excess IXFR diffs if the maximum number permitted
+                // by the policy has been reduced.
+                {
+                    let mut state = zone.write(center);
+                    state.policy = Some(pol.latest.clone());
+                    state
+                        .storage
+                        .diffs
+                        .discard_excess_diffs(pol.latest.server.outbound.max_diffs);
+                }
 
                 center
                     .key_manager
@@ -1030,6 +1039,7 @@ impl HttpServer {
                     .iter()
                     .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
+                max_diffs: p_outbound.max_diffs,
             },
         };
 

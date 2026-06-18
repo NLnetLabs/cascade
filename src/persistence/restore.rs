@@ -87,42 +87,65 @@ pub fn restore_loaded(
 
     let mut all_serials = vec![];
     let mut diffs_to_store: Vec<Arc<DiffData>> = vec![];
+    let restore_base_idx = state.persistence.loaded_diffs.restore_base_idx();
 
-    for diff_info in diff_infos {
-        trace!(
-            "Loading and applying loaded diff form '{}'",
-            diff_info.path().display()
-        );
-        let mut loaded_patcher = restorer
-            .patch()
-            .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
-
-        let (start_serial, end_serial) = load_ixfr_wire_dump(diff_info.path(), &mut buf, |event| {
-            apply_ixfr_event_to_loaded_data(&mut loaded_patcher, event);
-        })
-        .map_err(|err| {
-            io::Error::other(format!(
-                "Loading diff '{}' failed: {err}",
-                diff_info.path().display()
-            ))
-        })?;
-
-        loaded_patcher.next_patchset().map_err(|err| {
-            io::Error::other(format!("Internal error: Next patchset failed: {err}"))
-        })?;
-
-        loaded_patcher
-            .apply()
-            .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
-
-        if let Some(diff) = restorer.take_diff() {
-            diffs_to_store.push(diff.into());
+    for (idx, diff_info) in diff_infos.enumerate() {
+        let (start_serial, end_serial) = if idx < restore_base_idx {
             trace!(
-                "Extracted IXFR loaded diff for SOA serial {} from file '{}': serial {start_serial} -> {end_serial}",
-                soa.rdata.serial,
+                "Building standalone IXFR diff #{idx} from '{}'",
                 diff_info.path().display()
             );
-        }
+            let mut diff = Box::new(DiffData::new());
+            let (start_serial, end_serial) =
+                load_ixfr_wire_dump(diff_info.path(), &mut buf, |event| {
+                    apply_ixfr_event_to_diff_data(&mut diff, event);
+                })
+                .map_err(|err| {
+                    io::Error::other(format!(
+                        "Loading diff '{}' failed: {err}",
+                        diff_info.path().display()
+                    ))
+                })?;
+            diffs_to_store.push(diff.into());
+            (start_serial, end_serial)
+        } else {
+            trace!(
+                "Loading and applying loaded diff #{idx} from '{}'",
+                diff_info.path().display()
+            );
+            let mut loaded_patcher = restorer
+                .patch()
+                .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
+
+            let (start_serial, end_serial) =
+                load_ixfr_wire_dump(diff_info.path(), &mut buf, |event| {
+                    apply_ixfr_event_to_loaded_data(&mut loaded_patcher, event);
+                })
+                .map_err(|err| {
+                    io::Error::other(format!(
+                        "Loading diff '{}' failed: {err}",
+                        diff_info.path().display()
+                    ))
+                })?;
+
+            loaded_patcher.next_patchset().map_err(|err| {
+                io::Error::other(format!("Internal error: Next patchset failed: {err}"))
+            })?;
+
+            loaded_patcher
+                .apply()
+                .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
+
+            if let Some(diff) = restorer.take_diff() {
+                diffs_to_store.push(diff.into());
+                trace!(
+                    "Extracted IXFR loaded diff for SOA serial {} from file '{}': serial {start_serial} -> {end_serial}",
+                    soa.rdata.serial,
+                    diff_info.path().display()
+                );
+            }
+            (start_serial, end_serial)
+        };
 
         let start_serial: u32 = start_serial.into();
         let end_serial: u32 = end_serial.into();
@@ -204,49 +227,74 @@ pub fn restore_signed(
 
     let mut all_serials = vec![];
     let mut diffs_to_store: Vec<(Option<Serial>, Arc<DiffData>)> = vec![];
+    let restore_base_idx = state.persistence.signed_diffs.restore_base_idx();
 
     // Load each diff and apply it to the zone, retrieving a single DiffData
     // per signed diff. Store each signed DiffData alongside the corresponding
     // loaded DiffData that was restored earlier in restore_loaded(). These
     // DiffData's will be used to respond to IXFR requests, while at the same
     // time also building up the entire signed zone that should be served for
-    // AXFR requests.
-    for diff_info in diff_infos {
-        trace!(
-            "Loading and applying signed diff from '{}' for loaded serial {:?}",
-            diff_info.path().display(),
-            diff_info.loaded_serial()
-        );
-        let mut signed_patcher = restorer
-            .patch()
-            .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
-
-        let (start_serial, end_serial) = load_ixfr_wire_dump(diff_info.path(), &mut buf, |event| {
-            apply_ixfr_event_to_signed_data(&mut signed_patcher, event);
-        })
-        .map_err(|err| {
-            io::Error::other(format!(
-                "Loading diff '{}' failed: {err}",
-                diff_info.path().display()
-            ))
-        })?;
-
-        signed_patcher.next_patchset().map_err(|err| {
-            io::Error::other(format!("Internal error: Next patchset failed: {err}"))
-        })?;
-
-        signed_patcher
-            .apply()
-            .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
-
-        if let Some(diff) = restorer.take_diff() {
-            diffs_to_store.push((diff_info.loaded_serial(), diff.into()));
+    // AXFR requests. Skip diffs that were included in the snapshot during the
+    // last compaction event but still need to be loaded into memory to serve
+    // in IXFR responses.
+    for (idx, diff_info) in diff_infos.enumerate() {
+        let (start_serial, end_serial) = if idx < restore_base_idx {
             trace!(
-                "Extracted IXFR signed diff for SOA serial {} from file '{}': serial {start_serial} -> {end_serial}",
-                soa.rdata.serial,
+                "Building standalone IXFR diff #{idx} from '{}'",
                 diff_info.path().display()
             );
-        }
+            let mut diff = Box::new(DiffData::new());
+            let (start_serial, end_serial) =
+                load_ixfr_wire_dump(diff_info.path(), &mut buf, |event| {
+                    apply_ixfr_event_to_diff_data(&mut diff, event);
+                })
+                .map_err(|err| {
+                    io::Error::other(format!(
+                        "Loading diff '{}' failed: {err}",
+                        diff_info.path().display()
+                    ))
+                })?;
+            diffs_to_store.push((diff_info.loaded_serial(), diff.into()));
+            (start_serial, end_serial)
+        } else {
+            trace!(
+                "Loading and applying signed diff #{idx} from '{}' for loaded serial {:?}",
+                diff_info.path().display(),
+                diff_info.loaded_serial()
+            );
+            let mut signed_patcher = restorer
+                .patch()
+                .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
+
+            let (start_serial, end_serial) =
+                load_ixfr_wire_dump(diff_info.path(), &mut buf, |event| {
+                    apply_ixfr_event_to_signed_data(&mut signed_patcher, event);
+                })
+                .map_err(|err| {
+                    io::Error::other(format!(
+                        "Loading diff '{}' failed: {err}",
+                        diff_info.path().display()
+                    ))
+                })?;
+
+            signed_patcher.next_patchset().map_err(|err| {
+                io::Error::other(format!("Internal error: Next patchset failed: {err}"))
+            })?;
+
+            signed_patcher
+                .apply()
+                .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
+
+            if let Some(diff) = restorer.take_diff() {
+                diffs_to_store.push((diff_info.loaded_serial(), diff.into()));
+                trace!(
+                    "Extracted IXFR signed diff for SOA serial {} from file '{}': serial {start_serial} -> {end_serial}",
+                    soa.rdata.serial,
+                    diff_info.path().display()
+                );
+            }
+            (start_serial, end_serial)
+        };
 
         let start_serial: u32 = start_serial.into();
         let end_serial: u32 = end_serial.into();
@@ -260,10 +308,20 @@ pub fn restore_signed(
         num_diffs_to_restore, zone.name
     );
 
+    let max_diffs = zone
+        .read()
+        .policy
+        .clone()
+        .map(|p| p.server.outbound.max_diffs);
+
     let mut state = zone.write(center);
     for (loaded_serial, diff) in diffs_to_store {
         // Store the signed diff to be used as part of serving an IXFR.
         state.storage.diffs.store_signed_diff(loaded_serial, diff);
+    }
+
+    if let Some(max_diffs) = max_diffs {
+        state.storage.diffs.discard_excess_diffs(max_diffs);
     }
 
     info!(
@@ -498,5 +556,15 @@ fn apply_ixfr_event_to_signed_data(patcher: &mut SignedZonePatcher<'_>, event: I
         IxfrEvent::Add(r) if r.rtype == RType::SOA => patcher.add_soa(r.into()).unwrap(),
         IxfrEvent::Add(r) => patcher.add(r).unwrap(),
         IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
+    }
+}
+
+fn apply_ixfr_event_to_diff_data(diff: &mut Box<DiffData>, event: IxfrEvent) {
+    match event {
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => diff.removed_soa = Some(r.into()),
+        IxfrEvent::Remove(r) => diff.removed_records.push(r),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => diff.added_soa = Some(r.into()),
+        IxfrEvent::Add(r) => diff.added_records.push(r),
+        IxfrEvent::EndOfUpdate => {}
     }
 }

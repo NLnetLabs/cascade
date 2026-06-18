@@ -656,6 +656,7 @@ impl ZoneLoadSourceSpec {
 pub struct PersistedDiffsSpec {
     pub is_signed: bool,
     pub next_idx: usize,
+    pub restore_base_idx: usize,
     pub diff_infos: Vec<PersistedDiffFileInfoSpec>,
 }
 
@@ -671,7 +672,12 @@ impl PersistedDiffsSpec {
             true => PersistedDiffRecordSource::Signed,
             false => PersistedDiffRecordSource::Loaded,
         };
-        PersistedDiffManager::from_parts(is_signed, self.next_idx, diff_infos)
+        PersistedDiffManager::from_parts(
+            is_signed,
+            self.next_idx,
+            self.restore_base_idx,
+            diff_infos,
+        )
     }
 
     /// Build into this specification.
@@ -679,6 +685,7 @@ impl PersistedDiffsSpec {
         Self {
             is_signed: false,
             next_idx: loaded_diffs.next_idx(),
+            restore_base_idx: loaded_diffs.restore_base_idx(),
             diff_infos: loaded_diffs
                 .diffs()
                 .iter()
@@ -692,6 +699,7 @@ impl PersistedDiffsSpec {
         Self {
             is_signed: true,
             next_idx: signed_diffs.next_idx(),
+            restore_base_idx: signed_diffs.restore_base_idx(),
             diff_infos: signed_diffs
                 .diffs()
                 .iter()

@@ -562,6 +562,11 @@ pub struct OutboundPolicy {
     ///
     /// TODO: support the RFC 1996 "Notify Set"?
     pub send_notify_to: Vec<NameserverCommsPolicy>,
+
+    /// The maximum number of IXFR diffs to keep.
+    ///
+    /// Excess diffs will be discarded.
+    pub max_diffs: usize,
 }
 
 //----------- NameserverCommsPolicy -------------------------------------------

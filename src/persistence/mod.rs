@@ -92,12 +92,12 @@
 //! signed review hook be able to query the loaded review server for the
 //! loaded diff?
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use crate::{center::Center, util::AbortOnDrop, zone::ZoneByName};
 
 mod persist;
-use persist::{persist_loaded, persist_signed};
+use persist::{persist_loaded, persist_signed, persist_to_file_from_parts};
 
 mod restore;
 use restore::{restore_loaded, restore_signed};
@@ -123,6 +123,66 @@ impl Persister {
 }
 
 impl Default for Persister {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+//----------- Compacter --------------------------------------------------------
+
+/// The zone data compacter.
+///
+/// Compacts zone data on disk periodically, keeping the number of diffs within
+/// the configured maximum per zone.
+#[derive(Debug)]
+pub struct Compacter {}
+
+impl Compacter {
+    /// Construct a new [`Compacter`].
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// Drive this [`Compacter`].
+    pub fn run(center: Arc<Center>) -> AbortOnDrop {
+        AbortOnDrop::from(tokio::spawn(async move {
+            // TODO: Make compaction interval configurable?
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+
+                // Obtain a list of all zones.
+                let zones = {
+                    let state = center.state.lock().unwrap();
+                    // TODO: To avoid invoking compaction unnecessarily we
+                    // could store a flag with the zone to say that the diffs
+                    // have been changed since last compaction and reset it on
+                    // compaction, and filter unchanged zones out here.
+                    state
+                        .zones
+                        .iter()
+                        .filter(|ZoneByName(z)| !z.state.read().maintenance_mode)
+                        .map(|ZoneByName(z)| z.clone())
+                        .collect::<Vec<_>>()
+                };
+
+                // Compact each zone one at a time.
+                // TODO: Add a configuration setting to control the maximum
+                // number of zones to compact concurrently?
+                for zone in zones {
+                    // Spawn the compaction task on a Tokio blocking task
+                    // thread so as not to block any other async tasks on the
+                    // same executor thread with a long running compaction.
+                    let mut handle = zone.write_handle(&center);
+                    handle.persistence().start_compaction();
+                }
+            }
+        }))
+    }
+}
+
+impl Default for Compacter {
     fn default() -> Self {
         Self::new()
     }

@@ -60,6 +60,12 @@ const KEY_ROLL_TIME: u32 = 24 * 3600;
 // When auto remove is enabled, remove old keys after one week.
 const AUTO_REMOVE_DELAY: u32 = 7 * 24 * 3600;
 
+// Defaults for diff purging.
+//
+// The maximum number of diffs to keep per zone.
+// Based on the NSD default of ixfr-number: 5.
+const MAX_DIFFS: usize = 5;
+
 //----------- Spec -------------------------------------------------------------
 
 /// A policy file.
@@ -945,10 +951,20 @@ pub struct OutboundSpec {
     /// TODO: support the RFC 1996 "Notify Set"?
     #[serde(default = "empty_list")]
     pub send_notify_to: Vec<NameserverCommsSpec>,
+
+    /// The maximum number of IXFR diffs to keep.
+    ///
+    /// Excess diffs will be discarded.
+    #[serde(default = "default_max_diffs")]
+    pub max_diffs: usize,
 }
 
 fn empty_list() -> Vec<NameserverCommsSpec> {
     vec![]
+}
+
+fn default_max_diffs() -> usize {
+    MAX_DIFFS
 }
 
 //--- Conversion
@@ -959,6 +975,7 @@ impl OutboundSpec {
         OutboundPolicy {
             provide_xfr_to: self.provide_xfr_to.into_iter().map(|v| v.parse()).collect(),
             send_notify_to: self.send_notify_to.into_iter().map(|v| v.parse()).collect(),
+            max_diffs: self.max_diffs,
         }
     }
 
@@ -975,6 +992,7 @@ impl OutboundSpec {
                 .iter()
                 .map(NameserverCommsSpec::build)
                 .collect(),
+            max_diffs: policy.max_diffs,
         }
     }
 }

@@ -4,6 +4,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::Arc,
+    time::Instant,
 };
 
 use cascade_zonedata::{
@@ -40,6 +41,26 @@ impl ZonePersistenceHandle<'_> {
             state: self.state,
             center: self.center,
         }
+    }
+
+    /// Compact persisted data for the zone.
+    #[tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn start_compaction(&mut self) {
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        let span = trace_span!("compact");
+        self.state
+            .persistence
+            .ongoing
+            .spawn_blocking(span, move || {
+                PersistenceState::compact(&center, &zone);
+                let mut handle = zone.write_handle(&center);
+                handle.state.persistence.ongoing.finish();
+            });
     }
 
     /// Begin restoring data for the zone.
@@ -280,14 +301,179 @@ pub struct PersistenceState {
     /// diffs triggered by a change in the loaded zone actually has an
     /// associated loaded diff serial.
     pub signed_diffs: PersistedDiffManager,
+
+    /// The last time that the extra diffs were merged into the persisted
+    /// zone.
+    pub last_compacted_at: Option<Instant>,
+}
+
+impl PersistenceState {
+    pub fn compact(center: &Arc<Center>, zone: &Arc<Zone>) {
+        // Is the zone available at the publication server? We need to read
+        // from that view so that we can update the zone snapshot files on
+        // disk so we can't do anything while Cascade is still starting up
+        // and hasn't yet assigned the viewer or for a zone that hasn't been
+        // published yet.
+        let Some(viewer) = center.publication_server.viewer(zone) else {
+            trace!(
+                "Ignoring compaction request for zone '{}': no publication viewer available",
+                zone.name
+            );
+            return;
+        };
+
+        // Is compaction needed? Compare the allowed number of diffs to the
+        // actual number of persisted diffs. For that we need a policy,
+        // which the zone _should_ have. If not, abort.
+        let state = zone.state.read();
+        let Some(ref policy) = state.policy else {
+            trace!(
+                "Ignoring compaction request for zone '{}': no policy available",
+                zone.name
+            );
+            return;
+        };
+
+        // Grab some values that we need then release the state lock.
+        let max_diffs = policy.server.outbound.max_diffs;
+        // The number of actual diffs is one less than the set of diff paths
+        // as the first path is to the snapshot, not to a diff.
+        let num_signed_diffs = state.persistence.signed_diffs.len().saturating_sub(1);
+        let loaded_snapshot_path = state.persistence.loaded_diffs.diff_infos.first().cloned();
+        let signed_snapshot_path = state.persistence.signed_diffs.diff_infos.first().cloned();
+        drop(state);
+
+        // Check the number of persisted diffs vs the number allowed.
+        trace!(
+            "Checking if compaction is needed for zone '{}': {num_signed_diffs} > {max_diffs}",
+            zone.name
+        );
+        if num_signed_diffs > max_diffs {
+            debug!(
+                "Compacting persisted diffs for zone '{}' with {} diffs > {} max diffs",
+                zone.name, num_signed_diffs, max_diffs
+            );
+            let num_diffs_to_remove = num_signed_diffs.abs_diff(max_diffs);
+            let loaded_snapshot_path = &loaded_snapshot_path.unwrap().path;
+            let signed_snapshot_path = &signed_snapshot_path.unwrap().path;
+
+            // Get access to the published records for the zone, so that we
+            // can write new loaded and signed snapshot files to disk.
+            if let Ok(viewer) = viewer.try_read()
+                && let Some(reader) = viewer.read()
+            {
+                debug!(
+                    "Writing loaded zone snapshot to {}",
+                    loaded_snapshot_path.display()
+                );
+                crate::persistence::persist_to_file_from_parts(
+                    loaded_snapshot_path,
+                    None,
+                    reader.soa().clone(),
+                    [].iter().cloned(),
+                    // TODO: It would be nice if we didn't have to clone
+                    // the records here.
+                    reader.loaded_records(),
+                );
+
+                debug!(
+                    "Writing new signed zone snapshot to {}",
+                    signed_snapshot_path.display()
+                );
+                crate::persistence::persist_to_file_from_parts(
+                    signed_snapshot_path,
+                    None,
+                    reader.soa().clone(),
+                    [].iter().cloned(),
+                    // TODO: It would be nice if we didn't have to clone
+                    // the records here.
+                    reader.generated_records().iter().cloned(),
+                );
+
+                // Now that we have re-written the snapshots using the latest
+                // published version of the zone we don't need any of the
+                // on-disk persisted diffs that were previously applied on top
+                // of the old snapshot to re-create the zone.
+                //
+                // We might still however need some of those on-disk diffs so
+                // that we can reload them on startup to be able to serve them
+                // as IXFR diffs to downstream nameservers.
+                //
+                // Check which ones we can delete and after deleting them
+                // update our record of the first on-disk diff file that
+                // should be applied on top of the updated snapshot.
+                let mut state = zone.write(center);
+
+                // Remove the first N oldest signed diffs and their
+                // corresponding loaded diffs. Skip the first "diff" as it is
+                // the snapshot, not a diff.
+                let mut idx = 0;
+                let mut loaded_serials_to_remove = vec![];
+                state
+                    .persistence
+                    .signed_diffs
+                    .diff_infos
+                    .retain(|diff_info| {
+                        // Keep only the snapshot and diffs newer than the ones
+                        // to remove.
+                        let keep = idx == 0 || idx > num_diffs_to_remove;
+                        trace!("Compaction for zone '{}': removing {num_diffs_to_remove} diffs: retain diff #{idx}: {keep}", zone.name);
+                        idx += 1;
+
+                        if !keep {
+                            // Remove the corresponding loaded diff.
+                            if let Some(loaded_serial) = diff_info.loaded_serial {
+                                loaded_serials_to_remove.push(loaded_serial);
+                            }
+                        }
+                        keep
+                    });
+
+                // Remove the corresponding loaded diffs.
+                for loaded_serial in loaded_serials_to_remove.into_iter() {
+                    if let Some(found_item) = state
+                        .persistence
+                        .loaded_diffs
+                        .diffs()
+                        .iter()
+                        .find(|item| item.loaded_serial == Some(loaded_serial))
+                        .cloned()
+                    {
+                        trace!(
+                            "Compaction for zone '{}': removing loaded diff for loaded serial {loaded_serial}",
+                            zone.name
+                        );
+                        let _ = state
+                            .persistence
+                            .loaded_diffs
+                            .diff_infos
+                            .remove(&found_item);
+                    }
+                }
+
+                state.persistence.loaded_diffs.restore_base_idx =
+                    state.persistence.loaded_diffs.len();
+                state.persistence.signed_diffs.restore_base_idx =
+                    state.persistence.signed_diffs.len();
+                trace!(
+                    "Compaction complete: next_idx: loaded={}, signed={}, restore_base_idx: loaded={}, signed={}",
+                    state.persistence.loaded_diffs.next_idx,
+                    state.persistence.signed_diffs.next_idx,
+                    state.persistence.loaded_diffs.restore_base_idx,
+                    state.persistence.signed_diffs.restore_base_idx
+                );
+            }
+        }
+    }
 }
 
 impl Default for PersistenceState {
     fn default() -> Self {
         Self {
+            ongoing: Default::default(),
             loaded_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Loaded),
             signed_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Signed),
-            ongoing: Default::default(),
+            last_compacted_at: None,
         }
     }
 }
@@ -313,23 +499,34 @@ pub struct PersistedDiffManager {
     /// to.
     next_idx: usize,
 
+    /// The index of the first diff_info to apply to the snapshot when restoring.
+    ///
+    /// After compaction the on-disk diffs that existed must no longer be applied
+    /// to the base snapshot as the new snapshot includes them, but we should
+    /// still track their paths so that we can load them for use in responding to
+    /// IXFR client requests. So we need to remember which index to start applying
+    /// diffs to the snapshot from.
+    restore_base_idx: usize,
+
     /// The collection of persisted data file paths in this set.
     diff_infos: BTreeSet<PersistedDiffFileInfo>,
 }
 
 impl PersistedDiffManager {
     pub fn new(record_source: PersistedDiffRecordSource) -> Self {
-        Self::from_parts(record_source, 0, Default::default())
+        Self::from_parts(record_source, 0, 0, Default::default())
     }
 
     pub fn from_parts(
         record_source: PersistedDiffRecordSource,
         next_idx: usize,
+        restore_base_idx: usize,
         diff_infos: BTreeSet<PersistedDiffFileInfo>,
     ) -> Self {
         Self {
             record_source,
             next_idx,
+            restore_base_idx,
             diff_infos,
         }
     }
@@ -382,6 +579,14 @@ impl PersistedDiffManager {
 
     pub fn diffs(&self) -> &BTreeSet<PersistedDiffFileInfo> {
         &self.diff_infos
+    }
+
+    fn len(&self) -> usize {
+        self.diff_infos.len()
+    }
+
+    pub fn restore_base_idx(&self) -> usize {
+        self.restore_base_idx
     }
 }
 
@@ -514,24 +719,6 @@ pub struct IxfrZoneDiffs {
     signed_diffs: BTreeMap<u32, RelatedSignedDiff>,
 }
 
-struct RelatedSignedDiff {
-    /// The signed diff.
-    diff: Arc<DiffData>,
-
-    /// The removed serial number of the loaded diff that this signed diff
-    /// relates to, if any.
-    related_loaded_serial: Option<u32>,
-}
-
-impl RelatedSignedDiff {
-    fn new(diff: Arc<DiffData>, loaded_serial: Option<Serial>) -> Self {
-        Self {
-            diff,
-            related_loaded_serial: loaded_serial.map(Into::into),
-        }
-    }
-}
-
 impl IxfrZoneDiffs {
     pub fn new() -> Self {
         Default::default()
@@ -599,6 +786,29 @@ impl IxfrZoneDiffs {
 
         diffs
     }
+
+    pub fn discard_excess_diffs(&mut self, max_diffs: usize) {
+        let num_signed_diffs = self.num_signed_diffs();
+        debug!("Checking for diffs to discard: {num_signed_diffs} > {max_diffs}?");
+        if num_signed_diffs > max_diffs {
+            // Prune the oldest diffs so that we end up storing no more than
+            // max_diffs signed diffs.
+            let num_diffs_to_prune = num_signed_diffs - max_diffs;
+            debug!("Discarding {num_diffs_to_prune} in-memory diffs");
+            for _ in 0..num_diffs_to_prune {
+                if let Some(e) = self.signed_diffs.first_entry() {
+                    trace!("Discarding in-memory signed diff for serial {}", e.key());
+                    let related_loaded_diff = e.remove();
+                    if let Some(loaded_serial) = related_loaded_diff.related_loaded_serial {
+                        trace!(
+                            "Discarding related in-memory loaded diff for serial {loaded_serial}"
+                        );
+                        let _ = self.loaded_diffs.remove(&loaded_serial);
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for IxfrZoneDiffs {
@@ -629,6 +839,26 @@ impl std::fmt::Display for IxfrZoneDiffs {
         }
 
         std::fmt::Result::Ok(())
+    }
+}
+
+//------------ RelatedSignedDiff ---------------------------------------------
+
+struct RelatedSignedDiff {
+    /// The signed diff.
+    diff: Arc<DiffData>,
+
+    /// The removed serial number of the loaded diff that this signed diff
+    /// relates to, if any.
+    related_loaded_serial: Option<u32>,
+}
+
+impl RelatedSignedDiff {
+    fn new(diff: Arc<DiffData>, loaded_serial: Option<Serial>) -> Self {
+        Self {
+            diff,
+            related_loaded_serial: loaded_serial.map(Into::into),
+        }
     }
 }
 

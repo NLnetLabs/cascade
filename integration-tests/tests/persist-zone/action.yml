@@ -480,11 +480,11 @@ runs:
     #    the same IXFRs as before.
     # ------------------------------------------------------------------------
 
-    - name: Stop Cascade again
+    - name: 6 Stop Cascade again
       run: |
         pkill cascaded
 
-    - name: Wait for Cascade to exit again
+    - name: 6 Wait for Cascade to exit again
       run: |
         timeout=10 # seconds
         start=$(date +%s)
@@ -497,12 +497,12 @@ runs:
           sleep 1
         done
 
-    - name: Start Cascade a 4th time
+    - name: 6 Start Cascade a 4th time
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
         cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
 
-    - name: Wait for Cascade to become healthy a 4th time
+    - name: 6 Wait for Cascade to become healthy a 4th time
       run: |
         timeout=10 # seconds
         start=$(date +%s)
@@ -514,7 +514,7 @@ runs:
           sleep 1
         done
 
-    - name: Check that Cascade still knows the zone
+    - name: 6 Check that Cascade still knows the zone
       run: |
         timeout=10 # seconds
         start=$(date +%s)
@@ -527,7 +527,7 @@ runs:
           sleep 1
         done
 
-    - name: Wait for Cascade to serve the re-signed zone with a newer serial number
+    - name: 6 Wait for Cascade to serve the re-signed zone with a newer serial number
       env:
         EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
       run: |
@@ -544,12 +544,12 @@ runs:
           sleep 1
         done
 
-    - name: Check that Cascade did NOT re-sign the zone
+    - name: 6 Check that Cascade did NOT re-sign the zone
       run: |
         dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed5.log
         diff -u example.test.signed4.log example.test.signed5.log
 
-    - name: "Verify again that IXFR for 01 -> 03 is available"
+    - name: "6 Verify again that IXFR for 01 -> 03 is available"
       env:
         EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
       run: |
@@ -574,7 +574,7 @@ runs:
         sed -e 's/\s\+/ /g' "${OUT_FILE}" | grep -F '5 IN SOA' > diff.in
         diff -u diff.in "${EXPECTED_OUT_FILE}"
 
-    - name: "Verify again that IXFR for 02 -> 03 is available"
+    - name: "6 Verify again that IXFR for 02 -> 03 is available"
       env:
         EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
       run: |
@@ -592,21 +592,71 @@ runs:
         example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
         EOF
 
-        dig +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+        dig +qid=6 +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
         sed -e 's/\s\+/ /g' "${OUT_FILE}" | grep -F '5 IN SOA' > diff.in
         diff -u diff.in "${EXPECTED_OUT_FILE}"
 
     # ------------------------------------------------------------------------
-    # 7. Delete all persisted signed zone data files to verify that Cascade
-    #    can handle partial restoration for a zone that was previously signed
-    #    at least once.
+    # 7. Reduce the number of diffs that Cascade should keep and check that
+    #    diffs get removed from memory and from disk.
     # ------------------------------------------------------------------------
 
-    - name: Stop Cascade again
+    - name: 7 Reduce policy setting max-diffs to 1.
+      run: |
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/integration-tests/persist-zone"
+        cp "${TEST_DIR}/policies/minimal-diffs.toml" "${POLICY_DIR}/default.toml"
+        cascade policy reload
+
+    - name: "7 Verify that IXFR for 02 -> 03 is available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 2 ))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        EXPECTED_OUT_FILE="expected.out"
+
+        let SER_2=$(( EXPECTED_SERIAL + 2))
+        let SER_3=$(( EXPECTED_SERIAL + 3))
+
+        cat >"${EXPECTED_OUT_FILE}" <<EOF
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_2} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        EOF
+
+        dig +qid=71 +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+        sed -e 's/\s\+/ /g' "${OUT_FILE}" | grep -F '5 IN SOA' > diff.in
+        diff -u diff.in "${EXPECTED_OUT_FILE}"
+
+    - name: "7 Verify that IXFR for 01 -> 03 is NOT available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        # Attempting to get the diff from 00 -> 01 should return an AXFR
+        # (denoted by a single leading SOA and a single trailing SOA)
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 3))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        dig +qid=72 +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+
+        NUM_SOA=$(grep -E 'example.test.\s+5\s+IN\s+SOA\s+ns1.example.test.\smail.example.test.\s'${EXPECTED_SERIAL}'\s60\s60\s3600\s5' "${OUT_FILE}" | wc -l)
+        if [[ ${NUM_SOA} -ne 2 ]]; then
+          echo "::error:: Expected 2 SOA RRs but got ${NUM_SOA} RRs."
+          exit 1
+        fi
+
+    # ------------------------------------------------------------------------
+    # 8. Stop and restart Cascade and verify that after restoring diffs from
+    #    disk it has the same behaviour as before it was shutdown.
+    # ------------------------------------------------------------------------
+
+    - name: 8 Stop Cascade again
       run: |
         pkill cascaded
 
-    - name: Wait for Cascade to exit again
+    - name: 8 Wait for Cascade to exit again
       run: |
         timeout=10 # seconds
         start=$(date +%s)
@@ -619,17 +669,12 @@ runs:
           sleep 1
         done
 
-    - name: Delete the persisted signed zone data that Cascade wrote to disk
-      run: |
-        CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        rm "${CASCADE_DIR}"/zone-state/example.test.signed.*
-
-    - name: Start Cascade again
+    - name: 8 Start Cascade again
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
         cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
 
-    - name: Wait for Cascade to become healthy again
+    - name: 8 Wait for Cascade to become healthy again
       run: |
         timeout=10 # seconds
         start=$(date +%s)
@@ -641,7 +686,7 @@ runs:
           sleep 1
         done
 
-    - name: Check that Cascade still knows the zone
+    - name: 8 Check that Cascade still knows the zone
       run: |
         timeout=10 # seconds
         start=$(date +%s)
@@ -654,7 +699,104 @@ runs:
           sleep 1
         done
 
-    - name: Wait for Cascade to serve the re-signed zone with a newer serial number
+    - name: "8 Verify that IXFR for 02 -> 03 is available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 2 ))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        EXPECTED_OUT_FILE="expected.out"
+
+        let SER_2=$(( EXPECTED_SERIAL + 2))
+        let SER_3=$(( EXPECTED_SERIAL + 3))
+
+        cat >"${EXPECTED_OUT_FILE}" <<EOF
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_2} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        example.test. 5 IN SOA ns1.example.test. mail.example.test. ${SER_3} 60 60 3600 5
+        EOF
+
+        dig +qid=81 +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+        sed -e 's/\s\+/ /g' "${OUT_FILE}" | grep -F '5 IN SOA' > diff.in
+        diff -u diff.in "${EXPECTED_OUT_FILE}"
+
+    - name: "8 Verify that IXFR for 01 -> 03 is NOT available"
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        # Attempting to get the diff from 00 -> 01 should return an AXFR
+        # (denoted by a single leading SOA and a single trailing SOA)
+        let CLIENT_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 3))
+        OUT_FILE="example.test.ixfr.from-${CLIENT_SERIAL}.log"
+        dig +qid=82 +noall +answer @127.0.0.1 -p 4542 -t ixfr=${CLIENT_SERIAL} example.test > "${OUT_FILE}"
+
+        NUM_SOA=$(grep -E 'example.test.\s+5\s+IN\s+SOA\s+ns1.example.test.\smail.example.test.\s'${EXPECTED_SERIAL}'\s60\s60\s3600\s5' "${OUT_FILE}" | wc -l)
+        if [[ ${NUM_SOA} -ne 2 ]]; then
+          echo "::error:: Expected 2 SOA RRs but got ${NUM_SOA} RRs."
+          exit 1
+        fi
+
+    # ------------------------------------------------------------------------
+    # 9. Delete all persisted signed zone data files to verify that Cascade
+    #    can handle partial restoration for a zone that was previously signed
+    #    at least once.
+    # ------------------------------------------------------------------------
+
+    - name: 9 Stop Cascade again
+      run: |
+        pkill cascaded
+
+    - name: 9 Wait for Cascade to exit again
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until ! cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade health
+            echo "::error:: timeout: health check did not indicate Cascade had stopped"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: 9 Delete the persisted signed zone data that Cascade wrote to disk
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        rm "${CASCADE_DIR}"/zone-state/example.test.signed.*
+
+    - name: 9 Start Cascade again
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+
+    - name: 9 Wait for Cascade to become healthy again
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: health check did not indicate Cascade had started"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: 9 Check that Cascade still knows the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone list | grep -q example.test; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone list
+            echo "::error:: timeout: Cascade no longer knows the zone"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: 9 Wait for Cascade to serve the re-signed zone with a newer serial number
       env:
         EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
       run: |
@@ -671,11 +813,11 @@ runs:
           sleep 1
         done
 
-    - name: Save the signed zone for later comparison
+    - name: 9 Save the signed zone for later comparison
       run: |
         dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR > example.test.signed7.log
 
-    - name: Check that Cascade DID resign the zone, not just bump the serial number
+    - name: 9 Check that Cascade DID resign the zone, not just bump the serial number
       run: |
         if diff -u example.test.signed2.log example.test.signed7.log > unexpected-diff.log; then
           echo "::error:: Cascade should have re-signed the zone"
