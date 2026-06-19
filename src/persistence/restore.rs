@@ -315,13 +315,29 @@ pub fn restore_signed(
         .map(|p| p.server.outbound.max_diffs);
 
     let mut state = zone.write(center);
-    for (loaded_serial, diff) in diffs_to_store {
-        // Store the signed diff to be used as part of serving an IXFR.
-        state.storage.diffs.store_signed_diff(loaded_serial, diff);
-    }
+    let last_diff = diffs_to_store.last();
+    if let Some((last_loaded_serial, last_diff)) = last_diff {
+        state.storage.published_soa = last_diff.added_soa.clone();
+        state.storage.published_loaded_soa = Some(
+            state
+                .storage
+                .published_soa
+                .clone()
+                .map(|mut soa| {
+                    soa.rdata.serial = last_loaded_serial.unwrap();
+                    soa
+                })
+                .unwrap(),
+        );
 
-    if let Some(max_diffs) = max_diffs {
-        state.storage.diffs.discard_excess_diffs(max_diffs);
+        for (loaded_serial, diff) in diffs_to_store {
+            // Store the signed diff to be used as part of serving an IXFR.
+            state.storage.diffs.store_signed_diff(loaded_serial, diff);
+        }
+
+        if let Some(max_diffs) = max_diffs {
+            state.storage.diffs.discard_excess_diffs(max_diffs);
+        }
     }
 
     info!(
