@@ -14,6 +14,7 @@
 - git add Cargo.toml Cargo.lock Changelog.md pkg/rules/packages-to-build.yml doc/manual/build/man/*.*
 - git commit
 - git push
+- `./act-wrapper --rm` - make sure that the integration tests pass
 - in GH UI invoke the packaging workflow on the release branch
 - make a PR for the branch and mention the workflow run URL in the descrption
 - review the PR and ensure the workflow succeeds
