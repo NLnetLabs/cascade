@@ -33,13 +33,11 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 - Add `CASCADE_DAEMON` env var for the CLI. ([#817] by @tertsdiepraam)
 - Support importing keys by private key path as well as public key path.
   ([#820] by @ximon18)
-- Document incremental signing ([#639] by @bal-e)
+- Document incremental signing. ([#639] by @bal-e)
 
 ### Bug fixes
 
 - Prevent a crash when re-signing fails. ([#821] by @bal-e)
-
-### Other changes
 
 ### Documentation improvements
 
@@ -47,9 +45,12 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 
 ### Known issues
 
+- Restoring with a rejected signed zone in the history causes loss of the
+  published zone. ([#825])
+
 ### Acknowledgements
 
-Thanks to @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
+Thanks to @davidgroves, @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
 valuable feedback!
 
 [#639]: https://github.com/NLnetLabs/cascade/pull/639
@@ -59,6 +60,7 @@ valuable feedback!
 [#817]: https://github.com/NLnetLabs/cascade/pull/817
 [#820]: https://github.com/NLnetLabs/cascade/pull/820
 [#821]: https://github.com/NLnetLabs/cascade/pull/821
+[#825]: https://github.com/NLnetLabs/cascade/pull/825
 
 ## 0.1.0-beta2 'Donde comen dos, comen tres'
 
