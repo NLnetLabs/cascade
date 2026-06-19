@@ -33,6 +33,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 - Add `CASCADE_DAEMON` env var for the CLI. ([#817] by @tertsdiepraam)
 - Support importing keys by private key path as well as public key path.
   ([#820] by @ximon18)
+- Document incremental signing ([#639] by @bal-e)
 
 ### Bug fixes
 
@@ -51,6 +52,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 Thanks to @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
 valuable feedback!
 
+[#639]: https://github.com/NLnetLabs/cascade/pull/639
 [#807]: https://github.com/NLnetLabs/cascade/pull/807
 [#810]: https://github.com/NLnetLabs/cascade/pull/810
 [#814]: https://github.com/NLnetLabs/cascade/pull/814
