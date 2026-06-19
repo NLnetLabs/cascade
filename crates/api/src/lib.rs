@@ -847,6 +847,34 @@ pub struct LoaderPolicyInfo {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct KeyManagerPolicyInfo {
     pub hsm_server_id: Option<String>,
+    pub use_csk: bool,
+    pub algorithm: String,
+    pub ksk_validity: Option<u32>,
+    pub zsk_validity: Option<u32>,
+    pub csk_validity: Option<u32>,
+    pub auto_ksk: AutoConfigPolicyInfo,
+    pub auto_zsk: AutoConfigPolicyInfo,
+    pub auto_csk: AutoConfigPolicyInfo,
+    pub auto_algorithm: AutoConfigPolicyInfo,
+    pub dnskey_inception_offset: u32,
+    pub dnskey_signature_lifetime: u32,
+    pub dnskey_remain_time: u32,
+    pub cds_inception_offset: u32,
+    pub cds_signature_lifetime: u32,
+    pub cds_remain_time: u32,
+    pub ds_algorithm: String,
+    pub default_ttl: u32,
+    pub auto_remove: bool,
+    pub auto_remove_delay: Duration,
+    pub publication_nameservers: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct AutoConfigPolicyInfo {
+    pub start: bool,
+    pub report: bool,
+    pub expire: bool,
+    pub done: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -874,6 +902,9 @@ pub struct SignerPolicyInfo {
     // TODO: These fields should have a type that explains that they represent durations.
     pub sig_inception_offset: u32,
     pub sig_validity_offset: u32,
+    pub sig_remain_time: u32,
+    pub signature_refresh_interval: u32,
+    pub key_roll_time: u32,
     pub denial: SignerDenialPolicyInfo,
     pub review: ReviewPolicyInfo,
 }
