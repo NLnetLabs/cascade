@@ -13,12 +13,12 @@ Context
 -------
 
 Cascade can sign zones in either of two modes: full signing and incremental
-signing. It will automatically choose one. Full signing unconditionally signs
-every record in the loaded zone, even if some of those records had valid
-signatures. Incremental signing will examine previously generated signatures
-and only sign records that are missing signatures or whose signatures need
-updating. Incremental signing is more complicated than full signing, but it has
-two benefits:
+signing. It will automatically choose one (as explained below). Full signing
+unconditionally signs every record in the loaded zone, even if some of those
+records had valid signatures. Incremental signing will examine previously
+generated signatures and only sign records that are missing signatures or whose
+signatures need updating. Incremental signing is more complicated than full
+signing, but it has two benefits:
 
 1. It can reuse existing signatures, significantly reducing the number of
    cryptographic signatures it needs to generate. This is important for
