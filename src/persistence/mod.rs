@@ -111,9 +111,7 @@ pub mod zone;
 /// This component is responsible for persisting zone data, so it can be
 /// restored (and Cascade can resume operation) after a crash / restart.
 #[derive(Debug)]
-pub struct Persister {
-    // TODO: Do we need any global state for persistence?
-}
+pub struct Persister {}
 
 impl Persister {
     /// Construct a new [`Persister`].
