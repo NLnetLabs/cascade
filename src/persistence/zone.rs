@@ -468,7 +468,6 @@ impl Default for PersistenceState {
             ongoing: Default::default(),
             loaded_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Loaded),
             signed_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Signed),
-            last_compacted_at: None,
         }
     }
 }
