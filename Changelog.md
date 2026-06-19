@@ -14,9 +14,9 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-beta3 'Villa Volta'
 
-Released yyyy-mm-dd.
+Released 2026-06-19.
 
 Feedback welcome at https://community.nlnetlabs.nl/, bug reports can be
 raised at https://github.com/NLnetLabs/cascade/issues.
