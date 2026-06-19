@@ -845,10 +845,6 @@ impl StorageZoneHandle<'_> {
             // Initiate cleanup of the abandoned instance.
             handle.storage().start_cleanup(cleaner);
 
-            // Notify the rest of Cascade that any additional cleanup
-            // of the loaded zone is needed..
-            handle.storage().on_loaded_cleanup();
-
             handle.state.storage.background_tasks.finish();
         });
     }
