@@ -581,7 +581,7 @@ impl PersistedDiffManager {
         &self.diff_infos
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.diff_infos.len()
     }
 
