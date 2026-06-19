@@ -34,6 +34,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 - Add `CASCADE_DAEMON` env var for the CLI. ([#817] by @tertsdiepraam)
 - Support importing keys by private key path as well as public key path.
   ([#820] by @ximon18)
+- Add basic info command to get daemon version. ([#815] by @tertsdiepraam)
 
 ### Bug fixes
 
@@ -60,6 +61,7 @@ valuable feedback!
 [#807]: https://github.com/NLnetLabs/cascade/pull/807
 [#810]: https://github.com/NLnetLabs/cascade/pull/810
 [#814]: https://github.com/NLnetLabs/cascade/pull/814
+[#815]: https://github.com/NLnetLabs/cascade/pull/815
 [#817]: https://github.com/NLnetLabs/cascade/pull/817
 [#820]: https://github.com/NLnetLabs/cascade/pull/820
 [#821]: https://github.com/NLnetLabs/cascade/pull/821
