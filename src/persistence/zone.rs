@@ -4,7 +4,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::Arc,
-    time::Instant,
 };
 
 use cascade_zonedata::{
@@ -301,10 +300,6 @@ pub struct PersistenceState {
     /// diffs triggered by a change in the loaded zone actually has an
     /// associated loaded diff serial.
     pub signed_diffs: PersistedDiffManager,
-
-    /// The last time that the extra diffs were merged into the persisted
-    /// zone.
-    pub last_compacted_at: Option<Instant>,
 }
 
 impl PersistenceState {
