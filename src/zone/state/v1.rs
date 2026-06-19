@@ -714,7 +714,9 @@ impl PersistedDiffsSpec {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PersistedDiffFileInfoSpec {
     path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
     loaded_serial: Option<Serial>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     signed_serial: Option<Serial>,
 }
 
