@@ -90,6 +90,21 @@ all the signatures in the zone are sorted in DNSSEC canonical order, and among
 the first ``N`` of those, signatures still using the previous set of keys are
 re-generated.
 
+Comparison to Jitter
+--------------------
+
+OpenDNSSEC uses a "jitter" based mechanism, where the expiration times of
+signatures are randomly generated and spread out over a period of time.
+Signatures are refreshed as soon as they are close to expiry; if many signatures
+get close to expiry at the same time, they will all be refreshed immediately.
+
+In contrast, Cascade sets the expiration times of records to a fixed offset into
+the future (regardless of whether it is full-signing or incremental-signing).
+If many signatures get close to expiry at the same time, Cascade will refresh
+them in batches, spread out over a period of time. It selects batches in a
+determistic way. We call the result a re-signing schedule. This approach is more
+predictable, easier to tune, and easier to test.
+
 Configuration
 -------------
 
