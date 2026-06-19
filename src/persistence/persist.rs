@@ -107,12 +107,11 @@ pub fn persist_signed(
         let destination = {
             let mut handle = zone.write_handle(center);
             let signed_serial = signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
-            handle.state.persistence.signed_diffs.push(
-                zone,
-                center,
-                loaded_serial,
-                signed_serial,
-            )
+            handle
+                .state
+                .persistence
+                .signed_diffs
+                .push(zone, center, loaded_serial, signed_serial)
         };
 
         // Update the set of persisted zone data file paths BEFORE writing
