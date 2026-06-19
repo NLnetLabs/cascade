@@ -542,6 +542,9 @@ impl StorageZoneHandle<'_> {
 
             handle.storage().start_cleanup(cleaner);
 
+            // Notify the rest of Cascade that cleanup has been done.
+            handle.storage().on_loaded_cleanup();
+
             handle.state.storage.background_tasks.finish();
         });
     }
@@ -842,6 +845,10 @@ impl StorageZoneHandle<'_> {
             // Initiate cleanup of the abandoned instance.
             handle.storage().start_cleanup(cleaner);
 
+            // Notify the rest of Cascade that any additional cleanup
+            // of the loaded zone is needed..
+            handle.storage().on_loaded_cleanup();
+
             handle.state.storage.background_tasks.finish();
         });
     }
@@ -870,6 +877,29 @@ impl StorageZoneHandle<'_> {
             // The zone is no longer passive.
             // return;
         }
+    }
+
+    /// Do any non-state machine related loaded zone cleanup.
+    ///
+    /// This method triggers an update of persistence state to reflect that
+    /// the persisted loaded zone did not progress successfully through
+    /// signing and instead has been discarded and so persistence should also
+    /// cleanup the persisted copy of the loaded zone.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub(crate) fn on_loaded_cleanup(&mut self) {
+        // TODO: is it safe to access the loaded review SOA after the review
+        // states have been left?
+        let loaded_serial = self
+            .state
+            .storage
+            .loaded_review_soa
+            .as_ref()
+            .map(|soa| soa.rdata.serial);
+        self.state.persistence.loaded_diffs.cleanup(loaded_serial);
     }
 }
 

@@ -530,6 +530,17 @@ impl PersistedDiffManager {
         loaded_serial: Option<Serial>,
         signed_serial: Option<Serial>,
     ) -> PathBuf {
+        // Catch issues like https://github.com/NLnetLabs/cascade/issues/825:
+        // If both serials are None the diff represents a snapshot which we
+        // should only receive if we have no stored diff paths already. We
+        // could delete the existing diff_infos entries at this point but that
+        // would leave behind any actual diffs at those paths on disk, and
+        // if we are wrong we will interfere with normal Cascade operation by
+        // discarding diff paths that we should not be discarding. So we can't
+        // handle this heere and should never get into this state so just
+        // abort as something is seriously wrong.
+        assert!(self.diff_infos.is_empty() || loaded_serial.is_some() || signed_serial.is_some());
+
         let zone_name = &zone.name;
         let data_file_type = match self.record_source {
             PersistedDiffRecordSource::Loaded => "loaded",
@@ -556,13 +567,53 @@ impl PersistedDiffManager {
         path
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.diff_infos.is_empty()
+    pub fn cleanup(&mut self, serial: Option<Serial>) {
+        // If no serial number is provided we can only cleanup the initial
+        // snapshot, and we should only do that if we have only a snapshot
+        // and no diffs.
+        assert!(!self.is_empty());
+        assert!(self.diff_infos.len() == 1 || serial.is_some());
+
+        // We can't just remove a diff out of the middle of a sequence,
+        // we can only cleanup the last diff. If it's a snapshot we are
+        // cleaning up that should be the last entry, we can't orphan diffs
+        // by removing the snapshot they apply to.
+        let last = self.diff_infos.pop_last().unwrap();
+        if let Some(serial) = serial {
+            // When removing a diff the specified serial must match that of
+            // the last diff that we have.
+            assert_eq!(last.loaded_serial, Some(serial));
+        } else {
+            // In the case of removing a snapshot, set next_idx back to 0
+            // so that the snapshot is always numbered 0. Nothing should
+            // depend on this but it just feels a bit nicer to see 0 in the
+            // filename of the snapshot and know that that should be the
+            // snapshot.
+            // TODO: Maybe we should separate out snapshot files from diff
+            // files.
+            self.next_idx = 0;
+        }
+
+        trace!(
+            "Removing persisted zone data file '{}' for cleaned serial {serial:?}",
+            last.path.display()
+        );
+        if let Err(err) = std::fs::remove_file(&last.path) {
+            warn!(
+                "Unable to cleanup persisted data for serial {serial:?} by deleting '{}': {err}",
+                last.path.display()
+            );
+        }
     }
 
     pub fn clear(&mut self) {
         self.diff_infos.clear();
         self.next_idx = 0;
+        self.restore_base_idx = 0;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.diff_infos.is_empty()
     }
 
     pub fn next_idx(&self) -> usize {
