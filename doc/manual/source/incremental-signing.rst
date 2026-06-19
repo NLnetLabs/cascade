@@ -41,13 +41,13 @@ Key Rollovers
 
 Cascade has a key manager, which can direct the signer to change the set of
 keys it signs the zone with. With full signing, this is relatively simple:
-all signatures will be re-generated using the new set of signing keys. For
-the reasons discussed above, this is suboptimal. Thus, the incremental signer
-supports performing key rollovers over a period of time, where it will gradually
-update the signatures of all the records in the zone. Re-signing is performed
-such that the zone is always DNSSEC valid; for most key rollovers, this implies
-adding new keys to the `DNSKEY` record, (incrementally) replacing signatures
-with old keys for signatures with new keys, and removing old keys from `DNSKEY`.
+all signatures will be re-generated using the new set of signing keys. The
+incremental signer supports performing key rollovers over a period of time,
+where it will gradually update the signatures of all the records in the zone.
+Re-signing is performed such that the zone is always DNSSEC valid; for most key
+rollovers, this implies adding new keys to the `DNSKEY` record, (incrementally)
+replacing signatures with old keys for signatures with new keys, and removing
+old keys from `DNSKEY`.
 
 Regardless of whether a key roll is occurring, the incremental signer starts by
 re-generating signatures that are expiring or whose underlying data (the RRset
