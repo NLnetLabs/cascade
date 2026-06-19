@@ -13,12 +13,12 @@ Context
 -------
 
 Cascade can sign zones in either of two modes: full signing and incremental
-signing. It will automatically choose one. Full signing unconditionally signs
-every record in the loaded zone, even if some of those records had valid
-signatures. Incremental signing will examine previously generated signatures
-and only sign records that are missing signatures or whose signatures need
-updating. Incremental signing is more complicated than full signing, but it has
-two benefits:
+signing. It will automatically choose one (as explained below). Full signing
+unconditionally signs every record in the loaded zone, even if some of those
+records had valid signatures. Incremental signing will examine previously
+generated signatures and only sign records that are missing signatures or whose
+signatures need updating. Incremental signing is more complicated than full
+signing, but it has two benefits:
 
 1. It can reuse existing signatures, significantly reducing the number of
    cryptographic signatures it needs to generate. This is important for
@@ -41,13 +41,13 @@ Key Rollovers
 
 Cascade has a key manager, which can direct the signer to change the set of
 keys it signs the zone with. With full signing, this is relatively simple:
-all signatures will be re-generated using the new set of signing keys. For
-the reasons discussed above, this is suboptimal. Thus, the incremental signer
-supports performing key rollovers over a period of time, where it will gradually
-update the signatures of all the records in the zone. Re-signing is performed
-such that the zone is always DNSSEC valid; for most key rollovers, this implies
-adding new keys to the `DNSKEY` record, (incrementally) replacing signatures
-with old keys for signatures with new keys, and removing old keys from `DNSKEY`.
+all signatures will be re-generated using the new set of signing keys. The
+incremental signer supports performing key rollovers over a period of time,
+where it will gradually update the signatures of all the records in the zone.
+Re-signing is performed such that the zone is always DNSSEC valid; for most key
+rollovers, this implies adding new keys to the `DNSKEY` record, (incrementally)
+replacing signatures with old keys for signatures with new keys, and removing
+old keys from `DNSKEY`.
 
 Regardless of whether a key roll is occurring, the incremental signer starts by
 re-generating signatures that are expiring or whose underlying data (the RRset
@@ -89,6 +89,21 @@ has taken longer than planned, it will be completed immediately. Otherwise,
 all the signatures in the zone are sorted in DNSSEC canonical order, and among
 the first ``N`` of those, signatures still using the previous set of keys are
 re-generated.
+
+Comparison to Jitter
+--------------------
+
+OpenDNSSEC uses a "jitter" based mechanism, where the expiration times of
+signatures are randomly generated and spread out over a period of time.
+Signatures are refreshed as soon as they are close to expiry; if many signatures
+get close to expiry at the same time, they will all be refreshed immediately.
+
+In contrast, Cascade sets the expiration times of records to a fixed offset into
+the future (regardless of whether it is full-signing or incremental-signing).
+If many signatures expire at the same time, Cascade will refresh
+them in batches, spread out over a period of time. It selects batches in a
+determistic way. We call the result a re-signing schedule. This approach is more
+predictable, easier to tune, and easier to test.
 
 Configuration
 -------------
