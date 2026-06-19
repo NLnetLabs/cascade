@@ -99,6 +99,7 @@ impl HttpServer {
 
         let app = Router::new()
             .route("/health", get(Self::health))
+            .route("/info", get(Self::info))
             .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
@@ -192,6 +193,13 @@ impl HttpServer {
     /// If this endpoint responds, the daemon is considered healthy.
     async fn health() -> Json<api::Health> {
         Json(Health { healthy: true })
+    }
+
+    /// Get server info
+    async fn info() -> Json<api::Info> {
+        Json(Info {
+            version: env!("CASCADE_BUILD_VERSION").into(),
+        })
     }
 
     async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
