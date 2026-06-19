@@ -100,7 +100,7 @@ get close to expiry at the same time, they will all be refreshed immediately.
 
 In contrast, Cascade sets the expiration times of records to a fixed offset into
 the future (regardless of whether it is full-signing or incremental-signing).
-If many signatures get close to expiry at the same time, Cascade will refresh
+If many signatures expire at the same time, Cascade will refresh
 them in batches, spread out over a period of time. It selects batches in a
 determistic way. We call the result a re-signing schedule. This approach is more
 predictable, easier to tune, and easier to test.
