@@ -331,3 +331,19 @@ jobs:
       - uses: ./integration-tests/tests/persist-zone
         with:
           log-level: ${{ inputs.log-level }}
+      
+  # Added for https://github.com/NLnetLabs/cascade/pull/825
+  persist-then-reject:
+    name: Restore after discard of the loaded zone should still work.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/persist-then-reject
+        with:
+          log-level: ${{ inputs.log-level }}
