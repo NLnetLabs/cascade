@@ -317,10 +317,8 @@ impl PersistenceState {
             return;
         };
 
-        // Is compaction needed? Compare the allowed number of diffs to the
-        // actual number of persisted diffs. For that we need a policy,
-        // which the zone _should_ have. If not, abort.
-        let state = zone.state.read();
+        let mut state = zone.write(center);
+
         let Some(ref policy) = state.policy else {
             trace!(
                 "Ignoring compaction request for zone '{}': no policy available",
@@ -336,7 +334,6 @@ impl PersistenceState {
         let num_signed_diffs = state.persistence.signed_diffs.len().saturating_sub(1);
         let loaded_snapshot_path = state.persistence.loaded_diffs.diff_infos.first().cloned();
         let signed_snapshot_path = state.persistence.signed_diffs.diff_infos.first().cloned();
-        drop(state);
 
         // Check the number of persisted diffs vs the number allowed.
         trace!(
@@ -397,7 +394,6 @@ impl PersistenceState {
                 // Check which ones we can delete and after deleting them
                 // update our record of the first on-disk diff file that
                 // should be applied on top of the updated snapshot.
-                let mut state = zone.write(center);
 
                 // Remove the first N oldest signed diffs and their
                 // corresponding loaded diffs. Skip the first "diff" as it is
