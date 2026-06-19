@@ -852,6 +852,33 @@ impl IxfrZoneDiffs {
             }
         }
     }
+
+    pub fn discard_last_matching_diffs(
+        &mut self,
+        loaded_serial: Option<Serial>,
+        signed_serial: Option<Serial>,
+    ) {
+        assert!(loaded_serial.is_some() || signed_serial.is_some());
+        trace!("discard_last_matching_diff: {loaded_serial:?}");
+
+        if let Some(loaded_serial) = loaded_serial {
+            if let Some(e) = self.loaded_diffs.last_entry() {
+                if *e.key() == u32::from(loaded_serial) {
+                    trace!("Discarding loaded diff for serial {loaded_serial}");
+                    self.loaded_diffs.pop_last();
+                }
+            }
+        }
+
+        if let Some(signed_serial) = signed_serial {
+            if let Some(e) = self.signed_diffs.last_entry() {
+                if *e.key() == u32::from(signed_serial) {
+                    trace!("Discarding signed diff for serial {signed_serial}");
+                    self.signed_diffs.pop_last();
+                }
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for IxfrZoneDiffs {

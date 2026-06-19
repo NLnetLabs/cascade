@@ -895,7 +895,24 @@ impl StorageZoneHandle<'_> {
             .loaded_review_soa
             .as_ref()
             .map(|soa| soa.rdata.serial);
+
+        // Remove the persisted copy of the loaded zone.
         self.state.persistence.loaded_diffs.cleanup(loaded_serial);
+
+        // Remove the persisted in-memory diff.
+        let last_loaded_serial = self
+            .state
+            .storage
+            .published_loaded_soa
+            .as_ref()
+            .map(|soa| soa.rdata.serial);
+        trace!("Last loaded serial: {last_loaded_serial:?}");
+        if last_loaded_serial.is_some() {
+            self.state
+                .storage
+                .diffs
+                .discard_last_matching_diffs(last_loaded_serial, None);
+        }
     }
 }
 
