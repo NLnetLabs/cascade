@@ -335,7 +335,9 @@ impl PersistenceState {
         let loaded_snapshot_path = state.persistence.loaded_diffs.diff_infos.first().cloned();
         let signed_snapshot_path = state.persistence.signed_diffs.diff_infos.first().cloned();
 
-        // Check the number of persisted diffs vs the number allowed.
+        // Is compaction needed? Compare the allowed number of diffs to the
+        // actual number of persisted diffs. For that we need a policy, which
+        // the zone _should_ have. If not, abort.
         trace!(
             "Checking if compaction is needed for zone '{}': {num_signed_diffs} > {max_diffs}",
             zone.name
