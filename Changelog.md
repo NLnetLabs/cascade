@@ -14,9 +14,9 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-beta3 'Villa Volta'
 
-Released yyyy-mm-dd.
+Released 2026-06-19.
 
 Feedback welcome at https://community.nlnetlabs.nl/, bug reports can be
 raised at https://github.com/NLnetLabs/cascade/issues.
@@ -28,35 +28,45 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 
 ### New
 
+- Add all policy info to the policy show command. ([#738] by @tertsdiepraam)
 - Print a message in list commands when no items can be shown. ([#807] by
   @tertsdiepraam)
 - Add `CASCADE_DAEMON` env var for the CLI. ([#817] by @tertsdiepraam)
 - Support importing keys by private key path as well as public key path.
   ([#820] by @ximon18)
+- Add basic info command to get daemon version. ([#815] by @tertsdiepraam)
 
 ### Bug fixes
 
 - Prevent a crash when re-signing fails. ([#821] by @bal-e)
 
-### Other changes
-
 ### Documentation improvements
 
 - Add the word client to `--version`. ([#814] by @tertsdiepraam)
+- Document incremental signing. ([#639] by @bal-e)
+- More incremental signing docs. ([#829] by @bal-e)
 
 ### Known issues
 
+- Restoring with a rejected signed zone in the history causes loss of the
+  published zone. ([#825])
+
 ### Acknowledgements
 
-Thanks to @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
+Thanks to @davidgroves, @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
 valuable feedback!
 
+[#639]: https://github.com/NLnetLabs/cascade/pull/639
+[#738]: https://github.com/NLnetLabs/cascade/pull/738
 [#807]: https://github.com/NLnetLabs/cascade/pull/807
 [#810]: https://github.com/NLnetLabs/cascade/pull/810
 [#814]: https://github.com/NLnetLabs/cascade/pull/814
+[#815]: https://github.com/NLnetLabs/cascade/pull/815
 [#817]: https://github.com/NLnetLabs/cascade/pull/817
 [#820]: https://github.com/NLnetLabs/cascade/pull/820
 [#821]: https://github.com/NLnetLabs/cascade/pull/821
+[#825]: https://github.com/NLnetLabs/cascade/pull/825
+[#829]: https://github.com/NLnetLabs/cascade/pull/829
 
 ## 0.1.0-beta2 'Donde comen dos, comen tres'
 

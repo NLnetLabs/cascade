@@ -24,6 +24,10 @@ pub enum Command {
     #[command(name = "health")]
     Health,
 
+    /// Show daemon information.
+    #[command(name = "info")]
+    Info,
+
     /// Manage zones
     #[command(name = "zone")]
     Zone(self::zone::Zone),
@@ -78,6 +82,11 @@ impl Command {
                     // This path is unreachable in practice at the moment.
                     println!("The Cascade daemon is reachable but reports itself as unhealthy.");
                 }
+                Ok(())
+            }
+            Self::Info => {
+                let info = client.get_json::<cascade_api::Info>("info").await?;
+                println!("Cascade daemon version: {}", info.version);
                 Ok(())
             }
             Self::Zone(zone) => zone.execute(client).await,

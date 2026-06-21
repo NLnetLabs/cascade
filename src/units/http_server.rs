@@ -39,6 +39,7 @@ use crate::center::get_zone;
 use crate::loader;
 use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
+use crate::policy::AutoConfig;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
@@ -98,6 +99,7 @@ impl HttpServer {
 
         let app = Router::new()
             .route("/health", get(Self::health))
+            .route("/info", get(Self::info))
             .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
@@ -195,6 +197,13 @@ impl HttpServer {
     /// If this endpoint responds, the daemon is considered healthy.
     async fn health() -> Json<api::Health> {
         Json(Health { healthy: true })
+    }
+
+    /// Get server info
+    async fn info() -> Json<api::Info> {
+        Json(Info {
+            version: env!("CASCADE_BUILD_VERSION").into(),
+        })
     }
 
     async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
@@ -1019,68 +1028,170 @@ impl HttpServer {
         };
 
         let zones = p.zones.iter().cloned().collect();
-        let loader = LoaderPolicyInfo {
-            review: ReviewPolicyInfo {
-                mode: match p.latest.loader.review.mode.clone() {
-                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
-                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
-                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+
+        let crate::policy::PolicyVersion {
+            name,
+            loader,
+            key_manager,
+            signer,
+            server,
+        } = &*p.latest;
+
+        let loader = {
+            let crate::policy::LoaderPolicy { review } = loader;
+
+            LoaderPolicyInfo {
+                review: ReviewPolicyInfo {
+                    mode: match review.mode.clone() {
+                        crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                        crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                        crate::policy::ReviewMode::Script { hook } => {
+                            ReviewPolicyMode::Script { hook }
+                        }
+                    },
+                    on_reject: match review.on_reject {
+                        crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                        crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                    },
                 },
-                on_reject: match p.latest.loader.review.on_reject {
-                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
-                },
-            },
+            }
         };
 
-        let signer = SignerPolicyInfo {
-            serial_policy: match p.latest.signer.serial_policy {
-                SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
-                SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
-                SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
-                SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
-            },
-            sig_inception_offset: p.latest.signer.sig_inception_offset,
-            sig_validity_offset: p.latest.signer.sig_validity_time,
-            denial: match p.latest.signer.denial {
-                SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
-                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 { opt_out },
-            },
-            review: ReviewPolicyInfo {
-                mode: match p.latest.signer.review.mode.clone() {
-                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
-                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
-                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+        let signer = {
+            let &crate::policy::SignerPolicy {
+                serial_policy,
+                sig_inception_offset,
+                sig_validity_time,
+                sig_remain_time,
+                signature_refresh_interval,
+                key_roll_time,
+                ref denial,
+                ref review,
+            } = signer;
+
+            SignerPolicyInfo {
+                serial_policy: match serial_policy {
+                    SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
+                    SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
+                    SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
+                    SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
                 },
-                on_reject: match p.latest.signer.review.on_reject {
-                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                sig_inception_offset,
+                sig_validity_offset: sig_validity_time,
+                sig_remain_time,
+                signature_refresh_interval,
+                key_roll_time,
+                denial: match denial {
+                    SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
+                    &SignerDenialPolicy::NSec3 { opt_out } => {
+                        SignerDenialPolicyInfo::NSec3 { opt_out }
+                    }
                 },
-            },
+                review: ReviewPolicyInfo {
+                    mode: match review.mode.clone() {
+                        crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                        crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                        crate::policy::ReviewMode::Script { hook } => {
+                            ReviewPolicyMode::Script { hook }
+                        }
+                    },
+                    on_reject: match review.on_reject {
+                        crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                        crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                    },
+                },
+            }
         };
 
-        let key_manager = KeyManagerPolicyInfo {
-            hsm_server_id: p.latest.key_manager.hsm_server_id.clone(),
-        };
+        let key_manager = {
+            let &crate::policy::KeyManagerPolicy {
+                ref hsm_server_id,
+                use_csk,
+                ref algorithm,
+                ksk_validity,
+                zsk_validity,
+                csk_validity,
+                ref auto_ksk,
+                ref auto_zsk,
+                ref auto_csk,
+                ref auto_algorithm,
+                dnskey_inception_offset,
+                dnskey_signature_lifetime,
+                dnskey_remain_time,
+                cds_inception_offset,
+                cds_signature_lifetime,
+                cds_remain_time,
+                ref ds_algorithm,
+                default_ttl,
+                auto_remove,
+                auto_remove_delay,
+                ref publication_nameservers,
+            } = key_manager;
 
-        let p_outbound = &p.latest.server.outbound;
-        let server = ServerPolicyInfo {
-            outbound: OutboundPolicyInfo {
-                provide_xfr_to: p_outbound
-                    .provide_xfr_to
+            fn map_auto(
+                &AutoConfig {
+                    start,
+                    report,
+                    expire,
+                    done,
+                }: &AutoConfig,
+            ) -> AutoConfigPolicyInfo {
+                AutoConfigPolicyInfo {
+                    start,
+                    report,
+                    expire,
+                    done,
+                }
+            }
+
+            KeyManagerPolicyInfo {
+                hsm_server_id: hsm_server_id.clone(),
+                algorithm: algorithm.to_string(),
+                use_csk,
+                ksk_validity,
+                zsk_validity,
+                csk_validity,
+                auto_ksk: map_auto(auto_ksk),
+                auto_zsk: map_auto(auto_zsk),
+                auto_csk: map_auto(auto_csk),
+                auto_algorithm: map_auto(auto_algorithm),
+                dnskey_inception_offset,
+                dnskey_signature_lifetime,
+                dnskey_remain_time,
+                cds_inception_offset,
+                cds_signature_lifetime,
+                cds_remain_time,
+                ds_algorithm: ds_algorithm.to_string(),
+                default_ttl: default_ttl.as_secs(),
+                auto_remove,
+                auto_remove_delay,
+                publication_nameservers: publication_nameservers
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .map(ToString::to_string)
                     .collect(),
-                send_notify_to: p_outbound
-                    .send_notify_to
-                    .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
-                    .collect(),
-            },
+            }
+        };
+
+        let server = {
+            let crate::policy::ServerPolicy { outbound } = server;
+            ServerPolicyInfo {
+                outbound: OutboundPolicyInfo {
+                    provide_xfr_to: outbound
+                        .provide_xfr_to
+                        .iter()
+                        .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                        .collect(),
+                    send_notify_to: outbound
+                        .send_notify_to
+                        .iter()
+                        .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                        .collect(),
+                },
+            }
         };
 
         Json(Ok(PolicyInfo {
-            name: p.latest.name.clone(),
+            name: name.clone(),
             zones,
             loader,
             key_manager,
