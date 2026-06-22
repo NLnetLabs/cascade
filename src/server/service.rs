@@ -610,72 +610,26 @@ mod compat {
 
                 trace!("Serving diff #{abs_idx} for loaded review server IXFR out",);
 
+                let origin = &*removed_soa.rname;
+
                 if mode == ServiceMode::LoadedReview {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    rrs.extend(
-                        soa_source_diff
-                            .removed_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
+                    rrs.extend(loaded_diff.removed_non_soa(origin).cloned());
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    rrs.extend(
-                        soa_source_diff
-                            .added_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
+                    rrs.extend(loaded_diff.added_non_soa(origin).cloned());
                 } else {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    rrs.extend(
-                        loaded_diff
-                            .removed_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
-                    rrs.extend(
-                        soa_source_diff
-                            .removed_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
+                    rrs.extend(loaded_diff.removed_non_soa(origin).cloned());
+                    rrs.extend(signed_diff.removed_non_soa(origin).cloned());
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    rrs.extend(
-                        loaded_diff
-                            .added_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
-                    rrs.extend(
-                        soa_source_diff
-                            .added_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
+                    rrs.extend(loaded_diff.added_non_soa(origin).cloned());
+                    rrs.extend(signed_diff.added_non_soa(origin).cloned());
                 }
 
                 last_removed_soa = Some(removed_soa);
