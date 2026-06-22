@@ -30,7 +30,8 @@
   - publish_helper.sh --dry-run https://github.com/NLnetLabs/cascade/actions/runs/NNNNNNNN
   - publish_helper.sh https://github.com/NLnetLabs/cascade/actions/runs/NNNNNNNN
 - create a GH release for the tag based on Changelog.md
-- announce via post in the Cascade topic on https://community.nlnetlabs.nl/
+- announce via post in the Cascade topic on https://community.nlnetlabs.nl/.
+  - remember to tag it as #release.
 
 # Prepare for development
 - git checkout -b prep-for-dev
