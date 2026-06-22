@@ -23,7 +23,7 @@ inputs:
     required: false
     default: ''
     type: string
-  accept-xfr-from:
+  provide-xfr-to:
     description: The IP address, port and name of the TSIG key to permit when replying to SOA and XFR requests from downstream nameservers.
     required: false
     default: ''
@@ -101,14 +101,14 @@ runs:
     - name: Add a custom policy
       run: |
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        cascade template policy | grep -Ev '(send-notify-to|accept-xfr-from)' > "${POLICY_DIR}/restricted.toml"
-        if [ "${{ inputs.accept-xfr-from }}" != "" ]; then
-          echo 'accept-xfr-from = ["${{ inputs.accept-xfr-from }}"]' >> "${POLICY_DIR}/restricted.toml"
+        cascade template policy | grep -Ev '(send-notify-to|provide-xfr-to)' > "${POLICY_DIR}/restricted.toml"
+        if [ "${{ inputs.provide-xfr-to }}" != "" ]; then
+          echo 'provide-xfr-to = ["${{ inputs.provide-xfr-to }}"]' >> "${POLICY_DIR}/restricted.toml"
         fi
         if [ "${{ inputs.send-notify-to }}" != "" ]; then
           echo 'send-notify-to = ["${{ inputs.send-notify-to }}"]' >> "${POLICY_DIR}/restricted.toml"
         fi
-        if [[ "${{ inputs.accept-xfr-from}}" == *"^tsig-key"* || "${{ inputs.send-notify-to }}" == *"^tsig-key"* ]]; then
+        if [[ "${{ inputs.provide-xfr-to}}" == *"^tsig-key"* || "${{ inputs.send-notify-to }}" == *"^tsig-key"* ]]; then
           cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
         fi
         cascade policy reload

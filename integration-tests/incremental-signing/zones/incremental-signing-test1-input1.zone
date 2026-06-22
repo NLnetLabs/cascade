@@ -2,7 +2,7 @@
 
 ; Set the serial number of the first version to 12345. Use the 'keep' serial
 ; policy to make it easy to check when the first version has been signed.
-@ IN SOA ns hostmaster 12345 3600 3600 86400 3600
+@ 3600 IN SOA ns hostmaster 12345 3600 3600 86400 3600
 
 ; A zone should have an NS record.
 @ NS ns1
@@ -17,9 +17,12 @@ a.modify		A	192.0.2.0
 aaaa.modify		AAAA	2001:db8::
 txt.modify		TXT	"Original zone"
 
+; Test whether just changing the TTL gets signed properly.
+ttl.modify	3600	TXT	"Only the TTL changes"
+
 ; A delegation to be able to create RRsets that are not authoritative in this
-; zone.
-not-auth		NS	ns
+; zone. Set TTL explictly to deal with ttl.modify having a different TTL.
+not-auth	3600	NS	ns
 
 ; A collection of non-authoritative RRsets that will be modified.
 cname.modify.not-auth	CNAME	cname-target

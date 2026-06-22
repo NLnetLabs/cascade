@@ -39,6 +39,7 @@ use crate::center::get_zone;
 use crate::loader;
 use crate::manager::Terminated;
 use crate::metrics::MetricsCollection;
+use crate::policy::AutoConfig;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
@@ -50,10 +51,8 @@ use crate::units::key_manager::KmipServerCredentialsFileMode;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
-use crate::zone::HistoricalEvent;
-use crate::zone::HistoricalEventType;
-use crate::zone::ZoneHandle;
 use crate::zone::machine::ZoneStateMachine;
+use crate::zone::{HistoricalEvent, HistoricalEventType, ZoneByName};
 
 pub const HTTP_UNIT_NAME: &str = "HS";
 
@@ -100,6 +99,7 @@ impl HttpServer {
 
         let app = Router::new()
             .route("/health", get(Self::health))
+            .route("/info", get(Self::info))
             .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
@@ -191,8 +191,15 @@ impl HttpServer {
     }
 
     /// If this endpoint responds, the daemon is considered healthy.
-    async fn health() -> Json<()> {
-        Json(())
+    async fn health() -> Json<api::Health> {
+        Json(Health { healthy: true })
+    }
+
+    /// Get server info
+    async fn info() -> Json<api::Info> {
+        Json(Info {
+            version: env!("CASCADE_BUILD_VERSION").into(),
+        })
     }
 
     async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
@@ -218,11 +225,9 @@ impl HttpServer {
         let center = &state.center;
 
         // Determine which pipelines are halted.
-        for zone in center.state.lock().unwrap().zones.iter() {
-            if let Ok(zone_state) = zone.0.state.lock()
-                && let Some(err) = zone_state.machine.display_halted_reason()
-            {
-                halted_zones.push((zone.0.name.clone(), err.clone()))
+        for ZoneByName(zone) in center.state.lock().unwrap().zones.iter() {
+            if let Some(err) = zone.read().machine.display_halted_reason() {
+                halted_zones.push((zone.name.clone(), err.clone()))
             }
         }
 
@@ -322,15 +327,7 @@ impl HttpServer {
         let do_zone_reset = || {
             let zone = center::get_zone(&state.center, &name).ok_or(ZoneResetError::NoSuchZone)?;
 
-            let mut zone_state = zone.state.lock().unwrap();
-
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut zone_state,
-                center: &state.center,
-            };
-
-            match handle.try_reset() {
+            match zone.write_handle(&state.center).get().try_reset() {
                 Ok(_) => Ok(ZoneResetOutput {
                     zone: zone.name.clone(),
                 }),
@@ -373,6 +370,7 @@ impl HttpServer {
         let zone;
         let halted_reason;
         let progress;
+        let signing_report;
         let unsigned_serial;
         let signed_serial;
         let published_serial;
@@ -390,7 +388,7 @@ impl HttpServer {
                 .0
                 .clone();
 
-            let zone_state = zone.state.lock().unwrap();
+            let zone_state = zone.read();
             halted_reason = zone_state.halted_reason();
 
             policy = zone_state
@@ -474,7 +472,13 @@ impl HttpServer {
                 .map(|r| Serial::from(u32::from(r.rdata.serial)));
 
             progress = match zone_state.machine {
-                ZoneStateMachine::Waiting(..) => Progress::Waiting,
+                ZoneStateMachine::Waiting(..) => {
+                    if zone_state.storage.is_restoring() {
+                        Progress::Restoring
+                    } else {
+                        Progress::Waiting
+                    }
+                }
                 ZoneStateMachine::Loading(..) => Progress::Loading,
                 ZoneStateMachine::LoadedReview(..) => Progress::LoadedReview,
                 ZoneStateMachine::HaltLoaded(..) => Progress::HaltLoaded,
@@ -485,12 +489,25 @@ impl HttpServer {
                 ZoneStateMachine::Poisoned => unreachable!(),
             };
 
+            // Query signing status
+            signing_report = if progress >= Progress::SignedReview {
+                zone_state
+                    .signer
+                    .active_signing_status
+                    .as_ref()
+                    .and_then(|s| s.read().unwrap().mk_signing_report())
+            } else {
+                None
+            };
+
             last_published = zone_state
                 .last_published
                 .as_ref()
                 .map(|p| LastPublishedZone {
                     loaded_serial: p.loaded_serial,
                     signed_serial: p.signed_serial,
+                    num_records: p.num_records,
+                    timestamp: p.timestamp,
                 });
 
             let mut found_error = None;
@@ -607,17 +624,9 @@ impl HttpServer {
             }
         }
 
-        // Query signing status
-        let signing_report = if progress >= Progress::SignedReview {
-            let center = &state.center;
-            center.signer.on_signing_report(&zone)
-        } else {
-            None
-        };
-
         // TODO: Report separate information for ongoing and completed loads.
         let receipt_report = {
-            let state = zone.state.lock().unwrap();
+            let state = zone.read();
             let active = state.loader.active_load_metrics.as_ref();
             let last = state.loader.last_load_metrics.as_ref();
             active
@@ -671,9 +680,9 @@ impl HttpServer {
             Some(zone) => zone,
             None => return Json(Err(ZoneHistoryError::ZoneDoesNotExist)),
         };
-        let zone_state = zone.state.lock().unwrap();
         Json(Ok(ZoneHistory {
-            history: zone_state
+            history: zone
+                .read()
                 .history
                 .iter()
                 .map(|i| i.clone().into())
@@ -752,15 +761,11 @@ impl HttpServer {
             let zone =
                 center::get_zone(&state.center, &name).ok_or(ZoneOverrideError::NoSuchZone)?;
 
-            let mut zone_state = zone.state.lock().unwrap();
-
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut zone_state,
-                center: &state.center,
-            };
-
-            match handle.try_override_loaded_reject() {
+            match zone
+                .write_handle(&state.center)
+                .get()
+                .try_override_loaded_reject()
+            {
                 Ok(_) => Ok(ZoneOverrideOutput {
                     review_stage: ZoneReviewStage::Unsigned,
                     zone: zone.name.clone(),
@@ -825,15 +830,11 @@ impl HttpServer {
             let zone =
                 center::get_zone(&state.center, &name).ok_or(ZoneOverrideError::NoSuchZone)?;
 
-            let mut zone_state = zone.state.lock().unwrap();
-
-            let mut handle = ZoneHandle {
-                zone: &zone,
-                state: &mut zone_state,
-                center: &state.center,
-            };
-
-            match handle.try_override_signed_reject() {
+            match zone
+                .write_handle(&state.center)
+                .get()
+                .try_override_signed_reject()
+            {
                 Ok(_) => Ok(ZoneOverrideOutput {
                     review_stage: ZoneReviewStage::Signed,
                     zone: zone.name.clone(),
@@ -867,7 +868,7 @@ impl HttpServer {
         let zone =
             center::get_zone(&state.center, &name).ok_or(ZoneMaintenanceModeError::NoSuchZone)?;
 
-        let mut zone_state = zone.state.lock().unwrap();
+        let mut zone_state = zone.write(&state.center);
 
         if zone_state.maintenance_mode == enable {
             return Err(ZoneMaintenanceModeError::AlreadyInThatState);
@@ -947,20 +948,16 @@ impl HttpServer {
                 .expect("we just reloaded these policies");
 
             for zone_name in &pol.zones {
-                let zone = state
+                let ZoneByName(zone) = state
                     .zones
                     .get(zone_name)
                     .expect("zones and policies are consistent");
 
-                let mut state = zone.0.state.lock().expect("lock isn't poisoned");
-                state.policy = Some(pol.latest.clone());
+                zone.write(center).policy = Some(pol.latest.clone());
 
-                center.key_manager.on_zone_policy_changed(
-                    center,
-                    &zone.0,
-                    old.clone(),
-                    new.clone(),
-                );
+                center
+                    .key_manager
+                    .on_zone_policy_changed(center, zone, old.clone(), new.clone());
             }
         }
 
@@ -985,68 +982,170 @@ impl HttpServer {
         };
 
         let zones = p.zones.iter().cloned().collect();
-        let loader = LoaderPolicyInfo {
-            review: ReviewPolicyInfo {
-                mode: match p.latest.loader.review.mode.clone() {
-                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
-                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
-                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+
+        let crate::policy::PolicyVersion {
+            name,
+            loader,
+            key_manager,
+            signer,
+            server,
+        } = &*p.latest;
+
+        let loader = {
+            let crate::policy::LoaderPolicy { review } = loader;
+
+            LoaderPolicyInfo {
+                review: ReviewPolicyInfo {
+                    mode: match review.mode.clone() {
+                        crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                        crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                        crate::policy::ReviewMode::Script { hook } => {
+                            ReviewPolicyMode::Script { hook }
+                        }
+                    },
+                    on_reject: match review.on_reject {
+                        crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                        crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                    },
                 },
-                on_reject: match p.latest.loader.review.on_reject {
-                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
-                },
-            },
+            }
         };
 
-        let signer = SignerPolicyInfo {
-            serial_policy: match p.latest.signer.serial_policy {
-                SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
-                SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
-                SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
-                SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
-            },
-            sig_inception_offset: p.latest.signer.sig_inception_offset,
-            sig_validity_offset: p.latest.signer.sig_validity_time,
-            denial: match p.latest.signer.denial {
-                SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
-                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 { opt_out },
-            },
-            review: ReviewPolicyInfo {
-                mode: match p.latest.signer.review.mode.clone() {
-                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
-                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
-                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+        let signer = {
+            let &crate::policy::SignerPolicy {
+                serial_policy,
+                sig_inception_offset,
+                sig_validity_time,
+                sig_remain_time,
+                signature_refresh_interval,
+                key_roll_time,
+                ref denial,
+                ref review,
+            } = signer;
+
+            SignerPolicyInfo {
+                serial_policy: match serial_policy {
+                    SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
+                    SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
+                    SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
+                    SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
                 },
-                on_reject: match p.latest.signer.review.on_reject {
-                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                sig_inception_offset,
+                sig_validity_offset: sig_validity_time,
+                sig_remain_time,
+                signature_refresh_interval,
+                key_roll_time,
+                denial: match denial {
+                    SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
+                    &SignerDenialPolicy::NSec3 { opt_out } => {
+                        SignerDenialPolicyInfo::NSec3 { opt_out }
+                    }
                 },
-            },
+                review: ReviewPolicyInfo {
+                    mode: match review.mode.clone() {
+                        crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                        crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                        crate::policy::ReviewMode::Script { hook } => {
+                            ReviewPolicyMode::Script { hook }
+                        }
+                    },
+                    on_reject: match review.on_reject {
+                        crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                        crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                    },
+                },
+            }
         };
 
-        let key_manager = KeyManagerPolicyInfo {
-            hsm_server_id: p.latest.key_manager.hsm_server_id.clone(),
-        };
+        let key_manager = {
+            let &crate::policy::KeyManagerPolicy {
+                ref hsm_server_id,
+                use_csk,
+                ref algorithm,
+                ksk_validity,
+                zsk_validity,
+                csk_validity,
+                ref auto_ksk,
+                ref auto_zsk,
+                ref auto_csk,
+                ref auto_algorithm,
+                dnskey_inception_offset,
+                dnskey_signature_lifetime,
+                dnskey_remain_time,
+                cds_inception_offset,
+                cds_signature_lifetime,
+                cds_remain_time,
+                ref ds_algorithm,
+                default_ttl,
+                auto_remove,
+                auto_remove_delay,
+                ref publication_nameservers,
+            } = key_manager;
 
-        let p_outbound = &p.latest.server.outbound;
-        let server = ServerPolicyInfo {
-            outbound: OutboundPolicyInfo {
-                accept_xfr_from: p_outbound
-                    .accept_xfr_from
+            fn map_auto(
+                &AutoConfig {
+                    start,
+                    report,
+                    expire,
+                    done,
+                }: &AutoConfig,
+            ) -> AutoConfigPolicyInfo {
+                AutoConfigPolicyInfo {
+                    start,
+                    report,
+                    expire,
+                    done,
+                }
+            }
+
+            KeyManagerPolicyInfo {
+                hsm_server_id: hsm_server_id.clone(),
+                algorithm: algorithm.to_string(),
+                use_csk,
+                ksk_validity,
+                zsk_validity,
+                csk_validity,
+                auto_ksk: map_auto(auto_ksk),
+                auto_zsk: map_auto(auto_zsk),
+                auto_csk: map_auto(auto_csk),
+                auto_algorithm: map_auto(auto_algorithm),
+                dnskey_inception_offset,
+                dnskey_signature_lifetime,
+                dnskey_remain_time,
+                cds_inception_offset,
+                cds_signature_lifetime,
+                cds_remain_time,
+                ds_algorithm: ds_algorithm.to_string(),
+                default_ttl: default_ttl.as_secs(),
+                auto_remove,
+                auto_remove_delay,
+                publication_nameservers: publication_nameservers
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .map(ToString::to_string)
                     .collect(),
-                send_notify_to: p_outbound
-                    .send_notify_to
-                    .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
-                    .collect(),
-            },
+            }
+        };
+
+        let server = {
+            let crate::policy::ServerPolicy { outbound } = server;
+            ServerPolicyInfo {
+                outbound: OutboundPolicyInfo {
+                    provide_xfr_to: outbound
+                        .provide_xfr_to
+                        .iter()
+                        .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                        .collect(),
+                    send_notify_to: outbound
+                        .send_notify_to
+                        .iter()
+                        .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                        .collect(),
+                },
+            }
         };
 
         Json(Ok(PolicyInfo {
-            name: p.latest.name.clone(),
+            name: name.clone(),
             zones,
             loader,
             key_manager,
@@ -1301,7 +1400,7 @@ impl HttpServer {
                 .key_manager
                 .publication_nameservers
                 .iter()
-                .chain(policy.latest.server.outbound.accept_xfr_from.iter())
+                .chain(policy.latest.server.outbound.provide_xfr_to.iter())
                 .chain(policy.latest.server.outbound.send_notify_to.iter())
                 .filter_map(|acl| acl.tsig_key_name.as_ref())
                 .peekable();

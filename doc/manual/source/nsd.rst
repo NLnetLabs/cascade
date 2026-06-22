@@ -121,4 +121,4 @@ nameserver such as NSD you must set the required policy settings and reload
 the policy. The relevant policy settings in Cascade are:
 
 - ``server.outbound.send-notify-to``
-- ``server.outbound.accept-xfr-from```
+- ``server.outbound.provide-xfr-to``

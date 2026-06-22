@@ -7,7 +7,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::ansi;
 use crate::api::*;
 use crate::client::CascadeApiClient;
-use crate::println;
+use crate::{eprintln, println};
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct Zone {
@@ -23,8 +23,9 @@ pub enum ZoneCommand {
     Add {
         name: ZoneName,
 
-        /// The zone source can be an IP address (with or without port,
-        /// defaults to port 53) or a file path.
+        /// The source to obtain the zone content from:
+        /// `IP:[PORT][^TSIG_KEY_NAME]` (port defaults to 53) or the path to
+        /// a zone file locally available to the `cascaded` daemon.
         // TODO: allow supplying different tcp and/or udp port?
         #[arg(long = "source")]
         source: ZoneSource,
@@ -191,24 +192,9 @@ impl Zone {
                 import_csk_kmip,
             } => {
                 let import_public_key = import_public_key.into_iter().map(KeyImport::PublicKey);
-                let import_ksk_file = import_ksk_file.into_iter().map(|p| {
-                    KeyImport::File(FileKeyImport {
-                        key_type: KeyType::Ksk,
-                        path: p,
-                    })
-                });
-                let import_csk_file = import_csk_file.into_iter().map(|p| {
-                    KeyImport::File(FileKeyImport {
-                        key_type: KeyType::Csk,
-                        path: p,
-                    })
-                });
-                let import_zsk_file = import_zsk_file.into_iter().map(|p| {
-                    KeyImport::File(FileKeyImport {
-                        key_type: KeyType::Zsk,
-                        path: p,
-                    })
-                });
+                let import_ksk_file = key_file_imports(import_ksk_file, KeyType::Ksk)?;
+                let import_csk_file = key_file_imports(import_csk_file, KeyType::Csk)?;
+                let import_zsk_file = key_file_imports(import_zsk_file, KeyType::Zsk)?;
                 let import_ksk_kmip = kmip_imports(KeyType::Ksk, &import_ksk_kmip);
                 let import_csk_kmip = kmip_imports(KeyType::Csk, &import_csk_kmip);
                 let import_zsk_kmip = kmip_imports(KeyType::Zsk, &import_zsk_kmip);
@@ -269,6 +255,10 @@ impl Zone {
             }
             ZoneCommand::List => {
                 let response: ZonesListResult = client.get_json("zone/").await?;
+
+                if response.zones.is_empty() {
+                    eprintln!("No zones to show");
+                }
 
                 for zone_name in response.zones {
                     println!("{}", zone_name);
@@ -631,8 +621,11 @@ impl Zone {
         if let Some(last) = &zone.last_published {
             println!("  loaded serial: {}", last.loaded_serial);
             println!("  signed serial: {}", last.signed_serial);
-            println!("  timestamp:     <TODO>");
-            println!("  size:          <TODO> records (<TODO>B)");
+            println!(
+                "  timestamp:     {}",
+                jiff::Timestamp::try_from(last.timestamp).unwrap()
+            );
+            println!("  size:          {} records", last.num_records);
         } else {
             println!("  <no versions published yet>");
         }
@@ -640,7 +633,7 @@ impl Zone {
         // Output information per step progressed until the first still
         // in-progress/aborted step or show all steps if all have completed.
         println!("");
-        print_status(zone.progress, &zone, &policy);
+        print_status(&zone, &policy);
 
         if zone.last_published.is_some() {
             println!("");
@@ -703,8 +696,11 @@ impl Zone {
     }
 }
 
-pub fn print_status(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
-    let progress = match zone.progress {
+pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
+    let current = zone.progress;
+
+    let progress = match current {
+        Progress::Restoring => "restoring",
         Progress::Waiting => "idle",
         Progress::Loading => "loading",
         Progress::LoadedReview => "waiting for loaded review",
@@ -717,7 +713,7 @@ pub fn print_status(current: Progress, zone: &ZoneStatus, policy: &PolicyInfo) {
 
     println!("status: {}{progress}{}", ansi::BLUE, ansi::RESET);
 
-    if current == Progress::Waiting {
+    if matches!(current, Progress::Waiting | Progress::Restoring) {
         return;
     }
 
@@ -773,6 +769,7 @@ fn print_load_phase(
         let total_size = receipt_report
             .as_ref()
             .and_then(|r| r.total_byte_count)
+            .filter(|r| *r > 0)
             .map_or("".into(), |bytes| {
                 let total_size = format_size(bytes, " ", "B");
                 format!(" / {total_size}")
@@ -780,6 +777,7 @@ fn print_load_phase(
 
         let percentage = if let Some(r) = receipt_report
             && let Some(t) = r.total_byte_count
+            && t > 0
         {
             let b = r.byte_count as f64;
             let t = t as f64;
@@ -969,11 +967,38 @@ impl std::fmt::Display for Icon {
     }
 }
 
+/// Format a size in a human-readable way
+///
+/// Shows one decimal point if the size is small enough for that to make sense
+/// (e.g. below 10KB).
 fn format_size(v: usize, spacer: &str, suffix: &str) -> String {
+    let v = v as f64;
+
+    const M: f64 = 1_000_000.0;
+    const K: f64 = 1_000.0;
+
     match v {
-        n if n > 1_000_000 => format!("{}{spacer}M{suffix}", n / 1_000_000),
-        n if n > 1_000 => format!("{}{spacer}K{suffix}", n / 1_000),
+        n if n > 10.0 * M => format!("{:.0}{spacer}M{suffix}", n / M),
+        n if n > M => format!("{:.1}{spacer}M{suffix}", n / M),
+        n if n > 10.0 * K => format!("{:.0}{spacer}K{suffix}", n / K),
+        n if n > K => format!("{:.1}{spacer}K{suffix}", n / K),
         n => format!("{n}{spacer}{suffix}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_size;
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(945, " ", "B"), "945 B");
+        assert_eq!(format_size(9450, " ", "B"), "9.4 KB");
+        assert_eq!(format_size(94500, " ", "B"), "94 KB");
+        assert_eq!(format_size(945000, " ", "B"), "945 KB");
+        assert_eq!(format_size(9450000, " ", "B"), "9.4 MB");
+        assert_eq!(format_size(94500000, " ", "B"), "94 MB");
+        assert_eq!(format_size(945000000, " ", "B"), "945 MB");
     }
 }
 
@@ -1026,6 +1051,50 @@ fn format_duration(duration: Duration) -> String {
             )
             .unwrap()
     )
+}
+
+fn key_file_imports(
+    key_paths: Vec<Utf8PathBuf>,
+    key_type: KeyType,
+) -> Result<Vec<KeyImport>, String> {
+    let mut key_imports = Vec::with_capacity(key_paths.len());
+    for key_path in key_paths {
+        key_imports.push(KeyImport::File(expand_key_path(key_path, key_type)?));
+    }
+    Ok(key_imports)
+}
+
+// This is not done as impl TryFrom<Utf8PathBuf> for FileKeyImport as neither
+// Utf8PathBuf nor FileKeyImport are not defined in this crate and Rust
+// doesn't allow impl for a type defined in another crate.
+fn expand_key_path(key_file_path: Utf8PathBuf, key_type: KeyType) -> Result<FileKeyImport, String> {
+    // Is the given path to a .key file or a .private file? We need both
+    // so generate the other one from the one given. Note that we don't
+    // do any actual checking against the filesystem, that is left to the
+    // daemon as the files have to be loaded by the daemon which may have
+    // different access rights (or even be on a different filesystem/host)
+    // than the client.
+    let (public_key_path, private_key_path) = match key_file_path.extension() {
+        Some("key") => {
+            let pri_path = key_file_path.with_extension("private");
+            let pub_path = key_file_path;
+            Ok((pub_path, pri_path))
+        }
+        Some("private") => {
+            let pub_path = key_file_path.with_extension("key");
+            let pri_path = key_file_path;
+            Ok((pub_path, pri_path))
+        }
+        _ => Err(format!(
+            "Key file path '{key_file_path}' does not end in .key or .private"
+        )),
+    }?;
+
+    Ok(FileKeyImport {
+        key_type,
+        public_key_path,
+        private_key_path,
+    })
 }
 
 fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {

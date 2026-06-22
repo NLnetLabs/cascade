@@ -98,8 +98,9 @@ no zones:
 
 .. Note:: The program:`cascade` CLI connects via HTTPS to the
    :program:`cascaded` daemon. By default it connects to 127.0.0.1:4539.
-   You can override this by passing ``--server <IP>:<PORT>`` to connect to
-   a Cascade daemon running on another machine.
+   You can override this by passing ``--server <IP>:<PORT>`` or by defining
+   an environment variable ``CASCADE_DAEMON="<IP>:<PORT>"`` to connect to a
+   Cascade daemon running on another machine or port.
 
 The :program:`cascade` CLI is the primary means of interacting with the
 :program:`cascaded` daemon.
@@ -130,11 +131,6 @@ Defining Policy
 After configuring Cascade, you can begin adding zones. Cascade supports zones
 sourced from a local file or fetched from another nameserver using XFR 
 :term:`zone transfers <Zone transfer>`.
-
-.. Note:: The current version of Cascade does not yet support TSIG 
-   authenticated XFR nor can it pass through a signed zone intact. Any DNSSEC
-   records will be stripped from the zone before signing. We expect to add 
-   support for these features soon.
 
 Zones take a lot of their settings from policy. Policies allow easy re-use of
 settings across multiple zones and control things like whether or not zones
@@ -202,8 +198,8 @@ For example:
     last published
       loaded serial: 2001062501
       signed serial: 2026050600
-      timestamp:     <TODO>
-      size:          <TODO> records (<TODO>B)
+      timestamp:     2026-06-02T12:53:10.158779414Z
+      size:          10 records
 
     status: idle
 

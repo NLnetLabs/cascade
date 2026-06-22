@@ -56,7 +56,7 @@ Arguments for :subcmd:`tsig add`
 --------------------------------
 
 .. option:: <TSIG_KEY_NAME>
-.. option:: [<ALGORITHM>]:<TSIG_KEY_NAME>:<SECRET>
+.. option:: [<ALGORITHM>:]<TSIG_KEY_NAME>:<SECRET>
 
    The name of the TSIG key to add, or a complete TSIG key specification.
 

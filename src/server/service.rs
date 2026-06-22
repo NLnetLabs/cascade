@@ -179,17 +179,17 @@ mod compat {
 
     fn is_permitted<V: Viewer>(
         zone: &ServedZone<V>,
-        old_request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
+        request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
     ) -> bool {
-        let zone_state = zone.handle.state.lock().unwrap();
+        let zone_state = zone.handle.read();
 
         if tracing::enabled!(Level::TRACE) {
-            let tsig_key = old_request.metadata().as_ref().map(|key| key.name());
+            let tsig_key = request.metadata().as_ref().map(|key| key.name());
             trace!(
                 "Received request {} from {} for {} in zone {} with TSIG key {tsig_key:?}",
-                old_request.message().header().id(),
-                old_request.client_addr().ip(),
-                old_request
+                request.message().header().id(),
+                request.client_addr().ip(),
+                request
                     .message()
                     .qtype()
                     .map(|rtype| rtype.to_string())
@@ -201,15 +201,15 @@ mod compat {
         if let Some(acls) = zone_state
             .policy
             .as_ref()
-            .map(|p| &p.server.outbound.accept_xfr_from)
+            .map(|p| &p.server.outbound.provide_xfr_to)
         {
             // If at least one ACL was specified, enforce it.
             if !acls.is_empty() {
-                let wanted_tsig_key_name = old_request.metadata().as_ref().map(|key| key.name());
+                let wanted_tsig_key_name = request.metadata().as_ref().map(|key| key.name());
 
                 for acl in acls {
                     // Does the client address match the allowed address?
-                    if acl.addr.ip() == old_request.client_addr().ip() {
+                    if acl.addr.ip() == request.client_addr().ip() {
                         // Is the request signed with the right TSIG key?
                         if acl.tsig_key_name.as_ref() == wanted_tsig_key_name {
                             // Allow the request.
@@ -229,9 +229,9 @@ mod compat {
                     };
                     debug!(
                         "Rejecting request {} from {} for {} in zone {}: access denied{extra}",
-                        old_request.message().header().id(),
-                        old_request.client_addr().ip(),
-                        old_request
+                        request.message().header().id(),
+                        request.client_addr().ip(),
+                        request
                             .message()
                             .qtype()
                             .map(|rtype| rtype.to_string())
@@ -313,7 +313,7 @@ mod compat {
             let soa = viewer.soa().clone();
             let mut records = [soa.clone().into()]
                 .into_iter()
-                .chain(viewer.non_soa_records())
+                .chain(viewer.non_soa_records().cloned())
                 .chain([soa.into()])
                 .peekable();
 
@@ -426,7 +426,7 @@ mod compat {
         }
 
         let diffs = {
-            let zone_state = zone.handle.state.lock().unwrap();
+            let zone_state = zone.handle.read();
 
             match mode {
                 ServiceMode::LoadedReview => {
@@ -613,21 +613,69 @@ mod compat {
                 if mode == ServiceMode::LoadedReview {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    rrs.extend(soa_source_diff.removed_records.clone());
+                    rrs.extend(
+                        soa_source_diff
+                            .removed_records
+                            .iter()
+                            .filter(|&r| {
+                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
+                            })
+                            .cloned(),
+                    );
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    rrs.extend(soa_source_diff.added_records.clone());
+                    rrs.extend(
+                        soa_source_diff
+                            .added_records
+                            .iter()
+                            .filter(|&r| {
+                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
+                            })
+                            .cloned(),
+                    );
                 } else {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    rrs.extend(loaded_diff.removed_records.clone());
-                    rrs.extend(soa_source_diff.removed_records.clone());
+                    rrs.extend(
+                        loaded_diff
+                            .removed_records
+                            .iter()
+                            .filter(|&r| {
+                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
+                            })
+                            .cloned(),
+                    );
+                    rrs.extend(
+                        soa_source_diff
+                            .removed_records
+                            .iter()
+                            .filter(|&r| {
+                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
+                            })
+                            .cloned(),
+                    );
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    rrs.extend(loaded_diff.added_records.clone());
-                    rrs.extend(soa_source_diff.added_records.clone());
+                    rrs.extend(
+                        loaded_diff
+                            .added_records
+                            .iter()
+                            .filter(|&r| {
+                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
+                            })
+                            .cloned(),
+                    );
+                    rrs.extend(
+                        soa_source_diff
+                            .added_records
+                            .iter()
+                            .filter(|&r| {
+                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
+                            })
+                            .cloned(),
+                    );
                 }
 
                 last_removed_soa = Some(removed_soa);
@@ -725,7 +773,9 @@ trait Viewer {
     fn soa(&self) -> &SoaRecord;
 
     /// Return all records in the zone (excluding SOA).
-    fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send;
+    fn non_soa_records<'d>(
+        &'d self,
+    ) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d, Self>;
 }
 
 impl Viewer for LoadedZoneReviewer {
@@ -737,8 +787,13 @@ impl Viewer for LoadedZoneReviewer {
         self.read().unwrap().soa()
     }
 
-    fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send {
-        self.read().unwrap().regular_records().iter().cloned()
+    fn non_soa_records<'d>(&'d self) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d> {
+        let soa = self.soa();
+        self.read()
+            .unwrap()
+            .regular_records()
+            .iter()
+            .filter(|&r| r.rname != soa.rname || r.rtype != soa.rtype)
     }
 }
 
@@ -751,11 +806,14 @@ impl Viewer for SignedZoneReviewer {
         self.read().unwrap().soa()
     }
 
-    fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send {
+    fn non_soa_records<'d>(&'d self) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d> {
+        let soa = self.soa();
         let reader = self.read().unwrap();
         reader
-            .loaded_records()
-            .chain(reader.generated_records().iter().cloned())
+            .generated_records()
+            .iter()
+            .filter(|&r| r.rname != soa.rname || r.rtype != soa.rtype)
+            .chain(reader.loaded_records())
     }
 }
 
@@ -768,11 +826,14 @@ impl Viewer for ZoneViewer {
         self.read().unwrap().soa()
     }
 
-    fn non_soa_records(&self) -> impl Iterator<Item = RegularRecord> + Send {
+    fn non_soa_records<'d>(&'d self) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d> {
+        let soa = self.soa();
         let reader = self.read().unwrap();
         reader
-            .loaded_records()
-            .chain(reader.generated_records().iter().cloned())
+            .generated_records()
+            .iter()
+            .filter(|&r| r.rname != soa.rname || r.rtype != soa.rtype)
+            .chain(reader.loaded_records())
     }
 }
 

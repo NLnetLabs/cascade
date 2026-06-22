@@ -1,6 +1,8 @@
 //! Incremental signing.
 
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -9,9 +11,12 @@ use cascade_zonedata::{
     LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
     SoaRecord,
 };
+use domain::base::RecordData;
 use domain::base::Serial;
 use domain::base::iana::{Class, ZonemdAlgorithm, ZonemdScheme};
 use domain::base::name::FlattenInto;
+use domain::base::rdata::ComposeRecordData;
+use domain::base::wire::Composer;
 use domain::base::{
     CanonicalOrd, Name, NameBuilder, Record, Rtype, Serial as DomainSerial, ToName, Ttl,
 };
@@ -44,10 +49,11 @@ use crate::center::Center;
 use crate::manager::record_zone_event;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::SigningTrigger;
+use crate::signer::status::SigningStatusPerZone;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
-    KeyPair, KeySetState, MinTimestamp, PassThroughMode, SignerError, SigningStatusPerZone,
-    ZoneSigner, faketime_or_now, load_keys,
+    KeyPair, KeySetState, MinTimestamp, PassThroughMode, SignerError, ZoneSigner, faketime_or_now,
+    load_keys,
 };
 use crate::zone::{HistoricalEvent, Zone};
 
@@ -80,14 +86,7 @@ pub fn sign_incrementally(
     let keyset_state: KeySetState = serde_json::from_str(&state)
         .map_err(|e| SignerError::SigningError(format!("loading keyset state failed: {e}")))?;
 
-    let policy;
-    {
-        let zone_state = zone
-            .state
-            .lock()
-            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
-        policy = zone_state.policy.clone().expect("should be there");
-    };
+    let policy = zone.read().policy.clone().unwrap();
 
     let use_nsec3 = matches!(policy.signer.denial, SignerDenialPolicy::NSec3 { .. });
 
@@ -231,12 +230,12 @@ pub fn sign_incrementally(
             .map(|s| domain::base::Serial(s.into())),
     );
 
-    ws.local_state.save(&ws.center, &ws.zone)?;
+    ws.local_state.save(&ws.center, &ws.zone);
 
     Ok(())
 }
 
-type Zrd = Record<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>;
+type Zrd = RecordFullCmp<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>;
 type RtypeSet = HashSet<Rtype>;
 type ChangesValue = (RtypeSet, RtypeSet); // add set followed by delete set.
 
@@ -645,6 +644,9 @@ impl WorkSpace<'_> {
                 // just remove all if there is more than one.
                 for r in old_rrs {
                     let r: SoaRecord = r.clone().into();
+                    self.patch.remove(r.clone().into()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to remove soa {r:?}: {e}"))
+                    })?;
                     self.patch.remove_soa(r.clone()).map_err(|e| {
                         SignerError::PatchFailed(format!("unable to remove soa {r:?}: {e}"))
                     })?;
@@ -691,6 +693,9 @@ impl WorkSpace<'_> {
                 // just add all if there is more than one.
                 for r in new_rrs {
                     let r: SoaRecord = r.clone().into();
+                    self.patch.add(r.clone().into()).map_err(|e| {
+                        SignerError::PatchFailed(format!("unable to add soa {r:?}: {e}"))
+                    })?;
                     self.patch.add_soa(r.clone()).map_err(|e| {
                         SignerError::PatchFailed(format!("unable to add soa {r:?}: {e}"))
                     })?;
@@ -1040,7 +1045,7 @@ impl WorkSpace<'_> {
                 z.1,
                 Bytes::copy_from_slice(digest.as_ref()),
             );
-            let record = Record::new(
+            let record = RecordFullCmp::new(
                 iss.origin.clone(),
                 soa_records[0].class(),
                 soa_records[0].ttl(),
@@ -1119,7 +1124,7 @@ impl WorkSpace<'_> {
                     zone_soa.expire(),
                     zone_soa.minimum(),
                 ));
-                let record = Record::new(
+                let record = RecordFullCmp::new(
                     old_soa.owner().clone(),
                     old_soa.class(),
                     old_soa.ttl(),
@@ -1149,7 +1154,7 @@ impl WorkSpace<'_> {
                     zone_soa.minimum(),
                 ));
 
-                let record = Record::new(
+                let record = RecordFullCmp::new(
                     old_soa.owner().clone(),
                     old_soa.class(),
                     old_soa.ttl(),
@@ -1185,7 +1190,7 @@ impl WorkSpace<'_> {
                     zone_soa.minimum(),
                 ));
 
-                let record = Record::new(
+                let record = RecordFullCmp::new(
                     old_soa.owner().clone(),
                     old_soa.class(),
                     old_soa.ttl(),
@@ -1264,7 +1269,7 @@ impl WorkSpace<'_> {
                     .clone()
                     .try_flatten_into()
                     .expect("should not fail");
-                let r = Record::new(owner.clone(), record.class(), record.ttl(), data);
+                let r = RecordFullCmp::new(owner.clone(), record.class(), record.ttl(), data);
 
                 if r.rtype() == Rtype::RRSIG {
                     let ZoneRecordData::Rrsig(rrsig) = r.data() else {
@@ -1299,7 +1304,7 @@ impl WorkSpace<'_> {
                 ZonemdAlgorithm::SHA384,
                 Bytes::new(),
             );
-            let record = Record::new(
+            let record = RecordFullCmp::new(
                 iss.origin.clone(),
                 Class::IN,
                 Ttl::ZERO,
@@ -1536,7 +1541,7 @@ impl IncrementalSigningState {
     ) -> Result<(), SignerError> {
         // Collect records for a
         // name/RRtype and store a complete RRset in a hash table.
-        let mut records = Vec::<Record<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>>::new();
+        let mut records = Vec::<Zrd>::new();
         let mut rrsig_records = vec![];
         let mut type_covered = Rtype::RRSIG;
 
@@ -1545,6 +1550,7 @@ impl IncrementalSigningState {
         for entry in signed_reader.all_records() {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
+            let record: Zrd = record.into();
 
             match record.data() {
                 ZoneRecordData::Rrsig(rrsig) => {
@@ -1626,13 +1632,12 @@ impl IncrementalSigningState {
     pub fn load_unsigned_zone(&mut self, reader: &LoadedZoneReader) -> Result<(), SignerError> {
         // Collect records for a
         // name/RRtype and store a complete RRset in a btree.
-        let mut records = Vec::<Record<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>>::new();
-
-        records.push(Into::<OldParsedRecord>::into(reader.soa().clone()).flatten_into());
+        let mut records = Vec::<Zrd>::new();
 
         for entry in reader.regular_records() {
             let record: OldParsedRecord = entry.clone().into();
             let record: StoredRecord = record.flatten_into();
+            let record: Zrd = record.into();
 
             // Skip record types we don't need.
             if record.rtype() == Rtype::NSEC
@@ -2171,6 +2176,7 @@ impl IncrementalSigningState {
 
     fn new_nsec_chain(&mut self) -> Result<(), SignerError> {
         let records = self.get_unsigned_sorted();
+        let records: Vec<_> = records.into_iter().map(RecordFullCmp::to_record).collect();
         let records_iter = RecordsIter::new_from_refs(&records);
         let config = GenerateNsecConfig::new();
         let nsec_records = generate_nsecs(&self.origin, records_iter, &config)
@@ -2180,7 +2186,7 @@ impl IncrementalSigningState {
         let mut new_sigs = vec![];
 
         for r in nsec_records {
-            let record = Record::new(
+            let record = RecordFullCmp::new(
                 r.owner().clone(),
                 r.class(),
                 r.ttl(),
@@ -2205,6 +2211,7 @@ impl IncrementalSigningState {
 
     fn new_nsec3_chain(&mut self) -> Result<(), SignerError> {
         let records = self.get_unsigned_sorted();
+        let records: Vec<_> = records.into_iter().map(RecordFullCmp::to_record).collect();
         let records_iter = RecordsIter::new_from_refs(&records);
         let config = GenerateNsec3Config::<_, DefaultSorter>::new(self.nsec3param.clone())
             .with_ttl_mode(Nsec3ParamTtlMode::SoaMinimum);
@@ -2215,7 +2222,7 @@ impl IncrementalSigningState {
         let mut new_sigs = vec![];
 
         let r = nsec3_records.nsec3param;
-        let record = Record::new(
+        let record = RecordFullCmp::new(
             r.owner().clone(),
             r.class(),
             r.ttl(),
@@ -2236,7 +2243,7 @@ impl IncrementalSigningState {
         self.new_apex.insert(Rtype::NSEC3PARAM, records);
 
         for r in nsec3_records.nsec3s {
-            let record = Record::new(
+            let record = RecordFullCmp::new(
                 r.owner().clone(),
                 r.class(),
                 r.ttl(),
@@ -2285,10 +2292,7 @@ pub struct LocalState {
 
 impl LocalState {
     pub fn new(zone: &Arc<Zone>) -> Result<Self, SignerError> {
-        let zone_state = zone
-            .state
-            .lock()
-            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
+        let zone_state = zone.read();
 
         Ok(Self {
             apex_remove: zone_state.apex_remove.clone(),
@@ -2301,47 +2305,19 @@ impl LocalState {
         })
     }
 
-    pub fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) -> Result<(), SignerError> {
-        let mut modified = false;
+    pub fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) {
+        // TODO: The state is always marked as dirty. We could avoid marking it
+        // as dirty in case we detect a modification has not happened. We should
+        // evaluate whether this is worthwhile.
+        let mut zone_state = zone.write(center);
 
-        let mut zone_state = zone
-            .state
-            .lock()
-            .map_err(|e| SignerError::SigningError(format!("zone.state.lock() failed: {e}")))?;
-
-        if self.apex_remove != zone_state.apex_remove {
-            zone_state.apex_remove = self.apex_remove;
-            modified = true;
-        }
-        if self.apex_extra != zone_state.apex_extra {
-            zone_state.apex_extra = self.apex_extra;
-            modified = true;
-        }
-        if self.last_signature_refresh != zone_state.last_signature_refresh {
-            zone_state.last_signature_refresh = self.last_signature_refresh;
-            modified = true;
-        }
-        if self.key_tags != zone_state.key_tags {
-            zone_state.key_tags = self.key_tags;
-            modified = true;
-        }
-        if self.key_roll != zone_state.key_roll {
-            zone_state.key_roll = self.key_roll;
-            modified = true;
-        }
-        if self.previous_serial != zone_state.previous_serial {
-            zone_state.previous_serial = self.previous_serial;
-            modified = true;
-        }
-        if self.next_min_expiration != zone_state.next_min_expiration {
-            zone_state.next_min_expiration = self.next_min_expiration;
-            modified = true;
-        }
-
-        if modified {
-            zone.mark_dirty(&mut zone_state, center);
-        }
-        Ok(())
+        zone_state.apex_remove = self.apex_remove;
+        zone_state.apex_extra = self.apex_extra;
+        zone_state.last_signature_refresh = self.last_signature_refresh;
+        zone_state.key_tags = self.key_tags;
+        zone_state.key_roll = self.key_roll;
+        zone_state.previous_serial = self.previous_serial;
+        zone_state.next_min_expiration = self.next_min_expiration;
     }
 }
 
@@ -2362,13 +2338,14 @@ fn sign_records(
         return Ok(());
     }
 
-    let rrset = Rrset::new_from_owned(records)
+    let records: Vec<_> = records.iter().map(RecordFullCmp::to_record).collect();
+    let rrset = Rrset::new_from_refs(&records)
         .map_err(|e| SignerError::SigningError(format!("Rrset::new failed: {e}")))?;
     let mut rrsig_records = vec![];
     for key in keys {
         let rrsig = sign_rrset(key, &rrset, inception, expiration)
             .map_err(|e| SignerError::SigningError(format!("signing failed: {e}")))?;
-        let record = Record::new(
+        let record = RecordFullCmp::new(
             rrsig.owner().clone(),
             rrsig.class(),
             rrsig.ttl(),
@@ -2400,7 +2377,7 @@ fn nsec_insert(
     };
     let next = previous_nsec.next_name();
     let new_nsec = Nsec::new(next.clone(), rtypebitmap);
-    let new_record = Record::new(
+    let new_record = RecordFullCmp::new(
         name.clone(),
         previous_record.class(),
         previous_record.ttl(),
@@ -2409,7 +2386,7 @@ fn nsec_insert(
     iss.nsecs.insert(name.clone(), new_record);
     iss.modified_nsecs.insert(name.clone());
     let previous_nsec = Nsec::new(name.clone(), previous_nsec.types().clone());
-    let previous_record = Record::new(
+    let previous_record = RecordFullCmp::new(
         previous_name.clone(),
         previous_record.class(),
         previous_record.ttl(),
@@ -2434,7 +2411,7 @@ fn nsec_remove(name: &Name<Bytes>, next_name: &Name<Bytes>, iss: &mut Incrementa
         panic!("NSEC record expected");
     };
     let previous_nsec = Nsec::new(next_name.clone(), previous_nsec.types().clone());
-    let previous_record = Record::new(
+    let previous_record = RecordFullCmp::new(
         previous_name.clone(),
         previous_record.class(),
         previous_record.ttl(),
@@ -2471,7 +2448,7 @@ fn nsec_update_bitmap(
 
     let rtypebitmap = nsec_rtypebitmap_from_iterator(curr.iter());
     let nsec = Nsec::new(nsec.next_name().clone(), rtypebitmap);
-    let record = Record::new(
+    let record = RecordFullCmp::new(
         record.owner().clone(),
         record.class(),
         record.ttl(),
@@ -2624,7 +2601,7 @@ fn nsec3_update(
         nsec3.next_owner().clone(),
         rtypebitmap,
     );
-    let record = Record::new(
+    let record = RecordFullCmp::new(
         nsec3_record.owner().clone(),
         nsec3_record.class(),
         nsec3_record.ttl(),
@@ -2759,7 +2736,7 @@ fn nsec3_remove_one(
         nsec3_next.clone(),
         previous_nsec.types().clone(),
     );
-    let previous_record = Record::new(
+    let previous_record = RecordFullCmp::new(
         previous_name.clone(),
         previous_record.class(),
         previous_record.ttl(),
@@ -2992,7 +2969,7 @@ fn nsec3_insert_one(
         next.clone(),
         rtypebitmap,
     );
-    let new_record = Record::new(
+    let new_record = RecordFullCmp::new(
         nsec3_name.clone(),
         previous_record.class(),
         previous_record.ttl(),
@@ -3008,7 +2985,7 @@ fn nsec3_insert_one(
         nsec3_hash,
         previous_nsec3.types().clone(),
     );
-    let previous_record = Record::new(
+    let previous_record = RecordFullCmp::new(
         previous_name.clone(),
         previous_record.class(),
         previous_record.ttl(),
@@ -3171,4 +3148,171 @@ fn sign_rtype_set(
         iss.rrsigs.insert(key, sig);
     }
     Ok(())
+}
+
+//------------ RecordFullCmp -------------------------------------------------
+/// A wrapper around Record where compare and equal also take the TTL into
+/// account.
+#[derive(Debug)]
+struct RecordFullCmp<Name, Data>(Record<Name, Data>);
+
+impl<Name, Data> RecordFullCmp<Name, Data> {
+    fn new(owner: Name, class: Class, ttl: Ttl, data: Data) -> Self {
+        Self(Record::new(owner, class, ttl, data))
+    }
+
+    fn class(&self) -> Class {
+        self.0.class()
+    }
+
+    fn data(&self) -> &Data {
+        self.0.data()
+    }
+
+    fn owner(&self) -> &Name {
+        self.0.owner()
+    }
+
+    fn ttl(&self) -> Ttl {
+        self.0.ttl()
+    }
+
+    fn to_record(&self) -> &Record<Name, Data> {
+        &self.0
+    }
+
+    /* Currently unused.
+    fn into_record(self) -> Record<Name, Data> {
+    self.0
+    }
+    */
+}
+
+impl<Name, Data> RecordFullCmp<Name, Data>
+where
+    Data: RecordData,
+{
+    fn rtype(&self) -> Rtype {
+        self.0.rtype()
+    }
+}
+
+//--- PartialEq and Eq
+
+impl<N, NN, D, DD> PartialEq<RecordFullCmp<NN, DD>> for RecordFullCmp<N, D>
+where
+    N: PartialEq<NN>,
+    D: RecordData + PartialEq<DD>,
+    DD: RecordData,
+{
+    fn eq(&self, other: &RecordFullCmp<NN, DD>) -> bool {
+        self.owner() == other.owner()
+            && self.class() == other.class()
+            && self.ttl() == other.ttl()
+            && self.data() == other.data()
+    }
+}
+
+impl<N: Eq, D: RecordData + Eq> Eq for RecordFullCmp<N, D> {}
+
+impl<N, NN, D, DD> CanonicalOrd<RecordFullCmp<NN, DD>> for RecordFullCmp<N, D>
+where
+    N: ToName,
+    NN: ToName,
+    D: RecordData + CanonicalOrd<DD>,
+    DD: RecordData,
+{
+    fn canonical_cmp(&self, other: &RecordFullCmp<NN, DD>) -> Ordering {
+        self.0.canonical_cmp(&other.0)
+    }
+}
+
+//--- Hash
+
+impl<Name, Data> hash::Hash for RecordFullCmp<Name, Data>
+where
+    Name: hash::Hash,
+    Data: hash::Hash,
+{
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<N: ToName, D: RecordData + ComposeRecordData> RecordFullCmp<N, D> {
+    /* Currently unused.
+    pub fn compose<Target: Composer + ?Sized>(
+        &self,
+        target: &mut Target,
+    ) -> Result<(), Target::AppendError> {
+    self.0.compose(target)
+    }
+    */
+
+    pub fn compose_canonical<Target: Composer + ?Sized>(
+        &self,
+        target: &mut Target,
+    ) -> Result<(), Target::AppendError> {
+        self.0.compose_canonical(target)
+    }
+}
+
+//--- AsRef
+
+impl<N, D> AsRef<RecordFullCmp<N, D>> for RecordFullCmp<N, D> {
+    fn as_ref(&self) -> &RecordFullCmp<N, D> {
+        self
+    }
+}
+
+impl<Name, TName, Data, TData> FlattenInto<RecordFullCmp<TName, TData>>
+    for RecordFullCmp<Name, Data>
+where
+    Name: FlattenInto<TName>,
+    Data: FlattenInto<TData, AppendError = Name::AppendError>,
+{
+    type AppendError = Name::AppendError;
+
+    fn try_flatten_into(self) -> Result<RecordFullCmp<TName, TData>, Name::AppendError> {
+        Ok(RecordFullCmp(self.0.try_flatten_into()?))
+    }
+}
+
+impl<Name, Data> Clone for RecordFullCmp<Name, Data>
+where
+    Name: Clone,
+    Data: Clone,
+{
+    fn clone(&self) -> Self {
+        RecordFullCmp(self.0.clone())
+    }
+}
+
+// Do not implement
+// impl<Name, Data> From<RecordFullCmp<Name, Data>> for Record<Name, Data>
+// this may unexpectedly change RecordFullCmp into Record. Use
+// into_record instead.
+
+impl From<RecordFullCmp<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>> for SoaRecord {
+    fn from(source: RecordFullCmp<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>) -> Self {
+        source.0.into()
+    }
+}
+
+impl From<RecordFullCmp<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>> for RegularRecord {
+    fn from(source: RecordFullCmp<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>) -> Self {
+        source.0.into()
+    }
+}
+
+impl<Name, Data> From<Record<Name, Data>> for RecordFullCmp<Name, Data> {
+    fn from(source: Record<Name, Data>) -> Self {
+        Self(source)
+    }
+}
+
+impl From<SoaRecord> for RecordFullCmp<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>> {
+    fn from(source: SoaRecord) -> Self {
+        Self(source.into())
+    }
 }

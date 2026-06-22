@@ -190,7 +190,8 @@ pub enum KeyImport {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct FileKeyImport {
     pub key_type: KeyType,
-    pub path: Utf8PathBuf,
+    pub public_key_path: Utf8PathBuf,
+    pub private_key_path: Utf8PathBuf,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -466,15 +467,15 @@ pub struct ZoneStatus {
 pub struct LastPublishedZone {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,
-    // TODO:
-    //  - time of publish
-    //  - number of records
-    //  - size in bytes
+    pub timestamp: SystemTime,
+    pub num_records: usize,
+    // TODO: size in bytes
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Progress {
     Waiting,
+    Restoring,
     Loading,
     LoadedReview,
     HaltLoaded,
@@ -759,6 +760,16 @@ impl fmt::Display for ZoneReloadError {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Health {
+    pub healthy: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Info {
+    pub version: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
@@ -841,6 +852,34 @@ pub struct LoaderPolicyInfo {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct KeyManagerPolicyInfo {
     pub hsm_server_id: Option<String>,
+    pub use_csk: bool,
+    pub algorithm: String,
+    pub ksk_validity: Option<u32>,
+    pub zsk_validity: Option<u32>,
+    pub csk_validity: Option<u32>,
+    pub auto_ksk: AutoConfigPolicyInfo,
+    pub auto_zsk: AutoConfigPolicyInfo,
+    pub auto_csk: AutoConfigPolicyInfo,
+    pub auto_algorithm: AutoConfigPolicyInfo,
+    pub dnskey_inception_offset: u32,
+    pub dnskey_signature_lifetime: u32,
+    pub dnskey_remain_time: u32,
+    pub cds_inception_offset: u32,
+    pub cds_signature_lifetime: u32,
+    pub cds_remain_time: u32,
+    pub ds_algorithm: String,
+    pub default_ttl: u32,
+    pub auto_remove: bool,
+    pub auto_remove_delay: Duration,
+    pub publication_nameservers: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct AutoConfigPolicyInfo {
+    pub start: bool,
+    pub report: bool,
+    pub expire: bool,
+    pub done: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -868,6 +907,9 @@ pub struct SignerPolicyInfo {
     // TODO: These fields should have a type that explains that they represent durations.
     pub sig_inception_offset: u32,
     pub sig_validity_offset: u32,
+    pub sig_remain_time: u32,
+    pub signature_refresh_interval: u32,
+    pub key_roll_time: u32,
     pub denial: SignerDenialPolicyInfo,
     pub review: ReviewPolicyInfo,
 }
@@ -900,7 +942,7 @@ pub struct ServerPolicyInfo {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct OutboundPolicyInfo {
-    pub accept_xfr_from: Vec<NameserverCommsPolicyInfo>,
+    pub provide_xfr_to: Vec<NameserverCommsPolicyInfo>,
     pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
 }
 

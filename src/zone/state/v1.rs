@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use camino::Utf8Path;
@@ -15,7 +16,7 @@ use crate::loader::Source;
 use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
 use crate::tsig::TsigStore;
-use crate::zone::HistoryItem;
+use crate::zone::{HistoryItem, LastPublished};
 use crate::{
     policy::{
         KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
@@ -37,6 +38,9 @@ pub struct Spec {
     /// The full details of the policy are stored here, as there may be a newer
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
+
+    /// Metadata related to the last published zone version.
+    pub last_published: Option<LastPublished>,
 
     /// The source of the zone.
     pub source: ZoneLoadSourceSpec,
@@ -91,6 +95,16 @@ pub struct Spec {
 
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
+
+    /// Locations of persisted unsigned zone diffs to enable IXFR from
+    /// the upstream to resume on restart, and to enable a complete latest
+    /// unsigned version of the zone to be reconstituted.
+    pub persisted_loaded_diffs: Vec<PathBuf>,
+
+    /// Locations of persisted signed zone diffs to ensure IXFR out toward
+    /// downstreams is still possible after restart, and to enable a complete
+    /// latest signed version of the zone to be reconsituted.
+    pub persisted_signed_diffs: Vec<PathBuf>,
 }
 
 //--- Conversion
@@ -100,6 +114,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
+            last_published: zone.last_published.clone(),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
@@ -110,6 +125,8 @@ impl Spec {
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
             history: zone.history.clone(),
+            persisted_loaded_diffs: zone.persisted_loaded_diff_paths.clone(),
+            persisted_signed_diffs: zone.persisted_signed_diff_paths.clone(),
         }
     }
 }

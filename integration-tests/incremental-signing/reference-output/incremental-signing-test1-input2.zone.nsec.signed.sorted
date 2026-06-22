@@ -19,9 +19,9 @@ delegation1.example.	3600	IN	NSEC	ent2nt.example. NS DS RRSIG NSEC
 delegation1.example.	3600	IN	RRSIG	DS 15 2 3600 20231114221320 20200913122640 2835 example. EJcI7l72ZEAO6Kp5IwDkKtWuwqxeS6IIg9M6+Jb3MamNM1pSd12VgMkI6ItB321fqEjbVnrh2VEzwxiRMh3BBA==
 delegation1.example.	3600	IN	RRSIG	NSEC 15 2 3600 20231114221320 20200913122640 2835 example. lUXU9BPtqvegBHnMUGUK0944a/qaRETsgObPcOSsnHoJFqxkPvymHTtvDOtbvJx/0HsL8YbUW+FqV1Xr849UAw==
 dname.modify.example.	3600	IN	DNAME	dname-target2.example.
-dname.modify.example.	3600	IN	NSEC	txt.modify.example. DNAME RRSIG NSEC
+dname.modify.example.	3600	IN	NSEC	ttl.modify.example. DNAME RRSIG NSEC
 dname.modify.example.	3600	IN	RRSIG	DNAME 15 3 3600 20231114221320 20200913122640 2835 example. wBvJ3qKVTjKuTydVTEmnPv47IQ9Gs4JF8y1U0/qJ90pODlfkAUnQDDqDkDv7ZMZbV2mhPJgBH7R+MSUtPSV6Ag==
-dname.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. LxhaKg+u4m3K8RMy8hId1bjX7KijmJUvUxiYRvxZJPpzQwAuA1w21906GZbKOylPwI57WbCMGScPHUYS2XgIAw==
+dname.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. ekz0FdA/VC+XJGN80zN9R4BvQXAe42ThQGM8I8ZlCQksPBWC8Z89sYwNqRDC8c4D9RCVNdPXDC53uutQe+1dAw==
 dname.modify.not-auth.example.	3600	IN	DNAME	dname-target2.example.
 ds.new-ent.example.	3600	IN	DS	12345 13 253 01
 ds.new-ent.example.	3600	IN	NSEC	ns.new-ent.example. DS RRSIG NSEC
@@ -48,6 +48,10 @@ not-auth.example.	3600	IN	RRSIG	NSEC 15 2 3600 20231114221320 20200913122640 283
 ns.new-ent.example.	3600	IN	NS	ns1.example.
 ns.new-ent.example.	3600	IN	NSEC	txt.new-ent.example. NS RRSIG NSEC
 ns.new-ent.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. yzvqXmagqNJxZYj5G2oa00ODds24JbHnDQSLdHqIrXHrsqGVkNrsfUfOMfKkPfYp0H9UXDyusu5wrwZraYwHDA==
+ttl.modify.example.	3600	IN	NSEC	txt.modify.example. TXT RRSIG NSEC
+ttl.modify.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. pzQ976TcCvkBcV2HF4dQjaXEDdZqMJpcf2zm1UBIihl3FpEFsh6xt9cVyUV9ksz/r6bgoFsBcoIHUbQ/UbzhDw==
+ttl.modify.example.	600	IN	RRSIG	TXT 15 3 600 20231114221320 20200913122640 2835 example. s7VrzvLhUU0cau5uEsFaKGft90OHcOlJyiUmqvr65gHqgNX9k7SbLbkMaTiTzCXt0WsKHx04uoZVpsZjIB3PDQ==
+ttl.modify.example.	600	IN	TXT	"Only the TTL changes"
 txt.ent2nt.example.	3600	IN	NSEC	a.modify.example. TXT RRSIG NSEC
 txt.ent2nt.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. duq6f2MPCxNU1PPy83bBPj/pERJubhNKUwfpqRSO4IKES48z7EnWWbQGsHyfCy73EwhlKVIEaFpE6Z8g9KRCDw==
 txt.ent2nt.example.	3600	IN	RRSIG	TXT 15 3 3600 20231114221320 20200913122640 2835 example. T4aySP1d7bSYFIWyJ8ic+877Ad34Zntpqgtqqm8QZH7+VHdONArMK87K6mizPoHF9IcjS0SgTylLOMyIZr9MBw==

@@ -98,7 +98,7 @@ If it is configured to ``"discard"``, it will simply go back to the idle
 state as if the loading or signing operation didn't happen. This is the most
 fault-tolerant option.
 
-If it is instead set to ``"halt"`` then Cascade will stop doing any operations
+If it is instead set to ``"halt"`` then **Cascade will stop doing any operations**
 to the zone. This allows the operator to investigate the issue before Cascade
 continues. If the zone should be accepted anyway, the :command:`cascade zone
 override` command can be used to override the previous rejection. If the
@@ -143,9 +143,6 @@ script\ [1]_ as ``/usr/local/bin/cascade-review.sh``:
         else
             dnssec-verify -q -o "${CASCADE_ZONE}" /dev/stdin
         fi
-
-.. versionadded:: 0.1.0-alpha2
-   Environment variables ``CASCADE_SERVER_IP`` and ``CASCADE_SERVER_PORT``.
 
 Next, we update the zone's policy to use the review script for both stages:
 
