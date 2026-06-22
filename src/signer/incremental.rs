@@ -1,7 +1,8 @@
 //! Incremental signing.
 
+use core::ops::RangeBounds;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet, hash_map};
+use std::collections::{BTreeMap, HashMap, HashSet, btree_map, hash_map, hash_set};
 use std::hash;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
@@ -768,41 +769,38 @@ impl WorkSpace<'_> {
             }
         }
 
-        // NSEC records that were deleted.
-        for (k, old_nsec) in &iss.old_nsecs {
-            if let Some(new_nsec) = iss.nsecs.get(k) {
-                if new_nsec == old_nsec {
-                    // No change.
-                    continue;
+        // Handle NSECs.
+        for name in iss.nsecs.changes_iter() {
+            if let Some(change) = iss.nsecs.get_change(name) {
+                match change {
+                    NsecChange::Original { .. } => unreachable!(),
+                    NsecChange::Removed { old } => {
+                        let old_nsec: RegularRecord = old.clone().into();
+                        self.patch.remove(old_nsec.clone()).map_err(|e| {
+                            SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}"))
+                        })?;
+                    }
+                    NsecChange::Modified { old, new } => {
+                        if old != new {
+                            let old_nsec: RegularRecord = old.clone().into();
+                            self.patch.remove(old_nsec.clone()).map_err(|e| {
+                                SignerError::PatchFailed(format!(
+                                    "unable to remove {old_nsec:?}: {e}"
+                                ))
+                            })?;
+                            let new_nsec: RegularRecord = new.clone().into();
+                            self.patch.add(new_nsec.clone()).map_err(|e| {
+                                SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}"))
+                            })?;
+                        }
+                    }
+                    NsecChange::New { new } => {
+                        let new_nsec: RegularRecord = new.clone().into();
+                        self.patch.add(new_nsec.clone()).map_err(|e| {
+                            SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}"))
+                        })?;
+                    }
                 }
-                let old_nsec: RegularRecord = old_nsec.clone().into();
-                self.patch.remove(old_nsec.clone()).map_err(|e| {
-                    SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}"))
-                })?;
-            } else {
-                let old_nsec: RegularRecord = old_nsec.clone().into();
-                self.patch.remove(old_nsec.clone()).map_err(|e| {
-                    SignerError::PatchFailed(format!("unable to remove {old_nsec:?}: {e}"))
-                })?;
-            }
-        }
-
-        // NSEC records that were added.
-        for (k, new_nsec) in &iss.nsecs {
-            if let Some(old_nsec) = iss.old_nsecs.get(k) {
-                if new_nsec == old_nsec {
-                    // No change.
-                    continue;
-                }
-                let new_nsec: RegularRecord = new_nsec.clone().into();
-                self.patch.add(new_nsec.clone()).map_err(|e| {
-                    SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}"))
-                })?;
-            } else {
-                let new_nsec: RegularRecord = new_nsec.clone().into();
-                self.patch.add(new_nsec.clone()).map_err(|e| {
-                    SignerError::PatchFailed(format!("unable to add {new_nsec:?}: {e}"))
-                })?;
             }
         }
 
@@ -1475,11 +1473,7 @@ struct IncrementalSigningState<'zd> {
     /// The apex of the new version of the unsigned zone.
     new_apex_saved: HashMap<Rtype, Vec<Zrd>>,
 
-    /// NSEC records of the previously signed zone.
-    old_nsecs: BTreeMap<Name<Bytes>, Zrd>,
-
-    /// NSEC records of the newly signed zone.
-    nsecs: BTreeMap<Name<Bytes>, Zrd>,
+    nsecs: Nsecs,
 
     /// NSEC3 records of the previously signed zone.
     old_nsec3s: BTreeMap<Name<Bytes>, Zrd>,
@@ -1495,6 +1489,7 @@ struct IncrementalSigningState<'zd> {
 
     /// List of NSEC or NSEC3 records that have been modified and needs to
     /// be signed.
+    // TODO: rewrite to rely on changes collection within nsecs and nsec3s.
     modified_nsecs: HashSet<Name<Bytes>>,
 
     /// Signing keys.
@@ -1546,8 +1541,7 @@ impl<'a> IncrementalSigningState<'a> {
             new_apex_saved: HashMap::new(),
             old_data: HashMap::new(),
             new_data: BTreeMap::new(),
-            old_nsecs: BTreeMap::new(),
-            nsecs: BTreeMap::new(),
+            nsecs: Nsecs::new(),
             old_nsec3s: BTreeMap::new(),
             nsec3s: BTreeMap::new(),
             rrsigs: Rrsigs::new(),
@@ -1582,7 +1576,8 @@ impl<'a> IncrementalSigningState<'a> {
                 ZoneRecordData::Nsec(_) => {
                     // Assume (at most) one NSEC record per owner name.
                     // Directly insert into the btree map.
-                    self.nsecs.insert(record.owner().clone(), record);
+                    self.nsecs
+                        .add_existing_record(record.owner().clone(), record);
                 }
                 ZoneRecordData::Nsec3(_) => {
                     // Assume (at most) one NSEC3 record per owner name.
@@ -1620,7 +1615,6 @@ impl<'a> IncrementalSigningState<'a> {
             }
         }
         self.old_apex_saved = self.old_apex.clone();
-        self.old_nsecs = self.nsecs.clone();
         self.old_nsec3s = self.nsec3s.clone();
         Ok(())
     }
@@ -2171,7 +2165,7 @@ impl<'a> IncrementalSigningState<'a> {
             let key = (new_name, NewRtype::NSEC);
             self.rrsigs.remove(&key);
         }
-        self.nsecs = BTreeMap::new();
+        self.nsecs.remove_all();
 
         for k in self.nsec3s.keys() {
             let new_name = old_base_name_to_revnamebuf(k);
@@ -2199,7 +2193,8 @@ impl<'a> IncrementalSigningState<'a> {
                 r.ttl(),
                 ZoneRecordData::Nsec(r.data().clone()),
             );
-            self.nsecs.insert(record.owner().clone(), record.clone());
+            self.nsecs
+                .insert_new_record(record.owner().clone(), record.clone());
             sign_records(
                 &self.origin,
                 &[record],
@@ -2281,6 +2276,238 @@ impl<'a> IncrementalSigningState<'a> {
         data.par_sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
 
         data
+    }
+}
+
+struct Nsecs {
+    nsecs: BTreeMap<Name<Bytes>, NsecChange>,
+    changes: HashSet<Name<Bytes>>,
+}
+
+impl Nsecs {
+    fn new() -> Self {
+        Self {
+            nsecs: BTreeMap::new(),
+            changes: HashSet::new(),
+        }
+    }
+
+    fn add_existing_record(&mut self, name: Name<Bytes>, value: Zrd) {
+        let nsec_change = NsecChange::Original { old: value };
+        self.nsecs.insert(name, nsec_change);
+    }
+
+    fn insert_new_record(&mut self, name: Name<Bytes>, value: Zrd) {
+        let entry = self.nsecs.entry(name.clone());
+        match entry {
+            btree_map::Entry::Occupied(mut entry) => {
+                let change = entry.get_mut();
+                match change {
+                    NsecChange::Original { old } | NsecChange::Modified { old, .. } => {
+                        let new_change = NsecChange::Modified {
+                            old: old.clone(),
+                            new: value,
+                        };
+                        *change = new_change;
+
+                        // No need for an insert for Modified, but it doesn't
+                        // hurt.
+                        self.changes.insert(name);
+                    }
+                    NsecChange::Removed { .. } => todo!(),
+                    NsecChange::New { .. } => {
+                        let new_change = NsecChange::New { new: value };
+                        *change = new_change;
+                    }
+                }
+            }
+            btree_map::Entry::Vacant(entry) => {
+                let change = NsecChange::New { new: value };
+                entry.insert(change);
+                self.changes.insert(name);
+            }
+        }
+    }
+
+    fn remove(&mut self, name: &Name<Bytes>) {
+        let entry = self.nsecs.entry(name.clone());
+        match entry {
+            btree_map::Entry::Occupied(mut entry) => {
+                let change = entry.get_mut();
+                match change {
+                    NsecChange::Original { old } | NsecChange::Modified { old, .. } => {
+                        let new_change = NsecChange::Removed { old: old.clone() };
+                        *change = new_change;
+
+                        // No need for an insert for Modified, but it doesn't
+                        // hurt.
+                        self.changes.insert(name.clone());
+                    }
+                    NsecChange::Removed { .. } => todo!(),
+                    NsecChange::New { .. } => {
+                        // Remove the new entry.
+                        entry.remove();
+                        self.changes.remove(name);
+                    }
+                }
+            }
+            btree_map::Entry::Vacant(_entry) => {
+                todo!();
+            }
+        }
+    }
+
+    fn remove_all(&mut self) {
+        for (name, change) in self.nsecs.iter_mut() {
+            match change {
+                NsecChange::Original { old } => {
+                    let new_change = NsecChange::Removed { old: old.clone() };
+                    *change = new_change;
+
+                    // No need for an insert for Modified, but it doesn't
+                    // hurt.
+                    self.changes.insert(name.clone());
+                }
+                NsecChange::Removed { .. } => todo!(),
+                NsecChange::Modified { .. } => todo!(),
+                NsecChange::New { .. } => todo!(),
+            }
+        }
+    }
+
+    fn get(&self, name: &Name<Bytes>) -> Option<&Zrd> {
+        if let Some(change) = self.nsecs.get(name) {
+            match change {
+                NsecChange::Original { old } => return Some(old),
+                NsecChange::Removed { .. } => todo!(),
+                NsecChange::Modified { new, .. } | NsecChange::New { new } => return Some(new),
+            }
+        }
+        None
+    }
+
+    fn get_change(&self, name: &Name<Bytes>) -> Option<&NsecChange> {
+        self.nsecs.get(name)
+    }
+
+    fn keys(&self) -> NsecsKeysIter<'_> {
+        NsecsKeysIter::new(self.nsecs.iter())
+    }
+
+    fn values(&self) -> NsecsValuesIter<'_> {
+        NsecsValuesIter::new(self.nsecs.values())
+    }
+
+    fn range<R>(&self, range: R) -> NsecRange<'_>
+    where
+        R: RangeBounds<Name<Bytes>>,
+    {
+        NsecRange::new(self.nsecs.range(range))
+    }
+
+    fn changes_iter(&self) -> hash_set::Iter<'_, Name<Bytes>> {
+        self.changes.iter()
+    }
+}
+
+enum NsecChange {
+    Original { old: Zrd },
+    Removed { old: Zrd },
+    Modified { old: Zrd, new: Zrd },
+    New { new: Zrd },
+}
+
+struct NsecsKeysIter<'a> {
+    iter: btree_map::Iter<'a, Name<Bytes>, NsecChange>,
+}
+
+impl<'a> NsecsKeysIter<'a> {
+    fn new(iter: btree_map::Iter<'a, Name<Bytes>, NsecChange>) -> Self {
+        Self { iter }
+    }
+}
+
+type NsecKeyItem<'a> = &'a Name<Bytes>;
+
+impl<'a> Iterator for NsecsKeysIter<'a> {
+    type Item = NsecKeyItem<'a>;
+    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        loop {
+            if let Some((name, item)) = self.iter.next() {
+                match item {
+                    NsecChange::Original { .. }
+                    | NsecChange::Modified { .. }
+                    | NsecChange::New { .. } => return Some(name),
+                    NsecChange::Removed { .. } => continue,
+                }
+            }
+            break;
+        }
+        None
+    }
+}
+
+struct NsecsValuesIter<'a> {
+    iter: btree_map::Values<'a, Name<Bytes>, NsecChange>,
+}
+
+impl<'a> NsecsValuesIter<'a> {
+    fn new(iter: btree_map::Values<'a, Name<Bytes>, NsecChange>) -> Self {
+        Self { iter }
+    }
+}
+
+type NsecItem<'a> = &'a Zrd;
+
+impl<'a> Iterator for NsecsValuesIter<'a> {
+    type Item = NsecItem<'a>;
+    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        loop {
+            if let Some(item) = self.iter.next() {
+                match item {
+                    NsecChange::Original { old } => return Some(old),
+                    NsecChange::Removed { .. } => continue,
+                    NsecChange::Modified { new, .. } | NsecChange::New { new } => return Some(new),
+                }
+            }
+            break;
+        }
+        None
+    }
+}
+
+struct NsecRange<'a> {
+    range: btree_map::Range<'a, Name<Bytes>, NsecChange>,
+}
+
+impl<'a> NsecRange<'a> {
+    fn new(range: btree_map::Range<'a, Name<Bytes>, NsecChange>) -> Self {
+        Self { range }
+    }
+}
+
+impl<'a> Iterator for NsecRange<'a> {
+    type Item = (&'a Name<Bytes>, &'a Zrd);
+    fn next(&mut self) -> std::option::Option<<Self as Iterator>::Item> {
+        todo!()
+    }
+}
+
+impl<'a> DoubleEndedIterator for NsecRange<'a> {
+    fn next_back(&mut self) -> Option<<Self as Iterator>::Item> {
+        loop {
+            if let Some((name, item)) = self.range.next_back() {
+                match item {
+                    NsecChange::Original { old } => return Some((name, old)),
+                    NsecChange::Removed { .. } => continue,
+                    NsecChange::Modified { new, .. } | NsecChange::New { new } => {
+                        return Some((name, new));
+                    }
+                }
+            }
+            break;
+        }
+        None
     }
 }
 
@@ -2743,13 +2970,12 @@ fn nsec_insert(
     // Try to find the NSEC record that comes before the one we are trying
     // to insert. Assume that the apex NSEC will always exist can sort
     // before anything else.
-    let mut range = iss.nsecs.range::<Name<_>, _>(..name);
+    let mut range = iss.nsecs.range(..name);
     let (previous_name, previous_record) = range
         .next_back()
         .expect("previous NSEC record should exist");
     let previous_name = previous_name.clone();
     let previous_record = previous_record.clone();
-    drop(range);
     let ZoneRecordData::Nsec(previous_nsec) = previous_record.data() else {
         panic!("NSEC record expected");
     };
@@ -2761,7 +2987,7 @@ fn nsec_insert(
         previous_record.ttl(),
         ZoneRecordData::Nsec(new_nsec),
     );
-    iss.nsecs.insert(name.clone(), new_record);
+    iss.nsecs.insert_new_record(name.clone(), new_record);
     iss.modified_nsecs.insert(name.clone());
     let previous_nsec = Nsec::new(name.clone(), previous_nsec.types().clone());
     let previous_record = RecordFullCmp::new(
@@ -2770,7 +2996,8 @@ fn nsec_insert(
         previous_record.ttl(),
         ZoneRecordData::Nsec(previous_nsec),
     );
-    iss.nsecs.insert(previous_name.clone(), previous_record);
+    iss.nsecs
+        .insert_new_record(previous_name.clone(), previous_record);
     iss.modified_nsecs.insert(previous_name.clone());
 }
 
@@ -2778,13 +3005,12 @@ fn nsec_remove(name: &Name<Bytes>, next_name: &Name<Bytes>, iss: &mut Incrementa
     // Try to find the NSEC record that comes before the one we are trying
     // to remove. Assume that the apex NSEC will always exist can sort
     // before anything else.
-    let mut range = iss.nsecs.range::<Name<_>, _>(..name);
+    let mut range = iss.nsecs.range(..name);
     let (previous_name, previous_record) = range
         .next_back()
         .expect("previous NSEC record should exist");
     let previous_name = previous_name.clone();
     let previous_record = previous_record.clone();
-    drop(range);
     let ZoneRecordData::Nsec(previous_nsec) = previous_record.data() else {
         panic!("NSEC record expected");
     };
@@ -2795,7 +3021,8 @@ fn nsec_remove(name: &Name<Bytes>, next_name: &Name<Bytes>, iss: &mut Incrementa
         previous_record.ttl(),
         ZoneRecordData::Nsec(previous_nsec),
     );
-    iss.nsecs.insert(previous_name.clone(), previous_record);
+    iss.nsecs
+        .insert_new_record(previous_name.clone(), previous_record);
     iss.modified_nsecs.insert(previous_name.clone());
     iss.nsecs.remove(name);
     iss.modified_nsecs.remove(name);
@@ -2832,7 +3059,7 @@ fn nsec_update_bitmap(
         record.ttl(),
         ZoneRecordData::Nsec(nsec),
     );
-    iss.nsecs.insert(owner.clone(), record);
+    iss.nsecs.insert_new_record(owner.clone(), record);
 
     iss.modified_nsecs.insert(owner.clone());
     curr
