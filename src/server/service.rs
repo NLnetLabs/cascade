@@ -623,12 +623,12 @@ mod compat {
                 } else {
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    rrs.extend(loaded_diff.removed_non_soa(origin).cloned());
+                    rrs.extend(loaded_diff.unsigned_removed_non_soa(origin).cloned());
                     rrs.extend(signed_diff.removed_non_soa(origin).cloned());
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    rrs.extend(loaded_diff.added_non_soa(origin).cloned());
+                    rrs.extend(loaded_diff.unsigned_added_non_soa(origin).cloned());
                     rrs.extend(signed_diff.added_non_soa(origin).cloned());
                 }
 
