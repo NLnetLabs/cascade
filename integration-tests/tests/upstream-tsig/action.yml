@@ -98,7 +98,7 @@ runs:
     - name: Verify that attempting to remove the TSIG key fails.
       run: |
         cascade tsig remove tsig-key &> tsig-remove.log && exit 1
-        grep -F 'the TSIG key cannot be removed as it is used by' tsig-remove.log
+        grep -F 'Failed to remove TSIG key: key is still in use by' tsig-remove.log
 
     - name: Remove the zone
       run: |
