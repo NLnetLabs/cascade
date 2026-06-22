@@ -1357,7 +1357,22 @@ impl HttpServer {
             .map(|_| TsigRemoveResult)
             .map_err(|e| match e {
                 RemoveError::NotFound => TsigRemoveError::NotFound,
-                RemoveError::Used => TsigRemoveError::InUse,
+                RemoveError::InUse(usage_references) => TsigRemoveError::InUse(
+                    usage_references
+                        .into_iter()
+                        .map(|usage| match usage {
+                            tsig::UsageReference::ZoneSource(zone) => {
+                                TsigKeyUsageReference::ZoneSource(zone.0.name.clone())
+                            }
+                            tsig::UsageReference::ZoneOther(zone) => {
+                                TsigKeyUsageReference::ZoneOther(zone.0.name.clone())
+                            }
+                            tsig::UsageReference::Policy(policy) => {
+                                TsigKeyUsageReference::Policy(policy.name.clone())
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                ),
             });
         Json(res)
     }
