@@ -296,9 +296,12 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     // Collect still existing references to the key that prevent us from
     // removing it.
 
-    // Collect the TSIG store references for which we have no way of saying
-    // why it is in use. We will remove these in favour of explicit references
-    // where possible.
+    // 1. Collect the TSIG store references for which we have no way of
+    //    saying why it is in use. We will remove these in favour of explicit
+    //    references where possible.
+    //
+    // Allow the Clippy warning as we know that it is a false positive.
+    #[allow(clippy::mutable_key_type)]
     let mut unknown_refs = state
         .tsig_store
         .map
@@ -307,15 +310,14 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
             key_info
                 .zones
                 .iter()
-                .map(|z| z.0.name.clone())
+                .map(|z| ZoneByName(z.0.clone()))
                 .collect::<HashSet<_>>()
         })
         .unwrap_or_default();
 
-    // Find references to the TSIG key in zone source settings. While we
-    // search, forget any vague unknown references to the zone for which we
-    // can instead offer a specific reference of the key to a point-of-usage
-    // to the user.
+    // 2. Find references to the TSIG key in zone source settings. While we
+    //    search, forget any vague unknown references to the zone for which we
+    //    can instead offer a specific reference to the zone using the key.
     let mut refs = state
         .zones
         .iter()
@@ -327,18 +329,13 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
             )
         })
         .inspect(|&referenced_zone| {
-            // Lookup the zone by name because:
-            //   a) if using ZoneByName Clippy complains about a mutable key
-            //   b) if Arc<Zone> can't be put in HashSet as it is not Eq.
-            //   c) it is duplicate zone names that we want to avoid reporting
-            //      to the end user.
-            let _ = unknown_refs.remove(&referenced_zone.0.name);
+            let _ = unknown_refs.remove(referenced_zone);
         })
         .cloned()
         .map(UsageReference::ZoneSource)
         .collect::<Vec<_>>();
 
-    // Find references to the TSIG key in policies.
+    // 3. Find references to the TSIG key in policies.
     refs.extend(
         state
             .policies
@@ -363,15 +360,19 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
             .map(UsageReference::Policy),
     );
 
+    // 4. Include any usage references to zones for which we still don't know
+    //    where they are used.
+    refs.extend(unknown_refs.into_iter().map(UsageReference::ZoneOther));
+
+    // Return an error report if the key is in use, else delete it as
+    // requested.
     if !refs.is_empty() {
-        return Err(RemoveError::InUse(refs));
+        Err(RemoveError::InUse(refs))
+    } else {
+        let _ = state.tsig_store.map.remove(name);
+        state.tsig_store.mark_dirty(center);
+        Ok(())
     }
-
-    let _ = state.tsig_store.map.remove(name);
-
-    state.tsig_store.mark_dirty(center);
-
-    Ok(())
 }
 
 //----------- ImportError ------------------------------------------------------
