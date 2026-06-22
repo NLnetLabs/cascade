@@ -138,8 +138,7 @@ impl RestoringSignedStorage {
         LoadedZoneReviewer,
         SignedZoneReviewer,
         ZoneViewer,
-        SignedZoneBuilder,
-        SigningStorage,
+        PassiveStorage,
     ) {
         assert!(
             Arc::ptr_eq(restorer.data(), &self.data),
@@ -147,11 +146,11 @@ impl RestoringSignedStorage {
         );
 
         restorer.clear();
-
         let Self {
             data,
-            curr_loaded_index,
+            curr_loaded_index: _,
         } = self;
+        let curr_loaded_index = false;
         let curr_signed_index = false;
 
         let loaded_reviewer =
@@ -166,18 +165,14 @@ impl RestoringSignedStorage {
             )
         };
         let viewer = unsafe { ZoneViewer::new(data.clone(), curr_loaded_index, curr_signed_index) };
-        let builder = unsafe {
-            SignedZoneBuilder::new(data.clone(), curr_loaded_index, !curr_signed_index, None)
-        };
 
-        let storage = SigningStorage {
+        let storage = PassiveStorage {
             data,
             curr_loaded_index,
             curr_signed_index,
-            loaded_diff: None,
         };
 
-        (loaded_reviewer, signed_reviewer, viewer, builder, storage)
+        (loaded_reviewer, signed_reviewer, viewer, storage)
     }
 }
 

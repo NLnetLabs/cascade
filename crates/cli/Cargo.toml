@@ -39,7 +39,7 @@ path = "../api"
 # The CLI delegates to Clap to handle basic concerns like argument parsing.
 [dependencies.clap]
 workspace = true
-features = ["cargo", "derive", "wrap_help"]
+features = ["cargo", "derive", "env", "wrap_help"]
 
 # TODO: Evaluate this choice.
 [dependencies.futures-util]

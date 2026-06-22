@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE" "1" "Jan 01, 2026" "0.1.0-alpha5" "Cascade"
+.TH "CASCADE" "1" "Jan 01, 2026" "0.1.0-beta3" "Cascade"
 .SH NAME
 cascade \- Cascade CLI
 .SH SYNOPSIS
@@ -40,7 +40,8 @@ cascade \- Cascade CLI
 .INDENT 0.0
 .TP
 .B \-s, \-\-server <IP:PORT>
-The cascade server instance to connect to [default: 127.0.0.1:4539].
+The Cascade server instance to connect to. This option takes priority
+over the \fBCASCADE_DAEMON\fP environment variable. [default: 127.0.0.1:4539]
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -56,7 +57,13 @@ Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP
 .INDENT 0.0
 .TP
 .B \-V, \-\-version
-Print version.
+Print client version.
+.UNINDENT
+.SH ENVIRONMENT VARIABLES
+.INDENT 0.0
+.TP
+.B CASCADE_DAEMON
+The Cascade server instance to connect to.
 .UNINDENT
 .SH COMMANDS
 .INDENT 0.0

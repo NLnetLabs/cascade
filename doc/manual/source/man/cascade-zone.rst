@@ -26,6 +26,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`history` ``<NAME>``
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`maintenance` ``<enable|disable>`` ``<NAME>``
+
 Description
 -----------
 
@@ -133,28 +135,31 @@ Options for :subcmd:`zone add`
 
    Import a key pair as a KSK.
 
-   The file path needs to be the public key file of the KSK. The private key
-   file name is derived from the public key file. Key files are not
-   actually copied from the specified paths and must remain accessible
-   to the server.
+   The file path needs to either be a public key file of the KSK with
+   extension .key, or a private key file of the KSK with extension .private.
+   The path to the other half of the key will be derived by replacing .key
+   with .private or vice versa. Key files are not actually copied from the
+   specified paths and must remain accessible to the server.
 
 .. option:: --import-zsk-file <IMPORT_ZSK_FILE>
 
    Import a key pair as a ZSK.
 
-   The file path needs to be the public key file of the ZSK. The private key
-   file name is derived from the public key file. Key files are not
-   actually copied from the specified paths and must remain accessible
-   to the server.
+   The file path needs to either be a public key file of the ZSK with
+   extension .key, or a private key file of the ZSK with extension .private.
+   The path to the other half of the key will be derived by replacing .key
+   with .private or vice versa. Key files are not actually copied from the
+   specified paths and must remain accessible to the server.
 
 .. option:: --import-csk-file <IMPORT_CSK_FILE>
 
    Import a key pair as a CSK.
 
-   The file path needs to be the public key file of the CSK. The private key
-   file name is derived from the public key file. Key files are not
-   actually copied from the specified paths and must remain accessible
-   to the server.
+   The file path needs to either be a public key file of the CSK with
+   extension .key, or a private key file of the CSK with extension .private.
+   The path to the other half of the key will be derived by replacing .key
+   with .private or vice versa. Key files are not actually copied from the
+   specified paths and must remain accessible to the server.
 
 .. option:: --import-ksk-kmip <server> <public_id> <private_id> <algorithm> <flags>
 
@@ -223,6 +228,8 @@ Options for :subcmd:`zone reject`
 Options for :subcmd:`zone override`
 -----------------------------------
 
+.. versionadded:: 0.1.0-beta1
+
 .. option:: <--unsigned|--signed>
 
    Whether the zone to override is at the unsigned or signed review stage.
@@ -247,9 +254,22 @@ Options for :subcmd:`zone status`
 Options for :subcmd:`zone reset`
 ---------------------------------
 
+.. versionadded:: 0.1.0-beta1
+
 .. option:: <NAME>
 
    The name of the zone to reset the pipeline of.
+
+Options for :subcmd:`zone maintenance`
+--------------------------------------
+
+.. option:: <enable|disable>
+
+   Whether maintenance mode should be enabled or disabled.
+ 
+.. option:: <NAME>
+
+   The name of the zone to toggle maintenance mode of.
 
 See Also
 --------

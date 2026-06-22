@@ -1,6 +1,8 @@
 cascade debug
 =============
 
+.. versionadded:: 0.1.0-beta1
+.. 
 Synopsis
 --------
 

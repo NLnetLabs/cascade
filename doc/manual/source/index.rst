@@ -20,10 +20,14 @@ Cascade
 A friendly, stand-alone :doc:`DNSSEC <intro>` signing solution designed to
 communicate what it's doing and is easy to interact with. 
 
-Cascade is currently in the **alpha** development phase. We would love for
+Cascade is currently in the **beta** development phase. We would love for
 you to :doc:`get to know Cascade <before-you-start>` and are eager to hear
 :ref:`your experiences <reach-out>` so we can improve every aspect. Please
 consider the current :doc:`limitations`.
+
+.. tip:: To see at a glance what's new in the beta1 release read our
+         `"Cascade: Start your engines!" <https://blog.nlnetlabs.nl/cascade-beta1-release/>`_
+         blog post.
 
 Cascade has the following design goals:
 
@@ -64,6 +68,9 @@ sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
 channel on the `DNS OARC Mattermost 
 server <https://www.dns-oarc.net/oarc/services/chat>`_, or
 mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
+Or if you want to discuss operational experiences, if you have feedback or
+if you want to request a feature, please use the
+`NLnet Labs Community Forum <https://community.nlnetlabs.nl/c/cascade/10/>`_.
 
 Examples of things we're interested in:
 
@@ -98,9 +105,11 @@ Examples of things we're interested in:
    :name: toc-core
 
    key-management
+   incremental-signing
    hsms
    review-hooks
    zone-transfers
+   maintenance-mode
 
 .. toctree::
    :maxdepth: 2
