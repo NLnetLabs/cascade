@@ -19,6 +19,7 @@ use crate::{
 /// [`LoadedZoneBuilder`] is used to load new instances of a zone from external
 /// sources (e.g. zonefiles and DNS servers). It offers read-only access to the
 /// current loaded instance of the zone, to support incremental loading.
+#[must_use = "Dropping this will lock up the zone data storage"]
 pub struct LoadedZoneBuilder {
     /// The underlying data.
     data: Arc<Data>,
@@ -285,6 +286,7 @@ impl fmt::Debug for LoadedZoneBuilder {
 /// re-sign existing signed instances. It offers read-only access to the current
 /// (loaded and signed) instance of the zone, and (if any) the new loaded
 /// instance of the zone, to support incremental signing.
+#[must_use = "Dropping this will lock up the zone data storage"]
 pub struct SignedZoneBuilder {
     /// The underlying data.
     data: Arc<Data>,
@@ -732,6 +734,7 @@ impl fmt::Debug for SignedZoneBuilder {
 //----------- LoadedZoneBuilt --------------------------------------------------
 
 /// Proof that the loaded component of a zone has been built.
+#[must_use = "Dropping this will lock up the zone data storage"]
 pub struct LoadedZoneBuilt {
     /// The underlying data.
     pub(crate) data: Arc<Data>,
@@ -743,6 +746,7 @@ pub struct LoadedZoneBuilt {
 //----------- SignedZoneBuilt --------------------------------------------------
 
 /// Proof that the signed component of a zone has been built.
+#[must_use = "Dropping this will lock up the zone data storage"]
 pub struct SignedZoneBuilt {
     /// The underlying data.
     pub(crate) data: Arc<Data>,
