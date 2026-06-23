@@ -30,6 +30,7 @@
   - publish_helper.sh --dry-run https://github.com/NLnetLabs/cascade/actions/runs/NNNNNNNN
   - publish_helper.sh https://github.com/NLnetLabs/cascade/actions/runs/NNNNNNNN
 - create a GH release for the tag based on Changelog.md
+- close the GH milestone for this release (if any)
 - announce via post in the Cascade topic on https://community.nlnetlabs.nl/.
   - remember to tag it as #release.
 
@@ -43,6 +44,7 @@
 - make a PR for the branch
 - review the PR and ensure the workflow succeeds
 - merge the prep-for-dev branch to main
+- create a GH milestone for the next release (if needed)
 
 # Final steps
 - Upgrade cascade.nlnetlabs.nl to the now published released package.

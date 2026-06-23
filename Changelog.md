@@ -14,6 +14,29 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Breaking changes
+
+### New
+
+### Bug fixes
+
+### Other changes
+
+- Extend cascade tsig remove error to report the users of the key. ([#719] by
+  @ximon18)
+
+### Documentation improvements
+
+### Known issues
+
+### Acknowledgements
+
+[#719]: https://github.com/NLnetLabs/cascade/pull/719
+
 ## 0.1.0-beta3 'Villa Volta'
 
 Released 2026-06-19.
