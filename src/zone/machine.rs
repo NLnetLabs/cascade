@@ -1,9 +1,12 @@
+use std::time::SystemTime;
+
 use cascade_api::ZoneReviewStatus;
+use domain::base::Serial;
 use tracing::{info, trace};
 
 use crate::{
     units::zone_signer::SignerError,
-    zone::{HistoricalEvent, ZoneHandle},
+    zone::{HistoricalEvent, LastPublished, ZoneHandle},
 };
 
 /// State machine for a particular zone
@@ -407,14 +410,51 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Switching operations
 impl<'a> ZoneHandle<'a> {
-    /// Begin switching to an approved instance of the zone.
-    pub(crate) fn start_switch(&mut self, persisted: cascade_zonedata::SignedZonePersisted) {
-        self.storage().start_switch(persisted);
-    }
+    /// Finish persisting an approved signed instance.
+    pub(crate) fn finish_signed_persistence(
+        &mut self,
+        persisted: cascade_zonedata::SignedZonePersisted,
+    ) {
+        let viewer = self.storage().finish_signed_persistence(persisted);
 
-    /// Finish switching to a new instance of the zone.
-    pub(crate) fn finish_switch(&mut self, cleaner: cascade_zonedata::ZoneCleaner) {
-        self.storage().start_cleanup(cleaner);
+        self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
+        self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
+
+        // Compute the total number of records
+        let reader = viewer.read().unwrap();
+        let generated_records = reader.generated_records().len();
+        let loaded_records = reader.loaded().regular_records().len() - 1;
+        let num_records = generated_records + loaded_records;
+
+        let loaded_serial = Serial(
+            self.state
+                .storage
+                .published_loaded_soa
+                .as_ref()
+                .unwrap()
+                .rdata
+                .serial
+                .into(),
+        );
+        let signed_serial = Serial(
+            self.state
+                .storage
+                .published_soa
+                .as_ref()
+                .unwrap()
+                .rdata
+                .serial
+                .into(),
+        );
+        let timestamp = SystemTime::now();
+        self.state.last_published = Some(LastPublished {
+            loaded_serial,
+            signed_serial,
+            timestamp,
+            num_records,
+        });
+
+        self.storage().start_publishing(viewer);
     }
 }
 

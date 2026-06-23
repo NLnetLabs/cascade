@@ -23,7 +23,7 @@
 //! such operations must wait. When the data storage becomes passive, it will
 //! call [`StorageZoneHandle::on_passive()`] to initiate enqueued operations.
 
-use std::{fmt, sync::Arc, time::SystemTime};
+use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
     DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
@@ -31,14 +31,13 @@ use cascade_zonedata::{
     SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
     SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
-use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{LastPublished, Zone, ZoneHandle, ZoneState, machine::ZoneStateMachine},
+    zone::{Zone, ZoneHandle, ZoneState, machine::ZoneStateMachine},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -575,6 +574,22 @@ impl StorageZoneHandle<'_> {
             ),
         }
     }
+
+    /// Finish the ongoing signed-instance persistence.
+    pub fn finish_signed_persistence(&mut self, persisted: SignedZonePersisted) -> ZoneViewer {
+        // Examine the current state.
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::PersistingSigned(s)) => {
+                let (s, viewer) = s.mark_complete(persisted);
+                transition.move_to(ZoneDataStorage::Switching(s));
+                viewer
+            }
+
+            _ => unreachable!(
+                "'ZoneDataStorage::PersistingSigned' is the only state where a 'SignedZonePersisted' is available"
+            ),
+        }
+    }
 }
 
 /// # Background Tasks
@@ -623,38 +638,16 @@ impl StorageZoneHandle<'_> {
         });
     }
 
-    /// Start switching to an approved and persisted signed instance.
+    /// Start publishing a new instance.
     ///
     /// A background task will be spawned to switch the publication server to
-    /// the newly persisted instance and transition to the next state.
+    /// the new instance and transition to the next state.
     #[tracing::instrument(
         level = "trace",
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn start_switch(&mut self, persisted: SignedZonePersisted) {
-        // Examine the current state.
-        let viewer = match transition(&mut self.state.storage.machine) {
-            (transition, ZoneDataStorage::PersistingSigned(s)) => {
-                let (s, viewer) = s.mark_complete(persisted);
-                transition.move_to(ZoneDataStorage::Switching(s));
-                viewer
-            }
-
-            _ => unreachable!(
-                "'ZoneDataStorage::PersistingSigned' is the only state where a 'SignedZonePersisted' is available"
-            ),
-        };
-
-        self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
-        self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
-
-        // Compute the total number of records
-        let reader = viewer.read().unwrap();
-        let generated_records = reader.generated_records().len();
-        let loaded_records = reader.loaded().regular_records().len() - 1;
-        let num_records = generated_records + loaded_records;
-
+    pub fn start_publishing(&mut self, viewer: ZoneViewer) {
         // Spawn a background task to update the publication server.
         let span = trace_span!("switch_publication_server");
         let zone = self.zone.clone();
@@ -679,37 +672,7 @@ impl StorageZoneHandle<'_> {
                 _ => unreachable!("just transitioned to 'Switching'"),
             };
 
-            let loaded_serial = Serial(
-                handle
-                    .state
-                    .storage
-                    .published_loaded_soa
-                    .as_ref()
-                    .unwrap()
-                    .rdata
-                    .serial
-                    .into(),
-            );
-            let signed_serial = Serial(
-                handle
-                    .state
-                    .storage
-                    .published_soa
-                    .as_ref()
-                    .unwrap()
-                    .rdata
-                    .serial
-                    .into(),
-            );
-            let timestamp = SystemTime::now();
-            handle.state.last_published = Some(LastPublished {
-                loaded_serial,
-                signed_serial,
-                timestamp,
-                num_records,
-            });
-
-            handle.get().finish_switch(cleaner);
+            handle.storage().start_cleanup(cleaner);
 
             handle.state.storage.background_tasks.finish();
         });

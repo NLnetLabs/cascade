@@ -181,7 +181,7 @@ impl ZonePersistenceHandle<'_> {
                 // cannot be taken until the outer function terminates.
                 let mut handle = zone.write_handle(&center);
 
-                handle.get().start_switch(persisted);
+                handle.get().finish_signed_persistence(persisted);
 
                 handle.state.persistence.ongoing.finish();
             });
