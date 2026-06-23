@@ -190,7 +190,17 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::LoadedReview(loaded.finish_load()));
 
-        self.storage().finish_load(built);
+        let loaded_reviewer = self.storage().finish_load(built);
+
+        // TODO: Use the instance ID here, which will not require
+        // examining the zone contents.
+        let serial = loaded_reviewer.read().unwrap().soa().rdata.serial;
+        self.state.record_event(
+            HistoricalEvent::NewVersionReceived,
+            Some(domain::base::Serial(serial.into())),
+        );
+
+        self.storage().start_loaded_review(loaded_reviewer);
     }
 }
 
@@ -234,7 +244,10 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Waiting(loaded.soft_reject()));
-        self.storage().abandon_loaded_review();
+        let loaded_reviewer = self.storage().abandon_loaded_review();
+        // Stop serving the abandoned instance.
+        self.storage()
+            .start_rewinding_loaded_review(loaded_reviewer);
     }
 
     pub(crate) fn hard_reject_loaded(&mut self) {
@@ -272,7 +285,9 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::SignedReview(signing.finish_signing()));
 
-        self.storage().finish_sign(built);
+        let signed_reviewer = self.storage().finish_sign(built);
+        // Begin reviewing the prepared instance.
+        self.storage().start_signed_review(signed_reviewer);
     }
 
     // Abandon the ongoing signing operation (but not due to failure).
@@ -287,7 +302,10 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Waiting(signing.abandon()));
 
-        self.storage().abandon_sign(builder);
+        let loaded_reviewer = self.storage().abandon_sign(builder);
+        // Stop serving the abandoned instance.
+        self.storage()
+            .start_rewinding_loaded_review(loaded_reviewer);
     }
 
     pub(crate) fn signing_failed(
@@ -303,7 +321,10 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::SigningFailed(signing.signing_failed(err)));
 
-        self.storage().abandon_sign(builder);
+        let loaded_reviewer = self.storage().abandon_sign(builder);
+        // Stop serving the abandoned instance.
+        self.storage()
+            .start_rewinding_loaded_review(loaded_reviewer);
     }
 }
 
@@ -349,10 +370,15 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Waiting(signed.soft_reject()));
 
+        let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
+
         // TODO: This should be handled by 'Instances'.
         self.state.next_min_expiration = None;
+        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
+        self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
 
-        self.storage().abandon_signed_review();
+        self.storage()
+            .start_rewinding_review(loaded_reviewer, signed_reviewer);
     }
 
     pub(crate) fn hard_reject_signed(&mut self) {
@@ -395,7 +421,9 @@ impl<'a> ZoneHandle<'a> {
             ZoneStateMachine::HaltLoaded(halt_loaded) => {
                 let waiting = halt_loaded.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
-                self.storage().abandon_loaded_review();
+                let loaded_reviewer = self.storage().abandon_loaded_review();
+                self.storage()
+                    .start_rewinding_loaded_review(loaded_reviewer);
             }
             ZoneStateMachine::HaltSigned(halt_signed) => {
                 let waiting = halt_signed.reset();
@@ -404,7 +432,9 @@ impl<'a> ZoneHandle<'a> {
                 // TODO: This should be handled by 'Instances'.
                 self.state.next_min_expiration = None;
 
-                self.storage().abandon_signed_review();
+                let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
+                self.storage()
+                    .start_rewinding_review(loaded_reviewer, signed_reviewer);
             }
             ZoneStateMachine::SigningFailed(signing_failed) => {
                 let waiting = signing_failed.reset();
