@@ -152,7 +152,9 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use domain::new::base::Record;
 use domain::new::base::compat::Ttl;
+use domain::new::base::compat::iana::Class;
 use domain::{
     base::{ToName, name::FlattenInto},
     new::{
@@ -222,6 +224,10 @@ pub struct RegularRecord(pub domain::new::base::Record<Box<RevName>, BoxedRecord
 // Compatibility with domain old base. Maybe these need to be added to
 // Record as well.
 impl RegularRecord {
+    pub fn new(rname: Box<RevName>, class: Class, ttl: Ttl, rdata: BoxedRecordData) -> Self {
+        let record = Record::old_new_box(rname, class, ttl, rdata);
+        Self(record)
+    }
     pub fn data(&self) -> RecordData<'_, &Name> {
         self.0.rdata.get()
     }
@@ -230,6 +236,9 @@ impl RegularRecord {
     }
     pub fn ttl(&self) -> Ttl {
         self.0.ttl
+    }
+    pub fn class(&self) -> Class {
+        self.0.rclass
     }
 }
 
