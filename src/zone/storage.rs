@@ -176,8 +176,6 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     pub fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
-        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
-
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("start_loaded_review");
@@ -260,8 +258,6 @@ impl StorageZoneHandle<'_> {
                 info!("The loaded instance has been rejected; cleaning it up");
 
                 let (s, loaded_reviewer) = s.give_up();
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
                 transition.move_to(ZoneDataStorage::CleanLoadedPending(s));
                 loaded_reviewer
             }
@@ -383,8 +379,6 @@ impl StorageZoneHandle<'_> {
                 trace!("Abandoning the ongoing sign operation");
 
                 let (s, loaded_reviewer) = s.give_up(builder);
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
                 transition.move_to(ZoneDataStorage::CleanLoadedPending(s));
                 loaded_reviewer
             }
@@ -405,8 +399,6 @@ impl StorageZoneHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     pub fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer) {
-        self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
-
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("start_signed_review");

@@ -200,6 +200,8 @@ impl<'a> ZoneHandle<'a> {
             Some(domain::base::Serial(serial.into())),
         );
 
+        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
+
         self.storage().start_loaded_review(loaded_reviewer);
     }
 }
@@ -246,6 +248,7 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::Waiting(loaded.soft_reject()));
         let loaded_reviewer = self.storage().abandon_loaded_review();
         // Stop serving the abandoned instance.
+        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
     }
@@ -287,6 +290,7 @@ impl<'a> ZoneHandle<'a> {
 
         let signed_reviewer = self.storage().finish_sign(built);
         // Begin reviewing the prepared instance.
+        self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
         self.storage().start_signed_review(signed_reviewer);
     }
 
@@ -304,6 +308,7 @@ impl<'a> ZoneHandle<'a> {
 
         let loaded_reviewer = self.storage().abandon_sign(builder);
         // Stop serving the abandoned instance.
+        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
     }
@@ -323,6 +328,7 @@ impl<'a> ZoneHandle<'a> {
 
         let loaded_reviewer = self.storage().abandon_sign(builder);
         // Stop serving the abandoned instance.
+        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
     }
@@ -422,6 +428,8 @@ impl<'a> ZoneHandle<'a> {
                 let waiting = halt_loaded.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
                 let loaded_reviewer = self.storage().abandon_loaded_review();
+                self.state.storage.loaded_review_soa =
+                    loaded_reviewer.read().map(|r| r.soa().clone());
                 self.storage()
                     .start_rewinding_loaded_review(loaded_reviewer);
             }
