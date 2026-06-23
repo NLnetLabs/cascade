@@ -29,7 +29,7 @@ runs:
           sleep 1
         done
 
-    - name: Verify the NSEC signed zone
+    - name: Verify the DNSSEC signed zone
       run: |
         dig +noall +answer +onesoa @127.0.0.1 -p 4542 example.test AXFR > example-test.axfr.log
         dnssec-verify -o example.test example-test.axfr.log | tee dnssec-verify.log
