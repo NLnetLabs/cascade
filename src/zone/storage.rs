@@ -515,36 +515,7 @@ impl StorageZoneHandle<'_> {
             _ => panic!("The zone is not undergoing signer review"),
         };
 
-        let span = trace_span!("reset_review_servers");
-        let zone = self.zone.clone();
-        let center = self.center.clone();
-        self.state.storage.background_tasks.spawn(span, async move {
-            trace!("Resetting the signed review server");
-            let old_signed_reviewer =
-                SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
-
-            trace!("Resetting the loaded review server");
-            let old_loaded_reviewer =
-                LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
-
-            // Examine the current state.
-            let mut handle = zone.write_handle(&center);
-            let cleaner = match transition(&mut handle.state.storage.machine) {
-                (transition, ZoneDataStorage::CleanWholePending(s)) => {
-                    let (s, cleaner) = s
-                        .stop_review(old_signed_reviewer)
-                        .stop_review(old_loaded_reviewer);
-                    transition.move_to(ZoneDataStorage::Cleaning(s));
-                    cleaner
-                }
-
-                _ => unreachable!("The zone was left in 'CleanWholePending' state"),
-            };
-
-            handle.storage().start_cleanup(cleaner);
-
-            handle.state.storage.background_tasks.finish();
-        });
+        self.start_rewinding_review(loaded_reviewer, signed_reviewer);
     }
 }
 
@@ -841,6 +812,57 @@ impl StorageZoneHandle<'_> {
             };
 
             // Initiate cleanup of the abandoned instance.
+            handle.storage().start_cleanup(cleaner);
+
+            handle.state.storage.background_tasks.finish();
+        });
+    }
+
+    /// Rewind the loaded and signed review servers.
+    ///
+    /// When an upcoming loaded+signed instance is under review and is
+    /// abandoned, the review servers must be updated to stop serving it. A
+    /// background task will be started to achieve this.
+    ///
+    /// The loaded and signed reviewer objects for the current instance (not the
+    /// one being abandoned) are received. The old reviewers will be returned to
+    /// the state machine and the old instance will be cleaned up.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    fn start_rewinding_review(
+        &mut self,
+        loaded_reviewer: LoadedZoneReviewer,
+        signed_reviewer: SignedZoneReviewer,
+    ) {
+        let span = trace_span!("reset_review_servers");
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        self.state.storage.background_tasks.spawn(span, async move {
+            trace!("Resetting the signed review server");
+            let old_signed_reviewer =
+                SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
+
+            trace!("Resetting the loaded review server");
+            let old_loaded_reviewer =
+                LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
+
+            // Examine the current state.
+            let mut handle = zone.write_handle(&center);
+            let cleaner = match transition(&mut handle.state.storage.machine) {
+                (transition, ZoneDataStorage::CleanWholePending(s)) => {
+                    let (s, cleaner) = s
+                        .stop_review(old_signed_reviewer)
+                        .stop_review(old_loaded_reviewer);
+                    transition.move_to(ZoneDataStorage::Cleaning(s));
+                    cleaner
+                }
+
+                _ => unreachable!("The zone was left in 'CleanWholePending' state"),
+            };
+
             handle.storage().start_cleanup(cleaner);
 
             handle.state.storage.background_tasks.finish();
