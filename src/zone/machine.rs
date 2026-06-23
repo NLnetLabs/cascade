@@ -1,5 +1,4 @@
 use cascade_api::ZoneReviewStatus;
-use cascade_zonedata::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder};
 use tracing::{info, trace};
 
 use crate::{
@@ -99,7 +98,7 @@ impl ZoneStateMachine {
 
 /// # Initiating operations
 impl<'a> ZoneHandle<'a> {
-    pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
+    pub(crate) fn try_start_load(&mut self) -> Option<cascade_zonedata::LoadedZoneBuilder> {
         // If we're in maintenance mode, then we don't start this operation.
         // TODO: distinguish between a manual load and an automatic one.
         if self.state.maintenance_mode {
@@ -131,7 +130,7 @@ impl<'a> ZoneHandle<'a> {
         Some(builder)
     }
 
-    pub(crate) fn try_start_resign(&mut self) -> Option<SignedZoneBuilder> {
+    pub(crate) fn try_start_resign(&mut self) -> Option<cascade_zonedata::SignedZoneBuilder> {
         // If we're in maintenance mode, then we don't start this operation.
         // TODO: distinguish between a manual resign and an automatic one.
         if self.state.maintenance_mode {
@@ -170,7 +169,7 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Loading operations
 impl<'a> ZoneHandle<'a> {
-    pub(crate) fn abandon_load(&mut self, builder: LoadedZoneBuilder) {
+    pub(crate) fn abandon_load(&mut self, builder: cascade_zonedata::LoadedZoneBuilder) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Loading(loaded) = state else {
@@ -182,7 +181,7 @@ impl<'a> ZoneHandle<'a> {
         self.storage().abandon_load(builder);
     }
 
-    pub(crate) fn finish_load(&mut self, built: LoadedZoneBuilt) {
+    pub(crate) fn finish_load(&mut self, built: cascade_zonedata::LoadedZoneBuilt) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Loading(loaded) = state else {
@@ -277,7 +276,7 @@ impl<'a> ZoneHandle<'a> {
     }
 
     // Abandon the ongoing signing operation (but not due to failure).
-    pub(crate) fn abandon_signing(&mut self, builder: SignedZoneBuilder) {
+    pub(crate) fn abandon_signing(&mut self, builder: cascade_zonedata::SignedZoneBuilder) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
@@ -291,7 +290,11 @@ impl<'a> ZoneHandle<'a> {
         self.storage().abandon_sign(builder);
     }
 
-    pub(crate) fn signing_failed(&mut self, builder: SignedZoneBuilder, err: SignerError) {
+    pub(crate) fn signing_failed(
+        &mut self,
+        builder: cascade_zonedata::SignedZoneBuilder,
+        err: SignerError,
+    ) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
