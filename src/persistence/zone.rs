@@ -364,9 +364,7 @@ impl PersistenceState {
                     loaded_snapshot_path,
                     None,
                     reader.soa().clone(),
-                    [].iter().cloned(),
-                    // TODO: It would be nice if we didn't have to clone
-                    // the records here.
+                    [].iter(),
                     reader.loaded_records(),
                 );
 
@@ -378,10 +376,8 @@ impl PersistenceState {
                     signed_snapshot_path,
                     None,
                     reader.soa().clone(),
-                    [].iter().cloned(),
-                    // TODO: It would be nice if we didn't have to clone
-                    // the records here.
-                    reader.generated_records().iter().cloned(),
+                    [].iter(),
+                    reader.generated_records().iter(),
                 );
 
                 // Now that we have re-written the snapshots using the latest

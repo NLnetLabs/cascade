@@ -1,4 +1,9 @@
-use cascade_api::ReviewPolicyMode;
+use std::fmt::Display;
+
+use cascade_api::{
+    AutoConfigPolicyInfo, KeyManagerPolicyInfo, LoaderPolicyInfo, ReviewPolicyMode,
+    ServerPolicyInfo, SignerPolicyInfo,
+};
 
 use crate::{
     ansi,
@@ -8,7 +13,7 @@ use crate::{
         SignerSerialPolicyInfo,
     },
     client::CascadeApiClient,
-    println,
+    eprintln, println,
 };
 
 #[derive(Clone, Debug, clap::Args)]
@@ -37,6 +42,10 @@ impl Policy {
         match self.command {
             PolicyCommand::List => {
                 let res: PolicyListResult = client.get_json("policy/").await?;
+
+                if res.policies.is_empty() {
+                    eprintln!("No policies to show");
+                }
 
                 for policy in res.policies {
                     println!("{policy}");
@@ -100,10 +109,18 @@ impl Policy {
 }
 
 fn print_policy(p: &PolicyInfo) {
-    let none = "<none>".to_string();
-    let name = &p.name;
+    let PolicyInfo {
+        name,
+        zones,
+        loader,
+        key_manager,
+        signer,
+        server,
+    } = p;
 
-    let zones: Vec<_> = p.zones.iter().map(|z| format!("{}", z)).collect();
+    let none = "<none>".to_string();
+
+    let zones: Vec<_> = zones.iter().map(|z| format!("{}", z)).collect();
 
     let zones = if !zones.is_empty() {
         zones.join(", ")
@@ -111,17 +128,140 @@ fn print_policy(p: &PolicyInfo) {
         none.clone()
     };
 
-    let serial_policy = match p.signer.serial_policy {
+    println!("{name}:");
+    println!("  zones: {zones}");
+    print_loader_policy(loader);
+    print_key_manager_policy(key_manager);
+    print_signer_policy(signer);
+    print_server_policy(server);
+}
+
+fn or_none(x: &Option<impl Display>) -> String {
+    x.as_ref()
+        .map(ToString::to_string)
+        .unwrap_or("<none>".into())
+}
+
+fn print_loader_policy(LoaderPolicyInfo { review }: &LoaderPolicyInfo) {
+    println!("  loader:");
+    print_review(review);
+}
+
+fn print_key_manager_policy(
+    KeyManagerPolicyInfo {
+        hsm_server_id,
+        use_csk,
+        algorithm,
+        ksk_validity,
+        zsk_validity,
+        csk_validity,
+        auto_ksk,
+        auto_zsk,
+        auto_csk,
+        auto_algorithm,
+        dnskey_inception_offset,
+        dnskey_signature_lifetime,
+        dnskey_remain_time,
+        cds_inception_offset,
+        cds_signature_lifetime,
+        cds_remain_time,
+        ds_algorithm,
+        default_ttl,
+        auto_remove,
+        auto_remove_delay,
+        publication_nameservers,
+    }: &KeyManagerPolicyInfo,
+) {
+    // TODO: we should probably condense this information a lot or hide unnecessary details. For example, only
+    // show CSK info when `use_csk` is `true`.
+    println!("  key manager:");
+    println!("    HSM server: {}", or_none(hsm_server_id));
+    println!("    DS algorithm: {ds_algorithm}");
+    if *auto_remove {
+        println!(
+            "    auto-remove: true (delay {}s)",
+            auto_remove_delay.as_secs()
+        );
+    } else {
+        println!("    auto-remove: false",);
+    }
+    println!("    algorithm: {algorithm}");
+    print_auto_flags(auto_algorithm);
+    if *use_csk {
+        println!("    CSK:");
+        println!("      validity: {}s", or_none(csk_validity));
+        print_auto_flags(auto_csk);
+    } else {
+        println!("    KSK:");
+        println!("      validity: {}s", or_none(ksk_validity));
+        print_auto_flags(auto_ksk);
+        println!("    ZSK:");
+        println!("      validity: {}s", or_none(zsk_validity));
+        print_auto_flags(auto_zsk);
+    }
+    println!("    records:");
+    println!("      TTL: {default_ttl}s");
+    println!("      DNSKEY:");
+    println!("        signature inception offset: {dnskey_inception_offset}s");
+    println!("        signature lifetime: {dnskey_signature_lifetime}s");
+    println!("        signature remain time: {dnskey_remain_time}s");
+    println!("      CDS:");
+    println!("        signature inception offset: {cds_inception_offset}s");
+    println!("        signature lifetime: {cds_signature_lifetime}s");
+    println!("        signature remain time: {cds_remain_time}s");
+
+    if publication_nameservers.is_empty() {
+        println!("    publication nameservers: <none>");
+    } else {
+        println!("    publication nameservers:");
+
+        for ns in publication_nameservers {
+            println!("     - {ns}")
+        }
+    }
+}
+
+fn print_auto_flags(auto: &AutoConfigPolicyInfo) {
+    print!("      auto flags:");
+    if !auto.start && !auto.report && !auto.expire && !auto.done {
+        println!(" <none>");
+        return;
+    }
+    if auto.start {
+        print!(" start");
+    }
+    if auto.report {
+        print!(" report");
+    }
+    if auto.expire {
+        print!(" expire");
+    }
+    if auto.done {
+        print!(" done");
+    }
+    println!();
+}
+
+fn print_signer_policy(
+    SignerPolicyInfo {
+        review,
+        serial_policy,
+        sig_inception_offset,
+        sig_validity_offset,
+        sig_remain_time,
+        signature_refresh_interval,
+        key_roll_time,
+        denial,
+    }: &SignerPolicyInfo,
+) {
+    let serial_policy = match serial_policy {
         SignerSerialPolicyInfo::Keep => "keep",
         SignerSerialPolicyInfo::Counter => "counter",
         SignerSerialPolicyInfo::UnixTime => "unix time",
         SignerSerialPolicyInfo::DateCounter => "date counter",
     };
 
-    let inc = p.signer.sig_inception_offset;
-    let val = p.signer.sig_validity_offset;
-
-    let denial = match &p.signer.denial {
+    let denial = match &denial {
         SignerDenialPolicyInfo::NSec => "NSEC",
         SignerDenialPolicyInfo::NSec3 { opt_out } => match opt_out {
             true => "NSEC3 (opt-out: disabled)",
@@ -129,45 +269,66 @@ fn print_policy(p: &PolicyInfo) {
         },
     };
 
-    let hsm_server_id = p.key_manager.hsm_server_id.as_ref().unwrap_or(&none);
-    let max_diffs = p.server.outbound.max_diffs;
-    let max_diffs_size = p.server.outbound.max_diffs_size;
-
-    fn print_review(r: &ReviewPolicyInfo) {
-        println!("    review:");
-        match &r.mode {
-            ReviewPolicyMode::Off => println!("      mode: off"),
-            ReviewPolicyMode::Manual => println!("      mode: manual"),
-            ReviewPolicyMode::Script { hook } => {
-                println!("      mode: script");
-                println!("      hook: {hook}")
-            }
-        }
-    }
-
-    fn print_nameserver_comms_policy(n: &[NameserverCommsPolicyInfo]) {
-        for item in n {
-            println!("        {item}");
-        }
-    }
-
-    println!("{name}:");
-    println!("  zones: {zones}");
-    println!("  loader:");
-    print_review(&p.loader.review);
-    println!("  key manager:");
-    println!("    hsm server: {hsm_server_id}");
     println!("  signer:");
     println!("    serial policy: {serial_policy}");
-    println!("    signature inception offset: {inc} seconds",);
-    println!("    signature validity offset: {val} seconds",);
+    println!("    signature inception offset: {sig_inception_offset}s");
+    println!("    signature validity offset: {sig_validity_offset}s");
+    println!("    signature remain time: {sig_remain_time}s");
+    println!("    signature refresh interval: {signature_refresh_interval}s");
+    println!("    key roll time: {key_roll_time}s");
     println!("    denial: {denial}");
-    print_review(&p.signer.review);
+    print_review(review);
+}
+
+fn print_server_policy(
+    ServerPolicyInfo {
+        outbound:
+            cascade_api::OutboundPolicyInfo {
+                provide_xfr_to,
+                send_notify_to,
+                max_diffs,
+                max_diffs_size,
+            },
+    }: &ServerPolicyInfo,
+) {
     println!("  server:");
     println!("    outbound:");
-    println!("      provide XFR to:");
-    print_nameserver_comms_policy(&p.server.outbound.provide_xfr_to);
-    println!("      send NOTIFY to:");
-    print_nameserver_comms_policy(&p.server.outbound.send_notify_to);
+    print_nameserver_comms_policy("provide XFR to", provide_xfr_to);
+    print_nameserver_comms_policy("send NOTIFY to", send_notify_to);
     println!("      max diffs: {max_diffs} ({max_diffs_size}%)");
+}
+
+fn print_review(ReviewPolicyInfo { mode, on_reject }: &ReviewPolicyInfo) {
+    print!("    review:");
+    match mode {
+        ReviewPolicyMode::Off => {
+            println!(" off");
+            return;
+        }
+        ReviewPolicyMode::Manual => {
+            println!("");
+            println!("      mode: manual");
+        }
+        ReviewPolicyMode::Script { hook } => {
+            println!("");
+            println!("      mode: script");
+            println!("      hook: {hook}")
+        }
+    }
+    let on_reject = match on_reject {
+        cascade_api::ReviewPolicyOnReject::Discard => "discard",
+        cascade_api::ReviewPolicyOnReject::Halt => "halt",
+    };
+    println!("      on reject: {on_reject}")
+}
+
+fn print_nameserver_comms_policy(name: &str, n: &[NameserverCommsPolicyInfo]) {
+    if n.is_empty() {
+        println!("      {name}: <none>");
+        return;
+    }
+    println!("      {name}:");
+    for item in n {
+        println!("        {item}");
+    }
 }

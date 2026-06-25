@@ -154,15 +154,16 @@ pub fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
         destination,
         diff.removed_soa.clone(),
         diff.added_soa.clone().unwrap(),
-        diff.removed_records.iter().cloned(),
-        diff.added_records.iter().cloned(),
+        diff.removed_records.iter(),
+        diff.added_records.iter(),
     );
 }
 
 // TODO: It would be nice to take the records by reference.
 pub fn persist_to_file_from_parts<
-    I: Iterator<Item = RegularRecord>,
-    J: Iterator<Item = RegularRecord>,
+    'd,
+    I: Iterator<Item = &'d RegularRecord>,
+    J: Iterator<Item = &'d RegularRecord>,
 >(
     destination: &Path,
     removed_soa: Option<SoaRecord>,
@@ -263,11 +264,14 @@ pub fn persist_to_file_from_parts<
 
         // Write the deleted records.
         for r in removed_records {
+            if r.rname == removed_soa.rname && r.rtype == removed_soa.rtype {
+                continue;
+            }
             trace!(
                 "persist_to_file: Writing IXFR diff sequence RR: {:?}",
                 r.rtype
             );
-            write_rr(&mut buf, &r, &mut f);
+            write_rr(&mut buf, r, &mut f);
             n_rrs_removed += 1;
         }
 
@@ -281,11 +285,14 @@ pub fn persist_to_file_from_parts<
 
     // Write the added records.
     for r in added_records {
+        if r.rname == added_soa.rname && r.rtype == added_soa.rtype {
+            continue;
+        }
         trace!(
             "persist_to_file: Writing IXFR diff sequence RR: {:?}",
             r.rtype
         );
-        write_rr(&mut buf, &r, &mut f);
+        write_rr(&mut buf, r, &mut f);
         n_rr_added += 1;
     }
 

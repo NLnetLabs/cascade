@@ -39,7 +39,9 @@ use crate::{
     persistence::zone::IxfrZoneDiffs,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{HistoricalEvent, LastPublished, Zone, ZoneHandle, ZoneState},
+    zone::{
+        HistoricalEvent, LastPublished, Zone, ZoneHandle, ZoneState, machine::ZoneStateMachine,
+    },
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -734,8 +736,8 @@ impl StorageZoneHandle<'_> {
         // Compute the total number of records
         let reader = viewer.read().unwrap();
         let generated_records = reader.generated_records().len();
-        let loaded_records = reader.loaded().regular_records().len();
-        let num_records = 1 + generated_records + loaded_records;
+        let loaded_records = reader.loaded().regular_records().len() - 1;
+        let num_records = generated_records + loaded_records;
 
         // Spawn a background task to update the publication server.
         let span = trace_span!("switch_publication_server");
@@ -864,6 +866,12 @@ impl StorageZoneHandle<'_> {
         // TODO: Check whether resigning is needed. It has higher priority than
         // loading a new instance.
 
+        // Ensure a new operation can be started.
+        let ZoneStateMachine::Waiting(_) = &self.state.machine else {
+            trace!("Ignoring `on_passive()` because the pipeline is busy");
+            return;
+        };
+
         if self.zone().loader().start_pending() {
             // The zone is no longer passive.
             return;
@@ -871,7 +879,7 @@ impl StorageZoneHandle<'_> {
 
         if self.zone().signer().start_pending() {
             // The zone is no longer passive.
-            // return;
+            //return;
         }
     }
 

@@ -316,7 +316,7 @@ jobs:
       - uses: ./integration-tests/tests/review-signed-zone
         with:
           log-level: ${{ inputs.log-level }}
-      
+
   persist-zone:
     name: Added zone should still exist after restart.
     runs-on: ubuntu-latest
@@ -331,7 +331,7 @@ jobs:
       - uses: ./integration-tests/tests/persist-zone
         with:
           log-level: ${{ inputs.log-level }}
-      
+
   # Added for https://github.com/NLnetLabs/cascade/pull/825
   persist-then-reject:
     name: Restore after discard of the loaded zone should still work.
@@ -345,5 +345,36 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/persist-then-reject
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  sign-using-a-hsm:
+    name: Sign using a HSM.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/sign-using-a-hsm
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/issues/105
+  strip-dnssec-rrs:
+    name: Sign using an already signed input zone.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/strip-dnssec-rrs
         with:
           log-level: ${{ inputs.log-level }}
