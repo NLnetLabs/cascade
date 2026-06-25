@@ -34,15 +34,19 @@ systemd features should be used instead.
            For a full explanation of systemd settings please consult the
            `systemd documentation <https://systemd.io/>`_.
 
+        When using Cascade witb systemd some settings must be configured
+        the Cascade configuration file and others must be configured via
+        systemd.
+
         Systemd has built-in support for deamon features such as dropping
         privileges (see ``User=`` and ``Group=``), binding to privileged
         ports (port numbers below 1024) and forking the process to run in
         the background.
 
-        Cascade also supports the systemd socket activation feature that
-        allows systemd, via a ``socket`` unit, to bind to interfaces and
-        privileged ports on behalf of Cascade. An example ``cascaded.socket``
-        unit might look as follows:
+        To support binding to privileged ports without requiring elevated
+        privileges Cascade supports the systemd socket activation feature.
+        To use this you will need to create a ``socket`` unit, An example
+        ``cascaded.socket`` unit might look as follows:
 
         .. code-block::
 
