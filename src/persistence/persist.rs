@@ -353,26 +353,27 @@ fn store_diff(
 pub fn discard_excess_diffs(handle: &mut OwnedZoneHandle) {
     // Purge in-memory diffs if needed before adding a new one.
     if let Some(policy) = handle.state.policy.as_ref()
-        && let Some(last_published) = handle.state.last_published.as_ref() {
-            // Fetch diff purging settings from policy.
-            let max_diffs = policy.server.outbound.max_diffs;
-            let max_size_percentage = policy.server.outbound.max_diffs_size;
+        && let Some(last_published) = handle.state.last_published.as_ref()
+    {
+        // Fetch diff purging settings from policy.
+        let max_diffs = policy.server.outbound.max_diffs;
+        let max_size_percentage = policy.server.outbound.max_diffs_size;
 
-            // Calculate the maximum number of records that a set of diffs can
-            // be based on the policy settings. IxfrZoneDiffs can't do this
-            // for us as it has no access to `last_published`.
-            let current_size = last_published.num_records as f64;
-            let max_size = if max_size_percentage == 0 {
-                0
-            } else {
-                let percentage = max_size_percentage as f64 / 100.0;
-                (current_size * percentage) as usize
-            };
+        // Calculate the maximum number of records that a set of diffs can
+        // be based on the policy settings. IxfrZoneDiffs can't do this
+        // for us as it has no access to `last_published`.
+        let current_size = last_published.num_records as f64;
+        let max_size = if max_size_percentage == 0 {
+            0
+        } else {
+            let percentage = max_size_percentage as f64 / 100.0;
+            (current_size * percentage) as usize
+        };
 
-            trace!(
-                "Discarding excess in-memory diffs for zone '{}' with settings max_diffs={max_diffs}, current_size={current_size}, max_size={max_size_percentage}% ({max_size} RRs)",
-                handle.zone.name
-            );
-            handle.state.storage.diffs.trim(max_diffs, max_size);
-        }
+        trace!(
+            "Discarding excess in-memory diffs for zone '{}' with settings max_diffs={max_diffs}, current_size={current_size}, max_size={max_size_percentage}% ({max_size} RRs)",
+            handle.zone.name
+        );
+        handle.state.storage.diffs.trim(max_diffs, max_size);
+    }
 }
