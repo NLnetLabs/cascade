@@ -949,6 +949,10 @@ impl HttpServer {
                 {
                     let mut handle = zone.write_handle(center);
 
+                    // Update the policy version used by the zone to be the
+                    // new version that resulted from reloading policy.
+                    handle.state.policy = Some(pol.latest.clone());
+
                     crate::persistence::discard_excess_diffs(&mut handle);
                 }
 
