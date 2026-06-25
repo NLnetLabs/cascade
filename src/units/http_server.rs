@@ -953,17 +953,11 @@ impl HttpServer {
                     .get(zone_name)
                     .expect("zones and policies are consistent");
 
-                // Discard excess IXFR diffs if the maximum number permitted
-                // by the policy has been reduced.
-                {
-                    let mut handle = zone.write_handle(center);
+                zone.write(center).policy = Some(pol.latest.clone());
 
-                    // Update the policy version used by the zone to be the
-                    // new version that resulted from reloading policy.
-                    handle.state.policy = Some(pol.latest.clone());
-
-                    crate::persistence::discard_excess_diffs(&mut handle);
-                }
+                center
+                    .persister
+                    .on_zone_policy_changed(center, zone, old.clone(), new.clone());
 
                 center
                     .key_manager

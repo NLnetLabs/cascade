@@ -310,33 +310,40 @@ pub fn restore_signed(
         num_diffs_to_restore, zone.name
     );
 
-    let mut handle = zone.write_handle(center);
     let last_diff = diffs_to_store.last();
     if let Some((last_loaded_serial, last_diff)) = last_diff {
-        handle.state.storage.published_soa = last_diff.added_soa.clone();
-        handle.state.storage.published_loaded_soa = Some(
-            handle
-                .state
-                .storage
-                .published_soa
-                .clone()
-                .map(|mut soa| {
-                    soa.rdata.serial = last_loaded_serial.unwrap();
-                    soa
-                })
-                .unwrap(),
-        );
+        {
+            let mut state = zone.write(center);
 
-        for (loaded_serial, diff) in diffs_to_store {
-            // Store the signed diff to be used as part of serving an IXFR.
-            handle
-                .state
-                .storage
-                .diffs
-                .store_signed_diff(loaded_serial, diff);
+            // Build a new loaded SOA RR from the last published SOA RR with
+            // the serial number replaced with that of the last loaded serial.
+            // We don't have access to the actual last loaded SOA here, only
+            // it's serial number as that is all that we stored in the state
+            // that we restored. We can't set `published_loaded_soa` in
+            // restore_loaded() as we don't know at that point if the last
+            // loaded diff was later published.
+            //
+            // TODO: Could fields in the SOA other than the serial differ
+            // between the loaded SOA and the published SOA, and thus is it
+            // then insufficient to use the last published SOA RR as the basis
+            // for constructing a last published loaded SOA RR?
+            let mut template_soa =
+                last_diff.added_soa.clone().expect(
+                    "To be restoring a signed zone we must have had a diff which must have had an added SOA",
+                );
+            template_soa.rdata.serial = last_loaded_serial
+                .expect("A restored signed diff must be related to a loaded diff");
+
+            state.storage.published_soa = last_diff.added_soa.clone();
+            state.storage.published_loaded_soa = Some(template_soa);
+
+            for (loaded_serial, diff) in diffs_to_store {
+                // Store the signed diff to be used as part of serving an IXFR.
+                state.storage.diffs.store_signed_diff(loaded_serial, diff);
+            }
         }
 
-        discard_excess_diffs(&mut handle);
+        discard_excess_diffs(center, zone);
     }
 
     info!(

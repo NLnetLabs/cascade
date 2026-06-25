@@ -16,7 +16,7 @@ use tracing::trace;
 
 use crate::{
     center::Center,
-    zone::{OwnedZoneHandle, Zone, save_state_now},
+    zone::{Zone, save_state_now},
 };
 
 /// Persist the data for a loaded instance of a zone.
@@ -336,19 +336,19 @@ fn store_for_ixfr_out(
     // Ignore the diff if it is not acceptable, e.g. if it changes more than
     // X% of the records in the zone or crosses some other threshold.
     if signed_diff.removed_soa.is_some() && signed_diff.added_soa.is_some() {
-        let mut handle = zone.write_handle(center);
-        discard_excess_diffs(&mut handle);
-        store_diff(&mut handle, loaded_diff, signed_diff);
+        discard_excess_diffs(center, zone);
+        store_diff(center, zone, loaded_diff, signed_diff);
     }
 }
 
 fn store_diff(
-    handle: &mut OwnedZoneHandle<'_>,
+    center: &Arc<Center>,
+    zone: &Arc<Zone>,
     loaded_diff: Option<&Arc<DiffData>>,
     signed_diff: &Arc<DiffData>,
 ) {
     let loaded_serial = loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
-    let diffs = &mut handle.state.storage.diffs;
+    let diffs = &mut zone.write(center).storage.diffs;
     if let Some(loaded_diff) = loaded_diff {
         diffs.store_loaded_diff(loaded_diff.clone());
     }
@@ -357,10 +357,10 @@ fn store_diff(
 
 //------------ discard_excess_diffs() ----------------------------------------
 
-pub fn discard_excess_diffs(handle: &mut OwnedZoneHandle) {
-    // Purge in-memory diffs if needed before adding a new one.
-    if let Some(policy) = handle.state.policy.as_ref()
-        && let Some(last_published) = handle.state.last_published.as_ref()
+pub fn discard_excess_diffs(center: &Arc<Center>, zone: &Arc<Zone>) {
+    let mut state = zone.write(center);
+    if let Some(policy) = state.policy.as_ref()
+        && let Some(last_published) = state.last_published.as_ref()
     {
         // Fetch diff purging settings from policy.
         let max_diffs = policy.server.outbound.max_diffs;
@@ -379,8 +379,8 @@ pub fn discard_excess_diffs(handle: &mut OwnedZoneHandle) {
 
         trace!(
             "Discarding excess in-memory diffs for zone '{}' with settings max_diffs={max_diffs}, current_size={current_size}, max_size={max_size_percentage}% ({max_size} RRs)",
-            handle.zone.name
+            zone.name
         );
-        handle.state.storage.diffs.trim(max_diffs, max_size);
+        state.storage.diffs.trim(max_diffs, max_size);
     }
 }

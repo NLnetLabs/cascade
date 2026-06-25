@@ -94,7 +94,12 @@
 
 use std::{sync::Arc, time::Duration};
 
-use crate::{center::Center, util::AbortOnDrop, zone::ZoneByName};
+use crate::{
+    center::Center,
+    policy::PolicyVersion,
+    util::AbortOnDrop,
+    zone::{Zone, ZoneByName},
+};
 
 mod persist;
 pub use persist::{
@@ -119,6 +124,26 @@ impl Persister {
     /// Construct a new [`Persister`].
     pub fn new() -> Self {
         Self {}
+    }
+
+    pub fn on_zone_policy_changed(
+        &self,
+        center: &Arc<Center>,
+        zone: &Arc<Zone>,
+        old: Option<Arc<PolicyVersion>>,
+        new: Arc<PolicyVersion>,
+    ) {
+        if let Some(old) = old
+            && old.server.outbound.max_diffs <= new.server.outbound.max_diffs
+            && old.server.outbound.max_diffs_size <= new.server.outbound.max_diffs_size
+        {
+            // Nothing changed, at least not in a way that affects us.
+            // Increased diff limits doesn't require action, only a reduction
+            // in limits requires us to act.
+            return;
+        }
+
+        discard_excess_diffs(center, zone);
     }
 }
 
