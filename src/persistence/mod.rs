@@ -97,7 +97,9 @@ use std::{sync::Arc, time::Duration};
 use crate::{center::Center, util::AbortOnDrop, zone::ZoneByName};
 
 mod persist;
-use persist::{persist_loaded, persist_signed, persist_to_file_from_parts};
+pub use persist::{
+    discard_excess_diffs, persist_loaded, persist_signed, persist_to_file_from_parts,
+};
 
 mod restore;
 use restore::{restore_loaded, restore_signed};

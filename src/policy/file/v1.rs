@@ -66,6 +66,16 @@ const AUTO_REMOVE_DELAY: u32 = 7 * 24 * 3600;
 // Based on the NSD default of ixfr-number: 5.
 const MAX_DIFFS: usize = 5;
 
+// The maximum size that in-memory diffs may reach as a percentage of the
+// published zone.
+//
+// IXFR diffs that describe larger changes (compared to the last published
+// version of the zone) than this limit will be kept in-memory to to serve to
+// IXFR clients.
+//
+// Based on https://github.com/NLnetLabs/cascade/issues/830#issuecomment-4752275415
+const MAX_DIFFS_SIZE: usize = 20;
+
 //----------- Spec -------------------------------------------------------------
 
 /// A policy file.
@@ -957,6 +967,14 @@ pub struct OutboundSpec {
     /// Excess diffs will be discarded.
     #[serde(default = "default_max_diffs")]
     pub max_diffs: usize,
+
+    /// The maximum percentage of change allowed for a single IXFR diff.
+    ///
+    /// Only diffs that desribe smaller changes (compared to the last
+    /// published version of the zone) than this limit will be stored and
+    /// served to clients.
+    #[serde(default = "default_max_diffs_size")]
+    max_diffs_size: usize,
 }
 
 fn empty_list() -> Vec<NameserverCommsSpec> {
@@ -965,6 +983,10 @@ fn empty_list() -> Vec<NameserverCommsSpec> {
 
 fn default_max_diffs() -> usize {
     MAX_DIFFS
+}
+
+fn default_max_diffs_size() -> usize {
+    MAX_DIFFS_SIZE
 }
 
 //--- Conversion
@@ -976,6 +998,7 @@ impl OutboundSpec {
             provide_xfr_to: self.provide_xfr_to.into_iter().map(|v| v.parse()).collect(),
             send_notify_to: self.send_notify_to.into_iter().map(|v| v.parse()).collect(),
             max_diffs: self.max_diffs,
+            max_diffs_size: self.max_diffs_size,
         }
     }
 
@@ -993,6 +1016,7 @@ impl OutboundSpec {
                 .map(NameserverCommsSpec::build)
                 .collect(),
             max_diffs: policy.max_diffs,
+            max_diffs_size: policy.max_diffs_size,
         }
     }
 }

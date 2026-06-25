@@ -130,8 +130,8 @@ fn print_policy(p: &PolicyInfo) {
     };
 
     let hsm_server_id = p.key_manager.hsm_server_id.as_ref().unwrap_or(&none);
-
     let max_diffs = p.server.outbound.max_diffs;
+    let max_diffs_size = p.server.outbound.max_diffs_size;
 
     fn print_review(r: &ReviewPolicyInfo) {
         println!("    review:");
@@ -169,5 +169,5 @@ fn print_policy(p: &PolicyInfo) {
     print_nameserver_comms_policy(&p.server.outbound.provide_xfr_to);
     println!("      send NOTIFY to:");
     print_nameserver_comms_policy(&p.server.outbound.send_notify_to);
-    println!("      max diffs: {max_diffs}")
+    println!("      max diffs: {max_diffs} ({max_diffs_size}%)");
 }

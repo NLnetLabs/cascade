@@ -24,7 +24,7 @@ use domain::{
 };
 use tracing::{info, trace};
 
-use crate::{center::Center, zone::Zone};
+use crate::{center::Center, persistence::discard_excess_diffs, zone::Zone};
 
 /// Restore the loaded instance data of a zone.
 ///
@@ -308,18 +308,13 @@ pub fn restore_signed(
         num_diffs_to_restore, zone.name
     );
 
-    let max_diffs = zone
-        .read()
-        .policy
-        .clone()
-        .map(|p| p.server.outbound.max_diffs);
-
-    let mut state = zone.write(center);
+    let mut handle = zone.write_handle(center);
     let last_diff = diffs_to_store.last();
     if let Some((last_loaded_serial, last_diff)) = last_diff {
-        state.storage.published_soa = last_diff.added_soa.clone();
-        state.storage.published_loaded_soa = Some(
-            state
+        handle.state.storage.published_soa = last_diff.added_soa.clone();
+        handle.state.storage.published_loaded_soa = Some(
+            handle
+                .state
                 .storage
                 .published_soa
                 .clone()
@@ -332,12 +327,14 @@ pub fn restore_signed(
 
         for (loaded_serial, diff) in diffs_to_store {
             // Store the signed diff to be used as part of serving an IXFR.
-            state.storage.diffs.store_signed_diff(loaded_serial, diff);
+            handle
+                .state
+                .storage
+                .diffs
+                .store_signed_diff(loaded_serial, diff);
         }
 
-        if let Some(max_diffs) = max_diffs {
-            state.storage.diffs.discard_excess_diffs(max_diffs);
-        }
+        discard_excess_diffs(&mut handle);
     }
 
     info!(

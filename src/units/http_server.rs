@@ -947,12 +947,9 @@ impl HttpServer {
                 // Discard excess IXFR diffs if the maximum number permitted
                 // by the policy has been reduced.
                 {
-                    let mut state = zone.write(center);
-                    state.policy = Some(pol.latest.clone());
-                    state
-                        .storage
-                        .diffs
-                        .discard_excess_diffs(pol.latest.server.outbound.max_diffs);
+                    let mut handle = zone.write_handle(center);
+
+                    crate::persistence::discard_excess_diffs(&mut handle);
                 }
 
                 center
@@ -1040,6 +1037,7 @@ impl HttpServer {
                     .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                     .collect(),
                 max_diffs: p_outbound.max_diffs,
+                max_diffs_size: p_outbound.max_diffs_size,
             },
         };
 

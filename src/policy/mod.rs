@@ -567,6 +567,14 @@ pub struct OutboundPolicy {
     ///
     /// Excess diffs will be discarded.
     pub max_diffs: usize,
+
+    /// The maximum size that in-memory diffs may reach as a percentage
+    /// of the published zone.
+    ///
+    /// IXFR diffs that describe larger changes (compared to the last
+    /// published version of the zone) than this limit will be kept in-memory
+    /// to to serve to IXFR clients.
+    pub max_diffs_size: usize,
 }
 
 //----------- NameserverCommsPolicy -------------------------------------------

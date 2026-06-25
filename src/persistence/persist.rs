@@ -12,11 +12,11 @@ use cascade_zonedata::{
 };
 
 use domain::new::base::wire::{BuildBytes, TruncationError};
-use tracing::{trace, warn};
+use tracing::trace;
 
 use crate::{
     center::Center,
-    zone::{Zone, save_state_now},
+    zone::{OwnedZoneHandle, Zone, save_state_now},
 };
 
 /// Persist the data for a loaded instance of a zone.
@@ -74,14 +74,11 @@ pub fn persist_loaded(
 
         persist_to_file(&destination, loaded_diff.clone());
 
-        if loaded_diff.removed_soa.is_some() && loaded_diff.removed_soa != loaded_diff.added_soa {
-            let mut handle = zone.write_handle(center);
-            handle
-                .state
-                .storage
-                .diffs
-                .store_loaded_diff(loaded_diff.clone());
-        }
+        // We don't add the loaded diff to the in-memory store used for
+        // serving IXFR responses, that is done later in persist_signed() as
+        // the store is only used for answering requests to the publication
+        // server, and because if we add it here then abandon signing for some
+        // reason we would then have to remove the loaded diff that we added.
     }
 
     persister.mark_complete()
@@ -101,11 +98,11 @@ pub fn persist_signed(
     if !persister.signed_diff().is_empty() {
         let loaded_diff = persister.loaded_diff();
         let signed_diff = persister.signed_diff();
-        let loaded_serial =
-            loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
 
         let destination = {
             let mut handle = zone.write_handle(center);
+            let loaded_serial =
+                loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
             let signed_serial = signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
             handle
                 .state
@@ -144,64 +141,7 @@ pub fn persist_signed(
         persist_to_file(&destination, signed_diff.clone());
 
         // Store the diffs in-memory for serving IXFR out.
-        //
-        // Only store a diff if the SOA from the previous version of the
-        // signed zone was removed and a new one added, otherwise this is not
-        // a diff to a previous version of the zone but actually a snapshot of
-        // the zone after having been signed for the first time.
-        if signed_diff.removed_soa.is_some() && signed_diff.removed_soa != signed_diff.added_soa {
-            // Store anything that changed when the zone was re-loaded, i.e.
-            // unsigned zone content changes. Note that the SOA SERIAL is not
-            // required to change unless using 'keep' policy and so we should
-            // not require the SOA to have been removed and a new one added.
-
-            // Store anything that changed when the zone was re-signed, i.e.
-            // changes DNSSEC RRs that can be caused by unsigned content
-            // changes or changing from NSEC <-> NSEC3 or using a new key
-            // to sign with or just regenerating signatures to avoid them
-            // expiring. Signed zones MUST always have a new SOA SERIAL
-            // compared to the previous version of the signed zone.
-
-            let mut handle = zone.write_handle(center);
-
-            // Purge in-memory diffs if needed before adding a new one.
-            if let Some(max_diffs) = handle
-                .state
-                .policy
-                .as_ref()
-                .map(|p| p.server.outbound.max_diffs)
-            {
-                trace!(
-                    "Discarding in-memory diffs to max {max_diffs} for zone '{}'",
-                    zone.name
-                );
-                handle.state.storage.diffs.discard_excess_diffs(max_diffs);
-            }
-
-            // If we have a new signed diff to store because records in the
-            // loaded part of the zone changed, e.g. due to changes in the
-            // zone content or receipt of a changed DNSKEY set from the key
-            // manager, then the loaded diff will have been stored in-memory
-            // by loaded zone persistence, but the corresponding signed diff
-            // will not yet have been stored in-memory, we have to do that
-            // now. In this case we have to update the last stored in-memory
-            // diff. We drop the partial diff and push a replacement full
-            // diff instead.
-            //
-            // Alternatively if we have a new signed diff to store because
-            // records in the signed part of the zone changed, e.g. due to
-            // signature re-generation to ensure that existing signatures
-            // don't expire, then there will be no corresponding loaded diff
-            // yet in-memory. In this case we have to push an entirely new
-            // diff to the in-memory collection without dropping an existing
-            // diff first.
-
-            handle
-                .state
-                .storage
-                .diffs
-                .store_signed_diff(loaded_serial, signed_diff.clone());
-        }
+        store_for_ixfr_out(center, zone, loaded_diff, signed_diff);
     }
 
     persister.mark_complete()
@@ -372,4 +312,68 @@ pub fn persist_to_file_from_parts<
         removed_soa.as_ref().map(|v| v.rdata.serial),
         added_soa.rdata.serial,
     );
+}
+
+//------------ store_for_ixfr_out() ------------------------------------------
+
+fn store_for_ixfr_out(
+    center: &Arc<Center>,
+    zone: &Arc<Zone>,
+    loaded_diff: Option<&Arc<DiffData>>,
+    signed_diff: &Arc<DiffData>,
+) {
+    // Only store a diff if the SOA from the previous version of the
+    // signed zone was removed and a new one added, otherwise this is not
+    // a diff to a previous version of the zone but actually a snapshot of
+    // the zone after having been signed for the first time.
+    // Ignore the diff if it is not acceptable, e.g. if it changes more than
+    // X% of the records in the zone or crosses some other threshold.
+    if signed_diff.removed_soa.is_some() && signed_diff.added_soa.is_some() {
+        let mut handle = zone.write_handle(center);
+        discard_excess_diffs(&mut handle);
+        store_diff(&mut handle, loaded_diff, signed_diff);
+    }
+}
+
+fn store_diff(
+    handle: &mut OwnedZoneHandle<'_>,
+    loaded_diff: Option<&Arc<DiffData>>,
+    signed_diff: &Arc<DiffData>,
+) {
+    let loaded_serial = loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
+    let diffs = &mut handle.state.storage.diffs;
+    if let Some(loaded_diff) = loaded_diff {
+        diffs.store_loaded_diff(loaded_diff.clone());
+    }
+    diffs.store_signed_diff(loaded_serial, signed_diff.clone());
+}
+
+//------------ discard_excess_diffs() ----------------------------------------
+
+pub fn discard_excess_diffs(handle: &mut OwnedZoneHandle) {
+    // Purge in-memory diffs if needed before adding a new one.
+    if let Some(policy) = handle.state.policy.as_ref() {
+        if let Some(last_published) = handle.state.last_published.as_ref() {
+            // Fetch diff purging settings from policy.
+            let max_diffs = policy.server.outbound.max_diffs;
+            let max_size_percentage = policy.server.outbound.max_diffs_size;
+
+            // Calculate the maximum number of records that a set of diffs can
+            // be based on the policy settings. IxfrZoneDiffs can't do this
+            // for us as it has no access to `last_published`.
+            let current_size = last_published.num_records as f64;
+            let max_size = if max_size_percentage == 0 {
+                0
+            } else {
+                let percentage = max_size_percentage as f64 / 100.0;
+                (current_size * percentage) as usize
+            };
+
+            trace!(
+                "Discarding excess in-memory diffs for zone '{}' with settings max_diffs={max_diffs}, current_size={current_size}, max_size={max_size_percentage}% ({max_size} RRs)",
+                handle.zone.name
+            );
+            handle.state.storage.diffs.trim(max_diffs, max_size);
+        }
+    }
 }

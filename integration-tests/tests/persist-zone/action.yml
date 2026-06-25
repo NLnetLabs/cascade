@@ -28,6 +28,20 @@ runs:
         log-level: ${{ inputs.log-level }}
 
     # ------------------------------------------------------------------------
+    # Increase the server.outbound.max-diffs-size policy setting to prevent it
+    # interfering in our test which happens because this test uses very small
+    # zones, and so the default of 20% causes diffs to be discarded as 20% of
+    # a small number of records is a very small number and this the limit is
+    # easily reached.
+    # ------------------------------------------------------------------------
+
+    - name: Increase policy setting max-diffs-size to 100%.
+      run: |
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        sed -i -e 's|#max-diffs-size.\+|max-diffs-size = 100|' "${POLICY_DIR}/default.toml"
+        cascade policy reload
+
+    # ------------------------------------------------------------------------
     # 0. Add a zone that cannot be loaded but does not fail `zone add`
     #    immediately so that Cascade has the zone but no content for it,
     #    then stop Cascade and restart it, to verify that Cascade can handle

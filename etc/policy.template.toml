@@ -502,6 +502,20 @@ mode = "off"
 # does not currently implement this behaviour. Cascade also currently has no
 # support for RFC 1995 section 6 condensation of multiple versions.
 #
-# The default is to limits diffs to 5 per zone. If set to 0 storage of diffs
+# The default is to limits diffs to 5 per zone. If set to 0, storage of diffs
 # will be disabled.
 #max-diffs = 5
+
+# The maximum size that the collection of IXFR diffs for a zone can grow
+# to in-memory after which diffs are discarded, oldest first, one at a time
+# until the remaining diffs combined are smaller than this percentage of the
+# published zone.
+#
+# This setting has no impact on the number of diffs persisted to disk. See
+# max-diffs to control that.
+# 
+# The default is 20%. If set to 0, or a value low enough for the size of zone
+# and the rate and size of change means that the collection of diffs always
+# exceeds this percentage, then no diffs will be stored in memory and IXFR
+# requests will be responded to with an AXFR instead.
+#max-diffs-size = 20
