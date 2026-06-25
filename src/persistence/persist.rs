@@ -311,6 +311,10 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
 
         // Write the deleted records.
         for r in &diff.removed_records {
+            if r.rname == removed_soa.rname && r.rtype == removed_soa.rtype {
+                continue;
+            }
+
             write_rr(&mut buf, r, &mut f);
         }
 
@@ -320,6 +324,10 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
 
     // Write the added records.
     for r in &diff.added_records {
+        if r.rname == added_soa.rname && r.rtype == added_soa.rtype {
+            continue;
+        }
+
         write_rr(&mut buf, r, &mut f);
     }
 
@@ -331,15 +339,7 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
         destination.display(),
         diff.removed_soa.as_ref().map(|v| v.rdata.serial),
         diff.added_soa.as_ref().map(|v| v.rdata.serial),
-        if !diff.removed_records.is_empty() {
-            diff.removed_records.len() + 1
-        } else {
-            0
-        },
-        if !diff.added_records.is_empty() {
-            diff.added_records.len() + 1
-        } else {
-            0
-        },
+        diff.removed_records.is_empty(),
+        diff.added_records.len(),
     );
 }

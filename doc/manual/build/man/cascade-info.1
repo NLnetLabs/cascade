@@ -27,30 +27,24 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-TEMPLATE" "1" "Jan 01, 2026" "0.1.0-beta3" "Cascade"
+.TH "CASCADE-INFO" "1" "Jan 01, 2026" "0.1.0-beta4-dev" "Cascade"
 .SH NAME
-cascade-template \- Print example config or policy files
+cascade-info \- Show daemon information
+.sp
+Added in version 0.1.0\-beta2.
+
 .SH SYNOPSIS
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP template \fB<COMMAND>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP info
 .SH DESCRIPTION
 .sp
-Print example config or policy files.
+Show daemon information.
+.sp
+Reports the version of the Cascade daemon being connected to.
 .SH GLOBAL OPTIONS
 .sp
 See \fI\%Cascade CLI\fP for information about global options supported by every CLI
 command.
-.SH COMMANDS
-.INDENT 0.0
-.TP
-.B config
-Generate a config template.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B policy
-Generate a policy template.
-.UNINDENT
 .SH SEE ALSO
 .INDENT 0.0
 .TP

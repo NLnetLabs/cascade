@@ -9,13 +9,31 @@ use super::client::CascadeApiClient;
 use super::commands::Command;
 
 #[derive(Clone, Debug, Parser)]
-#[command(version = env!("CASCADE_BUILD_VERSION"), disable_help_subcommand = true)]
+#[command(
+    version = env!("CASCADE_BUILD_VERSION"),
+    disable_help_subcommand = true,
+    disable_version_flag = true,
+)]
 pub struct Args {
+    /// Print client version
+    #[arg(
+        short = 'V',
+        long = "version",
+        // This doesn't need to be global, because that might lead to confusion
+        // about whether the version is for the client or the server.
+        global = false,
+        action = clap::ArgAction::Version,
+        // Display it at the end of the help
+        display_order = 100,
+    )]
+    pub version: (),
+
     /// The cascade server instance to connect to
     #[arg(
         short = 's',
         long = "server",
         value_name = "IP:PORT",
+        env = "CASCADE_DAEMON",
         default_value = "127.0.0.1:4539",
         global = true
     )]

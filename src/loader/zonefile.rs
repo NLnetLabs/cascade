@@ -47,6 +47,7 @@ pub fn load(
 
         match record {
             Parsed::Soa(soa) => {
+                writer.add(soa.clone().into())?;
                 writer.set_soa(soa)?;
             }
             Parsed::Record(record) => writer.add(record)?,
