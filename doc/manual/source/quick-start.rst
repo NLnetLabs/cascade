@@ -34,7 +34,7 @@ systemd features should be used instead.
            For a full explanation of systemd settings please consult the
            `systemd documentation <https://systemd.io/>`_.
 
-         Systemd has built-in support for deamon features such as dropping
+        Systemd has built-in support for deamon features such as dropping
         privileges (see ``User=`` and ``Group=``), binding to privileged
         ports (port numbers below 1024) and forking the process to run in
         the background.
