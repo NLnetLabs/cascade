@@ -35,8 +35,8 @@ systemd features should be used instead.
            `systemd documentation <https://systemd.io/>`_.
 
         When using Cascade witb systemd some settings must be configured
-        the Cascade configuration file and others must be configured via
-        systemd.
+        using the Cascade configuration file and others must be configured 
+        via systemd.
 
         Systemd has built-in support for deamon features such as dropping
         privileges (see ``User=`` and ``Group=``), binding to privileged
