@@ -1,13 +1,25 @@
 //! Persisting zone data to and restoring from disk.
 //!
-//! The zone persister saves the data for loaded and signed zones to disk, so
-//! that Cascade can seamlessly resume operation after a crash / restart. At
-//! startup it tries to restore data for all known zones.
+//! # Summary
 //!
-//! When re-starting Cascade in-memory zone and IXFR diff data will be lost
-//! unless persisted and restored. This module implements persistence
-//! and restoration using files on disk stored in the zone-state directory
-//! alongside the JSON '.db' zone state files.
+//! On approval of loaded or signed diffs the persister:
+//!   - Writes diffs to disk, so that Cascade can seamlessly resume operation
+//!     after a crash restart. Separate files are stored for loaded vs signed
+//!     data. Persistence files are stored alongside other state files for a
+//!     zone in the zone-state configuration path, with the set of currently
+//!     in-use persistence paths being stored in Cascade zone state.
+//!   - Stores diffs in memory, so that RFC 1995 IXFR requests can be
+//!     responded to with the set of diffs needed by the client.
+//!
+//! When re-starting Cascade, lost in-memory zone and IXFR diff data will be
+//! restored from the disk files written by the persister.
+//!
+//! In-memory diffs are discarded, oldest first, when configured limits are
+//! exceeded.
+//!
+//! Persisted disk files are also discarded oldest first but after a delay
+//! to spread out the cost of "compacting" the zone (replacing the snapshot
+//! with a new one that contains the current set of published zone records).
 //!
 //! # Data format
 //!
@@ -86,12 +98,39 @@
 //! to still be able to query the review server for an IXFR diff after
 //! Cascsade restarts.
 //!
-//! TODO: What happens if loaded data is approved and persisted, but
-//! Cascade is terminated before signing occurs. In such a case if restore
-//! is done as described above signing can occur as usual, but will a
-//! signed review hook be able to query the loaded review server for the
-//! loaded diff?
-
+//! # Purging
+//!
+//! To avoid excess disk and memory usage, diffs in excess of configured
+//! limits are discarded.
+//!
+//! # Architecture
+//!
+//! - The zone storage state machine has states relating to persistence
+//!   and restoration and invokes code in this module to actually implement
+//!   those responsibilities.
+//! - IXFR diffs for use by the publication server are stored in zone
+//!   storage. IXFR diffs for use by the preview servers are accessed from
+//!   the in-memory temporary diffs held in review related storage machine
+//!   states.
+//! - Three "units" defined in this module are stored in `Center` and run
+//!   by `Manager`: `Persister`, `Restorer` and `Compacter`. Restorer runs
+//!   on startup. Compacter runs in the background continuously. Persister
+//!   does not "run" but instead provides callback `on_zone_policy_changed`.
+//! - The relationship between a signed diff and the loaded diff it
+//!   corresponds to is tracked both in persistence and in-memory diff state.
+//! - Persistence is done atomically, writing first to a temporary file and
+//!   then replacing any previous file with an atomic rename.
+//! - Diffs are stored and accessed using the same data type as already used
+//!   by Cascade to transport diffs between pipeline stages when needed,
+//!   namely `DiffData`.
+//! - `PersistenceState` per zone uses two instances of `PersistedDiffManager`
+//!   to keep track of persisted zone data files and implemements compaction
+//!   of a single zone. Compaction requires access to the latest published
+//!   version of a zone in order to replace the existing persisted snapshot
+//!   with an up-to-date version. Access to the published zone is done via the
+//!   viewer for the zone.
+//! - `IxfrZoneDiffs` stores diffs used when responding to an RFC 1995 IXFR
+//!   request, and offers lookup and trim operations.
 use std::{sync::Arc, time::Duration};
 
 use crate::{
