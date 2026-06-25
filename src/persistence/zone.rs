@@ -700,10 +700,9 @@ impl Ord for PersistedDiffFileInfo {
 /// The set of diffs for a single zone, to be used to serve IXFR responses
 /// from the publication server to clients.
 ///
-/// Note: These diffs are not currently used to serve IXFR responses from
-/// review servers to clients as during review the current diff is already
-/// available to the review server via the current state of the zone storage
-/// state machine.
+/// Note: These diffs are not used to serve IXFR responses from review servers
+/// to clients as during review the current diff is already available to the
+/// review server via the current state of the zone storage state machine.
 ///
 /// A new diff is added to this set once the loaded or signed change to the
 /// zone is approved at a pipeline review stage.
@@ -743,6 +742,10 @@ impl Ord for PersistedDiffFileInfo {
 /// at different moments in the zone pipeline lifecycle we need to keep track
 /// when receiving a signed diff of which loaded SOA serial the signed diff
 /// relates to, so that we can later serve them together.
+///
+/// To ensure memory usage can be controlled diffs can be "trimmed" discarding
+/// older diffs if the total number or size of the diffs exceeds configured
+/// bounds.
 #[derive(Default)]
 pub struct IxfrZoneDiffs {
     /// Diffs in the loaded part of the zone from one serial number to
