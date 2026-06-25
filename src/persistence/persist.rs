@@ -352,8 +352,8 @@ fn store_diff(
 
 pub fn discard_excess_diffs(handle: &mut OwnedZoneHandle) {
     // Purge in-memory diffs if needed before adding a new one.
-    if let Some(policy) = handle.state.policy.as_ref() {
-        if let Some(last_published) = handle.state.last_published.as_ref() {
+    if let Some(policy) = handle.state.policy.as_ref()
+        && let Some(last_published) = handle.state.last_published.as_ref() {
             // Fetch diff purging settings from policy.
             let max_diffs = policy.server.outbound.max_diffs;
             let max_size_percentage = policy.server.outbound.max_diffs_size;
@@ -375,5 +375,4 @@ pub fn discard_excess_diffs(handle: &mut OwnedZoneHandle) {
             );
             handle.state.storage.diffs.trim(max_diffs, max_size);
         }
-    }
 }

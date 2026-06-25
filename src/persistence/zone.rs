@@ -849,14 +849,10 @@ impl IxfrZoneDiffs {
         // Next trim enough diffs to bring the total number of RRs stored
         // under the specified limit.
         let loaded_diff_sizes = self
-            .loaded_diffs
-            .iter()
-            .map(|(_, d)| Self::calc_diff_size(d))
+            .loaded_diffs.values().map(Self::calc_diff_size)
             .collect::<Vec<usize>>();
         let signed_diff_sizes = self
-            .signed_diffs
-            .iter()
-            .map(|(_, rd)| Self::calc_diff_size(&rd.diff))
+            .signed_diffs.values().map(|rd| Self::calc_diff_size(&rd.diff))
             .collect::<Vec<usize>>();
         let mut total_rr_count =
             loaded_diff_sizes.iter().sum::<usize>() + signed_diff_sizes.iter().sum::<usize>();
