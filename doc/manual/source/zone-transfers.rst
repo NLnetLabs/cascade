@@ -48,6 +48,9 @@ Providing zone transfers to a downstream server
 By default, Cascade allows downstream servers to access published zones by
 zone transfer, no configuration is needed.
 
+To restrict the downstream nameservers which may request transfer of the
+zone use the ``server.outbound.provide-xfr-to`` policy setting.`
+
 To ensure timely update by secondaries, Cascade can be configured to send
 :RFC:`1996` NOTIFY messages to specified secondaries. This is done via the
 policy setting ``server.outbound.send-notify-to``, optionally specifying an
@@ -59,8 +62,8 @@ policy setting ``server.outbound.send-notify-to``, optionally specifying an
 .. tip:: Use :program:`cascade` :subcmd:`tsig add` to add a TSIG key to
          Cascade _before_ reloading policy file changes.
 
-Controlling automatic key rollover zone transfer settings
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Zone transfers when using automated key rollover
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When using automatic key rollover (the default) Cascade will attempt to verify
 that certain key properties of the signed zone being served to consumers are
