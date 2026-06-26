@@ -62,6 +62,29 @@ policy setting ``server.outbound.send-notify-to``, optionally specifying an
 .. tip:: Use :program:`cascade` :subcmd:`tsig add` to add a TSIG key to
          Cascade _before_ reloading policy file changes.
 
+Managing IXFR diff memory and disk usage
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Cascade has two policy settings which control how much disk space and memory
+will be used for storing IXFR diffs:
+
+- ``server.outbound.max_diffs``
+- ``server.outbound.max_diffs_size``
+
+``max_diffs`` specifies the maximum numer of IXFR diffs per zone that Cascade
+may keep in memory and on disk.
+
+``max_diffs_size`` specifies the maximum size of all diffs combined that may
+be stored in memory per zone and is defined in relation to the size (number of
+records) of the published zone.
+
+Note that diffs on disk are (a) lazily removed, and so may persist longer than
+expected, and (b) may also be needed to restore the published zone on restart
+of Cascade and will then be removed once the persisted zone record data has
+been compacted at which point it is safe to delete diffs.
+
+``max_diffs_size`` `
+
 Zone transfers when using automated key rollover
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
