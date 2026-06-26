@@ -381,6 +381,12 @@ impl PersistenceState {
                             if let Some(loaded_serial) = diff_info.loaded_serial {
                                 loaded_serials_to_remove.push(loaded_serial);
                             }
+                            if let Err(err) = std::fs::remove_file(&diff_info.path) {
+                                warn!(
+                                    "Failed to remove unusable persisted zone data file '{}': {err}",
+                                    diff_info.path.display()
+                                );
+                            }
                         }
                         keep
                     });
@@ -404,6 +410,12 @@ impl PersistenceState {
                             .loaded_diffs
                             .diff_infos
                             .remove(&found_item);
+                        if let Err(err) = std::fs::remove_file(&found_item.path) {
+                            warn!(
+                                "Failed to remove unusable persisted zone data file '{}': {err}",
+                                found_item.path.display()
+                            );
+                        }
                     }
                 }
 
@@ -442,7 +454,7 @@ impl PersistenceState {
                 );
                 if let Err(err) = std::fs::remove_file(&file_info.path) {
                     warn!(
-                        "Failed to remove unusable persisted zone data file '{}': {err}",
+                        "Failed to remove persisted zone data file '{}': {err}",
                         file_info.path.display()
                     );
                 }
