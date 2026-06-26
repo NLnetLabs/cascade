@@ -44,7 +44,7 @@ systemd features should be used instead.
         the background.
 
         To support binding to privileged ports without requiring elevated
-        privileges Cascade supports the systemd socket activation feature.
+        privileges Cascade supports the systemd `socket activation feature <https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html#>`.
         To use this you will need to create a ``socket`` unit, An example
         ``cascaded.socket`` unit might look as follows:
 
