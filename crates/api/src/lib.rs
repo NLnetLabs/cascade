@@ -262,15 +262,30 @@ pub enum TsigRemoveError {
     NotFound,
 
     /// The specified TSIG key cannot be removed as it is in use.
-    InUse,
+    InUse(Vec<TsigKeyUsageReference>),
 }
 
-impl fmt::Display for TsigRemoveError {
+/// Supporting details for TsigRemoveError::InUse.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum TsigKeyUsageReference {
+    /// The TSIG key is referenced by the source of the named zone.
+    ZoneSource(ZoneName),
+
+    /// The TSIG key is in use by the named zone for some other reason.
+    ZoneOther(ZoneName),
+
+    /// The TSIG key is referenced by one or more settings in the named
+    /// policy.
+    Policy(Box<str>),
+}
+
+impl fmt::Display for TsigKeyUsageReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            TsigRemoveError::NotFound => "no such TSIG key was found",
-            TsigRemoveError::InUse => "the TSIG key cannot be removed as it is in use",
-        })
+        match self {
+            TsigKeyUsageReference::ZoneSource(name) => write!(f, "the source of the '{name}' zone"),
+            TsigKeyUsageReference::ZoneOther(name) => write!(f, "zone '{name}'"),
+            TsigKeyUsageReference::Policy(name) => write!(f, "policy '{name}"),
+        }
     }
 }
 
@@ -765,6 +780,11 @@ pub struct Health {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Info {
+    pub version: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,
     pub signing_queue: Vec<SigningQueueReport>,
@@ -847,6 +867,34 @@ pub struct LoaderPolicyInfo {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct KeyManagerPolicyInfo {
     pub hsm_server_id: Option<String>,
+    pub use_csk: bool,
+    pub algorithm: String,
+    pub ksk_validity: Option<u32>,
+    pub zsk_validity: Option<u32>,
+    pub csk_validity: Option<u32>,
+    pub auto_ksk: AutoConfigPolicyInfo,
+    pub auto_zsk: AutoConfigPolicyInfo,
+    pub auto_csk: AutoConfigPolicyInfo,
+    pub auto_algorithm: AutoConfigPolicyInfo,
+    pub dnskey_inception_offset: u32,
+    pub dnskey_signature_lifetime: u32,
+    pub dnskey_remain_time: u32,
+    pub cds_inception_offset: u32,
+    pub cds_signature_lifetime: u32,
+    pub cds_remain_time: u32,
+    pub ds_algorithm: String,
+    pub default_ttl: u32,
+    pub auto_remove: bool,
+    pub auto_remove_delay: Duration,
+    pub publication_nameservers: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct AutoConfigPolicyInfo {
+    pub start: bool,
+    pub report: bool,
+    pub expire: bool,
+    pub done: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -874,6 +922,9 @@ pub struct SignerPolicyInfo {
     // TODO: These fields should have a type that explains that they represent durations.
     pub sig_inception_offset: u32,
     pub sig_validity_offset: u32,
+    pub sig_remain_time: u32,
+    pub signature_refresh_interval: u32,
+    pub key_roll_time: u32,
     pub denial: SignerDenialPolicyInfo,
     pub review: ReviewPolicyInfo,
 }
