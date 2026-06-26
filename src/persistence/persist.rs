@@ -247,18 +247,10 @@ pub fn persist_to_file_from_parts<
     let mut n_rrs_removed = 0;
     let mut n_rr_added = 0;
 
-    trace!(
-        "persist_to_file: Writing initial SOA: {}",
-        added_soa.rdata.serial
-    );
     write_rr(&mut buf, &added_soa, &mut f);
 
     // Start deleted records block by writing the old SOA, if any.
     if let Some(removed_soa) = &removed_soa {
-        trace!(
-            "persist_to_file: Writing IXFR diff sequence start: removed SOA: {}",
-            removed_soa.rdata.serial
-        );
         write_rr(&mut buf, removed_soa, &mut f);
         n_rrs_removed += 1;
 
@@ -267,19 +259,11 @@ pub fn persist_to_file_from_parts<
             if r.rname == removed_soa.rname && r.rtype == removed_soa.rtype {
                 continue;
             }
-            trace!(
-                "persist_to_file: Writing IXFR diff sequence RR: {:?}",
-                r.rtype
-            );
             write_rr(&mut buf, r, &mut f);
             n_rrs_removed += 1;
         }
 
         // Start added records block by writing the new SOA
-        trace!(
-            "persist_to_file: Writing IXFR diff sequence continuation: added SOA: {}",
-            added_soa.rdata.serial
-        );
         write_rr(&mut buf, &added_soa, &mut f);
     }
 
@@ -288,19 +272,11 @@ pub fn persist_to_file_from_parts<
         if r.rname == added_soa.rname && r.rtype == added_soa.rtype {
             continue;
         }
-        trace!(
-            "persist_to_file: Writing IXFR diff sequence RR: {:?}",
-            r.rtype
-        );
         write_rr(&mut buf, r, &mut f);
         n_rr_added += 1;
     }
 
     // Finish the AXFR/IXFR by writing the new SOA again
-    trace!(
-        "persist_to_file: Writing final SOA: {}",
-        added_soa.rdata.serial
-    );
     write_rr(&mut buf, &added_soa, &mut f);
     n_rr_added += 1;
 
