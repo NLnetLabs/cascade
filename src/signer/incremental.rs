@@ -3341,7 +3341,7 @@ fn nsec3_remove_et(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
 
         // No descendents with NSEC3 records are found. Delete this one.
         let next_owner = nsec3.next_owner();
-        nsec3_remove_one(&nsec3_name, &next_owner, iss);
+        nsec3_remove_one(&nsec3_name, next_owner, iss);
 
         // We remove the NSEC3 record for the name. Get the parent. We should
         // be below apex, so the parent has to exist.
@@ -3368,7 +3368,6 @@ fn nsec3_remove_one(
 
     let previous_name = previous_name.clone();
     let previous_record = previous_record.clone();
-    drop(range);
     let NewRecordData::Nsec3(previous_nsec) = previous_record.data() else {
         panic!("NSEC3 record expected");
     };
@@ -3457,7 +3456,7 @@ fn nsec3_set_occluded(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
         };
 
         let nsec3_next = nsec3.next_owner();
-        nsec3_remove_full(&key_name, &nsec3_name, &nsec3_next, iss);
+        nsec3_remove_full(&key_name, &nsec3_name, nsec3_next, iss);
     }
 }
 
@@ -3606,7 +3605,6 @@ fn nsec3_insert_one(
     };
     let previous_name = previous_name.clone();
     let previous_record = previous_record.clone();
-    drop(range);
     let NewRecordData::Nsec3(previous_nsec3) = previous_record.data() else {
         panic!("NSEC3 record expected");
     };
@@ -4065,8 +4063,7 @@ fn new_base_bytes_to_old_base_ownerhash(owner: &SizePrefixed<u8, [u8]>) -> Owner
     let old_ownerhash =
         OwnerHash::from_octets(bytes).expect("OwnerHash should accept new base bytes");
     let old_ownerhash = OwnerHash::<Vec<u8>>::octets_from(old_ownerhash);
-    let x = OwnerHash::<Bytes>::octets_from(old_ownerhash);
-    x
+    OwnerHash::<Bytes>::octets_from(old_ownerhash)
 }
 
 fn ownerhash_to_new_base_bytes<Octs>(ownerhash: OwnerHash<Octs>) -> Box<SizePrefixed<u8, [u8]>>
