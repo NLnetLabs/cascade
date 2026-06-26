@@ -54,9 +54,9 @@ policy setting ``server.outbound.send-notify-to``, optionally specifying an
 :RFC:8945` TSIG key to use to authenticate communication.
 
 .. tip:: Remember to reload the policy file after changing it. See
-         :program:`cascade` policy :subcmd:`reload`
+         :program:`cascade` :subcmd:`policy reload`.
 
-.. tip:: Use :program:`cascade` tsig :subcmd:`add` to add a TSIG key to
+.. tip:: Use :program:`cascade` :subcmd:`tsig add` to add a TSIG key to
          Cascade _before_ reloading policy file changes.
 
 Controlling automatic key rollover zone transfer settings
