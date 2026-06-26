@@ -49,7 +49,7 @@ By default, Cascade allows downstream servers to access published zones by
 zone transfer, no configuration is needed.
 
 To restrict the downstream nameservers which may request transfer of the
-zone use the ``server.outbound.provide-xfr-to`` policy setting.`
+zone use the ``server.outbound.provide-xfr-to`` policy setting.
 
 To ensure timely update by secondaries, Cascade can be configured to send
 :RFC:`1996` NOTIFY messages to specified secondaries. This is done via the
@@ -82,8 +82,6 @@ Note that diffs on disk are (a) lazily removed, and so may persist longer than
 expected, and (b) may also be needed to restore the published zone on restart
 of Cascade and will then be removed once the persisted zone record data has
 been compacted at which point it is safe to delete diffs.
-
-``max_diffs_size`` `
 
 Zone transfers when using automated key rollover
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
