@@ -225,9 +225,9 @@ fn abandon_signed_restoration(
 }
 
 fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
+    PersistenceState::clear(center, zone);
     {
         let mut state = zone.write(center);
-        clear_persisted_zone_data(center, &mut state);
 
         // In case this zone was signed in the past we have to make sure that
         // any attempt to enqueue a re-signing operation will be skipped as
@@ -244,39 +244,6 @@ fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) 
         state.signer.cancel_enqueued_signing_operations();
     }
     save_state_now(center, zone);
-}
-
-fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
-    // We can't use the persisted data so remove the paths from state, remove
-    // the corresponding files on disk and remove any diffs that we loaded
-    // into memory.
-    for file_info in state
-        .persistence
-        .loaded_diffs
-        .diff_infos
-        .iter()
-        .chain(state.persistence.signed_diffs.diff_infos.iter())
-    {
-        if file_info.path.exists()
-            && file_info
-                .path
-                .starts_with(center.config.zone_state_dir.as_std_path())
-        {
-            info!(
-                "Removing unusable persisted zone data file '{}'",
-                file_info.path.display()
-            );
-            if let Err(err) = std::fs::remove_file(&file_info.path) {
-                warn!(
-                    "Failed to remove unusable persisted zone data file '{}': {err}",
-                    file_info.path.display()
-                );
-            }
-        }
-    }
-    state.persistence.loaded_diffs.clear();
-    state.persistence.signed_diffs.clear();
-    state.storage.diffs.clear();
 }
 
 //----------- PersistenceState -----------------------------------------------
@@ -454,6 +421,37 @@ impl PersistenceState {
             }
         }
     }
+
+    pub fn clear(center: &Arc<Center>, zone: &Arc<Zone>) {
+        let mut state = zone.write(center);
+        for file_info in state
+            .persistence
+            .loaded_diffs
+            .diff_infos
+            .iter()
+            .chain(state.persistence.signed_diffs.diff_infos.iter())
+        {
+            if file_info.path.exists()
+                && file_info
+                    .path
+                    .starts_with(center.config.zone_state_dir.as_std_path())
+            {
+                info!(
+                    "Removing persisted zone data file '{}'",
+                    file_info.path.display()
+                );
+                if let Err(err) = std::fs::remove_file(&file_info.path) {
+                    warn!(
+                        "Failed to remove unusable persisted zone data file '{}': {err}",
+                        file_info.path.display()
+                    );
+                }
+            }
+        }
+        state.persistence.loaded_diffs.clear();
+        state.persistence.signed_diffs.clear();
+        state.storage.diffs.clear();
+    }
 }
 
 impl Default for PersistenceState {
@@ -548,11 +546,7 @@ impl PersistedDiffManager {
             .zone_state_dir
             .join(format!("{zone_name}.{data_file_type}.{}", self.next_idx))
             .into_std_path_buf();
-        let file_info = PersistedDiffFileInfo {
-            path: path.clone(),
-            loaded_serial,
-            signed_serial,
-        };
+        let file_info = PersistedDiffFileInfo::new(path.clone(), loaded_serial, signed_serial);
 
         assert!(self.diff_infos.insert(file_info));
 
