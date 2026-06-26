@@ -117,6 +117,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 - Ignore re-signing without a published signed instance. ([#795] by @bal-e)
 - Account for TTL-only changes in incremental re-signing. ([#803] by
   @Philip-NLnetLabs)
+- Actually use changes on policy reload. ([#606] by @bal-e)
 
 ### Documentation improvements
 
@@ -135,6 +136,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 Thanks to @jpmens and @gryphius for testing Cascade and providing valuable
 feedback and contributions to the documentation.
 
+[#606]: https://github.com/NLnetLabs/cascade/pull/606
 [#704]: https://github.com/NLnetLabs/cascade/pull/704
 [#708]: https://github.com/NLnetLabs/cascade/pull/708
 [#711]: https://github.com/NLnetLabs/cascade/pull/711
