@@ -34,7 +34,7 @@ systemd features should be used instead.
            For a full explanation of systemd settings please consult the
            `systemd documentation <https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html>`_.
 
-        When using Cascade witb systemd some settings must be configured
+        When using Cascade with systemd some settings must be configured
         using the Cascade configuration file and others must be configured 
         via systemd.
 
