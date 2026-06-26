@@ -383,8 +383,8 @@ impl PersistenceState {
                             }
                             if let Err(err) = std::fs::remove_file(&diff_info.path) {
                                 warn!(
-                                    "Failed to remove unusable persisted zone data file '{}': {err}",
-                                    diff_info.path.display()
+                                    "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
+                                    zone.name, diff_info.path.display()
                                 );
                             }
                         }
