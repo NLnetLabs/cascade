@@ -51,7 +51,7 @@ zone transfer, no configuration is needed.
 To ensure timely update by secondaries, Cascade can be configured to send
 :RFC:`1996` NOTIFY messages to specified secondaries. This is done via the
 policy setting ``server.outbound.send-notify-to``, optionally specifying an
-:RFC:8945` TSIG key to use to authenticate communication.
+:RFC:`8945` TSIG key to use to authenticate communication.
 
 .. tip:: Remember to reload the policy file after changing it. See
          :program:`cascade` :subcmd:`policy reload`.
