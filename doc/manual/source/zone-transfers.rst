@@ -104,8 +104,8 @@ data has been compacted at which point it is safe to delete diffs.
              Cascade restoring the last published version of the zone if the
              daemon process is restarted.
 
-Configuring the nameservers used by automated key rollover
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Zone transfers and automated key rollover
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When using automatic key rollover (the default) Cascade will attempt to verify
 that certain key properties of the signed zone being served to consumers are
