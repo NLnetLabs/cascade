@@ -257,6 +257,14 @@ impl PublicationServer {
         let handle = &center.publication_server.handle;
         handle.remove_zone(zone);
     }
+
+    /// Get the viewer for this zone.
+    ///
+    /// If Cascade is still starting up there may not be a viewer for the zone
+    /// yet.
+    pub fn viewer(&self, zone: &Arc<Zone>) -> Option<Arc<tokio::sync::RwLock<ZoneViewer>>> {
+        self.handle.viewer(zone)
+    }
 }
 
 impl Default for PublicationServer {

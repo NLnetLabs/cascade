@@ -1,13 +1,25 @@
 //! Persisting zone data to and restoring from disk.
 //!
-//! The zone persister saves the data for loaded and signed zones to disk, so
-//! that Cascade can seamlessly resume operation after a crash / restart. At
-//! startup it tries to restore data for all known zones.
+//! # Summary
 //!
-//! When re-starting Cascade in-memory zone and IXFR diff data will be lost
-//! unless persisted and restored. This module implements persistence
-//! and restoration using files on disk stored in the zone-state directory
-//! alongside the JSON '.db' zone state files.
+//! On approval of loaded or signed diffs the persister:
+//!   - Writes diffs to disk, so that Cascade can seamlessly resume operation
+//!     after a crash restart. Separate files are stored for loaded vs signed
+//!     data. Persistence files are stored alongside other state files for a
+//!     zone in the zone-state configuration path, with the set of currently
+//!     in-use persistence paths being stored in Cascade zone state.
+//!   - Stores diffs in memory, so that RFC 1995 IXFR requests can be
+//!     responded to with the set of diffs needed by the client.
+//!
+//! When re-starting Cascade, lost in-memory zone and IXFR diff data will be
+//! restored from the disk files written by the persister.
+//!
+//! In-memory diffs are discarded, oldest first, when configured limits are
+//! exceeded.
+//!
+//! Persisted disk files are also discarded oldest first but after a delay
+//! to spread out the cost of "compacting" the zone (replacing the snapshot
+//! with a new one that contains the current set of published zone records).
 //!
 //! # Data format
 //!
@@ -86,18 +98,52 @@
 //! to still be able to query the review server for an IXFR diff after
 //! Cascsade restarts.
 //!
-//! TODO: What happens if loaded data is approved and persisted, but
-//! Cascade is terminated before signing occurs. In such a case if restore
-//! is done as described above signing can occur as usual, but will a
-//! signed review hook be able to query the loaded review server for the
-//! loaded diff?
+//! # Purging
+//!
+//! To avoid excess disk and memory usage, diffs in excess of configured
+//! limits are discarded.
+//!
+//! # Architecture
+//!
+//! - The zone storage state machine has states relating to persistence
+//!   and restoration and invokes code in this module to actually implement
+//!   those responsibilities.
+//! - IXFR diffs for use by the publication server are stored in zone
+//!   storage. IXFR diffs for use by the preview servers are accessed from
+//!   the in-memory temporary diffs held in review related storage machine
+//!   states.
+//! - Three "units" defined in this module are stored in `Center` and run
+//!   by `Manager`: `Persister`, `Restorer` and `Compacter`. Restorer runs
+//!   on startup. Compacter runs in the background continuously. Persister
+//!   does not "run" but instead provides callback `on_zone_policy_changed`.
+//! - The relationship between a signed diff and the loaded diff it
+//!   corresponds to is tracked both in persistence and in-memory diff state.
+//! - Persistence is done atomically, writing first to a temporary file and
+//!   then replacing any previous file with an atomic rename.
+//! - Diffs are stored and accessed using the same data type as already used
+//!   by Cascade to transport diffs between pipeline stages when needed,
+//!   namely `DiffData`.
+//! - `PersistenceState` per zone uses two instances of `PersistedDiffManager`
+//!   to keep track of persisted zone data files and implemements compaction
+//!   of a single zone. Compaction requires access to the latest published
+//!   version of a zone in order to replace the existing persisted snapshot
+//!   with an up-to-date version. Access to the published zone is done via the
+//!   viewer for the zone.
+//! - `IxfrZoneDiffs` stores diffs used when responding to an RFC 1995 IXFR
+//!   request, and offers lookup and trim operations.
+use std::{sync::Arc, time::Duration};
 
-use std::sync::Arc;
-
-use crate::{center::Center, util::AbortOnDrop, zone::ZoneByName};
+use crate::{
+    center::Center,
+    policy::PolicyVersion,
+    util::AbortOnDrop,
+    zone::{Zone, ZoneByName},
+};
 
 mod persist;
-use persist::{persist_loaded, persist_signed};
+pub use persist::{
+    discard_excess_diffs, persist_loaded, persist_signed, persist_to_file_from_parts,
+};
 
 mod restore;
 use restore::{restore_loaded, restore_signed};
@@ -111,18 +157,96 @@ pub mod zone;
 /// This component is responsible for persisting zone data, so it can be
 /// restored (and Cascade can resume operation) after a crash / restart.
 #[derive(Debug)]
-pub struct Persister {
-    // TODO: Do we need any global state for persistence?
-}
+pub struct Persister {}
 
 impl Persister {
     /// Construct a new [`Persister`].
     pub fn new() -> Self {
         Self {}
     }
+
+    pub fn on_zone_policy_changed(
+        &self,
+        center: &Arc<Center>,
+        zone: &Arc<Zone>,
+        old: Option<Arc<PolicyVersion>>,
+        new: Arc<PolicyVersion>,
+    ) {
+        if let Some(old) = old
+            && old.server.outbound.max_diffs <= new.server.outbound.max_diffs
+            && old.server.outbound.max_diffs_size <= new.server.outbound.max_diffs_size
+        {
+            // Nothing changed, at least not in a way that affects us.
+            // Increased diff limits doesn't require action, only a reduction
+            // in limits requires us to act.
+            return;
+        }
+
+        discard_excess_diffs(center, zone);
+    }
 }
 
 impl Default for Persister {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+//----------- Compacter --------------------------------------------------------
+
+/// The zone data compacter.
+///
+/// Compacts zone data on disk periodically, keeping the number of diffs within
+/// the configured maximum per zone.
+#[derive(Debug)]
+pub struct Compacter {}
+
+impl Compacter {
+    /// Construct a new [`Compacter`].
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// Drive this [`Compacter`].
+    pub fn run(center: Arc<Center>) -> AbortOnDrop {
+        AbortOnDrop::from(tokio::spawn(async move {
+            // TODO: Make compaction interval configurable?
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+
+                // Obtain a list of all zones.
+                let zones = {
+                    let state = center.state.lock().unwrap();
+                    // TODO: To avoid invoking compaction unnecessarily we
+                    // could store a flag with the zone to say that the diffs
+                    // have been changed since last compaction and reset it on
+                    // compaction, and filter unchanged zones out here.
+                    state
+                        .zones
+                        .iter()
+                        .filter(|ZoneByName(z)| !z.state.read().maintenance_mode)
+                        .map(|ZoneByName(z)| z.clone())
+                        .collect::<Vec<_>>()
+                };
+
+                // Compact each zone one at a time.
+                // TODO: Add a configuration setting to control the maximum
+                // number of zones to compact concurrently?
+                for zone in zones {
+                    // Spawn the compaction task on a Tokio blocking task
+                    // thread so as not to block any other async tasks on the
+                    // same executor thread with a long running compaction.
+                    let mut handle = zone.write_handle(&center);
+                    handle.persistence().start_compaction();
+                }
+            }
+        }))
+    }
+}
+
+impl Default for Compacter {
     fn default() -> Self {
         Self::new()
     }

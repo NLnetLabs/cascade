@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-beta3" "Cascade"
+.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-beta4-dev" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -110,6 +110,9 @@ Override a previous rejection of a zone review.
 .TP
 .B status
 Get the status of a single zone.
+.sp
+Also reports any issues that occured with recent operations on the zone
+and whether the zone is being restored from disk.
 .UNINDENT
 .INDENT 0.0
 .TP

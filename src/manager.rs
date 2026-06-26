@@ -6,7 +6,7 @@ use crate::center::Center;
 use crate::daemon::SocketProvider;
 use crate::loader::Loader;
 use crate::metrics::MetricsCollection;
-use crate::persistence::Restorer;
+use crate::persistence::{Compacter, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::units::http_server::HTTP_UNIT_NAME;
 use crate::units::http_server::HttpServer;
@@ -51,6 +51,10 @@ impl Manager {
         // Spawn the zone data restorer.
         debug!("Starting the zone data restorer");
         handles.push(Restorer::run(center.clone()));
+
+        // Spawn the zone data compacter.
+        debug!("Starting the zone data compacter");
+        handles.push(Compacter::run(center.clone()));
 
         // Spawn the zone loader.
         debug!("Starting the zone loader");

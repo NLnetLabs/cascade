@@ -77,6 +77,9 @@ Commands
 
    Get the status of a single zone.
 
+   Also reports any issues that occured with recent operations on the zone
+   and whether the zone is being restored from disk.
+
 .. subcmd:: reset
 
    Reset the pipeline for a zone to get it out of a halted state.
