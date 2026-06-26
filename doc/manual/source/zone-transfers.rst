@@ -42,8 +42,8 @@ Cascade can be instructed to authenticate the upstream nameserver by use of a
 TSIG key. The TSIG key to use must be provided to Cascade _before_ adding the
 zone. See :program:`cascade` :subcmd:`tsig add`.
 
-Providing zone transfers to a downstream server
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Providing zone transfers to downstream nameservers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 By default, Cascade allows downstream servers to access published zones by
 zone transfer, no configuration is needed.
