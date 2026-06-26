@@ -22,6 +22,7 @@ use domain::base::{
     CanonicalOrd, Name, NameBuilder, Record, Rtype, Serial as DomainSerial, ToName, Ttl,
 };
 use domain::dep::octseq::OctetsFrom;
+use domain::dep::octseq::Parser;
 use domain::dep::octseq::builder::with_infallible;
 use domain::dnssec::common::nsec3_hash;
 use domain::dnssec::sign::denial::nsec::{GenerateNsecConfig, generate_nsecs};
@@ -34,11 +35,15 @@ use domain::dnssec::sign::records::{DefaultSorter, RecordsIter, Rrset};
 use domain::dnssec::sign::signatures::rrsigs::sign_rrset;
 use domain::new::base::RType as NewRtype;
 use domain::new::base::TTL as NewTtl;
+use domain::new::base::build::AsBytes;
 use domain::new::base::compat::iana::Class as NewClass;
 use domain::new::base::name::Name as NewName;
 use domain::new::base::name::{NameBuf, RevName, RevNameBuf};
-use domain::new::base::parse::ParseBytes;
+use domain::new::base::parse::{ParseBytes, ParseBytesZC};
+use domain::new::base::wire::SizePrefixed;
 use domain::new::rdata::Nsec as NewNsec;
+use domain::new::rdata::Nsec3 as NewNsec3;
+use domain::new::rdata::Nsec3Param as NewNsec3Param;
 use domain::new::rdata::RecordData as NewRecordData;
 use domain::rdata::dnssec::{RtypeBitmap, Timestamp};
 use domain::rdata::nsec3::OwnerHash;
@@ -391,6 +396,7 @@ impl WorkSpace<'_> {
                     .nsec3s
                     .get(&old_key.0)
                     .expect("NSEC3 record should exist");
+                let record: Zrd = record.clone().into();
                 let records = [record.clone()];
                 sign_records(
                     &iss.origin,
@@ -489,6 +495,7 @@ impl WorkSpace<'_> {
                         .nsec3s
                         .get(&old_key.0)
                         .expect("NSEC3 record should exist");
+                    let record: Zrd = record.clone().into();
                     let records = [record.clone()];
                     sign_records(
                         &iss.origin,
@@ -579,6 +586,7 @@ impl WorkSpace<'_> {
                     .nsec3s
                     .get(&old_key.0)
                     .expect("NSEC3 record should exist");
+                let record: Zrd = record.clone().into();
                 let records = [record.clone()];
                 sign_records(
                     &iss.origin,
@@ -777,72 +785,8 @@ impl WorkSpace<'_> {
             }
         }
 
-        // Handle NSECs.
-        for name in iss.nsecs.changes_iter() {
-            if let Some(change) = iss.nsecs.get_change(name) {
-                match change {
-                    NsecChange::Original { .. } => unreachable!(),
-                    NsecChange::Removed { old } => {
-                        self.patch.remove((*old).clone()).map_err(|e| {
-                            SignerError::PatchFailed(format!("unable to remove {old:?}: {e}"))
-                        })?;
-                    }
-                    NsecChange::Modified { old, new } => {
-                        if *old != new {
-                            self.patch.remove((*old).clone()).map_err(|e| {
-                                SignerError::PatchFailed(format!("unable to remove {old:?}: {e}"))
-                            })?;
-                            self.patch.add(new.clone()).map_err(|e| {
-                                SignerError::PatchFailed(format!("unable to add {new:?}: {e}"))
-                            })?;
-                        }
-                    }
-                    NsecChange::New { new } => {
-                        self.patch.add(new.clone()).map_err(|e| {
-                            SignerError::PatchFailed(format!("unable to add {new:?}: {e}"))
-                        })?;
-                    }
-                }
-            }
-        }
-
-        // NSEC3 records that were deleted.
-        for (k, old_nsec3) in &iss.old_nsec3s {
-            if let Some(new_nsec3) = iss.nsec3s.get(k) {
-                if new_nsec3 == old_nsec3 {
-                    // No change.
-                    continue;
-                }
-                let old_nsec3: RegularRecord = old_nsec3.clone().into();
-                self.patch.remove(old_nsec3.clone()).map_err(|e| {
-                    SignerError::PatchFailed(format!("unable to remove {old_nsec3:?}: {e}"))
-                })?;
-            } else {
-                let old_nsec3: RegularRecord = old_nsec3.clone().into();
-                self.patch.remove(old_nsec3.clone()).map_err(|e| {
-                    SignerError::PatchFailed(format!("unable to remove {old_nsec3:?}: {e}"))
-                })?;
-            }
-        }
-
-        // NSEC3 records that were added.
-        for (k, new_nsec3) in &iss.nsec3s {
-            if let Some(old_nsec3) = iss.old_nsec3s.get(k) {
-                if new_nsec3 == old_nsec3 {
-                    // No change.
-                    continue;
-                }
-                let new_nsec3: RegularRecord = new_nsec3.clone().into();
-                self.patch.add(new_nsec3.clone()).map_err(|e| {
-                    SignerError::PatchFailed(format!("unable to add {new_nsec3:?}: {e}"))
-                })?;
-            } else {
-                let new_nsec3: RegularRecord = new_nsec3.clone().into();
-                self.patch.add(new_nsec3.clone()).map_err(|e| {
-                    SignerError::PatchFailed(format!("unable to add {new_nsec3:?}: {e}"))
-                })?;
-            }
-        }
+        iss.nsecs.generate_diff(&mut self.patch)?;
+        iss.nsec3s.generate_diff(&mut self.patch)?;
 
         for change in iss.rrsigs.changes.values() {
             match change {
@@ -1027,7 +971,12 @@ impl WorkSpace<'_> {
         }));
         all.extend(all_nsecs.iter());
 
-        all.extend(iss.nsec3s.values());
+        let mut all_nsec3s: Vec<Zrd> = vec![];
+        all_nsec3s.extend(iss.nsec3s.values().map(|r| {
+            let s: Record<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>> = (*r).clone().into();
+            s.into()
+        }));
+        all.extend(all_nsec3s.iter());
 
         let mut all_rrsigs: Vec<Zrd> = vec![];
         let new_origin = old_base_name_to_revnamebuf(&iss.origin);
@@ -1371,7 +1320,7 @@ impl WorkSpace<'_> {
                     panic!("NSEC3 for {m} should exist");
                 };
 
-                let nsec3 = nsec3.clone();
+                let nsec3 = nsec3.clone().into();
                 sign_records(
                     &iss.origin,
                     &[nsec3],
@@ -1423,10 +1372,11 @@ impl WorkSpace<'_> {
                 debug!("replacing NSEC3 with NSEC took {:?}", start.elapsed());
                 return Ok(());
             }
-            let ZoneRecordData::Nsec3param(nsec3param) = nsec3param_records[0].data() else {
+            let new_nsec3param_record: RegularRecord = nsec3param_records[0].clone().into();
+            let NewRecordData::Nsec3Param(nsec3param) = new_nsec3param_record.data() else {
                 panic!("ZoneRecordData::Nsec3param expected");
             };
-            if *nsec3param != iss.nsec3param {
+            if *nsec3param != *iss.nsec3param {
                 // Parameters changed, resign.
                 let start = Instant::now();
                 iss.remove_nsec_nsec3();
@@ -1480,13 +1430,11 @@ struct IncrementalSigningState<'zd> {
     /// The apex of the new version of the unsigned zone.
     new_apex_saved: HashMap<Rtype, Vec<Zrd>>,
 
+    // Stores old and new NSEC records and creates diffs.
     nsecs: Nsecs<'zd>,
 
-    /// NSEC3 records of the previously signed zone.
-    old_nsec3s: BTreeMap<Name<Bytes>, Zrd>,
-
-    /// NSEC3 records of the newly signed zone.
-    nsec3s: BTreeMap<Name<Bytes>, Zrd>,
+    // Stores old and new NSEC3 records and creates diffs.
+    nsec3s: Nsecs<'zd>,
 
     // Stores old and new RRSIG records and creates diffs.
     rrsigs: Rrsigs<'zd>,
@@ -1509,7 +1457,7 @@ struct IncrementalSigningState<'zd> {
     expiration: Timestamp,
 
     // NSEC3 parameters.
-    nsec3param: Nsec3param<Bytes>,
+    nsec3param: Box<NewNsec3Param>,
 }
 
 impl<'a> IncrementalSigningState<'a> {
@@ -1531,7 +1479,7 @@ impl<'a> IncrementalSigningState<'a> {
         // This is the only way to deal with opt-out. There is no data type
         // for flags or constant for opt-out. Creating an Nsec3param makes it
         // possible to set opt-out.
-        let mut nsec3param = Nsec3param::default();
+        let mut nsec3param: Nsec3param<Vec<u8>> = Nsec3param::default();
         match &policy.signer.denial {
             SignerDenialPolicy::NSec => (),
             SignerDenialPolicy::NSec3 { opt_out } => {
@@ -1540,6 +1488,7 @@ impl<'a> IncrementalSigningState<'a> {
                 }
             }
         }
+        let nsec3param = old_base_nsec3param_to_new_base(&nsec3param);
         Ok(Self {
             origin,
             old_apex: HashMap::new(),
@@ -1549,8 +1498,7 @@ impl<'a> IncrementalSigningState<'a> {
             old_data: HashMap::new(),
             new_data: BTreeMap::new(),
             nsecs: Nsecs::new(),
-            old_nsec3s: BTreeMap::new(),
-            nsec3s: BTreeMap::new(),
+            nsec3s: Nsecs::new(),
             rrsigs: Rrsigs::new(),
             changes: HashMap::new(),
             modified_nsecs: HashSet::new(),
@@ -1589,7 +1537,8 @@ impl<'a> IncrementalSigningState<'a> {
                 ZoneRecordData::Nsec3(_) => {
                     // Assume (at most) one NSEC3 record per owner name.
                     // Directly insert into the btree map.
-                    self.nsec3s.insert(record.owner().clone(), record);
+                    self.nsec3s
+                        .add_existing_record(record.owner().clone(), entry);
                 }
                 _ => {
                     if records.is_empty() {
@@ -1622,7 +1571,6 @@ impl<'a> IncrementalSigningState<'a> {
             }
         }
         self.old_apex_saved = self.old_apex.clone();
-        self.old_nsec3s = self.nsec3s.clone();
         Ok(())
     }
 
@@ -1997,13 +1945,16 @@ impl<'a> IncrementalSigningState<'a> {
 
             if let Some(record_nsec3) = self.nsec3s.get(&nsec3_name) {
                 let record_nsec3 = record_nsec3.clone();
-                let ZoneRecordData::Nsec3(nsec3) = record_nsec3.data() else {
+                let NewRecordData::Nsec3(nsec3) = record_nsec3.data() else {
                     panic!("NSEC3 record expected");
                 };
 
                 // Convert the existing RRtype bitmap into a hash set.
                 let mut curr = HashSet::new();
-                for rtype in nsec3.types() {
+                // TODO: should implement IntoIterator for TypeBitMaps.
+                //for rtype in nsec3.types() {
+                for rtype in nsec3.types().iter() {
+                    let rtype = new_base_rtype_to_old_base_rtype(rtype);
                     curr.insert(rtype);
                 }
 
@@ -2024,11 +1975,11 @@ impl<'a> IncrementalSigningState<'a> {
                         // When NS is added, we should keep the signatures for
                         // DS. Do not try to remove a signature for RRSIG because
                         // it does not exist.
-                        if rtype == Rtype::DS || rtype == Rtype::RRSIG {
+                        if rtype == NewRtype::DS || rtype == NewRtype::RRSIG {
                             continue;
                         }
                         let new_name = old_base_name_to_revnamebuf(key);
-                        let key = (new_name, old_base_rtype_to_new_base_rtype(rtype));
+                        let key = (new_name, rtype);
                         self.rrsigs.remove(&key);
                     }
 
@@ -2039,7 +1990,7 @@ impl<'a> IncrementalSigningState<'a> {
                     let add = add.intersection(&mask).copied().collect();
 
                     // Update the NSEC3 record.
-                    nsec3_update_bitmap(key, &record_nsec3, nsec3, &curr, &add, delete, self);
+                    nsec3_update_bitmap(key, &record_nsec3, &nsec3, &curr, &add, delete, self);
 
                     // Mark descendents as occluded after updating the bitmap.
                     // The reason is that nsec3_update_bitmap uses the current
@@ -2069,7 +2020,7 @@ impl<'a> IncrementalSigningState<'a> {
                     }
 
                     let mut new =
-                        nsec3_update_bitmap(key, &record_nsec3, nsec3, &curr, add, delete, self);
+                        nsec3_update_bitmap(key, &record_nsec3, &nsec3, &curr, add, delete, self);
 
                     // Sign the types at this name except for NSEC, and RRSIG.
                     new.remove(&Rtype::RRSIG);
@@ -2079,7 +2030,7 @@ impl<'a> IncrementalSigningState<'a> {
                     nsec3_clear_occluded(key, self)?;
                     continue;
                 }
-                if *key != self.origin && nsec3.types().contains(Rtype::NS) {
+                if *key != self.origin && nsec3.types().contains(NewRtype::NS) {
                     // NS marks a delegation but only when the NS is not
                     // at the apex.
 
@@ -2088,14 +2039,14 @@ impl<'a> IncrementalSigningState<'a> {
                         let ds_set: HashSet<_> = [Rtype::DS].into();
                         sign_rtype_set(key, &ds_set, self)?;
                     }
-                    nsec3_update_bitmap(key, &record_nsec3, nsec3, &curr, add, delete, self);
+                    nsec3_update_bitmap(key, &record_nsec3, &nsec3, &curr, add, delete, self);
                     continue;
                 }
 
                 // The add types need to be signed.
                 sign_rtype_set(key, add, self)?;
 
-                nsec3_update_bitmap(key, &record_nsec3, nsec3, &curr, add, delete, self);
+                nsec3_update_bitmap(key, &record_nsec3, &nsec3, &curr, add, delete, self);
             } else {
                 if add.is_empty() {
                     assert!(!delete.is_empty());
@@ -2187,7 +2138,7 @@ impl<'a> IncrementalSigningState<'a> {
             let key = (new_name, NewRtype::NSEC3);
             self.rrsigs.remove(&key);
         }
-        self.nsec3s = BTreeMap::new();
+        self.nsec3s.remove_all();
     }
 
     fn new_nsec_chain(&mut self) -> Result<(), SignerError> {
@@ -2230,7 +2181,8 @@ impl<'a> IncrementalSigningState<'a> {
         let records = self.get_unsigned_sorted();
         let records: Vec<_> = records.into_iter().map(RecordFullCmp::to_record).collect();
         let records_iter = RecordsIter::new_from_refs(&records);
-        let config = GenerateNsec3Config::<_, DefaultSorter>::new(self.nsec3param.clone())
+        let old_nsec3param = new_base_nsec3param_to_old_base(&self.nsec3param);
+        let config = GenerateNsec3Config::<_, DefaultSorter>::new(old_nsec3param)
             .with_ttl_mode(Nsec3ParamTtlMode::SoaMinimum);
         let nsec3_records = generate_nsec3s(&self.origin, records_iter, &config)
             .map_err(|e| SignerError::SigningError(format!("generate_nsec3s failed: {e}")))?;
@@ -2266,7 +2218,8 @@ impl<'a> IncrementalSigningState<'a> {
                 r.ttl(),
                 ZoneRecordData::Nsec3(r.data().clone()),
             );
-            self.nsec3s.insert(record.owner().clone(), record.clone());
+            self.nsec3s
+                .insert_new_record(record.owner().clone(), record.clone().into());
             sign_records(
                 &self.origin,
                 &[record],
@@ -2319,7 +2272,9 @@ impl<'a> Nsecs<'a> {
             btree_map::Entry::Occupied(mut entry) => {
                 let change = entry.get_mut();
                 match change {
-                    NsecChange::Original { old } | NsecChange::Modified { old, .. } => {
+                    NsecChange::Original { old }
+                    | NsecChange::Modified { old, .. }
+                    | NsecChange::Removed { old } => {
                         let new_change = NsecChange::Modified { old, new: value };
                         *change = new_change;
 
@@ -2327,7 +2282,6 @@ impl<'a> Nsecs<'a> {
                         // hurt.
                         self.changes.insert(name);
                     }
-                    NsecChange::Removed { .. } => todo!(),
                     NsecChange::New { .. } => {
                         let new_change = NsecChange::New { new: value };
                         *change = new_change;
@@ -2392,7 +2346,7 @@ impl<'a> Nsecs<'a> {
         if let Some(change) = self.nsecs.get(name) {
             match change {
                 NsecChange::Original { old } => return Some(old),
-                NsecChange::Removed { .. } => todo!(),
+                NsecChange::Removed { .. } => return None,
                 NsecChange::Modified { new, .. } | NsecChange::New { new } => return Some(new),
             }
         }
@@ -2401,6 +2355,18 @@ impl<'a> Nsecs<'a> {
 
     fn get_change(&self, name: &Name<Bytes>) -> Option<&NsecChange<'_>> {
         self.nsecs.get(name)
+    }
+
+    fn contains_key(&self, name: &Name<Bytes>) -> bool {
+        if let Some(change) = self.nsecs.get(name) {
+            match change {
+                NsecChange::Removed { .. } => return false,
+                NsecChange::Original { .. }
+                | NsecChange::Modified { .. }
+                | NsecChange::New { .. } => return true,
+            }
+        }
+        false
     }
 
     fn keys(&self) -> NsecsKeysIter<'_> {
@@ -2420,6 +2386,38 @@ impl<'a> Nsecs<'a> {
 
     fn changes_iter(&self) -> hash_set::Iter<'_, Name<Bytes>> {
         self.changes.iter()
+    }
+
+    /// Add changes to NSEC(3) records to the patch.
+    fn generate_diff(&self, patch: &mut SignedZonePatcher) -> Result<(), SignerError> {
+        for name in self.changes_iter() {
+            if let Some(change) = self.get_change(name) {
+                match change {
+                    NsecChange::Original { .. } => unreachable!(),
+                    NsecChange::Removed { old } => {
+                        patch.remove((*old).clone()).map_err(|e| {
+                            SignerError::PatchFailed(format!("unable to remove {old:?}: {e}"))
+                        })?;
+                    }
+                    NsecChange::Modified { old, new } => {
+                        if *old != new {
+                            patch.remove((*old).clone()).map_err(|e| {
+                                SignerError::PatchFailed(format!("unable to remove {old:?}: {e}"))
+                            })?;
+                            patch.add(new.clone()).map_err(|e| {
+                                SignerError::PatchFailed(format!("unable to add {new:?}: {e}"))
+                            })?;
+                        }
+                    }
+                    NsecChange::New { new } => {
+                        patch.add(new.clone()).map_err(|e| {
+                            SignerError::PatchFailed(format!("unable to add {new:?}: {e}"))
+                        })?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -3007,8 +3005,8 @@ fn nsec_insert(
     // TODO: construct using new base.
     let new_record = Record::new(
         name.clone(),
-        new_base_class_to_old_base_class(previous_record.class()),
-        new_base_ttl_to_old_base_ttl(previous_record.ttl()),
+        new_base_class_to_old_base(previous_record.class()),
+        new_base_ttl_to_old_base(previous_record.ttl()),
         ZoneRecordData::Nsec(new_nsec),
     );
     iss.nsecs.insert_new_record(name.clone(), new_record.into());
@@ -3085,8 +3083,8 @@ fn nsec_update_bitmap(
     let old_owner = revname_to_old_base_name(owner);
     let record = RecordFullCmp::new(
         old_owner.clone(),
-        new_base_class_to_old_base_class(record.class()),
-        new_base_ttl_to_old_base_ttl(record.ttl()),
+        new_base_class_to_old_base(record.class()),
+        new_base_ttl_to_old_base(record.ttl()),
         ZoneRecordData::Nsec(nsec),
     );
     iss.nsecs
@@ -3226,37 +3224,41 @@ where
 }
 
 fn nsec3_update(
-    owner: &Name<Bytes>,
-    nsec3_record: &Zrd,
-    nsec3: &Nsec3<Bytes>,
+    owner: &RevName,
+    nsec3_record: &RegularRecord,
+    nsec3: &NewNsec3,
     rtypes: &HashSet<Rtype>,
     iss: &mut IncrementalSigningState,
 ) {
     // Just update an NSEC3 record without further logic.
     let rtypebitmap = nsec3_rtypebitmap_from_iterator(rtypes.iter());
+    let old_nsec3param = new_base_nsec3param_to_old_base(&iss.nsec3param);
     let nsec3 = Nsec3::new(
-        iss.nsec3param.hash_algorithm(),
-        iss.nsec3param.flags(),
-        iss.nsec3param.iterations(),
-        iss.nsec3param.salt().clone(),
-        nsec3.next_owner().clone(),
+        old_nsec3param.hash_algorithm(),
+        old_nsec3param.flags(),
+        old_nsec3param.iterations(),
+        old_nsec3param.salt().clone(),
+        new_base_bytes_to_old_base_ownerhash(nsec3.next_owner()),
         rtypebitmap,
     );
+    let old_owner = revname_to_old_base_name(nsec3_record.owner());
     let record = RecordFullCmp::new(
-        nsec3_record.owner().clone(),
-        nsec3_record.class(),
-        nsec3_record.ttl(),
+        old_owner,
+        new_base_class_to_old_base(nsec3_record.class()),
+        new_base_ttl_to_old_base(nsec3_record.ttl()),
         ZoneRecordData::Nsec3(nsec3),
     );
-    iss.nsec3s.insert(owner.clone(), record);
+    let old_owner = revname_to_old_base_name(owner);
+    iss.nsec3s
+        .insert_new_record(old_owner.clone(), record.into());
 
-    iss.modified_nsecs.insert(owner.clone());
+    iss.modified_nsecs.insert(old_owner);
 }
 
 fn nsec3_remove_full(
     name: &Name<Bytes>,
     nsec3_name: &Name<Bytes>,
-    nsec3_next: &OwnerHash<Bytes>,
+    nsec3_next: &SizePrefixed<u8, [u8]>,
     iss: &mut IncrementalSigningState,
 ) {
     nsec3_remove_one(nsec3_name, nsec3_next, iss);
@@ -3292,8 +3294,9 @@ fn nsec3_remove_et(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
             // No NSEC3 record, nothing to do.
             return;
         };
+        let record_nsec3 = record_nsec3.clone();
 
-        let ZoneRecordData::Nsec3(nsec3) = record_nsec3.data() else {
+        let NewRecordData::Nsec3(nsec3) = record_nsec3.data() else {
             panic!("NSEC3 record expected");
         };
 
@@ -3337,7 +3340,7 @@ fn nsec3_remove_et(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
         }
 
         // No descendents with NSEC3 records are found. Delete this one.
-        let next_owner = nsec3.next_owner().clone();
+        let next_owner = nsec3.next_owner();
         nsec3_remove_one(&nsec3_name, &next_owner, iss);
 
         // We remove the NSEC3 record for the name. Get the parent. We should
@@ -3348,16 +3351,16 @@ fn nsec3_remove_et(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
 
 fn nsec3_remove_one(
     nsec3_name: &Name<Bytes>,
-    nsec3_next: &OwnerHash<Bytes>,
+    nsec3_next: &SizePrefixed<u8, [u8]>,
     iss: &mut IncrementalSigningState,
 ) {
     // Try to find the NSEC3 record that comes before the one we are trying
     // to remove.
-    let mut range = iss.nsec3s.range::<Name<_>, _>(..nsec3_name);
+    let mut range = iss.nsec3s.range(..nsec3_name);
     let (previous_name, previous_record) = if let Some(kv) = range.next_back() {
         kv
     } else {
-        let mut range = iss.nsec3s.range::<Name<_>, _>(nsec3_name..);
+        let mut range = iss.nsec3s.range(nsec3_name..);
         range
             .next_back()
             .expect("at least one element should exist")
@@ -3366,24 +3369,26 @@ fn nsec3_remove_one(
     let previous_name = previous_name.clone();
     let previous_record = previous_record.clone();
     drop(range);
-    let ZoneRecordData::Nsec3(previous_nsec) = previous_record.data() else {
+    let NewRecordData::Nsec3(previous_nsec) = previous_record.data() else {
         panic!("NSEC3 record expected");
     };
-    let previous_nsec3 = Nsec3::new(
+    let previous_nsec3 = NewNsec3::new(
         iss.nsec3param.hash_algorithm(),
         iss.nsec3param.flags(),
         iss.nsec3param.iterations(),
-        iss.nsec3param.salt().clone(),
-        nsec3_next.clone(),
-        previous_nsec.types().clone(),
+        iss.nsec3param.salt(),
+        nsec3_next,
+        previous_nsec.types(),
     );
-    let previous_record = RecordFullCmp::new(
-        previous_name.clone(),
+    let previous_name_revnamebuf = old_base_name_to_revnamebuf(previous_name.clone());
+    let previous_record = RegularRecord::new(
+        previous_name_revnamebuf.unsized_copy_into(),
         previous_record.class(),
         previous_record.ttl(),
-        ZoneRecordData::Nsec3(previous_nsec3),
+        NewRecordData::<NameBuf>::Nsec3(previous_nsec3).into(),
     );
-    iss.nsec3s.insert(previous_name.clone(), previous_record);
+    iss.nsec3s
+        .insert_new_record(previous_name.clone(), previous_record);
     iss.modified_nsecs.insert(previous_name.clone());
     iss.nsec3s.remove(nsec3_name);
     iss.modified_nsecs.remove(nsec3_name);
@@ -3428,7 +3433,7 @@ fn nsec3_set_occluded(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
             continue;
         };
 
-        let ZoneRecordData::Nsec3(nsec3) = record_nsec3.data() else {
+        let NewRecordData::Nsec3(nsec3) = record_nsec3.data() else {
             panic!("NSEC3 record expected");
         };
 
@@ -3436,21 +3441,22 @@ fn nsec3_set_occluded(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
 
         // Remove all signatures.
         for rtype in nsec3.types().iter() {
-            let key = (
-                old_base_name_to_revnamebuf(key_name),
-                old_base_rtype_to_new_base_rtype(rtype),
-            );
+            let key = (old_base_name_to_revnamebuf(key_name), rtype);
             iss.rrsigs.remove(&key);
         }
     }
     for (key_name, nsec3_name) in work {
-        let record_nsec3 = iss.nsec3s.get(&nsec3_name).expect("NSEC3 should exist");
+        let record_nsec3 = iss
+            .nsec3s
+            .get(&nsec3_name)
+            .expect("NSEC3 should exist")
+            .clone();
 
-        let ZoneRecordData::Nsec3(nsec3) = record_nsec3.data() else {
+        let NewRecordData::Nsec3(nsec3) = record_nsec3.data() else {
             panic!("NSEC3 record expected");
         };
 
-        let nsec3_next = nsec3.next_owner().clone();
+        let nsec3_next = nsec3.next_owner();
         nsec3_remove_full(&key_name, &nsec3_name, &nsec3_next, iss);
     }
 }
@@ -3589,11 +3595,11 @@ fn nsec3_insert_one(
     // to insert. It is possible that we try to insert before the first NSEC3
     // record. In that case, logically try to insert after the last NSEC3
     // record.
-    let mut range = iss.nsec3s.range::<Name<_>, _>(..nsec3_name);
+    let mut range = iss.nsec3s.range(..nsec3_name);
     let (previous_name, previous_record) = if let Some(kv) = range.next_back() {
         kv
     } else {
-        let mut range = iss.nsec3s.range::<Name<_>, _>(nsec3_name..);
+        let mut range = iss.nsec3s.range(nsec3_name..);
         range
             .next_back()
             .expect("at least one element should exist")
@@ -3601,49 +3607,54 @@ fn nsec3_insert_one(
     let previous_name = previous_name.clone();
     let previous_record = previous_record.clone();
     drop(range);
-    let ZoneRecordData::Nsec3(previous_nsec3) = previous_record.data() else {
+    let NewRecordData::Nsec3(previous_nsec3) = previous_record.data() else {
         panic!("NSEC3 record expected");
     };
     let next = previous_nsec3.next_owner();
+    let old_nsec3param = new_base_nsec3param_to_old_base(&iss.nsec3param);
     let new_nsec3 = Nsec3::new(
-        iss.nsec3param.hash_algorithm(),
-        iss.nsec3param.flags(),
-        iss.nsec3param.iterations(),
-        iss.nsec3param.salt().clone(),
-        next.clone(),
+        old_nsec3param.hash_algorithm(),
+        old_nsec3param.flags(),
+        old_nsec3param.iterations(),
+        old_nsec3param.salt().clone(),
+        new_base_bytes_to_old_base_ownerhash(next),
         rtypebitmap,
     );
     let new_record = RecordFullCmp::new(
         nsec3_name.clone(),
-        previous_record.class(),
-        previous_record.ttl(),
+        new_base_class_to_old_base(previous_record.class()),
+        new_base_ttl_to_old_base(previous_record.ttl()),
         ZoneRecordData::Nsec3(new_nsec3),
     );
-    iss.nsec3s.insert(nsec3_name.clone(), new_record);
+    iss.nsec3s
+        .insert_new_record(nsec3_name.clone(), new_record.into());
     iss.modified_nsecs.insert(nsec3_name.clone());
-    let previous_nsec3 = Nsec3::new(
+    let new_nsec3_hash = ownerhash_to_new_base_bytes(nsec3_hash);
+    let previous_nsec3 = NewNsec3::new(
         iss.nsec3param.hash_algorithm(),
         iss.nsec3param.flags(),
         iss.nsec3param.iterations(),
-        iss.nsec3param.salt().clone(),
-        nsec3_hash,
-        previous_nsec3.types().clone(),
+        iss.nsec3param.salt(),
+        new_nsec3_hash.as_ref(),
+        previous_nsec3.types(),
     );
-    let previous_record = RecordFullCmp::new(
-        previous_name.clone(),
+    let previous_name_revnamebuf = old_base_name_to_revnamebuf(previous_name.clone());
+    let previous_record = RegularRecord::new(
+        previous_name_revnamebuf.unsized_copy_into(),
         previous_record.class(),
         previous_record.ttl(),
-        ZoneRecordData::Nsec3(previous_nsec3),
+        NewRecordData::<NameBuf>::Nsec3(previous_nsec3).into(),
     );
-    iss.nsec3s.insert(previous_name.clone(), previous_record);
+    iss.nsec3s
+        .insert_new_record(previous_name.clone(), previous_record);
     iss.modified_nsecs.insert(previous_name.clone());
 }
 
 // Return the effective result HashSet even when the NSEC3 record gets deleted.
 fn nsec3_update_bitmap(
     name: &Name<Bytes>,
-    nsec3_record: &Zrd,
-    nsec3: &Nsec3<Bytes>,
+    nsec3_record: &RegularRecord,
+    nsec3: &NewNsec3,
     curr: &HashSet<Rtype>,
     add: &HashSet<Rtype>,
     delete: &HashSet<Rtype>,
@@ -3718,12 +3729,13 @@ fn nsec3_hash_parts(
     name: &Name<Bytes>,
     iss: &IncrementalSigningState,
 ) -> (OwnerHash<Bytes>, Name<Bytes>) {
+    let old_nsec3param = new_base_nsec3param_to_old_base(&iss.nsec3param);
     let nsec3_hash_octets = OwnerHash::<Bytes>::octets_from(
         nsec3_hash::<_, _, BytesMut>(
             name,
-            iss.nsec3param.hash_algorithm(),
-            iss.nsec3param.iterations(),
-            iss.nsec3param.salt(),
+            old_nsec3param.hash_algorithm(),
+            old_nsec3param.iterations(),
+            old_nsec3param.salt(),
         )
         .expect("should not fail"),
     );
@@ -4012,14 +4024,60 @@ fn new_base_rtype_to_old_base_rtype(rtype: NewRtype) -> Rtype {
 
 /// Turn a new base Class into an old base Class.
 // TODO: add to domain.
-fn new_base_class_to_old_base_class(class: NewClass) -> Class {
+fn new_base_class_to_old_base(class: NewClass) -> Class {
     let v: u16 = class.code.into();
     v.into()
 }
 
 /// Turn a new base Ttl into an old base Ttl.
 // TODO: add to domain.
-fn new_base_ttl_to_old_base_ttl(ttl: NewTtl) -> Ttl {
+fn new_base_ttl_to_old_base(ttl: NewTtl) -> Ttl {
     let v: u32 = ttl.into();
     Ttl::from_secs(v)
+}
+
+fn old_base_nsec3param_to_new_base<Oct>(nsec3param: &Nsec3param<Oct>) -> Box<NewNsec3Param>
+where
+    Oct: AsRef<[u8]>,
+{
+    let mut buf = vec![];
+    nsec3param.compose_rdata(&mut buf).expect("should not fail");
+    let new_nsec3param = NewNsec3Param::parse_bytes_by_ref(&buf)
+        .expect("should be able to parse old base Nsec3Param");
+    let nsec3param_box: Box<NewNsec3Param> = new_nsec3param.unsized_copy_into();
+    nsec3param_box
+}
+
+fn new_base_nsec3param_to_old_base(nsec3param: &NewNsec3Param) -> Nsec3param<Bytes> {
+    let bytes = nsec3param.as_bytes().to_vec();
+    let mut parser = Parser::from_ref(&bytes);
+    let old_nsec3param = Nsec3param::parse(&mut parser)
+        .expect("old base Nsec3param should be able to parse new base Nsec3Param");
+    assert!(parser.remaining() == 0);
+    let old_nsec3param = Nsec3param::<Vec<u8>>::octets_from(old_nsec3param);
+    Nsec3param::<Bytes>::octets_from(old_nsec3param)
+}
+
+fn new_base_bytes_to_old_base_ownerhash(owner: &SizePrefixed<u8, [u8]>) -> OwnerHash<Bytes> {
+    // There is no parse for OwnerHash. Hack around it be just dropping the
+    // first byte of the slice. This is the length byte.
+    let bytes = &owner.as_bytes()[1..];
+    let old_ownerhash =
+        OwnerHash::from_octets(bytes).expect("OwnerHash should accept new base bytes");
+    let old_ownerhash = OwnerHash::<Vec<u8>>::octets_from(old_ownerhash);
+    let x = OwnerHash::<Bytes>::octets_from(old_ownerhash);
+    x
+}
+
+fn ownerhash_to_new_base_bytes<Octs>(ownerhash: OwnerHash<Octs>) -> Box<SizePrefixed<u8, [u8]>>
+where
+    Octs: AsRef<[u8]>,
+{
+    let bytes = ownerhash.as_slice();
+
+    // Assume that OwnerHash limits the length to something that fits in a u8.
+    let mut vec = vec![bytes.len() as u8];
+    vec.extend_from_slice(bytes);
+    let sp_box = Vec::into_boxed_slice(vec);
+    SizePrefixed::parse_bytes_in(sp_box).expect("Should not fail")
 }
