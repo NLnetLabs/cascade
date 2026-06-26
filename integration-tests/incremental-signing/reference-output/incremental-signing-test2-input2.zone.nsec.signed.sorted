@@ -2,6 +2,14 @@
 3msev9usmd4br9s97v51r2tdvmr9iqo1.example.	3600	IN	RRSIG	NSEC 15 2 3600 20231114221320 20200913122640 2835 example. VWUuLKLDh8RGF5grYWgk1gDmahzd7iAjFa9ujasFZwFcf67x4ExkjhM+hfQ5TpxZu3rbHjNiEE7qOH2YxcTiAA==
 3msev9usmd4br9s97v51r2tdvmr9iqo1.example.	3600	IN	RRSIG	TXT 15 2 3600 20231114221320 20200913122640 2835 example. uwQV+V+4An/FmhvLnmpAilSJrdfRiuXxq4QsQduhGwA6kn+F1zdP0U2iyh24Z7w2na5YIqFhHHx+CXCXNl1uBg==
 3msev9usmd4br9s97v51r2tdvmr9iqo1.example.	3600	IN	TXT	"At NSEC3 name"
+B.canonical-test.example.	3600	IN	NSEC	c.canonical-test.example. TXT RRSIG NSEC
+B.canonical-test.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. 9OOeK4nZ5rkXARaXTgxct7bcMQPmAZeJT0bMrLlxXWLOpQKQpAtwlnvv0CFgRP+coQa4ZoGTwxP9aLWpW9fTBg==
+B.canonical-test.example.	3600	IN	RRSIG	TXT 15 3 3600 20231114221320 20200913122640 2835 example. xXeEpbck6UqlPUJsbIzYcSiMsPNDID97PNJ3mb62RajRETawpGgSQfth9eLwSjWvaE+RSG34xDQNO4lAj6yaBw==
+B.canonical-test.example.	3600	IN	TXT	"second"
+a.canonical-test.example.	3600	IN	NSEC	B.canonical-test.example. TXT RRSIG NSEC
+a.canonical-test.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. rYPTHo5OadlAeFtjk5eqADEmA4Mi+2IqoFtnzhTyLIpKZKaMHrbzTN5tUTz4qHno7wiTjgg3BknhHA++PHXQBQ==
+a.canonical-test.example.	3600	IN	RRSIG	TXT 15 3 3600 20231114221320 20200913122640 2835 example. I9Ea1G0f5OyWigbJMZaEPiwM6UbtzNnhh5GeCXp7q4ntnAsHf+55rQjggCYaRsGxDED4rdPc9bz5UgXPnyRtAw==
+a.canonical-test.example.	3600	IN	TXT	"first"
 a.delegation.ent.example.	3600	IN	A	192.0.2.1
 a.delegation.example.	3600	IN	A	192.0.2.0
 a.ds-delegation.example.	3600	IN	A	192.0.2.1
@@ -14,6 +22,10 @@ aaaa.ds-delegation.example.	3600	IN	AAAA	2001:db8::1
 aaaa.ds-delegation.example.	3600	IN	NSEC	txt.ent.ds-delegation.example. AAAA RRSIG NSEC
 aaaa.ds-delegation.example.	3600	IN	RRSIG	AAAA 15 3 3600 20231114221320 20200913122640 2835 example. Zbwm2ubJLrWdbWBbEEYF0OYEG6q6N12mZ304TT2l/18abaQuly7oKvy3GJDIQK952bGzGlwxC9a6D/8wZ1yoCA==
 aaaa.ds-delegation.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. bLmhAGuHY13TwGRDrTpvrDXEV8YuzPBN8XLXzVSkBKXONdbaM/Y4vWP3l+EiXpyt0Y3qxsj+t9hwlDcgYYH/Bg==
+c.canonical-test.example.	3600	IN	NSEC	delegation.example. TXT RRSIG NSEC
+c.canonical-test.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. ItXzEp0GNAwLAAK7K/y1sDK4BSGeFxXjtGlR4LuxGF7oUY5lw2+kD2J8Y1fH1+sy0CSg0dVGMsPDyNCWWxqlBA==
+c.canonical-test.example.	3600	IN	RRSIG	TXT 15 3 3600 20231114221320 20200913122640 2835 example. tA46DalTOJzyZxoPxDTGudGvDkHnVdaryh6JSGya9BweQA+/Vn6kdy3bxPZKbOCXMsjzBWACKMsk2618Kc9CBA==
+c.canonical-test.example.	3600	IN	TXT	"third"
 cname.delegation.example.	3600	IN	CNAME	cname-target.example.
 delegation-ds.example.	3600	IN	DS	12345 13 253 03
 delegation-ds.example.	3600	IN	NS	ns2.example.
@@ -53,8 +65,8 @@ syogkgc.example.	3600	IN	RRSIG	TXT 15 2 3600 20231114221320 20200913122640 2835 
 syogkgc.example.	3600	IN	TXT	"new last NSEC3 hash"
 to-be-occluded.new-delegation.example.	3600	IN	DS	12345 13 253 05
 to-be-occluded.new-delegation.example.	3600	IN	NS	ns4.example.
-txt.add.example.	3600	IN	NSEC	delegation.example. TXT RRSIG NSEC
-txt.add.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. q33pcv7Ux7n59r2KsIXsr36oRywF5Q3lPNCuQi+44T/TVyGuURJgLr9RYxnOff6ufWr2MTgjtWKdw2d6OrplDw==
+txt.add.example.	3600	IN	NSEC	a.canonical-test.example. TXT RRSIG NSEC
+txt.add.example.	3600	IN	RRSIG	NSEC 15 3 3600 20231114221320 20200913122640 2835 example. bHGW40KcEvlH6b4aaYVieB95i9xg124grDIqL0vKIzEAo++ozrl8Gza9DBAep9lnx4to6tfPgx8OA49csoXFAw==
 txt.add.example.	3600	IN	RRSIG	TXT 15 3 3600 20231114221320 20200913122640 2835 example. IMXtwJrrNyIwGJsdYyKkRXF4IwdZlT/Azc8jnmaKoG/dOqfzmCtbbVTgiZTxuLmXzVDSRZX4PWTDGXPXWmn4BQ==
 txt.add.example.	3600	IN	TXT	"New name and RRset"
 txt.delegation.ent.example.	3600	IN	TXT	"TXT not-below/below delegation"
