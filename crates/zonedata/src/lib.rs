@@ -145,7 +145,6 @@
 //!   be optimized, many of the other fields can be deduplicated.
 
 use std::hash::Hash;
-use std::hash::Hasher;
 use std::{
     cmp, fmt,
     iter::Peekable,
@@ -228,7 +227,7 @@ pub fn is_signing(rtype: RType, at_apex: impl FnOnce() -> bool) -> bool {
 //----------- Record -----------------------------------------------------------
 
 /// A DNS record.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegularRecord(pub domain::new::base::Record<Box<RevName>, BoxedRecordData>);
 
 // Compatibility with domain old base. Maybe these need to be added to
@@ -270,15 +269,6 @@ impl Deref for RegularRecord {
 impl DerefMut for RegularRecord {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
-    }
-}
-
-impl Hash for RegularRecord {
-    fn hash<H>(&self, h: &mut H)
-    where
-        H: Hasher,
-    {
-        self.0.hash(h);
     }
 }
 
