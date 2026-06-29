@@ -414,7 +414,7 @@ impl WorkSpace<'_> {
         }
 
         for sigs in new_sigs {
-            iss.rrsigs.insert_new_records(sigs);
+            iss.rrsigs.replace_with_new_records(sigs);
         }
 
         // Assume we signed at least one record. If we don't then something is
@@ -511,7 +511,7 @@ impl WorkSpace<'_> {
             }
 
             for sigs in new_sigs {
-                iss.rrsigs.insert_new_records(sigs);
+                iss.rrsigs.replace_with_new_records(sigs);
             }
 
             // Clear key_roll.
@@ -600,7 +600,7 @@ impl WorkSpace<'_> {
         }
 
         for sigs in new_sigs {
-            iss.rrsigs.insert_new_records(sigs);
+            iss.rrsigs.replace_with_new_records(sigs);
         }
         Ok(())
     }
@@ -1101,7 +1101,7 @@ impl WorkSpace<'_> {
             &mut new_sigs,
         )?;
         iss.new_apex.insert(key.1, zonemd_records);
-        iss.rrsigs.insert_new_records(new_sigs[0].clone());
+        iss.rrsigs.replace_with_new_records(new_sigs[0].clone());
         Ok(())
     }
 
@@ -1395,7 +1395,7 @@ impl WorkSpace<'_> {
             }
         }
         for sigs in new_sigs {
-            iss.rrsigs.insert_new_records(sigs);
+            iss.rrsigs.replace_with_new_records(sigs);
         }
         Ok(())
     }
@@ -1778,7 +1778,7 @@ impl<'a> IncrementalSigningState<'a> {
             }
         }
         for sigs in new_sigs {
-            self.rrsigs.insert_new_records(sigs);
+            self.rrsigs.replace_with_new_records(sigs);
         }
         for old_rrset in self.old_data.values() {
             // What is left in old_data is removed.
@@ -2211,7 +2211,7 @@ impl<'a> IncrementalSigningState<'a> {
             )?;
         }
         for sig in new_sigs {
-            self.rrsigs.insert_new_records(sig);
+            self.rrsigs.replace_with_new_records(sig);
         }
         Ok(())
     }
@@ -2267,7 +2267,7 @@ impl<'a> IncrementalSigningState<'a> {
             )?;
         }
         for sig in new_sigs {
-            self.rrsigs.insert_new_records(sig);
+            self.rrsigs.replace_with_new_records(sig);
         }
         Ok(())
     }
@@ -2356,7 +2356,9 @@ impl<'zd> Rrsigs<'zd> {
         }
     }
 
-    fn insert_new_records(&mut self, records: Vec<RegularRecord>) {
+    /// Replace the signature for an RRset with a new collection of signatures.
+    /// If there were no previous signature then this is an insert.
+    fn replace_with_new_records(&mut self, records: Vec<RegularRecord>) {
         let NewRecordData::Rrsig(rrsig) = records[0].data() else {
             panic!("ZoneRecordData::Rrsig expected");
         };
@@ -2616,6 +2618,8 @@ impl<'a> Iterator for RrsigsValuesIter<'a> {
     }
 }
 
+/// Changes to the signatures for an RRset. Note that the signatures
+/// are not ordered.
 #[derive(Debug)]
 enum RrsigChange<'zd> {
     Delete {
@@ -3505,7 +3509,7 @@ fn sign_rtype_set(
         )?;
     }
     for sigs in new_sigs {
-        iss.rrsigs.insert_new_records(sigs);
+        iss.rrsigs.replace_with_new_records(sigs);
     }
     Ok(())
 }
