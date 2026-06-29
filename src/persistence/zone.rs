@@ -10,6 +10,7 @@ use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
+    server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState, save_state_now},
 };
@@ -110,7 +111,17 @@ impl ZonePersistenceHandle<'_> {
                     "Restored diffs: {:?}",
                     handle.state.persistence.loaded_diff_paths
                 );
-                handle.storage().finish_signed_restoration(restored);
+                let (loaded_reviewer, signed_reviewer, viewer) =
+                    handle.storage().finish_signed_restoration(restored);
+
+                // Register the zone against the zone servers.
+                LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+                SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+                PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+                // Send a notification that the state machine is now passive.
+                handle.storage().on_passive();
+
                 handle.state.persistence.ongoing.finish();
             });
     }
@@ -171,7 +182,7 @@ impl ZonePersistenceHandle<'_> {
                 // cannot be taken until the outer function terminates.
                 let mut handle = zone.write_handle(&center);
 
-                handle.get().start_switch(persisted);
+                handle.get().finish_signed_persistence(persisted);
 
                 handle.state.persistence.ongoing.finish();
             });
@@ -185,7 +196,17 @@ fn abandon_loaded_restoration(
 ) {
     reset_state_due_to_abandoned_restore(center, zone);
     let mut handle = zone.write_handle(center);
-    handle.storage().abandon_loaded_restoration(restorer);
+    let (loaded_reviewer, signed_reviewer, viewer) =
+        handle.storage().abandon_loaded_restoration(restorer);
+
+    // Update the zone servers.
+    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+    // Send a notification that the state machine is now passive.
+    handle.storage().on_passive();
+
     handle.state.persistence.ongoing.finish();
 }
 
@@ -196,7 +217,17 @@ fn abandon_signed_restoration(
 ) {
     reset_state_due_to_abandoned_restore(center, zone);
     let mut handle = zone.write_handle(center);
-    handle.storage().abandon_signed_restoration(restorer);
+    let (loaded_reviewer, signed_reviewer, viewer) =
+        handle.storage().abandon_signed_restoration(restorer);
+
+    // Update the zone servers.
+    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+    // Send a notification that the state machine is now passive.
+    handle.storage().on_passive();
+
     handle.state.persistence.ongoing.finish();
 }
 

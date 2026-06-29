@@ -15,6 +15,7 @@ use crate::{Data, DiffData, LoadedZoneReader, SignedZoneReader};
 ///
 /// [`ZoneViewer`] offers complete (read-only) access to the current
 /// authoritative instance of a zone.
+#[must_use = "Dropping this will lock up the zone data storage"]
 pub struct ZoneViewer {
     /// The underlying data.
     data: Arc<Data>,
@@ -117,6 +118,7 @@ impl ZoneViewer {
 /// [`LoadedZoneReviewer`] offers read-only access to the loaded component
 /// of an upcoming instance of a zone, allowing its contents to be reviewed
 /// before it is signed or it becomes authoritative.
+#[must_use = "Dropping this will lock up the zone data storage"]
 pub struct LoadedZoneReviewer {
     /// The underlying data.
     data: Arc<Data>,
@@ -198,6 +200,7 @@ impl LoadedZoneReviewer {
 /// [`SignedZoneReviewer`] offers complete (read-only) access to an upcoming
 /// signed instance of a zone, allowing its contents to be reviewed before it
 /// becomes authoritative.
+#[must_use = "Dropping this will lock up the zone data storage"]
 pub struct SignedZoneReviewer {
     /// The underlying data.
     data: Arc<Data>,
