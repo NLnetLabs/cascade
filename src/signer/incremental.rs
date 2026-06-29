@@ -2358,11 +2358,19 @@ impl<'zd> Rrsigs<'zd> {
 
     /// Replace the signature for an RRset with a new collection of signatures.
     /// If there were no previous signature then this is an insert.
+    /// The list of RRSIG records has to have a common owner name and
+    /// the same type_covered().
     fn replace_with_new_records(&mut self, records: Vec<RegularRecord>) {
         let NewRecordData::Rrsig(rrsig) = records[0].data() else {
             panic!("ZoneRecordData::Rrsig expected");
         };
-        let buf_key = (records[0].owner().unsized_copy_into(), rrsig.type_covered());
+
+        let buf_key: (Box<RevName>, _) =
+            (records[0].owner().unsized_copy_into(), rrsig.type_covered());
+
+        // Check that all records have the same owner name and the same
+        // type_covered().
+        debug_assert!(records.iter().all(|r| r.owner() == buf_key.0.as_ref() && matches!(r.data(), NewRecordData::Rrsig(rrsig) if rrsig.type_covered() == buf_key.1)));
 
         // First check the changes map.
         match self.changes.entry(buf_key) {
