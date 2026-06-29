@@ -2339,8 +2339,11 @@ impl<'zd> Rrsigs<'zd> {
                 // Whether a new change is Modified or Insert depends on
                 // whether RRSIGs already exist or not.
                 let key = (record.owner(), rrsig.type_covered());
-                let change = if let Some(_sigs) = self.old_rrsigs.get(&key) {
-                    todo!();
+                let change = if let Some(old_sigs) = self.old_rrsigs.get(&key) {
+                    RrsigChange::Modified {
+                        old: old_sigs.to_vec(),
+                        new: vec![record],
+                    }
                 } else {
                     // Nothing yet. Create an Insert.
                     RrsigChange::Insert { new: vec![record] }
@@ -2371,19 +2374,13 @@ impl<'zd> Rrsigs<'zd> {
             hash_map::Entry::Occupied(mut entry) => {
                 let change = entry.get_mut();
                 match change {
-                    RrsigChange::Delete { .. } => {
-                        // Create a new empty change, either insert or
-                        // modify depending on the existing RRSIGS.
-                        let key = (records[0].owner(), rrsig.type_covered());
-                        let new_change = if let Some(rrsigs) = self.old_rrsigs.get(&key) {
-                            RrsigChange::Modified {
-                                old: rrsigs.to_vec(),
-                                new: records,
-                            }
-                        } else {
-                            todo!();
+                    RrsigChange::Delete { old } => {
+                        // Old RRSIGs existed but were deleted. Create a
+                        // Modify.
+                        *change = RrsigChange::Modified {
+                            old: old.to_vec(),
+                            new: records,
                         };
-                        *change = new_change;
                     }
                     RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
                         *new = records;
