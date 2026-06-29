@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-beta2" "Cascade"
+.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-beta3" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -183,30 +183,33 @@ This needs to be a file path accessible by the Cascade daemon.
 .B \-\-import\-ksk\-file <IMPORT_KSK_FILE>
 Import a key pair as a KSK.
 .sp
-The file path needs to be the public key file of the KSK. The private key
-file name is derived from the public key file. Key files are not
-actually copied from the specified paths and must remain accessible
-to the server.
+The file path needs to either be a public key file of the KSK with
+extension .key, or a private key file of the KSK with extension .private.
+The path to the other half of the key will be derived by replacing .key
+with .private or vice versa. Key files are not actually copied from the
+specified paths and must remain accessible to the server.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-import\-zsk\-file <IMPORT_ZSK_FILE>
 Import a key pair as a ZSK.
 .sp
-The file path needs to be the public key file of the ZSK. The private key
-file name is derived from the public key file. Key files are not
-actually copied from the specified paths and must remain accessible
-to the server.
+The file path needs to either be a public key file of the ZSK with
+extension .key, or a private key file of the ZSK with extension .private.
+The path to the other half of the key will be derived by replacing .key
+with .private or vice versa. Key files are not actually copied from the
+specified paths and must remain accessible to the server.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-import\-csk\-file <IMPORT_CSK_FILE>
 Import a key pair as a CSK.
 .sp
-The file path needs to be the public key file of the CSK. The private key
-file name is derived from the public key file. Key files are not
-actually copied from the specified paths and must remain accessible
-to the server.
+The file path needs to either be a public key file of the CSK with
+extension .key, or a private key file of the CSK with extension .private.
+The path to the other half of the key will be derived by replacing .key
+with .private or vice versa. Key files are not actually copied from the
+specified paths and must remain accessible to the server.
 .UNINDENT
 .INDENT 0.0
 .TP

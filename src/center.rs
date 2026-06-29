@@ -152,15 +152,22 @@ pub async fn add_zone(
 
             // Don't try to restore zone data, since it's a completely new zone.
             //
-            // This will clear the data for the zone and register it against the
-            // zone servers.
-            ZoneHandle {
+            // This will clear the data for the zone.
+            let mut handle = ZoneHandle {
                 zone: &zone,
                 state: &mut zone_state,
                 center,
-            }
-            .storage()
-            .abandon_loaded_restoration(restorer);
+            };
+            let (loaded_reviewer, signed_reviewer, viewer) =
+                handle.storage().abandon_loaded_restoration(restorer);
+
+            // Update the zone servers.
+            LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+            SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+            PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+            // Send a notification that the state machine is now passive.
+            handle.storage().on_passive();
         }
 
         // Insert the zone in the global set.

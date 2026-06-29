@@ -10,7 +10,7 @@ documentation = "https://cascade.docs.nlnetlabs.nl"
 repository = "https://github.com/NLnetLabs/cascade"
 license = "BSD-3-Clause"
 
-version = "0.1.0-beta3-dev"
+version = "0.1.0-beta4-dev"
 rust-version = "1.88"
 edition = "2024"
 
@@ -242,6 +242,7 @@ assets = [
 ["doc/manual/build/man/cascade-debug.1", "usr/share/man/man1/cascade-debug.1", "644"],
 ["doc/manual/build/man/cascade-health.1", "usr/share/man/man1/cascade-health.1", "644"],
 ["doc/manual/build/man/cascade-hsm.1", "usr/share/man/man1/cascade-hsm.1", "644"],
+["doc/manual/build/man/cascade-info.1", "usr/share/man/man1/cascade-info.1", "644"],
 ["doc/manual/build/man/cascade-tsig.1", "usr/share/man/man1/cascade-tsig.1", "644"],
 ["doc/manual/build/man/cascade-keyset.1", "usr/share/man/man1/cascade-keyset.1", "644"],
 ["doc/manual/build/man/cascade-policy.1", "usr/share/man/man1/cascade-policy.1", "644"],
@@ -295,6 +296,7 @@ assets = [
 { source = "doc/manual/build/man/cascade-debug.1", dest = "/usr/share/man/man1/cascade-debug.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-health.1", dest = "/usr/share/man/man1/cascade-health.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-hsm.1", dest = "/usr/share/man/man1/cascade-hsm.1", mode = "644", doc = true },
+{ source = "doc/manual/build/man/cascade-info.1", dest = "/usr/share/man/man1/cascade-info.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-tsig.1", dest = "/usr/share/man/man1/cascade-tsig.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-keyset.1", dest = "/usr/share/man/man1/cascade-keyset.1", mode = "644", doc = true },
 { source = "doc/manual/build/man/cascade-policy.1", dest = "/usr/share/man/man1/cascade-policy.1", mode = "644", doc = true },
