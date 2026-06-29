@@ -305,7 +305,7 @@ impl WorkSpace<'_> {
             since_last_time = effective_lifetime;
         }
 
-        let total_signatures = iss.rrsigs.len();
+        let total_signatures = iss.rrsigs.signed_rrset_count();
 
         let to_sign = since_last_time.as_secs_f64() * (total_signatures as f64)
             / effective_lifetime.as_secs_f64();
@@ -519,7 +519,7 @@ impl WorkSpace<'_> {
             return Ok(());
         }
 
-        let total_signatures = iss.rrsigs.len();
+        let total_signatures = iss.rrsigs.signed_rrset_count();
 
         let to_sign =
             since_start.as_secs_f64() * (total_signatures as f64) / key_roll_time.as_secs_f64();
@@ -2407,7 +2407,9 @@ impl<'zd> Rrsigs<'zd> {
         RrsigsValuesIter::new(self.old_rrsigs.iter(), &self.changes)
     }
 
-    fn len(&self) -> usize {
+    /// Return the number of RRsets that have signatures taking inserts and
+    /// deletes into account.
+    fn signed_rrset_count(&self) -> usize {
         // Return the number of RRsets that have signatures.
         let len = self.old_rrsigs.len();
 
