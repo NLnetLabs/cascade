@@ -2322,19 +2322,13 @@ impl<'zd> Rrsigs<'zd> {
             hash_map::Entry::Occupied(mut entry) => {
                 let change = entry.get_mut();
                 match change {
-                    RrsigChange::Delete { .. } => {
-                        // Create a new empty change, either insert of
-                        // modify depending on the existing RRSIGS.
-                        let key = (record.owner(), rrsig.type_covered());
-                        let new_change = if let Some(rrsigs) = self.old_rrsigs.get(&key) {
-                            RrsigChange::Modified {
-                                old: rrsigs.to_vec(),
-                                new: vec![record],
-                            }
-                        } else {
-                            todo!();
+                    RrsigChange::Delete { old } => {
+                        // We found Delete so old RRSIGs exit and we need
+                        // to create a Modified.
+                        *change = RrsigChange::Modified {
+                            old: old.to_vec(),
+                            new: vec![record],
                         };
-                        *change = new_change;
                     }
                     RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
                         new.push(record);
@@ -2342,7 +2336,7 @@ impl<'zd> Rrsigs<'zd> {
                 }
             }
             hash_map::Entry::Vacant(entry) => {
-                // Whether to new change is Modified or Insert depends on
+                // Whether a new change is Modified or Insert depends on
                 // whether RRSIGs already exist or not.
                 let key = (record.owner(), rrsig.type_covered());
                 let change = if let Some(_sigs) = self.old_rrsigs.get(&key) {
