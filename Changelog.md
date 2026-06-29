@@ -24,6 +24,11 @@ Released yyyy-mm-dd.
 
 ### Bug fixes
 
+- If the input zone contains DNSSEC records, they are removed during signing,
+  but (changes to them) were still showing up in IXFR output from the signed
+  zone; remove them from IXFRs ([#835] by @bal-e, reported in [#798] by
+  @gryphius).
+
 ### Other changes
 
 - Extend cascade tsig remove error to report the users of the key. ([#719] by
@@ -35,7 +40,10 @@ Released yyyy-mm-dd.
 
 ### Acknowledgements
 
+[#798]: https://github.com/NLnetLabs/cascade/issues/798
+
 [#719]: https://github.com/NLnetLabs/cascade/pull/719
+[#835]: https://github.com/NLnetLabs/cascade/pull/835
 
 ## 0.1.0-beta3 'Villa Volta'
 
