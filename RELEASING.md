@@ -23,7 +23,7 @@
 
 # Merge and release
 - git checkout main
-- git tag
+- git tag -a (annotation: `Release <VERSION> '<NAME>'`)
 - git push --tags
 - GH should automatically run the packaging workflow again creating run NNNNNNNN
 - if successful:
