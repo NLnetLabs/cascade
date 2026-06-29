@@ -2423,12 +2423,7 @@ impl<'zd> Rrsigs<'zd> {
             })
             .sum();
 
-        let ilen = (len as isize) + changes;
-        if ilen >= 0 {
-            ilen as usize
-        } else {
-            unreachable!()
-        }
+        len.checked_add_signed(changes).expect("len + changes >= 0")
     }
 
     fn remove(&mut self, key: &RrsigKey) -> Option<()> {
