@@ -324,7 +324,7 @@ impl WorkSpace<'_> {
                     + self.policy.signer.signature_refresh_interval
             {
                 let owner_namebuf: NameBuf = RevNameBuf::copy_from(owner).into();
-                let old_rtype = new_base_rtype_to_old_base_rtype(*rtype);
+                let old_rtype = new_base_rtype_to_old_base_rtype(rtype);
                 error!(
                     "TTL of {}/{} too large: signature-remain-time ({}) + TTL ({}) + signature-refresh-interval ({}) >= signature-lifetime ({})",
                     owner_namebuf,
@@ -364,12 +364,12 @@ impl WorkSpace<'_> {
                 break;
             }
 
-            let key = (*owner, **rtype);
+            let key = (*owner, *rtype);
             let old_key = (
                 revname_to_old_base_name(owner),
-                new_base_rtype_to_old_base_rtype(**rtype),
+                new_base_rtype_to_old_base_rtype(*rtype),
             );
-            if **rtype == NewRtype::NSEC {
+            if *rtype == NewRtype::NSEC {
                 let record = iss.nsecs.get(&old_key.0).expect("NSEC record should exist");
                 let records = [record.clone()];
                 sign_records(
@@ -380,7 +380,7 @@ impl WorkSpace<'_> {
                     iss.expiration,
                     &mut new_sigs,
                 )?;
-            } else if **rtype == NewRtype::NSEC3 {
+            } else if *rtype == NewRtype::NSEC3 {
                 let record = iss
                     .nsec3s
                     .get(&old_key.0)
@@ -461,12 +461,12 @@ impl WorkSpace<'_> {
                     continue;
                 }
 
-                let key = (owner, *rtype);
+                let key = (owner, rtype);
                 let old_key = (
                     revname_to_old_base_name(owner),
-                    new_base_rtype_to_old_base_rtype(*rtype),
+                    new_base_rtype_to_old_base_rtype(rtype),
                 );
-                if *rtype == NewRtype::NSEC {
+                if rtype == NewRtype::NSEC {
                     let record = iss.nsecs.get(&old_key.0).expect("NSEC record should exist");
                     let records = [record.clone()];
                     sign_records(
@@ -477,7 +477,7 @@ impl WorkSpace<'_> {
                         iss.expiration,
                         &mut new_sigs,
                     )?;
-                } else if *rtype == NewRtype::NSEC3 {
+                } else if rtype == NewRtype::NSEC3 {
                     let record = iss
                         .nsec3s
                         .get(&old_key.0)
@@ -550,12 +550,12 @@ impl WorkSpace<'_> {
                 continue;
             }
 
-            let key = (*owner, **rtype);
+            let key = (*owner, *rtype);
             let old_key = (
                 revname_to_old_base_name(owner),
-                new_base_rtype_to_old_base_rtype(**rtype),
+                new_base_rtype_to_old_base_rtype(*rtype),
             );
-            if **rtype == NewRtype::NSEC {
+            if *rtype == NewRtype::NSEC {
                 let record = iss.nsecs.get(&old_key.0).expect("NSEC record should exist");
                 let records = [record.clone()];
                 sign_records(
@@ -566,7 +566,7 @@ impl WorkSpace<'_> {
                     iss.expiration,
                     &mut new_sigs,
                 )?;
-            } else if **rtype == NewRtype::NSEC3 {
+            } else if *rtype == NewRtype::NSEC3 {
                 let record = iss
                     .nsec3s
                     .get(&old_key.0)
@@ -1031,7 +1031,7 @@ impl WorkSpace<'_> {
             iss.rrsigs
                 .iter()
                 .filter_map(|((o, t), r)| {
-                    if *o != *new_origin.as_ref() || *t != NewRtype::ZONEMD {
+                    if *o != *new_origin.as_ref() || t != NewRtype::ZONEMD {
                         Some(r)
                     } else {
                         None
@@ -2285,11 +2285,12 @@ impl<'a> IncrementalSigningState<'a> {
     }
 }
 
+type RrsigKey<'a> = (&'a RevName, NewRtype);
 struct Rrsigs<'zd> {
     // Store the existing RRSIG records. The incremental signer doesn't
     // need them, but we need them to inform the zone store which records
     // have been removed.
-    old_rrsigs: HashMap<(&'zd RevName, NewRtype), Vec<&'zd RegularRecord>>,
+    old_rrsigs: HashMap<RrsigKey<'zd>, Vec<&'zd RegularRecord>>,
 
     changes: HashMap<(Box<RevName>, NewRtype), RrsigChange<'zd>>,
 }
@@ -2428,7 +2429,7 @@ impl<'zd> Rrsigs<'zd> {
         }
     }
 
-    fn remove(&mut self, key: &(&RevName, NewRtype)) -> Option<()> {
+    fn remove(&mut self, key: &RrsigKey) -> Option<()> {
         // Remove normally returns the removed item, but we don't need
         // that. We should switch to a boolean.
 
@@ -2496,7 +2497,7 @@ impl<'zd> Rrsigs<'zd> {
     }
 }
 
-type RrsigIterItem<'a> = ((&'a RevName, &'a NewRtype), Vec<&'a RegularRecord>);
+type RrsigIterItem<'a> = (RrsigKey<'a>, Vec<&'a RegularRecord>);
 impl<'a> IntoIterator for &'a Rrsigs<'a> {
     type Item = RrsigIterItem<'a>;
     type IntoIter = RrsigIter<'a>;
@@ -2507,14 +2508,14 @@ impl<'a> IntoIterator for &'a Rrsigs<'a> {
 
 #[allow(clippy::type_complexity)]
 struct RrsigIter<'a> {
-    iter: Option<hash_map::Iter<'a, (&'a RevName, NewRtype), Vec<&'a RegularRecord>>>,
+    iter: Option<hash_map::Iter<'a, RrsigKey<'a>, Vec<&'a RegularRecord>>>,
     changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange<'a>>,
     changes_iter: Option<hash_map::Iter<'a, (Box<RevName>, NewRtype), RrsigChange<'a>>>,
 }
 
 impl<'a> RrsigIter<'a> {
     fn new(
-        iter: hash_map::Iter<'a, (&RevName, NewRtype), Vec<&RegularRecord>>,
+        iter: hash_map::Iter<'a, RrsigKey<'a>, Vec<&RegularRecord>>,
         changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange>,
     ) -> RrsigIter<'a> {
         RrsigIter {
@@ -2537,7 +2538,7 @@ impl<'a> Iterator for RrsigIter<'a> {
                     continue;
                 }
 
-                return Some(((name, rtype), sigs.to_vec()));
+                return Some(((name, *rtype), sigs.to_vec()));
             }
             self.iter = None;
             self.changes_iter = Some(self.changes.iter());
@@ -2551,7 +2552,7 @@ impl<'a> Iterator for RrsigIter<'a> {
                     }
                     RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
                         let new: Vec<&RegularRecord> = new.iter().collect();
-                        return Some(((name.as_ref(), rtype), new));
+                        return Some(((name.as_ref(), *rtype), new));
                     }
                 }
             }
@@ -2563,14 +2564,14 @@ impl<'a> Iterator for RrsigIter<'a> {
 
 #[allow(clippy::type_complexity)]
 struct RrsigsValuesIter<'a> {
-    iter: Option<hash_map::Iter<'a, (&'a RevName, NewRtype), Vec<&'a RegularRecord>>>,
+    iter: Option<hash_map::Iter<'a, RrsigKey<'a>, Vec<&'a RegularRecord>>>,
     changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange<'a>>,
     changes_values: Option<hash_map::Values<'a, (Box<RevName>, NewRtype), RrsigChange<'a>>>,
 }
 
 impl<'a> RrsigsValuesIter<'a> {
     fn new(
-        iter: hash_map::Iter<'a, (&RevName, NewRtype), Vec<&RegularRecord>>,
+        iter: hash_map::Iter<'a, RrsigKey<'a>, Vec<&RegularRecord>>,
         changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange>,
     ) -> RrsigsValuesIter<'a> {
         RrsigsValuesIter {
