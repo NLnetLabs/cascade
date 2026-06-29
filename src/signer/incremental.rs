@@ -2530,43 +2530,31 @@ impl<'a> Iterator for RrsigIter<'a> {
     type Item = RrsigIterItem<'a>;
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
         if let Some(iter) = &mut self.iter {
-            loop {
-                let next = iter.next();
-                if let Some(((name, rtype), sigs)) = next {
-                    // Check if changes has something.
-                    let key = (RevNameBuf::copy_from(name), *rtype);
-                    if self.changes.get(&key).is_some() {
-                        // Get it from changes if not deleted.
-                        continue;
-                    }
-
-                    return Some(((name, rtype), sigs.to_vec()));
+            for ((name, rtype), sigs) in iter.by_ref() {
+                // Check if changes has something.
+                let key = (RevNameBuf::copy_from(name), *rtype);
+                if self.changes.get(&key).is_some() {
+                    // Get it from changes if not deleted.
+                    continue;
                 }
 
-                // End of iterator.
-                break;
+                return Some(((name, rtype), sigs.to_vec()));
             }
             self.iter = None;
             self.changes_iter = Some(self.changes.iter());
         }
         if let Some(changes_iter) = &mut self.changes_iter {
-            loop {
-                let next = changes_iter.next();
-                if let Some(((name, rtype), change)) = next {
-                    match change {
-                        RrsigChange::Delete { .. } => {
-                            // Nothing here.
-                            continue;
-                        }
-                        RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
-                            let new: Vec<&RegularRecord> = new.iter().collect();
-                            return Some(((name.as_ref(), rtype), new));
-                        }
+            for ((name, rtype), change) in changes_iter.by_ref() {
+                match change {
+                    RrsigChange::Delete { .. } => {
+                        // Nothing here.
+                        continue;
+                    }
+                    RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
+                        let new: Vec<&RegularRecord> = new.iter().collect();
+                        return Some(((name.as_ref(), rtype), new));
                     }
                 }
-
-                // End of iterator.
-                break;
             }
             self.changes_iter = None;
         }
@@ -2599,43 +2587,31 @@ impl<'a> Iterator for RrsigsValuesIter<'a> {
 
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
         if let Some(iter) = &mut self.iter {
-            loop {
-                let next = iter.next();
-                if let Some(((name, rtype), sigs)) = next {
-                    // Check if changes has something.
-                    let key = (RevNameBuf::copy_from(name), *rtype);
-                    if self.changes.get(&key).is_some() {
-                        // Get it from changes if not deleted.
-                        continue;
-                    }
-
-                    return Some(sigs.to_vec());
+            for ((name, rtype), sigs) in iter.by_ref() {
+                // Check if changes has something.
+                let key = (RevNameBuf::copy_from(name), *rtype);
+                if self.changes.get(&key).is_some() {
+                    // Get it from changes if not deleted.
+                    continue;
                 }
 
-                // End of iterator.
-                break;
+                return Some(sigs.to_vec());
             }
             self.iter = None;
             self.changes_values = Some(self.changes.values());
         }
         if let Some(changes_values) = &mut self.changes_values {
-            loop {
-                let next = changes_values.next();
-                if let Some(change) = next {
-                    match change {
-                        RrsigChange::Delete { .. } => {
-                            // Nothing here.
-                            continue;
-                        }
-                        RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
-                            let new: Vec<&RegularRecord> = new.iter().collect();
-                            return Some(new.to_vec());
-                        }
+            for change in changes_values.by_ref() {
+                match change {
+                    RrsigChange::Delete { .. } => {
+                        // Nothing here.
+                        continue;
+                    }
+                    RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
+                        let new: Vec<&RegularRecord> = new.iter().collect();
+                        return Some(new.to_vec());
                     }
                 }
-
-                // End of iterator.
-                break;
             }
             self.changes_values = None;
         }
