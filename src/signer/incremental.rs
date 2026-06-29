@@ -39,6 +39,7 @@ use domain::rdata::dnssec::{RtypeBitmap, Timestamp};
 use domain::rdata::nsec3::OwnerHash;
 use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
 use domain::utils::base32;
+use domain::utils::dst::UnsizedCopy;
 use domain::zonefile::inplace::Entry;
 use domain::zonetree::StoredRecord;
 use jiff::tz::TimeZone;
@@ -1280,7 +1281,7 @@ impl WorkSpace<'_> {
         for t in curr_apex_remove {
             let origin = old_base_name_to_revnamebuf(&iss.origin);
             let rtype = old_base_rtype_to_new_base_rtype(*t);
-            let key = (origin, rtype);
+            let key = (origin.as_ref(), rtype);
             iss.new_apex.remove(t);
             iss.rrsigs.remove(&key);
         }
@@ -1721,7 +1722,7 @@ impl<'a> IncrementalSigningState<'a> {
                 new_rrset.sort_by(|a, b| a.as_ref().data().canonical_cmp(b.as_ref().data()));
 
                 let new_name = old_base_name_to_revnamebuf(key.0);
-                let key = (new_name, old_base_rtype_to_new_base_rtype(key.1));
+                let key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(key.1));
                 if *old_rrset != *new_rrset && self.rrsigs.remove(&key).is_some() {
                     sign_records(
                         &self.origin,
@@ -1756,7 +1757,7 @@ impl<'a> IncrementalSigningState<'a> {
                 new_rrset.sort_by(|a, b| a.as_ref().data().canonical_cmp(b.as_ref().data()));
 
                 let new_name = old_base_name_to_revnamebuf(key.0);
-                let key = (new_name, old_base_rtype_to_new_base_rtype(key.1));
+                let key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(key.1));
                 if *old_rrset != *new_rrset && self.rrsigs.remove(&key).is_some() {
                     sign_records(
                         &self.origin,
@@ -1784,7 +1785,7 @@ impl<'a> IncrementalSigningState<'a> {
             let rtype = old_rrset[0].rtype();
             let key = (old_rrset[0].owner().clone(), rtype);
             let new_name = old_base_name_to_revnamebuf(old_rrset[0].owner());
-            let new_key = (new_name, old_base_rtype_to_new_base_rtype(rtype));
+            let new_key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(rtype));
 
             self.rrsigs.remove(&new_key);
 
@@ -1802,7 +1803,7 @@ impl<'a> IncrementalSigningState<'a> {
             let rtype = old_rrset[0].rtype();
             let key = (old_rrset[0].owner().clone(), rtype);
             let new_name = old_base_name_to_revnamebuf(old_rrset[0].owner());
-            let new_key = (new_name, old_base_rtype_to_new_base_rtype(rtype));
+            let new_key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(rtype));
 
             self.rrsigs.remove(&new_key);
 
@@ -1865,7 +1866,7 @@ impl<'a> IncrementalSigningState<'a> {
                             continue;
                         }
                         let new_name = old_base_name_to_revnamebuf(key);
-                        let key = (new_name, old_base_rtype_to_new_base_rtype(rtype));
+                        let key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(rtype));
                         self.rrsigs.remove(&key);
                     }
 
@@ -2019,7 +2020,7 @@ impl<'a> IncrementalSigningState<'a> {
                             continue;
                         }
                         let new_name = old_base_name_to_revnamebuf(key);
-                        let key = (new_name, old_base_rtype_to_new_base_rtype(rtype));
+                        let key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(rtype));
                         self.rrsigs.remove(&key);
                     }
 
@@ -2168,14 +2169,14 @@ impl<'a> IncrementalSigningState<'a> {
     fn remove_nsec_nsec3(&mut self) {
         for k in self.nsecs.keys() {
             let new_name = old_base_name_to_revnamebuf(k);
-            let key = (new_name, NewRtype::NSEC);
+            let key = (new_name.as_ref(), NewRtype::NSEC);
             self.rrsigs.remove(&key);
         }
         self.nsecs = BTreeMap::new();
 
         for k in self.nsec3s.keys() {
             let new_name = old_base_name_to_revnamebuf(k);
-            let key = (new_name, NewRtype::NSEC3);
+            let key = (new_name.as_ref(), NewRtype::NSEC3);
             self.rrsigs.remove(&key);
         }
         self.nsec3s = BTreeMap::new();
@@ -2290,7 +2291,7 @@ struct Rrsigs<'zd> {
     // have been removed.
     old_rrsigs: HashMap<(&'zd RevName, NewRtype), Vec<&'zd RegularRecord>>,
 
-    changes: HashMap<(RevNameBuf, NewRtype), RrsigChange<'zd>>,
+    changes: HashMap<(Box<RevName>, NewRtype), RrsigChange<'zd>>,
 }
 
 impl<'zd> Rrsigs<'zd> {
@@ -2313,7 +2314,7 @@ impl<'zd> Rrsigs<'zd> {
         let NewRecordData::Rrsig(rrsig) = record.data() else {
             panic!("ZoneRecordData::Rrsig expected");
         };
-        let buf_key = (RevNameBuf::copy_from(record.owner()), rrsig.type_covered());
+        let buf_key = (record.owner().unsized_copy_into(), rrsig.type_covered());
 
         // First check the changes map.
         match self.changes.entry(buf_key) {
@@ -2358,10 +2359,7 @@ impl<'zd> Rrsigs<'zd> {
         let NewRecordData::Rrsig(rrsig) = records[0].data() else {
             panic!("ZoneRecordData::Rrsig expected");
         };
-        let buf_key = (
-            RevNameBuf::copy_from(records[0].owner()),
-            rrsig.type_covered(),
-        );
+        let buf_key = (records[0].owner().unsized_copy_into(), rrsig.type_covered());
 
         // First check the changes map.
         match self.changes.entry(buf_key) {
@@ -2430,17 +2428,18 @@ impl<'zd> Rrsigs<'zd> {
         }
     }
 
-    fn remove(&mut self, key: &(RevNameBuf, NewRtype)) -> Option<()> {
+    fn remove(&mut self, key: &(&RevName, NewRtype)) -> Option<()> {
         // Remove normally returns the removed item, but we don't need
         // that. We should switch to a boolean.
 
         // Check if the old version has RRSIGs.
-        let old_key = (key.0.as_ref(), key.1);
+        let old_key = (key.0, key.1);
+        let box_key = (key.0.unsized_copy_into(), key.1);
         if let Some(rrsigs) = self.old_rrsigs.get(&old_key) {
             // There are RRSIGs in the old version. Check if they have been
             // deleted before.
             let mut result = Some(());
-            match self.changes.entry(key.clone()) {
+            match self.changes.entry(box_key.clone()) {
                 hash_map::Entry::Occupied(mut entry) => {
                     let change = entry.get_mut();
                     match change {
@@ -2471,7 +2470,7 @@ impl<'zd> Rrsigs<'zd> {
             // They were not present in the old version, check if they have
             // been added.
             let mut result = None;
-            match self.changes.entry(key.clone()) {
+            match self.changes.entry(box_key) {
                 hash_map::Entry::Occupied(entry) => {
                     let change = entry.get();
                     match change {
@@ -2509,14 +2508,14 @@ impl<'a> IntoIterator for &'a Rrsigs<'a> {
 #[allow(clippy::type_complexity)]
 struct RrsigIter<'a> {
     iter: Option<hash_map::Iter<'a, (&'a RevName, NewRtype), Vec<&'a RegularRecord>>>,
-    changes: &'a HashMap<(RevNameBuf, NewRtype), RrsigChange<'a>>,
-    changes_iter: Option<hash_map::Iter<'a, (RevNameBuf, NewRtype), RrsigChange<'a>>>,
+    changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange<'a>>,
+    changes_iter: Option<hash_map::Iter<'a, (Box<RevName>, NewRtype), RrsigChange<'a>>>,
 }
 
 impl<'a> RrsigIter<'a> {
     fn new(
         iter: hash_map::Iter<'a, (&RevName, NewRtype), Vec<&RegularRecord>>,
-        changes: &'a HashMap<(RevNameBuf, NewRtype), RrsigChange>,
+        changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange>,
     ) -> RrsigIter<'a> {
         RrsigIter {
             iter: Some(iter),
@@ -2532,7 +2531,7 @@ impl<'a> Iterator for RrsigIter<'a> {
         if let Some(iter) = &mut self.iter {
             for ((name, rtype), sigs) in iter.by_ref() {
                 // Check if changes has something.
-                let key = (RevNameBuf::copy_from(name), *rtype);
+                let key = ((*name).unsized_copy_into(), *rtype);
                 if self.changes.get(&key).is_some() {
                     // Get it from changes if not deleted.
                     continue;
@@ -2565,14 +2564,14 @@ impl<'a> Iterator for RrsigIter<'a> {
 #[allow(clippy::type_complexity)]
 struct RrsigsValuesIter<'a> {
     iter: Option<hash_map::Iter<'a, (&'a RevName, NewRtype), Vec<&'a RegularRecord>>>,
-    changes: &'a HashMap<(RevNameBuf, NewRtype), RrsigChange<'a>>,
-    changes_values: Option<hash_map::Values<'a, (RevNameBuf, NewRtype), RrsigChange<'a>>>,
+    changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange<'a>>,
+    changes_values: Option<hash_map::Values<'a, (Box<RevName>, NewRtype), RrsigChange<'a>>>,
 }
 
 impl<'a> RrsigsValuesIter<'a> {
     fn new(
         iter: hash_map::Iter<'a, (&RevName, NewRtype), Vec<&RegularRecord>>,
-        changes: &'a HashMap<(RevNameBuf, NewRtype), RrsigChange>,
+        changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange>,
     ) -> RrsigsValuesIter<'a> {
         RrsigsValuesIter {
             iter: Some(iter),
@@ -2589,7 +2588,7 @@ impl<'a> Iterator for RrsigsValuesIter<'a> {
         if let Some(iter) = &mut self.iter {
             for ((name, rtype), sigs) in iter.by_ref() {
                 // Check if changes has something.
-                let key = (RevNameBuf::copy_from(name), *rtype);
+                let key = ((*name).unsized_copy_into(), *rtype);
                 if self.changes.get(&key).is_some() {
                     // Get it from changes if not deleted.
                     continue;
@@ -2775,7 +2774,8 @@ fn nsec_remove(name: &Name<Bytes>, next_name: &Name<Bytes>, iss: &mut Incrementa
     iss.modified_nsecs.insert(previous_name.clone());
     iss.nsecs.remove(name);
     iss.modified_nsecs.remove(name);
-    let key = (old_base_name_to_revnamebuf(name), NewRtype::NSEC);
+    let name_revnamebuf = old_base_name_to_revnamebuf(name);
+    let key = (name_revnamebuf.as_ref(), NewRtype::NSEC);
     iss.rrsigs.remove(&key);
 }
 
@@ -2846,8 +2846,9 @@ fn nsec_set_occluded(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
 
         // Remove all signatures.
         for rtype in nsec.types().iter() {
+            let curr_revnamebuf = old_base_name_to_revnamebuf(&curr);
             let key = (
-                old_base_name_to_revnamebuf(&curr),
+                curr_revnamebuf.as_ref(),
                 old_base_rtype_to_new_base_rtype(rtype),
             );
             iss.rrsigs.remove(&key);
@@ -3103,7 +3104,8 @@ fn nsec3_remove_one(
     iss.modified_nsecs.insert(previous_name.clone());
     iss.nsec3s.remove(nsec3_name);
     iss.modified_nsecs.remove(nsec3_name);
-    let key = (old_base_name_to_revnamebuf(nsec3_name), NewRtype::NSEC3);
+    let nsec3_name_revnamebuf = old_base_name_to_revnamebuf(nsec3_name);
+    let key = (nsec3_name_revnamebuf.as_ref(), NewRtype::NSEC3);
     iss.rrsigs.remove(&key);
 }
 
@@ -3152,8 +3154,9 @@ fn nsec3_set_occluded(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
 
         // Remove all signatures.
         for rtype in nsec3.types().iter() {
+            let key_name_revnamebuf = old_base_name_to_revnamebuf(key_name);
             let key = (
-                old_base_name_to_revnamebuf(key_name),
+                key_name_revnamebuf.as_ref(),
                 old_base_rtype_to_new_base_rtype(rtype),
             );
             iss.rrsigs.remove(&key);
