@@ -27,7 +27,7 @@ runs:
       run: |
         ZONE_DIR=$(integration-tests/scripts/get-default-path.sh test-env:nameserver-base-dir)
         ZONE_FILE="${ZONE_DIR}/nsd-primary/zones/example.test.primary-zone"
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/axfr-in-large"
+        INTEGRATION_TEST_DIR="${PWD}/integration-tests/multipart-axfr"
         cp "${INTEGRATION_TEST_DIR}"/example.test.zone "${ZONE_FILE}"
         ./integration-tests/scripts/manage-test-environment.sh control nsd-primary reload example.test
 

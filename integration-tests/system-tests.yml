@@ -364,7 +364,7 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
-  axfr-in-large:
+  multipart-axfr:
     name: Receive a large zone via multi-part AXFR from the NSD primary.
     runs-on: ${{ matrix.os }}
     strategy:
@@ -376,6 +376,6 @@ jobs:
       - uses: ./.github/actions/set-build-profile
         with:
           build-profile: ${{ inputs.build-profile }}
-      - uses: ./integration-tests/tests/axfr-in-large
+      - uses: ./integration-tests/tests/multipart-axfr
         with:
           log-level: ${{ inputs.log-level }}
