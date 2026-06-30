@@ -66,16 +66,22 @@ to stress or performance test the interface. The tested HSMs are\:
 .. table:: Supported HSMs
    :widths: auto
 
-   ================  ======================  =========  =================
-   HSM               Type                    Interface  Integration guide
-   ================  ======================  =========  =================
-   Fortanix DSM      Cloud                   KMIP       
-   Thales Cloud HSM  Cldud                   PKCS#11    :doc:`view <thales>`
-   Nitrokey NetHSM   Hardware, Docker image  PKCS#11    :doc:`view <nethsm>`
-   YubiHSM 2         USB key                 PKCS#11    
-   SoftHSM v2.6.1    Software                PKCS#11    :doc:`view <softhsm>`
-   SmartCard-HSM     Smart Card              PKCS#11    :doc:`view <smartcard-hsm>`
-   ================  ======================  =========  =================
+   ====================  ======================  =========  =================
+   HSM                   Type                    Interface  Integration guide
+   ====================  ======================  =========  =================
+   Fortanix DSM          Cloud                   KMIP       
+   Thales Cloud HSM      Cldud                   PKCS#11    :doc:`view <thales>`
+   Nitrokey NetHSM [1]_  Hardware, Docker image  PKCS#11    :doc:`view <nethsm>`
+   YubiHSM 2             USB key                 PKCS#11    
+   SoftHSM v2.6.1        Software                PKCS#11    :doc:`view <softhsm>`
+   SmartCard-HSM         Smart Card              PKCS#11    :doc:`view <smartcard-hsm>`
+   ====================  ======================  =========  =================
+
+.. [1] Username and password must be specified in `p11nethsm.conf` for
+    both the `operator` and `admin` user in order to use the Nitrokey
+    NetHSM PKCS#11 module with Cascade-HSM-Bridge. See the
+    `Nitrokey Documentation <https://docs.nitrokey.com/nethsm/pkcs11-setup#users>`_
+    for more information.
 
 .. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
    though KMIP 1.2 requires servers to offer support for old versions of the
