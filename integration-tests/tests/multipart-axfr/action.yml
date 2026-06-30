@@ -68,13 +68,13 @@ runs:
     # Currently there is no NSD or Cascade metric that can be used to check
     # this.
 
-    - name: Query the zone at the unsigned preview server
+    - name: Query the zone at the unsigned review server
       run: |
         dig +noall +onesoa +answer @127.0.0.1 -p 4540 example.test AXFR &> example.test.zone.log
 
         # Check that the received zone matches the included ZONEMD RR.
         # FYI the ZONEMD RR was generated using ldns-signzone -z sha512 -Z example.test.zone
-        if ! ldns-verify-zone -Z example.test.zone.log 2>&1 | tee ldns-verify-unsigned-preview-zone.log; then
+        if ! ldns-verify-zone -Z example.test.zone.log 2>&1 | tee ldns-verify-unsigned-review-zone.log; then
           echo "::error:: the unsigned review zone failed the ldns-verify-zone check"
           exit 1
         fi
