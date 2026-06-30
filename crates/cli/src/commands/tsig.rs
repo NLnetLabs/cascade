@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use camino::Utf8PathBuf;
 use cascade_api::{
-    TsigAddError, TsigAddResult, TsigKeyName, TsigListResult, TsigRemoveError, TsigRemoveResult,
+    TsigAddError, TsigAddResult, TsigKeyName, TsigKeyUsageReference, TsigListResult,
+    TsigRemoveError, TsigRemoveResult,
 };
 
 use crate::client::CascadeApiClient;
@@ -162,7 +163,37 @@ impl Tsig {
                         println!("Removed TSIG key {name}");
                         Ok(())
                     }
-                    Err(e) => Err(format!("Failed to remove TSIG key: {e}")),
+                    Err(err) => {
+                        let mut msg = "Failed to remove TSIG key: ".to_string();
+                        match err {
+                            TsigRemoveError::NotFound => {
+                                msg.push_str("key not found");
+                            }
+                            TsigRemoveError::InUse(key_refs) if key_refs.is_empty() => {
+                                // This should not happen.
+                                msg.push_str("key is still in use by: Unknown");
+                            }
+                            TsigRemoveError::InUse(key_refs) => {
+                                msg.push_str("key is still in use by:");
+                                for key_ref in key_refs {
+                                    let cause = match key_ref {
+                                        TsigKeyUsageReference::ZoneSource(name) => {
+                                            format!("  - The source of zone '{name}'")
+                                        }
+                                        TsigKeyUsageReference::ZoneOther(name) => {
+                                            format!("  - Zone '{name}'")
+                                        }
+                                        TsigKeyUsageReference::Policy(name) => {
+                                            format!("  - Policy '{name}'")
+                                        }
+                                    };
+                                    msg.push('\n');
+                                    msg.push_str(&cause);
+                                }
+                            }
+                        }
+                        Err(msg)
+                    }
                 }
             }
 

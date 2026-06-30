@@ -877,27 +877,11 @@ impl KmipClientCredentialsFile {
     ///   - Create the file if missing.
     ///   - Keep the file open for writing back changes. See [`Self::save()`].
     pub fn new(path: &Path, mode: KmipServerCredentialsFileMode) -> Result<Self, String> {
-        let read;
-        let write;
-        let create;
-
-        match mode {
-            KmipServerCredentialsFileMode::ReadOnly => {
-                read = true;
-                write = false;
-                create = false;
-            }
-            KmipServerCredentialsFileMode::ReadWrite => {
-                read = true;
-                write = true;
-                create = false;
-            }
-            KmipServerCredentialsFileMode::CreateReadWrite => {
-                read = true;
-                write = true;
-                create = true;
-            }
-        }
+        let (read, write, create) = match mode {
+            KmipServerCredentialsFileMode::ReadOnly => (true, false, false),
+            KmipServerCredentialsFileMode::ReadWrite => (true, true, false),
+            KmipServerCredentialsFileMode::CreateReadWrite => (true, true, true),
+        };
 
         let file = OpenOptions::new()
             .read(read)

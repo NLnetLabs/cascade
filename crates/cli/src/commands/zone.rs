@@ -1098,17 +1098,14 @@ fn expand_key_path(key_file_path: Utf8PathBuf, key_type: KeyType) -> Result<File
 }
 
 fn kmip_imports(key_type: KeyType, x: &[String]) -> Vec<KeyImport> {
-    let chunks = x.chunks_exact(5);
+    let (chunks, remainder) = x.as_chunks::<5>();
 
     // If this fails then clap is not doing what we expect.
-    assert!(chunks.remainder().is_empty());
+    assert!(remainder.is_empty());
 
     chunks
-        .into_iter()
-        .map(|chunk| {
-            let [server, public_id, private_id, algorithm, flags] = chunk else {
-                unreachable!()
-            };
+        .iter()
+        .map(|[server, public_id, private_id, algorithm, flags]| {
             KeyImport::Kmip(KmipKeyImport {
                 key_type,
                 server: server.clone(),
