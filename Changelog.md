@@ -36,12 +36,14 @@ Released yyyy-mm-dd.
 
 ### Documentation improvements
 
+- Update note about compatibility with NetHSM. ([#621] by @jans23)
+
 ### Known issues
 
 ### Acknowledgements
 
+[#621]: https://github.com/NLnetLabs/cascade/pull/621
 [#798]: https://github.com/NLnetLabs/cascade/issues/798
-
 [#719]: https://github.com/NLnetLabs/cascade/pull/719
 [#835]: https://github.com/NLnetLabs/cascade/pull/835
 
