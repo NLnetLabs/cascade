@@ -380,7 +380,7 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
-multipart-axfr:
+  multipart-axfr:
     name: Receive a large zone via multi-part AXFR from the NSD primary.
     runs-on: ${{ matrix.os }}
     strategy:
