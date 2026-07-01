@@ -68,7 +68,7 @@ jobs:
     - uses: ./.github/actions/prepare-systest-env
     - uses: ./.github/actions/set-build-profile
       with:
-        build-profile: release
+        build-profile: ${{ inputs.build-profile }}
     - run: cascade --version
     - run: file $(which cascade)
 
@@ -81,6 +81,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/set-build-profile
+      with:
+        build-profile: ${{ inputs.build-profile }}
     - run: cascade --version
     - run: file $(which cascade)
 
@@ -226,7 +229,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
         with:
-          build-profile: release
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/notify-in-for-unknown-zone
         with:
           log-level: ${{ inputs.log-level }}
