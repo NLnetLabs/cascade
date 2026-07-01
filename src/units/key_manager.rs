@@ -30,8 +30,6 @@
 //!
 //! In order for `dnst` to be able to interact with a HSM it requires KMIP
 //! credentials which are written by Cascade to a file it shares with `dnst`.
-//! It it thus important that file format compatibility is maintained with
-//! `dnst`.
 //!
 //! Examples of this can be seen in `register_zone()` and
 //! `on_zone_policy_changed()`.
