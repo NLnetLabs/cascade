@@ -15,10 +15,10 @@
 //! ## WARNING: duplicate definitions
 //!
 //! Currently there is no common Rust crate shared by `dnst` and Cascade which
-//! defines how to (de)serialize the shared file formats. Instead the data
-//! Rust data structures and Serde directives are duplicated in `dnst` and
-//! Cascade. Even worse, some data types for communication with `dnst` are
-//! defined more than once in Cascade, e.g. at the time of writing the type
+//! defines how to (de)serialize the shared file formats. Instead the Rust
+//! data structures and Serde directives are duplicated in `dnst` and Cascade.
+//! Even worse, some data types for communication with `dnst` are defined
+//! more than once in Cascade, e.g. at the time of writing the type
 //! `KeySetState` is defined both in this file and in `zone_signer.rs` and
 //! is also used by `http_server.rs`.
 //!
