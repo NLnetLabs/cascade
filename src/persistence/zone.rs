@@ -232,8 +232,8 @@ fn abandon_signed_restoration(
 
 fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
     {
-        let mut state = zone.write(center);
-        clear_persisted_zone_data(center, &mut state);
+        let mut handle = zone.write_handle(center);
+        clear_persisted_zone_data(center, &mut handle.state);
 
         // In case this zone was signed in the past we have to make sure that
         // any attempt to enqueue a re-signing operation will be skipped as
@@ -241,13 +241,13 @@ fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) 
         // TODO: Find a better way to prevent this issue as changing the
         // min_expiration timestamps is a very indirect and non-obvious way of
         // preventing re-signing.
-        state.min_expiration = None;
-        state.next_min_expiration = None;
+        handle.state.min_expiration = None;
+        handle.state.next_min_expiration = None;
 
         // Also remove any already enqueued signing operation that is blocked
         // by the ongoing restore as it will otherwise immediately start once
         // the restore completes.
-        state.signer.cancel_enqueued_signing_operations();
+        handle.signer().cancel_enqueued_signing_operations();
     }
     save_state_now(center, zone);
 }
