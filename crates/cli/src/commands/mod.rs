@@ -63,6 +63,9 @@ pub enum Command {
     /// Print example config or policy files
     #[command(name = "template")]
     Template(self::template::Template),
+
+    #[command(name = "tui")]
+    Tui,
 }
 
 impl Command {
@@ -91,6 +94,7 @@ impl Command {
             Self::Hsm(hsm) => hsm.execute(client).await,
             Self::Tsig(tsig) => tsig.execute(client).await,
             Self::Template(template) => template.execute(client).await,
+            Self::Tui => crate::tui::launch(client),
         }
     }
 }

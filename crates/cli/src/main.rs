@@ -9,6 +9,7 @@ mod ansi;
 mod args;
 mod client;
 mod commands;
+mod tui;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {

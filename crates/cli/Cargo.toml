@@ -18,6 +18,8 @@ readme = "README.md"
 # --- Dependencies -------------------------------------------------------------
 
 [dependencies]
+ansi-to-tui = "8.0.1"
+ratatui = "0.30.2"
 
 # The CLI uses 'anstream' to conditionally disable ANSI colorization in its
 # output (e.g. in response to 'TERM=dumb').
@@ -69,7 +71,7 @@ version = "2.4"
 # most idiomatic option.  'tokio' is the perfect 'async' runtime for this.
 [dependencies.tokio]
 workspace = true
-features = ["macros", "net", "rt"]
+features = ["macros", "net", "rt", "rt-multi-thread"]
 
 # The CLI uses 'tracing' to log output.  While 'log' would suffice, 'tracing'
 # is already used elsewhere in this codebase.
