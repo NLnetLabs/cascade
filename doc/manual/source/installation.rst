@@ -277,7 +277,6 @@ Updating
 
    .. code-block:: bash
 
-      sudo systemctl stop cascaded.socket
       sudo systemctl stop cascaded.service
 
    Or by killing the Cascade daemon process otherwise:

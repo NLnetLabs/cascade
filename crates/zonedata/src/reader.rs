@@ -10,9 +10,7 @@
 //! See the [`crate::viewer`] module for high-level types that do consider
 //! concurrent access.
 
-use domain::new::base::RType;
-
-use crate::{InstanceData, RegularRecord, SoaRecord};
+use crate::{InstanceData, RegularRecord, SoaRecord, is_signing};
 
 //----------- LoadedZoneReader -------------------------------------------------
 
@@ -67,14 +65,11 @@ impl<'d> LoadedZoneReader<'d> {
     /// canonical order. The SOA record **is** included.
     pub fn unsigned_records(&self) -> impl Iterator<Item = &'d RegularRecord> + Send + use<'d> {
         // Filter out records that would be generated during signing.
-        //
-        // TODO: 'RType::{CDS, CDNSKEY, ZONEMD}'.
-        self.instance.records.iter().filter(|&r| {
-            !matches!(
-                r.rtype,
-                RType::NSEC | RType::NSEC3 | RType::NSEC3PARAM | RType::DNSKEY | RType::RRSIG
-            ) && !matches!(r.rtype.code.get(), 59 | 60 | 63)
-        })
+        let origin = &*self.instance.soa.as_ref().unwrap().rname;
+        self.instance
+            .records
+            .iter()
+            .filter(|&r| !is_signing(r.rtype, || *r.rname == *origin))
     }
 }
 

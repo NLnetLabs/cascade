@@ -78,6 +78,10 @@ Commands
 
           Print example config or policy files.
 
+        :doc:`cascade-info <cascade-info>`\ (1)
+
+          Show daemon information.
+
 .. only:: man or text
 
     **cascade-health**\ (1)
@@ -103,6 +107,9 @@ Commands
 
     **cascade-template**\ (1)
         Print example config or policy files.
+
+    **cascade-info**\ (1)
+        Show daemon information.
 
 See Also
 --------

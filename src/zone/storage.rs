@@ -23,24 +23,21 @@
 //! such operations must wait. When the data storage becomes passive, it will
 //! call [`StorageZoneHandle::on_passive()`] to initiate enqueued operations.
 
-use std::{fmt, sync::Arc, time::SystemTime};
+use std::{fmt, sync::Arc};
 
 use cascade_zonedata::{
     DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
     LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
     SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
-    SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage,
+    SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
-use domain::base::Serial;
 use tracing::{info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{
-        HistoricalEvent, LastPublished, Zone, ZoneHandle, ZoneState, machine::ZoneStateMachine,
-    },
+    zone::{Zone, ZoneHandle, ZoneState, machine::ZoneStateMachine},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
@@ -120,7 +117,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn finish_load(&mut self, built: LoadedZoneBuilt) {
+    pub fn finish_load(&mut self, built: LoadedZoneBuilt) -> LoadedZoneReviewer {
         // Examine the current state.
         let (transition, state) = transition(&mut self.state.storage.machine);
         match state {
@@ -129,16 +126,7 @@ impl StorageZoneHandle<'_> {
 
                 let (s, loaded_reviewer) = s.finish(built);
                 transition.move_to(ZoneDataStorage::ReviewLoadedPending(s));
-
-                // TODO: Use the instance ID here, which will not require
-                // examining the zone contents.
-                let serial = loaded_reviewer.read().unwrap().soa().rdata.serial;
-                self.state.record_event(
-                    HistoricalEvent::NewVersionReceived,
-                    Some(domain::base::Serial(serial.into())),
-                );
-
-                self.start_loaded_review(loaded_reviewer);
+                loaded_reviewer
             }
 
             _ => unreachable!(
@@ -186,9 +174,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
-        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
-
+    pub fn start_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("start_loaded_review");
@@ -263,25 +249,20 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn abandon_loaded_review(&mut self) {
+    pub fn abandon_loaded_review(&mut self) -> LoadedZoneReviewer {
         // Examine the current state.
-        let loaded_reviewer = match transition(&mut self.state.storage.machine) {
+        match transition(&mut self.state.storage.machine) {
             (transition, ZoneDataStorage::ReviewingLoaded(s)) => {
                 // TODO: Specify the instance ID.
                 info!("The loaded instance has been rejected; cleaning it up");
 
                 let (s, loaded_reviewer) = s.give_up();
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
                 transition.move_to(ZoneDataStorage::CleanLoadedPending(s));
                 loaded_reviewer
             }
 
             _ => panic!("The zone is not undergoing loader review"),
-        };
-
-        // Stop serving the abandoned instance.
-        self.start_rewinding_loaded_review(loaded_reviewer);
+        }
     }
 }
 
@@ -358,7 +339,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn finish_sign(&mut self, built: SignedZoneBuilt) {
+    pub fn finish_sign(&mut self, built: SignedZoneBuilt) -> SignedZoneReviewer {
         // Examine the current state.
         let (transition, state) = transition(&mut self.state.storage.machine);
         match state {
@@ -367,8 +348,7 @@ impl StorageZoneHandle<'_> {
 
                 let (s, signed_reviewer) = s.finish(built);
                 transition.move_to(ZoneDataStorage::ReviewSignedPending(s));
-
-                self.start_signed_review(signed_reviewer);
+                signed_reviewer
             }
 
             _ => unreachable!(
@@ -391,15 +371,13 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn abandon_sign(&mut self, builder: SignedZoneBuilder) {
+    pub fn abandon_sign(&mut self, builder: SignedZoneBuilder) -> LoadedZoneReviewer {
         // Examine the current state.
-        let loaded_reviewer = match transition(&mut self.state.storage.machine) {
+        match transition(&mut self.state.storage.machine) {
             (transition, ZoneDataStorage::Signing(s)) => {
                 trace!("Abandoning the ongoing sign operation");
 
                 let (s, loaded_reviewer) = s.give_up(builder);
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
                 transition.move_to(ZoneDataStorage::CleanLoadedPending(s));
                 loaded_reviewer
             }
@@ -407,10 +385,7 @@ impl StorageZoneHandle<'_> {
             _ => unreachable!(
                 "'ZoneDataStorage::Signing' is the only state where a 'SignedZoneBuilder' is available"
             ),
-        };
-
-        // Stop serving the abandoned instance.
-        self.start_rewinding_loaded_review(loaded_reviewer);
+        }
     }
 }
 
@@ -422,9 +397,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer) {
-        self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
-
+    pub fn start_signed_review(&mut self, signed_reviewer: SignedZoneReviewer) {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("start_signed_review");
@@ -495,56 +468,20 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn abandon_signed_review(&mut self) {
+    pub fn abandon_signed_review(&mut self) -> (LoadedZoneReviewer, SignedZoneReviewer) {
         // Examine the current state.
-        let (loaded_reviewer, signed_reviewer);
         match transition(&mut self.state.storage.machine) {
             (transition, ZoneDataStorage::ReviewingSigned(s)) => {
                 // TODO: Specify the instance ID.
                 info!("The signed instance has been rejected; cleaning it up");
 
-                let new_s;
-                (new_s, loaded_reviewer, signed_reviewer) = s.give_up();
+                let (new_s, loaded_reviewer, signed_reviewer) = s.give_up();
                 transition.move_to(ZoneDataStorage::CleanWholePending(new_s));
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
-                self.state.storage.signed_review_soa =
-                    signed_reviewer.read().map(|r| r.soa().clone());
+                (loaded_reviewer, signed_reviewer)
             }
 
             _ => panic!("The zone is not undergoing signer review"),
-        };
-
-        let span = trace_span!("reset_review_servers");
-        let zone = self.zone.clone();
-        let center = self.center.clone();
-        self.state.storage.background_tasks.spawn(span, async move {
-            trace!("Resetting the signed review server");
-            let old_signed_reviewer =
-                SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
-
-            trace!("Resetting the loaded review server");
-            let old_loaded_reviewer =
-                LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
-
-            // Examine the current state.
-            let mut handle = zone.write_handle(&center);
-            let cleaner = match transition(&mut handle.state.storage.machine) {
-                (transition, ZoneDataStorage::CleanWholePending(s)) => {
-                    let (s, cleaner) = s
-                        .stop_review(old_signed_reviewer)
-                        .stop_review(old_loaded_reviewer);
-                    transition.move_to(ZoneDataStorage::Cleaning(s));
-                    cleaner
-                }
-
-                _ => unreachable!("The zone was left in 'CleanWholePending' state"),
-            };
-
-            handle.storage().start_cleanup(cleaner);
-
-            handle.state.storage.background_tasks.finish();
-        });
+        }
     }
 }
 
@@ -576,84 +513,82 @@ impl StorageZoneHandle<'_> {
     ///
     /// The zone is moved to the passive state, and it is registered against
     /// Cascade's zone servers.
-    pub fn finish_signed_restoration(&mut self, restored: SignedZoneRestored) {
+    pub fn finish_signed_restoration(
+        &mut self,
+        restored: SignedZoneRestored,
+    ) -> (LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer) {
         // Examine the current state.
-        let (loaded_reviewer, signed_reviewer, viewer);
         match transition(&mut self.state.storage.machine) {
             (transition, ZoneDataStorage::RestoringSigned(s)) => {
-                let new_s;
-                (loaded_reviewer, signed_reviewer, viewer, new_s) = s.finish(restored);
+                let (loaded_reviewer, signed_reviewer, viewer, new_s) = s.finish(restored);
                 transition.move_to(ZoneDataStorage::Passive(new_s));
+                (loaded_reviewer, signed_reviewer, viewer)
             }
 
             _ => unreachable!(
                 "A 'SignedZoneRestored' is only available in the 'RestoringSigned' state"
             ),
         }
-
-        // Register the zone against the zone servers.
-        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
-
-        // Send a notification that the state machine is now passive.
-        self.on_passive();
     }
 
     /// Abandon the ongoing loaded-instance restore.
     ///
     /// Any intermediate zone data is cleared and the zone is moved to the
     /// passive state. It is registered against Cascade's zone servers.
-    pub fn abandon_loaded_restoration(&mut self, restorer: LoadedZoneRestorer) {
+    pub fn abandon_loaded_restoration(
+        &mut self,
+        restorer: LoadedZoneRestorer,
+    ) -> (LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer) {
         // Examine the current state.
-        let (loaded_reviewer, signed_reviewer, viewer);
         match transition(&mut self.state.storage.machine) {
             (transition, ZoneDataStorage::RestoringLoaded(s)) => {
-                let new_s;
-                (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
+                let (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
                 transition.move_to(ZoneDataStorage::Passive(new_s));
+                (loaded_reviewer, signed_reviewer, viewer)
             }
 
             _ => unreachable!(
                 "A 'LoadedZoneRestorer' is only available in the 'RestoringLoaded' state"
             ),
-        };
-
-        // Update the zone servers.
-        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
-
-        // Send a notification that the state machine is now passive.
-        self.on_passive();
+        }
     }
 
     /// Abandon the ongoing signed-instance restore.
     ///
     /// Any intermediate zone data is cleared and the zone is moved to the
     /// passive state. It is registered against Cascade's zone servers.
-    pub fn abandon_signed_restoration(&mut self, restorer: SignedZoneRestorer) {
+    pub fn abandon_signed_restoration(
+        &mut self,
+        restorer: SignedZoneRestorer,
+    ) -> (LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer) {
         // Examine the current state.
-        let (loaded_reviewer, signed_reviewer, viewer);
         match transition(&mut self.state.storage.machine) {
             (transition, ZoneDataStorage::RestoringSigned(s)) => {
-                let new_s;
-                (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
+                let (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
                 transition.move_to(ZoneDataStorage::Passive(new_s));
+                (loaded_reviewer, signed_reviewer, viewer)
             }
 
             _ => unreachable!(
                 "A 'SignedZoneRestorer' is only available in the 'RestoringSigned' state"
             ),
-        };
+        }
+    }
 
-        // Update the zone servers.
-        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
+    /// Finish the ongoing signed-instance persistence.
+    pub fn finish_signed_persistence(&mut self, persisted: SignedZonePersisted) -> ZoneViewer {
+        // Examine the current state.
+        match transition(&mut self.state.storage.machine) {
+            (transition, ZoneDataStorage::PersistingSigned(s)) => {
+                let (s, viewer) = s.mark_complete(persisted);
+                transition.move_to(ZoneDataStorage::Switching(s));
+                viewer
+            }
 
-        // Send a notification that the state machine is now passive.
-        self.on_passive();
+            _ => unreachable!(
+                "'ZoneDataStorage::PersistingSigned' is the only state where a 'SignedZonePersisted' is available"
+            ),
+        }
     }
 }
 
@@ -703,38 +638,16 @@ impl StorageZoneHandle<'_> {
         });
     }
 
-    /// Start switching to an approved and persisted signed instance.
+    /// Start publishing a new instance.
     ///
     /// A background task will be spawned to switch the publication server to
-    /// the newly persisted instance and transition to the next state.
+    /// the new instance and transition to the next state.
     #[tracing::instrument(
         level = "trace",
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn start_switch(&mut self, persisted: SignedZonePersisted) {
-        // Examine the current state.
-        let viewer = match transition(&mut self.state.storage.machine) {
-            (transition, ZoneDataStorage::PersistingSigned(s)) => {
-                let (s, viewer) = s.mark_complete(persisted);
-                transition.move_to(ZoneDataStorage::Switching(s));
-                viewer
-            }
-
-            _ => unreachable!(
-                "'ZoneDataStorage::PersistingSigned' is the only state where a 'SignedZonePersisted' is available"
-            ),
-        };
-
-        self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
-        self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
-
-        // Compute the total number of records
-        let reader = viewer.read().unwrap();
-        let generated_records = reader.generated_records().len();
-        let loaded_records = reader.loaded().regular_records().len() - 1;
-        let num_records = generated_records + loaded_records;
-
+    pub fn start_publishing(&mut self, viewer: ZoneViewer) {
         // Spawn a background task to update the publication server.
         let span = trace_span!("switch_publication_server");
         let zone = self.zone.clone();
@@ -759,37 +672,7 @@ impl StorageZoneHandle<'_> {
                 _ => unreachable!("just transitioned to 'Switching'"),
             };
 
-            let loaded_serial = Serial(
-                handle
-                    .state
-                    .storage
-                    .published_loaded_soa
-                    .as_ref()
-                    .unwrap()
-                    .rdata
-                    .serial
-                    .into(),
-            );
-            let signed_serial = Serial(
-                handle
-                    .state
-                    .storage
-                    .published_soa
-                    .as_ref()
-                    .unwrap()
-                    .rdata
-                    .serial
-                    .into(),
-            );
-            let timestamp = SystemTime::now();
-            handle.state.last_published = Some(LastPublished {
-                loaded_serial,
-                signed_serial,
-                timestamp,
-                num_records,
-            });
-
-            handle.get().finish_switch(cleaner);
+            handle.storage().start_cleanup(cleaner);
 
             handle.state.storage.background_tasks.finish();
         });
@@ -809,7 +692,7 @@ impl StorageZoneHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    fn start_rewinding_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
+    pub fn start_rewinding_loaded_review(&mut self, loaded_reviewer: LoadedZoneReviewer) {
         assert!(
             matches!(
                 self.state.storage.machine,
@@ -841,6 +724,57 @@ impl StorageZoneHandle<'_> {
             };
 
             // Initiate cleanup of the abandoned instance.
+            handle.storage().start_cleanup(cleaner);
+
+            handle.state.storage.background_tasks.finish();
+        });
+    }
+
+    /// Rewind the loaded and signed review servers.
+    ///
+    /// When an upcoming loaded+signed instance is under review and is
+    /// abandoned, the review servers must be updated to stop serving it. A
+    /// background task will be started to achieve this.
+    ///
+    /// The loaded and signed reviewer objects for the current instance (not the
+    /// one being abandoned) are received. The old reviewers will be returned to
+    /// the state machine and the old instance will be cleaned up.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %self.zone.name),
+    )]
+    pub fn start_rewinding_review(
+        &mut self,
+        loaded_reviewer: LoadedZoneReviewer,
+        signed_reviewer: SignedZoneReviewer,
+    ) {
+        let span = trace_span!("reset_review_servers");
+        let zone = self.zone.clone();
+        let center = self.center.clone();
+        self.state.storage.background_tasks.spawn(span, async move {
+            trace!("Resetting the signed review server");
+            let old_signed_reviewer =
+                SignedReviewServer::update_viewer(&center, &zone, signed_reviewer).await;
+
+            trace!("Resetting the loaded review server");
+            let old_loaded_reviewer =
+                LoadedReviewServer::update_viewer(&center, &zone, loaded_reviewer).await;
+
+            // Examine the current state.
+            let mut handle = zone.write_handle(&center);
+            let cleaner = match transition(&mut handle.state.storage.machine) {
+                (transition, ZoneDataStorage::CleanWholePending(s)) => {
+                    let (s, cleaner) = s
+                        .stop_review(old_signed_reviewer)
+                        .stop_review(old_loaded_reviewer);
+                    transition.move_to(ZoneDataStorage::Cleaning(s));
+                    cleaner
+                }
+
+                _ => unreachable!("The zone was left in 'CleanWholePending' state"),
+            };
+
             handle.storage().start_cleanup(cleaner);
 
             handle.state.storage.background_tasks.finish();

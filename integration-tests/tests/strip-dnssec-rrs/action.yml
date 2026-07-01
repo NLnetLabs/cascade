@@ -2,14 +2,29 @@
 # https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
 name: 'strip-dnssec-rrs'
 description: 'Sign using an already signed input zone.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
 runs:
   using: "composite"
   steps:
-    - name: Prepare the system test environment
-      uses: ./.github/actions/prepare-systest-env
-
-    - name: Setup and start the cascade daemon
-      uses: ./.github/actions/setup-and-start-cascade
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
 
     - name: Load a zone that contains DNSSEC RRs.
       run: |
@@ -29,7 +44,7 @@ runs:
           sleep 1
         done
 
-    - name: Verify the NSEC signed zone
+    - name: Verify the DNSSEC signed zone
       run: |
         dig +noall +answer +onesoa @127.0.0.1 -p 4542 example.test AXFR > example-test.axfr.log
         dnssec-verify -o example.test example-test.axfr.log | tee dnssec-verify.log
