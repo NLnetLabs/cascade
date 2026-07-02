@@ -1,12 +1,12 @@
 # Prepare
-- think of a release name
+- think of a release <NAME>
 - add new O/S versions in pkg/rules/packages-to-build.yml if needed
-- update Changelog.md with the release date, name and release summary
+- update Changelog.md with the release date, version X.Y.Z[-NNN], <NAME> and release summary
 
 # Make a release branch and test packaging
 - git checkout -b release-vX.Y.Z[-xxx]
 - cargo update
-- bump application version in Cargo.toml
+- bump application version in Cargo.toml to X.Y.Z[-xxx]
 - cargo check (to bump the application version in Cargo.lock)
 - pushd doc/manual
 - make man
@@ -23,21 +23,22 @@
 
 # Merge and release
 - git checkout main
-- git tag -a (annotation: `Release <VERSION> '<NAME>'`)
+- git tag -a -m "Release vX.Y.Z[-xxx] '<NAME>'`) 
+- Verify that the release tag version is the same as the Cargo.toml version but with a `v` prefix
 - git push --tags
 - GH should automatically run the packaging workflow again creating run NNNNNNNN
 - if successful:
   - publish_helper.sh --dry-run https://github.com/NLnetLabs/cascade/actions/runs/NNNNNNNN
   - publish_helper.sh https://github.com/NLnetLabs/cascade/actions/runs/NNNNNNNN
-- create a GH release for the tag based on Changelog.md
+- create a GH release with tag vX.Y.Z[-NNN] and title 'X.Y.Z[-NNN] <NAME>"
 - close the GH milestone for this release (if any)
 - announce via post in the Cascade topic on https://community.nlnetlabs.nl/.
   - remember to tag it as #release.
 
 # Prepare for development
 - git checkout -b prep-for-dev
-- bump application version in Cargo.toml to -dev
-- cargo check (to bump the application version in Cargo.lock)
+- bump application version in Cargo.toml to next minor version with suffix `-dev`
+- cargo check (to also bump the application version in Cargo.lock)
 - git add Cargo.toml Cargo.lock
 - git commit
 - git push
