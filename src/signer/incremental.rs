@@ -2293,7 +2293,7 @@ impl<'a> Nsecs<'a> {
                         // hurt.
                         self.changes.insert(name.unsized_copy_into());
                     }
-                    NsecChange::Removed { .. } => todo!(),
+                    NsecChange::Removed { .. } => (),
                     NsecChange::New { .. } => {
                         // Remove the new entry.
                         entry.remove();
@@ -2301,9 +2301,7 @@ impl<'a> Nsecs<'a> {
                     }
                 }
             }
-            btree_map::Entry::Vacant(_entry) => {
-                todo!();
-            }
+            btree_map::Entry::Vacant(_) => (),
         }
     }
 
@@ -2318,9 +2316,15 @@ impl<'a> Nsecs<'a> {
                     // hurt.
                     self.changes.insert(name.clone());
                 }
-                NsecChange::Removed { .. } => todo!(),
-                NsecChange::Modified { .. } => todo!(),
-                NsecChange::New { .. } => todo!(),
+                NsecChange::Modified { .. }
+                | NsecChange::New { .. }
+                | NsecChange::Removed { .. } => {
+                    // It would be very hard to remove a New entry here.
+                    // However, in the current code, Remove, New and Modified
+                    // should not exist when calling remove_all.
+                    // Remove and Modified are easy to implement though.
+                    unreachable!();
+                }
             }
         }
     }
@@ -2486,7 +2490,16 @@ impl<'a> NsecRange<'a> {
 impl<'a> Iterator for NsecRange<'a> {
     type Item = (&'a RevName, &'a RegularRecord);
     fn next(&mut self) -> std::option::Option<<Self as Iterator>::Item> {
-        todo!()
+        for (name, item) in self.range.by_ref() {
+            match item {
+                NsecChange::Original { old } => return Some((name, old)),
+                NsecChange::Removed { .. } => continue,
+                NsecChange::Modified { new, .. } | NsecChange::New { new } => {
+                    return Some((name, new));
+                }
+            }
+        }
+        None
     }
 }
 
