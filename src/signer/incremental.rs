@@ -21,9 +21,8 @@ use domain::base::wire::Composer;
 use domain::base::{
     CanonicalOrd, Name, NameBuilder, Record, Rtype, Serial as DomainSerial, ToName, Ttl,
 };
-use domain::dep::octseq::OctetsFrom;
-use domain::dep::octseq::Parser;
 use domain::dep::octseq::builder::with_infallible;
+use domain::dep::octseq::{OctetsFrom, Parser};
 use domain::dnssec::common::nsec3_hash;
 use domain::dnssec::sign::denial::nsec::{GenerateNsecConfig, generate_nsecs};
 use domain::dnssec::sign::denial::nsec3::{
@@ -33,18 +32,15 @@ use domain::dnssec::sign::keys::SigningKey;
 use domain::dnssec::sign::keys::keyset::{KeyType, UnixTime};
 use domain::dnssec::sign::records::{DefaultSorter, RecordsIter, Rrset};
 use domain::dnssec::sign::signatures::rrsigs::sign_rrset;
-use domain::new::base::RType as NewRtype;
-use domain::new::base::TTL as NewTtl;
 use domain::new::base::build::AsBytes;
 use domain::new::base::compat::iana::Class as NewClass;
-use domain::new::base::name::Name as NewName;
-use domain::new::base::name::{NameBuf, RevName, RevNameBuf};
+use domain::new::base::name::{Name as NewName, NameBuf, RevName, RevNameBuf};
 use domain::new::base::parse::{ParseBytes, ParseBytesZC};
 use domain::new::base::wire::SizePrefixed;
-use domain::new::rdata::Nsec as NewNsec;
-use domain::new::rdata::Nsec3 as NewNsec3;
-use domain::new::rdata::Nsec3Param as NewNsec3Param;
-use domain::new::rdata::RecordData as NewRecordData;
+use domain::new::base::{RType as NewRtype, TTL as NewTtl};
+use domain::new::rdata::{
+    Nsec as NewNsec, Nsec3 as NewNsec3, Nsec3Param as NewNsec3Param, RecordData as NewRecordData,
+};
 use domain::rdata::dnssec::{RtypeBitmap, Timestamp};
 use domain::rdata::nsec3::OwnerHash;
 use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
