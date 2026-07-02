@@ -144,12 +144,14 @@
 //!   structure as the records they sign. While the signature material cannot
 //!   be optimized, many of the other fields can be deduplicated.
 
+use std::hash::Hash;
 use std::{
     cmp, fmt,
     iter::Peekable,
     ops::{Deref, DerefMut},
 };
 
+use domain::new::base::compat::Ttl;
 use domain::{
     base::{ToName, name::FlattenInto},
     new::{
@@ -158,7 +160,7 @@ use domain::{
             name::{Name, NameBuf, RevName, RevNameBuf},
             wire::{BuildBytes, ParseBytes},
         },
-        rdata::{BoxedRecordData, Soa},
+        rdata::{BoxedRecordData, RecordData, Soa},
     },
     utils::dst::UnsizedCopy,
 };
@@ -225,8 +227,22 @@ pub fn is_signing(rtype: RType, at_apex: impl FnOnce() -> bool) -> bool {
 //----------- Record -----------------------------------------------------------
 
 /// A DNS record.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RegularRecord(pub domain::new::base::Record<Box<RevName>, BoxedRecordData>);
+
+// Compatibility with domain old base. Maybe these need to be added to
+// Record as well.
+impl RegularRecord {
+    pub fn data(&self) -> RecordData<'_, &Name> {
+        self.0.rdata.get()
+    }
+    pub fn owner(&self) -> &RevName {
+        self.0.rname.as_ref()
+    }
+    pub fn ttl(&self) -> Ttl {
+        self.0.ttl
+    }
+}
 
 impl PartialOrd for RegularRecord {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {

@@ -594,7 +594,7 @@ impl ZoneSigner {
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
         for record in reader.generated_records() {
-            let RecordData::RRSig(sig) = record.rdata.get() else {
+            let RecordData::Rrsig(sig) = record.rdata.get() else {
                 continue;
             };
 
