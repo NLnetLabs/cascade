@@ -1,3 +1,156 @@
+//! DNSSEC key management via `dnst`.
+//!
+//! This unit interacts with an external `dnst` command line tool which
+//! creates and manages DNSSEC keys on our behalf, provides signed apex
+//! records for inclusion by our signer in the signed zone, and provides
+//! instructions which are passed to our signer to tell it which keys to use
+//! to sign the zone records with.
+//!
+//! # API contract with `dnst`
+//!
+//! Cascade invokes `dnst` commands, reads its standard outputs, provides
+//! input files to it and reads files produced by `dnst`. Compatibility of
+//! these interfaces between `dnst` and Cascade must be maintained.
+//!
+//! ## WARNING: duplicate definitions
+//!
+//! Currently there is no common Rust crate shared by `dnst` and Cascade which
+//! defines how to (de)serialize the shared file formats. Instead the Rust
+//! data structures and Serde directives are duplicated in `dnst` and Cascade.
+//! Even worse, some data types for communication with `dnst` are defined
+//! more than once in Cascade, e.g. at the time of writing the type
+//! `KeySetState` is defined both in this file and in `zone_signer.rs` and
+//! is also used by `http_server.rs`.
+//!
+//! # Configuring `dnst`
+//!
+//! With the exception of KMIP credential files, any Cascade configuration
+//! relevant to `dnst` must be passed to `dnst` via `dnst` command line
+//! arguments.
+//!
+//! In order for `dnst` to be able to interact with a HSM it requires KMIP
+//! credentials which are written by Cascade to a file it shares with `dnst`.
+//!
+//! Examples of this can be seen in `register_zone()` and
+//! `on_zone_policy_changed()`.
+//!
+//! # Additional interaction with `dnst` via command execution
+//!
+//! Some Cascade CLI commands require information from, or provide instruction
+//! to, `dnst`, which is done by executing `dnst`, passing appropriate command
+//! line arguments, and capturing the resulting standard output and standard
+//! error.
+//!
+//! Note: `dnst` is not aware of Cascade and may produce output that would be
+//! confusing for Cascade operators. If the output of `dnst` is not suitable
+//! for consumption by Cascade operators it must be interpreted/massaged by
+//! Cascade. This is not ideal.
+//!
+//! Examples of this can be seen in `on_get_key()`, `on_remove_key()`,
+//! `on_roll_key()` and `on_status()`.
+//!
+//! # `dnst` controlling Cascade
+//!
+//! At moments scheduled by `dnst` via "cron" timestamps `KeyManager` checks
+//! the JSON state files produced by `dnst` to determine if they have changed,
+//! and if so enqueues re-signing of the zone. See `KeyManager::tick()`. The
+//! signer will then read the `dnst` state files to configure itself
+//! appropriately for signing.
+//!
+//! # KMIP key identifiers and labels
+//!
+//! Key generation is delegated to `dnst`. On-disk keys are referred to by
+//! their paths, for KMIP HSM keys identifiers issued by the HSM are used to
+//! refer to keys.
+//!
+//! KMIP HSM keys also have a "name" as well as an ID. The format and content
+//! of the name is determined by `dnst` but can be influenced by Cascade via
+//! `dnst` command line arguments, specifically a key prefix and maximum key
+//! name length can be configured in Cascade which are passed to `dnst`.
+//!
+//! For PKCS#11 HSMs we rely on Cascade-HSM-Bridge which acts as a KMIP server
+//! and communicates on our behalf with a loaded PKCS#11 module. PKCS#11 also
+//! has the concepts of key CKA_ID and CKA_Label, but unlike KMIP the CKA_ID
+//! for the public and private halves of the key, or for any two keys, need
+//! not be unique. Additionally not all PKCS#11 HSMs support labels, e.g. at
+//! the time of writing Nitrokey NetHSM does not support key labels.
+//!
+//! To handle the differences in KMIP and PKCS#11 key identification the
+//! Cascade-HSM-Bridge currently performs a deterministic mapping from the
+//! KMIP identifiers it issues to us and the CKA_ID values to use with the
+//! loaded PKCS#11 module.
+
+// More notes on how Casade, dnst and Cascade-HSM-Bridge interact:
+//
+// # Crate relationships
+//
+// dnst                                 cascade-hsm-bridge
+// +- domain                       +->  +- kmip-protocol
+// +- domain-kmip                  :       +- cryptoki
+//    +- kmip-protocol  <----------+
+//                                 ^
+// cascade                         :
+// +- domain                       :
+// +- domain-kmip                  :
+//    +- kmip-protocol  <----------+
+//
+// # Key generation
+//
+// cascade -> dnst -> domain -> domain-kmip -> kmip-protocol -> KMIP server
+//
+// Optional:
+// -> kmip-protocol -> cascade-hsm-bridge -> cryptoki -> PKCS#11
+//
+// # KMIP key naming strategy (in dnst)
+//
+// From keyset/cmd.rs::new_keys():
+//   1. Configurable label length limit defaulting to 32 bytes.
+//   2. Initial hexified random 32-byte label.
+//        kmip::sign::generate()
+//          KMIP_CreateKeyPair(Attribute::Name(pub), Attribute::Name(pri))
+//          KeyPair::from_metadata():
+//             PublicKey::for_key_id_and_dnssec_algorithm():
+//              client.get_key():
+//                KMIP_Get
+//          if !activate_on_create (i.e. always):
+//            KMIP_Activate
+//   3. Relabel to: <prefix>-<(partial) zone name>-<key tag>-<key type>.
+//        if supports_relabeling:
+//          # note: format_key_label() falls back to a hex string if it
+//          # cannot fit the values in the max label len allowed.
+//          pub_label = format_key_label(prefix, zone name, key tag, key type, "-pub", max_label_bytes)
+//          pri_label = format_key_label(prefix, zone name, key tag, key type, "-pri", max_label_bytes)
+//          conn.rename_key(public_key_id, pub_label):
+//            if !KMIP_ModifyAttribute(public_key_id, Attribute::Name(pub_label)):
+//              supports_relabeling = false
+//            else:
+//              conn.rename_key(private_key_id, pri_label):
+//                if !KMIP_ModifyAttribute(private_key_id, Attribute::Name(pri_label)):
+//                  supports_relabelling = false
+//
+// # Key ID handling by Cascade-HSM-Bridge
+//
+// KMIP_CreateKeyPair(Attribute::Name(pub), Attribute::Name(pri)):
+//   Only AttributeValue::Name(NameType::UninterpretedTextString) is supported.
+//   The given name bytes are used as-is.
+//   Convert names to PKCS#11 CKA_LABEL attributes.
+//   Loop:
+//     Set PKCS#11 CKA_ID to generate_cka_id(): random 20 bytes
+//     PKCS#11 C_FindObjects(CKA_ID)
+//   While object found
+//   PKCS#11 C_GenerateKeyPair(CKA_ID, CKA_LABEL pub, CKA_LABEL pri)
+//
+// KMIP_Get:
+//   PKCS#11 C_FindObjects(CKA_ID, CK_OBJECT_CLASS)
+//   PKCS#11 C_GetAttributeValue() for various non-label attributes
+//
+// KMIP_Activate:
+//   NOOP
+//
+// KMIP_ModifyAttribute:
+//   Only the "Name" attribute is supported.
+//   PKCS#11 C_SetAttributeValue(CKA_LABEL)
+
 use crate::api;
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError, get_zone};
