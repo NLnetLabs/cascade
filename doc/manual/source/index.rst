@@ -105,6 +105,7 @@ Examples of things we're interested in:
    :name: toc-core
 
    key-management
+   incremental-signing
    hsms
    review-hooks
    zone-transfers
@@ -174,6 +175,7 @@ Examples of things we're interested in:
    man/cascade-debug
    man/cascade-health
    man/cascade-hsm
+   man/cascade-info
    man/cascade-keyset
    man/cascade-policy
    man/cascade-status

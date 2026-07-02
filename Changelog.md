@@ -14,6 +14,95 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Breaking changes
+
+### New
+
+### Bug fixes
+
+- If the input zone contains DNSSEC records, they are removed during signing,
+  but (changes to them) were still showing up in IXFR output from the signed
+  zone; remove them from IXFRs ([#835] by @bal-e, reported in [#798] by
+  @gryphius).
+
+### Other changes
+
+- Extend cascade tsig remove error to report the users of the key. ([#719] by
+  @ximon18)
+- Reduce the memory use of RRSIGs during incremental signing. ([#824])
+
+### Documentation improvements
+
+- Update note about compatibility with NetHSM. ([#621] by @jans23)
+
+### Known issues
+
+### Acknowledgements
+
+[#621]: https://github.com/NLnetLabs/cascade/pull/621
+[#798]: https://github.com/NLnetLabs/cascade/issues/798
+[#719]: https://github.com/NLnetLabs/cascade/pull/719
+[#824]: https://github.com/NLnetLabs/cascade/pull/824
+[#835]: https://github.com/NLnetLabs/cascade/pull/835
+
+## 0.1.0-beta3 'Villa Volta'
+
+Released 2026-06-19.
+
+Feedback welcome at https://community.nlnetlabs.nl/, bug reports can be
+raised at https://github.com/NLnetLabs/cascade/issues.
+
+### Breaking changes
+
+- Return some proper JSON for the health API endpoint. ([#810] by
+  @tertsdiepraam)
+
+### New
+
+- Add all policy info to the policy show command. ([#738] by @tertsdiepraam)
+- Print a message in list commands when no items can be shown. ([#807] by
+  @tertsdiepraam)
+- Add `CASCADE_DAEMON` env var for the CLI. ([#817] by @tertsdiepraam)
+- Support importing keys by private key path as well as public key path.
+  ([#820] by @ximon18)
+- Add basic info command to get daemon version. ([#815] by @tertsdiepraam)
+
+### Bug fixes
+
+- Prevent a crash when re-signing fails. ([#821] by @bal-e)
+
+### Documentation improvements
+
+- Add the word client to `--version`. ([#814] by @tertsdiepraam)
+- Document incremental signing. ([#639] by @bal-e)
+- More incremental signing docs. ([#829] by @bal-e)
+
+### Known issues
+
+- Restoring with a rejected signed zone in the history causes loss of the
+  published zone. ([#825])
+
+### Acknowledgements
+
+Thanks to @davidgroves, @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
+valuable feedback!
+
+[#639]: https://github.com/NLnetLabs/cascade/pull/639
+[#738]: https://github.com/NLnetLabs/cascade/pull/738
+[#807]: https://github.com/NLnetLabs/cascade/pull/807
+[#810]: https://github.com/NLnetLabs/cascade/pull/810
+[#814]: https://github.com/NLnetLabs/cascade/pull/814
+[#815]: https://github.com/NLnetLabs/cascade/pull/815
+[#817]: https://github.com/NLnetLabs/cascade/pull/817
+[#820]: https://github.com/NLnetLabs/cascade/pull/820
+[#821]: https://github.com/NLnetLabs/cascade/pull/821
+[#825]: https://github.com/NLnetLabs/cascade/pull/825
+[#829]: https://github.com/NLnetLabs/cascade/pull/829
+
 ## 0.1.0-beta2 'Donde comen dos, comen tres'
 
 Released 2026-06-12.
@@ -28,16 +117,19 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 ### Breaking changes
 
 - Rename policy field `server.outbound.accept-xfr-from` to
-  `server.outbound.provide-xfr-to` ([#722] by @ximon18).
+  `server.outbound.provide-xfr-to`. ([#722] by @ximon18).
 
 ### New
 
 - Add an extra decimal digit to formatted numbers like "4KB" in
-  `cascade zone status` output ([#794] by @tertsdiepraam)
+  `cascade zone status` output. ([#794] by @tertsdiepraam)
 
 ### Bug fixes
 
-- Ignore re-signing without a published signed instance ([#795] by @bal-e)
+- Ignore re-signing without a published signed instance. ([#795] by @bal-e)
+- Account for TTL-only changes in incremental re-signing. ([#803] by
+  @Philip-NLnetLabs)
+- Actually use changes on policy reload. ([#606] by @bal-e)
 
 ### Documentation improvements
 
@@ -56,6 +148,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 Thanks to @jpmens and @gryphius for testing Cascade and providing valuable
 feedback and contributions to the documentation.
 
+[#606]: https://github.com/NLnetLabs/cascade/pull/606
 [#704]: https://github.com/NLnetLabs/cascade/pull/704
 [#708]: https://github.com/NLnetLabs/cascade/pull/708
 [#711]: https://github.com/NLnetLabs/cascade/pull/711
@@ -65,6 +158,7 @@ feedback and contributions to the documentation.
 [#722]: https://github.com/NLnetLabs/cascade/pull/722
 [#794]: https://github.com/NLnetLabs/cascade/pull/794
 [#795]: https://github.com/NLnetLabs/cascade/pull/795
+[#803]: https://github.com/NLnetLabs/cascade/pull/803
 
 ## 0.1.0-beta1 'Slàinte mhath'
 

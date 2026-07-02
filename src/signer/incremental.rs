@@ -327,7 +327,7 @@ impl WorkSpace<'_> {
             since_last_time = effective_lifetime;
         }
 
-        let total_signatures = iss.rrsigs.len();
+        let total_signatures = iss.rrsigs.signed_rrset_count();
 
         let to_sign = since_last_time.as_secs_f64() * (total_signatures as f64)
             / effective_lifetime.as_secs_f64();
@@ -346,7 +346,7 @@ impl WorkSpace<'_> {
                     + self.policy.signer.signature_refresh_interval
             {
                 let owner_namebuf: NameBuf = RevNameBuf::copy_from(owner).into();
-                let old_rtype = new_base_rtype_to_old_base_rtype(*rtype);
+                let old_rtype = new_base_rtype_to_old_base_rtype(rtype);
                 error!(
                     "TTL of {}/{} too large: signature-remain-time ({}) + TTL ({}) + signature-refresh-interval ({}) >= signature-lifetime ({})",
                     owner_namebuf,
@@ -386,15 +386,14 @@ impl WorkSpace<'_> {
                 break;
             }
 
-            let key = (*owner, **rtype);
+            let key = (*owner, *rtype);
             let old_key = (
                 revname_to_old_base_name(owner),
-                new_base_rtype_to_old_base_rtype(**rtype),
+                new_base_rtype_to_old_base_rtype(*rtype),
             );
-            if **rtype == NewRtype::NSEC {
+            if *rtype == NewRtype::NSEC {
                 let record = iss.nsecs.get(&key.0).expect("NSEC record should exist");
-                let record: Zrd = record.clone().into();
-                let records = [record.clone()];
+                let records = [record.clone().into()];
                 sign_records(
                     &iss.origin,
                     &records,
@@ -403,7 +402,7 @@ impl WorkSpace<'_> {
                     iss.expiration,
                     &mut new_sigs,
                 )?;
-            } else if **rtype == NewRtype::NSEC3 {
+            } else if *rtype == NewRtype::NSEC3 {
                 let record = iss
                     .nsec3s
                     .get(&key.0)
@@ -438,7 +437,7 @@ impl WorkSpace<'_> {
         }
 
         for sigs in new_sigs {
-            iss.rrsigs.insert_new_records(sigs);
+            iss.rrsigs.replace_with_new_records(sigs);
         }
 
         // Assume we signed at least one record. If we don't then something is
@@ -485,15 +484,14 @@ impl WorkSpace<'_> {
                     continue;
                 }
 
-                let key = (owner, *rtype);
+                let key = (owner, rtype);
                 let old_key = (
                     revname_to_old_base_name(owner),
-                    new_base_rtype_to_old_base_rtype(*rtype),
+                    new_base_rtype_to_old_base_rtype(rtype),
                 );
-                if *rtype == NewRtype::NSEC {
+                if rtype == NewRtype::NSEC {
                     let record = iss.nsecs.get(&key.0).expect("NSEC record should exist");
-                    let record: Zrd = record.clone().into();
-                    let records = [record.clone()];
+                    let records = [record.clone().into()];
                     sign_records(
                         &iss.origin,
                         &records,
@@ -502,7 +500,7 @@ impl WorkSpace<'_> {
                         iss.expiration,
                         &mut new_sigs,
                     )?;
-                } else if *rtype == NewRtype::NSEC3 {
+                } else if rtype == NewRtype::NSEC3 {
                     let record = iss
                         .nsec3s
                         .get(&key.0)
@@ -537,7 +535,7 @@ impl WorkSpace<'_> {
             }
 
             for sigs in new_sigs {
-                iss.rrsigs.insert_new_records(sigs);
+                iss.rrsigs.replace_with_new_records(sigs);
             }
 
             // Clear key_roll.
@@ -545,7 +543,7 @@ impl WorkSpace<'_> {
             return Ok(());
         }
 
-        let total_signatures = iss.rrsigs.len();
+        let total_signatures = iss.rrsigs.signed_rrset_count();
 
         let to_sign =
             since_start.as_secs_f64() * (total_signatures as f64) / key_roll_time.as_secs_f64();
@@ -576,15 +574,14 @@ impl WorkSpace<'_> {
                 continue;
             }
 
-            let key = (*owner, **rtype);
+            let key = (*owner, *rtype);
             let old_key = (
                 revname_to_old_base_name(owner),
-                new_base_rtype_to_old_base_rtype(**rtype),
+                new_base_rtype_to_old_base_rtype(*rtype),
             );
-            if **rtype == NewRtype::NSEC {
+            if *rtype == NewRtype::NSEC {
                 let record = iss.nsecs.get(&key.0).expect("NSEC record should exist");
-                let record: Zrd = record.clone().into();
-                let records = [record.clone()];
+                let records = [record.clone().into()];
                 sign_records(
                     &iss.origin,
                     &records,
@@ -593,7 +590,7 @@ impl WorkSpace<'_> {
                     iss.expiration,
                     &mut new_sigs,
                 )?;
-            } else if **rtype == NewRtype::NSEC3 {
+            } else if *rtype == NewRtype::NSEC3 {
                 let record = iss
                     .nsec3s
                     .get(&key.0)
@@ -628,7 +625,7 @@ impl WorkSpace<'_> {
         }
 
         for sigs in new_sigs {
-            iss.rrsigs.insert_new_records(sigs);
+            iss.rrsigs.replace_with_new_records(sigs);
         }
         Ok(())
     }
@@ -996,7 +993,7 @@ impl WorkSpace<'_> {
             iss.rrsigs
                 .iter()
                 .filter_map(|((o, t), r)| {
-                    if *o != *new_origin.as_ref() || *t != NewRtype::ZONEMD {
+                    if *o != *new_origin.as_ref() || t != NewRtype::ZONEMD {
                         Some(r)
                     } else {
                         None
@@ -1066,7 +1063,7 @@ impl WorkSpace<'_> {
             &mut new_sigs,
         )?;
         iss.new_apex.insert(key.1, zonemd_records);
-        iss.rrsigs.insert_new_records(new_sigs[0].clone());
+        iss.rrsigs.replace_with_new_records(new_sigs[0].clone());
         Ok(())
     }
 
@@ -1246,7 +1243,7 @@ impl WorkSpace<'_> {
         for t in curr_apex_remove {
             let origin = old_base_name_to_revnamebuf(&iss.origin);
             let rtype = old_base_rtype_to_new_base_rtype(*t);
-            let key = (origin, rtype);
+            let key = (origin.as_ref(), rtype);
             iss.new_apex.remove(t);
             iss.rrsigs.remove(&key);
         }
@@ -1362,7 +1359,7 @@ impl WorkSpace<'_> {
             }
         }
         for sigs in new_sigs {
-            iss.rrsigs.insert_new_records(sigs);
+            iss.rrsigs.replace_with_new_records(sigs);
         }
         Ok(())
     }
@@ -1684,7 +1681,7 @@ impl<'a> IncrementalSigningState<'a> {
                 new_rrset.sort_by(|a, b| a.as_ref().data().canonical_cmp(b.as_ref().data()));
 
                 let new_name = old_base_name_to_revnamebuf(key.0);
-                let key = (new_name, old_base_rtype_to_new_base_rtype(key.1));
+                let key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(key.1));
                 if *old_rrset != *new_rrset && self.rrsigs.remove(&key).is_some() {
                     sign_records(
                         &self.origin,
@@ -1719,7 +1716,7 @@ impl<'a> IncrementalSigningState<'a> {
                 new_rrset.sort_by(|a, b| a.as_ref().data().canonical_cmp(b.as_ref().data()));
 
                 let new_name = old_base_name_to_revnamebuf(key.0);
-                let key = (new_name, old_base_rtype_to_new_base_rtype(key.1));
+                let key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(key.1));
                 if *old_rrset != *new_rrset && self.rrsigs.remove(&key).is_some() {
                     sign_records(
                         &self.origin,
@@ -1740,14 +1737,14 @@ impl<'a> IncrementalSigningState<'a> {
             }
         }
         for sigs in new_sigs {
-            self.rrsigs.insert_new_records(sigs);
+            self.rrsigs.replace_with_new_records(sigs);
         }
         for old_rrset in self.old_data.values() {
             // What is left in old_data is removed.
             let rtype = old_rrset[0].rtype();
             let key = (old_rrset[0].owner().clone(), rtype);
             let new_name = old_base_name_to_revnamebuf(old_rrset[0].owner());
-            let new_key = (new_name, old_base_rtype_to_new_base_rtype(rtype));
+            let new_key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(rtype));
 
             self.rrsigs.remove(&new_key);
 
@@ -1765,7 +1762,7 @@ impl<'a> IncrementalSigningState<'a> {
             let rtype = old_rrset[0].rtype();
             let key = (old_rrset[0].owner().clone(), rtype);
             let new_name = old_base_name_to_revnamebuf(old_rrset[0].owner());
-            let new_key = (new_name, old_base_rtype_to_new_base_rtype(rtype));
+            let new_key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(rtype));
 
             self.rrsigs.remove(&new_key);
 
@@ -1837,7 +1834,7 @@ impl<'a> IncrementalSigningState<'a> {
                             continue;
                         }
                         let new_name = old_base_name_to_revnamebuf(key);
-                        let key = (new_name, rtype);
+                        let key = (new_name.as_ref(), rtype);
                         self.rrsigs.remove(&key);
                     }
 
@@ -1995,7 +1992,7 @@ impl<'a> IncrementalSigningState<'a> {
                             continue;
                         }
                         let new_name = old_base_name_to_revnamebuf(key);
-                        let key = (new_name, rtype);
+                        let key = (new_name.as_ref(), rtype);
                         self.rrsigs.remove(&key);
                     }
 
@@ -2143,15 +2140,13 @@ impl<'a> IncrementalSigningState<'a> {
 
     fn remove_nsec_nsec3(&mut self) {
         for k in self.nsecs.keys() {
-	    let k_buf = RevNameBuf::copy_from(k);
-            let key = (k_buf, NewRtype::NSEC);
+            let key = (k, NewRtype::NSEC);
             self.rrsigs.remove(&key);
         }
         self.nsecs.remove_all();
 
         for k in self.nsec3s.keys() {
-	    let k_buf = RevNameBuf::copy_from(k);
-            let key = (k_buf, NewRtype::NSEC3);
+            let key = (k, NewRtype::NSEC3);
             self.rrsigs.remove(&key);
         }
         self.nsec3s.remove_all();
@@ -2188,7 +2183,7 @@ impl<'a> IncrementalSigningState<'a> {
             )?;
         }
         for sig in new_sigs {
-            self.rrsigs.insert_new_records(sig);
+            self.rrsigs.replace_with_new_records(sig);
         }
         Ok(())
     }
@@ -2247,7 +2242,7 @@ impl<'a> IncrementalSigningState<'a> {
             )?;
         }
         for sig in new_sigs {
-            self.rrsigs.insert_new_records(sig);
+            self.rrsigs.replace_with_new_records(sig);
         }
         Ok(())
     }
@@ -2555,13 +2550,14 @@ impl<'a> DoubleEndedIterator for NsecRange<'a> {
     }
 }
 
+type RrsigKey<'a> = (&'a RevName, NewRtype);
 struct Rrsigs<'zd> {
     // Store the existing RRSIG records. The incremental signer doesn't
     // need them, but we need them to inform the zone store which records
     // have been removed.
-    old_rrsigs: HashMap<(&'zd RevName, NewRtype), Vec<&'zd RegularRecord>>,
+    old_rrsigs: HashMap<RrsigKey<'zd>, Vec<&'zd RegularRecord>>,
 
-    changes: HashMap<(RevNameBuf, NewRtype), RrsigChange<'zd>>,
+    changes: HashMap<(Box<RevName>, NewRtype), RrsigChange<'zd>>,
 }
 
 impl<'zd> Rrsigs<'zd> {
@@ -2584,26 +2580,20 @@ impl<'zd> Rrsigs<'zd> {
         let NewRecordData::Rrsig(rrsig) = record.data() else {
             panic!("ZoneRecordData::Rrsig expected");
         };
-        let buf_key = (RevNameBuf::copy_from(record.owner()), rrsig.type_covered());
+        let buf_key = (record.owner().unsized_copy_into(), rrsig.type_covered());
 
         // First check the changes map.
         match self.changes.entry(buf_key) {
             hash_map::Entry::Occupied(mut entry) => {
                 let change = entry.get_mut();
                 match change {
-                    RrsigChange::Delete { .. } => {
-                        // Create a new empty change, either insert of
-                        // modify depending on the existing RRSIGS.
-                        let key = (record.owner(), rrsig.type_covered());
-                        let new_change = if let Some(rrsigs) = self.old_rrsigs.get(&key) {
-                            RrsigChange::Modified {
-                                old: rrsigs.to_vec(),
-                                new: vec![record],
-                            }
-                        } else {
-                            todo!();
+                    RrsigChange::Delete { old } => {
+                        // We found Delete so old RRSIGs exit and we need
+                        // to create a Modified.
+                        *change = RrsigChange::Modified {
+                            old: old.to_vec(),
+                            new: vec![record],
                         };
-                        *change = new_change;
                     }
                     RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
                         new.push(record);
@@ -2611,11 +2601,14 @@ impl<'zd> Rrsigs<'zd> {
                 }
             }
             hash_map::Entry::Vacant(entry) => {
-                // Whether to new change is Modified or Insert depends on
+                // Whether a new change is Modified or Insert depends on
                 // whether RRSIGs already exist or not.
                 let key = (record.owner(), rrsig.type_covered());
-                let change = if let Some(_sigs) = self.old_rrsigs.get(&key) {
-                    todo!();
+                let change = if let Some(old_sigs) = self.old_rrsigs.get(&key) {
+                    RrsigChange::Modified {
+                        old: old_sigs.to_vec(),
+                        new: vec![record],
+                    }
                 } else {
                     // Nothing yet. Create an Insert.
                     RrsigChange::Insert { new: vec![record] }
@@ -2625,33 +2618,34 @@ impl<'zd> Rrsigs<'zd> {
         }
     }
 
-    fn insert_new_records(&mut self, records: Vec<RegularRecord>) {
+    /// Replace the signature for an RRset with a new collection of signatures.
+    /// If there were no previous signature then this is an insert.
+    /// The list of RRSIG records has to have a common owner name and
+    /// the same type_covered().
+    fn replace_with_new_records(&mut self, records: Vec<RegularRecord>) {
         let NewRecordData::Rrsig(rrsig) = records[0].data() else {
             panic!("ZoneRecordData::Rrsig expected");
         };
-        let buf_key = (
-            RevNameBuf::copy_from(records[0].owner()),
-            rrsig.type_covered(),
-        );
+
+        let buf_key: (Box<RevName>, _) =
+            (records[0].owner().unsized_copy_into(), rrsig.type_covered());
+
+        // Check that all records have the same owner name and the same
+        // type_covered().
+        debug_assert!(records.iter().all(|r| r.owner() == buf_key.0.as_ref() && matches!(r.data(), NewRecordData::Rrsig(rrsig) if rrsig.type_covered() == buf_key.1)));
 
         // First check the changes map.
         match self.changes.entry(buf_key) {
             hash_map::Entry::Occupied(mut entry) => {
                 let change = entry.get_mut();
                 match change {
-                    RrsigChange::Delete { .. } => {
-                        // Create a new empty change, either insert or
-                        // modify depending on the existing RRSIGS.
-                        let key = (records[0].owner(), rrsig.type_covered());
-                        let new_change = if let Some(rrsigs) = self.old_rrsigs.get(&key) {
-                            RrsigChange::Modified {
-                                old: rrsigs.to_vec(),
-                                new: records,
-                            }
-                        } else {
-                            todo!();
+                    RrsigChange::Delete { old } => {
+                        // Old RRSIGs existed but were deleted. Create a
+                        // Modify.
+                        *change = RrsigChange::Modified {
+                            old: old.to_vec(),
+                            new: records,
                         };
-                        *change = new_change;
                     }
                     RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
                         *new = records;
@@ -2679,7 +2673,9 @@ impl<'zd> Rrsigs<'zd> {
         RrsigsValuesIter::new(self.old_rrsigs.iter(), &self.changes)
     }
 
-    fn len(&self) -> usize {
+    /// Return the number of RRsets that have signatures taking inserts and
+    /// deletes into account.
+    fn signed_rrset_count(&self) -> usize {
         // Return the number of RRsets that have signatures.
         let len = self.old_rrsigs.len();
 
@@ -2693,26 +2689,21 @@ impl<'zd> Rrsigs<'zd> {
             })
             .sum();
 
-        let ilen = (len as isize) + changes;
-        if ilen >= 0 {
-            ilen as usize
-        } else {
-            unreachable!()
-        }
+        len.checked_add_signed(changes).expect("len + changes >= 0")
     }
 
-    // TODO: change key to &RevName
-    fn remove(&mut self, key: &(RevNameBuf, NewRtype)) -> Option<()> {
+    fn remove(&mut self, key: &RrsigKey) -> Option<()> {
         // Remove normally returns the removed item, but we don't need
         // that. We should switch to a boolean.
 
         // Check if the old version has RRSIGs.
-        let old_key = (key.0.as_ref(), key.1);
+        let old_key = (key.0, key.1);
+        let box_key = (key.0.unsized_copy_into(), key.1);
         if let Some(rrsigs) = self.old_rrsigs.get(&old_key) {
             // There are RRSIGs in the old version. Check if they have been
             // deleted before.
             let mut result = Some(());
-            match self.changes.entry(key.clone()) {
+            match self.changes.entry(box_key.clone()) {
                 hash_map::Entry::Occupied(mut entry) => {
                     let change = entry.get_mut();
                     match change {
@@ -2743,7 +2734,7 @@ impl<'zd> Rrsigs<'zd> {
             // They were not present in the old version, check if they have
             // been added.
             let mut result = None;
-            match self.changes.entry(key.clone()) {
+            match self.changes.entry(box_key) {
                 hash_map::Entry::Occupied(entry) => {
                     let change = entry.get();
                     match change {
@@ -2769,7 +2760,7 @@ impl<'zd> Rrsigs<'zd> {
     }
 }
 
-type RrsigIterItem<'a> = ((&'a RevName, &'a NewRtype), Vec<&'a RegularRecord>);
+type RrsigIterItem<'a> = (RrsigKey<'a>, Vec<&'a RegularRecord>);
 impl<'a> IntoIterator for &'a Rrsigs<'a> {
     type Item = RrsigIterItem<'a>;
     type IntoIter = RrsigIter<'a>;
@@ -2780,15 +2771,15 @@ impl<'a> IntoIterator for &'a Rrsigs<'a> {
 
 #[allow(clippy::type_complexity)]
 struct RrsigIter<'a> {
-    iter: Option<hash_map::Iter<'a, (&'a RevName, NewRtype), Vec<&'a RegularRecord>>>,
-    changes: &'a HashMap<(RevNameBuf, NewRtype), RrsigChange<'a>>,
-    changes_iter: Option<hash_map::Iter<'a, (RevNameBuf, NewRtype), RrsigChange<'a>>>,
+    iter: Option<hash_map::Iter<'a, RrsigKey<'a>, Vec<&'a RegularRecord>>>,
+    changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange<'a>>,
+    changes_iter: Option<hash_map::Iter<'a, (Box<RevName>, NewRtype), RrsigChange<'a>>>,
 }
 
 impl<'a> RrsigIter<'a> {
     fn new(
-        iter: hash_map::Iter<'a, (&RevName, NewRtype), Vec<&RegularRecord>>,
-        changes: &'a HashMap<(RevNameBuf, NewRtype), RrsigChange>,
+        iter: hash_map::Iter<'a, RrsigKey<'a>, Vec<&RegularRecord>>,
+        changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange>,
     ) -> RrsigIter<'a> {
         RrsigIter {
             iter: Some(iter),
@@ -2802,43 +2793,31 @@ impl<'a> Iterator for RrsigIter<'a> {
     type Item = RrsigIterItem<'a>;
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
         if let Some(iter) = &mut self.iter {
-            loop {
-                let next = iter.next();
-                if let Some(((name, rtype), sigs)) = next {
-                    // Check if changes has something.
-                    let key = (RevNameBuf::copy_from(name), *rtype);
-                    if self.changes.get(&key).is_some() {
-                        // Get it from changes if not deleted.
-                        continue;
-                    }
-
-                    return Some(((name, rtype), sigs.to_vec()));
+            for ((name, rtype), sigs) in iter.by_ref() {
+                // Check if changes has something.
+                let key = ((*name).unsized_copy_into(), *rtype);
+                if self.changes.get(&key).is_some() {
+                    // Get it from changes if not deleted.
+                    continue;
                 }
 
-                // End of iterator.
-                break;
+                return Some(((name, *rtype), sigs.to_vec()));
             }
             self.iter = None;
             self.changes_iter = Some(self.changes.iter());
         }
         if let Some(changes_iter) = &mut self.changes_iter {
-            loop {
-                let next = changes_iter.next();
-                if let Some(((name, rtype), change)) = next {
-                    match change {
-                        RrsigChange::Delete { .. } => {
-                            // Nothing here.
-                            continue;
-                        }
-                        RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
-                            let new: Vec<&RegularRecord> = new.iter().collect();
-                            return Some(((name.as_ref(), rtype), new));
-                        }
+            for ((name, rtype), change) in changes_iter.by_ref() {
+                match change {
+                    RrsigChange::Delete { .. } => {
+                        // Nothing here.
+                        continue;
+                    }
+                    RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
+                        let new: Vec<&RegularRecord> = new.iter().collect();
+                        return Some(((name.as_ref(), *rtype), new));
                     }
                 }
-
-                // End of iterator.
-                break;
             }
             self.changes_iter = None;
         }
@@ -2848,15 +2827,15 @@ impl<'a> Iterator for RrsigIter<'a> {
 
 #[allow(clippy::type_complexity)]
 struct RrsigsValuesIter<'a> {
-    iter: Option<hash_map::Iter<'a, (&'a RevName, NewRtype), Vec<&'a RegularRecord>>>,
-    changes: &'a HashMap<(RevNameBuf, NewRtype), RrsigChange<'a>>,
-    changes_values: Option<hash_map::Values<'a, (RevNameBuf, NewRtype), RrsigChange<'a>>>,
+    iter: Option<hash_map::Iter<'a, RrsigKey<'a>, Vec<&'a RegularRecord>>>,
+    changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange<'a>>,
+    changes_values: Option<hash_map::Values<'a, (Box<RevName>, NewRtype), RrsigChange<'a>>>,
 }
 
 impl<'a> RrsigsValuesIter<'a> {
     fn new(
-        iter: hash_map::Iter<'a, (&RevName, NewRtype), Vec<&RegularRecord>>,
-        changes: &'a HashMap<(RevNameBuf, NewRtype), RrsigChange>,
+        iter: hash_map::Iter<'a, RrsigKey<'a>, Vec<&RegularRecord>>,
+        changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange>,
     ) -> RrsigsValuesIter<'a> {
         RrsigsValuesIter {
             iter: Some(iter),
@@ -2871,43 +2850,31 @@ impl<'a> Iterator for RrsigsValuesIter<'a> {
 
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
         if let Some(iter) = &mut self.iter {
-            loop {
-                let next = iter.next();
-                if let Some(((name, rtype), sigs)) = next {
-                    // Check if changes has something.
-                    let key = (RevNameBuf::copy_from(name), *rtype);
-                    if self.changes.get(&key).is_some() {
-                        // Get it from changes if not deleted.
-                        continue;
-                    }
-
-                    return Some(sigs.to_vec());
+            for ((name, rtype), sigs) in iter.by_ref() {
+                // Check if changes has something.
+                let key = ((*name).unsized_copy_into(), *rtype);
+                if self.changes.get(&key).is_some() {
+                    // Get it from changes if not deleted.
+                    continue;
                 }
 
-                // End of iterator.
-                break;
+                return Some(sigs.to_vec());
             }
             self.iter = None;
             self.changes_values = Some(self.changes.values());
         }
         if let Some(changes_values) = &mut self.changes_values {
-            loop {
-                let next = changes_values.next();
-                if let Some(change) = next {
-                    match change {
-                        RrsigChange::Delete { .. } => {
-                            // Nothing here.
-                            continue;
-                        }
-                        RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
-                            let new: Vec<&RegularRecord> = new.iter().collect();
-                            return Some(new.to_vec());
-                        }
+            for change in changes_values.by_ref() {
+                match change {
+                    RrsigChange::Delete { .. } => {
+                        // Nothing here.
+                        continue;
+                    }
+                    RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
+                        let new: Vec<&RegularRecord> = new.iter().collect();
+                        return Some(new.to_vec());
                     }
                 }
-
-                // End of iterator.
-                break;
             }
             self.changes_values = None;
         }
@@ -2915,6 +2882,8 @@ impl<'a> Iterator for RrsigsValuesIter<'a> {
     }
 }
 
+/// Changes to the signatures for an RRset. Note that the signatures
+/// are not ordered.
 #[derive(Debug)]
 enum RrsigChange<'zd> {
     Delete {
@@ -3060,7 +3029,6 @@ fn nsec_remove(name: &RevName, next_name: &NewName, iss: &mut IncrementalSigning
     // Try to find the NSEC record that comes before the one we are trying
     // to remove. Assume that the apex NSEC will always exist can sort
     // before anything else.
-    let old_name = revname_to_old_base_name(name);
     let name_box: Box<RevName> = name.unsized_copy_into();
     let mut range = iss.nsecs.range(..name_box);
     let (previous_name, previous_record) = range
@@ -3081,13 +3049,12 @@ fn nsec_remove(name: &RevName, next_name: &NewName, iss: &mut IncrementalSigning
         previous_record.ttl(),
         NewRecordData::<NameBuf>::Nsec(previous_nsec).into(),
     );
-    let previous_revnamebuf = RevNameBuf::copy_from(previous_name);
-    iss.nsecs
-        .insert_new_record(&previous_revnamebuf, previous_record);
+    iss.nsecs.insert_new_record(previous_name_revnamebuf.as_ref(), previous_record);
     iss.modified_nsecs.insert(old_previous_name.clone());
-    iss.nsecs.remove(&name);
+    iss.nsecs.remove(name);
+    let old_name = revname_to_old_base_name(name);
     iss.modified_nsecs.remove(&old_name);
-    let key = (RevNameBuf::copy_from(name), NewRtype::NSEC);
+    let key = (name, NewRtype::NSEC);
     iss.rrsigs.remove(&key);
 }
 
@@ -3162,12 +3129,16 @@ fn nsec_set_occluded(name: &RevName, iss: &mut IncrementalSigningState) {
         next = NameBuf::copy_from(nsec.next_name());
         old_next = name_to_old_base_name(next.as_ref());
 
-        let curr_revnamebuf: RevNameBuf = curr.into();
+        let curr_revnamebuf: RevNameBuf = curr.clone().into();
         nsec_remove(curr_revnamebuf.as_ref(), &next, iss);
 
         // Remove all signatures.
         for rtype in nsec.types().iter() {
-            let key = (curr_revnamebuf.clone(), rtype);
+	    let curr_revnamebuf: RevNameBuf = curr.clone().into();
+            let key = (
+                curr_revnamebuf.as_ref(),
+                rtype,
+            );
             iss.rrsigs.remove(&key);
         }
     }
@@ -3432,8 +3403,7 @@ fn nsec3_remove_one(
     iss.nsec3s.remove(nsec3_name);
     let old_nsec3_name = revname_to_old_base_name(nsec3_name);
     iss.modified_nsecs.remove(&old_nsec3_name);
-    let nsec3_revnamebuf = RevNameBuf::copy_from(nsec3_name);
-    let key = (nsec3_revnamebuf, NewRtype::NSEC3);
+    let key = (nsec3_name, NewRtype::NSEC3);
     iss.rrsigs.remove(&key);
 }
 
@@ -3483,7 +3453,11 @@ fn nsec3_set_occluded(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
 
         // Remove all signatures.
         for rtype in nsec3.types().iter() {
-            let key = (old_base_name_to_revnamebuf(key_name), rtype);
+            let key_name_revnamebuf = old_base_name_to_revnamebuf(key_name);
+            let key = (
+                key_name_revnamebuf.as_ref(),
+                rtype,
+            );
             iss.rrsigs.remove(&key);
         }
     }
@@ -3846,7 +3820,7 @@ fn sign_rtype_set(
         )?;
     }
     for sigs in new_sigs {
-        iss.rrsigs.insert_new_records(sigs);
+        iss.rrsigs.replace_with_new_records(sigs);
     }
     Ok(())
 }

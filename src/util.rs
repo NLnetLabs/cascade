@@ -119,6 +119,36 @@ impl fmt::Debug for BackgroundTasks {
     }
 }
 
+//----------- FmtBy() ----------------------------------------------------------
+
+/// Format using the given closure.
+///
+/// This is a polyfill for [`std::fmt::from_fn()`], which does not yet fit in
+/// our MSRV.
+///
+/// [`std::fmt::from_fn()`]: https://doc.rust-lang.org/stable/std/fmt/fn.from_fn.html
+pub struct FmtBy<F>(pub F)
+where
+    F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result;
+
+impl<F> fmt::Debug for FmtBy<F>
+where
+    F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (self.0)(f)
+    }
+}
+
+impl<F> fmt::Display for FmtBy<F>
+where
+    F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (self.0)(f)
+    }
+}
+
 //------------------------------------------------------------------------------
 
 /// Force a [`Future`] to evaluate synchronously.

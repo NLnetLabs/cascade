@@ -877,27 +877,11 @@ impl KmipClientCredentialsFile {
     ///   - Create the file if missing.
     ///   - Keep the file open for writing back changes. See [`Self::save()`].
     pub fn new(path: &Path, mode: KmipServerCredentialsFileMode) -> Result<Self, String> {
-        let read;
-        let write;
-        let create;
-
-        match mode {
-            KmipServerCredentialsFileMode::ReadOnly => {
-                read = true;
-                write = false;
-                create = false;
-            }
-            KmipServerCredentialsFileMode::ReadWrite => {
-                read = true;
-                write = true;
-                create = false;
-            }
-            KmipServerCredentialsFileMode::CreateReadWrite => {
-                read = true;
-                write = true;
-                create = true;
-            }
-        }
+        let (read, write, create) = match mode {
+            KmipServerCredentialsFileMode::ReadOnly => (true, false, false),
+            KmipServerCredentialsFileMode::ReadWrite => (true, true, false),
+            KmipServerCredentialsFileMode::CreateReadWrite => (true, true, true),
+        };
 
         let file = OpenOptions::new()
             .read(read)
@@ -1236,8 +1220,19 @@ fn imports_to_commands(key_imports: &[KeyImport]) -> Vec<Vec<String>> {
                     "import", key_type, "kmip", server, public_id, private_id, algorithm, flags
                 ]
             }
-            KeyImport::File(FileKeyImport { key_type, path }) => {
-                strs!["import", key_type, "file", path]
+            KeyImport::File(FileKeyImport {
+                key_type,
+                public_key_path,
+                private_key_path,
+            }) => {
+                strs![
+                    "import",
+                    key_type,
+                    "file",
+                    public_key_path,
+                    "--private-key",
+                    private_key_path
+                ]
             }
         })
         .collect()
