@@ -116,16 +116,17 @@
 //            KMIP_Activate
 //   3. Relabel to: <prefix>-<(partial) zone name>-<key tag>-<key type>.
 //        if supports_relabeling:
-//          if !conn.rename_key():
-//            supports_relabeling = false
-//              format_key_label()
-//              conn.rename_key(public_key_id, new_name):
-//                KMIP_ModifyAttribute(public_key_id, Attribute::Name(new_name)):
-//              if failed:
-//                supports_relabelling = false
-//              else:
-//                conn.rename_key(private_key_id, new_name):
-//                  KMIP_ModifyAttribute(private_key_id, Attribute::Name(new_name))
+//          # note: format_key_label() falls back to a hex string if it
+//          # cannot fit the values in the max label len allowed.
+//          pub_label = format_key_label(prefix, zone name, key tag, key type, "-pub", max_label_bytes)
+//          pri_label = format_key_label(prefix, zone name, key tag, key type, "-pri", max_label_bytes)
+//          conn.rename_key(public_key_id, pub_label):
+//            if !KMIP_ModifyAttribute(public_key_id, Attribute::Name(pub_label)):
+//              supports_relabeling = false
+//            else:
+//              conn.rename_key(private_key_id, pri_label):
+//                if !KMIP_ModifyAttribute(private_key_id, Attribute::Name(pri_label)):
+//                  supports_relabelling = false
 //
 // # Key ID handling by Cascade-HSM-Bridge
 //
