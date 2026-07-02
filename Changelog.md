@@ -33,16 +33,20 @@ Released yyyy-mm-dd.
 
 - Extend cascade tsig remove error to report the users of the key. ([#719] by
   @ximon18)
+- Reduce the memory use of RRSIGs during incremental signing. ([#824])
 
 ### Documentation improvements
+
+- Update note about compatibility with NetHSM. ([#621] by @jans23)
 
 ### Known issues
 
 ### Acknowledgements
 
+[#621]: https://github.com/NLnetLabs/cascade/pull/621
 [#798]: https://github.com/NLnetLabs/cascade/issues/798
-
 [#719]: https://github.com/NLnetLabs/cascade/pull/719
+[#824]: https://github.com/NLnetLabs/cascade/pull/824
 [#835]: https://github.com/NLnetLabs/cascade/pull/835
 
 ## 0.1.0-beta3 'Villa Volta'

@@ -232,7 +232,26 @@ impl HttpServer {
         }
 
         // Fetch the signing queue.
-        let signing_queue = center.signer.on_queue_report(center);
+        let signing_queue = {
+            let mut report = Vec::new();
+
+            // Get a list of zones in the queue.
+            let zones = center.signer.queue.export();
+
+            for zone in zones {
+                let zone_state = zone.read();
+                if let Some(status) = &zone_state.signer.active_signing_status
+                    && let Some(stage_report) = status.read().unwrap().mk_signing_report()
+                {
+                    report.push(SigningQueueReport {
+                        zone_name: zone.name.clone(),
+                        signing_report: stage_report,
+                    });
+                }
+            }
+
+            report
+        };
 
         let f = |x: &Vec<cascade_cfg::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
         let loaded_review_addrs = f(&center.config.loader.review.servers);
