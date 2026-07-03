@@ -80,7 +80,7 @@ pub fn restore_loaded(
 
     for diff_path in paths_iter {
         trace!(
-            "Loading and applying loaded diff form '{}'",
+            "Loading and applying loaded diff from '{}'",
             diff_path.display()
         );
         let mut loaded_patcher = restorer
