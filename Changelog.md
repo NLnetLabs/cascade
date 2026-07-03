@@ -14,7 +14,7 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Version 0.1.0-beta4 "Irish Goodbye"
+## Version 0.1.0-beta4 'Irish Goodbye'
 
 Released 2026-07-03.
 
@@ -53,6 +53,9 @@ Released 2026-07-03.
   reported by @jpmens)
 
 ### Acknowledgements
+
+Thanks to @jpmens, @gryphius, and @jans23 for testing Cascade and providing
+valuable feedback and contributions!
 
 [#621]: https://github.com/NLnetLabs/cascade/pull/621
 [#719]: https://github.com/NLnetLabs/cascade/pull/719
@@ -107,8 +110,8 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 
 ### Acknowledgements
 
-Thanks to @davidgroves, @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
-valuable feedback!
+Thanks to @davidgroves, @jpmens, @gryphius, and @marcgweg for testing Cascade
+and providing valuable feedback!
 
 [#639]: https://github.com/NLnetLabs/cascade/pull/639
 [#738]: https://github.com/NLnetLabs/cascade/pull/738
