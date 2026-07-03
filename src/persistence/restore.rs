@@ -40,12 +40,6 @@ pub fn restore_loaded(
     center: &Arc<Center>,
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<bool> {
-    // Remove any existing diffs.
-    {
-        let mut state = zone.write(center);
-        state.storage.diffs.clear();
-    }
-
     let state = zone.read();
     let mut paths_iter = state.persistence.loaded_diff_paths.iter();
     let Some(snapshot_path) = paths_iter.next() else {
