@@ -45,8 +45,8 @@
 //!     `StorageState::diffs` so that it can be served in response to an IXFR
 //!     request from a downstream nameserver.
 //!   - The path that the diff file was written to is appended to
-//!     `ZoneState::persistence.loaded_diff_paths` or
-//!     `ZoneState::persistence.signed_diff_paths` and the zone state is
+//!     [`PersistenceState::loaded_diff_paths`] or
+//!     [`PersistenceState::signed_diff_paths`] and the zone state is
 //!     immediately saved to disk.
 //!
 //! # Panics
