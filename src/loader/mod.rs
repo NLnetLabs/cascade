@@ -71,7 +71,7 @@ impl Loader {
         );
 
         metrics.register_with_unit(
-            "zone_loaded_last_successful_bytes",
+            "zone_loaded_last_successful_size",
             "Number of bytes loaded in last successful zone transfer or zonefile load",
             Unit::Bytes,
             loader_metrics.zone_loaded_last_successful_bytes.clone(),
@@ -84,7 +84,7 @@ impl Loader {
         );
 
         metrics.register_with_unit(
-            "zone_loaded_last_bytes",
+            "zone_loaded_last_size",
             "Number of bytes loaded in last attempted zone transfer or zonefile load",
             Unit::Bytes,
             loader_metrics.zone_loaded_last_bytes.clone(),
