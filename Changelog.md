@@ -14,13 +14,14 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## Version 0.1.0-beta4 "Irish Goodbye"
 
-Released yyyy-mm-dd.
+Released 2026-07-03.
 
 ### Breaking changes
 
-### New
+- Remove systemd socket binding to port 53 in supplied packages ([#847] by
+  @ximon18).
 
 ### Bug fixes
 
@@ -29,25 +30,43 @@ Released yyyy-mm-dd.
   zone; remove them from IXFRs ([#835] by @bal-e, reported in [#798] by
   @gryphius).
 
+- Overhaul how signing operations are enqueued for concurrency control,
+  preventing aborted signing operations from accumulating memory ([#789] by
+  @bal-e, reported in [#675] by @Philip-NLnetLabs)
+
 ### Other changes
 
 - Extend cascade tsig remove error to report the users of the key. ([#719] by
   @ximon18)
-- Reduce the memory use of RRSIGs during incremental signing. ([#824])
+- Reduce the memory use of RRSIGs during incremental signing. ([#824] by
+  @Philip-NLnetLabs)
 
 ### Documentation improvements
 
 - Update note about compatibility with NetHSM. ([#621] by @jans23)
+- Document the `cascade info` command ([#838] by @ximon18)
+- Add a `CONTRIBUTING.md` ([#850] by @tertsdiepraam)
 
 ### Known issues
+
+- Cascade can crash due to a race condition when removing a zone. ([#730],
+  reported by @jpmens)
 
 ### Acknowledgements
 
 [#621]: https://github.com/NLnetLabs/cascade/pull/621
-[#798]: https://github.com/NLnetLabs/cascade/issues/798
 [#719]: https://github.com/NLnetLabs/cascade/pull/719
 [#824]: https://github.com/NLnetLabs/cascade/pull/824
 [#835]: https://github.com/NLnetLabs/cascade/pull/835
+[#838]: https://github.com/NLnetLabs/cascade/pull/838
+[#789]: https://github.com/NLnetLabs/cascade/pull/789
+[#841]: https://github.com/NLnetLabs/cascade/pull/841
+[#847]: https://github.com/NLnetLabs/cascade/pull/847
+[#850]: https://github.com/NLnetLabs/cascade/pull/850
+
+[#730]: https://github.com/NLnetLabs/cascade/issues/730
+[#798]: https://github.com/NLnetLabs/cascade/issues/798
+[#675]: https://github.com/NLnetLabs/cascade/issues/675
 
 ## 0.1.0-beta3 'Villa Volta'
 
