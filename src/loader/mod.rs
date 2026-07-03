@@ -60,7 +60,7 @@ impl Loader {
 
         metrics.register(
             "xfr_requests_to_upstream_succeeded",
-            "Number of succeeded zone transfers by Cascade towards the upstream primary",
+            "Number of succesful zone transfers by Cascade towards the upstream primary",
             loader_metrics.xfr_requests_to_upstream_succeeded.clone(),
         );
 
