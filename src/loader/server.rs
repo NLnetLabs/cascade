@@ -44,8 +44,8 @@ use tokio::net::TcpStream;
 use tracing::{debug, trace};
 
 use crate::{
-    loader::{ActiveLoadMetrics, LoaderPrometheusMetrics},
-    metrics::{XfrLabels, XfrTransport, XfrType},
+    loader::ActiveLoadMetrics,
+    metrics::{XfrTransport, XfrType},
     zone::Zone,
 };
 
@@ -72,7 +72,6 @@ pub async fn refresh(
     tsig_key: Option<tsig::Key>,
     builder: &mut LoadedZoneBuilder,
     metrics: &ActiveLoadMetrics,
-    prometheus_metrics: &LoaderPrometheusMetrics,
 ) -> Result<bool, RefreshError> {
     debug!("Refreshing {:?} from server {addr:?}", zone.name);
 
@@ -88,13 +87,13 @@ pub async fn refresh(
 
     if builder.curr().is_none() {
         // Fetch the whole zone.
-        axfr(zone, addr, tsig_key, builder, metrics, prometheus_metrics).await?;
+        axfr(zone, addr, tsig_key, builder, metrics).await?;
 
         return Ok(true);
     };
 
     // Fetch the zone relative to the latest local copy.
-    Ok(ixfr(zone, addr, tsig_key, builder, metrics, prometheus_metrics).await?)
+    Ok(ixfr(zone, addr, tsig_key, builder, metrics).await?)
 }
 
 //----------- ixfr() -----------------------------------------------------------
@@ -118,7 +117,6 @@ pub async fn ixfr(
     tsig_key: Option<tsig::Key>,
     builder: &mut LoadedZoneBuilder,
     metrics: &ActiveLoadMetrics,
-    prometheus_metrics: &LoaderPrometheusMetrics,
 ) -> Result<bool, IxfrError> {
     debug!("Attempting an IXFR");
 
@@ -184,14 +182,8 @@ pub async fn ixfr(
     let mut response = SendRequestMulti::send_request(&*client, request);
     let mut interpreter = XfrResponseInterpreter::new();
 
-    prometheus_metrics
-        .xfr_requests_to_upstream_attempted
-        .get_or_create(&XfrLabels {
-            zone: zone.name.clone().into(),
-            r#type: XfrType::IXFR,
-            transport: XfrTransport::TCP,
-        })
-        .inc();
+    zone.metrics
+        .inc_xfr_requests_to_upstream_attempted(XfrType::IXFR, XfrTransport::TCP);
 
     // Process the first message.
     let initial = response
@@ -203,7 +195,7 @@ pub async fn ixfr(
     if initial.header().rcode() == Rcode::NOTIMP {
         trace!("The server does not support IXFR, falling back to AXFR");
 
-        axfr(zone, addr, tsig_key, builder, metrics, prometheus_metrics).await?;
+        axfr(zone, addr, tsig_key, builder, metrics).await?;
         return Ok(true);
     }
 
@@ -268,14 +260,8 @@ pub async fn ixfr(
             writer.apply()?;
             metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
 
-            prometheus_metrics
-                .xfr_requests_to_upstream_succeeded
-                .get_or_create(&XfrLabels {
-                    zone: zone.name.clone().into(),
-                    r#type: XfrType::IXFR,
-                    transport: XfrTransport::TCP,
-                })
-                .inc();
+            zone.metrics
+                .inc_xfr_requests_to_upstream_succeeded(XfrType::IXFR, XfrTransport::TCP);
 
             Ok(true)
         }
@@ -312,14 +298,8 @@ pub async fn ixfr(
 
             writer.apply()?;
 
-            prometheus_metrics
-                .xfr_requests_to_upstream_succeeded
-                .get_or_create(&XfrLabels {
-                    zone: zone.name.clone().into(),
-                    r#type: XfrType::IXFR,
-                    transport: XfrTransport::TCP,
-                })
-                .inc();
+            zone.metrics
+                .inc_xfr_requests_to_upstream_succeeded(XfrType::IXFR, XfrTransport::TCP);
 
             Ok(true)
         }
@@ -384,7 +364,6 @@ pub async fn axfr(
     tsig_key: Option<tsig::Key>,
     builder: &mut LoadedZoneBuilder,
     metrics: &ActiveLoadMetrics,
-    prometheus_metrics: &LoaderPrometheusMetrics,
 ) -> Result<(), AxfrError> {
     debug!("Attempting an AXFR");
 
@@ -433,14 +412,8 @@ pub async fn axfr(
             Box::new(client) as _
         };
 
-    prometheus_metrics
-        .xfr_requests_to_upstream_attempted
-        .get_or_create(&XfrLabels {
-            zone: zone.name.clone().into(),
-            r#type: XfrType::AXFR,
-            transport: XfrTransport::TCP,
-        })
-        .inc();
+    zone.metrics
+        .inc_xfr_requests_to_upstream_attempted(XfrType::AXFR, XfrTransport::TCP);
 
     // Attempt the AXFR.
     let request = RequestMessageMulti::new(message).unwrap();
@@ -483,14 +456,8 @@ pub async fn axfr(
     writer.set_soa(soa)?;
     writer.apply()?;
 
-    prometheus_metrics
-        .xfr_requests_to_upstream_succeeded
-        .get_or_create(&XfrLabels {
-            zone: zone.name.clone().into(),
-            r#type: XfrType::AXFR,
-            transport: XfrTransport::TCP,
-        })
-        .inc();
+    zone.metrics
+        .inc_xfr_requests_to_upstream_succeeded(XfrType::AXFR, XfrTransport::TCP);
 
     Ok(())
 }

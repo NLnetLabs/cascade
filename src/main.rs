@@ -4,7 +4,7 @@ use cascaded::{
     daemon::{PreBindError, SocketProvider, daemonize},
     loader::Loader,
     manager::Manager,
-    metrics::MetricsCollection,
+    metrics::Metrics,
     persistence::{Persister, Restorer},
     policy,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
@@ -77,6 +77,7 @@ fn main() -> ExitCode {
     // Load the global state file or build one from scratch.
     let mut zones = Default::default();
     let mut policies = Default::default();
+    let metrics = Metrics::new();
     let state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
         Ok(mut state) => {
             info!(
@@ -116,11 +117,16 @@ fn main() -> ExitCode {
                     !state.zones.contains(&name),
                     "Zone '{name}' was encountered twice"
                 );
-                let zone =
-                    match Zone::restore(&config, name, &mut state.policies, &state.tsig_store) {
-                        Ok(zone) => zone,
-                        Err(_) => return ExitCode::FAILURE,
-                    };
+                let zone = match Zone::restore(
+                    &config,
+                    name,
+                    &mut state.policies,
+                    &state.tsig_store,
+                    &metrics,
+                ) {
+                    Ok(zone) => zone,
+                    Err(_) => return ExitCode::FAILURE,
+                };
                 state.zones.insert(ZoneByName(Arc::new(zone)));
             }
 
@@ -248,14 +254,13 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let mut metrics = MetricsCollection::new();
-
     // Prepare Cascade.
     let center = Arc::new(Center {
         state: Mutex::new(state),
         config,
+        metrics,
         logger,
-        loader: Loader::new(&mut metrics),
+        loader: Loader::new(),
         key_manager: KeyManager::new(),
         persister: Persister::new(),
         restorer: Restorer::new(),
@@ -288,7 +293,7 @@ fn main() -> ExitCode {
     // Enter the runtime.
     let result = runtime.block_on(async {
         // Spawn Cascade's units.
-        let manager = match Manager::spawn(center.clone(), socket_provider, metrics) {
+        let manager = match Manager::spawn(center.clone(), socket_provider) {
             Ok(manager) => manager,
             Err(err) => {
                 error!("Failed to spawn units: {err}");

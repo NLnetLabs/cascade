@@ -19,6 +19,7 @@ use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
 
+use crate::metrics::{Metrics, ZoneMetrics};
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
@@ -57,6 +58,9 @@ pub struct Zone {
     /// [`ZoneState`].
     pub state: ZoneStateLock,
 
+    /// The metrics for this zone.
+    pub metrics: ZoneMetrics,
+
     /// Whether the zone was restored from the state file.
     ///
     /// This is set if the zone originates from a previous execution of Cascade
@@ -70,10 +74,12 @@ impl Zone {
     ///
     /// The zone is initialized to an empty state, where nothing is known about
     /// it and Cascade won't act on it.
-    pub fn new(name: Name<Bytes>) -> Self {
+    pub fn new(name: Name<Bytes>, metrics: &Metrics) -> Self {
+        let metrics = metrics.get_zone_metrics(name.clone());
         Self {
             name,
             state: ZoneStateLock::new(ZoneState::default()),
+            metrics,
             restored: false,
         }
     }
@@ -100,6 +106,7 @@ impl Zone {
         name: Name<Bytes>,
         policies: &mut foldhash::HashMap<Box<str>, Policy>,
         tsig_store: &TsigStore,
+        metrics: &Metrics,
     ) -> Result<Self, state::LoadError> {
         let path = config.zone_state_dir.join(format!("{name}.db"));
 
@@ -115,10 +122,13 @@ impl Zone {
             }
         };
 
+        let metrics = metrics.get_zone_metrics(name.clone());
+
         debug!("Restored the state of zone '{name}' (from '{path}')");
 
         Ok(Self {
             name,
+            metrics,
             state: ZoneStateLock::new(state),
             restored: true,
         })
