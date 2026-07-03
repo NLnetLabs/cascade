@@ -285,6 +285,18 @@ fn clear_persisted_zone_data(center: &Center, state: &mut ZoneState) {
 //----------- PersistenceState -----------------------------------------------
 
 /// State related to data persistence for a zone.
+///
+/// Each zone consists of records from the loaded zone and, once signed,
+/// changes in the set of records that result from signing.
+///
+/// Each time a zone is reloaded from the source records may change resulting
+/// in a loaded diff. Each time a zone is (re)signed records that were created
+/// by the last signing operation may be changed resulting in a signed diff.
+///
+/// The set of loaded and signed diffs are each stored in two sets of files
+/// per zone, the loaded set and the signed set. The first file in each set
+/// is a diff against nothing aka a snapshot. Each subsequent file is a diff
+/// against the previous file.
 #[derive(Debug, Default)]
 pub struct PersistenceState {
     /// Ongoing persist/restore operations.

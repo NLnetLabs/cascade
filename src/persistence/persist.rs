@@ -20,6 +20,9 @@ use crate::{
 };
 
 /// Persist the data for a loaded instance of a zone.
+///
+/// Data is persisted in the form of an AXFR wire format snapshot file plus
+/// zero or more IXFR wire format diff files.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -97,6 +100,9 @@ pub fn persist_loaded(
 }
 
 /// Persist the data for a signed instance of a zone.
+///
+/// Data is persisted in the form of an AXFR wire format snapshot file plus
+/// zero or more IXFR wire format diff files.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -115,14 +121,16 @@ pub fn persist_signed(
 
         // Determine the path to write to and update the record of written
         // paths here as we don't want to give responsibility for working with
-        // ZoneState to the persistence crate. Accumulate a set of diffs per
-        // unsigned and signed zone, each stored at a path one suffixed by an
-        // index which rises by one when persisted.
+        // ZoneState to the persistence crate.
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
             let next_idx = handle.state.persistence.signed_diff_paths.len();
+            // Determine the path to persist the diff to. The path consists
+            // of the zone name, the part of the zone that persisted records
+            // relate to (loaded or signed) and a rising index number that
+            // serves to make each path unique.
             let destination = center
                 .config
                 .zone_state_dir
