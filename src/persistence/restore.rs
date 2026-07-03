@@ -58,11 +58,6 @@ pub fn restore_loaded(
         state.persistence.loaded_diff_paths
     );
 
-    // Determine the paths to read from. Each zone is persisted as an AXFR
-    // plus zero or more IXFRs. The restorer takes a base path ending in an
-    // unsigned integer number and loads that file plus N more, where the
-    // final number in the path is replaced by the previous number plus one
-    // each time.
     let mut buf = Vec::<u8>::new();
 
     // Process the initial "loaded" AXFR wire format dump.
