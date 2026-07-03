@@ -22,54 +22,88 @@ The :file:`/etc/cascade/config.toml` file controls listen addresses, which
 filesystem paths Cascade uses, daemonization settings (running in the
 background, running as a different user), and log settings.
 
-If using systemd to run Cascade some of these settings should be ignored and
-systemd features used instead.
+If using systemd to run Cascade, some of these settings should be ignored and
+systemd features should be used instead.
 
 .. tabs::
 
    .. group-tab:: Using systemd
 
-        On systems using systemd the ``cascaded.socket`` unit is used to bind
-        to listen addresses on behalf of Cascade. By default, the provided
-        listen address is ``localhost:53``. If you wish to change the
-        addresses bound, you will need to override the ``cascaded.socket``
-        unit. One way to do this is to use the ``systemctl edit`` command like
-        so:
+        .. note::
 
-        .. code-block:: bash
+           For a full explanation of systemd settings please consult the
+           `systemd documentation <https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html>`_.
 
-           sudo systemctl edit cascaded.socket
+        When using Cascade with systemd some settings must be configured
+        using the Cascade configuration file and others must be configured 
+        via systemd.
 
-        and insert the following config:
+        Systemd has built-in support for deamon features such as dropping
+        privileges (see ``User=`` and ``Group=``), binding to privileged
+        ports (port numbers below 1024) and forking the process to run in
+        the background.
 
-        .. code-block:: text
+        To support binding to privileged ports without requiring elevated
+        privileges Cascade supports the systemd `socket activation feature <https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html#>`.
+        To use this you will need to create a ``socket`` unit, An example
+        ``cascaded.socket`` unit might look as follows:
 
-           [Socket]
-           # Uncomment the next line if you wish to disable listening on localhost.
-           #ListenStream=
-           ListenDatagram=<your-ip>:53
-           ListenStream=<your-ip>:53
+        .. code-block::
 
-        Then notify systemd of the changes and (re)start Cascade:
+          [Unit]
+          Description=Cascaded Sockets
+          
+          [Socket]
+          # To prevent listening on localhost replace 127.0.0.1:53 with a
+          # blank value, e.g.
+          # ListenStream=
+          ListenDatagram=127.0.0.1:53
+          ListenDatagram=[::1]:53
+          ListenStream=127.0.0.1:53
+          ListenStream=[::1]:53
+          Accept=no
+          
+          [Install]
+          WantedBy=sockets.target
 
-        .. code-block:: bash
+        You may also need to add the following ``Requires`` line to the
+        Cascade unit file:
 
-            sudo systemctl daemon-reload
-            sudo systemctl restart cascaded
+        .. code-block::
+
+           [Unit]
+           Requires=cascaded.socket
+
+        To start Cascade use the following command: (you may need elevated
+        privileges to run this command, e.g. run it as ``root`` or use a
+        command such as ``sudo``)
+
+        .. code-block::
+
+           systemctl start cascaded
 
    .. group-tab:: Without systemd
 
-        When using Cascade without systemd, you need to configure the listen
-        address in the ``[server]`` section of Cascade's ``config.toml``:
+        When using Cascade without systemd, all configuration is done via the
+        Cascade configuration file.
+
+        To configure to listen on specific interfaces or ports see the ``servers``
+        setting in the ``[server]`` section of Cascade's ``config.toml``:
 
         .. code-block:: text
 
             [server]
-            servers = ["<your-ip>:53"]
+            servers = ["<your-ip>:<your-port>"]
 
-        Then you can start Cascade with (replace the config and state path
-        with your appropriate values, and if your config uses privileged ports
-        or the daemonization identity feature run the command as root):
+        Then you can start Cascade with the following command. Replace the
+        config and state path with values suitable for your system.
+
+        .. note::
+        
+           If you configure Cascade to listen on a privileged port (port
+           numbers below 1024) or use the daemonization ``identity`` feature,
+           you will need to run the command with sufficient privileges, e.g.
+           by running it as ``root`` or via a command such as ``sudo``.
 
         .. code-block:: bash
 
@@ -98,8 +132,9 @@ no zones:
 
 .. Note:: The program:`cascade` CLI connects via HTTPS to the
    :program:`cascaded` daemon. By default it connects to 127.0.0.1:4539.
-   You can override this by passing ``--server <IP>:<PORT>`` to connect to
-   a Cascade daemon running on another machine.
+   You can override this by passing ``--server <IP>:<PORT>`` or by defining
+   an environment variable ``CASCADE_DAEMON="<IP>:<PORT>"`` to connect to a
+   Cascade daemon running on another machine or port.
 
 The :program:`cascade` CLI is the primary means of interacting with the
 :program:`cascaded` daemon.

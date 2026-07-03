@@ -3,9 +3,15 @@
 use std::{collections::hash_map, fmt, io, sync::Arc, time::Duration};
 
 use domain::tsig;
+use foldhash::HashSet;
 use tracing::{debug, error, trace};
 
-use crate::{center::Center, config::Config, zone::ZoneByPtr};
+use crate::{
+    center::Center,
+    config::Config,
+    policy::PolicyVersion,
+    zone::{ZoneByName, ZoneByPtr},
+};
 
 pub mod file;
 
@@ -287,62 +293,86 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
         return Err(RemoveError::NotFound);
     }
 
-    // Is the TSIG key in use with a zone source?
-    if state.zones.iter().any(|z| {
-        let zone_state = z.0.state.lock().unwrap();
-        matches!(zone_state.loader.source, crate::loader::Source::Server { tsig_key: Some(ref key), .. } if name == key.name())
-    }) {
-        return Err(RemoveError::Used);
-    }
+    // Collect still existing references to the key that prevent us from
+    // removing it.
 
-    // Is the TSIG key referenced by any active (not being deleted) policy?
-    let tsig_key_found = state
-        .policies
-        .values()
-        .filter_map(|p| (!p.mid_deletion).then_some(&p.latest))
-        .any(|p| {
-            p.key_manager
-                .publication_nameservers
+    // 1. Collect the TSIG store references for which we have no way of
+    //    saying why it is in use. We will remove these in favour of explicit
+    //    references where possible.
+    //
+    // Allow the Clippy warning as we know that it is a false positive.
+    #[allow(clippy::mutable_key_type)]
+    let mut unknown_refs = state
+        .tsig_store
+        .map
+        .get(name)
+        .map(|key_info| {
+            key_info
+                .zones
                 .iter()
-                .any(|ns| ns.tsig_key_name.as_ref() == Some(name))
-                || p.server
-                    .outbound
-                    .accept_xfr_from
+                .map(|z| ZoneByName(z.0.clone()))
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default();
+
+    // 2. Find references to the TSIG key in zone source settings. While we
+    //    search, forget any vague unknown references to the zone for which we
+    //    can instead offer a specific reference to the zone using the key.
+    let mut refs = state
+        .zones
+        .iter()
+        .filter(|z| {
+            matches!(
+                z.0.state.read().loader.source,
+                crate::loader::Source::Server { tsig_key: Some(ref key), .. }
+                    if name == key.name()
+            )
+        })
+        .inspect(|&referenced_zone| {
+            let _ = unknown_refs.remove(referenced_zone);
+        })
+        .cloned()
+        .map(UsageReference::ZoneSource)
+        .collect::<Vec<_>>();
+
+    // 3. Find references to the TSIG key in policies.
+    refs.extend(
+        state
+            .policies
+            .values()
+            .map(|p| p.latest.clone())
+            .filter(|p| {
+                p.key_manager
+                    .publication_nameservers
                     .iter()
-                    .any(|acl| acl.tsig_key_name.as_ref() == Some(name))
-                || p.server
-                    .outbound
-                    .send_notify_to
-                    .iter()
-                    .any(|acl| acl.tsig_key_name.as_ref() == Some(name))
-        });
+                    .any(|ns| ns.tsig_key_name.as_ref() == Some(name))
+                    || p.server
+                        .outbound
+                        .provide_xfr_to
+                        .iter()
+                        .any(|acl| acl.tsig_key_name.as_ref() == Some(name))
+                    || p.server
+                        .outbound
+                        .send_notify_to
+                        .iter()
+                        .any(|acl| acl.tsig_key_name.as_ref() == Some(name))
+            })
+            .map(UsageReference::Policy),
+    );
 
-    if tsig_key_found {
-        // TODO: Indicate to the operator where the key is in use.
-        return Err(RemoveError::Used);
+    // 4. Include any usage references to zones for which we still don't know
+    //    where they are used.
+    refs.extend(unknown_refs.into_iter().map(UsageReference::ZoneOther));
+
+    // Return an error report if the key is in use, else delete it as
+    // requested.
+    if !refs.is_empty() {
+        Err(RemoveError::InUse(refs))
+    } else {
+        let _ = state.tsig_store.map.remove(name);
+        state.tsig_store.mark_dirty(center);
+        Ok(())
     }
-
-    // Delete the TSIG key. The TSIG key store has a set of zones that
-    // refer to the key to avoid having to lock and inspect zone state,
-    // so we can also find that the TSIG key is still referenced there
-    // if an operation to remove a zone hasn't cleaned up the reference
-    // to the zone in the TSIG store yet (even though its source no
-    // longer refers to it in the check we did above - can this ever
-    // happen?).
-    match state.tsig_store.map.entry(name.clone()) {
-        hash_map::Entry::Occupied(entry) => {
-            if !entry.get().zones.is_empty() {
-                // TODO: Indicate to the operator where the key is in use.
-                return Err(RemoveError::Used);
-            }
-            entry.remove_entry();
-        }
-        hash_map::Entry::Vacant(_) => return Err(RemoveError::NotFound),
-    }
-
-    state.tsig_store.mark_dirty(center);
-
-    Ok(())
 }
 
 //----------- ImportError ------------------------------------------------------
@@ -390,13 +420,27 @@ impl fmt::Display for GenerateError {
 //----------- RemoveError ------------------------------------------------------
 
 /// An error removing a TSIG key.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum RemoveError {
     /// No such key exists.
     NotFound,
 
-    /// The key is in use.
-    Used,
+    /// The key cannot be removed as it is in use.
+    InUse(Vec<UsageReference>),
+}
+
+/// Supporting details for RemoveError::InUse.
+#[derive(Clone, Debug)]
+pub enum UsageReference {
+    /// The key is in use by one or more zones to authenticate communication
+    /// with upstream nameservers.
+    ZoneSource(ZoneByName),
+
+    // The key is in use by a zone for some other reason.
+    ZoneOther(ZoneByName),
+
+    // The key is referenced by one or more settings of a policy.
+    Policy(Arc<PolicyVersion>),
 }
 
 impl std::error::Error for RemoveError {}
@@ -404,8 +448,21 @@ impl std::error::Error for RemoveError {}
 impl fmt::Display for RemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RemoveError::NotFound => write!(f, "could not find the requested key"),
-            RemoveError::Used => write!(f, "the key is currently in use"),
+            RemoveError::NotFound => write!(f, "the TSIG key does not exist"),
+            RemoveError::InUse(usage_references) => write!(
+                f,
+                "the TSIG key is in use: {}",
+                usage_references
+                    .iter()
+                    .map(|r| match r {
+                        UsageReference::ZoneSource(zone) =>
+                            format!("by source of zone '{}'", zone.0.name),
+                        UsageReference::ZoneOther(zone) => format!("by zone '{}'", zone.0.name),
+                        UsageReference::Policy(policy) => format!("by policy '{}'", policy.name),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 }

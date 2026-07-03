@@ -141,7 +141,7 @@ pub async fn add_zone(
         };
 
         {
-            let mut zone_state = zone.state.lock().unwrap();
+            let mut zone_state = zone.state.write_cleanly();
             let restorer = zone_state.storage.restorer.take().unwrap();
             let policy = state
                 .policies
@@ -152,15 +152,22 @@ pub async fn add_zone(
 
             // Don't try to restore zone data, since it's a completely new zone.
             //
-            // This will clear the data for the zone and register it against the
-            // zone servers.
-            ZoneHandle {
+            // This will clear the data for the zone.
+            let mut handle = ZoneHandle {
                 zone: &zone,
                 state: &mut zone_state,
                 center,
-            }
-            .storage()
-            .abandon_loaded_restoration(restorer);
+            };
+            let (loaded_reviewer, signed_reviewer, viewer) =
+                handle.storage().abandon_loaded_restoration(restorer);
+
+            // Update the zone servers.
+            LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+            SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+            PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+            // Send a notification that the state machine is now passive.
+            handle.storage().on_passive();
         }
 
         // Insert the zone in the global set.
@@ -213,7 +220,7 @@ pub async fn add_zone(
     }
 
     {
-        let mut state = zone.state.lock().unwrap();
+        let mut state = zone.write(center);
 
         state.record_event(HistoricalEvent::Added, None);
 
@@ -258,7 +265,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     SignedReviewServer::remove_zone(center, &zone);
     PublicationServer::remove_zone(center, &zone);
 
-    let mut zone_state = zone.state.lock().unwrap();
+    let mut zone_state = zone.state.write_cleanly();
 
     ZoneHandle {
         zone: &zone,
@@ -294,9 +301,14 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
         state.tsig_store.mark_dirty(center);
     }
 
-    info!("Removed zone '{name}'");
+    // Persist the state file one last time.
     zone_state.record_event(HistoricalEvent::Removed, None);
-    zone.mark_dirty(&mut zone_state, center);
+    std::mem::drop(zone_state);
+    crate::zone::save_state_now(center, &zone);
+
+    // TODO: Remove the zone state file?
+
+    info!("Removed zone '{name}'");
     Ok(())
 }
 

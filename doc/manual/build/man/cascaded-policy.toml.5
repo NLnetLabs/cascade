@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Jan 01, 2026" "0.1.0-beta1" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "Jan 01, 2026" "0.1.0-beta5-dev" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -183,8 +183,7 @@ The default value is \fB\(dqoff\(dq\fP\&.
 A hook for reviewing a loaded zone. This is a path to an executable.
 .sp
 This command string will be executed in the user\(aqs shell when a new version
-of a zone is loaded.  At the moment, it will only be run if \fBrequired\fP is
-true.
+of a zone is loaded.
 .sp
 It will receive the following information via environment variables:
 .INDENT 7.0
@@ -730,11 +729,11 @@ the nameserver.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B accept\-xfr\-from = []
-The set of nameservers to accept zone transfer requests from.
+.B provide\-xfr\-to = []
+The set of nameservers to provide zone transfers to.
 .sp
-If no nameservers are specified, zone transfer requests will be accepted
-from any nameserver.
+If no nameservers are specified, zone transfers will be provided to any
+nameserver.
 .sp
 Each nameserver must be specified as a string in the form:
 .sp

@@ -25,6 +25,10 @@ you to :doc:`get to know Cascade <before-you-start>` and are eager to hear
 :ref:`your experiences <reach-out>` so we can improve every aspect. Please
 consider the current :doc:`limitations`.
 
+.. tip:: To see at a glance what's new in the beta1 release read our
+         `"Cascade: Start your engines!" <https://blog.nlnetlabs.nl/cascade-beta1-release/>`_
+         blog post.
+
 Cascade has the following design goals:
 
 Flexibility
@@ -101,6 +105,7 @@ Examples of things we're interested in:
    :name: toc-core
 
    key-management
+   incremental-signing
    hsms
    review-hooks
    zone-transfers
@@ -170,6 +175,7 @@ Examples of things we're interested in:
    man/cascade-debug
    man/cascade-health
    man/cascade-hsm
+   man/cascade-info
    man/cascade-keyset
    man/cascade-policy
    man/cascade-status

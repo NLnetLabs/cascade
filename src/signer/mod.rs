@@ -19,20 +19,25 @@
 
 use std::{
     ops::{BitOr, BitOrAssign},
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use cascade_zonedata::SignedZoneBuilder;
 use tracing::{debug, error};
 
-use crate::units::zone_signer::SignerError;
 use crate::{
     center::Center,
-    zone::{HistoricalEvent, Zone, ZoneHandle},
+    zone::{HistoricalEvent, Zone},
+};
+use crate::{
+    signer::queue::SigningPermit, signer::status::SigningStatusPerZone,
+    units::zone_signer::SignerError,
 };
 
 pub mod incremental;
 pub mod keys;
+pub mod queue;
+pub mod status;
 pub mod zone;
 
 //----------- sign() -----------------------------------------------------------
@@ -53,46 +58,33 @@ pub mod zone;
     skip_all,
     fields(zone = %zone.name, ?trigger),
 )]
-async fn sign(
+fn sign(
     center: Arc<Center>,
     zone: Arc<Zone>,
     mut builder: SignedZoneBuilder,
     trigger: SigningTrigger,
+    permit: SigningPermit,
+    status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
-    let (status, _permits) = center.signer.wait_to_sign(&zone).await;
-
-    let (result, builder) = tokio::task::spawn_blocking({
-        let center = center.clone();
-        let zone = zone.clone();
-        let status = status.clone();
-        move || {
-            let result = center
-                .signer
-                .sign_zone(&center, &zone, &mut builder, trigger, status);
-            (result, builder)
-        }
-    })
-    .await
-    .unwrap();
+    let result = center
+        .signer
+        .sign_zone(&center, &zone, &mut builder, trigger, status.clone());
 
     let mut status = status.write().unwrap();
-    let mut state = zone.state.lock().unwrap();
-    let mut handle = ZoneHandle {
-        zone: &zone,
-        state: &mut state,
-        center: &center,
-    };
+    let mut handle = zone.write_handle(&center);
     handle.state.signer.ongoing.finish();
+    center.signer.queue.finish(permit, &center);
+    // TODO: Remove `status` from `handle.state.signer.active_signing_status`?
 
     match result {
         Ok(()) => {
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
-            handle.finish_signing(built);
+            handle.get().finish_signing(built);
             status.status.finish(true);
             status.current_action = "Finished".to_string();
         }
         Err(SignerError::NothingToDo) => {
-            handle.abandon_signing(builder);
+            handle.get().abandon_signing(builder);
             status.status.finish(true);
             status.current_action = "Nothing to do".to_string();
         }
@@ -101,7 +93,7 @@ async fn sign(
             // a while assuming the unsigned zone gets updated regularly.
             // TODO: But if nothing happens for too long we should warn.
             // Something in status would be good.
-            handle.abandon_signing(builder);
+            handle.get().abandon_signing(builder);
             status.status.finish(true);
 
             status.current_action = "Resign failed due to Keep policy".to_string();
@@ -126,7 +118,7 @@ async fn sign(
         }
         Err(error) => {
             error!("Signing failed: {error}");
-            handle.signing_failed(builder, error.clone());
+            handle.get().signing_failed(builder, error.clone());
             status.status.finish(false);
             status.current_action = "Aborted".to_string();
 

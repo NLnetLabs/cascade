@@ -68,7 +68,7 @@ jobs:
     - uses: ./.github/actions/prepare-systest-env
     - uses: ./.github/actions/set-build-profile
       with:
-        build-profile: release
+        build-profile: ${{ inputs.build-profile }}
     - run: cascade --version
     - run: file $(which cascade)
 
@@ -81,6 +81,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/set-build-profile
+      with:
+        build-profile: ${{ inputs.build-profile }}
     - run: cascade --version
     - run: file $(which cascade)
 
@@ -226,7 +229,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
         with:
-          build-profile: release
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/notify-in-for-unknown-zone
         with:
           log-level: ${{ inputs.log-level }}
@@ -286,7 +289,7 @@ jobs:
       fail-fast: true
       matrix:
         send-notify-to: [ '',  '127.0.0.1:1054', '127.0.0.1:1054^tsig-key' ]
-        accept-xfr-from: [ '', '127.0.0.1', '127.0.0.1^tsig-key' ]
+        provide-xfr-to: [ '', '127.0.0.1', '127.0.0.1^tsig-key' ]
         downstream-expects-tsig: [ 0, 1 ]
         downstream-uses-tsig: [ 0, 1 ]
     steps:
@@ -298,10 +301,25 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
           send-notify-to: ${{ matrix.send-notify-to }}
-          accept-xfr-from: ${{ matrix.accept-xfr-from }}
+          provide-xfr-to: ${{ matrix.provide-xfr-to }}
           downstream-expects-tsig: ${{ matrix.downstream-expects-tsig }}
           downstream-uses-tsig: ${{ matrix.downstream-uses-tsig }}
 
+  review-signed-zone:
+    name: Review signed zone.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/review-signed-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+      
   persist-zone:
     name: Added zone should still exist after restart.
     runs-on: ubuntu-latest
@@ -314,5 +332,69 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/persist-zone
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  sign-using-a-hsm:
+    name: Sign using a HSM.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/sign-using-a-hsm
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  # Added for https://github.com/NLnetLabs/cascade/issues/105
+  strip-dnssec-rrs:
+    name: Sign using an already signed input zone.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/strip-dnssec-rrs
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  load-signed-apex-cname:
+    name: Load a zonefile containing a signed apex CNAME
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/load-signed-apex-cname
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  multipart-axfr:
+    name: Receive a large zone via multi-part AXFR from the NSD primary.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/multipart-axfr
         with:
           log-level: ${{ inputs.log-level }}

@@ -94,11 +94,7 @@
 
 use std::sync::Arc;
 
-use crate::{
-    center::Center,
-    util::AbortOnDrop,
-    zone::{ZoneByName, ZoneHandle},
-};
+use crate::{center::Center, util::AbortOnDrop, zone::ZoneByName};
 
 mod persist;
 use persist::{persist_loaded, persist_signed};
@@ -167,12 +163,7 @@ impl Restorer {
 
             // Attempt to restore data for every zone.
             for zone in zones {
-                let mut state = zone.state.lock().unwrap();
-                let mut handle = ZoneHandle {
-                    zone: &zone,
-                    state: &mut state,
-                    center: &center,
-                };
+                let mut handle = zone.write_handle(&center);
 
                 // Zones that are _not_ restored from disk will move out the
                 // 'restorer' field and use it to initialize the zone data to

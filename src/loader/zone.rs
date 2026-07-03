@@ -55,8 +55,6 @@ impl LoaderZoneHandle<'_> {
         self.state
             .record_event(HistoricalEvent::SourceChanged, None);
 
-        self.zone.mark_dirty(self.state, self.center);
-
         self.enqueue_refresh(false);
     }
 

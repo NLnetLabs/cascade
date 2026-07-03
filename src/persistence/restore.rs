@@ -40,7 +40,7 @@ pub fn restore_loaded(
     center: &Arc<Center>,
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<bool> {
-    let mut state = zone.state.lock().unwrap();
+    let mut state = zone.write(center);
     if state.persisted_loaded_diff_paths.is_empty() {
         return io::Result::Ok(false);
     }
@@ -71,6 +71,7 @@ pub fn restore_loaded(
     ))?;
     loaded_replacer.set_soa(soa.clone()).unwrap();
     loaded_replacer.set_records(records).unwrap();
+    loaded_replacer.add(soa.clone().into()).unwrap();
     loaded_replacer.apply().unwrap();
     trace!(
         "Restored loaded snapshot for SOA serial {} for zone '{}' from file '{loaded_source}'",
@@ -106,7 +107,7 @@ pub fn restore_loaded(
 
         if let Some(diff) = restorer.take_diff() {
             // Store the loaded diff to be used as part of serving an IXFR.
-            let mut state = zone.state.lock().unwrap();
+            let mut state = zone.write(center);
             state
                 .storage
                 .diffs
@@ -145,7 +146,7 @@ pub fn restore_signed(
     center: &Arc<Center>,
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<bool> {
-    let state = zone.state.lock().unwrap();
+    let state = zone.read();
     if state.persisted_signed_diff_paths.is_empty() {
         return io::Result::Ok(false);
     }
@@ -175,6 +176,7 @@ pub fn restore_signed(
     ))?;
     signed_replacer.set_soa(soa.clone()).unwrap();
     signed_replacer.set_records(records).unwrap();
+    signed_replacer.add(soa.clone().into()).unwrap();
     signed_replacer.apply().unwrap();
     trace!(
         "Restored signed snapshot for SOA serial {} for zone '{}' from file '{signed_source}'",
@@ -216,7 +218,7 @@ pub fn restore_signed(
             .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
 
         if let Some(signed_diff) = restorer.take_diff() {
-            let mut state = zone.state.lock().unwrap();
+            let mut state = zone.write(center);
             // Get the diff pair (loaded diff and missing signed diff) that
             // this signed diff needs to be inserted into. If the signed diff
             // was caused by incremental signing then a loaded diff won't have
@@ -498,9 +500,15 @@ enum IxfrEvent {
 
 fn apply_ixfr_event_to_loaded_data(patcher: &mut LoadedZonePatcher<'_>, event: IxfrEvent) {
     match event {
-        IxfrEvent::Remove(r) if r.rtype == RType::SOA => patcher.remove_soa(r.into()).unwrap(),
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
+            patcher.remove(r.clone()).unwrap();
+            patcher.remove_soa(r.into()).unwrap();
+        }
         IxfrEvent::Remove(r) => patcher.remove(r).unwrap(),
-        IxfrEvent::Add(r) if r.rtype == RType::SOA => patcher.add_soa(r.into()).unwrap(),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
+            patcher.add(r.clone()).unwrap();
+            patcher.add_soa(r.into()).unwrap()
+        }
         IxfrEvent::Add(r) => patcher.add(r).unwrap(),
         IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
     }
@@ -508,9 +516,15 @@ fn apply_ixfr_event_to_loaded_data(patcher: &mut LoadedZonePatcher<'_>, event: I
 
 fn apply_ixfr_event_to_signed_data(patcher: &mut SignedZonePatcher<'_>, event: IxfrEvent) {
     match event {
-        IxfrEvent::Remove(r) if r.rtype == RType::SOA => patcher.remove_soa(r.into()).unwrap(),
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
+            patcher.remove(r.clone()).unwrap();
+            patcher.remove_soa(r.into()).unwrap();
+        }
         IxfrEvent::Remove(r) => patcher.remove(r).unwrap(),
-        IxfrEvent::Add(r) if r.rtype == RType::SOA => patcher.add_soa(r.into()).unwrap(),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
+            patcher.add(r.clone()).unwrap();
+            patcher.add_soa(r.into()).unwrap()
+        }
         IxfrEvent::Add(r) => patcher.add(r).unwrap(),
         IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
     }

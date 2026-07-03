@@ -16,7 +16,7 @@ use tracing::{trace, warn};
 
 use crate::{
     center::Center,
-    zone::{Zone, ZoneHandle, save_state_now},
+    zone::{Zone, save_state_now},
 };
 
 /// Persist the data for a loaded instance of a zone.
@@ -39,12 +39,7 @@ pub fn persist_loaded(
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
         let destination = {
-            let mut state = zone.state.lock().unwrap();
-            let handle = ZoneHandle {
-                zone,
-                state: &mut state,
-                center,
-            };
+            let mut handle = zone.write_handle(center);
             let next_idx = handle.state.persisted_loaded_diff_paths.len();
             let destination = center
                 .config
@@ -103,7 +98,7 @@ pub fn persist_loaded(
         // unsigned zone content changes. Note that the SOA SERIAL is not
         // required to change unless using 'keep' policy and so we should not
         // require the SOA to have been removed and a new one added.
-        let mut state = zone.state.lock().unwrap();
+        let mut handle = zone.write_handle(center);
 
         let loaded_only_diff = (persister.loaded_diff().clone(), DiffData::new().into());
         trace!(
@@ -119,7 +114,7 @@ pub fn persist_loaded(
                 .as_ref()
                 .map(|soa_rr| soa_rr.rdata.serial),
         );
-        state.storage.diffs.push(loaded_only_diff);
+        handle.state.storage.diffs.push(loaded_only_diff);
     }
 
     persister.mark_complete()
@@ -148,12 +143,7 @@ pub fn persist_signed(
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
         let destination = {
-            let mut state = zone.state.lock().unwrap();
-            let handle = ZoneHandle {
-                zone,
-                state: &mut state,
-                center,
-            };
+            let mut handle = zone.write_handle(center);
             let next_idx = handle.state.persisted_signed_diff_paths.len();
             let destination = center
                 .config
@@ -216,7 +206,7 @@ pub fn persist_signed(
             // expiring. Signed zones MUST always have a new SOA SERIAL
             // compared to the previous version of the signed zone.
 
-            let mut state = zone.state.lock().unwrap();
+            let mut handle = zone.write_handle(center);
 
             // If we have a new signed diff to store because records in the
             // loaded part of the zone changed, e.g. due to changes in the
@@ -237,12 +227,12 @@ pub fn persist_signed(
             // diff first.
 
             let mut action = "Storing new";
-            if let Some(potentially_partial_diff) = state.storage.diffs.last()
+            if let Some(potentially_partial_diff) = handle.state.storage.diffs.last()
                 && potentially_partial_diff.1.is_empty()
             {
                 // Remove the partial diff, it will be replaced by a
                 // complete diff.
-                let _partial_diff = state.storage.diffs.pop();
+                let _partial_diff = handle.state.storage.diffs.pop();
                 action = "Updating existing";
             }
 
@@ -266,7 +256,11 @@ pub fn persist_signed(
                     .as_ref()
                     .map(|soa_rr| soa_rr.rdata.serial),
             );
-            state.storage.diffs.push((loaded_diff, signed_diff.clone()));
+            handle
+                .state
+                .storage
+                .diffs
+                .push((loaded_diff, signed_diff.clone()));
         }
     }
 
@@ -368,6 +362,10 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
 
         // Write the deleted records.
         for r in &diff.removed_records {
+            if r.rname == removed_soa.rname && r.rtype == removed_soa.rtype {
+                continue;
+            }
+
             write_rr(&mut buf, r, &mut f);
         }
 
@@ -377,6 +375,10 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
 
     // Write the added records.
     for r in &diff.added_records {
+        if r.rname == added_soa.rname && r.rtype == added_soa.rtype {
+            continue;
+        }
+
         write_rr(&mut buf, r, &mut f);
     }
 
@@ -388,15 +390,7 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
         destination.display(),
         diff.removed_soa.as_ref().map(|v| v.rdata.serial),
         diff.added_soa.as_ref().map(|v| v.rdata.serial),
-        if !diff.removed_records.is_empty() {
-            diff.removed_records.len() + 1
-        } else {
-            0
-        },
-        if !diff.added_records.is_empty() {
-            diff.added_records.len() + 1
-        } else {
-            0
-        },
+        diff.removed_records.is_empty(),
+        diff.added_records.len(),
     );
 }

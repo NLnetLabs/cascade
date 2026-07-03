@@ -1,5 +1,5 @@
 use std::cmp::{Ordering, min};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::env::{self, VarError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -10,7 +10,7 @@ use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
 use domain::base::Rtype;
 use domain::base::Serial;
 use domain::base::name::FlattenInto;
-use domain::base::{CanonicalOrd, Name, Record};
+use domain::base::{CanonicalOrd, Record};
 use domain::dnssec::sign::SigningConfig;
 use domain::dnssec::sign::denial::config::DenialConfig;
 use domain::dnssec::sign::denial::nsec::generate_nsecs;
@@ -36,26 +36,21 @@ use rayon::iter::{
 };
 use rayon::slice::ParallelSliceMut;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
+use tokio::sync::watch;
 use tokio::time::Instant;
-use tracing::{Level, debug, info, trace};
+use tracing::{debug, info, trace};
 
-use crate::api::{
-    SigningFinishedReport, SigningInProgressReport, SigningQueueReport, SigningReport,
-    SigningRequestedReport, SigningStageReport,
-};
 use crate::center::Center;
 use crate::manager::record_zone_event;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::incremental::{LocalState, sign_incrementally};
 use crate::signer::keys::{LoadError, ZoneSigningKeys};
+use crate::signer::queue::SigningQueue;
+use crate::signer::status::{SigningStatusPerZone, ZoneSigningStatus};
 use crate::signer::{ResigningTrigger, SigningTrigger};
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
-use crate::util::{
-    AbortOnDrop, serialize_duration_as_secs, serialize_instant_as_duration_secs,
-    serialize_opt_duration_as_secs,
-};
-use crate::zone::{HistoricalEvent, Zone, ZoneHandle};
+use crate::util::AbortOnDrop;
+use crate::zone::{HistoricalEvent, Zone, ZoneByName};
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -74,15 +69,14 @@ use crate::zone::{HistoricalEvent, Zone, ZoneHandle};
 //------------ ZoneSigner ----------------------------------------------------
 
 pub struct ZoneSigner {
-    // TODO: Discuss whether this semaphore is necessary.
-    max_concurrent_operations: usize,
-    concurrent_operation_permits: Arc<Semaphore>,
-    signer_status: ZoneSignerStatus,
     pub kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
 
     /// A live view of the next scheduled global resigning time.
     next_resign_time_tx: watch::Sender<Option<tokio::time::Instant>>,
     next_resign_time_rx: watch::Receiver<Option<tokio::time::Instant>>,
+
+    /// The signing queue.
+    pub queue: SigningQueue,
 }
 
 impl ZoneSigner {
@@ -90,14 +84,13 @@ impl ZoneSigner {
     pub fn new() -> Self {
         let max_concurrent_operations = 1;
         let (next_resign_time_tx, next_resign_time_rx) = watch::channel(None);
+        let queue = SigningQueue::new(max_concurrent_operations.try_into().unwrap());
 
         Self {
-            max_concurrent_operations,
-            concurrent_operation_permits: Arc::new(Semaphore::new(max_concurrent_operations)),
-            signer_status: ZoneSignerStatus::new(),
             kmip_servers: Default::default(),
             next_resign_time_tx,
             next_resign_time_rx,
+            queue,
         }
     }
 
@@ -141,85 +134,6 @@ impl ZoneSigner {
         }))
     }
 
-    fn mk_signing_report(
-        &self,
-        status: Arc<RwLock<SigningStatusPerZone>>,
-    ) -> Option<SigningReport> {
-        let status = status.read().unwrap();
-        let now = Instant::now();
-        let now_t = SystemTime::now();
-        let stage_report = match status.status {
-            ZoneSigningStatus::Requested(s) => {
-                Some(SigningStageReport::Requested(SigningRequestedReport {
-                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                }))
-            }
-            ZoneSigningStatus::InProgress(s) => {
-                Some(SigningStageReport::InProgress(SigningInProgressReport {
-                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                    zone_serial: domain::base::Serial(s.zone_serial.into()),
-                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
-                    unsigned_rr_count: s.unsigned_rr_count,
-                    walk_time: s.walk_time,
-                    sort_time: s.sort_time,
-                    denial_rr_count: s.denial_rr_count,
-                    denial_time: s.denial_time,
-                    rrsig_count: s.rrsig_count,
-                    rrsig_reused_count: s.rrsig_reused_count,
-                    rrsig_time: s.rrsig_time,
-                    total_time: s.total_time,
-                    threads_used: s.threads_used,
-                }))
-            }
-            ZoneSigningStatus::Finished(s) => {
-                Some(SigningStageReport::Finished(SigningFinishedReport {
-                    requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                    zone_serial: domain::base::Serial(s.zone_serial.into()),
-                    started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
-                    unsigned_rr_count: s.unsigned_rr_count,
-                    walk_time: s.walk_time,
-                    sort_time: s.sort_time,
-                    denial_rr_count: s.denial_rr_count,
-                    denial_time: s.denial_time,
-                    rrsig_count: s.rrsig_count,
-                    rrsig_reused_count: s.rrsig_reused_count,
-                    rrsig_time: s.rrsig_time,
-                    total_time: s.total_time,
-                    threads_used: s.threads_used,
-                    finished_at: now_t.checked_sub(now.duration_since(s.finished_at))?,
-                    succeeded: s.succeeded,
-                }))
-            }
-            ZoneSigningStatus::Aborted => None,
-        };
-
-        stage_report.map(|stage_report| SigningReport {
-            current_action: status.current_action.clone(),
-            stage_report,
-        })
-    }
-
-    pub fn on_signing_report(&self, zone: &Arc<Zone>) -> Option<SigningReport> {
-        self.signer_status
-            .get(zone)
-            .and_then(|status| self.mk_signing_report(status))
-    }
-
-    pub fn on_queue_report(&self, _center: &Arc<Center>) -> Vec<SigningQueueReport> {
-        let mut report = vec![];
-        let zone_signer_status = &self.signer_status;
-        let q = zone_signer_status.zones_being_signed.read().unwrap();
-        for q_item in q.iter().rev() {
-            if let Some(stage_report) = self.mk_signing_report(q_item.clone()) {
-                report.push(SigningQueueReport {
-                    zone_name: q_item.read().unwrap().zone.name.clone(),
-                    signing_report: stage_report,
-                });
-            }
-        }
-        report
-    }
-
     pub fn on_publish_signed_zone(&self, center: &Arc<Center>) {
         trace!("[ZS]: a zone is published, recompute next time to re-sign");
         let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
@@ -230,43 +144,6 @@ impl ZoneSigner {
         // react to changes in policy, for example, whether NSEC is used
         // or NSEC3.
         let _ = self.next_resign_time_tx.send(Some(Instant::now()));
-    }
-
-    /// Enqueue a zone for signing, waiting until it can begin.
-    pub async fn wait_to_sign(
-        &self,
-        zone: &Arc<Zone>,
-    ) -> (Arc<RwLock<SigningStatusPerZone>>, [OwnedSemaphorePermit; 3]) {
-        let zone_name = &zone.name;
-        info!("[ZS]: Waiting to enqueue signing operation for zone '{zone_name}'.");
-
-        self.signer_status.dump_queue();
-
-        let (q_size, q_permit, zone_permit, status) = {
-            let signer_status = &self.signer_status;
-            // TODO: Propagate the error properly.
-            signer_status
-                .enqueue(zone)
-                .await
-                .unwrap_or_else(|err| panic!("{err}"))
-        };
-
-        let num_ops_in_progress =
-            self.max_concurrent_operations - self.concurrent_operation_permits.available_permits();
-        info!(
-            "[ZS]: Waiting to start signing operation for zone '{zone_name}': {num_ops_in_progress} signing operations are in progress and {} operations are queued ahead of us.",
-            q_size - 1
-        );
-
-        let permit = self
-            .concurrent_operation_permits
-            .clone()
-            .acquire_owned()
-            .await
-            .unwrap();
-
-        // TODO: Why do we need three different permits?
-        (status, [q_permit, zone_permit, permit])
     }
 
     pub fn sign_zone(
@@ -289,8 +166,8 @@ impl ZoneSigner {
         let mut local_state = LocalState::new(zone)?;
 
         let policy = {
-            // Use a block to make sure that the mutex is clearly dropped.
-            let zone_state = zone.state.lock().unwrap();
+            // Use a block to make sure that the lock is clearly dropped.
+            let zone_state = zone.read();
 
             zone_state.policy.clone().unwrap()
         };
@@ -358,6 +235,7 @@ impl ZoneSigner {
             soa.rdata.serial = serial;
             soa
         };
+        new_records.push(new_soa.clone().into());
 
         info!(
             "[ZS]: Serials for zone '{zone_name}': last signed={previous_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
@@ -389,9 +267,10 @@ impl ZoneSigner {
         status.write().unwrap().current_action = "Collecting records to sign".to_string();
         debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
         let walk_start = Instant::now();
-        // TODO: Filter out DNSSEC records from the loaded instance.
         let mut records = loaded
             .unsigned_records()
+            .filter(|r| r.rname != new_soa.rname || r.rtype != new_soa.rtype)
+            .cloned()
             .map(OldRecord::from)
             .collect::<Vec<_>>();
         records.push(new_soa.clone().into());
@@ -652,7 +531,7 @@ impl ZoneSigner {
         let min_expiration = Arc::new(MinTimestamp::new());
         let saved_min_expiration = min_expiration.clone();
         for record in reader.generated_records() {
-            let RecordData::RRSig(sig) = record.rdata.get() else {
+            let RecordData::Rrsig(sig) = record.rdata.get() else {
                 continue;
             };
 
@@ -707,7 +586,7 @@ impl ZoneSigner {
         );
 
         local_state.last_signature_refresh = UnixTime::now();
-        local_state.save(center, zone)?;
+        local_state.save(center, zone);
 
         Ok(())
     }
@@ -751,27 +630,25 @@ impl ZoneSigner {
 
         // Compute when to incrementally sign a zone again to refresh
         // signatures.
-        for zone in zones {
-            let zone = &zone.0;
+        for ZoneByName(zone) in zones {
             let zone_name = &zone.name;
 
-            let last_signature_refresh = {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let zone_state = zone.state.lock().unwrap();
-                zone_state.last_signature_refresh.clone()
-            };
+            let last_signature_refresh;
+            let signature_refresh_interval;
+            {
+                // Use a block to make sure that the lock is clearly dropped.
+                let zone_state = zone.read();
 
-            // Ensure that the Mutexes are locked only in this block;
-            let signature_refresh_interval = {
-                let zone_state = zone.state.lock().unwrap();
+                last_signature_refresh = zone_state.last_signature_refresh.clone();
+
                 // TODO: what if there is no policy?
-                zone_state
+                signature_refresh_interval = zone_state
                     .policy
                     .as_ref()
                     .unwrap()
                     .signer
-                    .signature_refresh_interval
-            };
+                    .signature_refresh_interval;
+            }
 
             let curr_refresh_time = last_signature_refresh.clone()
                 + Duration::from_secs(signature_refresh_interval as u64);
@@ -827,23 +704,22 @@ impl ZoneSigner {
             let zone = &zone.0;
             let zone_name = &zone.name;
 
-            let last_signature_refresh = {
-                // Use a block to make sure that the mutex is clearly dropped.
-                let zone_state = zone.state.lock().unwrap();
-                zone_state.last_signature_refresh.clone()
-            };
+            let last_signature_refresh;
+            let signature_refresh_interval;
+            {
+                // Use a block to make sure that the lock is clearly dropped.
+                let zone_state = zone.read();
 
-            // Ensure that the Mutexes are locked only in this block;
-            let signature_refresh_interval = {
-                let zone_state = zone.state.lock().unwrap();
-                // What if there is no policy?
-                zone_state
+                last_signature_refresh = zone_state.last_signature_refresh.clone();
+
+                // TODO: what if there is no policy?
+                signature_refresh_interval = zone_state
                     .policy
                     .as_ref()
                     .unwrap()
                     .signer
-                    .signature_refresh_interval
-            };
+                    .signature_refresh_interval;
+            }
 
             let curr_refresh_time = last_signature_refresh.clone()
                 + Duration::from_secs(signature_refresh_interval as u64);
@@ -870,14 +746,9 @@ impl ZoneSigner {
                     let mut resign_busy = center.resign_busy.lock().expect("should not fail");
                     resign_busy.insert(zone_name.clone(), curr_refresh_time);
                 }
-                let mut state = zone.state.lock().unwrap();
-                ZoneHandle {
-                    zone,
-                    state: &mut state,
-                    center,
-                }
-                .signer()
-                .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
+                zone.write_handle(center)
+                    .signer()
+                    .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
             }
         }
     }
@@ -937,322 +808,6 @@ fn parse_nsec3_config(opt_out: bool) -> GenerateNsec3Config<Bytes, MultiThreaded
 impl std::fmt::Debug for ZoneSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZoneSigner").finish()
-    }
-}
-
-//------------ ZoneSigningStatus ---------------------------------------------
-
-#[derive(Copy, Clone, Serialize)]
-pub struct RequestedStatus {
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    requested_at: tokio::time::Instant,
-}
-
-impl RequestedStatus {
-    fn new() -> Self {
-        Self {
-            requested_at: Instant::now(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Serialize)]
-pub struct InProgressStatus {
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    requested_at: tokio::time::Instant,
-    zone_serial: domain::base::Serial,
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    started_at: tokio::time::Instant,
-    unsigned_rr_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    walk_time: Option<Duration>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    sort_time: Option<Duration>,
-    denial_rr_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    denial_time: Option<Duration>,
-    rrsig_count: Option<usize>,
-    rrsig_reused_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    rrsig_time: Option<Duration>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    total_time: Option<Duration>,
-    threads_used: Option<usize>,
-}
-
-impl InProgressStatus {
-    fn new(requested_status: RequestedStatus, zone_serial: NewBaseSerial) -> Self {
-        Self {
-            requested_at: requested_status.requested_at,
-            zone_serial: domain::base::Serial(zone_serial.into()),
-            started_at: Instant::now(),
-            unsigned_rr_count: None,
-            walk_time: None,
-            sort_time: None,
-            denial_rr_count: None,
-            denial_time: None,
-            rrsig_count: None,
-            rrsig_reused_count: None,
-            rrsig_time: None,
-            total_time: None,
-            threads_used: None,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Serialize)]
-pub struct FinishedStatus {
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    requested_at: tokio::time::Instant,
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    started_at: tokio::time::Instant,
-    zone_serial: domain::base::Serial,
-    unsigned_rr_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    walk_time: Duration,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    sort_time: Duration,
-    denial_rr_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    denial_time: Duration,
-    rrsig_count: usize,
-    rrsig_reused_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    rrsig_time: Duration,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    total_time: Duration,
-    threads_used: usize,
-    #[serde(serialize_with = "serialize_instant_as_duration_secs")]
-    finished_at: tokio::time::Instant,
-    succeeded: bool,
-}
-
-impl FinishedStatus {
-    fn new(in_progress_status: InProgressStatus, succeeded: bool) -> Self {
-        Self {
-            requested_at: in_progress_status.requested_at,
-            zone_serial: in_progress_status.zone_serial,
-            started_at: Instant::now(),
-            unsigned_rr_count: in_progress_status.unsigned_rr_count.unwrap_or_default(),
-            walk_time: in_progress_status.walk_time.unwrap_or_default(),
-            sort_time: in_progress_status.sort_time.unwrap_or_default(),
-            denial_rr_count: in_progress_status.denial_rr_count.unwrap_or_default(),
-            denial_time: in_progress_status.denial_time.unwrap_or_default(),
-            rrsig_count: in_progress_status.rrsig_count.unwrap_or_default(),
-            rrsig_reused_count: in_progress_status.rrsig_reused_count.unwrap_or_default(),
-            rrsig_time: in_progress_status.rrsig_time.unwrap_or_default(),
-            total_time: in_progress_status.total_time.unwrap_or_default(),
-            threads_used: in_progress_status.threads_used.unwrap_or_default(),
-            finished_at: Instant::now(),
-            succeeded,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Serialize)]
-pub enum ZoneSigningStatus {
-    Requested(RequestedStatus),
-
-    InProgress(InProgressStatus),
-
-    Finished(FinishedStatus),
-
-    Aborted,
-}
-
-impl ZoneSigningStatus {
-    fn new() -> Self {
-        Self::Requested(RequestedStatus::new())
-    }
-
-    fn start(&mut self, zone_serial: NewBaseSerial) -> Result<(), ()> {
-        match *self {
-            ZoneSigningStatus::Requested(s) => {
-                *self = Self::InProgress(InProgressStatus::new(s, zone_serial));
-                Ok(())
-            }
-            ZoneSigningStatus::Aborted
-            | ZoneSigningStatus::InProgress(_)
-            | ZoneSigningStatus::Finished(_) => Err(()),
-        }
-    }
-
-    pub fn finish(&mut self, succeeded: bool) {
-        match *self {
-            ZoneSigningStatus::Requested(_) => {
-                *self = Self::Aborted;
-            }
-            ZoneSigningStatus::InProgress(status) => {
-                *self = Self::Finished(FinishedStatus::new(status, succeeded))
-            }
-            ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted => { /* Nothing to do */ }
-        }
-    }
-}
-
-impl std::fmt::Display for ZoneSigningStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ZoneSigningStatus::Requested(_) => f.write_str("Requested"),
-            ZoneSigningStatus::InProgress(_) => f.write_str("InProgress"),
-            ZoneSigningStatus::Finished(_) => f.write_str("Finished"),
-            ZoneSigningStatus::Aborted => f.write_str("Aborted"),
-        }
-    }
-}
-
-//------------ ZoneSignerStatus ----------------------------------------------
-
-const SIGNING_QUEUE_SIZE: usize = 100;
-
-pub struct SigningStatusPerZone {
-    pub zone: Arc<Zone>,
-    pub current_action: String,
-    pub status: ZoneSigningStatus,
-}
-
-struct ZoneSignerStatus {
-    // Maps zone names to signing status, keeping records of previous signing.
-    // Use VecDeque for its ability to act as a ring buffer: check size, if
-    // at max desired capacity pop_front(), then in both cases push_back().
-    //
-    // TODO: Separate out signing request queuing from signing statistics
-    // tracking.
-    zones_being_signed: Arc<RwLock<VecDeque<Arc<RwLock<SigningStatusPerZone>>>>>,
-
-    // Sign each zone only once at a time.
-    zone_semaphores: Arc<RwLock<HashMap<Name<Bytes>, Arc<Semaphore>>>>,
-
-    queue_semaphore: Arc<Semaphore>,
-}
-
-impl ZoneSignerStatus {
-    pub fn new() -> Self {
-        Self {
-            zones_being_signed: Arc::new(std::sync::RwLock::new(VecDeque::with_capacity(
-                SIGNING_QUEUE_SIZE,
-            ))),
-            zone_semaphores: Default::default(),
-            queue_semaphore: Arc::new(Semaphore::new(SIGNING_QUEUE_SIZE)),
-        }
-    }
-
-    pub fn get(&self, wanted_zone: &Arc<Zone>) -> Option<Arc<RwLock<SigningStatusPerZone>>> {
-        self.dump_queue();
-
-        let zones_being_signed = self.zones_being_signed.read().unwrap();
-        for q_item in zones_being_signed.iter().rev() {
-            let readable_q_item = q_item.read().unwrap();
-            if Arc::ptr_eq(&readable_q_item.zone, wanted_zone)
-                && !matches!(readable_q_item.status, ZoneSigningStatus::Aborted)
-            {
-                return Some(q_item.clone());
-            }
-        }
-        None
-    }
-
-    fn dump_queue(&self) {
-        if tracing::event_enabled!(Level::DEBUG) {
-            let zones_being_signed = self.zones_being_signed.read().unwrap();
-            for q_item in zones_being_signed.iter().rev() {
-                let q_item = q_item.read().unwrap();
-                match q_item.status {
-                    ZoneSigningStatus::Requested(_) => {
-                        debug!("[ZS]: Queue item: {} => requested", q_item.zone.name)
-                    }
-                    ZoneSigningStatus::InProgress(_) => {
-                        debug!("[ZS]: Queue item: {} => in-progress", q_item.zone.name)
-                    }
-                    ZoneSigningStatus::Finished(_) => {
-                        debug!("[ZS]: Queue item: {} => finished", q_item.zone.name)
-                    }
-                    ZoneSigningStatus::Aborted => {
-                        debug!("[ZS]: Queue item: {} => aborted", q_item.zone.name)
-                    }
-                };
-            }
-        }
-    }
-
-    /// Enqueue a zone for signing.
-    pub async fn enqueue(
-        &self,
-        zone: &Arc<Zone>,
-    ) -> Result<
-        (
-            usize,
-            OwnedSemaphorePermit,
-            OwnedSemaphorePermit,
-            Arc<RwLock<SigningStatusPerZone>>,
-        ),
-        SignerError,
-    > {
-        let zone_name = &zone.name;
-        debug!("SIGNER[{zone_name}]: Adding to the queue");
-        let status = Arc::new(RwLock::new(SigningStatusPerZone {
-            zone: zone.clone(),
-            current_action: "Waiting for any existing signing operation for this zone to finish"
-                .to_string(),
-            status: ZoneSigningStatus::new(),
-        }));
-        {
-            let mut zones_being_signed = self.zones_being_signed.write().unwrap();
-            zones_being_signed.push_back(status.clone());
-        }
-
-        let approx_q_size = SIGNING_QUEUE_SIZE - self.queue_semaphore.available_permits() + 1;
-        debug!("SIGNER[{zone_name}]: Approx queue size = {approx_q_size}");
-
-        debug!("SIGNER[{zone_name}]: Acquiring zone permit");
-        let zone_semaphore = self
-            .zone_semaphores
-            .write()
-            .unwrap()
-            .entry(zone_name.clone())
-            .or_insert(Arc::new(Semaphore::new(1)))
-            .clone();
-        let zone_permit = zone_semaphore.acquire_owned().await.map_err(|_| {
-            SignerError::InternalError("Cannot acquire the zone semaphore".to_string())
-        })?;
-        debug!("SIGNER[{zone_name}]: Zone permit acquired");
-
-        status.write().unwrap().current_action = "Waiting for a signing queue slot".to_string();
-
-        debug!("SIGNER: Acquiring queue permit");
-        let queue_permit = self
-            .queue_semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| SignerError::SignerNotReady)?;
-        debug!("SIGNER[{zone_name}]: Queue permit acquired");
-
-        // If we were able to acquire a permit that means that a signing operation completed
-        // and so we are safe to remove one item from the ring buffer.
-        let mut zones_being_signed = self.zones_being_signed.write().unwrap();
-        if zones_being_signed.len() == zones_being_signed.capacity() {
-            // Discard oldest.
-            let signing_status = zones_being_signed.pop_front();
-            if let Some(signing_status) = signing_status {
-                // Old items in the queue should have reached a final state,
-                // either finished or aborted. If not, something is wrong with
-                // the queueing logic.
-                if !matches!(
-                    signing_status.read().unwrap().status,
-                    ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted
-                ) {
-                    return Err(SignerError::InternalError(
-                        "Signing queue not in the expected state".to_string(),
-                    ));
-                }
-            }
-        }
-
-        status.write().unwrap().current_action = "Queued for signing".to_string();
-
-        debug!("SIGNER[{zone_name}]: Enqueuing complete.");
-        Ok((approx_q_size, queue_permit, zone_permit, status))
     }
 }
 
