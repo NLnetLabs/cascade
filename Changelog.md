@@ -14,6 +14,18 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Breaking changes
+### New
+### Bug fixes
+### Other changes
+### Documentation improvements
+### Known issues
+### Acknowledgements
+
 ## Version 0.1.0-beta4 'Irish Goodbye'
 
 Released 2026-07-03.
