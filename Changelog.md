@@ -23,7 +23,7 @@ Released yyyy-mm-dd.
 ### New
 
 - Add prometheus metrics for zone transfers and loaded zone bytes and records.
-  ([#538] by @mozzieongit)
+  ([#538] by @mozzieongit and @tertsdiepraam)
 
 ### Bug fixes
 

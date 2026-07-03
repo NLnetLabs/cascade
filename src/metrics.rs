@@ -75,10 +75,10 @@ impl MetricsCollection {
         // implement Clone.
         let _cascade_version = Info::new(vec![
             ("version", clap::crate_version!()),
-            ("build", env!("CASCADE_BUILD_COMMIT")),
+            ("commit", env!("CASCADE_BUILD_COMMIT")),
         ]);
 
-        // The prometheus docs linked to
+        // See the prometheus docs at
         // https://www.robustperception.io/exposing-the-software-version-to-prometheus/
         // for exposing software version information. And `prometheus_client`
         // exposes the `Info` type, which we use here to expose cascade
@@ -299,7 +299,7 @@ pub struct ZoneHaltMode {
 
 //------------ HaltMode ------------------------------------------------------
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
 pub enum HaltMode {
     HardHalt,
 }
@@ -309,13 +309,13 @@ pub enum HaltMode {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct XfrLabels {
     pub zone: StoredName,
-    pub xfrtype: XfrType,
+    pub r#type: XfrType,
     pub transport: XfrTransport,
 }
 
 //------------ XfrType -------------------------------------------------------
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
 pub enum XfrType {
     AXFR,
     IXFR,
@@ -323,7 +323,7 @@ pub enum XfrType {
 
 //------------ XfrTransport --------------------------------------------------
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
 pub enum XfrTransport {
     TCP,
     UDP,

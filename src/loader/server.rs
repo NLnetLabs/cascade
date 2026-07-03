@@ -188,7 +188,7 @@ pub async fn ixfr(
         .xfr_requests_to_upstream_attempted
         .get_or_create(&XfrLabels {
             zone: zone.name.clone().into(),
-            xfrtype: XfrType::IXFR,
+            r#type: XfrType::IXFR,
             transport: XfrTransport::TCP,
         })
         .inc();
@@ -272,7 +272,7 @@ pub async fn ixfr(
                 .xfr_requests_to_upstream_succeeded
                 .get_or_create(&XfrLabels {
                     zone: zone.name.clone().into(),
-                    xfrtype: XfrType::IXFR,
+                    r#type: XfrType::IXFR,
                     transport: XfrTransport::TCP,
                 })
                 .inc();
@@ -316,7 +316,7 @@ pub async fn ixfr(
                 .xfr_requests_to_upstream_succeeded
                 .get_or_create(&XfrLabels {
                     zone: zone.name.clone().into(),
-                    xfrtype: XfrType::IXFR,
+                    r#type: XfrType::IXFR,
                     transport: XfrTransport::TCP,
                 })
                 .inc();
@@ -437,7 +437,7 @@ pub async fn axfr(
         .xfr_requests_to_upstream_attempted
         .get_or_create(&XfrLabels {
             zone: zone.name.clone().into(),
-            xfrtype: XfrType::AXFR,
+            r#type: XfrType::AXFR,
             transport: XfrTransport::TCP,
         })
         .inc();
@@ -487,7 +487,7 @@ pub async fn axfr(
         .xfr_requests_to_upstream_succeeded
         .get_or_create(&XfrLabels {
             zone: zone.name.clone().into(),
-            xfrtype: XfrType::AXFR,
+            r#type: XfrType::AXFR,
             transport: XfrTransport::TCP,
         })
         .inc();

@@ -60,7 +60,7 @@ impl Loader {
 
         metrics.register(
             "xfr_requests_to_upstream_succeeded",
-            "Number of zone transfers succeeded by Cascade towards the upstream primary",
+            "Number of succeeded zone transfers by Cascade towards the upstream primary",
             loader_metrics.xfr_requests_to_upstream_succeeded.clone(),
         );
 
@@ -71,7 +71,7 @@ impl Loader {
         );
 
         metrics.register_with_unit(
-            "zone_loaded_last_successful",
+            "zone_loaded_last_successful_bytes",
             "Number of bytes loaded in last successful zone transfer or zonefile load",
             Unit::Bytes,
             loader_metrics.zone_loaded_last_successful_bytes.clone(),
@@ -79,13 +79,13 @@ impl Loader {
 
         metrics.register(
             "zone_loaded_last_records",
-            "Number of records loaded in last successful zone transfer or zonefile load",
+            "Number of records loaded in last attempted zone transfer or zonefile load",
             loader_metrics.zone_loaded_last_records.clone(),
         );
 
         metrics.register_with_unit(
-            "zone_loaded_last",
-            "Number of bytes loaded in last successful zone transfer or zonefile load",
+            "zone_loaded_last_bytes",
+            "Number of bytes loaded in last attempted zone transfer or zonefile load",
             Unit::Bytes,
             loader_metrics.zone_loaded_last_bytes.clone(),
         );
