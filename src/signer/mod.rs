@@ -34,6 +34,7 @@ use crate::{
     units::zone_signer::SignerError,
 };
 
+pub mod full;
 pub mod incremental;
 pub mod keys;
 pub mod queue;
@@ -66,9 +67,7 @@ fn sign(
     permit: SigningPermit,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
-    let result = center
-        .signer
-        .sign_zone(&center, &zone, &mut builder, trigger, status.clone());
+    let result = full::sign_zone(&center, &zone, &mut builder, trigger, status.clone());
 
     let mut status = status.write().unwrap();
     let mut handle = zone.write_handle(&center);
