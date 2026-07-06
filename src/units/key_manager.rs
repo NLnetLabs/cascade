@@ -51,11 +51,16 @@
 //!
 //! # `dnst` controlling Cascade
 //!
-//! At moments scheduled by `dnst` via "cron" timestamps `KeyManager` checks
-//! the JSON state files produced by `dnst` to determine if they have changed,
-//! and if so enqueues re-signing of the zone. See `KeyManager::tick()`. The
-//! signer will then read the `dnst` state files to configure itself
-//! appropriately for signing.
+//! Each `tick()` (every 5 seconds at the time of writing) the `KeyManager`
+//! if not busy, checks per zone if the state file managed by `dnst` has been
+//! updated, and if so triggers re-signing of the zone on the basis that the
+//! set of DNSSEC keys to sign the zone with may have changed.
+//!
+//! If not modified and the next "cron" moment (as defined by the `cron_next`
+//! entry in the `dnst` zone state file) has been reached the Key Manager
+//! invokes the `dnst keyset cron` command. This is expected to cause changes
+//! to the `dnst` managed zone state file which will lead to re-signing being
+//! triggered or `dnst keyset cron` being retried.
 //!
 //! # KMIP key identifiers and labels
 //!
