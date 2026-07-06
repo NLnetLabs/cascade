@@ -25,9 +25,14 @@ runs:
     - uses: ./.github/actions/setup-and-start-cascade
       with:
         log-level: ${{ inputs.log-level }}
+
     ###
     ### Create your test here
     ###
+
+    - name: Kill Cascade so that coverage metrics, if enabled, get written out.
+      run: pkill cascaded
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()

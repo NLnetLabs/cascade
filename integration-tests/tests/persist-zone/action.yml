@@ -56,9 +56,9 @@ runs:
         done
 
     - name: Restart Cascade
-      run: |
-        CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log" 
+      uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
 
     - name: Wait for Cascade to become healthy
       run: |
@@ -152,9 +152,9 @@ runs:
     # Cascade should reload the signed zone data from the data it persisted
     # to disk.
     - name: Start Cascade again
-      run: |
-        CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+      uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
 
     - name: Wait for Cascade to become healthy again
       run: |
@@ -232,9 +232,9 @@ runs:
         rm "${CASCADE_DIR}"/zone-state/example.test.signed.*
 
     - name: Start Cascade a 3rd time
-      run: |
-        CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+      uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
 
     - name: Wait for Cascade to become healthy a 3rd time
       run: |
@@ -498,9 +498,9 @@ runs:
         done
 
     - name: Start Cascade a 4th time
-      run: |
-        CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+      uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
 
     - name: Wait for Cascade to become healthy a 4th time
       run: |
@@ -625,9 +625,9 @@ runs:
         rm "${CASCADE_DIR}"/zone-state/example.test.signed.*
 
     - name: Start Cascade again
-      run: |
-        CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+      uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
 
     - name: Wait for Cascade to become healthy again
       run: |
@@ -681,6 +681,9 @@ runs:
           echo "::error:: Cascade should have re-signed the zone"
           exit 1
         fi
+
+    - name: Kill Cascade so that coverage metrics, if enabled, get written out.
+      run: pkill cascaded
 
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles

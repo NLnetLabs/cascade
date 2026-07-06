@@ -38,9 +38,11 @@ runs:
         chmod +x ${INTEGRATION_TEST_DIR}/hooks/*
         # Tell Cascade to load our new test policy.
         cascade policy reload
+
     - name: Add a zone
       run: |
         cascade zone add --policy test --source 127.0.0.1:1055 example.test
+
     - name: Check zone status
       run: |
         timeout=10 # seconds
@@ -53,9 +55,14 @@ runs:
           fi
           sleep 1
         done
+
     - name: Query zone
       run: |
         dig @127.0.0.1 -p 4542 example.test AXFR 
+
+    - name: Kill Cascade so that coverage metrics, if enabled, get written out.
+      run: pkill cascaded
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()

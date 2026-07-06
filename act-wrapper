@@ -29,6 +29,10 @@ function usage {
 	echo
 	echo "'$0 +stats-graph </path/to/write/report.png>'"
 	echo
+	echo "To create a code coverage report use:"
+	echo
+	echo "'$0 +coverage </path/to/write/report/>'"
+	echo
 	echo "NOTE: '+XXX' arguments must be the first arguments to act-wrapper, and can be combined."
 	echo
 	echo "Inputs that can be provided via --input:"
@@ -84,6 +88,13 @@ while [[ "$1" =~ ^\+ ]]; do
 			shift
 			docker_stats_graph_path="$1"
 			;;
+		+coverage)
+		  coverage=true
+		  coverage_path="/tmp/cascade-coverage-data/$BASHPID"
+		  mkdir -p ${coverage_path}
+		  act_args+=(--input build-profile=debug)
+		  act_args+=(--container-options "-v ${coverage_path}:/tmp/cov")
+		  ;;
 		*)
 			echo >&2 "ERROR: Unrecognized + argument: $1"
 			usage
@@ -93,10 +104,38 @@ while [[ "$1" =~ ^\+ ]]; do
 	shift
 done
 
+if [[ "$coverage" == true ]]; then
+	if [[ "$no_build" == true || "$build_inside" == true ]]; then
+  	echo >&2 "ERROR: +coverage is not compatible with +nobuild or +build-inside"
+	  exit 1
+	fi
+
+  echo "Code coverage reporting activated:"
+  echo "  - Data will be written to the following directory: ${coverage_path}"
+fi
+
 if [[ "$no_build" != true ]]; then
 	if [[ "$build_inside" != true ]]; then
-		cargo build
-		cargo build --release
+		if [[ "$coverage" == true ]]; then
+			# Ensure that only the binaries we want to be instrumented get
+			# instrumented, so don't export RUSTFLAGS but instead set it specifically
+			# here. See: https://doc.rust-lang.org/beta/rustc/instrument-coverage.html
+			# for more information.
+			RUSTFLAGS="-C instrument-coverage" cargo build
+			RUSTFLAGS="-C instrument-coverage" cargo build --release
+		else
+			cargo build
+			cargo build --release
+		fi
+
+		if [[ "$coverage" == "true" ]]; then
+			# For some reason I don't understand, RUSTFLAGS="-C instrument-coverage"
+			# causes default_xxx.profraw files to be written out _during cargo build_
+			# while we only want and expect them when the built binary is run. Delete
+			# the files that were just created to prevent confusion and littering the
+			# users checkout with these files...
+			find . -type f -name 'default*.profraw' -exec rm {} \;
+		fi
 	fi
 
 	docker buildx build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-tests-runner --build-arg MSRV=$MSRV "${args[@]}"
@@ -221,6 +260,24 @@ EOF
 			echo "${GNUPLOT_SCRIPT}" | gnuplot -c /dev/stdin > "${docker_stats_graph_path}"
 		fi
 	fi
+fi
+
+if [[ "$coverage" == true ]]; then
+	echo "Merging coverage data files..."
+	llvm-profdata merge -sparse $(find "${coverage_path}/" -type f -iname '*.profraw' -printf "%p ") -o "${coverage_path}/merged"
+
+	echo "Generating HTML coverage report in ${coverage_path}/report"
+	llvm-cov show \
+    -Xdemangler=rustfilt \
+    --object target/debug/cascade \
+    --object target/debug/cascaded \
+    -show-line-counts-or-regions \
+    -show-instantiations \
+    -ignore-filename-regex='/.cargo/' \
+    -ignore-filename-regex='/.rustup/' \
+    -instr-profile="${coverage_path}/merged" \
+    --format=html \
+    -output-dir="${coverage_path}/report"
 fi
 
 if docker container ls --format '{{.Names}}' --all | grep -q "^act-"; then

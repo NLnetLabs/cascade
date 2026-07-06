@@ -155,6 +155,9 @@ runs:
       run: |
         dig @127.0.0.1 -p 1054 text.${{ steps.set-vars.outputs.ZONE_NAME }} TXT | grep 'Hello World'
 
+    - name: Kill Cascade so that coverage metrics, if enabled, get written out.
+      run: pkill cascaded
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()

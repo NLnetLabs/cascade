@@ -31,6 +31,9 @@ RUN <<EOF
   apt-get install -y file
 
   apt-get install -y ldnsutils
+
+  # For use by code coverage testing
+  apt-get install -y uuid
 EOF
 
 RUN <<EOF
