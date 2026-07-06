@@ -375,6 +375,12 @@ pub struct SignerState {
     /// An enqueued re-signing operation, if any.
     pub enqueued_resign: Option<EnqueuedResign>,
 
+    /// When a zone is scheduled to be re-signed.
+    ///
+    /// If this is [`Some`], the zone is currently scheduled for re-signing, at
+    /// the specified time.
+    pub scheduled_resign_time: Option<SystemTime>,
+
     /// Status for an active signing operation, if any.
     //
     // TODO: Embed in a state machine.

@@ -126,11 +126,12 @@ impl ZoneSigner {
         // signatures.
         zones
             .into_iter()
-            // Compute the ideal re-sign time for each zone, filtering out zones
-            // that don't need re-signing.
+            // Load the scheduled re-signing time for each zone.
             .filter_map(|ZoneByName(zone)| {
-                let zone_state = zone.read();
-                resign_time(&zone_state)
+                let mut zone_state = zone.write(center);
+                let resign_time = resign_time(&zone_state);
+                zone_state.signer.scheduled_resign_time = resign_time;
+                resign_time
             })
             .min()
             .map(|t| {
@@ -158,37 +159,16 @@ impl ZoneSigner {
 
         for ZoneByName(zone) in zones {
             let zone_name = &zone.name;
+            let mut handle = zone.write_handle(center);
 
-            let Some(resign_time) = ({
-                let zone_state = zone.read();
-                resign_time(&zone_state)
-            }) else {
+            let Some(resign_time) = handle.state.signer.scheduled_resign_time.take() else {
                 continue;
             };
-
-            let curr_refresh_time = UnixTime::try_from(resign_time).unwrap();
-
-            // Start a new block to make sure the mutex is released.
-            {
-                let resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_refresh_time = resign_busy.get(zone_name);
-                if let Some(saved_refresh_time) = opt_refresh_time
-                    && *saved_refresh_time == curr_refresh_time
-                {
-                    // This zone is busy.
-                    continue;
-                }
-            }
 
             if resign_time < now {
                 trace!("[ZS]: re-signing: request signing of zone {zone_name}");
 
-                // Start a new block to make sure the mutex is released.
-                {
-                    let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                    resign_busy.insert(zone_name.clone(), curr_refresh_time);
-                }
-                zone.write_handle(center)
+                handle
                     .signer()
                     .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
             }
