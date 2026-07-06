@@ -40,17 +40,14 @@ pub fn restore_loaded(
     center: &Arc<Center>,
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<bool> {
-    let state = zone.read();
-    let mut paths_iter = state.persistence.loaded_diff_paths.iter();
+    let paths = zone.read().persistence.loaded_diff_paths.clone();
+    let mut paths_iter = paths.iter();
     let Some(snapshot_path) = paths_iter.next() else {
         return io::Result::Ok(false);
     };
 
     info!("Restoring persisted loaded data for zone '{}'", zone.name);
-    trace!(
-        "Restoring from paths: {:?}",
-        state.persistence.loaded_diff_paths
-    );
+    trace!("Restoring from paths: {paths:?}",);
 
     let mut buf = Vec::<u8>::new();
 
@@ -118,7 +115,6 @@ pub fn restore_loaded(
         let end_serial: u32 = end_serial.into();
         all_serials.push((start_serial, end_serial));
     }
-    drop(state);
 
     let num_diffs_to_restore = diffs_to_store.len();
     trace!(
@@ -153,17 +149,14 @@ pub fn restore_signed(
     center: &Arc<Center>,
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<bool> {
-    let state = zone.read();
-    let mut path_infos_iter = state.persistence.signed_diff_paths.iter();
+    let paths = zone.read().persistence.signed_diff_paths.clone();
+    let mut path_infos_iter = paths.iter();
     let Some((snapshot_path, _serial)) = path_infos_iter.next() else {
         return io::Result::Ok(false);
     };
 
     info!("Restoring persisted signed data for zone '{}'", zone.name);
-    trace!(
-        "Restoring from paths: {:?}",
-        state.persistence.signed_diff_paths
-    );
+    trace!("Restoring from paths: {paths:?}",);
 
     // Determine the paths to read from. Each zone is persisted as an AXFR
     // plus zero or more IXFRs. The restorer takes a base path ending in an
@@ -242,7 +235,6 @@ pub fn restore_signed(
         let end_serial: u32 = end_serial.into();
         all_serials.push((start_serial, end_serial));
     }
-    drop(state);
 
     let num_diffs_to_restore = diffs_to_store.len();
     trace!(
