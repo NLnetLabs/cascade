@@ -67,7 +67,11 @@ fn sign(
     permit: SigningPermit,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
-    let result = full::sign_zone(&center, &zone, &mut builder, trigger, status.clone());
+    let result = if let Some(patcher) = builder.patch() {
+        self::incremental::sign_incrementally(patcher, &zone, &center, trigger, status.clone())
+    } else {
+        self::full::sign_zone(&center, &zone, &mut builder, trigger, status.clone())
+    };
 
     let mut status = status.write().unwrap();
     let mut handle = zone.write_handle(&center);

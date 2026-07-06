@@ -49,7 +49,7 @@ use crate::{
     policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy},
     signer::{
         SigningTrigger,
-        incremental::{LocalState, sign_incrementally},
+        incremental::LocalState,
         keys::ZoneSigningKeys,
         status::{SigningStatusPerZone, ZoneSigningStatus},
     },
@@ -68,10 +68,6 @@ pub fn sign_zone(
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) -> Result<(), SignerError> {
     let zone_name = &zone.name;
-
-    if let Some(patcher) = builder.patch() {
-        return sign_incrementally(patcher, zone, center, trigger, status);
-    }
 
     info!("[ZS]: Starting signing operation for zone '{zone_name}'");
     let start = Instant::now();
