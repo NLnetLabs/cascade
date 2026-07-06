@@ -9,8 +9,8 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use bytes::{Bytes, BytesMut};
 use cascade_zonedata::{
-    LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
-    SoaRecord,
+    DiffData, LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher,
+    SignedZoneReader, SoaRecord,
 };
 use domain::base::RecordData;
 use domain::base::Serial;
@@ -163,6 +163,9 @@ pub fn sign_incrementally(
         let start = Instant::now();
         iss.load_unsigned_zone(&ws.patch.next_loaded().expect("should be there"))?;
         debug!("loading new unsigned zone took {:?}", start.elapsed());
+        let start = Instant::now();
+        iss.load_unsigned_diffs(ws.patch.unsigned_diff().expect("should be there"))?;
+        debug!("loading new unsigned diffs took {:?}", start.elapsed());
     } else {
         // Re-use the signed data.
         iss.load_signed_only();
@@ -330,7 +333,7 @@ impl WorkSpace<'_> {
                     + self.policy.signer.signature_refresh_interval
             {
                 let owner_namebuf: NameBuf = RevNameBuf::copy_from(owner).into();
-                let old_rtype = new_base_rtype_to_old_base_rtype(rtype);
+                let old_rtype = new_base_rtype_to_old_base(rtype);
                 error!(
                     "TTL of {}/{} too large: signature-remain-time ({}) + TTL ({}) + signature-refresh-interval ({}) >= signature-lifetime ({})",
                     owner_namebuf,
@@ -373,7 +376,7 @@ impl WorkSpace<'_> {
             let key = (*owner, *rtype);
             let old_key = (
                 revname_to_old_base_name(owner),
-                new_base_rtype_to_old_base_rtype(*rtype),
+                new_base_rtype_to_old_base(*rtype),
             );
             if *rtype == NewRtype::NSEC {
                 let record = iss.nsecs.get(key.0).expect("NSEC record should exist");
@@ -401,14 +404,16 @@ impl WorkSpace<'_> {
             } else {
                 let new_origin = old_base_name_to_revnamebuf(&iss.origin);
                 let records = if *key.0 == *new_origin.as_ref() {
-                    iss.new_apex.get(&old_key.1)
+                    iss.new_apex.get(&old_key.1).map(|v| v.to_vec())
                 } else {
-                    iss.new_data.get(&old_key)
+                    iss.data
+                        .get(&old_key)
+                        .map(|v| v.iter().map(|r| (*r).clone().into()).collect::<Vec<_>>())
                 }
                 .expect("records should exist");
                 sign_records(
                     &iss.origin,
-                    records,
+                    &records,
                     &iss.keys,
                     iss.inception,
                     iss.expiration,
@@ -468,7 +473,7 @@ impl WorkSpace<'_> {
                 let key = (owner, rtype);
                 let old_key = (
                     revname_to_old_base_name(owner),
-                    new_base_rtype_to_old_base_rtype(rtype),
+                    new_base_rtype_to_old_base(rtype),
                 );
                 if rtype == NewRtype::NSEC {
                     let record = iss.nsecs.get(key.0).expect("NSEC record should exist");
@@ -496,14 +501,16 @@ impl WorkSpace<'_> {
                 } else {
                     let new_origin = old_base_name_to_revnamebuf(&iss.origin);
                     let records = if *key.0 == *new_origin.as_ref() {
-                        iss.new_apex.get(&old_key.1)
+                        iss.new_apex.get(&old_key.1).map(|v| v.to_vec())
                     } else {
-                        iss.new_data.get(&old_key)
+                        iss.data
+                            .get(&old_key)
+                            .map(|v| v.iter().map(|r| (*r).clone().into()).collect::<Vec<_>>())
                     }
                     .expect("records should exist");
                     sign_records(
                         &iss.origin,
-                        records,
+                        &records,
                         &iss.keys,
                         iss.inception,
                         iss.expiration,
@@ -555,7 +562,7 @@ impl WorkSpace<'_> {
             let key = (*owner, *rtype);
             let old_key = (
                 revname_to_old_base_name(owner),
-                new_base_rtype_to_old_base_rtype(*rtype),
+                new_base_rtype_to_old_base(*rtype),
             );
             if *rtype == NewRtype::NSEC {
                 let record = iss.nsecs.get(key.0).expect("NSEC record should exist");
@@ -583,14 +590,16 @@ impl WorkSpace<'_> {
             } else {
                 let new_origin = old_base_name_to_revnamebuf(&iss.origin);
                 let records = if *key.0 == *new_origin.as_ref() {
-                    iss.new_apex.get(&old_key.1)
+                    iss.new_apex.get(&old_key.1).map(|v| v.to_vec())
                 } else {
-                    iss.new_data.get(&old_key)
+                    iss.data
+                        .get(&old_key)
+                        .map(|v| v.iter().map(|r| (*r).clone().into()).collect::<Vec<_>>())
                 }
                 .expect("records should exist");
                 sign_records(
                     &iss.origin,
-                    records,
+                    &records,
                     &iss.keys,
                     iss.inception,
                     iss.expiration,
@@ -935,9 +944,10 @@ impl WorkSpace<'_> {
                 .flatten(),
         );
 
-        all.extend(
-            iss.new_data
-                .iter()
+        let mut all_data: Vec<Zrd> = vec![];
+        all_data.extend(
+            iss.data
+                .iter_unordered()
                 .filter_map(|((o, t), r)| {
                     if *o != iss.origin || *t != Rtype::ZONEMD {
                         Some(r)
@@ -945,8 +955,14 @@ impl WorkSpace<'_> {
                         None
                     }
                 })
-                .flatten(),
+                .flatten()
+                .map(|r| {
+                    let s: Record<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>> =
+                        (*r).clone().into();
+                    s.into()
+                }),
         );
+        all.extend(all_data.iter());
 
         let mut all_nsecs: Vec<Zrd> = vec![];
         all_nsecs.extend(iss.nsecs.values().map(|r| {
@@ -1396,10 +1412,6 @@ struct IncrementalSigningState<'zd> {
     /// by the diff that the zone store provides.
     old_apex: HashMap<Rtype, Vec<Zrd>>,
 
-    /// Non-apex RRsets of the previously signed zone. With the exeception of
-    /// NSEC, NSEC3 and RRSIG records.
-    old_data: HashMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
-
     /// Saved copy of old_apex for generating diffs for the zone store.
     old_apex_saved: HashMap<Rtype, Vec<Zrd>>,
 
@@ -1408,13 +1420,10 @@ struct IncrementalSigningState<'zd> {
     /// zone.
     new_apex: HashMap<Rtype, Vec<Zrd>>,
 
-    /// After incremental signing, this contains the non-apex RRsets
-    /// (with the exeception of NSEC, NSEC3, and RRSIG records) of the newly
-    /// signed zone.
-    new_data: BTreeMap<(Name<Bytes>, Rtype), Vec<Zrd>>,
-
     /// The apex of the new version of the unsigned zone.
     new_apex_saved: HashMap<Rtype, Vec<Zrd>>,
+
+    data: Data<'zd>,
 
     // Stores old and new NSEC records and creates diffs.
     nsecs: Nsecs<'zd>,
@@ -1476,8 +1485,7 @@ impl<'a> IncrementalSigningState<'a> {
             old_apex_saved: HashMap::new(),
             new_apex: HashMap::new(),
             new_apex_saved: HashMap::new(),
-            old_data: HashMap::new(),
-            new_data: BTreeMap::new(),
+            data: Data::new(),
             nsecs: Nsecs::new(),
             nsec3s: Nsecs::new(),
             rrsigs: Rrsigs::new(),
@@ -1519,6 +1527,10 @@ impl<'a> IncrementalSigningState<'a> {
                     self.nsec3s.add_existing_record(entry);
                 }
                 _ => {
+                    if *record.owner() != self.origin {
+                        self.data.insert_existing_record(entry);
+                        continue;
+                    }
                     if records.is_empty() {
                         records.push(record);
                         continue;
@@ -1529,11 +1541,7 @@ impl<'a> IncrementalSigningState<'a> {
                         continue;
                     }
                     let key = (records[0].owner().clone(), records[0].rtype());
-                    if key.0 == self.origin {
-                        self.old_apex.entry(key.1).or_default().append(&mut records);
-                    } else {
-                        self.old_data.entry(key).or_default().append(&mut records);
-                    }
+                    self.old_apex.entry(key.1).or_default().append(&mut records);
                     records = vec![];
                     records.push(record);
                 }
@@ -1542,11 +1550,8 @@ impl<'a> IncrementalSigningState<'a> {
 
         if !records.is_empty() {
             let key = (records[0].owner().clone(), records[0].rtype());
-            if key.0 == self.origin {
-                self.old_apex.entry(key.1).or_default().append(&mut records);
-            } else {
-                self.old_data.entry(key).or_default().append(&mut records);
-            }
+            assert!(key.0 == self.origin);
+            self.old_apex.entry(key.1).or_default().append(&mut records);
         }
         self.old_apex_saved = self.old_apex.clone();
         Ok(())
@@ -1582,7 +1587,7 @@ impl<'a> IncrementalSigningState<'a> {
             if key.0 == self.origin {
                 self.new_apex.entry(key.1).or_default().append(&mut records);
             } else {
-                self.new_data.entry(key).or_default().append(&mut records);
+                // Take Data changes from diffs.
             }
             records = vec![];
             records.push(record);
@@ -1593,7 +1598,7 @@ impl<'a> IncrementalSigningState<'a> {
             if key.0 == self.origin {
                 self.new_apex.entry(key.1).or_default().append(&mut records);
             } else {
-                self.new_data.entry(key).or_default().append(&mut records);
+                // Take Data changes from diffs.
             }
         }
 
@@ -1609,12 +1614,29 @@ impl<'a> IncrementalSigningState<'a> {
         Ok(())
     }
 
+    pub fn load_unsigned_diffs(&mut self, diffs: DiffData) -> Result<(), SignerError> {
+        let origin_revnamebuf = old_base_name_to_revnamebuf(&self.origin);
+
+        // Add_records and removed_records can be processed in any order.
+        // Processing removed_records first is slightly more efficient.
+        for record in diffs.removed_records {
+            if record.owner() == origin_revnamebuf.as_ref() {
+                continue; // Skip records at apex.
+            }
+            self.data.remove_record(record);
+        }
+        for record in diffs.added_records {
+            if record.owner() == origin_revnamebuf.as_ref() {
+                continue; // Skip records at apex.
+            }
+            self.data.add_record(record);
+        }
+
+        Ok(())
+    }
+
     pub fn load_signed_only(&mut self) {
         // Copy old data to new data.
-
-        for (k, v) in &self.old_data {
-            self.new_data.insert(k.clone(), v.clone());
-        }
         for (k, v) in &self.old_apex {
             self.new_apex.insert(*k, v.clone());
             self.new_apex_saved.insert(*k, v.clone());
@@ -1623,49 +1645,59 @@ impl<'a> IncrementalSigningState<'a> {
 
     pub fn initial_diffs(&mut self) -> Result<(), SignerError> {
         let mut new_sigs = vec![];
-        for new_rrset in self.new_data.values_mut() {
-            let key = (new_rrset[0].owner().clone(), new_rrset[0].rtype());
 
+        // Iterated over changes.
+        for (key, change) in self.data.changes_iter() {
             // XXX for compatibility with the full zone signer, always
             // ignore DNSKEY/CDS/CDNSKEY when not at apex.
-            let rtype = new_rrset[0].rtype();
+            let rtype = key.1;
             if (rtype == Rtype::DNSKEY || rtype == Rtype::CDS || rtype == Rtype::CDNSKEY)
-                && *new_rrset[0].owner() != self.origin
+                && key.0 != self.origin
             {
                 continue;
             }
 
-            if let Some(mut old_rrset) = self.old_data.remove(&key) {
-                let rtype = new_rrset[0].rtype();
-                if (rtype == Rtype::DNSKEY || rtype == Rtype::CDS || rtype == Rtype::CDNSKEY)
-                    && *new_rrset[0].owner() == self.origin
-                {
-                    // At apex, these types are signed by the key manager. No
-                    // need to check for changes.
-                    continue;
-                }
-                old_rrset.sort_by(|a, b| a.as_ref().data().canonical_cmp(b.as_ref().data()));
-                new_rrset.sort_by(|a, b| a.as_ref().data().canonical_cmp(b.as_ref().data()));
+            match change {
+                DataChange::Removed { .. } => {
+                    let new_name = old_base_name_to_revnamebuf(&key.0);
+                    let new_key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(rtype));
 
-                let new_name = old_base_name_to_revnamebuf(key.0);
-                let key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(key.1));
-                if *old_rrset != *new_rrset && self.rrsigs.remove(&key).is_some() {
-                    sign_records(
-                        &self.origin,
-                        new_rrset,
-                        &self.keys,
-                        self.inception,
-                        self.expiration,
-                        &mut new_sigs,
-                    )?;
+                    self.rrsigs.remove(&new_key);
+
+                    if let Some((_, removed)) = self.changes.get_mut(&key.0) {
+                        removed.insert(rtype);
+                    } else {
+                        let added = HashSet::new();
+                        let mut removed = HashSet::new();
+                        removed.insert(rtype);
+                        self.changes.insert(key.0.clone(), (added, removed));
+                    }
                 }
-            } else if let Some((added, _)) = self.changes.get_mut(&key.0) {
-                added.insert(new_rrset[0].rtype());
-            } else {
-                let mut added = HashSet::new();
-                let removed = HashSet::new();
-                added.insert(new_rrset[0].rtype());
-                self.changes.insert(key.0, (added, removed));
+                DataChange::Modified { new, .. } => {
+                    let new_name = old_base_name_to_revnamebuf(&key.0);
+                    let key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(key.1));
+                    if self.rrsigs.remove(&key).is_some() {
+                        let new_rrset: Vec<_> = new.iter().map(|r| (*r).clone().into()).collect();
+                        sign_records(
+                            &self.origin,
+                            &new_rrset,
+                            &self.keys,
+                            self.inception,
+                            self.expiration,
+                            &mut new_sigs,
+                        )?;
+                    }
+                }
+                DataChange::Insert { .. } => {
+                    if let Some((added, _)) = self.changes.get_mut(&key.0) {
+                        added.insert(rtype);
+                    } else {
+                        let mut added = HashSet::new();
+                        let removed = HashSet::new();
+                        added.insert(rtype);
+                        self.changes.insert(key.0.clone(), (added, removed));
+                    }
+                }
             }
         }
         for new_rrset in self.new_apex.values_mut() {
@@ -1705,24 +1737,6 @@ impl<'a> IncrementalSigningState<'a> {
         }
         for sigs in new_sigs {
             self.rrsigs.replace_with_new_records(sigs);
-        }
-        for old_rrset in self.old_data.values() {
-            // What is left in old_data is removed.
-            let rtype = old_rrset[0].rtype();
-            let key = (old_rrset[0].owner().clone(), rtype);
-            let new_name = old_base_name_to_revnamebuf(old_rrset[0].owner());
-            let new_key = (new_name.as_ref(), old_base_rtype_to_new_base_rtype(rtype));
-
-            self.rrsigs.remove(&new_key);
-
-            if let Some((_, removed)) = self.changes.get_mut(&key.0) {
-                removed.insert(rtype);
-            } else {
-                let added = HashSet::new();
-                let mut removed = HashSet::new();
-                removed.insert(rtype);
-                self.changes.insert(key.0, (added, removed));
-            }
         }
         for old_rrset in self.old_apex.values() {
             // What is left in old_data is removed.
@@ -1772,7 +1786,7 @@ impl<'a> IncrementalSigningState<'a> {
                 // TypeBitmaps.
                 //for rtype in nsec.types() {
                 for rtype in nsec.types().types() {
-                    let rtype = new_base_rtype_to_old_base_rtype(rtype);
+                    let rtype = new_base_rtype_to_old_base(rtype);
                     curr.insert(rtype);
                 }
 
@@ -1830,7 +1844,7 @@ impl<'a> IncrementalSigningState<'a> {
                     // Curr does not include all types at this name. Add the
                     // missing types to curr.
                     let range_key = (key.clone(), 0.into());
-                    let range = self.new_data.range(range_key..);
+                    let range = self.data.range(range_key..);
                     for ((r_name, r_type), _) in range {
                         if r_name != key {
                             break;
@@ -1934,7 +1948,7 @@ impl<'a> IncrementalSigningState<'a> {
                 // TODO: should implement IntoIterator for TypeBitMaps.
                 //for rtype in nsec3.types() {
                 for rtype in nsec3.types().iter() {
-                    let rtype = new_base_rtype_to_old_base_rtype(rtype);
+                    let rtype = new_base_rtype_to_old_base(rtype);
                     curr.insert(rtype);
                 }
 
@@ -1987,7 +2001,7 @@ impl<'a> IncrementalSigningState<'a> {
                     // Curr does not include all types at this name. Add the
                     // missing types to curr.
                     let range_key = (key.clone(), 0.into());
-                    let range = self.new_data.range(range_key..);
+                    let range = self.data.range(range_key..);
                     for ((r_name, r_type), _) in range {
                         if r_name != key {
                             break;
@@ -2060,7 +2074,7 @@ impl<'a> IncrementalSigningState<'a> {
                     // We are not at apex because apex always has an NSEC3
                     // record.
                     let tmpkey = (key.clone(), Rtype::NS);
-                    if self.new_data.contains_key(&tmpkey) {
+                    if self.data.contains_key(&tmpkey) {
                         // Found an NS record. It is safe to add NS to the add
                         // set.
                         add.insert(Rtype::NS);
@@ -2121,8 +2135,8 @@ impl<'a> IncrementalSigningState<'a> {
 
     fn new_nsec_chain(&mut self) -> Result<(), SignerError> {
         let records = self.get_unsigned_sorted();
-        let records: Vec<_> = records.into_iter().map(RecordFullCmp::to_record).collect();
-        let records_iter = RecordsIter::new_from_refs(&records);
+        let records: Vec<_> = records.into_iter().map(|r| r.to_record().clone()).collect();
+        let records_iter = RecordsIter::new_from_owned(&records);
         let config = GenerateNsecConfig::new();
         let nsec_records = generate_nsecs(&self.origin, records_iter, &config)
             .map_err(|e| SignerError::SigningError(format!("new_nsec_chain failed: {e}")))?;
@@ -2156,8 +2170,8 @@ impl<'a> IncrementalSigningState<'a> {
 
     fn new_nsec3_chain(&mut self) -> Result<(), SignerError> {
         let records = self.get_unsigned_sorted();
-        let records: Vec<_> = records.into_iter().map(RecordFullCmp::to_record).collect();
-        let records_iter = RecordsIter::new_from_refs(&records);
+        let records: Vec<_> = records.into_iter().map(|r| r.to_record().clone()).collect();
+        let records_iter = RecordsIter::new_from_owned(&records);
         let old_nsec3param = new_base_nsec3param_to_old_base(&self.nsec3param);
         let config = GenerateNsec3Config::<_, DefaultSorter>::new(old_nsec3param)
             .with_ttl_mode(Nsec3ParamTtlMode::SoaMinimum);
@@ -2212,16 +2226,417 @@ impl<'a> IncrementalSigningState<'a> {
         Ok(())
     }
 
-    fn get_unsigned_sorted(&self) -> Vec<&Zrd> {
+    fn get_unsigned_sorted(&self) -> Vec<Zrd> {
         // Create a Vec with all unsigned records to be able to sort them in
         // canonical order.
 
-        let mut apex: Vec<_> = self.old_apex.values().flatten().collect();
-        let mut data: Vec<_> = self.old_data.values().flatten().collect();
+        let mut apex: Vec<_> = self.old_apex.values().flatten().cloned().collect();
+        let mut data: Vec<_> = self
+            .data
+            .values_unordered()
+            .flatten()
+            .map(|r| (*r).clone().into())
+            .collect();
         data.append(&mut apex);
-        data.par_sort_by(|e1, e2| CanonicalOrd::canonical_cmp(*e1, *e2));
+        data.par_sort_by(CanonicalOrd::canonical_cmp);
 
         data
+    }
+}
+
+struct Data<'a> {
+    old_data: BTreeMap<(Name<Bytes>, Rtype), Vec<&'a RegularRecord>>,
+
+    changes: BTreeMap<(Name<Bytes>, Rtype), DataChange<'a>>,
+}
+
+impl<'a> Data<'a> {
+    fn new() -> Self {
+        Self {
+            old_data: BTreeMap::new(),
+            changes: BTreeMap::new(),
+        }
+    }
+
+    fn insert_existing_record(&mut self, record: &'a RegularRecord) {
+        let old_owner = revname_to_old_base_name(record.owner());
+        let key = (old_owner, new_base_rtype_to_old_base(record.data().rtype()));
+        match self.old_data.entry(key) {
+            btree_map::Entry::Vacant(entry) => {
+                entry.insert(vec![record]);
+            }
+            btree_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().push(record);
+            }
+        }
+    }
+
+    fn add_record(&mut self, record: RegularRecord) {
+        let old_owner = revname_to_old_base_name(record.owner());
+        let key = (old_owner, new_base_rtype_to_old_base(record.data().rtype()));
+        match self.changes.entry(key.clone()) {
+            btree_map::Entry::Vacant(entry) => {
+                if let Some(old) = self.old_data.get(&key) {
+                    let mut new: Vec<_> = old.iter().map(|r| (*r).clone()).collect();
+                    new.push(record);
+                    entry.insert(DataChange::Modified {
+                        old: old.clone(),
+                        new,
+                    });
+                } else {
+                    entry.insert(DataChange::Insert { new: vec![record] });
+                }
+            }
+            btree_map::Entry::Occupied(ref mut entry) => {
+                let change = entry.get_mut();
+                match change {
+                    DataChange::Removed { old } => {
+                        *change = DataChange::Modified {
+                            old: old.to_vec(),
+                            new: vec![record],
+                        };
+                    }
+                    DataChange::Modified { new, .. } | DataChange::Insert { new, .. } => {
+                        new.push(record);
+                    }
+                }
+            }
+        }
+    }
+
+    fn remove_record(&mut self, record: RegularRecord) {
+        // Assume that zonedata is internally consistent and we will not get
+        // a remove for a record that is not present in the current signed
+        // zone.
+        // If that would happen we can do one of three things:
+        // 1) panic,
+        // 2) return an error,
+        // 3) log an error and continue.
+        // Option 3) is unattactive because it may lead to broken zones.
+        // Option 2) is extra complexity for something that should not happen.
+        // That leaves option 1).
+        // A better solution would be to change that zonedata interface to
+        // deal with RRsets instead of individual records.
+
+        let old_owner = revname_to_old_base_name(record.owner());
+        let key = (old_owner, new_base_rtype_to_old_base(record.data().rtype()));
+        match self.changes.entry(key.clone()) {
+            btree_map::Entry::Vacant(entry) => {
+                let old = self.old_data.get(&key).expect("RRset should exist");
+                let mut new: Vec<_> = old.iter().map(|r| (*r).clone()).collect();
+                let index = new
+                    .iter()
+                    .position(|r| *r == record)
+                    .expect("position should exist");
+                new.remove(index);
+                let change = if new.is_empty() {
+                    DataChange::Removed { old: old.clone() }
+                } else {
+                    DataChange::Modified {
+                        old: old.clone(),
+                        new,
+                    }
+                };
+                entry.insert(change);
+            }
+            btree_map::Entry::Occupied(mut entry) => {
+                match entry.get() {
+                    DataChange::Removed { .. } => unreachable!(), // Cannot remove from a remove RRset.
+                    DataChange::Modified { old, new } => {
+                        let index = new
+                            .iter()
+                            .position(|r| *r == record)
+                            .expect("position should exist");
+                        let mut new = new.to_vec();
+                        new.remove(index);
+                        let change = if new.is_empty() {
+                            DataChange::Removed { old: old.clone() }
+                        } else {
+                            DataChange::Modified {
+                                old: old.clone(),
+                                new,
+                            }
+                        };
+                        entry.insert(change);
+                    }
+                    DataChange::Insert { .. } => unreachable!(), // There should be no remove for a record that has just been inserted.
+                }
+            }
+        }
+    }
+
+    fn get(&self, key: &(Name<Bytes>, Rtype)) -> Option<Vec<&RegularRecord>> {
+        if let Some(change) = self.changes.get(key) {
+            match change {
+                DataChange::Removed { .. } => None,
+                DataChange::Modified { new, .. } | DataChange::Insert { new } => {
+                    Some(new.iter().collect())
+                }
+            }
+        } else {
+            self.old_data.get(key).cloned()
+        }
+    }
+
+    fn contains_key(&self, key: &(Name<Bytes>, Rtype)) -> bool {
+        if let Some(change) = self.changes.get(key) {
+            match change {
+                DataChange::Removed { .. } => false,
+                DataChange::Modified { .. } | DataChange::Insert { .. } => true,
+            }
+        } else {
+            self.old_data.contains_key(key)
+        }
+    }
+
+    // Iterator but unordered.
+    fn iter_unordered(&self) -> DataIter<'_> {
+        DataIter::new(self.old_data.iter(), &self.changes)
+    }
+
+    // Iterator over all values but unordered.
+    fn values_unordered(&self) -> DataValuesIter<'_> {
+        DataValuesIter::new(self.old_data.iter(), &self.changes)
+    }
+
+    fn changes_iter(&self) -> btree_map::Iter<'_, (Name<Bytes>, Rtype), DataChange<'_>> {
+        self.changes.iter()
+    }
+
+    fn range<R>(&self, range: R) -> DataRange<'_>
+    where
+        R: Clone + RangeBounds<(Name<Bytes>, Rtype)>,
+    {
+        DataRange::new(
+            self.old_data.range(range.clone()),
+            self.changes.range(range),
+        )
+    }
+}
+
+enum DataChange<'a> {
+    Removed {
+        old: Vec<&'a RegularRecord>,
+    },
+    Modified {
+        old: Vec<&'a RegularRecord>,
+        new: Vec<RegularRecord>,
+    },
+    Insert {
+        new: Vec<RegularRecord>,
+    },
+}
+
+type DataKey = (Name<Bytes>, Rtype);
+
+// Iterator but without any defined order.
+struct DataIter<'a> {
+    iter: Option<btree_map::Iter<'a, DataKey, Vec<&'a RegularRecord>>>,
+    changes: &'a BTreeMap<DataKey, DataChange<'a>>,
+    changes_iter: Option<btree_map::Iter<'a, DataKey, DataChange<'a>>>,
+}
+
+impl<'a> DataIter<'a> {
+    fn new(
+        iter: btree_map::Iter<'a, DataKey, Vec<&'a RegularRecord>>,
+        changes: &'a BTreeMap<DataKey, DataChange>,
+    ) -> Self {
+        Self {
+            iter: Some(iter),
+            changes,
+            changes_iter: None,
+        }
+    }
+}
+
+type DataIterItem<'a> = (&'a DataKey, Vec<&'a RegularRecord>);
+impl<'a> Iterator for DataIter<'a> {
+    type Item = DataIterItem<'a>;
+
+    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        if let Some(iter) = &mut self.iter {
+            for (key, data) in iter.by_ref() {
+                // Check if changes has something.
+                if self.changes.get(key).is_some() {
+                    // Get it from changes if not deleted.
+                    continue;
+                }
+
+                return Some((key, data.to_vec()));
+            }
+            self.iter = None;
+            self.changes_iter = Some(self.changes.iter());
+        }
+        if let Some(changes_iter) = &mut self.changes_iter {
+            for (key, change) in changes_iter.by_ref() {
+                match change {
+                    DataChange::Removed { .. } => {
+                        // Nothing here.
+                        continue;
+                    }
+                    DataChange::Modified { new, .. } | DataChange::Insert { new, .. } => {
+                        let new: Vec<&RegularRecord> = new.iter().collect();
+                        return Some((key, new.to_vec()));
+                    }
+                }
+            }
+            self.changes_iter = None;
+        }
+        None
+    }
+}
+
+// Iterator over all values but without any defined order.
+struct DataValuesIter<'a> {
+    iter: Option<btree_map::Iter<'a, DataKey, Vec<&'a RegularRecord>>>,
+    changes: &'a BTreeMap<DataKey, DataChange<'a>>,
+    changes_values: Option<btree_map::Values<'a, DataKey, DataChange<'a>>>,
+}
+
+impl<'a> DataValuesIter<'a> {
+    fn new(
+        iter: btree_map::Iter<'a, DataKey, Vec<&'a RegularRecord>>,
+        changes: &'a BTreeMap<DataKey, DataChange>,
+    ) -> Self {
+        Self {
+            iter: Some(iter),
+            changes,
+            changes_values: None,
+        }
+    }
+}
+
+impl<'a> Iterator for DataValuesIter<'a> {
+    type Item = Vec<&'a RegularRecord>;
+
+    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        if let Some(iter) = &mut self.iter {
+            for (key, data) in iter.by_ref() {
+                // Check if changes has something.
+                if self.changes.get(key).is_some() {
+                    // Get it from changes if not deleted.
+                    continue;
+                }
+
+                return Some(data.to_vec());
+            }
+            self.iter = None;
+            self.changes_values = Some(self.changes.values());
+        }
+        if let Some(changes_values) = &mut self.changes_values {
+            for change in changes_values.by_ref() {
+                match change {
+                    DataChange::Removed { .. } => {
+                        // Nothing here.
+                        continue;
+                    }
+                    DataChange::Modified { new, .. } | DataChange::Insert { new, .. } => {
+                        let new: Vec<&RegularRecord> = new.iter().collect();
+                        return Some(new.to_vec());
+                    }
+                }
+            }
+            self.changes_values = None;
+        }
+        None
+    }
+}
+
+struct DataRange<'a> {
+    old_data_range: Option<btree_map::Range<'a, DataKey, Vec<&'a RegularRecord>>>,
+    changes_range: Option<btree_map::Range<'a, DataKey, DataChange<'a>>>,
+    old_data_item: Option<(&'a DataKey, &'a Vec<&'a RegularRecord>)>,
+    change_item: Option<(&'a DataKey, &'a DataChange<'a>)>,
+}
+
+impl<'a> DataRange<'a> {
+    fn new(
+        old_data_range: btree_map::Range<'a, DataKey, Vec<&'a RegularRecord>>,
+        changes_range: btree_map::Range<'a, DataKey, DataChange>,
+    ) -> Self {
+        Self {
+            old_data_range: Some(old_data_range),
+            changes_range: Some(changes_range),
+            old_data_item: None,
+            change_item: None,
+        }
+    }
+}
+
+impl<'a> Iterator for DataRange<'a> {
+    type Item = (&'a (Name<Bytes>, Rtype), Vec<&'a RegularRecord>);
+    fn next(&mut self) -> std::option::Option<<Self as Iterator>::Item> {
+        while let Some(old_data_range) = &mut self.old_data_range
+            && let Some(changes_range) = &mut self.changes_range
+        {
+            if self.old_data_item.is_none() {
+                if let Some(item) = old_data_range.next() {
+                    self.old_data_item = Some(item);
+                } else {
+                    self.old_data_range = None;
+                    break;
+                }
+            }
+            if self.change_item.is_none() {
+                if let Some(item) = changes_range.next() {
+                    self.change_item = Some(item);
+                } else {
+                    self.changes_range = None;
+                    break;
+                }
+            }
+            let old_data_key = self.old_data_item.expect("item should be there").0;
+            let change_key = self.change_item.expect("item should be there").0;
+            match old_data_key.cmp(change_key) {
+                Ordering::Less => {
+                    // old_data_item comes first.
+                    let old_data_item = self.old_data_item.take().expect("item should be there");
+                    return Some((old_data_key, old_data_item.1.to_vec()));
+                }
+                Ordering::Equal => {
+                    // Remove the old_data_item and continue with change_item;
+                    let _ = self.old_data_item.take();
+                }
+                Ordering::Greater => {
+                    // change_item comes first.
+                }
+            }
+            let change_item = self.change_item.take().expect("item should be there");
+            match change_item.1 {
+                DataChange::Removed { .. } => continue,
+                DataChange::Modified { new, .. } | DataChange::Insert { new } => {
+                    return Some((change_key, new.iter().collect()));
+                }
+            }
+        }
+
+        // One of the two iterators has exhauted, drain the other one.
+        while let Some(old_data_range) = &mut self.old_data_range {
+            if let Some(item) = self.old_data_item.take() {
+                return Some((item.0, item.1.to_vec()));
+            }
+            if let Some(item) = old_data_range.next() {
+                return Some((item.0, item.1.to_vec()));
+            }
+            self.old_data_range = None;
+        }
+        while let Some(changes_range) = &mut self.changes_range {
+            let change_item = if let Some(item) = self.change_item.take() {
+                item
+            } else if let Some(item) = changes_range.next() {
+                item
+            } else {
+                self.changes_range = None;
+                continue;
+            };
+            match change_item.1 {
+                DataChange::Removed { .. } => continue,
+                DataChange::Modified { new, .. } | DataChange::Insert { new } => {
+                    return Some((change_item.0, new.iter().collect()));
+                }
+            }
+        }
+        None
     }
 }
 
@@ -3091,7 +3506,7 @@ fn nsec_clear_occluded(
     iss: &mut IncrementalSigningState,
 ) -> Result<(), SignerError> {
     let key = (name.clone(), Rtype::SOA);
-    let range = iss.new_data.range(key..);
+    let range = iss.data.range(key..);
     let mut opt_curr_name: Option<&Name<Bytes>> = None;
     let mut curr_types: HashSet<Rtype> = HashSet::new();
     let mut work = vec![];
@@ -3254,7 +3669,7 @@ fn nsec3_remove_et(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
 
         // Check the descendents.
         let key = (name.clone(), Rtype::SOA);
-        let range = iss.new_data.range(key..);
+        let range = iss.data.range(key..);
         let mut opt_curr_name: Option<&Name<Bytes>> = None;
 
         for ((key_name, _), _) in range {
@@ -3345,7 +3760,7 @@ fn nsec3_set_occluded(name: &Name<Bytes>, iss: &mut IncrementalSigningState) {
     // delete all signatures and the NSEC3 record.
 
     let key = (name.clone(), Rtype::SOA);
-    let range = iss.new_data.range(key..);
+    let range = iss.data.range(key..);
     let mut opt_curr_name: Option<&Name<Bytes>> = None;
     let mut work = vec![];
 
@@ -3414,7 +3829,7 @@ fn nsec3_clear_occluded(
     iss: &mut IncrementalSigningState,
 ) -> Result<(), SignerError> {
     let key = (name.clone(), Rtype::SOA);
-    let range = iss.new_data.range(key..);
+    let range = iss.data.range(key..);
     let mut opt_curr_name: Option<&Name<Bytes>> = None;
     let mut curr_types: HashSet<Rtype> = HashSet::new();
     let mut work = vec![];
@@ -3719,7 +4134,7 @@ fn is_occluded(name: &Name<Bytes>, iss: &IncrementalSigningState) -> bool {
             // Something weird is going on. Return not occluded.
             return false;
         }
-        if iss.new_data.contains_key(&(curr.clone(), Rtype::NS)) {
+        if iss.data.contains_key(&(curr.clone(), Rtype::NS)) {
             // Name is occluded.
             return true;
         }
@@ -3735,15 +4150,17 @@ fn sign_rtype_set(
     for rtype in set {
         let key = (name.clone(), *rtype);
         let Some(records) = (if *name == iss.origin {
-            iss.new_apex.get(&key.1)
+            iss.new_apex.get(&key.1).map(|v| v.to_vec())
         } else {
-            iss.new_data.get(&key)
+            iss.data
+                .get(&key)
+                .map(|v| v.iter().map(|r| (*r).clone().into()).collect::<Vec<_>>())
         }) else {
             panic!("Expected something for {name}/{rtype}");
         };
         sign_records(
             &iss.origin,
-            records,
+            &records,
             &iss.keys,
             iss.inception,
             iss.expiration,
@@ -3970,7 +4387,7 @@ fn old_base_rtype_to_new_base_rtype(rtype: Rtype) -> NewRtype {
 
 /// Turn a new base Rtype into an old base Rtype.
 // TODO: add to domain.
-fn new_base_rtype_to_old_base_rtype(rtype: NewRtype) -> Rtype {
+fn new_base_rtype_to_old_base(rtype: NewRtype) -> Rtype {
     let v: u16 = rtype.into();
     v.into()
 }
