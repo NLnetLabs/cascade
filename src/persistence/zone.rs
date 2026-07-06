@@ -111,6 +111,8 @@ impl ZonePersistenceHandle<'_> {
                 let (loaded_reviewer, signed_reviewer, viewer) =
                     handle.storage().finish_signed_restoration(restored);
 
+                handle.signer().on_restoration();
+
                 // Register the zone against the zone servers.
                 LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
                 SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);

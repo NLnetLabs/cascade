@@ -502,10 +502,6 @@ impl ZoneServer {
             zone.write_handle(center).get().approve_signed();
         }
 
-        // Send a message to the zone signer to trigger a re-scan of
-        // when to re-sign next.
-        center.signer.on_publish_signed_zone(center);
-
         info!("[CC]: Instructing publication server to publish the signed zone");
         PublicationServer::publish(center, zone, zone_serial);
     }

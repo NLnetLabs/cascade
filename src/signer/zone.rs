@@ -42,7 +42,65 @@ impl SignerZoneHandle<'_> {
             center: self.center,
         }
     }
+}
 
+/// # Reacting to changes
+impl SignerZoneHandle<'_> {
+    /// React to a change in the zone's policy.
+    pub fn after_policy_change(&mut self) {
+        // TODO: Try to reschedule re-signing in fewer cases.
+        self.reschedule_resigning();
+    }
+
+    /// React to the zone being restored from disk.
+    ///
+    /// This is called upon startup when a loaded+signed instance of the zone is
+    /// successfully restored from disk. It schedules the zone for re-signing.
+    pub fn on_restoration(&mut self) {
+        assert!(
+            self.state.signer.scheduled_resign_time.is_none(),
+            "A zone cannot be scheduled for re-signing until restoration completes"
+        );
+
+        self.reschedule_resigning();
+    }
+
+    /// React to the upcoming (signed) instance of the zone being published.
+    ///
+    /// This schedules the zone for re-signing as needed.
+    pub fn on_publication(&mut self) {
+        self.reschedule_resigning();
+    }
+
+    /// React to a signed instance of the zone being abandoned.
+    pub fn before_signed_abandonment(&mut self) {
+        // TODO: Make the caller pass in the right `SigningTrigger`.
+        // TODO: Only enqueue a re-sign if a re-sign was abandoned.
+        //
+        // TODO: Decide what the semantically correct thing to do is. For now,
+        // we just try to re-sign again, in an infinite loop.
+        self.enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
+    }
+
+    /// (Re-)schedule a zone for re-signing.
+    ///
+    /// This will recompute when the zone should be scheduled (if at all) and
+    /// update its schedule in the global state.
+    fn reschedule_resigning(&mut self) {
+        let new_time = resign_time(self.state);
+
+        self.state.signer.scheduled_resign_time = new_time;
+
+        let _ = self
+            .center
+            .signer
+            .next_resign_time_tx
+            .send(Some(tokio::time::Instant::now()));
+    }
+}
+
+/// # Initiating signing
+impl SignerZoneHandle<'_> {
     /// Enqueue a new-signing operation.
     ///
     /// When a new instance of the zone is loaded, reviewed, and approved, this
@@ -446,7 +504,7 @@ pub struct EnqueuedResign {
 /// Compute when a zone should be re-signed.
 ///
 /// Returns [`None`] if the zone does not need re-signing.
-pub fn resign_time(state: &ZoneState) -> Option<SystemTime> {
+fn resign_time(state: &ZoneState) -> Option<SystemTime> {
     let policy = state.policy.as_ref()?;
 
     let last_refresh_time =

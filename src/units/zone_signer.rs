@@ -18,7 +18,6 @@ use crate::center::Center;
 use crate::signer::ResigningTrigger;
 use crate::signer::keys::LoadError;
 use crate::signer::queue::SigningQueue;
-use crate::signer::zone::resign_time;
 use crate::util::AbortOnDrop;
 use crate::zone::ZoneByName;
 
@@ -42,7 +41,7 @@ pub struct ZoneSigner {
     pub kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
 
     /// A live view of the next scheduled global resigning time.
-    next_resign_time_tx: watch::Sender<Option<tokio::time::Instant>>,
+    pub next_resign_time_tx: watch::Sender<Option<tokio::time::Instant>>,
     next_resign_time_rx: watch::Receiver<Option<tokio::time::Instant>>,
 
     /// The signing queue.
@@ -103,18 +102,6 @@ impl ZoneSigner {
         }))
     }
 
-    pub fn on_publish_signed_zone(&self, center: &Arc<Center>) {
-        trace!("[ZS]: a zone is published, recompute next time to re-sign");
-        let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
-    }
-
-    pub fn on_zone_policy_changed(&self) {
-        // Just recompute the resign timer. In the future we may want to
-        // react to changes in policy, for example, whether NSEC is used
-        // or NSEC3.
-        let _ = self.next_resign_time_tx.send(Some(Instant::now()));
-    }
-
     fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
         #[allow(clippy::mutable_key_type)]
         let zones = {
@@ -128,10 +115,8 @@ impl ZoneSigner {
             .into_iter()
             // Load the scheduled re-signing time for each zone.
             .filter_map(|ZoneByName(zone)| {
-                let mut zone_state = zone.write(center);
-                let resign_time = resign_time(&zone_state);
-                zone_state.signer.scheduled_resign_time = resign_time;
-                resign_time
+                let zone_state = zone.read();
+                zone_state.signer.scheduled_resign_time
             })
             .min()
             .map(|t| {
