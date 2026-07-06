@@ -5,7 +5,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use crate::{
     center::Center,
@@ -15,7 +15,7 @@ use crate::{
         status::{SigningStatusPerZone, ZoneSigningStatus},
     },
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{Zone, ZoneByPtr, ZoneHandle, ZoneState},
     zonedata::SignedZoneBuilder,
 };
 
@@ -86,16 +86,36 @@ impl SignerZoneHandle<'_> {
     ///
     /// This will recompute when the zone should be scheduled (if at all) and
     /// update its schedule in the global state.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(%zone = self.zone.name),
+    )]
     fn reschedule_resigning(&mut self) {
+        // TODO: Make `Scheduler` work with `SystemTime` directly.
+        fn to_instant(time: SystemTime) -> std::time::Instant {
+            // We are computing a timeout value. If the timeout is in the
+            // past then we can just as well use zero.
+            let since_now = time
+                .duration_since(SystemTime::now())
+                .unwrap_or(Duration::ZERO);
+
+            std::time::Instant::now() + since_now
+        }
+
         let new_time = resign_time(self.state);
+        let old_time = self.state.signer.scheduled_resign_time;
+
+        trace!(?new_time, ?old_time, "Rescheduling re-signing");
+
+        let zone = ZoneByPtr(self.zone.clone());
+        self.center.signer.resign_scheduler.update(
+            &zone,
+            old_time.map(to_instant),
+            new_time.map(to_instant),
+        );
 
         self.state.signer.scheduled_resign_time = new_time;
-
-        let _ = self
-            .center
-            .signer
-            .next_resign_time_tx
-            .send(Some(tokio::time::Instant::now()));
     }
 }
 
