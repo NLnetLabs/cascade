@@ -38,7 +38,6 @@ use crate::center::Center;
 use crate::center::get_zone;
 use crate::loader;
 use crate::manager::Terminated;
-use crate::metrics::MetricsCollection;
 use crate::policy::AutoConfig;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
@@ -61,13 +60,6 @@ pub const HTTP_UNIT_NAME: &str = "HS";
 
 pub struct HttpServer {
     pub center: Arc<Center>,
-    pub metrics: Arc<MetricsCollection>,
-    pub http_metrics: HttpMetrics,
-}
-
-#[derive(Default)]
-pub struct HttpMetrics {
-    // http_api_last_connection: Counter,
 }
 
 impl HttpServer {
@@ -75,27 +67,8 @@ impl HttpServer {
     pub fn launch(
         center: Arc<Center>,
         http_sockets: Vec<TcpListener>,
-        /* mut */ metrics: MetricsCollection,
     ) -> Result<Arc<Self>, Terminated> {
-        // TODO: register metrics here
-
-        let http_metrics = HttpMetrics::default();
-
-        // This would require some work in tracking the last API access. I did
-        // not find a way to call something on every route in axum. Maybe we
-        // need a wrapper function that sets the last_connection timestamp.
-        // // - last time a CLI connection was made
-        // metrics.register(
-        //     "http_api_last_connection",
-        //     "The last unix epoch time an API HTTP connection was made (excl. /metrics and /)",
-        //     http_metrics.http_api_last_connection.clone()
-        // );
-
-        let this = Arc::new(Self {
-            center,
-            metrics: Arc::new(metrics),
-            http_metrics,
-        });
+        let this = Arc::new(Self { center });
 
         let app = Router::new()
             .route("/health", get(Self::health))
@@ -203,7 +176,7 @@ impl HttpServer {
     }
 
     async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
-        match state.metrics.assemble(state.center.clone()) {
+        match state.center.metrics.assemble(state.center.clone()) {
             Ok(b) => Ok((
                 StatusCode::OK,
                 [(

@@ -18,17 +18,12 @@ use camino::Utf8Path;
 use cascade_api::ZoneReloadError;
 use cascade_zonedata::LoadedZoneBuilder;
 use domain::{new::base::Serial, tsig};
-use prometheus_client::{
-    metrics::{counter::Counter, family::Family, gauge::Gauge},
-    registry::Unit,
-};
 use tracing::{debug, error, info};
 
 use crate::{
     center::{Center, State},
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
-    metrics::{MetricsCollection, XfrLabels, ZoneLabel},
     util::AbortOnDrop,
     zone::{HistoricalEvent, Zone, ZoneByName, ZoneByPtr},
 };
@@ -40,60 +35,16 @@ mod zonefile;
 //----------- Loader -----------------------------------------------------------
 
 /// The zone loader.
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct Loader {
     /// A scheduler for SOA timer based zone refreshes.
     refresh_scheduler: Scheduler<ZoneByPtr>,
-    prometheus_metrics: LoaderPrometheusMetrics,
 }
 
 impl Loader {
     /// Construct a new [`Loader`].
-    pub fn new(metrics: &mut MetricsCollection) -> Self {
-        let loader_metrics = LoaderPrometheusMetrics::default();
-
-        metrics.register(
-            "xfr_requests_to_upstream_attempted",
-            "Number of zone transfers attempted by Cascade towards the upstream primary",
-            loader_metrics.xfr_requests_to_upstream_attempted.clone(),
-        );
-
-        metrics.register(
-            "xfr_requests_to_upstream_succeeded",
-            "Number of succesful zone transfers by Cascade towards the upstream primary",
-            loader_metrics.xfr_requests_to_upstream_succeeded.clone(),
-        );
-
-        metrics.register(
-            "zone_loaded_last_successful_records",
-            "Number of records loaded in last successful zone transfer or zonefile load",
-            loader_metrics.zone_loaded_last_successful_records.clone(),
-        );
-
-        metrics.register_with_unit(
-            "zone_loaded_last_successful_size",
-            "Number of bytes loaded in last successful zone transfer or zonefile load",
-            Unit::Bytes,
-            loader_metrics.zone_loaded_last_successful_bytes.clone(),
-        );
-
-        metrics.register(
-            "zone_loaded_last_records",
-            "Number of records loaded in last attempted zone transfer or zonefile load",
-            loader_metrics.zone_loaded_last_records.clone(),
-        );
-
-        metrics.register_with_unit(
-            "zone_loaded_last_size",
-            "Number of bytes loaded in last attempted zone transfer or zonefile load",
-            Unit::Bytes,
-            loader_metrics.zone_loaded_last_bytes.clone(),
-        );
-
-        Self {
-            refresh_scheduler: Scheduler::new(),
-            prometheus_metrics: loader_metrics,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Initialize the loader, synchronously.
@@ -169,7 +120,6 @@ async fn refresh(
 ) {
     info!("Refreshing {:?}", zone.name);
     let force = refresh == EnqueuedRefresh::Reload;
-    let prometheus_metrics = &center.loader.prometheus_metrics;
 
     // Perform the source-specific reload into the zone contents.
     let result = match source {
@@ -191,29 +141,14 @@ async fn refresh(
         }
         Source::Server { addr, tsig_key } if force => {
             let tsig_key = tsig_key.as_deref().cloned();
-            server::axfr(
-                &zone,
-                &addr,
-                tsig_key,
-                &mut builder,
-                &metrics,
-                prometheus_metrics,
-            )
-            .await
-            .map(|()| true)
-            .map_err(Into::into)
+            server::axfr(&zone, &addr, tsig_key, &mut builder, &metrics)
+                .await
+                .map(|()| true)
+                .map_err(Into::into)
         }
         Source::Server { addr, tsig_key } => {
             let tsig_key = tsig_key.as_deref().cloned();
-            server::refresh(
-                &zone,
-                &addr,
-                tsig_key,
-                &mut builder,
-                &metrics,
-                prometheus_metrics,
-            )
-            .await
+            server::refresh(&zone, &addr, tsig_key, &mut builder, &metrics).await
         }
     };
 
@@ -224,20 +159,13 @@ async fn refresh(
     handle.state.loader.active_load_metrics = None;
     handle.state.loader.last_load_metrics = Some(metrics.finish());
 
-    let zone_label = ZoneLabel {
-        zone: zone.name.clone().into(),
-    };
     {
         let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
         // Copy generated loader metrics to prometheus metrics
-        prometheus_metrics
-            .zone_loaded_last_bytes
-            .get_or_create(&zone_label)
-            .set(loader_metrics.num_loaded_bytes as i64);
-        prometheus_metrics
-            .zone_loaded_last_records
-            .get_or_create(&zone_label)
-            .set(loader_metrics.num_loaded_records as i64);
+        zone.metrics
+            .zone_loaded_last_bytes(loader_metrics.num_loaded_bytes as i64);
+        zone.metrics
+            .zone_loaded_last_records(loader_metrics.num_loaded_records as i64);
     }
 
     // Update the SOA refresh timer state.
@@ -299,14 +227,10 @@ async fn refresh(
             let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
 
             // Copy generated loader metrics to prometheus metrics
-            prometheus_metrics
-                .zone_loaded_last_successful_bytes
-                .get_or_create(&zone_label)
-                .set(loader_metrics.num_loaded_bytes as i64);
-            prometheus_metrics
-                .zone_loaded_last_successful_records
-                .get_or_create(&zone_label)
-                .set(loader_metrics.num_loaded_records as i64);
+            zone.metrics
+                .zone_loaded_last_successful_bytes(loader_metrics.num_loaded_bytes as i64);
+            zone.metrics
+                .zone_loaded_last_successful_records(loader_metrics.num_loaded_records as i64);
 
             // Inform the zone storage of completion; it will initiate unsigned
             // review automatically.
@@ -511,27 +435,6 @@ impl ActiveLoadMetrics {
             num_loaded_records: self.num_loaded_records.load(atomic::Ordering::Relaxed),
         }
     }
-}
-
-//----------- LoaderPrometheusMetrics ----------------------------------------
-
-/// Prometheus metrics for the zone loader.
-#[derive(Debug, Default)]
-struct LoaderPrometheusMetrics {
-    /// The number of zone transfers attempted by Cascade to the upstream
-    xfr_requests_to_upstream_attempted: Family<XfrLabels, Counter>,
-    /// The number of zone transfers succeeded by Cascade to the upstream
-    xfr_requests_to_upstream_succeeded: Family<XfrLabels, Counter>,
-    /// The number of records loaded in the last successful load (file or transfer)
-    zone_loaded_last_successful_records: Family<ZoneLabel, Gauge>,
-    /// The number of bytes loaded in the last successful load (file or transfer)
-    zone_loaded_last_successful_bytes: Family<ZoneLabel, Gauge>,
-    /// The number of records loaded in the last load (file or transfer),
-    /// regardless of wether it was successful or aborted due to failure
-    zone_loaded_last_records: Family<ZoneLabel, Gauge>,
-    /// The number of bytes loaded in the last load (file or transfer),
-    /// regardless of wether it was successful or aborted due to failure
-    zone_loaded_last_bytes: Family<ZoneLabel, Gauge>,
 }
 
 //============ Errors ==========================================================

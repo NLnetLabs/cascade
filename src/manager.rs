@@ -5,7 +5,6 @@ use std::sync::Arc;
 use crate::center::Center;
 use crate::daemon::SocketProvider;
 use crate::loader::Loader;
-use crate::metrics::MetricsCollection;
 use crate::persistence::Restorer;
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::units::http_server::HTTP_UNIT_NAME;
@@ -37,11 +36,7 @@ pub struct Manager {
 
 impl Manager {
     /// Spawn all targets.
-    pub fn spawn(
-        center: Arc<Center>,
-        mut socket_provider: SocketProvider,
-        metrics: MetricsCollection,
-    ) -> Result<Self, Error> {
+    pub fn spawn(center: Arc<Center>, mut socket_provider: SocketProvider) -> Result<Self, Error> {
         // Initialize the components.
         {
             let mut state = center.state.lock().unwrap();
@@ -104,7 +99,7 @@ impl Manager {
 
         // Spawn the remote-control server.
         debug!("Starting the HTTP remote-control server");
-        let http_server = HttpServer::launch(center.clone(), http_sockets, metrics)?;
+        let http_server = HttpServer::launch(center.clone(), http_sockets)?;
 
         Ok(Self {
             center,

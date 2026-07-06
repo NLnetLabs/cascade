@@ -17,6 +17,7 @@ use crate::api::KeyImport;
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::metrics::Metrics;
 use crate::persistence::{Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::state::PolicySpec;
@@ -40,6 +41,9 @@ use crate::{
 pub struct Center {
     /// Global state.
     pub state: Mutex<State>,
+
+    // The Prometheus metrics
+    pub metrics: Metrics,
 
     /// The configuration.
     pub config: Config,
@@ -110,7 +114,7 @@ pub async fn add_zone(
         }
 
         // Create the zone and initialize its state.
-        zone = Arc::new(Zone::new(name));
+        zone = Arc::new(Zone::new(name, &center.metrics));
 
         source = match api_source {
             cascade_api::ZoneSource::None => crate::loader::Source::None,
