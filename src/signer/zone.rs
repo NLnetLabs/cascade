@@ -2,7 +2,7 @@
 
 use std::{
     sync::{Arc, RwLock},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use tracing::{debug, info};
@@ -433,4 +433,24 @@ pub struct EnqueuedResign {
     // TODO:
     // - The ID of the signed instance to re-sign.
     //   Panic if the actual obtained instance does not match this.
+}
+
+//------------------------------------------------------------------------------
+
+/// Compute when a zone should be re-signed.
+///
+/// Returns [`None`] if the zone does not need re-signing.
+pub fn resign_time(state: &ZoneState) -> Option<SystemTime> {
+    let policy = state.policy.as_ref()?;
+
+    let last_refresh_time =
+        SystemTime::UNIX_EPOCH + Duration::from(state.last_signature_refresh.clone());
+    let refresh_interval = Duration::from_secs(policy.signer.signature_refresh_interval as u64);
+    let min_expiration = state.min_expiration?.to_system_time(last_refresh_time);
+    let remain_time = Duration::from_secs(policy.signer.sig_remain_time as u64);
+
+    Some(Ord::min(
+        last_refresh_time + refresh_interval,
+        min_expiration - remain_time,
+    ))
 }
