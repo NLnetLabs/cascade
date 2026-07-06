@@ -35,6 +35,9 @@ Released 2026-07-03.
 - Remove systemd socket binding to port 53 in supplied packages ([#847] by
   @ximon18).
 
+- Add prometheus metrics for zone transfers and loaded zone bytes and records.
+  ([#538] by @mozzieongit and @tertsdiepraam)
+
 ### Bug fixes
 
 - If the input zone contains DNSSEC records, they are removed during signing,
@@ -370,6 +373,7 @@ Our continued thanks to @jpmens, @bortzmeyer, @gryphius and also to @alarig,
 [#518]: https://github.com/NLnetLabs/cascade/pull/518
 [#521]: https://github.com/NLnetLabs/cascade/pull/521
 [#536]: https://github.com/NLnetLabs/cascade/pull/536
+[#538]: https://github.com/NLnetLabs/cascade/pull/538
 [#539]: https://github.com/NLnetLabs/cascade/pull/539
 [#550]: https://github.com/NLnetLabs/cascade/pull/550
 [#555]: https://github.com/NLnetLabs/cascade/pull/555

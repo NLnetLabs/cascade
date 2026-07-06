@@ -4,6 +4,7 @@ use cascaded::{
     daemon::{PreBindError, SocketProvider, daemonize},
     loader::Loader,
     manager::Manager,
+    metrics::MetricsCollection,
     persistence::{Persister, Restorer},
     policy,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
@@ -247,12 +248,14 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    let mut metrics = MetricsCollection::new();
+
     // Prepare Cascade.
     let center = Arc::new(Center {
         state: Mutex::new(state),
         config,
         logger,
-        loader: Loader::new(),
+        loader: Loader::new(&mut metrics),
         key_manager: KeyManager::new(),
         persister: Persister::new(),
         restorer: Restorer::new(),
@@ -285,7 +288,7 @@ fn main() -> ExitCode {
     // Enter the runtime.
     let result = runtime.block_on(async {
         // Spawn Cascade's units.
-        let manager = match Manager::spawn(center.clone(), socket_provider) {
+        let manager = match Manager::spawn(center.clone(), socket_provider, metrics) {
             Ok(manager) => manager,
             Err(err) => {
                 error!("Failed to spawn units: {err}");

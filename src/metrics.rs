@@ -73,15 +73,16 @@ impl MetricsCollection {
         // software build information via labels and will always be 1. It
         // cannot be stored inside of `MetricsCollection` as it does not
         // implement Clone.
-        let _cascade_version = Info::new(vec![("version", clap::crate_version!())]);
+        let _cascade_version = Info::new(vec![
+            ("version", clap::crate_version!()),
+            ("commit", env!("CASCADE_BUILD_COMMIT")),
+        ]);
 
-        // The prometheus docs linked to
+        // See the prometheus docs at
         // https://www.robustperception.io/exposing-the-software-version-to-prometheus/
-        // for exposing software version information. And
-        // `prometheus_client` exposes the `Info` type. However, I don't
-        // know if we really need this. It would be more useful if it would
-        // include build information like <branch> and <revision> (but that
-        // requires a build-script).
+        // for exposing software version information. And `prometheus_client`
+        // exposes the `Info` type, which we use here to expose cascade
+        // version information just like `cascaded --version`.
         col.cascade
             .register("build", "Cascade build information", _cascade_version);
 
@@ -264,7 +265,7 @@ impl Default for MetricsCollection {
 //------------ StoredName ----------------------------------------------------
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct StoredName(Name<Bytes>);
+pub struct StoredName(Name<Bytes>);
 
 impl EncodeLabelValue for StoredName {
     fn encode(
@@ -275,19 +276,57 @@ impl EncodeLabelValue for StoredName {
     }
 }
 
+impl From<Name<Bytes>> for StoredName {
+    fn from(value: Name<Bytes>) -> Self {
+        Self(value)
+    }
+}
+
+//------------ ZoneLabel -----------------------------------------------------
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ZoneLabel {
+    pub zone: StoredName,
+}
+
 //------------ ZoneHaltMode --------------------------------------------------
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
-struct ZoneHaltMode {
-    zone: StoredName,
-    mode: HaltMode,
+pub struct ZoneHaltMode {
+    pub zone: StoredName,
+    pub mode: HaltMode,
 }
 
 //------------ HaltMode ------------------------------------------------------
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
-enum HaltMode {
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
+pub enum HaltMode {
     HardHalt,
+}
+
+//------------ XfrLabels -----------------------------------------------------
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct XfrLabels {
+    pub zone: StoredName,
+    pub r#type: XfrType,
+    pub transport: XfrTransport,
+}
+
+//------------ XfrType -------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
+pub enum XfrType {
+    AXFR,
+    IXFR,
+}
+
+//------------ XfrTransport --------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
+pub enum XfrTransport {
+    TCP,
+    UDP,
 }
 
 //------------ StateMetrics --------------------------------------------------
