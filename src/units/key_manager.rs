@@ -56,6 +56,8 @@
 //! updated, and if so triggers re-signing of the zone on the basis that the
 //! set of DNSSEC keys to sign the zone with may have changed.
 //!
+//! Note: In future `tick()` should be replaced by a timer per zone.
+//!
 //! If not modified and the next "cron" moment (as defined by the `cron_next`
 //! entry in the `dnst` zone state file) has been reached the Key Manager
 //! invokes the `dnst keyset cron` command. This is expected to cause changes
