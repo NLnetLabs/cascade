@@ -26,20 +26,16 @@ use domain::tsig::{Algorithm, KeyStore};
 use domain::zonetree::StoredName;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::api::{
-    ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStatus,
-};
+use crate::api::{ZoneReviewDecision, ZoneReviewStatus};
 use crate::center::Center;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
-use crate::policy::{NameserverCommsPolicy, OnReject, ReviewMode};
+use crate::policy::{NameserverCommsPolicy, ReviewMode};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
-use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneVersionReviewState,
-};
+use crate::zone::{HistoricalEvent, Zone};
 use crate::zonedata::{OldRecord, SoaRecord};
 
 /// The source of a zone server.
@@ -333,37 +329,6 @@ impl ZoneServer {
             }
         };
 
-        // Mark this version of the zone as pending approval.
-        //
-        // TODO: These entries should have been created a long time ago, but
-        // not all components use these fields yet.  For now, they need to be
-        // created over here -- hence 'or_insert_with()'.
-        {
-            let mut zone_state = zone.write(center);
-            match self.source {
-                Source::Unsigned => {
-                    zone_state
-                        .unsigned
-                        .entry(zone_serial)
-                        .or_insert_with(|| UnsignedZoneVersionState {
-                            review: Default::default(),
-                        })
-                        .review = ZoneVersionReviewState::Pending;
-                }
-                Source::Signed => {
-                    zone_state
-                        .signed
-                        .entry(zone_serial)
-                        .or_insert_with(|| SignedZoneVersionState {
-                            unsigned_serial: Serial::from(0), // TODO
-                            review: Default::default(),
-                        })
-                        .review = ZoneVersionReviewState::Pending;
-                }
-                Source::Published => unreachable!(),
-            }
-        }
-
         record_zone_event(center, zone, pending_event, Some(zone_serial));
 
         let ReviewMode::Script { hook } = review.mode else {
@@ -457,27 +422,25 @@ impl ZoneServer {
                 );
 
                 {
-                    let mut zone_state = zone.write(center);
+                    let mut handle = zone.write_handle(center);
                     match self.source {
                         Source::Unsigned => {
-                            zone_state.record_event(
+                            handle.state.record_event(
                                 HistoricalEvent::UnsignedHookFailed {
                                     err: err.to_string(),
                                 },
                                 Some(zone_serial),
                             );
-                            zone_state.unsigned.get_mut(&zone_serial).unwrap().review =
-                                ZoneVersionReviewState::Rejected;
+                            handle.get().hard_reject_loaded();
                         }
                         Source::Signed => {
-                            zone_state.record_event(
+                            handle.state.record_event(
                                 HistoricalEvent::SignedHookFailed {
                                     err: err.to_string(),
                                 },
                                 Some(zone_serial),
                             );
-                            zone_state.signed.get_mut(&zone_serial).unwrap().review =
-                                ZoneVersionReviewState::Rejected;
+                            handle.get().hard_reject_signed();
                         }
                         Source::Published => unreachable!(),
                     }
@@ -522,124 +485,6 @@ impl ZoneServer {
             }
         }
         Ok(())
-    }
-
-    pub fn on_zone_review(
-        &self,
-        center: &Arc<Center>,
-        zone: &Arc<Zone>,
-        zone_serial: Serial,
-        decision: ZoneReviewDecision,
-    ) -> ZoneReviewResult {
-        let unit_name = self.unit_name();
-        let zone_name = &zone.name;
-
-        // Look up the zone.
-
-        let new_review_state = match decision {
-            ZoneReviewDecision::Approve => ZoneVersionReviewState::Approved,
-            ZoneReviewDecision::Reject => ZoneVersionReviewState::Rejected,
-        };
-
-        // Look up the version of the zone being reviewed.
-        match self.source {
-            Source::Unsigned => {
-                {
-                    let mut zone_state = zone.write(center);
-                    let Some(version) = zone_state.unsigned.get_mut(&zone_serial) else {
-                        // 'on_seek_approval_for_zone_cmd()' should have created
-                        // this.  Since it doesn't exist, the zone is not under
-                        // review.
-
-                        debug!(
-                            "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
-                        );
-                        return Err(ZoneReviewError::NotUnderReview);
-                    };
-
-                    // Check that the zone was not already approved.
-                    if matches!(version.review, ZoneVersionReviewState::Approved) {
-                        // This version of the zone is no longer being reviewed.
-                        //
-                        // TODO: Differentiate this from 'NotUnderReview'?
-
-                        return Err(ZoneReviewError::NotUnderReview);
-                    }
-
-                    version.review = new_review_state;
-                }
-                if matches!(decision, ZoneReviewDecision::Approve) {
-                    info!(
-                        "Unsigned zone '{zone_name}' with serial {zone_serial} has been approved."
-                    );
-                    self.on_unsigned_zone_approved(center, zone, zone_serial);
-                } else {
-                    error!(
-                        "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
-                    );
-
-                    let mut handle = zone.write_handle(center);
-                    let policy = handle.state.policy.as_ref().unwrap();
-                    match policy.loader.review.on_reject {
-                        OnReject::Discard => {
-                            handle.get().soft_reject_loaded();
-                        }
-                        OnReject::Halt => {
-                            handle.get().hard_reject_loaded();
-                        }
-                    }
-                }
-            }
-
-            Source::Signed => {
-                {
-                    let mut zone_state = zone.write(center);
-                    let Some(version) = zone_state.signed.get_mut(&zone_serial) else {
-                        // 'on_seek_approval_for_zone_cmd()' should have created
-                        // this.  Since it doesn't exist, the zone is not under
-                        // review.
-
-                        debug!(
-                            "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
-                        );
-                        return Err(ZoneReviewError::NotUnderReview);
-                    };
-
-                    // Check that the zone was not already approved.
-                    if matches!(version.review, ZoneVersionReviewState::Approved) {
-                        // This version of the zone is no longer being reviewed.
-                        //
-                        // TODO: Differentiate this from 'NotUnderReview'?
-
-                        return Err(ZoneReviewError::NotUnderReview);
-                    }
-
-                    version.review = new_review_state;
-                }
-                if matches!(decision, ZoneReviewDecision::Approve) {
-                    info!("Signed zone '{zone_name}' with serial {zone_serial} has been approved.");
-                    self.on_signed_zone_approved(center, zone, zone_serial);
-                } else {
-                    error!(
-                        "Signed zone '{zone_name}' with serial {zone_serial} has been rejected."
-                    );
-                    let mut handle = zone.write_handle(center);
-                    let policy = handle.state.policy.as_ref().unwrap();
-                    match policy.signer.review.on_reject {
-                        OnReject::Discard => {
-                            handle.get().soft_reject_signed();
-                        }
-                        OnReject::Halt => {
-                            handle.get().hard_reject_signed();
-                        }
-                    }
-                }
-            }
-
-            Source::Published => unreachable!(),
-        };
-
-        Ok(ZoneReviewOutput {})
     }
 }
 
