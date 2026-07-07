@@ -121,6 +121,8 @@ async fn refresh(
     info!("Refreshing {:?}", zone.name);
     let force = refresh == EnqueuedRefresh::Reload;
 
+    let start = Instant::now();
+
     // Perform the source-specific reload into the zone contents.
     let result = match source {
         Source::None => Ok(false),
@@ -151,6 +153,10 @@ async fn refresh(
             server::refresh(&zone, &addr, tsig_key, &mut builder, &metrics).await
         }
     };
+
+    let end = Instant::now();
+    let duration = (end - start).as_secs_f64();
+    zone.metrics.last_load_duration(duration);
 
     let mut handle = zone.write_handle(&center);
 
@@ -216,6 +222,8 @@ async fn refresh(
         }
 
         Ok(true) => {
+            zone.metrics.last_successful_load_duration(duration);
+
             let soa = builder.next().unwrap().soa().clone();
 
             debug!(

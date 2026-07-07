@@ -354,6 +354,18 @@ struct PerZoneMetrics {
     /// The number of bytes loaded in the last load (file or transfer),
     /// regardless of wether it was successful or aborted due to failure
     zone_loaded_last_bytes: Family<ZoneLabel, Gauge>,
+
+    /// Duration of the last load for this zone.
+    zone_last_load_duration: Family<ZoneLabel, Gauge<f64, AtomicU64>>,
+
+    /// Duration of the last load for this zone.
+    zone_last_successful_load_duration: Family<ZoneLabel, Gauge<f64, AtomicU64>>,
+
+    /// Duration of the last successful signing operation for this zone.
+    zone_last_sign_duration: Family<ZoneLabel, Gauge<f64, AtomicU64>>,
+
+    /// Duration of the last signing operations for this zone.
+    zone_last_successful_sign_duration: Family<ZoneLabel, Gauge<f64, AtomicU64>>,
 }
 
 impl PerZoneMetrics {
@@ -394,6 +406,34 @@ impl PerZoneMetrics {
             "Number of bytes loaded in last attempted zone transfer or zonefile load",
             Unit::Bytes,
             self.zone_loaded_last_bytes.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_last_load_duration",
+            "Duration of the last load for this zone",
+            Unit::Seconds,
+            self.zone_last_load_duration.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_last_successful_load_duration",
+            "Duration of the last successful load for this zone",
+            Unit::Seconds,
+            self.zone_last_successful_load_duration.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_last_sign_duration",
+            "Duration of the last signing operation for this zone",
+            Unit::Seconds,
+            self.zone_last_sign_duration.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_last_successful_sign_duration",
+            "Duration of the last successful signing operation for this zone",
+            Unit::Seconds,
+            self.zone_last_successful_sign_duration.clone(),
         );
     }
 }
@@ -460,6 +500,42 @@ impl ZoneMetrics {
     pub fn zone_loaded_last_bytes(&self, n: i64) {
         self.per_zone_metrics
             .zone_loaded_last_bytes
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn last_load_duration(&self, n: f64) {
+        self.per_zone_metrics
+            .zone_last_load_duration
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn last_successful_load_duration(&self, n: f64) {
+        self.per_zone_metrics
+            .zone_last_successful_load_duration
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn last_sign_duration(&self, n: f64) {
+        self.per_zone_metrics
+            .zone_last_sign_duration
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn last_successful_sign_duration(&self, n: f64) {
+        self.per_zone_metrics
+            .zone_last_successful_sign_duration
             .get_or_create(&ZoneLabel {
                 zone: self.zone_name.clone(),
             })
