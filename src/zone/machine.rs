@@ -204,17 +204,18 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::LoadedReview(loaded.finish_load()));
 
-        let soa = built.next().unwrap().soa().clone();
+        let soa = built.next().unwrap().soa();
+        let serial = soa.rdata.serial;
+
+        self.state.instances.finish_load(&built);
 
         let loaded_reviewer = self.storage().finish_load(built);
 
         // TODO: Use the instance ID here.
         self.state.record_event(
             HistoricalEvent::NewVersionReceived,
-            Some(domain::base::Serial(soa.rdata.serial.into())),
+            Some(domain::base::Serial(serial.into())),
         );
-
-        self.state.instances.finish_load(soa);
 
         self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
 
@@ -306,11 +307,10 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::SignedReview(signing.finish_signing()));
 
-        let soa = built.next_signed().unwrap().soa().clone();
+        self.state.instances.finish_sign(&built);
 
         let signed_reviewer = self.storage().finish_sign(built);
         // Update the instance metadata.
-        self.state.instances.finish_sign(soa);
         self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
         // Begin reviewing the prepared instance.
         self.storage().start_signed_review(signed_reviewer);

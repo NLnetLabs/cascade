@@ -30,6 +30,8 @@
 //! of current instances. There may be any number of obsolete and abandoned
 //! instances.
 
+use std::num::NonZeroU64;
+
 use cascade_zonedata::SoaRecord;
 use domain::new::base::Serial;
 
@@ -144,7 +146,8 @@ impl Instances {
     /// Panics if:
     /// - There is no upcoming instance of the zone.
     /// - The upcoming instance is not empty.
-    pub fn finish_load(&mut self, soa: SoaRecord) {
+    /// - `built` contains an empty instance.
+    pub fn finish_load(&mut self, built: &cascade_zonedata::LoadedZoneBuilt) {
         let Some(upcoming) = &mut self.upcoming else {
             panic!("There is no upcoming instance of the zone");
         };
@@ -154,7 +157,15 @@ impl Instances {
             "The upcoming instance is not empty"
         );
 
-        upcoming.loaded = Some(LoadedInstance { soa });
+        let reader = built.next().unwrap();
+        let soa = reader.soa().clone();
+        let num_records = {
+            let n: usize = reader.regular_records().len();
+            let n: u64 = n.try_into().unwrap();
+            NonZeroU64::new(n).expect("the zone is non-empty")
+        };
+
+        upcoming.loaded = Some(LoadedInstance { soa, num_records });
     }
 }
 
@@ -167,7 +178,7 @@ impl Instances {
     /// Panics if:
     /// - There is no upcoming instance of the zone.
     /// - An upcoming signed instance already exists.
-    pub fn finish_sign(&mut self, soa: SoaRecord) {
+    pub fn finish_sign(&mut self, built: &cascade_zonedata::SignedZoneBuilt) {
         let Some(upcoming) = &mut self.upcoming else {
             panic!("There is no upcoming instance of the zone");
         };
@@ -177,7 +188,24 @@ impl Instances {
             "An upcoming signed instance already exists",
         );
 
-        upcoming.signed = Some(SignedInstance { soa });
+        let reader = built.next_signed().unwrap();
+        let soa = reader.soa().clone();
+        let num_generated_records = {
+            let n: usize = reader.generated_records().len();
+            let n: u64 = n.try_into().unwrap();
+            NonZeroU64::new(n).expect("the zone is non-empty")
+        };
+        let num_loaded_records = {
+            // TODO: Make sure this is fast, maybe cache it during signing.
+            let n: usize = reader.loaded_records().count();
+            u64::try_from(n).unwrap()
+        };
+
+        upcoming.signed = Some(SignedInstance {
+            soa,
+            num_generated_records,
+            num_loaded_records,
+        });
     }
 }
 
@@ -385,13 +413,20 @@ pub struct LoadedInstance {
     /// The primary purpose of this field is to provide the SOA serial. We still
     /// store the full SOA because it is used sometimes, e.g. for sending IXFRs.
     pub soa: SoaRecord,
+
+    /// The number of loaded records.
+    ///
+    /// This is the number of records in this instance. This includes any DNSSEC
+    /// records (RRSIG, NSEC, etc.) in the instance, even if they will not be
+    /// part of the signed instance. Notably, this also includes the SOA record.
+    pub num_records: NonZeroU64,
     //
     // TODO:
     // - Instance ID.
     // - How the instance was loaded (time, source, duration, size).
     // - Whether the zone contains DNSSEC records (for pass-through mode).
     // - Basic details of the zone:
-    //   - How many records it contains (especially NS, DS, glue records).
+    //   - How many NS / DS / glue records are in the zone.
     //   - Total memory usage.
 }
 
@@ -413,6 +448,22 @@ pub struct SignedInstance {
     /// store the full SOA because it is used sometimes, e.g. for sending NOTIFY
     /// messages.
     pub soa: SoaRecord,
+
+    /// The number of generated records.
+    ///
+    /// This is the number of records (RRSIG, NSEC, etc.) that were generated
+    /// when building this instance. Notably, this includes the SOA record. The
+    /// signed instance includes records from the loaded instance, but they are
+    /// not counted here (for that see [`Self::num_loaded_records`]).
+    pub num_generated_records: NonZeroU64,
+
+    /// The number of records included from the loaded instance.
+    ///
+    /// This is the number of records from the associated loaded instance that
+    /// are considered a part of the signed instance. This does not include
+    /// DNSSEC records present in the loaded instance. Notably, this also
+    /// excludes the loaded instance's SOA record.
+    pub num_loaded_records: u64,
     //
     // TODO:
     // - Instance ID.
@@ -420,8 +471,6 @@ pub struct SignedInstance {
     //   - time, source, duration, size
     //   - Whether re-signing occurred, and what was re-signed.
     // - Basic details of the signed zone:
-    //   - How many records it contains (especially RRSIG, NSEC/NSEC3 records).
-    //   - How many records from the loaded instance are included.
     //   - Total memory usage (excluding the loaded instance).
     // - DNSSEC details:
     //   - NSEC or NSEC3 records (incl. rollovers).

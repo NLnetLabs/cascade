@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -690,12 +691,15 @@ pub struct LoadedInstanceSpec {
     ///
     /// The record is serialized to the DNS wire format.
     pub soa: Box<[u8]>,
+
+    /// The number of loaded records.
+    pub num_records: NonZeroU64,
 }
 
 impl LoadedInstanceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> LoadedInstance {
-        let Self { soa } = self;
+        let Self { soa, num_records } = self;
 
         // TODO: Don't panic on failure; move this into Serde.
         let soa = SoaRecord(Record::parse_bytes(&soa).unwrap().transform(
@@ -703,18 +707,21 @@ impl LoadedInstanceSpec {
             |data: Soa<NameBuf>| data.map_names(|n| n.unsized_copy_into()),
         ));
 
-        LoadedInstance { soa }
+        LoadedInstance { soa, num_records }
     }
 
     /// Build into this specification.
     pub fn build(instance: &LoadedInstance) -> Self {
-        let LoadedInstance { soa } = instance;
+        let LoadedInstance {
+            ref soa,
+            num_records,
+        } = *instance;
 
         let mut buffer = vec![0u8; soa.0.built_bytes_size()];
         assert!(soa.0.build_bytes(&mut buffer).unwrap().is_empty());
         let soa = buffer.into_boxed_slice();
 
-        Self { soa }
+        Self { soa, num_records }
     }
 }
 
@@ -728,12 +735,22 @@ pub struct SignedInstanceSpec {
     ///
     /// The record is serialized to the DNS wire format.
     pub soa: Box<[u8]>,
+
+    /// The number of generated records.
+    pub num_generated_records: NonZeroU64,
+
+    /// The number of records included from the loaded instance.
+    pub num_loaded_records: u64,
 }
 
 impl SignedInstanceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> SignedInstance {
-        let Self { soa } = self;
+        let Self {
+            soa,
+            num_generated_records,
+            num_loaded_records,
+        } = self;
 
         // TODO: Don't panic on failure; move this into Serde.
         let soa = SoaRecord(Record::parse_bytes(&soa).unwrap().transform(
@@ -741,18 +758,30 @@ impl SignedInstanceSpec {
             |data: Soa<NameBuf>| data.map_names(|n| n.unsized_copy_into()),
         ));
 
-        SignedInstance { soa }
+        SignedInstance {
+            soa,
+            num_generated_records,
+            num_loaded_records,
+        }
     }
 
     /// Build into this specification.
     pub fn build(instance: &SignedInstance) -> Self {
-        let SignedInstance { soa } = instance;
+        let SignedInstance {
+            ref soa,
+            num_generated_records,
+            num_loaded_records,
+        } = *instance;
 
         let mut buffer = vec![0u8; soa.0.built_bytes_size()];
         assert!(soa.0.build_bytes(&mut buffer).unwrap().is_empty());
         let soa = buffer.into_boxed_slice();
 
-        Self { soa }
+        Self {
+            soa,
+            num_generated_records,
+            num_loaded_records,
+        }
     }
 }
 
