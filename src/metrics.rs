@@ -257,7 +257,6 @@ pub enum HaltMode {
 pub struct XfrLabels {
     pub zone: StoredName,
     pub r#type: XfrType,
-    pub transport: XfrTransport,
 }
 
 //------------ XfrType -------------------------------------------------------
@@ -266,14 +265,6 @@ pub struct XfrLabels {
 pub enum XfrType {
     Axfr,
     Ixfr,
-}
-
-//------------ XfrTransport --------------------------------------------------
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
-pub enum XfrTransport {
-    Tcp,
-    Udp,
 }
 
 //------------ StateMetrics --------------------------------------------------
@@ -448,24 +439,22 @@ pub struct ZoneMetrics {
 }
 
 impl ZoneMetrics {
-    pub fn inc_xfr_requests_to_upstream_attempted(&self, ty: XfrType, transport: XfrTransport) {
+    pub fn inc_xfr_requests_to_upstream_attempted(&self, ty: XfrType) {
         self.per_zone_metrics
             .xfr_requests_to_upstream_attempted
             .get_or_create(&XfrLabels {
                 zone: self.zone_name.clone(),
                 r#type: ty,
-                transport,
             })
             .inc();
     }
 
-    pub fn inc_xfr_requests_to_upstream_succeeded(&self, ty: XfrType, transport: XfrTransport) {
+    pub fn inc_xfr_requests_to_upstream_succeeded(&self, ty: XfrType) {
         self.per_zone_metrics
             .xfr_requests_to_upstream_succeeded
             .get_or_create(&XfrLabels {
                 zone: self.zone_name.clone(),
                 r#type: ty,
-                transport,
             })
             .inc();
     }
