@@ -1,7 +1,10 @@
 //! Handling signing keys.
 
 use core::fmt;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use camino::Utf8Path;
@@ -23,6 +26,7 @@ use url::Url;
 
 use crate::{
     center::Center,
+    signer::status::SigningStatusPerZone,
     units::{
         http_server::KmipServerState,
         key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode},
@@ -60,7 +64,10 @@ impl ZoneSigningKeys {
         center: &Center,
         zone: &Zone,
         keyset_state: &KeySetState,
+        status: &RwLock<SigningStatusPerZone>,
     ) -> Result<Self, Box<LoadError>> {
+        status.write().unwrap().current_action = "Loading signing keys".to_string();
+
         let mut list = Vec::new();
 
         for (pub_key_name, key_info) in keyset_state.keyset.keys() {
@@ -108,7 +115,7 @@ impl ZoneSigningKeys {
                             error,
                         })
                     })?;
-                    KeyPair::load_kmip(center, priv_url, pub_url)?
+                    KeyPair::load_kmip(center, priv_url, pub_url, status)?
                 }
                 _ => {
                     return Err(Box::new(LoadError::UnsupportedScheme { url: pub_url }));
@@ -266,6 +273,7 @@ impl KeyPair {
         center: &Center,
         priv_key_url: KeyUrl,
         pub_key_url: KeyUrl,
+        status: &RwLock<SigningStatusPerZone>,
     ) -> Result<Self, Box<LoadError>> {
         // TODO: Replace the connection pool if the persisted KMIP server settings
         // were updated more recently than the pool was created.
@@ -274,6 +282,9 @@ impl KeyPair {
         let kmip_conn_pool = match kmip_servers.entry(priv_key_url.server_id().to_string()) {
             std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
             std::collections::hash_map::Entry::Vacant(e) => {
+                status.write().unwrap().current_action =
+                    format!("Connecting to KMIP server '{}'", priv_key_url.server_id());
+
                 // Try and load the KMIP server settings.
                 let server_state_path = center
                     .config
@@ -313,7 +324,12 @@ impl KeyPair {
                         creds_path.as_std_path(),
                         KmipServerCredentialsFileMode::ReadOnly,
                     )
-                    .unwrap();
+                    .map_err(|error| {
+                        Box::new(LoadError::KmipClientCredentials {
+                            path: creds_path.clone(),
+                            error,
+                        })
+                    })?;
 
                     let creds = creds_file.get(&server_id).ok_or_else(|| {
                         Box::new(LoadError::MissingKmipClientCredentials {
@@ -359,6 +375,11 @@ impl KeyPair {
                 e.insert(pool)
             }
         };
+
+        status.write().unwrap().current_action = format!(
+            "Fetching keys from KMIP server '{}'",
+            priv_key_url.server_id()
+        );
 
         let priv_key_url_inner = (*priv_key_url).clone();
         let pub_key_url_inner = (*pub_key_url).clone();

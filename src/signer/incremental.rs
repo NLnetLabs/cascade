@@ -1510,8 +1510,7 @@ impl<'a> IncrementalSigningState<'a> {
         keyset_state: &KeySetState,
         status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Result<Self, SignerError> {
-        status.write().unwrap().current_action = "Loading signing keys".into();
-        let keys = ZoneSigningKeys::load(center, zone, keyset_state)?;
+        let keys = ZoneSigningKeys::load(center, zone, keyset_state, &status)?;
 
         let now = faketime_or_now();
         let now_u32 = Into::<Duration>::into(now.clone()).as_secs() as u32;
