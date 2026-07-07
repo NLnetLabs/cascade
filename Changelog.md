@@ -22,9 +22,14 @@ Released yyyy-mm-dd.
 ### New
 ### Bug fixes
 ### Other changes
+
+- Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
+
 ### Documentation improvements
 ### Known issues
 ### Acknowledgements
+
+[#872]: https://github.com/NLnetLabs/cascade/pull/872
 
 ## Version 0.1.0-beta4 'Irish Goodbye'
 
