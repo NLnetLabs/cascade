@@ -2,9 +2,6 @@
 
 use std::sync::Arc;
 
-use cascade_zonedata::{
-    LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer,
-};
 use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
@@ -12,6 +9,7 @@ use crate::{
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState, save_state_now},
+    zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
 };
 
 //----------- ZonePersistenceHandle --------------------------------------------

@@ -15,17 +15,17 @@ use std::{
 };
 
 use camino::Utf8Path;
-use cascade_api::ZoneReloadError;
-use cascade_zonedata::LoadedZoneBuilder;
-use domain::{new::base::Serial, tsig};
+use domain::tsig;
 use tracing::{debug, error, info};
 
 use crate::{
+    api::ZoneReloadError,
     center::{Center, State},
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
     zone::{HistoricalEvent, Zone, ZoneByName, ZoneByPtr},
+    zonedata::LoadedZoneBuilder,
 };
 
 mod server;
@@ -444,15 +444,6 @@ impl ActiveLoadMetrics {
 /// An error when refreshing a zone.
 #[derive(Debug)]
 pub enum RefreshError {
-    /// The source of the zone appears to be outdated.
-    OutdatedRemote {
-        /// The SOA serial of the local copy.
-        local_serial: Serial,
-
-        /// The SOA serial of the remote copy.
-        remote_serial: Serial,
-    },
-
     /// A query for a SOA record failed.
     QuerySoa(server::QuerySoaError),
 
@@ -464,16 +455,11 @@ pub enum RefreshError {
 
     /// The zonefile could not be loaded.
     Zonefile(zonefile::Error),
-
-    /// While we were processing a refresh another refresh or reload happened, changing the serial
-    LocalSerialChanged,
 }
 
 impl std::error::Error for RefreshError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::OutdatedRemote { .. } => None,
-            Self::LocalSerialChanged => None,
             Self::QuerySoa(error) => Some(error),
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
@@ -485,21 +471,6 @@ impl std::error::Error for RefreshError {
 impl fmt::Display for RefreshError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RefreshError::OutdatedRemote {
-                local_serial,
-                remote_serial,
-            } => {
-                write!(
-                    f,
-                    "the source of the zone is reporting an outdated SOA ({remote_serial}, while the latest local copy is {local_serial})"
-                )
-            }
-            RefreshError::LocalSerialChanged => {
-                write!(
-                    f,
-                    "Local serial changed while processing a refreshed zone. This will be fixed by a retry."
-                )
-            }
             RefreshError::QuerySoa(error) => {
                 write!(f, "could not retrieve the SOA record: {error}")
             }

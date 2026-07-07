@@ -1,12 +1,16 @@
 use std::time::SystemTime;
 
-use cascade_api::ZoneReviewStatus;
 use domain::base::Serial;
 use tracing::{info, trace};
 
 use crate::{
+    api::ZoneReviewStatus,
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, LastPublished, ZoneHandle},
+    zonedata::{
+        LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, SignedZoneBuilder,
+        SignedZoneBuilt, SignedZonePersisted,
+    },
 };
 
 /// State machine for a particular zone
@@ -101,7 +105,7 @@ impl ZoneStateMachine {
 
 /// # Initiating operations
 impl<'a> ZoneHandle<'a> {
-    pub(crate) fn try_start_load(&mut self) -> Option<cascade_zonedata::LoadedZoneBuilder> {
+    pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
         // If we're in maintenance mode, then we don't start this operation.
         // TODO: distinguish between a manual load and an automatic one.
         if self.state.maintenance_mode {
@@ -133,7 +137,7 @@ impl<'a> ZoneHandle<'a> {
         Some(builder)
     }
 
-    pub(crate) fn try_start_resign(&mut self) -> Option<cascade_zonedata::SignedZoneBuilder> {
+    pub(crate) fn try_start_resign(&mut self) -> Option<SignedZoneBuilder> {
         // If we're in maintenance mode, then we don't start this operation.
         // TODO: distinguish between a manual resign and an automatic one.
         if self.state.maintenance_mode {
@@ -172,7 +176,7 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Loading operations
 impl<'a> ZoneHandle<'a> {
-    pub(crate) fn abandon_load(&mut self, builder: cascade_zonedata::LoadedZoneBuilder) {
+    pub(crate) fn abandon_load(&mut self, builder: LoadedZoneBuilder) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Loading(loaded) = state else {
@@ -184,7 +188,7 @@ impl<'a> ZoneHandle<'a> {
         self.storage().abandon_load(builder);
     }
 
-    pub(crate) fn finish_load(&mut self, built: cascade_zonedata::LoadedZoneBuilt) {
+    pub(crate) fn finish_load(&mut self, built: LoadedZoneBuilt) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Loading(loaded) = state else {
@@ -277,12 +281,12 @@ impl<'a> ZoneHandle<'a> {
 /// # Signing operations
 impl<'a> ZoneHandle<'a> {
     /// Begin signing a new approved and persisted loaded instance.
-    pub(crate) fn start_new_sign(&mut self, persisted: cascade_zonedata::LoadedZonePersisted) {
+    pub(crate) fn start_new_sign(&mut self, persisted: LoadedZonePersisted) {
         let builder = self.storage().start_new_sign(persisted);
         self.signer().enqueue_new_sign(builder);
     }
 
-    pub(crate) fn finish_signing(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
+    pub(crate) fn finish_signing(&mut self, built: SignedZoneBuilt) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
@@ -298,7 +302,7 @@ impl<'a> ZoneHandle<'a> {
     }
 
     // Abandon the ongoing signing operation (but not due to failure).
-    pub(crate) fn abandon_signing(&mut self, builder: cascade_zonedata::SignedZoneBuilder) {
+    pub(crate) fn abandon_signing(&mut self, builder: SignedZoneBuilder) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
@@ -316,11 +320,7 @@ impl<'a> ZoneHandle<'a> {
             .start_rewinding_loaded_review(loaded_reviewer);
     }
 
-    pub(crate) fn signing_failed(
-        &mut self,
-        builder: cascade_zonedata::SignedZoneBuilder,
-        err: SignerError,
-    ) {
+    pub(crate) fn signing_failed(&mut self, builder: SignedZoneBuilder, err: SignerError) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
@@ -411,10 +411,7 @@ impl<'a> ZoneHandle<'a> {
 /// # Switching operations
 impl<'a> ZoneHandle<'a> {
     /// Finish persisting an approved signed instance.
-    pub(crate) fn finish_signed_persistence(
-        &mut self,
-        persisted: cascade_zonedata::SignedZonePersisted,
-    ) {
+    pub(crate) fn finish_signed_persistence(&mut self, persisted: SignedZonePersisted) {
         let viewer = self.storage().finish_signed_persistence(persisted);
 
         self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
