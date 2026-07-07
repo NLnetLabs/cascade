@@ -11,7 +11,8 @@ use crate::{
     center::Center,
     common::scheduler::Scheduler,
     util::AbortOnDrop,
-    zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle, ZoneState}, zonedata::{LoadedZoneBuilder, SoaRecord},
+    zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle, ZoneState},
+    zonedata::{LoadedZoneBuilder, SoaRecord},
 };
 
 use super::{ActiveLoadMetrics, LoadMetrics, Source};

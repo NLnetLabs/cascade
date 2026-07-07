@@ -151,19 +151,6 @@ where
 
 //------------------------------------------------------------------------------
 
-/// Force a [`Future`] to evaluate synchronously.
-pub fn force_future<F: IntoFuture>(future: F) -> F::Output {
-    let waker = std::task::Waker::noop();
-    let mut cx = std::task::Context::from_waker(waker);
-    let future = std::pin::pin!(future.into_future());
-    match future.poll(&mut cx) {
-        std::task::Poll::Ready(output) => output,
-        std::task::Poll::Pending => {
-            panic!("Could not evaluate the future synchronously")
-        }
-    }
-}
-
 /// Atomically write a file.
 ///
 /// # Panics
@@ -186,15 +173,6 @@ pub fn write_file(path: &Utf8Path, contents: &[u8]) -> io::Result<()> {
     let _ = tmp_file.persist(path)?;
 
     Ok(())
-}
-
-/// Update a value.
-#[inline]
-pub fn update_value<T: Eq>(dst: &mut T, value: T, changed: &mut bool) {
-    if *dst != value {
-        *changed = true;
-        *dst = value;
-    }
 }
 
 pub fn instant_to_duration_secs(instant: Instant) -> u64 {

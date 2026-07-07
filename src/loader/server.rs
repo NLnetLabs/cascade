@@ -43,7 +43,10 @@ use crate::{
     loader::ActiveLoadMetrics,
     metrics::{XfrTransport, XfrType},
     zone::Zone,
-    zonedata::{LoadedZoneBuilder, LoadedZonePatcher, LoadedZoneReplacer, OldRecord, PatchError, ReplaceError, SoaRecord},
+    zonedata::{
+        LoadedZoneBuilder, LoadedZonePatcher, LoadedZoneReplacer, OldRecord, PatchError,
+        ReplaceError, SoaRecord,
+    },
 };
 
 use super::RefreshError;
@@ -180,7 +183,7 @@ pub async fn ixfr(
     let mut interpreter = XfrResponseInterpreter::new();
 
     zone.metrics
-        .inc_xfr_requests_to_upstream_attempted(XfrType::IXFR, XfrTransport::TCP);
+        .inc_xfr_requests_to_upstream_attempted(XfrType::Ixfr, XfrTransport::Tcp);
 
     // Process the first message.
     let initial = response
@@ -258,7 +261,7 @@ pub async fn ixfr(
             metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
 
             zone.metrics
-                .inc_xfr_requests_to_upstream_succeeded(XfrType::IXFR, XfrTransport::TCP);
+                .inc_xfr_requests_to_upstream_succeeded(XfrType::Ixfr, XfrTransport::Tcp);
 
             Ok(true)
         }
@@ -296,7 +299,7 @@ pub async fn ixfr(
             writer.apply()?;
 
             zone.metrics
-                .inc_xfr_requests_to_upstream_succeeded(XfrType::IXFR, XfrTransport::TCP);
+                .inc_xfr_requests_to_upstream_succeeded(XfrType::Ixfr, XfrTransport::Tcp);
 
             Ok(true)
         }
@@ -410,7 +413,7 @@ pub async fn axfr(
         };
 
     zone.metrics
-        .inc_xfr_requests_to_upstream_attempted(XfrType::AXFR, XfrTransport::TCP);
+        .inc_xfr_requests_to_upstream_attempted(XfrType::Axfr, XfrTransport::Tcp);
 
     // Attempt the AXFR.
     let request = RequestMessageMulti::new(message).unwrap();
@@ -454,7 +457,7 @@ pub async fn axfr(
     writer.apply()?;
 
     zone.metrics
-        .inc_xfr_requests_to_upstream_succeeded(XfrType::AXFR, XfrTransport::TCP);
+        .inc_xfr_requests_to_upstream_succeeded(XfrType::Axfr, XfrTransport::Tcp);
 
     Ok(())
 }
@@ -643,7 +646,10 @@ impl fmt::Display for IxfrError {
                 f,
                 "the server's response was semantically incorrect: {error}"
             ),
-            IxfrError::XfrIter(_) => write!(f, "the server's response was semantically incorrect"),
+            IxfrError::XfrIter(error) => write!(
+                f,
+                "the server's response was semantically incorrect: {error:?}"
+            ),
             IxfrError::IncompleteResponse => {
                 write!(f, "the server's response appears to be incomplete")
             }
@@ -750,8 +756,11 @@ impl fmt::Display for AxfrError {
                 f,
                 "the server's response was semantically incorrect: {error}"
             ),
-            AxfrError::XfrIter(_) => {
-                write!(f, "the server's response was semantically incorrect")
+            AxfrError::XfrIter(error) => {
+                write!(
+                    f,
+                    "the server's response was semantically incorrect: {error:?}"
+                )
             }
             AxfrError::IncompleteResponse => {
                 write!(f, "the server's response appears to be incomplete")
@@ -797,9 +806,6 @@ pub enum QuerySoaError {
     /// A DNS client error occurred.
     Client(client::request::Error),
 
-    /// Could not connect to the server.
-    Connection(std::io::Error),
-
     /// The response could not be parsed.
     Parse(ParseError),
 
@@ -811,7 +817,6 @@ impl std::error::Error for QuerySoaError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             QuerySoaError::Client(error) => Some(error),
-            QuerySoaError::Connection(error) => Some(error),
             QuerySoaError::Parse(_) => None,
             QuerySoaError::MismatchedResponse => None,
         }
@@ -823,9 +828,6 @@ impl fmt::Display for QuerySoaError {
         match self {
             QuerySoaError::Client(error) => {
                 write!(f, "could not communicate with the server: {error}")
-            }
-            QuerySoaError::Connection(error) => {
-                write!(f, "could not connect to the server: {error}")
             }
             QuerySoaError::Parse(_) => write!(f, "could not parse the server's response"),
             QuerySoaError::MismatchedResponse => {

@@ -927,6 +927,7 @@ impl fmt::Debug for ZoneByPtr {
 
 /// An error in changing the policy of a zone.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(dead_code, reason = "Pending functionality")] // TODO
 pub enum ChangePolicyError {
     /// The specified zone does not exist.
     NoSuchZone,
@@ -954,6 +955,7 @@ impl fmt::Display for ChangePolicyError {
 
 /// An error in changing the source of a zone.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(dead_code, reason = "Pending functionality")] // TODO
 pub enum ChangeSourceError {
     /// The specified zone does not exist.
     NoSuchZone,

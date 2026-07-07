@@ -264,16 +264,16 @@ pub struct XfrLabels {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
 pub enum XfrType {
-    AXFR,
-    IXFR,
+    Axfr,
+    Ixfr,
 }
 
 //------------ XfrTransport --------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
 pub enum XfrTransport {
-    TCP,
-    UDP,
+    Tcp,
+    Udp,
 }
 
 //------------ StateMetrics --------------------------------------------------
