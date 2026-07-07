@@ -8,12 +8,11 @@ use std::{
 };
 
 use bytes::Bytes;
-use cascade_api::{TsigAddError, TsigAddResult};
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use tracing::{debug, error, info, trace};
 
-use crate::api::KeyImport;
+use crate::api::{self, KeyImport, TsigAddError, TsigAddResult};
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
@@ -26,7 +25,6 @@ use crate::units::key_manager::KeyManager;
 use crate::units::zone_signer::ZoneSigner;
 use crate::zone::{HistoricalEvent, ZoneByPtr, ZoneHandle};
 use crate::{
-    api,
     config::Config,
     log::Logger,
     policy::Policy,
@@ -117,9 +115,9 @@ pub async fn add_zone(
         zone = Arc::new(Zone::new(name, &center.metrics));
 
         source = match api_source {
-            cascade_api::ZoneSource::None => crate::loader::Source::None,
-            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
-            cascade_api::ZoneSource::Server { addr, tsig_key } => {
+            api::ZoneSource::None => crate::loader::Source::None,
+            api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
+            api::ZoneSource::Server { addr, tsig_key } => {
                 let tsig_key = if let Some(key_name) = tsig_key {
                     // Lookup the key in the TSIG key store.
                     let key = state

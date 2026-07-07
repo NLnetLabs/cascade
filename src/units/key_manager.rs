@@ -1,4 +1,5 @@
 use crate::api;
+use crate::api::keyset::{KeyRollCommand, KeyRollVariant};
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError, get_zone};
 use crate::manager::record_zone_event;
@@ -9,7 +10,6 @@ use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, Zone};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
-use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
 use core::time::Duration;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};

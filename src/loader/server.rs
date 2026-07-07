@@ -7,10 +7,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use cascade_zonedata::OldRecord;
-use cascade_zonedata::{
-    LoadedZoneBuilder, LoadedZonePatcher, LoadedZoneReplacer, PatchError, ReplaceError, SoaRecord,
-};
 use domain::base::MessageBuilder as OldBaseMessageBuilder;
 use domain::base::Rtype;
 use domain::{
@@ -47,6 +43,7 @@ use crate::{
     loader::ActiveLoadMetrics,
     metrics::{XfrTransport, XfrType},
     zone::Zone,
+    zonedata::{LoadedZoneBuilder, LoadedZonePatcher, LoadedZoneReplacer, OldRecord, PatchError, ReplaceError, SoaRecord},
 };
 
 use super::RefreshError;

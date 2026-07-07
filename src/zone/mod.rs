@@ -12,18 +12,18 @@ use std::{
 };
 
 use bytes::Bytes;
-use cascade_cfg::Config;
 use domain::base::{Name, Rtype, Serial};
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
 
-use crate::metrics::{Metrics, ZoneMetrics};
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
+    config::Config,
     loader::zone::{LoaderState, LoaderZoneHandle},
+    metrics::{Metrics, ZoneMetrics},
     persistence::zone::{PersistenceState, ZonePersistenceHandle},
     policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
@@ -591,10 +591,10 @@ pub enum HistoricalEvent {
         reason: String,
     },
     SigningSucceeded {
-        trigger: cascade_api::SigningTrigger,
+        trigger: api::SigningTrigger,
     },
     SigningFailed {
-        trigger: cascade_api::SigningTrigger,
+        trigger: api::SigningTrigger,
         reason: String,
     },
     UnsignedZoneReview {

@@ -226,7 +226,8 @@ impl HttpServer {
             report
         };
 
-        let f = |x: &Vec<cascade_cfg::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
+        let f =
+            |x: &Vec<crate::config::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
         let loaded_review_addrs = f(&center.config.loader.review.servers);
         let signed_review_addrs = f(&center.config.signer.review.servers);
         let server_addrs = f(&center.config.server.servers);

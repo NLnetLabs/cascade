@@ -23,6 +23,7 @@ use tracing_subscriber::FmtSubscriber;
 
 use cascade_api as api;
 use cascade_cfg as config;
+use cascade_zonedata as zonedata;
 
 mod center;
 mod common;

@@ -7,10 +7,6 @@ use std::{
     sync::Arc,
 };
 
-use cascade_zonedata::{
-    DiffData, LoadedZonePatcher, LoadedZoneRestorer, RegularRecord, SignedZonePatcher,
-    SignedZoneRestorer, SoaRecord,
-};
 use domain::{
     new::{
         base::{
@@ -24,7 +20,14 @@ use domain::{
 };
 use tracing::{info, trace};
 
-use crate::{center::Center, zone::Zone};
+use crate::{
+    center::Center,
+    zone::Zone,
+    zonedata::{
+        DiffData, LoadedZonePatcher, LoadedZoneRestorer, RegularRecord, SignedZonePatcher,
+        SignedZoneRestorer, SoaRecord,
+    },
+};
 
 /// Restore the loaded instance data of a zone.
 ///

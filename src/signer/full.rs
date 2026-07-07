@@ -9,7 +9,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use cascade_zonedata::{OldRecord, RegularRecord, SignedZoneBuilder};
 use domain::{
     base::{CanonicalOrd, Record, Serial, name::FlattenInto},
     dnssec::sign::{
@@ -58,6 +57,7 @@ use crate::{
         zone_signer::{KeySetState, MinTimestamp, SignerError},
     },
     zone::{HistoricalEvent, Zone},
+    zonedata::{OldRecord, RegularRecord, SignedZoneBuilder},
 };
 
 pub fn sign_zone(

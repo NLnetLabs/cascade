@@ -7,10 +7,6 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use bytes::{Bytes, BytesMut};
-use cascade_zonedata::{
-    LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
-    SoaRecord,
-};
 use domain::base::RecordData;
 use domain::base::Serial;
 use domain::base::iana::{Class, ZonemdAlgorithm, ZonemdScheme};
@@ -60,6 +56,10 @@ use crate::units::zone_signer::{
     KeySetState, MinTimestamp, PassThroughMode, SignerError, faketime_or_now,
 };
 use crate::zone::{HistoricalEvent, Zone};
+use crate::zonedata::{
+    LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
+    SoaRecord,
+};
 
 pub fn sign_incrementally(
     patch: SignedZonePatcher,
