@@ -13,6 +13,7 @@
 use std::{fmt, sync::Arc};
 
 use domain::new::base::RType;
+use rayon::slice::ParallelSliceMut;
 
 use crate::{
     DiffData, InstanceData, LoadedZoneReader, RegularRecord, SignedZoneReader, SoaRecord, merge,
@@ -640,7 +641,7 @@ fn apply_replacement(
         return Err(ReplaceError::MissingSoa);
     };
 
-    next.records.sort_unstable();
+    next.records.par_sort_unstable();
 
     if curr.soa.is_some() {
         let mut removed_records = Vec::new();
@@ -689,8 +690,8 @@ fn next_patchset(
         return Err(PatchError::MissingSoaChange);
     };
 
-    immediate.removed_records.sort_unstable();
-    immediate.added_records.sort_unstable();
+    immediate.removed_records.par_sort_unstable();
+    immediate.added_records.par_sort_unstable();
 
     if accumulated.is_empty() {
         // There was no previous patchset; accumulate the current one.

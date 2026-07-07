@@ -258,6 +258,7 @@ version = "0.1.0-beta5-dev"
 dependencies = [
  "bytes",
  "domain",
+ "rayon",
 ]
 
 [[package]]
