@@ -2,6 +2,7 @@ use tracing::{info, trace};
 
 use crate::{
     api::ZoneReviewStatus,
+    server::PublicationServer,
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, ZoneHandle},
     zonedata::{
@@ -358,7 +359,7 @@ impl<'a> ZoneHandle<'a> {
 /// # Signed Review operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn approve_signed(&mut self) {
-        info!("The signed instance has been approved");
+        info!("The signed instance has been approved; publishing");
 
         self.state.record_event(
             HistoricalEvent::SignedZoneReview {
@@ -440,13 +441,33 @@ impl<'a> ZoneHandle<'a> {
         let viewer = self.storage().finish_signed_persistence(persisted);
 
         self.state.instances.switch();
+        // TODO: Handle this with `Instances`.
+        self.state.min_expiration = self.state.next_min_expiration;
+        self.state.next_min_expiration = None;
 
         self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
         self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
 
+        let serial = self
+            .state
+            .instances
+            .current
+            .as_ref()
+            .unwrap()
+            .signed
+            .serial();
+
+        info!(
+            "Published a signed instance of '{}' with SOA serial {}",
+            self.zone.name,
+            serial.get()
+        );
+
         self.signer().on_publication();
 
         self.storage().start_publishing(viewer);
+
+        PublicationServer::after_publication(self);
     }
 }
 

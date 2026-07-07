@@ -3,7 +3,7 @@
 use std::{fmt, sync::Arc};
 
 use domain::base::Serial;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     center::Center,
@@ -12,10 +12,11 @@ use crate::{
     policy::OnReject,
     units::zone_server::{Source, ZoneServer},
     util::AbortOnDrop,
-    zone::{Zone, machine::ZoneStateMachine},
+    zone::{Zone, ZoneHandle, machine::ZoneStateMachine},
     zonedata::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer},
 };
 
+mod notify;
 mod request;
 mod service;
 
@@ -352,10 +353,52 @@ impl PublicationServer {
         )
     }
 
-    /// Publish an instance.
-    pub fn publish(center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
-        // TODO: Inline.
-        ZoneServer::new(Source::Published).on_publish_signed_zone(center, zone, zone_serial)
+    /// React to the publication of an instance.
+    ///
+    /// Sends NOTIFY messages to downstream servers if configured to do so.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %handle.zone.name),
+    )]
+    pub fn after_publication(handle: &mut ZoneHandle<'_>) {
+        let instance = handle
+            .state
+            .instances
+            .current
+            .as_ref()
+            .expect("A published zone must have a current instance");
+        let policy = handle
+            .state
+            .policy
+            .as_ref()
+            .expect("A published zone always has a policy");
+
+        let targets = policy
+            .server
+            .outbound
+            .send_notify_to
+            .iter()
+            .filter(|&s| s.addr.port() != 0)
+            .collect::<Vec<_>>();
+
+        debug!(
+            "Sending NOTIFY messages to {} downstream name servers",
+            targets.len()
+        );
+
+        if targets.is_empty() {
+            return;
+        }
+
+        trace!("Target name servers: {targets:?}");
+
+        self::notify::send_notify_to_addrs(
+            handle.zone.name.clone(),
+            instance.signed.soa.clone(),
+            targets.into_iter(),
+            handle.center,
+        );
     }
 
     /// Register a new zone.
