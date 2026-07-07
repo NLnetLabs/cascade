@@ -215,8 +215,6 @@ impl<'a> ZoneHandle<'a> {
             Some(domain::base::Serial(serial.into())),
         );
 
-        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
-
         self.storage().start_loaded_review(loaded_reviewer);
     }
 }
@@ -264,7 +262,6 @@ impl<'a> ZoneHandle<'a> {
         let loaded_reviewer = self.storage().abandon_loaded_review();
         // Abandon the entire upcoming instance.
         self.state.instances.abandon();
-        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -308,8 +305,6 @@ impl<'a> ZoneHandle<'a> {
         self.state.instances.finish_sign(&built);
 
         let signed_reviewer = self.storage().finish_sign(built);
-        // Update the instance metadata.
-        self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
         // Begin reviewing the prepared instance.
         self.storage().start_signed_review(signed_reviewer);
     }
@@ -329,7 +324,6 @@ impl<'a> ZoneHandle<'a> {
         let loaded_reviewer = self.storage().abandon_sign(builder);
         // Abandon the entire upcoming instance.
         self.state.instances.abandon();
-        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -349,7 +343,6 @@ impl<'a> ZoneHandle<'a> {
         let loaded_reviewer = self.storage().abandon_sign(builder);
         // Abandon the entire upcoming instance.
         self.state.instances.abandon();
-        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -406,8 +399,6 @@ impl<'a> ZoneHandle<'a> {
         self.state.instances.abandon();
         // TODO: This should be handled by 'Instances'.
         self.state.next_min_expiration = None;
-        self.state.storage.loaded_review_soa = loaded_reviewer.read().map(|r| r.soa().clone());
-        self.state.storage.signed_review_soa = signed_reviewer.read().map(|r| r.soa().clone());
 
         self.storage()
             .start_rewinding_review(loaded_reviewer, signed_reviewer);
@@ -445,9 +436,6 @@ impl<'a> ZoneHandle<'a> {
         self.state.min_expiration = self.state.next_min_expiration;
         self.state.next_min_expiration = None;
 
-        self.state.storage.published_soa = viewer.read().map(|r| r.soa().clone());
-        self.state.storage.published_loaded_soa = viewer.read().map(|r| r.loaded().soa().clone());
-
         let serial = self
             .state
             .instances
@@ -482,8 +470,6 @@ impl<'a> ZoneHandle<'a> {
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
                 let loaded_reviewer = self.storage().abandon_loaded_review();
                 self.state.instances.abandon();
-                self.state.storage.loaded_review_soa =
-                    loaded_reviewer.read().map(|r| r.soa().clone());
                 self.storage()
                     .start_rewinding_loaded_review(loaded_reviewer);
             }
