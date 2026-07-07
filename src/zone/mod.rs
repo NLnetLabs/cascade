@@ -325,9 +325,6 @@ pub struct ZoneState {
     /// operations automatically.
     pub maintenance_mode: bool,
 
-    /// Metadata related to the last published zone version.
-    pub last_published: Option<LastPublished>,
-
     /// An enqueued save of this state.
     ///
     /// The enqueued save operation will persist the current state in a short
@@ -441,7 +438,6 @@ impl Default for ZoneState {
             machine: Default::default(),
             policy: Default::default(),
             maintenance_mode: Default::default(),
-            last_published: Default::default(),
             enqueued_save: Default::default(),
             min_expiration: Default::default(),
             next_min_expiration: Default::default(),
@@ -461,22 +457,6 @@ impl Default for ZoneState {
             persistence: Default::default(),
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LastPublished {
-    pub loaded_serial: Serial,
-    pub signed_serial: Serial,
-
-    /// Time of publication
-    pub timestamp: SystemTime,
-
-    /// Number of records in the signed zone
-    pub num_records: usize,
-    //
-    // TODO: add the size
-    // /// Size in bytes
-    // pub size: usize,
 }
 
 /// The state of an unsigned version of a zone.
