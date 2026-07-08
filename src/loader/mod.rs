@@ -15,17 +15,17 @@ use std::{
 };
 
 use camino::Utf8Path;
-use cascade_api::ZoneReloadError;
-use cascade_zonedata::LoadedZoneBuilder;
-use domain::{new::base::Serial, tsig};
+use domain::tsig;
 use tracing::{debug, error, info};
 
 use crate::{
+    api::ZoneReloadError,
     center::{Center, State},
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
     zone::{HistoricalEvent, Zone, ZoneByName, ZoneByPtr},
+    zonedata::LoadedZoneBuilder,
 };
 
 mod server;
@@ -35,7 +35,7 @@ mod zonefile;
 //----------- Loader -----------------------------------------------------------
 
 /// The zone loader.
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct Loader {
     /// A scheduler for SOA timer based zone refreshes.
     refresh_scheduler: Scheduler<ZoneByPtr>,
@@ -44,9 +44,7 @@ pub struct Loader {
 impl Loader {
     /// Construct a new [`Loader`].
     pub fn new() -> Self {
-        Self {
-            refresh_scheduler: Scheduler::new(),
-        }
+        Self::default()
     }
 
     /// Initialize the loader, synchronously.
@@ -101,12 +99,6 @@ impl Loader {
         }
         handle.loader().enqueue_refresh(true);
         Ok(())
-    }
-}
-
-impl Default for Loader {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -167,6 +159,15 @@ async fn refresh(
     handle.state.loader.active_load_metrics = None;
     handle.state.loader.last_load_metrics = Some(metrics.finish());
 
+    {
+        let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
+        // Copy generated loader metrics to prometheus metrics
+        zone.metrics
+            .zone_loaded_last_bytes(loader_metrics.num_loaded_bytes as i64);
+        zone.metrics
+            .zone_loaded_last_records(loader_metrics.num_loaded_records as i64);
+    }
+
     // Update the SOA refresh timer state.
     //
     // NOTE: Zonefiles don't use the SOA refresh timers. They are only
@@ -222,6 +223,14 @@ async fn refresh(
                 serial = ?soa.rdata.serial,
                 "Loaded a new instance of the zone"
             );
+
+            let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
+
+            // Copy generated loader metrics to prometheus metrics
+            zone.metrics
+                .zone_loaded_last_successful_bytes(loader_metrics.num_loaded_bytes as i64);
+            zone.metrics
+                .zone_loaded_last_successful_records(loader_metrics.num_loaded_records as i64);
 
             // Inform the zone storage of completion; it will initiate unsigned
             // review automatically.
@@ -435,15 +444,6 @@ impl ActiveLoadMetrics {
 /// An error when refreshing a zone.
 #[derive(Debug)]
 pub enum RefreshError {
-    /// The source of the zone appears to be outdated.
-    OutdatedRemote {
-        /// The SOA serial of the local copy.
-        local_serial: Serial,
-
-        /// The SOA serial of the remote copy.
-        remote_serial: Serial,
-    },
-
     /// A query for a SOA record failed.
     QuerySoa(server::QuerySoaError),
 
@@ -455,16 +455,11 @@ pub enum RefreshError {
 
     /// The zonefile could not be loaded.
     Zonefile(zonefile::Error),
-
-    /// While we were processing a refresh another refresh or reload happened, changing the serial
-    LocalSerialChanged,
 }
 
 impl std::error::Error for RefreshError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::OutdatedRemote { .. } => None,
-            Self::LocalSerialChanged => None,
             Self::QuerySoa(error) => Some(error),
             Self::Ixfr(error) => Some(error),
             Self::Axfr(error) => Some(error),
@@ -476,21 +471,6 @@ impl std::error::Error for RefreshError {
 impl fmt::Display for RefreshError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RefreshError::OutdatedRemote {
-                local_serial,
-                remote_serial,
-            } => {
-                write!(
-                    f,
-                    "the source of the zone is reporting an outdated SOA ({remote_serial}, while the latest local copy is {local_serial})"
-                )
-            }
-            RefreshError::LocalSerialChanged => {
-                write!(
-                    f,
-                    "Local serial changed while processing a refreshed zone. This will be fixed by a retry."
-                )
-            }
             RefreshError::QuerySoa(error) => {
                 write!(f, "could not retrieve the SOA record: {error}")
             }

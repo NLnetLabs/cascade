@@ -5,7 +5,6 @@ use std::{
     time::SystemTime,
 };
 
-use cascade_zonedata::SignedZoneBuilder;
 use tracing::{debug, info};
 
 use crate::{
@@ -17,6 +16,7 @@ use crate::{
     },
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState},
+    zonedata::SignedZoneBuilder,
 };
 
 //----------- SignerZoneHandle -------------------------------------------------

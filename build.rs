@@ -181,17 +181,18 @@ fn main() -> Result<(), ()> {
                 // re-run and the above branch will be triggered.
             }
         }
-
-        let version = generate_version_string(is_jj);
-        print_version(&version);
+        let hash = get_commit_id(is_jj);
+        print_version(&format!("{} at {}", env!("CARGO_PKG_VERSION"), hash));
+        print_build_commit(&hash);
         Ok(())
     } else {
         print_version(concat!(env!("CARGO_PKG_VERSION"), " (no-git)"));
+        print_build_commit("<no-git>");
         Ok(())
     }
 }
 
-fn generate_version_string(is_jj: bool) -> String {
+fn get_commit_id(is_jj: bool) -> String {
     let (mut git_hash, is_dirty) = if is_jj {
         let git_hash = run_cmd_strip(
             "jj",
@@ -229,11 +230,15 @@ fn generate_version_string(is_jj: bool) -> String {
         git_hash.push_str("dirty");
     }
 
-    format!("{} at {}", env!("CARGO_PKG_VERSION"), git_hash)
+    git_hash
 }
 
 fn print_version(s: &str) {
     println!("cargo::rustc-env=CASCADE_BUILD_VERSION={s}");
+}
+
+fn print_build_commit(s: &str) {
+    println!("cargo::rustc-env=CASCADE_BUILD_COMMIT={s}");
 }
 
 fn generate_project_rerun_with_prefix(prefix: &str, paths: Vec<&str>) {

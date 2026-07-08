@@ -2,9 +2,6 @@
 
 use std::sync::{Arc, RwLock};
 
-use cascade_zonedata::{
-    LoadedZoneReviewer, RegularRecord, SignedZoneReviewer, SoaRecord, ZoneViewer,
-};
 use domain::{
     new::base::{
         name::{RevName, RevNameBuf},
@@ -13,7 +10,10 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 
-use crate::zone::Zone;
+use crate::{
+    zone::Zone,
+    zonedata::{LoadedZoneReviewer, RegularRecord, SignedZoneReviewer, SoaRecord, ZoneViewer},
+};
 
 //----------- ZoneService ------------------------------------------------------
 
@@ -84,7 +84,6 @@ impl<V> Clone for ZoneService<V> {
 mod compat {
     use std::{pin::Pin, sync::Arc};
 
-    use cascade_zonedata::{DiffData, OldRecord};
     use domain::{
         base::{Message, MessageBuilder, iana::Rcode},
         net::server::{
@@ -100,9 +99,12 @@ mod compat {
     use futures::Stream;
     use tracing::{Level, debug, trace, warn};
 
-    use crate::server::{
-        request::{RequestKind, ZoneRequestKind},
-        service::ServiceMode,
+    use crate::{
+        server::{
+            request::{RequestKind, ZoneRequestKind},
+            service::ServiceMode,
+        },
+        zonedata::{DiffData, OldRecord},
     };
 
     use super::{ServedZone, Viewer, ZoneService};
