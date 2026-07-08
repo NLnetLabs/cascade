@@ -22,10 +22,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use domain::base::Serial;
+use jiff::{Timestamp as JiffTimestamp, Zoned, tz::TimeZone};
 use tracing::{debug, error};
 
 use crate::{
     center::Center,
+    policy::SignerSerialPolicy,
     signer::{queue::SigningPermit, status::SigningStatusPerZone},
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, Zone},
@@ -130,6 +133,69 @@ fn sign(
                 },
                 None, // TODO
             );
+        }
+    }
+}
+
+/// Implement SOA serial policies.
+///
+/// There are four policies:
+///
+/// 1) Keep. Copy the serial from the unsigned zone. Refuse to sign
+///    if the serial did not change.
+/// 2) Increment. Copy the serial from the unsigned zone but increment
+///    the serial if the zone needs to be signed an the serial in
+///    the unsigned zone did not change.
+/// 3) Unix timestamp. The current time in Unix seconds. Increment if
+///    that does not result in a higher serial.
+/// 4) Broken down time (YYYYMMDDnn). The current day plus a serial
+///    number. Implies increment to generate different serial numbers
+///    over a day.
+fn update_soa_serial(
+    policy: SignerSerialPolicy,
+    loaded_serial: Serial,
+    previous_serial: Option<Serial>,
+) -> Result<Serial, SignerError> {
+    match policy {
+        SignerSerialPolicy::Keep => {
+            if let Some(previous_serial) = previous_serial
+                && loaded_serial <= previous_serial
+            {
+                return Err(SignerError::KeepSerialPolicyViolated);
+            }
+
+            Ok(loaded_serial)
+        }
+        SignerSerialPolicy::Counter => {
+            // Always increment the serial number, ignore the serial
+            // number in the unsigned zone.
+            let previous_serial = previous_serial.unwrap_or(Serial::from(0));
+            Ok(previous_serial.add(1))
+        }
+        SignerSerialPolicy::UnixTime => {
+            let mut serial = Serial::now();
+            if let Some(previous_serial) = previous_serial
+                && serial <= previous_serial
+            {
+                serial = previous_serial.add(1);
+            }
+
+            Ok(serial)
+        }
+        SignerSerialPolicy::DateCounter => {
+            let ts = JiffTimestamp::now();
+            let zone = Zoned::new(ts, TimeZone::UTC);
+            let serial =
+                ((zone.year() as u32 * 100 + zone.month() as u32) * 100 + zone.day() as u32) * 100;
+            let mut serial: Serial = serial.into();
+
+            if let Some(previous_serial) = previous_serial
+                && serial <= previous_serial
+            {
+                serial = previous_serial.add(1);
+            }
+
+            Ok(serial)
         }
     }
 }
