@@ -12,7 +12,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use cascade_cfg::Config;
 use domain::base::{Name, Rtype, Serial};
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::rdata::dnssec::Timestamp;
@@ -22,7 +21,9 @@ use tracing::{debug, error, trace};
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
+    config::Config,
     loader::zone::{LoaderState, LoaderZoneHandle},
+    metrics::{Metrics, ZoneMetrics},
     persistence::zone::{PersistenceState, ZonePersistenceHandle},
     policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
@@ -57,6 +58,9 @@ pub struct Zone {
     /// [`ZoneState`].
     pub state: ZoneStateLock,
 
+    /// The metrics for this zone.
+    pub metrics: ZoneMetrics,
+
     /// Whether the zone was restored from the state file.
     ///
     /// This is set if the zone originates from a previous execution of Cascade
@@ -70,10 +74,12 @@ impl Zone {
     ///
     /// The zone is initialized to an empty state, where nothing is known about
     /// it and Cascade won't act on it.
-    pub fn new(name: Name<Bytes>) -> Self {
+    pub fn new(name: Name<Bytes>, metrics: &Metrics) -> Self {
+        let metrics = metrics.get_zone_metrics(name.clone());
         Self {
             name,
             state: ZoneStateLock::new(ZoneState::default()),
+            metrics,
             restored: false,
         }
     }
@@ -100,6 +106,7 @@ impl Zone {
         name: Name<Bytes>,
         policies: &mut foldhash::HashMap<Box<str>, Policy>,
         tsig_store: &TsigStore,
+        metrics: &Metrics,
     ) -> Result<Self, state::LoadError> {
         let path = config.zone_state_dir.join(format!("{name}.db"));
 
@@ -115,10 +122,13 @@ impl Zone {
             }
         };
 
+        let metrics = metrics.get_zone_metrics(name.clone());
+
         debug!("Restored the state of zone '{name}' (from '{path}')");
 
         Ok(Self {
             name,
+            metrics,
             state: ZoneStateLock::new(state),
             restored: true,
         })
@@ -581,10 +591,10 @@ pub enum HistoricalEvent {
         reason: String,
     },
     SigningSucceeded {
-        trigger: cascade_api::SigningTrigger,
+        trigger: api::SigningTrigger,
     },
     SigningFailed {
-        trigger: cascade_api::SigningTrigger,
+        trigger: api::SigningTrigger,
         reason: String,
     },
     UnsignedZoneReview {
@@ -917,6 +927,7 @@ impl fmt::Debug for ZoneByPtr {
 
 /// An error in changing the policy of a zone.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(dead_code, reason = "Pending functionality")] // TODO
 pub enum ChangePolicyError {
     /// The specified zone does not exist.
     NoSuchZone,
@@ -944,6 +955,7 @@ impl fmt::Display for ChangePolicyError {
 
 /// An error in changing the source of a zone.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(dead_code, reason = "Pending functionality")] // TODO
 pub enum ChangeSourceError {
     /// The specified zone does not exist.
     NoSuchZone,

@@ -22,19 +22,19 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use cascade_zonedata::SignedZoneBuilder;
 use tracing::{debug, error};
 
 use crate::{
     center::Center,
-    zone::{HistoricalEvent, Zone},
-};
-use crate::{
-    signer::queue::SigningPermit, signer::status::SigningStatusPerZone,
+    signer::{queue::SigningPermit, status::SigningStatusPerZone},
     units::zone_signer::SignerError,
+    zone::{HistoricalEvent, Zone},
+    zonedata::SignedZoneBuilder,
 };
 
+pub mod full;
 pub mod incremental;
+pub mod keys;
 pub mod queue;
 pub mod status;
 pub mod zone;
@@ -65,9 +65,11 @@ fn sign(
     permit: SigningPermit,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
-    let result = center
-        .signer
-        .sign_zone(&center, &zone, &mut builder, trigger, status.clone());
+    let result = if let Some(patcher) = builder.patch() {
+        self::incremental::sign_incrementally(patcher, &zone, &center, trigger, status.clone())
+    } else {
+        self::full::sign_zone(&center, &zone, &mut builder, trigger, status.clone())
+    };
 
     let mut status = status.write().unwrap();
     let mut handle = zone.write_handle(&center);
@@ -148,7 +150,7 @@ pub enum SigningTrigger {
     Resign(ResigningTrigger),
 }
 
-impl From<SigningTrigger> for cascade_api::SigningTrigger {
+impl From<SigningTrigger> for crate::api::SigningTrigger {
     fn from(value: SigningTrigger) -> Self {
         match value {
             SigningTrigger::Load => Self::Load,
@@ -201,7 +203,7 @@ impl BitOrAssign for ResigningTrigger {
     }
 }
 
-impl From<ResigningTrigger> for cascade_api::ResigningTrigger {
+impl From<ResigningTrigger> for crate::api::ResigningTrigger {
     fn from(value: ResigningTrigger) -> Self {
         let ResigningTrigger {
             keys_changed,

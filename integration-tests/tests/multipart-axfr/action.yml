@@ -74,10 +74,7 @@ runs:
 
         # Check that the received zone matches the included ZONEMD RR.
         # FYI the ZONEMD RR was generated using ldns-signzone -z sha512 -Z example.test.zone
-        if ! ldns-verify-zone -Z example.test.zone.log 2>&1 | tee ldns-verify-unsigned-review-zone.log; then
-          echo "::error:: the unsigned review zone failed the ldns-verify-zone check"
-          exit 1
-        fi
+        ldns-verify-zone -Z example.test.zone.log >ldns-verify-unsigned-review-zone.log
 
         NUM_RRS=$(cat example.test.zone.log | wc -l)
         if [[ ${NUM_RRS} -ne 506 ]]; then

@@ -32,6 +32,7 @@ impl Spec {
     }
 
     /// Build into this specification.
+    #[expect(dead_code, reason = "We plan to support policy serialization")]
     pub fn build(policy: &Policy) -> Self {
         Self::V1(v1::Spec::build(&policy.latest))
     }
@@ -47,6 +48,7 @@ impl Spec {
     }
 
     /// Build and save this specification to a file.
+    #[expect(dead_code, reason = "We plan to support policy serialization")]
     pub fn save(&self, path: &Utf8Path) -> io::Result<()> {
         let text = toml::to_string_pretty(self)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;

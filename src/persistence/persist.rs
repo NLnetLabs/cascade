@@ -7,16 +7,16 @@ use std::{
     sync::Arc,
 };
 
-use cascade_zonedata::{
-    DiffData, LoadedZonePersisted, LoadedZonePersister, SignedZonePersisted, SignedZonePersister,
-};
-
 use domain::new::base::wire::{BuildBytes, TruncationError};
 use tracing::{trace, warn};
 
 use crate::{
     center::Center,
     zone::{Zone, save_state_now},
+    zonedata::{
+        DiffData, LoadedZonePersisted, LoadedZonePersister, SignedZonePersisted,
+        SignedZonePersister,
+    },
 };
 
 /// Persist the data for a loaded instance of a zone.

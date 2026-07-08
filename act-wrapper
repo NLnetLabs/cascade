@@ -2,6 +2,10 @@
 
 set -e
 
+CHDIR_PATH="integration-tests"
+WORKFLOW_PATH="system-tests.yml"
+ACT_EXTRA_ARGS=
+
 function usage {
 	echo "The act wrapper script."
 	echo
@@ -9,25 +13,34 @@ function usage {
 	echo "with a freshly compiled Cascade, before executing act with"
 	echo "the provided arguments."
 	echo
-	echo "If you want to skip the build step and run act with the latest"
-	echo "available version of the cascade test runner image you can use:"
+	echo "- If you want to skip the build step and run act with the latest"
+	echo "  available version of the cascade test runner image you can use:"
 	echo
-	echo "'$0 +nobuild <act-args>'"
+	echo "    '$0 +nobuild <act-args>'"
 	echo
-	echo "If you want to build cascade within the container build, use:"
+	echo "- If you want to build cascade within the container build, use:"
 	echo
-	echo "'$0 +build-inside <act-args>'"
+	echo "    '$0 +build-inside <act-args>'"
 	echo
-	echo "If you want to produce a report of approximate CPU and memory usage"
-	echo "over time use:"
+	echo "- If you want to run a benchmark test use:"
 	echo
-	echo "'$0 +stats-report </path/to/write/report.csv>'"
+	echo "    '$0 +benchmark <ZONE NAME> <ZONE PATH> <POLICY PATH.toml> <TIMEOUT SECONDS>'"
 	echo
-	echo "To create a PNG graph of the usage use: (requires gnuplot)"
-	echo "Note: If +stats-report is not used, a temporary file will be used"
-	echo "to capture resource usage in CSV format."
+	echo "  This will enable the +stats-graph option and invoke the"
+	echo "  integration-tests/benchmark-test.yml workflow using the supplied inputs"
+	echo "  with info level logging and a release mode build of Cascade."
 	echo
-	echo "'$0 +stats-graph </path/to/write/report.png>'"
+	echo "- If you want to produce a report of approximate CPU and memory usage"
+	echo "  over time use:"
+	echo
+	echo "    '$0 +stats-report </path/to/write/report.csv>'"
+	echo
+	echo "- To create a PNG graph of the usage use: (requires gnuplot)"
+	echo
+	echo "    '$0 +stats-graph </path/to/write/report.png>'"
+	echo
+	echo "  If +stats-report is not used, a temporary file will be used"
+	echo "  to capture resource usage in CSV format."
 	echo
 	echo "To create a code coverage report use:"
 	echo
@@ -94,6 +107,28 @@ while [[ "$1" =~ ^\+ ]]; do
 		  mkdir -p ${coverage_path}
 		  act_args+=(--input build-profile=debug)
 		  act_args+=(--container-options "-v ${coverage_path}:/tmp/cov")
+		  ;;
+		+benchmark)
+		  if [ $# -ne 5 ]; then
+		  	echo >&2 "ERROR: Incorrect number of arguments for +benchmark."
+		  	echo >&2
+		  	usage
+		  	exit 1
+		  fi
+		  shift; ZONE_NAME="$1"
+		  shift; ZONE_PATH="$1"
+		  shift; POLICY_PATH="$1"
+		  shift; TIMEOUT_SECS="$1"
+		  POLICY_NAME=$(basename -- "${POLICY_PATH}")
+      POLICY_NAME="${POLICY_NAME%.*}"
+		  NOW=$(date +"%Y%m%d_%H%M%S")
+		  WORKFLOW_PATH="benchmark-test.yml"
+      ACT_EXTRA_ARGS="--rm --input log-level=info --input zone-name=${ZONE_NAME} --input policy-name=${POLICY_NAME} --input timeout-seconds=${TIMEOUT_SECS}"
+		  docker_stats_graph=true
+		  docker_stats_graph_path="benchmark-${NOW}.png"
+		  mkdir "integration-tests/benchmark"
+      cp "${ZONE_PATH}" "integration-tests/benchmark/${ZONE_NAME}"
+      cp "${POLICY_PATH}" "integration-tests/benchmark/"
 		  ;;
 		*)
 			echo >&2 "ERROR: Unrecognized + argument: $1"
@@ -204,7 +239,7 @@ fi
 # `docker cp` respect .gitignore or .dockerignore or have any other way I have
 # found to achieve the same result.
 echo "Running tests"
-act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -C integration-tests -W system-tests.yml "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
+act "${act_args[@]}" --log-prefix-job-id --pull=false -P "ubuntu-latest=nlnetlabs/cascade-tests-runner" -C "${CHDIR_PATH}" -W "${WORKFLOW_PATH}" ${ACT_EXTRA_ARGS} "$@" && ACT_EXIT_CODE=$? || ACT_EXIT_CODE=$? 
 
 # Stop the docker stats collection process, if needed.
 if [[ "$docker_stats" == true ]]; then
@@ -235,7 +270,7 @@ if [[ "${docker_stats_graph}" == true && "${STATS_OKAY}" == true && "${ACT_EXIT_
 			# Generate the gnuplot control script.	
 			GNUPLOT_SCRIPT=$(cat <<EOF
 set locale "en_GB.UTF-8"
-set terminal png size 2048,1536
+set terminal png size 1024,768
 set datafile separator ','
 set title "Cascade ${GIT_VER}\n{/*0.75 $*}\n{/*0.75 ${CPU_INFO}"
 set timefmt "%s"

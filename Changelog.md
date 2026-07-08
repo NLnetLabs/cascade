@@ -22,9 +22,17 @@ Released yyyy-mm-dd.
 ### New
 ### Bug fixes
 ### Other changes
+
+- Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
+- Make logging during zone restoration consistent. ([#874] by @ximon18)
+
+
 ### Documentation improvements
 ### Known issues
 ### Acknowledgements
+
+[#872]: https://github.com/NLnetLabs/cascade/pull/872
+[#874]: https://github.com/NLnetLabs/cascade/pull/874
 
 ## Version 0.1.0-beta4 'Irish Goodbye'
 
@@ -34,6 +42,9 @@ Released 2026-07-03.
 
 - Remove systemd socket binding to port 53 in supplied packages ([#847] by
   @ximon18).
+
+- Add prometheus metrics for zone transfers and loaded zone bytes and records.
+  ([#538] by @mozzieongit and @tertsdiepraam)
 
 ### Bug fixes
 
@@ -370,6 +381,7 @@ Our continued thanks to @jpmens, @bortzmeyer, @gryphius and also to @alarig,
 [#518]: https://github.com/NLnetLabs/cascade/pull/518
 [#521]: https://github.com/NLnetLabs/cascade/pull/521
 [#536]: https://github.com/NLnetLabs/cascade/pull/536
+[#538]: https://github.com/NLnetLabs/cascade/pull/538
 [#539]: https://github.com/NLnetLabs/cascade/pull/539
 [#550]: https://github.com/NLnetLabs/cascade/pull/550
 [#555]: https://github.com/NLnetLabs/cascade/pull/555

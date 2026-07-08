@@ -1,4 +1,5 @@
 use crate::api;
+use crate::api::keyset::{KeyRollCommand, KeyRollVariant};
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError, get_zone};
 use crate::manager::record_zone_event;
@@ -9,7 +10,6 @@ use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, Zone};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
-use cascade_api::keyset::{KeyRollCommand, KeyRollVariant};
 use core::time::Duration;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
@@ -37,7 +37,6 @@ pub struct KeyManager {
 }
 
 impl KeyManager {
-    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             ks_info: Default::default(),
@@ -783,14 +782,6 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
 //============ KMIP Credential Management ====================================
 // Copied from dnst keyset. TODO: Share the code via a separate Rust crate.
 
-//------------ KmipClientCredentialsConfig -----------------------------------
-
-/// Optional disk file based credentials for connecting to a KMIP server.
-pub struct KmipClientCredentialsConfig {
-    pub credentials_store_path: PathBuf,
-    pub credentials: Option<KmipClientCredentials>,
-}
-
 //------------ KmipClientCredentials -----------------------------------------
 
 /// Credentials for connecting to a KMIP server.
@@ -831,6 +822,7 @@ pub enum KmipServerCredentialsFileMode {
     ReadOnly,
 
     /// Open an existing credentials file for reading and writing.
+    #[expect(dead_code)]
     ReadWrite,
 
     /// Open or create the credentials file for reading and writing.
@@ -968,6 +960,7 @@ impl KmipClientCredentialsFile {
 
     /// Does this credential set include credentials for the specified KMIP
     /// server.
+    #[expect(dead_code)]
     pub fn contains(&self, server_id: &str) -> bool {
         self.credentials.0.contains_key(server_id)
     }
@@ -991,10 +984,12 @@ impl KmipClientCredentialsFile {
     /// Remove any existing configuration for the specified KMIP server.
     ///
     /// Returns any previous configuration if found.
+    #[expect(dead_code)]
     pub fn remove(&mut self, server_id: &str) -> Option<KmipClientCredentials> {
         self.credentials.0.remove(server_id)
     }
 
+    #[expect(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.credentials.0.is_empty()
     }
