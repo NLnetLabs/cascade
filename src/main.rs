@@ -142,13 +142,16 @@ fn main() -> ExitCode {
                 );
                 let zone = match Zone::restore(
                     &config,
-                    name,
+                    name.clone(),
                     &mut state.policies,
                     &state.tsig_store,
                     &metrics,
                 ) {
                     Ok(zone) => zone,
-                    Err(_) => return ExitCode::FAILURE,
+                    Err(err) => {                                                                                                                                                       
+                        error!("Unable to restore zone '{name}': {err}");                                                                                                               
+                        return ExitCode::FAILURE;                                                                                                                                       
+                    }                                                                                                                                                                   
                 };
                 state.zones.insert(ZoneByName(Arc::new(zone)));
             }
