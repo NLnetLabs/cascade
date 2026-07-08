@@ -17,6 +17,7 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 
+#[allow(rustdoc::bare_urls)]
 /// The maximum size a DNS message is allowed to be, according to RFC 1035:
 ///
 /// https://www.rfc-editor.org/info/rfc1035/#section-4.2.2
