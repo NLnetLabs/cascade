@@ -148,10 +148,10 @@ fn main() -> ExitCode {
                     &metrics,
                 ) {
                     Ok(zone) => zone,
-                    Err(err) => {                                                                                                                                                       
-                        error!("Unable to restore zone '{name}': {err}");                                                                                                               
-                        return ExitCode::FAILURE;                                                                                                                                       
-                    }                                                                                                                                                                   
+                    Err(err) => {
+                        error!("Unable to restore zone '{name}': {err}");
+                        return ExitCode::FAILURE;
+                    }
                 };
                 state.zones.insert(ZoneByName(Arc::new(zone)));
             }
