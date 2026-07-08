@@ -25,12 +25,13 @@ Released yyyy-mm-dd.
 
 - Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
 - Make logging during zone restoration consistent. ([#874] by @ximon18)
-
+- Improve memory use of NSEC(3) in incremental signing (#842)
 
 ### Documentation improvements
 ### Known issues
 ### Acknowledgements
 
+[#842]: https://github.com/NLnetLabs/cascade/pull/842
 [#872]: https://github.com/NLnetLabs/cascade/pull/872
 [#874]: https://github.com/NLnetLabs/cascade/pull/874
 
