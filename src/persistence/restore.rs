@@ -135,7 +135,7 @@ pub fn restore_loaded(
     io::Result::Ok(true)
 }
 
-/// Restore the loaded instance data of a zone.
+/// Restore the signed instance data of a zone.
 ///
 /// Returns Ok(true) if data was stored, Ok(false) if there was nothing to
 /// restore, or Err(..) on error.
