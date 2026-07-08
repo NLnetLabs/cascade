@@ -25,7 +25,7 @@ use std::{
 
 use domain::base::Serial;
 use jiff::{Timestamp as JiffTimestamp, Zoned, tz::TimeZone};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::{
     center::Center,
@@ -70,6 +70,7 @@ fn sign(
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
     let start = Instant::now();
+    info!("Starting a sign operation for '{}'", zone.name);
 
     let result = if let Some(patcher) = builder.patch() {
         self::incremental::sign_incrementally(patcher, &zone, &center, trigger, status.clone())

@@ -555,9 +555,70 @@ pub struct SigningRequestedReport {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SigningStep {
+    Full(FullSigningStep),
+    Incremental(IncrementalSigningStep),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum FullSigningStep {
+    CollectingRecords,
+    FetchingKeys,
+    SortingRecords,
+    GeneratingDenialRecords,
+    GeneratingSignatureRecords,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum IncrementalSigningStep {
+    SigningIncrementally,
+}
+
+impl SigningStep {
+    pub fn as_str(&self) -> &str {
+        match self {
+            SigningStep::Full(s) => match s {
+                FullSigningStep::CollectingRecords => "collecting records",
+                FullSigningStep::FetchingKeys => "fetching keys",
+                FullSigningStep::SortingRecords => "sorting records",
+                FullSigningStep::GeneratingDenialRecords => "generating denial records",
+                FullSigningStep::GeneratingSignatureRecords => "generating signature records",
+            },
+            SigningStep::Incremental(s) => match s {
+                IncrementalSigningStep::SigningIncrementally => "signing incrementally",
+            },
+        }
+    }
+
+    pub fn get_current_step(&self) -> usize {
+        match self {
+            SigningStep::Full(s) => match s {
+                FullSigningStep::CollectingRecords => 1,
+                FullSigningStep::FetchingKeys => 2,
+                FullSigningStep::SortingRecords => 3,
+                FullSigningStep::GeneratingDenialRecords => 4,
+                FullSigningStep::GeneratingSignatureRecords => 5,
+            },
+            SigningStep::Incremental(s) => match s {
+                IncrementalSigningStep::SigningIncrementally => 1,
+            },
+        }
+    }
+
+    pub fn get_total_steps(&self) -> usize {
+        match self {
+            SigningStep::Full(_) => 5,
+            SigningStep::Incremental(_) => 1,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SigningInProgressReport {
+    pub step: SigningStep,
     pub requested_at: SystemTime,
-    pub zone_serial: Serial,
+    pub loaded_serial: Serial,
+    pub signed_serial: Serial,
     pub started_at: SystemTime,
     pub unsigned_rr_count: Option<usize>,
     pub walk_time: Option<Duration>,
@@ -574,7 +635,8 @@ pub struct SigningInProgressReport {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SigningFinishedReport {
     pub requested_at: SystemTime,
-    pub zone_serial: Serial,
+    pub loaded_serial: Serial,
+    pub signed_serial: Serial,
     pub started_at: SystemTime,
     pub unsigned_rr_count: usize,
     pub walk_time: Duration,

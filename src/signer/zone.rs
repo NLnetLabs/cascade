@@ -12,12 +12,14 @@ use crate::{
     signer::{
         ResigningTrigger, SigningTrigger,
         queue::{SigningPending, SigningPermit, SigningQueueLock},
-        status::{SigningStatusPerZone, ZoneSigningStatus},
+        status::{SigningStatusPerZone, SigningStep, ZoneSigningStatus},
     },
     util::BackgroundTasks,
     zone::{Zone, ZoneByPtr, ZoneHandle, ZoneState},
     zonedata::SignedZoneBuilder,
 };
+
+use super::status::FullSigningStep;
 
 //----------- SignerZoneHandle -------------------------------------------------
 
@@ -422,6 +424,7 @@ impl SignerZoneHandle<'_> {
     ) {
         let status = Arc::new(RwLock::new(SigningStatusPerZone {
             current_action: "Initiating signing".into(),
+            step: SigningStep::Full(FullSigningStep::CollectingRecords),
             status: ZoneSigningStatus::new(),
         }));
 

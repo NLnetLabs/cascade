@@ -725,12 +725,7 @@ pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
         current,
         &zone.unsigned_review_addr,
     );
-    print_sign_phase(
-        current,
-        zone.unsigned_serial,
-        zone.signed_serial,
-        &zone.signing_report,
-    );
+    print_sign_phase(current, zone.unsigned_serial, &zone.signing_report);
     print_signed_review_phase(
         &zone.name,
         zone.signed_serial,
@@ -849,9 +844,14 @@ fn print_loaded_review_phase(
 fn print_sign_phase(
     current: Progress,
     unsigned_serial: Option<Serial>,
-    signed_serial: Option<Serial>,
     signing_report: &Option<SigningReport>,
 ) {
+    let signed_serial = signing_report.as_ref().and_then(|r| match &r.stage_report {
+        SigningStageReport::Requested(_) => None,
+        SigningStageReport::InProgress(s) => Some(s.signed_serial),
+        SigningStageReport::Finished(s) => Some(s.signed_serial),
+    });
+
     if current < Progress::Signing {
         println!("  {Pending} sign");
     } else if current > Progress::Signing {
@@ -864,6 +864,18 @@ fn print_sign_phase(
             Some(SigningStageReport::Requested(_)) => None,
             Some(SigningStageReport::Finished(r)) => Some(r.started_at),
         };
+
+        let step = match &signing_report.as_ref().map(|r| &r.stage_report) {
+            None => "step: not started yet".into(),
+            Some(SigningStageReport::Requested(_)) => "step: not started yet".into(),
+            Some(SigningStageReport::InProgress(SigningInProgressReport { step, .. })) => {
+                let step_num = step.get_current_step();
+                let step_total = step.get_total_steps();
+                format!("step {step_num}/{step_total}: {}", step.as_str())
+            }
+            Some(SigningStageReport::Finished(_)) => "step: finished".into(),
+        };
+
         let unsigned_serial = serial_to_string(unsigned_serial);
 
         let short_signed_serial = if let Some(signed_serial) = signed_serial {
@@ -875,6 +887,7 @@ fn print_sign_phase(
         println!("  {Ongoing} sign{short_signed_serial}");
         println!("  |   loaded serial: {unsigned_serial}");
         println!("  |   signed serial: {signed_serial}");
+        println!("  |   {step}");
         println!(
             "  |   start time: {}",
             to_rfc3339_ago(start_time, "<not started yet>")

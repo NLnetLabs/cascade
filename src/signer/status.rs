@@ -16,7 +16,54 @@ use crate::util::{
 #[derive(Debug)]
 pub struct SigningStatusPerZone {
     pub current_action: String,
+    pub step: SigningStep,
     pub status: ZoneSigningStatus,
+}
+
+#[derive(Debug)]
+pub enum SigningStep {
+    Full(FullSigningStep),
+    Incremental(IncrementalSigningStep),
+}
+
+#[derive(Debug)]
+pub enum FullSigningStep {
+    CollectingRecords,
+    FetchingKeys,
+    SortingRecords,
+    GeneratingDenialRecords,
+    GeneratingSignatureRecords,
+}
+
+#[derive(Debug)]
+pub enum IncrementalSigningStep {
+    // TODO: Add more steps here.
+    SigningIncrementally,
+}
+
+impl SigningStep {
+    fn to_api(&self) -> cascade_api::SigningStep {
+        match self {
+            SigningStep::Full(s) => cascade_api::SigningStep::Full(match s {
+                FullSigningStep::CollectingRecords => {
+                    cascade_api::FullSigningStep::CollectingRecords
+                }
+                FullSigningStep::FetchingKeys => cascade_api::FullSigningStep::FetchingKeys,
+                FullSigningStep::SortingRecords => cascade_api::FullSigningStep::SortingRecords,
+                FullSigningStep::GeneratingDenialRecords => {
+                    cascade_api::FullSigningStep::GeneratingDenialRecords
+                }
+                FullSigningStep::GeneratingSignatureRecords => {
+                    cascade_api::FullSigningStep::GeneratingSignatureRecords
+                }
+            }),
+            SigningStep::Incremental(s) => cascade_api::SigningStep::Incremental(match s {
+                IncrementalSigningStep::SigningIncrementally => {
+                    cascade_api::IncrementalSigningStep::SigningIncrementally
+                }
+            }),
+        }
+    }
 }
 
 impl SigningStatusPerZone {
@@ -31,8 +78,10 @@ impl SigningStatusPerZone {
             }
             ZoneSigningStatus::InProgress(s) => {
                 Some(SigningStageReport::InProgress(SigningInProgressReport {
+                    step: self.step.to_api(),
                     requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                    zone_serial: domain::base::Serial(s.zone_serial.into()),
+                    loaded_serial: domain::base::Serial(s.loaded_serial.into()),
+                    signed_serial: domain::base::Serial(s.signed_serial.into()),
                     started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
                     unsigned_rr_count: s.unsigned_rr_count,
                     walk_time: s.walk_time,
@@ -49,7 +98,8 @@ impl SigningStatusPerZone {
             ZoneSigningStatus::Finished(s) => {
                 Some(SigningStageReport::Finished(SigningFinishedReport {
                     requested_at: now_t.checked_sub(now.duration_since(s.requested_at))?,
-                    zone_serial: domain::base::Serial(s.zone_serial.into()),
+                    loaded_serial: domain::base::Serial(s.loaded_serial.into()),
+                    signed_serial: domain::base::Serial(s.signed_serial.into()),
                     started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
                     unsigned_rr_count: s.unsigned_rr_count,
                     walk_time: s.walk_time,
@@ -94,10 +144,14 @@ impl ZoneSigningStatus {
     }
 
     #[allow(clippy::result_unit_err)] // TODO
-    pub fn start(&mut self, zone_serial: domain::new::base::Serial) -> Result<(), ()> {
+    pub fn start(
+        &mut self,
+        loaded_serial: domain::new::base::Serial,
+        signed_serial: domain::new::base::Serial,
+    ) -> Result<(), ()> {
         match *self {
             ZoneSigningStatus::Requested(s) => {
-                *self = Self::InProgress(InProgressStatus::new(s, zone_serial));
+                *self = Self::InProgress(InProgressStatus::new(s, loaded_serial, signed_serial));
                 Ok(())
             }
             ZoneSigningStatus::Aborted
@@ -149,7 +203,8 @@ impl RequestedStatus {
 pub struct InProgressStatus {
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub requested_at: tokio::time::Instant,
-    pub zone_serial: domain::base::Serial,
+    pub loaded_serial: domain::base::Serial,
+    pub signed_serial: domain::base::Serial,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub started_at: tokio::time::Instant,
     pub unsigned_rr_count: Option<usize>,
@@ -170,10 +225,15 @@ pub struct InProgressStatus {
 }
 
 impl InProgressStatus {
-    pub fn new(requested_status: RequestedStatus, zone_serial: domain::new::base::Serial) -> Self {
+    pub fn new(
+        requested_status: RequestedStatus,
+        loaded_serial: domain::new::base::Serial,
+        signed_serial: domain::new::base::Serial,
+    ) -> Self {
         Self {
             requested_at: requested_status.requested_at,
-            zone_serial: domain::base::Serial(zone_serial.into()),
+            loaded_serial: domain::base::Serial(loaded_serial.into()),
+            signed_serial: domain::base::Serial(signed_serial.into()),
             started_at: Instant::now(),
             unsigned_rr_count: None,
             walk_time: None,
@@ -195,7 +255,8 @@ pub struct FinishedStatus {
     pub requested_at: tokio::time::Instant,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub started_at: tokio::time::Instant,
-    pub zone_serial: domain::base::Serial,
+    pub loaded_serial: domain::base::Serial,
+    pub signed_serial: domain::base::Serial,
     pub unsigned_rr_count: usize,
     #[serde(serialize_with = "serialize_duration_as_secs")]
     pub walk_time: Duration,
@@ -220,7 +281,8 @@ impl FinishedStatus {
     fn new(in_progress_status: InProgressStatus, succeeded: bool) -> Self {
         Self {
             requested_at: in_progress_status.requested_at,
-            zone_serial: in_progress_status.zone_serial,
+            loaded_serial: in_progress_status.loaded_serial,
+            signed_serial: in_progress_status.signed_serial,
             started_at: Instant::now(),
             unsigned_rr_count: in_progress_status.unsigned_rr_count.unwrap_or_default(),
             walk_time: in_progress_status.walk_time.unwrap_or_default(),

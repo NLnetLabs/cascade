@@ -44,15 +44,15 @@ use domain::zonetree::StoredRecord;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
-use tracing::debug;
 use tracing::error;
+use tracing::{debug, info};
 
 use crate::center::Center;
 use crate::manager::record_zone_event;
 use crate::policy::{PolicyVersion, SignerDenialPolicy};
 use crate::signer::SigningTrigger;
 use crate::signer::keys::ZoneSigningKeys;
-use crate::signer::status::SigningStatusPerZone;
+use crate::signer::status::{IncrementalSigningStep, SigningStatusPerZone, SigningStep};
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
     KeySetState, MinTimestamp, PassThroughMode, SignerError, faketime_or_now,
@@ -80,8 +80,14 @@ pub fn sign_incrementally(
     // signatures need to be updated.
     // Resign using the unsigned zonefile when load_unsigned is true.
 
-    status.write().expect("should not fail").current_action =
-        "Start incremental signing".to_string();
+    info!("Start signing zone '{}' incrementally", zone.name);
+
+    {
+        let mut status = status.write().unwrap();
+        status.current_action = "Start incremental signing".to_string();
+        status.step = SigningStep::Incremental(IncrementalSigningStep::SigningIncrementally);
+    }
+
     let load_unsigned = patch.next_loaded().is_some();
 
     let origin = &zone.name;
@@ -94,6 +100,17 @@ pub fn sign_incrementally(
     let policy = zone.read().policy.clone().unwrap();
 
     let use_nsec3 = matches!(policy.signer.denial, SignerDenialPolicy::NSec3 { .. });
+
+    // If we have a new loaded version then the loaded serial is the one that
+    // we just loaded, otherwise it's the one that we loaded before.
+    // We don't use this directly but we do report it to the zone status.
+    let loaded_serial = patch
+        .next_loaded()
+        .or_else(|| patch.curr_loaded())
+        .unwrap()
+        .soa()
+        .rdata
+        .serial;
 
     let local_state = LocalState::new(zone)?;
     let mut ws = WorkSpace {
@@ -137,7 +154,8 @@ pub fn sign_incrementally(
         return Err(SignerError::NothingToDo);
     }
 
-    let mut iss = IncrementalSigningState::new(zone, &policy, center, &ws.keyset_state, status)?;
+    let mut iss =
+        IncrementalSigningState::new(zone, &policy, center, &ws.keyset_state, status.clone())?;
 
     let start = Instant::now();
     let patch_curr = ws.patch.curr();
@@ -156,7 +174,20 @@ pub fn sign_incrementally(
     }
 
     let start = Instant::now();
-    ws.load_apex_records(&mut iss)?;
+    let signed_serial = ws.load_apex_records(&mut iss)?;
+
+    {
+        let mut status = status.write().unwrap();
+        status
+            .status
+            .start(
+                loaded_serial,
+                domain::new::base::Serial::from(signed_serial.into_int()),
+            )
+            .unwrap();
+        status.current_action = "Start incremental signing".to_string();
+        status.step = SigningStep::Incremental(IncrementalSigningStep::SigningIncrementally);
+    }
 
     iss.initial_diffs()?;
 
@@ -1029,7 +1060,7 @@ impl WorkSpace<'_> {
         Ok(())
     }
 
-    fn update_soa_serial(&mut self, old_soa: &Zrd) -> Result<Zrd, SignerError> {
+    fn update_soa_serial(&mut self, old_soa: &Zrd) -> Result<(Serial, Zrd), SignerError> {
         let ZoneRecordData::Soa(zone_soa) = old_soa.data() else {
             unreachable!();
         };
@@ -1063,7 +1094,7 @@ impl WorkSpace<'_> {
             new_soa,
         );
 
-        Ok(record)
+        Ok((signed_serial, record))
     }
 
     pub fn sign_pass_through(&mut self) -> Result<(), SignerError> {
@@ -1102,7 +1133,7 @@ impl WorkSpace<'_> {
     pub fn load_apex_records(
         &mut self,
         iss: &mut IncrementalSigningState,
-    ) -> Result<(), SignerError> {
+    ) -> Result<Serial, SignerError> {
         // Assume that the apex records have been copied from KeySetState to
         // state. Now update the apex in new_data.
 
@@ -1179,11 +1210,11 @@ impl WorkSpace<'_> {
 
         // Update the SOA serial.
         let zone_soa_rr = &iss.new_apex.get(&Rtype::SOA).expect("SOA should exist")[0];
-        let new_soa = self.update_soa_serial(zone_soa_rr)?;
+        let (signed_serial, new_soa) = self.update_soa_serial(zone_soa_rr)?;
         let new_rrset = vec![new_soa];
         iss.new_apex.insert(Rtype::SOA, new_rrset);
 
-        Ok(())
+        Ok(signed_serial)
     }
 
     pub fn new_nsec_nsec3_sigs(
