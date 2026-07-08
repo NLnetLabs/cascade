@@ -8,10 +8,6 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use bytes::{Bytes, BytesMut};
-use cascade_zonedata::{
-    DiffData, LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher,
-    SignedZoneReader, SoaRecord,
-};
 use domain::base::RecordData;
 use domain::base::Serial;
 use domain::base::iana::{Class, ZonemdAlgorithm, ZonemdScheme};
@@ -28,7 +24,6 @@ use domain::dnssec::sign::denial::nsec::{GenerateNsecConfig, generate_nsecs};
 use domain::dnssec::sign::denial::nsec3::{
     GenerateNsec3Config, Nsec3ParamTtlMode, generate_nsec3s,
 };
-use domain::dnssec::sign::keys::SigningKey;
 use domain::dnssec::sign::keys::keyset::{KeyType, UnixTime};
 use domain::dnssec::sign::records::{DefaultSorter, RecordsIter, Rrset};
 use domain::dnssec::sign::signatures::rrsigs::sign_rrset;
@@ -60,16 +55,20 @@ use crate::center::Center;
 use crate::manager::record_zone_event;
 use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
 use crate::signer::SigningTrigger;
+use crate::signer::keys::ZoneSigningKeys;
 use crate::signer::status::SigningStatusPerZone;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
-    KeyPair, KeySetState, MinTimestamp, PassThroughMode, SignerError, ZoneSigner, faketime_or_now,
-    load_keys,
+    KeySetState, MinTimestamp, PassThroughMode, SignerError, faketime_or_now,
 };
 use crate::zone::{HistoricalEvent, Zone};
+use crate::zonedata::{
+	DiffData,
+    LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
+    SoaRecord,
+};
 
 pub fn sign_incrementally(
-    zone_signer: &ZoneSigner,
     patch: SignedZonePatcher,
     zone: &Arc<Zone>,
     center: &Arc<Center>,
@@ -143,14 +142,7 @@ pub fn sign_incrementally(
         return Err(SignerError::NothingToDo);
     }
 
-    let mut iss = IncrementalSigningState::new(
-        origin.clone(),
-        &policy,
-        zone_signer,
-        center,
-        &ws.keyset_state,
-        status,
-    )?;
+    let mut iss = IncrementalSigningState::new(zone, &policy, center, &ws.keyset_state, status)?;
 
     let start = Instant::now();
     let patch_curr = ws.patch.curr();
@@ -1465,7 +1457,7 @@ struct IncrementalSigningState<'zd> {
     changes: HashMap<Name<Bytes>, ChangesValue>,
 
     /// Signing keys.
-    keys: Vec<SigningKey<Bytes, KeyPair>>,
+    keys: ZoneSigningKeys,
 
     /// Inception time to use for signatures.
     inception: Timestamp,
@@ -1479,14 +1471,13 @@ struct IncrementalSigningState<'zd> {
 
 impl<'a> IncrementalSigningState<'a> {
     pub fn new(
-        origin: Name<Bytes>,
+        zone: &Zone,
         policy: &PolicyVersion,
-        zone_signer: &ZoneSigner,
         center: &Arc<Center>,
         keyset_state: &KeySetState,
         status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Result<Self, SignerError> {
-        let keys = load_keys(zone_signer, center, origin.clone(), keyset_state, status)?;
+        let keys = ZoneSigningKeys::load(center, zone, keyset_state, &status)?;
 
         let now = faketime_or_now();
         let now_u32 = Into::<Duration>::into(now.clone()).as_secs() as u32;
@@ -1507,7 +1498,7 @@ impl<'a> IncrementalSigningState<'a> {
         }
         let nsec3param = old_base_nsec3param_to_new_base(&nsec3param);
         Ok(Self {
-            origin,
+            origin: zone.name.clone(),
             old_apex: HashMap::new(),
             old_apex_saved: HashMap::new(),
             new_apex: HashMap::new(),
@@ -3327,7 +3318,7 @@ impl LocalState {
 fn sign_records(
     origin: &Name<Bytes>,
     records: &[Zrd],
-    keys: &[SigningKey<Bytes, KeyPair>],
+    keys: &ZoneSigningKeys,
     inception: Timestamp,
     expiration: Timestamp,
     new_sigs: &mut Vec<Vec<RegularRecord>>,
@@ -3345,7 +3336,7 @@ fn sign_records(
     let rrset = Rrset::new_from_refs(&records)
         .map_err(|e| SignerError::SigningError(format!("Rrset::new failed: {e}")))?;
     let mut rrsig_records = vec![];
-    for key in keys {
+    for key in &keys.list {
         let rrsig = sign_rrset(key, &rrset, inception, expiration)
             .map_err(|e| SignerError::SigningError(format!("signing failed: {e}")))?;
         let record = Record::new(

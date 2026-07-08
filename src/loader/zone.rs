@@ -5,7 +5,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cascade_zonedata::{LoadedZoneBuilder, SoaRecord};
 use tracing::{debug, info};
 
 use crate::{
@@ -13,6 +12,7 @@ use crate::{
     common::scheduler::Scheduler,
     util::AbortOnDrop,
     zone::{HistoricalEvent, Zone, ZoneByPtr, ZoneHandle, ZoneState},
+    zonedata::{LoadedZoneBuilder, SoaRecord},
 };
 
 use super::{ActiveLoadMetrics, LoadMetrics, Source};
