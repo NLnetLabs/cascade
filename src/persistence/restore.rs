@@ -2,7 +2,7 @@
 
 use std::{
     fs::File,
-    io::{self, BufReader, Read},
+    io::{self},
     path::Path,
     sync::Arc,
 };
@@ -13,18 +13,18 @@ use cascade_zonedata::{
 };
 use domain::{
     new::{
-        base::{
-            RType, Record, Serial,
-            name::{NameBuf, RevNameBuf},
-            parse::{ParseMessageBytes, SplitMessageBytes},
-        },
-        rdata::{BoxedRecordData, Soa},
+        base::{RType, Serial, name::NameBuf, parse::ParseMessageBytes},
+        rdata::Soa,
     },
     utils::dst::UnsizedCopy,
 };
 use tracing::{info, trace};
 
-use crate::{center::Center, zone::Zone};
+use crate::{
+    center::Center,
+    persistence::stream::{StreamingParser, StreamingParserError},
+    zone::Zone,
+};
 
 /// Restore the loaded instance data of a zone.
 ///
@@ -58,14 +58,12 @@ pub fn restore_loaded(
         .zone_state_dir
         .join(format!("{}.loaded.0", zone.name));
     let count = state.persisted_loaded_diff_paths.len();
-    let mut buf = Vec::<u8>::new();
     drop(state);
 
     // Process the initial "loaded" AXFR wire format dump.
-    let (soa, records) =
-        load_axfr_wire_dump(loaded_source.as_std_path(), &mut buf).map_err(|err| {
-            io::Error::other(format!("Loading snapshot '{loaded_source}' failed: {err}"))
-        })?;
+    let (soa, records) = load_axfr_wire_dump(loaded_source.as_std_path()).map_err(|err| {
+        io::Error::other(format!("Loading snapshot '{loaded_source}' failed: {err}"))
+    })?;
     let mut loaded_replacer = restorer.fill().ok_or(io::Error::other(
         "Internal error: Could not acquire replacer".to_string(),
     ))?;
@@ -91,11 +89,10 @@ pub fn restore_loaded(
             .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
         source.set_extension(i.to_string());
 
-        let (start_serial, end_serial) =
-            load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
-                apply_ixfr_event_to_loaded_data(&mut loaded_patcher, event);
-            })
-            .map_err(|err| io::Error::other(format!("Loading diff '{source}' failed: {err}",)))?;
+        let (start_serial, end_serial) = load_ixfr_wire_dump(source.as_std_path(), |event| {
+            apply_ixfr_event_to_loaded_data(&mut loaded_patcher, event);
+        })
+        .map_err(|err| io::Error::other(format!("Loading diff '{source}' failed: {err}",)))?;
 
         loaded_patcher.next_patchset().map_err(|err| {
             io::Error::other(format!("Internal error: Next patchset failed: {err}"))
@@ -132,7 +129,7 @@ pub fn restore_loaded(
     io::Result::Ok(true)
 }
 
-/// Restore the loaded instance data of a zone.
+/// Restore the signed instance data of a zone.
 ///
 /// Returns Ok(true) if data was stored, Ok(false) if there was nothing to
 /// restore, or Err(..) on error.
@@ -161,16 +158,14 @@ pub fn restore_signed(
         .zone_state_dir
         .join(format!("{}.signed.0", zone.name));
     let count = state.persisted_signed_diff_paths.len();
-    let mut buf = Vec::<u8>::new();
     drop(state);
 
     // Process the initial "signed" AXFR wire format dump.
-    let (soa, records) =
-        load_axfr_wire_dump(signed_source.as_std_path(), &mut buf).map_err(|err| {
-            io::Error::other(format!(
-                "Loading snapshot from '{signed_source}' failed: {err}"
-            ))
-        })?;
+    let (soa, records) = load_axfr_wire_dump(signed_source.as_std_path()).map_err(|err| {
+        io::Error::other(format!(
+            "Loading snapshot from '{signed_source}' failed: {err}"
+        ))
+    })?;
     let mut signed_replacer = restorer.fill().ok_or(io::Error::other(
         "Internal error: Could not acquire replacer".to_string(),
     ))?;
@@ -203,11 +198,10 @@ pub fn restore_signed(
             .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
         source.set_extension(i.to_string());
 
-        let (start_serial, end_serial) =
-            load_ixfr_wire_dump(source.as_std_path(), &mut buf, |event| {
-                apply_ixfr_event_to_signed_data(&mut signed_patcher, event);
-            })
-            .map_err(|err| io::Error::other(format!("Loading diff '{source}' failed: {err}")))?;
+        let (start_serial, end_serial) = load_ixfr_wire_dump(source.as_std_path(), |event| {
+            apply_ixfr_event_to_signed_data(&mut signed_patcher, event);
+        })
+        .map_err(|err| io::Error::other(format!("Loading diff '{source}' failed: {err}")))?;
 
         signed_patcher.next_patchset().map_err(|err| {
             io::Error::other(format!("Internal error: Next patchset failed: {err}"))
@@ -290,55 +284,90 @@ pub fn restore_signed(
     io::Result::Ok(true)
 }
 
-fn parse_rr(
-    buf: &[u8],
-    pos: usize,
-) -> Result<(Record<RevNameBuf, BoxedRecordData>, usize), String> {
-    Record::<RevNameBuf, BoxedRecordData>::split_message_bytes(buf, pos)
-        .map_err(|err| format!("Invalid wire format RR: {err}"))
-}
-
-fn parse_soa(buf: &[u8], pos: usize) -> Result<(SoaRecord, Soa<NameBuf>, usize), String> {
-    let (first_rr, rest) = Record::<RevNameBuf, Soa<NameBuf>>::split_message_bytes(buf, pos)
-        .map_err(|err| {
-            format!("Failed to parse record of persisted XFR dump as a SOA record: {err}")
-        })?;
-
-    if first_rr.rtype != RType::SOA {
-        return Err(format!(
-            "Persisted XFR dump record has RTYPE '{}' which is not a SOA RR.",
-            first_rr.rtype.code
-        ));
+/// Maps IxfrEvents onto LoadedZonePatcher actions.
+fn apply_ixfr_event_to_loaded_data(patcher: &mut LoadedZonePatcher<'_>, event: IxfrEvent) {
+    match event {
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
+            patcher.remove(r.clone()).unwrap();
+            patcher.remove_soa(r.into()).unwrap();
+        }
+        IxfrEvent::Remove(r) => patcher.remove(r).unwrap(),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
+            patcher.add(r.clone()).unwrap();
+            patcher.add_soa(r.into()).unwrap()
+        }
+        IxfrEvent::Add(r) => patcher.add(r).unwrap(),
+        IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
     }
-
-    // Save the SOA rdata for comparison later, before we convert it from
-    // using NameBuf typed fields to having Box<Name> typed fields (which
-    // is the format we store resource records in longer term in memory).
-    let soa_rdata = first_rr.rdata.clone();
-    let soa_rr = SoaRecord(first_rr.transform_ref(
-        |name: &RevNameBuf| (*name).unsized_copy_into(),
-        |data: &Soa<NameBuf>| data.map_names_by_ref(|name| (*name).unsized_copy_into()),
-    ));
-
-    Ok((soa_rr, soa_rdata, rest))
 }
 
-fn load_file_into_memory(source: &Path, buf: &mut Vec<u8>) -> std::io::Result<usize> {
-    buf.clear();
-    BufReader::new(File::open(source)?).read_to_end(buf)
+/// Maps IxfrEvents onto SignedZonePatcher actions.
+fn apply_ixfr_event_to_signed_data(patcher: &mut SignedZonePatcher<'_>, event: IxfrEvent) {
+    match event {
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
+            patcher.remove(r.clone()).unwrap();
+            patcher.remove_soa(r.into()).unwrap();
+        }
+        IxfrEvent::Remove(r) => patcher.remove(r).unwrap(),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
+            patcher.add(r.clone()).unwrap();
+            patcher.add_soa(r.into()).unwrap()
+        }
+        IxfrEvent::Add(r) => patcher.add(r).unwrap(),
+        IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
+    }
 }
 
-fn load_axfr_wire_dump(
-    source: &Path,
-    buf: &mut Vec<u8>,
-) -> io::Result<(SoaRecord, Vec<RegularRecord>)> {
-    load_file_into_memory(source, buf)?;
+/// An error occurred while restoring persisted zone data.
+pub enum RestoreError {
+    /// A SOA record was expected by some other record type was encountered.
+    ExpectedSoaRecord(RType),
 
-    let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0).map_err(|err| {
-        io::Error::other(format!(
-            "Failed to parse persisted snapshot initial SOA: {err}"
-        ))
-    })?;
+    /// A persisted wire format resource record could not be parsed.
+    ParseError(String),
+
+    /// An I/O error occurred while reading the persisted zone data.
+    IoError(std::io::Error),
+}
+
+//--- impl From
+
+impl From<std::io::Error> for RestoreError {
+    fn from(err: std::io::Error) -> Self {
+        Self::IoError(err)
+    }
+}
+
+impl From<StreamingParserError> for RestoreError {
+    fn from(err: StreamingParserError) -> Self {
+        match err {
+            StreamingParserError::IoError(err) => RestoreError::IoError(err),
+            StreamingParserError::ParseError(err) => RestoreError::ParseError(err),
+        }
+    }
+}
+
+//--- impl Display
+
+impl std::fmt::Display for RestoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Restore error: ")?;
+        match self {
+            RestoreError::ExpectedSoaRecord(rtype) => write!(
+                f,
+                "incorrect remove diff header: expected SOA, found {rtype}"
+            ),
+            RestoreError::ParseError(err) => write!(f, "invalid record: {err}"),
+            RestoreError::IoError(err) => write!(f, "i/o error: {err}"),
+        }
+    }
+}
+
+/// Read a collection of resource records in AXFR wire format from disk.
+fn load_axfr_wire_dump(source: &Path) -> Result<(SoaRecord, Vec<RegularRecord>), RestoreError> {
+    let mut reader = StreamingParser::new(File::open(source)?);
+
+    let (start_soa, start_soa_rdata) = reader.parse_soa()?;
 
     let mut records = vec![];
     loop {
@@ -346,12 +375,7 @@ fn load_axfr_wire_dump(
         // index in the buffer, each time receiving back the 'rest'
         // index at which parsing should start on the next iteration
         // of the loop.
-        let r;
-        (r, rest) = parse_rr(buf, rest).map_err(|err| {
-            io::Error::other(format!(
-                "Failed to parse persisted snapshot resource record at pos {rest}: {err}"
-            ))
-        })?;
+        let r = reader.parse_rr()?;
 
         // If the parsed record is a SOA it should be identical to
         // the SOA record that started the AXFR dump and signals the
@@ -381,20 +405,32 @@ fn load_axfr_wire_dump(
     Ok((start_soa, records))
 }
 
+/// An IXFR event to be handled by a caller of [`load_ixfr_wire_dump()`].
+enum IxfrEvent {
+    /// A record was removed from the zone.
+    Remove(RegularRecord),
+
+    /// A record was added to the zone.
+    Add(RegularRecord),
+
+    /// The end of a single diff from one serial to another was encountered.
+    EndOfUpdate,
+}
+
+/// Apply the changes recorded in an IXFR wire format file.
+///
+/// The manner in which the changes are "applied" is defined by a caller
+/// provided closure.
 fn load_ixfr_wire_dump<F>(
     source: &Path,
-    buf: &mut Vec<u8>,
     mut rr_handler: F,
-) -> io::Result<(Serial, Serial)>
+) -> Result<(Serial, Serial), RestoreError>
 where
     F: FnMut(IxfrEvent),
 {
-    load_file_into_memory(source, buf)?;
+    let mut reader = StreamingParser::new(File::open(source)?);
 
-    let buf = buf.as_slice();
-    let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0).map_err(|err| {
-        io::Error::other(format!("Failed to parse persisted diff initial SOA: {err}"))
-    })?;
+    let (start_soa, start_soa_rdata) = reader.parse_soa()?;
 
     let mut oldest_soa = None;
 
@@ -410,20 +446,12 @@ where
         // followed by a sequence of resource records to add,
 
         // Read the first deleted RR which should be a SOA RR.
-        let r;
-        (r, rest) = parse_rr(buf, rest).map_err(|err| {
-            io::Error::other(format!(
-                "Failed to parse persisted diff resource record at pos {rest}: {err}"
-            ))
-        })?;
+        let r = reader.parse_rr()?;
 
         if r.rtype != RType::SOA {
             // If this is the first RR of the sequence it MUST
             // be a SOA RR.
-            return Err(io::Error::other(format!(
-                "Expected first record of persisted diff remove sequence to be a SOA RR but found RTYPE {}",
-                r.rtype.code
-            )));
+            return Err(RestoreError::ExpectedSoaRecord(r.rtype));
         }
 
         if oldest_soa.is_none() {
@@ -437,10 +465,10 @@ where
         // Read more removed RRs until a SOA signals the end of the
         // removed RRs and the start of the added RRs.
         loop {
-            let r;
-            (r, rest) = parse_rr(buf, rest).map_err(|err| {
+            let r = reader.parse_rr().map_err(|err| {
                 io::Error::other(format!(
-                    "Failed to parse persisted diff removed resource record at pos {rest}: {err}"
+                    "Failed to parse persisted diff removed resource record at pos {}: {err}",
+                    reader.stream_position()
                 ))
             })?;
 
@@ -455,10 +483,10 @@ where
 
         // Read more added RRs until a SOA signals the end of added RRs.
         loop {
-            let r;
-            (r, rest) = parse_rr(buf, rest).map_err(|err| {
+            let r = reader.parse_rr().map_err(|err| {
                 io::Error::other(format!(
-                    "Failed to parse persisted diff added resource record at pos {rest}: {err}"
+                    "Failed to parse persisted diff added resource record at pos {}: {err}",
+                    reader.stream_position()
                 ))
             })?;
 
@@ -480,6 +508,13 @@ where
     }
 }
 
+/// Compare two SOA RRs.
+///
+/// A convenience wrapper around the data types that the caller has.
+///
+/// TODO: Taking both the record and a separate copy of its RDATA in alternate
+/// form just to compare two SOA RRs is lazy and silly, there must be a better
+/// way.
 fn is_same_soa(start_soa: &SoaRecord, start_soa_rdata: &Soa<NameBuf>, r: &RegularRecord) -> bool {
     if (r.rtype == RType::SOA
         && r.rname.as_ref() == &*start_soa.0.rname
@@ -490,42 +525,4 @@ fn is_same_soa(start_soa: &SoaRecord, start_soa_rdata: &Soa<NameBuf>, r: &Regula
         return &soa_rdata == start_soa_rdata;
     }
     false
-}
-
-enum IxfrEvent {
-    Remove(RegularRecord),
-    Add(RegularRecord),
-    EndOfUpdate,
-}
-
-fn apply_ixfr_event_to_loaded_data(patcher: &mut LoadedZonePatcher<'_>, event: IxfrEvent) {
-    match event {
-        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
-            patcher.remove(r.clone()).unwrap();
-            patcher.remove_soa(r.into()).unwrap();
-        }
-        IxfrEvent::Remove(r) => patcher.remove(r).unwrap(),
-        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
-            patcher.add(r.clone()).unwrap();
-            patcher.add_soa(r.into()).unwrap()
-        }
-        IxfrEvent::Add(r) => patcher.add(r).unwrap(),
-        IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
-    }
-}
-
-fn apply_ixfr_event_to_signed_data(patcher: &mut SignedZonePatcher<'_>, event: IxfrEvent) {
-    match event {
-        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
-            patcher.remove(r.clone()).unwrap();
-            patcher.remove_soa(r.into()).unwrap();
-        }
-        IxfrEvent::Remove(r) => patcher.remove(r).unwrap(),
-        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
-            patcher.add(r.clone()).unwrap();
-            patcher.add_soa(r.into()).unwrap()
-        }
-        IxfrEvent::Add(r) => patcher.add(r).unwrap(),
-        IxfrEvent::EndOfUpdate => patcher.next_patchset().unwrap(),
-    }
 }

@@ -102,6 +102,8 @@ use persist::{persist_loaded, persist_signed};
 mod restore;
 use restore::{restore_loaded, restore_signed};
 
+mod stream;
+
 pub mod zone;
 
 //----------- Persister --------------------------------------------------------
