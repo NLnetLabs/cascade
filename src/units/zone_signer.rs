@@ -50,7 +50,6 @@ pub struct ZoneSigner {
 }
 
 impl ZoneSigner {
-    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         let max_concurrent_operations = 1;
         let (next_resign_time_tx, next_resign_time_rx) = watch::channel(None);
@@ -431,8 +430,6 @@ pub enum PassThroughMode {
 
 #[derive(Clone, Debug)]
 pub enum SignerError {
-    SoaNotFound,
-    SignerNotReady,
     InternalError(String),
     KeepSerialPolicyViolated,
     CannotReadStateFile(String),
@@ -445,8 +442,6 @@ pub enum SignerError {
 impl std::fmt::Display for SignerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SignerError::SoaNotFound => f.write_str("SOA not found"),
-            SignerError::SignerNotReady => f.write_str("Signer not ready"),
             SignerError::InternalError(err) => write!(f, "Internal error: {err}"),
             SignerError::KeepSerialPolicyViolated => {
                 f.write_str("Serial policy is Keep but upstream serial did not increase")

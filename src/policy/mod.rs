@@ -40,6 +40,7 @@ pub struct Policy {
 //--- Loading / Saving
 
 pub enum PolicyChange {
+    #[expect(dead_code)]
     Removed(Arc<PolicyVersion>),
     Updated {
         old: Arc<PolicyVersion>,

@@ -25,10 +25,10 @@ use tracing::{debug, error, info};
 /// components and handles the interactions between them.
 pub struct Manager {
     /// The center.
-    pub center: Arc<Center>,
+    _center: Arc<Center>,
 
     /// The HTTP server.
-    pub http_server: Arc<HttpServer>,
+    _http_server: Arc<HttpServer>,
 
     /// Handles to tasks that should abort when we exit Cascade
     _handles: Vec<AbortOnDrop>,
@@ -102,8 +102,8 @@ impl Manager {
         let http_server = HttpServer::launch(center.clone(), http_sockets)?;
 
         Ok(Self {
-            center,
-            http_server,
+            _center: center,
+            _http_server: http_server,
             _handles: handles,
         })
     }

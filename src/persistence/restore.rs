@@ -45,7 +45,10 @@ pub fn restore_loaded(
         return io::Result::Ok(false);
     }
 
-    info!("Restoring loaded zone from persisted data");
+    info!(
+        "Restoring loaded records for zone '{}' from persisted data",
+        zone.name
+    );
     state.storage.diffs.clear();
 
     // Determine the paths to read from. Each zone is persisted as an AXFR
@@ -77,6 +80,7 @@ pub fn restore_loaded(
     );
 
     if count == 1 {
+        info!("Restored loaded snapshot for zone '{}'", zone.name);
         return io::Result::Ok(true);
     }
 
@@ -125,7 +129,11 @@ pub fn restore_loaded(
         soa.rdata.serial, zone.name
     );
 
-    info!("Restored loaded zone snapshot and {} diffs", count - 1);
+    info!(
+        "Restored loaded snapshot and {} diffs for zone '{}'",
+        count - 1,
+        zone.name
+    );
     io::Result::Ok(true)
 }
 
@@ -147,6 +155,11 @@ pub fn restore_signed(
     if state.persisted_signed_diff_paths.is_empty() {
         return io::Result::Ok(false);
     }
+
+    info!(
+        "Restoring signed records for zone '{}' from persisted data",
+        zone.name
+    );
 
     // Determine the paths to read from. Each zone is persisted as an AXFR
     // plus zero or more IXFRs. The restorer takes a base path ending in an
@@ -179,6 +192,7 @@ pub fn restore_signed(
     );
 
     if count == 1 {
+        info!("Restored signed snapshot for zone '{}'", zone.name);
         return io::Result::Ok(true);
     }
 
@@ -280,7 +294,11 @@ pub fn restore_signed(
         soa.rdata.serial, zone.name
     );
 
-    info!("Restored signed zone snapshot and {} diffs", count - 1);
+    info!(
+        "Restored signed snapshot and {} diffs for zone '{}'",
+        count - 1,
+        zone.name
+    );
     io::Result::Ok(true)
 }
 

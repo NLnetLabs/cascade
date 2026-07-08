@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use cascade_zonedata::{OldRecord, SoaRecord};
 use domain::base::iana::{Class, Opcode};
 use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
 use domain::net::client::dgram::Connection;
@@ -41,6 +40,7 @@ use crate::util::AbortOnDrop;
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneVersionReviewState,
 };
+use crate::zonedata::{OldRecord, SoaRecord};
 
 /// The source of a zone server.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
