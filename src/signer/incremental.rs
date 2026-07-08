@@ -63,9 +63,8 @@ use crate::units::zone_signer::{
 };
 use crate::zone::{HistoricalEvent, Zone};
 use crate::zonedata::{
-	DiffData,
-    LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher, SignedZoneReader,
-    SoaRecord,
+    DiffData, LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher,
+    SignedZoneReader, SoaRecord,
 };
 
 pub fn sign_incrementally(
