@@ -24,12 +24,15 @@ Released yyyy-mm-dd.
 ### Other changes
 
 - Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
+- Make logging during zone restoration consistent. ([#874] by @ximon18)
+
 
 ### Documentation improvements
 ### Known issues
 ### Acknowledgements
 
 [#872]: https://github.com/NLnetLabs/cascade/pull/872
+[#874]: https://github.com/NLnetLabs/cascade/pull/874
 
 ## Version 0.1.0-beta4 'Irish Goodbye'
 
