@@ -137,7 +137,7 @@ fn sign(
     }
 }
 
-/// Implement SOA serial policies.
+/// Compute the SOA serial for a signed zone.
 ///
 /// There are four policies:
 ///
@@ -151,7 +151,7 @@ fn sign(
 /// 4) Broken down time (YYYYMMDDnn). The current day plus a serial
 ///    number. Implies increment to generate different serial numbers
 ///    over a day.
-fn update_soa_serial(
+fn next_signed_soa_serial(
     policy: SignerSerialPolicy,
     loaded_serial: Serial,
     previous_serial: Option<Serial>,

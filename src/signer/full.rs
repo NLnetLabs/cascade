@@ -92,7 +92,7 @@ pub fn sign_zone(
         .expect("a non-empty loaded instance must exist");
     let loaded_serial = loaded.soa().rdata.serial;
 
-    let serial: Serial = super::update_soa_serial(
+    let serial = super::next_signed_soa_serial(
         policy.signer.serial_policy,
         Serial::from(loaded_serial.0.get()),
         previous_serial,

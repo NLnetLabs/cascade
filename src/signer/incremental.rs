@@ -1100,7 +1100,7 @@ impl WorkSpace<'_> {
         let loaded_serial = zone_soa.serial();
         let previous_serial = self.local_state.previous_serial;
 
-        let signed_serial = super::update_soa_serial(
+        let signed_serial = super::next_signed_soa_serial(
             self.policy.signer.serial_policy,
             loaded_serial,
             previous_serial,
