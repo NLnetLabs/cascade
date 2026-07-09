@@ -25,7 +25,8 @@ Released yyyy-mm-dd.
 
 - Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
 - Make logging during zone restoration consistent. ([#874] by @ximon18)
-- Improve memory use of NSEC(3) in incremental signing (#842)
+- Improve memory use of NSEC(3) in incremental signing ([#842] by @Philip-NLnetLabs)
+- Log the reason when unable to restore zone state on startup. (#878)
 
 ### Documentation improvements
 ### Known issues
@@ -34,6 +35,7 @@ Released yyyy-mm-dd.
 [#842]: https://github.com/NLnetLabs/cascade/pull/842
 [#872]: https://github.com/NLnetLabs/cascade/pull/872
 [#874]: https://github.com/NLnetLabs/cascade/pull/874
+[#878]: https://github.com/NLnetLabs/cascade/pull/878
 
 ## Version 0.1.0-beta4 'Irish Goodbye'
 
