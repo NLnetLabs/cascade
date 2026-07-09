@@ -21,6 +21,11 @@ Released yyyy-mm-dd.
 ### Breaking changes
 ### New
 ### Bug fixes
+
+- Overhaul how re-signing timers are managed, preventing race conditions causing
+  crashes when zones are removed. ([#863] by @bal-e, reported in [#730] by
+  @jpmens)
+
 ### Other changes
 
 - Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
@@ -32,7 +37,13 @@ Released yyyy-mm-dd.
 ### Known issues
 ### Acknowledgements
 
+Thanks to @jpmens and @gryphius for testing Cascade and providing valuable
+feedback!
+
+[#730]: https://github.com/NLnetLabs/cascade/issues/730
+
 [#842]: https://github.com/NLnetLabs/cascade/pull/842
+[#863]: https://github.com/NLnetLabs/cascade/pull/863
 [#872]: https://github.com/NLnetLabs/cascade/pull/872
 [#874]: https://github.com/NLnetLabs/cascade/pull/874
 [#878]: https://github.com/NLnetLabs/cascade/pull/878
