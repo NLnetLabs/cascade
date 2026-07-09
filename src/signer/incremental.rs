@@ -235,7 +235,7 @@ pub fn sign_incrementally(
 }
 
 type Zrd = RecordFullCmp<Name<Bytes>, ZoneRecordData<Bytes, Name<Bytes>>>;
-type RtypeSet = HashSet<Rtype>;
+type RtypeSet = HashSet<NewRtype>;
 type ChangesValue = (RtypeSet, RtypeSet); // add set followed by delete set.
 
 struct WorkSpace<'a> {
@@ -1445,8 +1445,7 @@ struct IncrementalSigningState<'zd> {
     rrsigs: Rrsigs<'zd>,
 
     /// List of RRsets that are added or deleted.
-    // XXX: change to Box<RevName>
-    changes: HashMap<Name<Bytes>, ChangesValue>,
+    changes: HashMap<Box<RevName>, ChangesValue>,
 
     /// Signing keys.
     keys: ZoneSigningKeys,
@@ -1623,14 +1622,13 @@ impl<'a> IncrementalSigningState<'a> {
 
                     self.rrsigs.remove(&tmp_key);
 
-                    let old_name = revname_to_old_base_name(key.0.as_ref());
-                    if let Some((_, removed)) = self.changes.get_mut(&old_name) {
-                        removed.insert(new_base_rtype_to_old_base(rtype));
+                    if let Some((_, removed)) = self.changes.get_mut(&key.0) {
+                        removed.insert(rtype);
                     } else {
                         let added = HashSet::new();
                         let mut removed = HashSet::new();
-                        removed.insert(new_base_rtype_to_old_base(rtype));
-                        self.changes.insert(old_name.clone(), (added, removed));
+                        removed.insert(rtype);
+                        self.changes.insert(key.0.clone(), (added, removed));
                     }
                 }
                 DataChange::Modified { new, .. } => {
@@ -1648,14 +1646,13 @@ impl<'a> IncrementalSigningState<'a> {
                     }
                 }
                 DataChange::Insert { .. } => {
-                    let old_name = revname_to_old_base_name(key.0.as_ref());
-                    if let Some((added, _)) = self.changes.get_mut(&old_name) {
-                        added.insert(new_base_rtype_to_old_base(rtype));
+                    if let Some((added, _)) = self.changes.get_mut(&key.0) {
+                        added.insert(rtype);
                     } else {
                         let mut added = HashSet::new();
                         let removed = HashSet::new();
-                        added.insert(new_base_rtype_to_old_base(rtype));
-                        self.changes.insert(old_name.clone(), (added, removed));
+                        added.insert(rtype);
+                        self.changes.insert(key.0.clone(), (added, removed));
                     }
                 }
             }
@@ -1663,8 +1660,8 @@ impl<'a> IncrementalSigningState<'a> {
         let new_origin = old_base_name_to_revnamebuf(&self.origin);
         for new_rrset in self.new_apex.values_mut() {
             let owner_revnamebuf = RevNameBuf::copy_from(new_rrset[0].owner());
+            let owner_boxrevname = owner_revnamebuf.unsized_copy_into();
             let key = (owner_revnamebuf.as_ref(), new_rrset[0].data().rtype());
-            let old_owner = revname_to_old_base_name(new_rrset[0].owner());
             if let Some(mut old_rrset) = self.old_apex.remove(&key.1) {
                 let rtype = new_rrset[0].data().rtype();
                 if (rtype == NewRtype::DNSKEY
@@ -1691,13 +1688,13 @@ impl<'a> IncrementalSigningState<'a> {
                         &mut new_sigs,
                     )?;
                 }
-            } else if let Some((added, _)) = self.changes.get_mut(&old_owner) {
-                added.insert(new_base_rtype_to_old_base(new_rrset[0].data().rtype()));
+            } else if let Some((added, _)) = self.changes.get_mut(&owner_boxrevname) {
+                added.insert(new_rrset[0].data().rtype());
             } else {
                 let mut added = HashSet::new();
                 let removed = HashSet::new();
-                added.insert(new_base_rtype_to_old_base(new_rrset[0].data().rtype()));
-                self.changes.insert(old_owner, (added, removed));
+                added.insert(new_rrset[0].data().rtype());
+                self.changes.insert(owner_boxrevname, (added, removed));
             }
         }
         for sigs in new_sigs {
@@ -1710,14 +1707,14 @@ impl<'a> IncrementalSigningState<'a> {
 
             self.rrsigs.remove(&key);
 
-            let old_owner = revname_to_old_base_name(old_rrset[0].owner());
-            if let Some((_, removed)) = self.changes.get_mut(&old_owner) {
-                removed.insert(new_base_rtype_to_old_base(rtype));
+            let owner_boxrevname = old_rrset[0].owner().unsized_copy_into();
+            if let Some((_, removed)) = self.changes.get_mut(&owner_boxrevname) {
+                removed.insert(rtype);
             } else {
                 let added = HashSet::new();
                 let mut removed = HashSet::new();
-                removed.insert(new_base_rtype_to_old_base(rtype));
-                self.changes.insert(old_owner, (added, removed));
+                removed.insert(rtype);
+                self.changes.insert(owner_boxrevname, (added, removed));
             }
         }
         Ok(())
@@ -1731,13 +1728,16 @@ impl<'a> IncrementalSigningState<'a> {
         // However, we removing a delegation, the situation is reversed. For now
         // assuming that sorting is not necessary.
 
+        let new_origin = old_base_name_to_revnamebuf(&self.origin);
+
         let changes = self.changes.clone();
         for (key, (add, delete)) in &changes {
+            let old_key_name = revname_to_old_base_name(key);
+
             // The intersection between add and delete is empty.
             assert!(add.intersection(delete).next().is_none());
 
-            let new_key = old_base_name_to_revnamebuf(key);
-            if let Some(record_nsec) = self.nsecs.get(&new_key) {
+            if let Some(record_nsec) = self.nsecs.get(key) {
                 let record_nsec = record_nsec.clone();
                 let NewRecordData::Nsec(nsec) = record_nsec.data() else {
                     panic!("NSEC record expected");
@@ -1750,7 +1750,6 @@ impl<'a> IncrementalSigningState<'a> {
                 // TypeBitmaps.
                 //for rtype in nsec.types() {
                 for rtype in nsec.types().types() {
-                    let rtype = new_base_rtype_to_old_base(rtype);
                     curr.insert(rtype);
                 }
 
@@ -1761,10 +1760,10 @@ impl<'a> IncrementalSigningState<'a> {
                 // difference between delete and curr is empty.
                 assert!(delete.difference(&curr).next().is_none());
 
-                if add.contains(&Rtype::NS) {
+                if add.contains(&NewRtype::NS) {
                     // Apex is special, but we can assume the NS RRset will not
                     // be added to apex.
-                    assert!(*key != self.origin);
+                    assert!(key.as_ref() != new_origin.as_ref());
 
                     // Remove the signatures for the existing types.
                     for rtype in nsec.types().iter() {
@@ -1778,17 +1777,16 @@ impl<'a> IncrementalSigningState<'a> {
                         {
                             continue;
                         }
-                        let new_name = old_base_name_to_revnamebuf(key);
-                        let key = (new_name.as_ref(), rtype);
+                        let key = (key.as_ref(), rtype);
                         self.rrsigs.remove(&key);
                     }
 
                     // Restrict curr and add to these types.
-                    let mask: HashSet<Rtype> =
-                        [Rtype::NS, Rtype::DS, Rtype::NSEC, Rtype::RRSIG].into();
+                    let mask: HashSet<NewRtype> =
+                        [NewRtype::NS, NewRtype::DS, NewRtype::NSEC, NewRtype::RRSIG].into();
 
-                    let curr = curr.intersection(&mask).copied().collect();
-                    let add = add.intersection(&mask).copied().collect();
+                    let curr: HashSet<NewRtype> = curr.intersection(&mask).copied().collect();
+                    let add: HashSet<NewRtype> = add.intersection(&mask).copied().collect();
 
                     // Update the NSEC record.
                     nsec_update_bitmap(&record_nsec, nsec, &curr, &add, delete, self);
@@ -1796,58 +1794,57 @@ impl<'a> IncrementalSigningState<'a> {
                     // Mark descendents as occluded after updating the bitmap.
                     // The reason is that nsec_update_bitmap uses the current
                     // next_name and nsec_set_occluded may change that.
-                    nsec_set_occluded(&new_key, self);
+                    nsec_set_occluded(key, self);
 
                     continue;
                 }
-                if delete.contains(&Rtype::NS) {
+                if delete.contains(&NewRtype::NS) {
                     // Apex is special, but we can assume the NS RRset will not
                     // be removed from apex.
-                    assert!(*key != self.origin);
+                    assert!(key.as_ref() != new_origin.as_ref());
 
                     // Curr does not include all types at this name. Add the
                     // missing types to curr.
-                    let revnamebuf = old_base_name_to_revnamebuf(key);
-                    let box_revname = revnamebuf.unsized_copy_into();
+                    let box_revname: Box<RevName> = key.as_ref().unsized_copy_into();
                     let range_key = (box_revname, 0.into());
                     let range = self.data.range(range_key..);
                     for ((r_name, r_type), _) in range {
-                        if r_name.as_ref() != revnamebuf.as_ref() {
+                        if r_name.as_ref() != key.as_ref() {
                             break;
                         }
-                        if add.contains(&new_base_rtype_to_old_base(*r_type)) {
+                        if add.contains(r_type) {
                             // Skip what we are trying to add.
                             continue;
                         }
-                        curr.insert(new_base_rtype_to_old_base(*r_type));
+                        curr.insert(*r_type);
                     }
 
                     let mut new = nsec_update_bitmap(&record_nsec, nsec, &curr, add, delete, self);
 
                     // Sign the types at this name except for NSEC, and RRSIG.
-                    new.remove(&Rtype::NSEC);
-                    new.remove(&Rtype::RRSIG);
-                    sign_rtype_set(key, &new, self)?;
+                    new.remove(&NewRtype::NSEC);
+                    new.remove(&NewRtype::RRSIG);
+                    sign_rtype_set(&old_key_name, &new, self)?;
 
                     // Names that were previously occluded are no longer.
-                    nsec_clear_occluded(key, self)?;
+                    nsec_clear_occluded(&old_key_name, self)?;
                     continue;
                 }
-                if *key != self.origin && nsec.types().contains(NewRtype::NS) {
+                if key.as_ref() != new_origin.as_ref() && nsec.types().contains(NewRtype::NS) {
                     // NS marks a delegation but only when the NS is not
                     // at the apex.
 
                     // If the add set contains DS then sign the DS RRset.
-                    if add.contains(&Rtype::DS) {
-                        let ds_set: HashSet<_> = [Rtype::DS].into();
-                        sign_rtype_set(key, &ds_set, self)?;
+                    if add.contains(&NewRtype::DS) {
+                        let ds_set: HashSet<_> = [NewRtype::DS].into();
+                        sign_rtype_set(&old_key_name, &ds_set, self)?;
                     }
                     nsec_update_bitmap(&record_nsec, nsec, &curr, add, delete, self);
                     continue;
                 }
 
                 // The add types need to be signed.
-                sign_rtype_set(key, add, self)?;
+                sign_rtype_set(&old_key_name, add, self)?;
 
                 nsec_update_bitmap(&record_nsec, nsec, &curr, add, delete, self);
             } else {
@@ -1857,29 +1854,33 @@ impl<'a> IncrementalSigningState<'a> {
                     continue;
                 }
                 assert!(delete.is_empty());
-                if is_occluded(key, self) {
+                if is_occluded(&old_key_name, self) {
                     // No need to do anything.
                     continue;
                 }
 
-                if add.contains(&Rtype::NS) {
+                if add.contains(&NewRtype::NS) {
                     // Create a new NSEC record and sign only DS records (if any).
-                    let rtypebitmap = nsec_rtypebitmap_from_iterator(add.iter());
-                    nsec_insert(&new_key, rtypebitmap, self);
-                    if add.contains(&Rtype::DS) {
-                        let ds_set: HashSet<_> = [Rtype::DS].into();
-                        sign_rtype_set(key, &ds_set, self)?;
+                    let old_add: HashSet<_> =
+                        add.iter().map(|r| new_base_rtype_to_old_base(*r)).collect();
+                    let rtypebitmap = nsec_rtypebitmap_from_iterator(old_add.iter());
+                    nsec_insert(key, rtypebitmap, self);
+                    if add.contains(&NewRtype::DS) {
+                        let ds_set: HashSet<_> = [NewRtype::DS].into();
+                        sign_rtype_set(&old_key_name, &ds_set, self)?;
                     }
 
                     // nsec_set_occluded expects the NSEC for key to exist.
                     // So call this after inserting the new NSEC record.
-                    nsec_set_occluded(&new_key, self);
+                    nsec_set_occluded(key, self);
                     continue;
                 }
                 // Create a new NSEC record and sign all records.
-                let rtypebitmap = nsec_rtypebitmap_from_iterator(add.iter());
-                nsec_insert(&new_key, rtypebitmap, self);
-                sign_rtype_set(key, add, self)?;
+                let old_add: HashSet<_> =
+                    add.iter().map(|r| new_base_rtype_to_old_base(*r)).collect();
+                let rtypebitmap = nsec_rtypebitmap_from_iterator(old_add.iter());
+                nsec_insert(key, rtypebitmap, self);
+                sign_rtype_set(&old_key_name, add, self)?;
             }
         }
         Ok(())
@@ -1890,17 +1891,21 @@ impl<'a> IncrementalSigningState<'a> {
         // process a new delegation before any glue. Which is more efficient.
         // Otherwise if glue comes first, the glue will be signed and inserted
         // in the NSEC chain only to be removed when the delegation is processed.
-        // However, we removing a delegation, the situation is reversed. For now
-        // assuming that sorting is not necessary.
+        // However, when removing a delegation, the situation is reversed.
+        // For now assume that sorting is not necessary.
+
+        let new_origin = old_base_name_to_revnamebuf(&self.origin);
 
         let opt_out_flag = self.nsec3param.opt_out_flag();
 
         let changes = self.changes.clone();
         for (key, (add, delete)) in &changes {
+            let old_key_name = revname_to_old_base_name(key);
+
             // The intersection between add and delete is empty.
             assert!(add.intersection(delete).next().is_none());
 
-            let (nsec3_hash_octets, nsec3_name) = nsec3_hash_parts(key, self);
+            let (nsec3_hash_octets, nsec3_name) = nsec3_hash_parts(&old_key_name, self);
 
             let new_nsec3_name = old_base_name_to_revnamebuf(&nsec3_name);
             if let Some(record_nsec3) = self.nsec3s.get(&new_nsec3_name) {
@@ -1914,7 +1919,6 @@ impl<'a> IncrementalSigningState<'a> {
                 // TODO: should implement IntoIterator for TypeBitMaps.
                 //for rtype in nsec3.types() {
                 for rtype in nsec3.types().iter() {
-                    let rtype = new_base_rtype_to_old_base(rtype);
                     curr.insert(rtype);
                 }
 
@@ -1925,10 +1929,10 @@ impl<'a> IncrementalSigningState<'a> {
                 // difference between delete and curr is empty.
                 assert!(delete.difference(&curr).next().is_none());
 
-                if add.contains(&Rtype::NS) {
+                if add.contains(&NewRtype::NS) {
                     // Apex is special, but we can assume the NS RRset will not
                     // be added to apex.
-                    assert!(*key != self.origin);
+                    assert!(key.as_ref() != new_origin.as_ref());
 
                     // Remove the signatures for the existing types.
                     for rtype in nsec3.types().iter() {
@@ -1938,77 +1942,107 @@ impl<'a> IncrementalSigningState<'a> {
                         if rtype == NewRtype::DS || rtype == NewRtype::RRSIG {
                             continue;
                         }
-                        let new_name = old_base_name_to_revnamebuf(key);
-                        let key = (new_name.as_ref(), rtype);
+                        let key = (key.as_ref(), rtype);
                         self.rrsigs.remove(&key);
                     }
 
                     // Restrict curr and add to these types.
-                    let mask: HashSet<Rtype> = [Rtype::NS, Rtype::DS, Rtype::RRSIG].into();
+                    let mask: HashSet<NewRtype> =
+                        [NewRtype::NS, NewRtype::DS, NewRtype::RRSIG].into();
 
                     let curr = curr.intersection(&mask).copied().collect();
                     let add = add.intersection(&mask).copied().collect();
 
                     // Update the NSEC3 record.
-                    nsec3_update_bitmap(key, &record_nsec3, &nsec3, &curr, &add, delete, self);
+                    nsec3_update_bitmap(
+                        &old_key_name,
+                        &record_nsec3,
+                        &nsec3,
+                        &curr,
+                        &add,
+                        delete,
+                        self,
+                    );
 
                     // Mark descendents as occluded after updating the bitmap.
                     // The reason is that nsec3_update_bitmap uses the current
                     // next_hash and nsec3_set_occluded may change that.
-                    nsec3_set_occluded(key, self);
+                    nsec3_set_occluded(&old_key_name, self);
 
                     continue;
                 }
-                if delete.contains(&Rtype::NS) {
+                if delete.contains(&NewRtype::NS) {
                     // Apex is special, but we can assume the NS RRset will not
                     // be removed from apex.
-                    assert!(*key != self.origin);
+                    assert!(key.as_ref() != new_origin.as_ref());
 
                     // Curr does not include all types at this name. Add the
                     // missing types to curr.
-                    let revnamebuf = old_base_name_to_revnamebuf(key);
-                    let box_revname = revnamebuf.unsized_copy_into();
+                    let box_revname = key.as_ref().unsized_copy_into();
                     let range_key = (box_revname, 0.into());
                     let range = self.data.range(range_key..);
                     for ((r_name, r_type), _) in range {
-                        if r_name.as_ref() != revnamebuf.as_ref() {
+                        if r_name.as_ref() != key.as_ref() {
                             break;
                         }
-                        if add.contains(&new_base_rtype_to_old_base(*r_type)) {
+                        if add.contains(r_type) {
                             // Skip what we are trying to add.
                             continue;
                         }
-                        curr.insert(new_base_rtype_to_old_base(*r_type));
+                        curr.insert(*r_type);
                     }
 
-                    let mut new =
-                        nsec3_update_bitmap(key, &record_nsec3, &nsec3, &curr, add, delete, self);
+                    let mut new = nsec3_update_bitmap(
+                        &old_key_name,
+                        &record_nsec3,
+                        &nsec3,
+                        &curr,
+                        add,
+                        delete,
+                        self,
+                    );
 
                     // Sign the types at this name except for NSEC, and RRSIG.
-                    new.remove(&Rtype::RRSIG);
-                    sign_rtype_set(key, &new, self)?;
+                    new.remove(&NewRtype::RRSIG);
+                    sign_rtype_set(&old_key_name, &new, self)?;
 
                     // Names that were previously occluded are no longer.
-                    nsec3_clear_occluded(key, self)?;
+                    nsec3_clear_occluded(&old_key_name, self)?;
                     continue;
                 }
-                if *key != self.origin && nsec3.types().contains(NewRtype::NS) {
+                if key.as_ref() != new_origin.as_ref() && nsec3.types().contains(NewRtype::NS) {
                     // NS marks a delegation but only when the NS is not
                     // at the apex.
 
                     // If the add set contains DS then sign the DS RRset.
-                    if add.contains(&Rtype::DS) {
-                        let ds_set: HashSet<_> = [Rtype::DS].into();
-                        sign_rtype_set(key, &ds_set, self)?;
+                    if add.contains(&NewRtype::DS) {
+                        let ds_set: HashSet<_> = [NewRtype::DS].into();
+                        sign_rtype_set(&old_key_name, &ds_set, self)?;
                     }
-                    nsec3_update_bitmap(key, &record_nsec3, &nsec3, &curr, add, delete, self);
+                    nsec3_update_bitmap(
+                        &old_key_name,
+                        &record_nsec3,
+                        &nsec3,
+                        &curr,
+                        add,
+                        delete,
+                        self,
+                    );
                     continue;
                 }
 
                 // The add types need to be signed.
-                sign_rtype_set(key, add, self)?;
+                sign_rtype_set(&old_key_name, add, self)?;
 
-                nsec3_update_bitmap(key, &record_nsec3, &nsec3, &curr, add, delete, self);
+                nsec3_update_bitmap(
+                    &old_key_name,
+                    &record_nsec3,
+                    &nsec3,
+                    &curr,
+                    add,
+                    delete,
+                    self,
+                );
             } else {
                 if add.is_empty() {
                     assert!(!delete.is_empty());
@@ -2016,12 +2050,12 @@ impl<'a> IncrementalSigningState<'a> {
                     // Special magic for out-out. It is possible that an NS
                     // record got deleted. With opt-out there will not be an
                     // NSEC3 record if there is only a NS record and no DS record.
-                    if opt_out_flag && delete.contains(&Rtype::NS) {
-                        if is_occluded(key, self) {
+                    if opt_out_flag && delete.contains(&NewRtype::NS) {
+                        if is_occluded(&old_key_name, self) {
                             // No need to do anything.
                             continue;
                         }
-                        nsec3_clear_occluded(key, self)?;
+                        nsec3_clear_occluded(&old_key_name, self)?;
                         continue;
                     }
 
@@ -2029,7 +2063,7 @@ impl<'a> IncrementalSigningState<'a> {
                     continue;
                 }
                 assert!(delete.is_empty());
-                if is_occluded(key, self) {
+                if is_occluded(&old_key_name, self) {
                     // No need to do anything.
                     continue;
                 }
@@ -2041,21 +2075,20 @@ impl<'a> IncrementalSigningState<'a> {
                     // case of opt-out there may already be an NS record.
                     // We are not at apex because apex always has an NSEC3
                     // record.
-                    let revnamebuf = old_base_name_to_revnamebuf(key);
-                    let box_revname = revnamebuf.unsized_copy_into();
-                    let tmpkey = (box_revname, NewRtype::NS);
+                    let key_boxrevname = key.as_ref().unsized_copy_into();
+                    let tmpkey = (key_boxrevname, NewRtype::NS);
                     if self.data.contains_key(&tmpkey) {
                         // Found an NS record. It is safe to add NS to the add
                         // set.
-                        add.insert(Rtype::NS);
+                        add.insert(NewRtype::NS);
                     }
                 }
 
-                if add.contains(&Rtype::NS) {
+                if add.contains(&NewRtype::NS) {
                     if opt_out_flag {
                         // Check if this is just an NS record. If so, don't
                         // create an NSEC3 record.
-                        if !add.iter().any(|r| *r != Rtype::NS) {
+                        if !add.iter().any(|r| *r != NewRtype::NS) {
                             continue;
                         }
                     }
@@ -2063,27 +2096,45 @@ impl<'a> IncrementalSigningState<'a> {
                     // If add contains DS then add RRSIG to add.
 
                     let mut add = add.clone(); // In case we need to add RRSIG.
-                    if add.contains(&Rtype::DS) {
-                        let ds_set: HashSet<_> = [Rtype::DS].into();
-                        sign_rtype_set(key, &ds_set, self)?;
-                        add.insert(Rtype::RRSIG);
+                    if add.contains(&NewRtype::DS) {
+                        let ds_set: HashSet<_> = [NewRtype::DS].into();
+                        sign_rtype_set(&old_key_name, &ds_set, self)?;
+                        add.insert(NewRtype::RRSIG);
                     }
 
-                    let rtypebitmap = nsec3_rtypebitmap_from_iterator(add.iter());
+                    let old_add: HashSet<_> =
+                        add.iter().map(|r| new_base_rtype_to_old_base(*r)).collect();
+                    let rtypebitmap = nsec3_rtypebitmap_from_iterator(old_add.iter());
 
-                    nsec3_insert_full(key, nsec3_hash_octets, &new_nsec3_name, rtypebitmap, self);
-                    nsec3_set_occluded(key, self);
+                    nsec3_insert_full(
+                        &old_key_name,
+                        nsec3_hash_octets,
+                        &new_nsec3_name,
+                        rtypebitmap,
+                        self,
+                    );
+                    nsec3_set_occluded(&old_key_name, self);
                     continue;
                 }
                 // The new name is not a delegation. Add RRSIG to the set of
                 // Rtypes.
                 let mut add_with_rrsig = add.clone();
-                add_with_rrsig.insert(Rtype::RRSIG);
+                add_with_rrsig.insert(NewRtype::RRSIG);
 
                 // Create a new NSEC3 record and sign all records.
-                let rtypebitmap = nsec3_rtypebitmap_from_iterator(add_with_rrsig.iter());
-                nsec3_insert_full(key, nsec3_hash_octets, &new_nsec3_name, rtypebitmap, self);
-                sign_rtype_set(key, &add, self)?;
+                let old_add_with_rrsig: HashSet<_> = add_with_rrsig
+                    .iter()
+                    .map(|r| new_base_rtype_to_old_base(*r))
+                    .collect();
+                let rtypebitmap = nsec3_rtypebitmap_from_iterator(old_add_with_rrsig.iter());
+                nsec3_insert_full(
+                    &old_key_name,
+                    nsec3_hash_octets,
+                    &new_nsec3_name,
+                    rtypebitmap,
+                    self,
+                );
+                sign_rtype_set(&old_key_name, &add, self)?;
             }
         }
         Ok(())
@@ -3401,12 +3452,12 @@ fn nsec_remove(name: &RevName, next_name: &NewName, iss: &mut IncrementalSigning
 fn nsec_update_bitmap(
     record: &RegularRecord,
     nsec: NewNsec,
-    curr: &HashSet<Rtype>,
-    add: &HashSet<Rtype>,
-    delete: &HashSet<Rtype>,
+    curr: &HashSet<NewRtype>,
+    add: &HashSet<NewRtype>,
+    delete: &HashSet<NewRtype>,
     iss: &mut IncrementalSigningState,
-) -> HashSet<Rtype> {
-    let set_nsec_rrsig: HashSet<_> = [Rtype::NSEC, Rtype::RRSIG].into();
+) -> HashSet<NewRtype> {
+    let set_nsec_rrsig: HashSet<_> = [NewRtype::NSEC, NewRtype::RRSIG].into();
 
     // Update curr.
     let curr: HashSet<_> = curr.union(add).copied().collect();
@@ -3418,7 +3469,11 @@ fn nsec_update_bitmap(
         return curr;
     }
 
-    let rtypebitmap = nsec_rtypebitmap_from_iterator(curr.iter());
+    let old_curr: HashSet<_> = curr
+        .iter()
+        .map(|r| new_base_rtype_to_old_base(*r))
+        .collect();
+    let rtypebitmap = nsec_rtypebitmap_from_iterator(old_curr.iter());
     let old_next_name = name_to_old_base_name(nsec.next_name());
     let nsec = Nsec::new(old_next_name, rtypebitmap);
     let old_owner = revname_to_old_base_name(owner);
@@ -3548,7 +3603,11 @@ fn nsec_clear_occluded(
 
         // Make sure NS doesn't get signed.
         curr_types.remove(&Rtype::NS);
-        sign_rtype_set(&curr_name, &curr_types, iss)?;
+        let new_curr_types = curr_types
+            .iter()
+            .map(|r| old_base_rtype_to_new_base(*r))
+            .collect();
+        sign_rtype_set(&curr_name, &new_curr_types, iss)?;
         let curr_revnamebuf = old_base_name_to_revnamebuf(curr_name);
         nsec_insert(&curr_revnamebuf, rtypebitmap, iss);
     }
@@ -3883,7 +3942,11 @@ fn nsec3_clear_occluded(
         // Make sure NS doesn't get signed. And avoid signing RRSIGs.
         curr_types.remove(&Rtype::NS);
         curr_types.remove(&Rtype::RRSIG);
-        sign_rtype_set(&curr_name, &curr_types, iss)?;
+        let new_curr_types = curr_types
+            .iter()
+            .map(|r| old_base_rtype_to_new_base(*r))
+            .collect();
+        sign_rtype_set(&curr_name, &new_curr_types, iss)?;
 
         let (nsec3_hash_octets, nsec3_name) = nsec3_hash_parts(&curr_name, iss);
         let nsec3_revnamebuf = old_base_name_to_revnamebuf(&nsec3_name);
@@ -4010,11 +4073,11 @@ fn nsec3_update_bitmap(
     name: &Name<Bytes>,
     nsec3_record: &RegularRecord,
     nsec3: &NewNsec3,
-    curr: &HashSet<Rtype>,
-    add: &HashSet<Rtype>,
-    delete: &HashSet<Rtype>,
+    curr: &HashSet<NewRtype>,
+    add: &HashSet<NewRtype>,
+    delete: &HashSet<NewRtype>,
     iss: &mut IncrementalSigningState,
-) -> HashSet<Rtype> {
+) -> HashSet<NewRtype> {
     // Update curr.
     let curr: HashSet<_> = curr.union(add).copied().collect();
     let mut curr: HashSet<_> = curr.difference(delete).copied().collect();
@@ -4022,38 +4085,42 @@ fn nsec3_update_bitmap(
 
     // Check if we need to add or remove RRSIG. Assume that apex has a SOA
     // record.
-    if curr.contains(&Rtype::NS) && !curr.contains(&Rtype::SOA) {
+    if curr.contains(&NewRtype::NS) && !curr.contains(&NewRtype::SOA) {
         // For an NS not at origin, there is an RRSIG if there is also a
         // DS record.
-        if curr.contains(&Rtype::DS) {
+        if curr.contains(&NewRtype::DS) {
             // Yes, add RRSIG.
-            curr.insert(Rtype::RRSIG);
+            curr.insert(NewRtype::RRSIG);
         } else {
             // No. Remove RRSIG.
-            curr.remove(&Rtype::RRSIG);
+            curr.remove(&NewRtype::RRSIG);
         }
     } else {
         // Is there anything apart from RRSIG?
-        if curr.iter().any(|r| *r != Rtype::RRSIG) {
+        if curr.iter().any(|r| *r != NewRtype::RRSIG) {
             // Yes. Add RRSIG.
-            curr.insert(Rtype::RRSIG);
+            curr.insert(NewRtype::RRSIG);
         } else {
             // No. Remove RRSIG.
-            curr.remove(&Rtype::RRSIG);
+            curr.remove(&NewRtype::RRSIG);
         }
     }
 
+    let old_curr: HashSet<_> = curr
+        .iter()
+        .map(|r| new_base_rtype_to_old_base(*r))
+        .collect();
     if curr.is_empty() {
         // The NSEC3 bitmp will be empty, but this may now have become an
         // empty non-terminal. Our only option is to update the NSEC3 record
         // and then call nsec3_remove_et to see if it is empty can can be
         // removed.
-        nsec3_update(owner, nsec3_record, nsec3, &curr, iss);
+        nsec3_update(owner, nsec3_record, nsec3, &old_curr, iss);
         nsec3_remove_et(name, iss);
         return curr;
     }
 
-    if iss.nsec3param.opt_out_flag() && !curr.iter().any(|r| *r != Rtype::NS) {
+    if iss.nsec3param.opt_out_flag() && !curr.iter().any(|r| *r != NewRtype::NS) {
         // The new bitmap has nothing except for NS. We would like to delete
         // the NSEC3. However there may still be descendents that need to be
         // removed with nsec3_set_occluded. Update this NSEC3 to be empty and
@@ -4065,7 +4132,7 @@ fn nsec3_update_bitmap(
         return curr;
     }
 
-    nsec3_update(owner, nsec3_record, nsec3, &curr, iss);
+    nsec3_update(owner, nsec3_record, nsec3, &old_curr, iss);
     curr
 }
 
@@ -4134,14 +4201,14 @@ fn is_occluded(name: &Name<Bytes>, iss: &IncrementalSigningState) -> bool {
 
 fn sign_rtype_set(
     name: &Name<Bytes>,
-    set: &HashSet<Rtype>,
+    set: &HashSet<NewRtype>,
     iss: &mut IncrementalSigningState,
 ) -> Result<(), SignerError> {
     let mut new_sigs = vec![];
     for rtype in set {
         let key_revnamebuf = old_base_name_to_revnamebuf(name);
         let key_boxrevname = key_revnamebuf.unsized_copy_into();
-        let key = (key_boxrevname, old_base_rtype_to_new_base(*rtype));
+        let key = (key_boxrevname, *rtype);
         let Some(records) = (if *name == iss.origin {
             iss.new_apex
                 .get(&key.1)
