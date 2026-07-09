@@ -1547,10 +1547,19 @@ impl<'a> IncrementalSigningState<'a> {
 
         self.new_apex = self.old_apex.clone();
 
+        // Delete the SOA RRset. We need the new SOA from the unsigned zone,
+        // but we can't use the diff due to the difference in serial numbers.
+        self.new_apex.remove(&NewRtype::SOA);
+
         // Add_records and removed_records can be processed in any order.
         // Processing removed_records first is slightly more efficient.
         for record in diffs.removed_records {
             if record.owner() == origin_revnamebuf.as_ref() {
+                // Ignore removal of SOA records.
+                if record.data().rtype() == NewRtype::SOA {
+                    continue;
+                }
+
                 let hash_map::Entry::Occupied(mut entry) =
                     self.new_apex.entry(record.data().rtype())
                 else {
