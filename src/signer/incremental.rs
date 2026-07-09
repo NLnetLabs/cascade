@@ -42,7 +42,6 @@ use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
 use domain::utils::base32;
 use domain::utils::dst::UnsizedCopy;
 use domain::zonefile::inplace::Entry;
-use domain::zonetree::StoredRecord;
 use jiff::tz::TimeZone;
 use jiff::{Timestamp as JiffTimestamp, Zoned};
 use rayon::slice::ParallelSliceMut;
@@ -62,10 +61,7 @@ use crate::units::zone_signer::{
     KeySetState, MinTimestamp, PassThroughMode, SignerError, faketime_or_now,
 };
 use crate::zone::{HistoricalEvent, Zone};
-use crate::zonedata::{
-    DiffData, LoadedZoneReader, OldParsedRecord, RegularRecord, SignedZonePatcher,
-    SignedZoneReader, SoaRecord,
-};
+use crate::zonedata::{DiffData, RegularRecord, SignedZonePatcher, SignedZoneReader, SoaRecord};
 
 pub fn sign_incrementally(
     patch: SignedZonePatcher,
@@ -151,9 +147,6 @@ pub fn sign_incrementally(
     ws.handle_nsec_nsec3(&mut iss)?;
 
     if load_unsigned {
-        let start = Instant::now();
-        iss.load_unsigned_zone(&ws.patch.next_loaded().expect("should be there"))?;
-        debug!("loading new unsigned zone took {:?}", start.elapsed());
         let start = Instant::now();
         iss.load_unsigned_diffs(ws.patch.unsigned_diff().expect("should be there"))?;
         debug!("loading new unsigned diffs took {:?}", start.elapsed());
@@ -1519,32 +1512,29 @@ impl<'a> IncrementalSigningState<'a> {
         signed_reader: &'a SignedZoneReader,
     ) -> Result<(), SignerError> {
         // Loop over all records. Records do not have to be sorted.
-        for entry in signed_reader.all_records() {
-            let record: OldParsedRecord = entry.clone().into();
-            let record: StoredRecord = record.flatten_into();
-            let record: Zrd = record.into();
-
-            match entry.data() {
+        let new_origin = old_base_name_to_revnamebuf(&self.origin);
+        for record in signed_reader.all_records() {
+            match record.data() {
                 NewRecordData::Rrsig(_rrsig) => {
-                    self.rrsigs.add_existing_record(entry);
+                    self.rrsigs.add_existing_record(record);
                 }
                 NewRecordData::Nsec(_) => {
                     // Assume (at most) one NSEC record per owner name.
                     // Directly insert into the btree map.
-                    self.nsecs.add_existing_record(entry);
+                    self.nsecs.add_existing_record(record);
                 }
                 NewRecordData::Nsec3(_) => {
                     // Assume (at most) one NSEC3 record per owner name.
                     // Directly insert into the btree map.
-                    self.nsec3s.add_existing_record(entry);
+                    self.nsec3s.add_existing_record(record);
                 }
                 _ => {
-                    if *record.owner() != self.origin {
-                        self.data.insert_existing_record(entry);
+                    if record.owner() != new_origin.as_ref() {
+                        self.data.insert_existing_record(record);
                         continue;
                     }
-                    let rtype = entry.data().rtype();
-                    self.old_apex.entry(rtype).or_default().push(entry.clone());
+                    let rtype = record.data().rtype();
+                    self.old_apex.entry(rtype).or_default().push(record.clone());
                 }
             }
         }
@@ -1553,29 +1543,41 @@ impl<'a> IncrementalSigningState<'a> {
         Ok(())
     }
 
-    pub fn load_unsigned_zone(&mut self, reader: &LoadedZoneReader) -> Result<(), SignerError> {
-        // Collect records for a
-        // name/RRtype and store a complete RRset in a btree.
+    pub fn load_unsigned_diffs(&mut self, diffs: DiffData) -> Result<(), SignerError> {
+        let origin_revnamebuf = old_base_name_to_revnamebuf(&self.origin);
 
-        let new_origin = old_base_name_to_revnamebuf(&self.origin);
-        for entry in reader.regular_records() {
-            let record: OldParsedRecord = entry.clone().into();
-            let record: StoredRecord = record.flatten_into();
-            let record: Zrd = record.into();
+        self.new_apex = self.old_apex.clone();
 
-            // Skip record types we don't need.
-            if record.rtype() == Rtype::NSEC
-                || record.rtype() == Rtype::NSEC3
-                || record.rtype() == Rtype::RRSIG
-            {
-                continue;
-            }
-
-            let key = (entry.owner(), entry.data().rtype());
-            if key.0 == new_origin.as_ref() {
-                self.new_apex.entry(key.1).or_default().push(entry.clone());
+        // Add_records and removed_records can be processed in any order.
+        // Processing removed_records first is slightly more efficient.
+        for record in diffs.removed_records {
+            if record.owner() == origin_revnamebuf.as_ref() {
+                let hash_map::Entry::Occupied(mut entry) =
+                    self.new_apex.entry(record.data().rtype())
+                else {
+                    unreachable!();
+                };
+                let records = entry.get_mut();
+                let index = records
+                    .iter()
+                    .position(|r| *r == record)
+                    .expect("position should exist");
+                records.remove(index);
+                if records.is_empty() {
+                    entry.remove();
+                }
             } else {
-                // Take Data changes from diffs.
+                self.data.remove_record(record);
+            }
+        }
+        for record in diffs.added_records {
+            if record.owner() == origin_revnamebuf.as_ref() {
+                self.new_apex
+                    .entry(record.data().rtype())
+                    .or_default()
+                    .push(record.clone());
+            } else {
+                self.data.add_record(record);
             }
         }
 
@@ -1588,26 +1590,6 @@ impl<'a> IncrementalSigningState<'a> {
         // zone.
         self.new_apex.remove(&NewRtype::NSEC3PARAM);
         self.new_apex.remove(&NewRtype::ZONEMD);
-        Ok(())
-    }
-
-    pub fn load_unsigned_diffs(&mut self, diffs: DiffData) -> Result<(), SignerError> {
-        let origin_revnamebuf = old_base_name_to_revnamebuf(&self.origin);
-
-        // Add_records and removed_records can be processed in any order.
-        // Processing removed_records first is slightly more efficient.
-        for record in diffs.removed_records {
-            if record.owner() == origin_revnamebuf.as_ref() {
-                continue; // Skip records at apex.
-            }
-            self.data.remove_record(record);
-        }
-        for record in diffs.added_records {
-            if record.owner() == origin_revnamebuf.as_ref() {
-                continue; // Skip records at apex.
-            }
-            self.data.add_record(record);
-        }
 
         Ok(())
     }
