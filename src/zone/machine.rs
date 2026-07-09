@@ -321,6 +321,8 @@ impl<'a> ZoneHandle<'a> {
     }
 
     pub(crate) fn signing_failed(&mut self, builder: SignedZoneBuilder, err: SignerError) {
+        self.signer().before_signed_abandonment();
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
@@ -370,6 +372,8 @@ impl<'a> ZoneHandle<'a> {
             },
             None, // TODO
         );
+
+        self.signer().before_signed_abandonment();
 
         let (transition, state) = self.state.machine.transition();
 
@@ -451,6 +455,8 @@ impl<'a> ZoneHandle<'a> {
             num_records,
         });
 
+        self.signer().on_publication();
+
         self.storage().start_publishing(viewer);
     }
 }
@@ -474,6 +480,7 @@ impl<'a> ZoneHandle<'a> {
                 let waiting = halt_signed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
 
+                self.signer().before_signed_abandonment();
                 // TODO: This should be handled by 'Instances'.
                 self.state.next_min_expiration = None;
 
