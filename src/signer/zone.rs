@@ -530,11 +530,6 @@ fn resign_time(state: &ZoneState) -> Option<SystemTime> {
     let last_refresh_time =
         SystemTime::UNIX_EPOCH + Duration::from(state.last_signature_refresh.clone());
     let refresh_interval = Duration::from_secs(policy.signer.signature_refresh_interval as u64);
-    let min_expiration = state.min_expiration?.to_system_time(last_refresh_time);
-    let remain_time = Duration::from_secs(policy.signer.sig_remain_time as u64);
 
-    Some(Ord::min(
-        last_refresh_time + refresh_interval,
-        min_expiration - remain_time,
-    ))
+    Some(last_refresh_time + refresh_interval)
 }
