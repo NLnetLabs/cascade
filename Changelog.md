@@ -26,7 +26,7 @@ Released yyyy-mm-dd.
 - Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
 - Make logging during zone restoration consistent. ([#874] by @ximon18)
 - Improve memory use of NSEC(3) in incremental signing ([#842] by @Philip-NLnetLabs)
-- Log the reason when unable to restore zone state on startup. (#878)
+- Log the reason when unable to restore zone state on startup. ([#878] by @ximon18)
 
 ### Documentation improvements
 ### Known issues
