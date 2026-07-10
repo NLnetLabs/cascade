@@ -77,10 +77,17 @@ impl Metrics {
         // software build information via labels and will always be 1. It
         // cannot be stored inside of `MetricsCollection` as it does not
         // implement Clone.
-        let _cascade_version = Info::new(vec![
-            ("version", clap::crate_version!()),
-            ("commit", env!("CASCADE_BUILD_COMMIT")),
-        ]);
+        let mut version_components = vec![("version", clap::crate_version!())];
+
+        // When building packages the CASCADE_BUILD_COMMIT environment
+        // variable is not set because build.rs sets it to a string ending in
+        // " (no-git)" which is undesirable for a release version so the
+        // Ploutos packaging rules prevent that happening by setting
+        // CASCADE_SKIP_VERSION_COMMIT.
+        if let Some(build_commit) = option_env!("CASCADE_BUILD_COMMIT") {
+            version_components.push(("commit", build_commit));
+        }
+        let cascade_version = Info::new(version_components);
 
         // See the prometheus docs at
         // https://www.robustperception.io/exposing-the-software-version-to-prometheus/
@@ -88,7 +95,7 @@ impl Metrics {
         // exposes the `Info` type, which we use here to expose cascade
         // version information just like `cascaded --version`.
         col.registry
-            .register("build", "Cascade build information", _cascade_version);
+            .register("build", "Cascade build information", cascade_version);
 
         col.registry.register_with_unit(
             "metrics_assemble_duration",
