@@ -28,6 +28,8 @@ Released yyyy-mm-dd.
 - Overhaul how re-signing timers are managed, preventing race conditions causing
   crashes when zones are removed. ([#863] by @bal-e, reported in [#730] by
   @jpmens)
+- Prohibit removing a zone while it is being restored from disk.
+  ([#886] by @bal-e)
 
 ### Other changes
 
@@ -55,6 +57,7 @@ feedback!
 [#876]: https://github.com/NLnetLabs/cascade/pull/876
 [#878]: https://github.com/NLnetLabs/cascade/pull/878
 [#804]: https://github.com/NLnetLabs/cascade/pull/804
+[#806]: https://github.com/NLnetLabs/cascade/pull/806
 
 ## Version 0.1.0-beta4 'Irish Goodbye'
 
