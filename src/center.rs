@@ -257,7 +257,18 @@ async fn register_zone(
 /// Remove a zone.
 pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
     let mut state = center.state.lock().unwrap();
-    let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?.0;
+
+    let ZoneByName(zone) = state.zones.get(&name).ok_or(ZoneRemoveError::NotFound)?;
+
+    // TODO(#871): support removing a zone during restoration.
+    if zone.read().storage.is_restoring() {
+        return Err(ZoneRemoveError::MidRestoration);
+    }
+
+    let ZoneByName(zone) = state
+        .zones
+        .take(&name)
+        .expect("the zone was found just above");
 
     // Remove the zone from all the places it might be stored.
     // The zone might not have made it to these places, but that's not an issue
@@ -488,6 +499,9 @@ impl From<ZoneAddError> for api::ZoneAddError {
 pub enum ZoneRemoveError {
     /// No such name could be found.
     NotFound,
+
+    /// The zone is being restored from disk.
+    MidRestoration,
 }
 
 impl std::error::Error for ZoneRemoveError {}
@@ -496,6 +510,7 @@ impl fmt::Display for ZoneRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
+            Self::MidRestoration => "the zone is being restored from disk",
         })
     }
 }
@@ -504,6 +519,7 @@ impl From<ZoneRemoveError> for api::ZoneRemoveError {
     fn from(value: ZoneRemoveError) -> Self {
         match value {
             ZoneRemoveError::NotFound => Self::NotFound,
+            ZoneRemoveError::MidRestoration => Self::MidRestoration,
         }
     }
 }
