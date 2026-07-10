@@ -35,7 +35,6 @@ use domain::{
     },
     rdata::ZoneRecordData,
 };
-use jiff::{Timestamp as JiffTimestamp, Zoned, tz::TimeZone};
 use rayon::{
     iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelExtend, ParallelIterator},
     slice::ParallelSliceMut,
@@ -45,7 +44,7 @@ use tracing::{debug, info};
 use crate::{
     center::Center,
     manager::record_zone_event,
-    policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy},
+    policy::{PolicyVersion, SignerDenialPolicy},
     signer::{
         SigningTrigger,
         incremental::LocalState,
@@ -93,49 +92,12 @@ pub fn sign_zone(
         .expect("a non-empty loaded instance must exist");
     let loaded_serial = loaded.soa().rdata.serial;
 
-    let serial: Serial = match policy.signer.serial_policy {
-        SignerSerialPolicy::Keep => {
-            let loaded_serial = Serial::from(Into::<u32>::into(loaded_serial));
-            if let Some(previous_serial) = previous_serial
-                && loaded_serial <= previous_serial
-            {
-                return Err(SignerError::KeepSerialPolicyViolated);
-            }
+    let serial = super::next_signed_soa_serial(
+        policy.signer.serial_policy,
+        Serial::from(loaded_serial.0.get()),
+        previous_serial,
+    )?;
 
-            loaded_serial
-        }
-        SignerSerialPolicy::Counter => {
-            // Always increment the serial number, ignore the serial
-            // number in the unsigned zone.
-            let previous_serial = previous_serial.unwrap_or(Serial::from(0));
-            previous_serial.add(1)
-        }
-        SignerSerialPolicy::UnixTime => {
-            let mut serial = Serial::now();
-            if let Some(previous_serial) = previous_serial
-                && serial <= previous_serial
-            {
-                serial = previous_serial.add(1);
-            }
-
-            serial
-        }
-        SignerSerialPolicy::DateCounter => {
-            let ts = JiffTimestamp::now();
-            let zone = Zoned::new(ts, TimeZone::UTC);
-            let serial =
-                ((zone.year() as u32 * 100 + zone.month() as u32) * 100 + zone.day() as u32) * 100;
-            let mut serial: Serial = serial.into();
-
-            if let Some(previous_serial) = previous_serial
-                && serial <= previous_serial
-            {
-                serial = previous_serial.add(1);
-            }
-
-            serial
-        }
-    };
     local_state.previous_serial = Some(serial);
     let serial = NewBaseSerial::from(serial.into_int());
     let new_soa = {
