@@ -20,6 +20,7 @@
 use std::{
     ops::{BitOr, BitOrAssign},
     sync::{Arc, RwLock},
+    time::Instant,
 };
 
 use domain::base::Serial;
@@ -68,11 +69,17 @@ fn sign(
     permit: SigningPermit,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
+    let start = Instant::now();
+
     let result = if let Some(patcher) = builder.patch() {
         self::incremental::sign_incrementally(patcher, &zone, &center, trigger, status.clone())
     } else {
         self::full::sign_zone(&center, &zone, &mut builder, trigger, status.clone())
     };
+
+    let end = Instant::now();
+    let duration = (end - start).as_secs_f64();
+    zone.metrics.last_sign_duration(duration);
 
     let mut status = status.write().unwrap();
     let mut handle = zone.write_handle(&center);
@@ -85,6 +92,7 @@ fn sign(
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
             handle.get().finish_signing(built);
             status.status.finish(true);
+            zone.metrics.last_successful_sign_duration(duration);
             status.current_action = "Finished".to_string();
         }
         Err(SignerError::NothingToDo) => {

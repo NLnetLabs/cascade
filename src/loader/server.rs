@@ -41,7 +41,7 @@ use tracing::{debug, trace};
 
 use crate::{
     loader::ActiveLoadMetrics,
-    metrics::{XfrTransport, XfrType},
+    metrics::XfrType,
     zone::Zone,
     zonedata::{
         LoadedZoneBuilder, LoadedZonePatcher, LoadedZoneReplacer, OldRecord, PatchError,
@@ -183,7 +183,7 @@ pub async fn ixfr(
     let mut interpreter = XfrResponseInterpreter::new();
 
     zone.metrics
-        .inc_xfr_requests_to_upstream_attempted(XfrType::Ixfr, XfrTransport::Tcp);
+        .inc_xfr_requests_to_upstream_attempted(XfrType::Ixfr);
 
     // Process the first message.
     let initial = response
@@ -261,7 +261,7 @@ pub async fn ixfr(
             metrics.num_loaded_bytes.fetch_add(bytes, Relaxed);
 
             zone.metrics
-                .inc_xfr_requests_to_upstream_succeeded(XfrType::Ixfr, XfrTransport::Tcp);
+                .inc_xfr_requests_to_upstream_succeeded(XfrType::Ixfr);
 
             Ok(true)
         }
@@ -299,7 +299,7 @@ pub async fn ixfr(
             writer.apply()?;
 
             zone.metrics
-                .inc_xfr_requests_to_upstream_succeeded(XfrType::Ixfr, XfrTransport::Tcp);
+                .inc_xfr_requests_to_upstream_succeeded(XfrType::Ixfr);
 
             Ok(true)
         }
@@ -413,7 +413,7 @@ pub async fn axfr(
         };
 
     zone.metrics
-        .inc_xfr_requests_to_upstream_attempted(XfrType::Axfr, XfrTransport::Tcp);
+        .inc_xfr_requests_to_upstream_attempted(XfrType::Axfr);
 
     // Attempt the AXFR.
     let request = RequestMessageMulti::new(message).unwrap();
@@ -457,7 +457,7 @@ pub async fn axfr(
     writer.apply()?;
 
     zone.metrics
-        .inc_xfr_requests_to_upstream_succeeded(XfrType::Axfr, XfrTransport::Tcp);
+        .inc_xfr_requests_to_upstream_succeeded(XfrType::Axfr);
 
     Ok(())
 }
