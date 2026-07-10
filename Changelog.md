@@ -19,6 +19,9 @@ Released yyyy-mm-dd.
 Released yyyy-mm-dd.
 
 ### Breaking changes
+
+- Persist zone fixes and improvements. ([#804] by @ximon18)
+
 ### New
 ### Bug fixes
 
@@ -51,6 +54,7 @@ feedback!
 [#874]: https://github.com/NLnetLabs/cascade/pull/874
 [#876]: https://github.com/NLnetLabs/cascade/pull/876
 [#878]: https://github.com/NLnetLabs/cascade/pull/878
+[#804]: https://github.com/NLnetLabs/cascade/pull/804
 
 ## Version 0.1.0-beta4 'Irish Goodbye'
 
