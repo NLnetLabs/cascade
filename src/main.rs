@@ -1,11 +1,11 @@
-use cascaded::{
-    center::{self, Center},
+use self::{
+    center::Center,
     config::{Config, SocketConfig},
     daemon::{PreBindError, SocketProvider, daemonize},
     loader::Loader,
     manager::Manager,
+    metrics::Metrics,
     persistence::{Persister, Restorer},
-    policy,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     units::{key_manager::KeyManager, zone_signer::ZoneSigner},
     zone::{Zone, ZoneByName},
@@ -20,6 +20,30 @@ use std::{
 };
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
+
+use cascade_api as api;
+use cascade_cfg as config;
+use cascade_zonedata as zonedata;
+
+mod center;
+mod common;
+mod daemon;
+mod loader;
+mod log;
+mod manager;
+mod metrics;
+mod persistence;
+mod policy;
+mod server;
+mod signer;
+mod state;
+mod tsig;
+mod units;
+mod util;
+mod zone;
+
+#[cfg(test)]
+pub mod tests;
 
 const MAX_SYSTEMD_FD_SOCKETS: usize = 32;
 
@@ -57,7 +81,7 @@ fn main() -> ExitCode {
     drop(log_guard);
 
     // Initialize the actual logger
-    let logger = match cascaded::log::Logger::launch(&config.daemon.logging) {
+    let logger = match self::log::Logger::launch(&config.daemon.logging) {
         Ok(logger) => logger,
         Err(e) => {
             error!("Failed to initialize logging: {e:?}");
@@ -76,6 +100,7 @@ fn main() -> ExitCode {
     // Load the global state file or build one from scratch.
     let mut zones = Default::default();
     let mut policies = Default::default();
+    let metrics = Metrics::new();
     let state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
         Ok(mut state) => {
             info!(
@@ -115,11 +140,19 @@ fn main() -> ExitCode {
                     !state.zones.contains(&name),
                     "Zone '{name}' was encountered twice"
                 );
-                let zone =
-                    match Zone::restore(&config, name, &mut state.policies, &state.tsig_store) {
-                        Ok(zone) => zone,
-                        Err(_) => return ExitCode::FAILURE,
-                    };
+                let zone = match Zone::restore(
+                    &config,
+                    name.clone(),
+                    &mut state.policies,
+                    &state.tsig_store,
+                    &metrics,
+                ) {
+                    Ok(zone) => zone,
+                    Err(err) => {
+                        error!("Unable to restore zone '{name}': {err}");
+                        return ExitCode::FAILURE;
+                    }
+                };
                 state.zones.insert(ZoneByName(Arc::new(zone)));
             }
 
@@ -251,6 +284,7 @@ fn main() -> ExitCode {
     let center = Arc::new(Center {
         state: Mutex::new(state),
         config,
+        metrics,
         logger,
         loader: Loader::new(),
         key_manager: KeyManager::new(),
@@ -312,15 +346,15 @@ fn main() -> ExitCode {
     });
 
     // Persist the current state.
-    cascaded::state::save_now(&center);
-    cascaded::tsig::save_now(&center);
+    self::state::save_now(&center);
+    self::tsig::save_now(&center);
     let zones = {
         let state = center.state.lock().unwrap();
         state.zones.iter().map(|z| z.0.clone()).collect::<Vec<_>>()
     };
     for zone in zones {
         // TODO: Maybe 'save_state_now()' should take '&Config'?
-        cascaded::zone::save_state_now(&center, &zone);
+        self::zone::save_state_now(&center, &zone);
     }
 
     result

@@ -8,7 +8,6 @@ use std::{
 
 use bytes::BufMut;
 use camino::Utf8Path;
-use cascade_zonedata::{LoadedZoneBuilder, RegularRecord, ReplaceError, SoaRecord};
 use domain::{
     base::{ToName, iana::Class},
     new::{
@@ -19,7 +18,11 @@ use domain::{
     zonefile::inplace,
 };
 
-use crate::{loader::ActiveLoadMetrics, zone::Zone};
+use crate::{
+    loader::ActiveLoadMetrics,
+    zone::Zone,
+    zonedata::{LoadedZoneBuilder, RegularRecord, ReplaceError, SoaRecord},
+};
 
 //----------- load() -----------------------------------------------------------
 

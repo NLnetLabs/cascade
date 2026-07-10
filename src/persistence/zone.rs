@@ -2,9 +2,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
-use cascade_zonedata::{
-    DiffData, LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer,
-};
+use cascade_zonedata::DiffData;
 use domain::new::base::Serial;
 use tracing::{debug, info, trace, trace_span, warn};
 
@@ -13,6 +11,7 @@ use crate::{
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState, save_state_now},
+    zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
 };
 
 //----------- ZonePersistenceHandle --------------------------------------------
@@ -114,10 +113,15 @@ impl ZonePersistenceHandle<'_> {
                 let (loaded_reviewer, signed_reviewer, viewer) =
                     handle.storage().finish_signed_restoration(restored);
 
+                handle.signer().on_restoration();
+
                 // Register the zone against the zone servers.
                 LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
                 SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
                 PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+                // Mark restoration as complete.
+                handle.state.instances.restore();
 
                 // Send a notification that the state machine is now passive.
                 handle.storage().on_passive();
@@ -233,8 +237,8 @@ fn abandon_signed_restoration(
 
 fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
     {
-        let mut state = zone.write(center);
-        clear_persisted_zone_data(center, &mut state);
+        let mut handle = zone.write_handle(center);
+        clear_persisted_zone_data(center, &mut handle.state);
 
         // In case this zone was signed in the past we have to make sure that
         // any attempt to enqueue a re-signing operation will be skipped as
@@ -242,13 +246,13 @@ fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) 
         // TODO: Find a better way to prevent this issue as changing the
         // min_expiration timestamps is a very indirect and non-obvious way of
         // preventing re-signing.
-        state.min_expiration = None;
-        state.next_min_expiration = None;
+        handle.state.min_expiration = None;
+        handle.state.next_min_expiration = None;
 
         // Also remove any already enqueued signing operation that is blocked
         // by the ongoing restore as it will otherwise immediately start once
         // the restore completes.
-        state.signer.cancel_enqueued_signing_operations();
+        handle.signer().cancel_enqueued_signing_operations();
     }
     save_state_now(center, zone);
 }

@@ -38,7 +38,6 @@ use crate::center::Center;
 use crate::center::get_zone;
 use crate::loader;
 use crate::manager::Terminated;
-use crate::metrics::MetricsCollection;
 use crate::policy::AutoConfig;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
@@ -61,13 +60,6 @@ pub const HTTP_UNIT_NAME: &str = "HS";
 
 pub struct HttpServer {
     pub center: Arc<Center>,
-    pub metrics: Arc<MetricsCollection>,
-    pub http_metrics: HttpMetrics,
-}
-
-#[derive(Default)]
-pub struct HttpMetrics {
-    // http_api_last_connection: Counter,
 }
 
 impl HttpServer {
@@ -75,27 +67,8 @@ impl HttpServer {
     pub fn launch(
         center: Arc<Center>,
         http_sockets: Vec<TcpListener>,
-        /* mut */ metrics: MetricsCollection,
     ) -> Result<Arc<Self>, Terminated> {
-        // TODO: register metrics here
-
-        let http_metrics = HttpMetrics::default();
-
-        // This would require some work in tracking the last API access. I did
-        // not find a way to call something on every route in axum. Maybe we
-        // need a wrapper function that sets the last_connection timestamp.
-        // // - last time a CLI connection was made
-        // metrics.register(
-        //     "http_api_last_connection",
-        //     "The last unix epoch time an API HTTP connection was made (excl. /metrics and /)",
-        //     http_metrics.http_api_last_connection.clone()
-        // );
-
-        let this = Arc::new(Self {
-            center,
-            metrics: Arc::new(metrics),
-            http_metrics,
-        });
+        let this = Arc::new(Self { center });
 
         let app = Router::new()
             .route("/health", get(Self::health))
@@ -203,7 +176,7 @@ impl HttpServer {
     }
 
     async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
-        match state.metrics.assemble(state.center.clone()) {
+        match state.center.metrics.assemble(state.center.clone()) {
             Ok(b) => Ok((
                 StatusCode::OK,
                 [(
@@ -232,9 +205,29 @@ impl HttpServer {
         }
 
         // Fetch the signing queue.
-        let signing_queue = center.signer.on_queue_report(center);
+        let signing_queue = {
+            let mut report = Vec::new();
 
-        let f = |x: &Vec<cascade_cfg::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
+            // Get a list of zones in the queue.
+            let zones = center.signer.queue.export();
+
+            for zone in zones {
+                let zone_state = zone.read();
+                if let Some(status) = &zone_state.signer.active_signing_status
+                    && let Some(stage_report) = status.read().unwrap().mk_signing_report()
+                {
+                    report.push(SigningQueueReport {
+                        zone_name: zone.name.clone(),
+                        signing_report: stage_report,
+                    });
+                }
+            }
+
+            report
+        };
+
+        let f =
+            |x: &Vec<crate::config::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
         let loaded_review_addrs = f(&center.config.loader.review.servers);
         let signed_review_addrs = f(&center.config.signer.review.servers);
         let server_addrs = f(&center.config.server.servers);
@@ -953,17 +946,17 @@ impl HttpServer {
                     .get(zone_name)
                     .expect("zones and policies are consistent");
 
-                zone.write(center).policy = Some(pol.latest.clone());
+                {
+                    let mut handle = zone.write_handle(center);
+                    handle.state.policy = Some(pol.latest.clone());
+                    handle.signer().after_policy_change();
+                }
 
                 center
                     .key_manager
                     .on_zone_policy_changed(center, zone, old.clone(), new.clone());
             }
         }
-
-        // We should have an on_zone_policy_changed per zone. For now, just
-        // call it once.
-        center.signer.on_zone_policy_changed();
 
         let mut changes: Vec<(String, _)> =
             changes.into_iter().map(|(p, c)| (p.into(), c)).collect();

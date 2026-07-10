@@ -25,14 +25,14 @@
 
 use std::{fmt, sync::Arc};
 
-use cascade_zonedata::{
+use tracing::{info, trace, trace_span, warn};
+
+use crate::zonedata::{
     DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
     LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
     SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
     SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
-use tracing::{info, trace, trace_span, warn};
-
 use crate::{
     center::Center,
     persistence::zone::IxfrZoneDiffs,

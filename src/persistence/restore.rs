@@ -7,10 +7,6 @@ use std::{
     sync::Arc,
 };
 
-use cascade_zonedata::{
-    DiffData, LoadedZonePatcher, LoadedZoneRestorer, RegularRecord, SignedZonePatcher,
-    SignedZoneRestorer, SoaRecord,
-};
 use domain::{
     new::{
         base::{
@@ -24,7 +20,14 @@ use domain::{
 };
 use tracing::{info, trace};
 
-use crate::{center::Center, zone::Zone};
+use crate::{
+    center::Center,
+    zone::Zone,
+    zonedata::{
+        DiffData, LoadedZonePatcher, LoadedZoneRestorer, RegularRecord, SignedZonePatcher,
+        SignedZoneRestorer, SoaRecord,
+    },
+};
 
 /// Restore the loaded instance data of a zone.
 ///
@@ -46,8 +49,11 @@ pub fn restore_loaded(
         return io::Result::Ok(false);
     };
 
-    info!("Restoring persisted loaded data for zone '{}'", zone.name);
     trace!("Restoring from paths: {paths:?}",);
+    info!(
+        "Restoring loaded records for zone '{}' from persisted data",
+        zone.name
+    );
 
     let mut buf = Vec::<u8>::new();
 
@@ -157,6 +163,11 @@ pub fn restore_signed(
 
     info!("Restoring persisted signed data for zone '{}'", zone.name);
     trace!("Restoring from paths: {paths:?}",);
+
+    info!(
+        "Restoring signed records for zone '{}' from persisted data",
+        zone.name
+    );
 
     // Determine the paths to read from. Each zone is persisted as an AXFR
     // plus zero or more IXFRs. The restorer takes a base path ending in an

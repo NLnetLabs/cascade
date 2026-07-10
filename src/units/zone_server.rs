@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use cascade_zonedata::{OldRecord, SoaRecord};
 use domain::base::iana::{Class, Opcode};
 use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
 use domain::net::client::dgram::Connection;
@@ -41,6 +40,7 @@ use crate::util::AbortOnDrop;
 use crate::zone::{
     HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneVersionReviewState,
 };
+use crate::zonedata::{OldRecord, SoaRecord};
 
 /// The source of a zone server.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -501,10 +501,6 @@ impl ZoneServer {
         {
             zone.write_handle(center).get().approve_signed();
         }
-
-        // Send a message to the zone signer to trigger a re-scan of
-        // when to re-sign next.
-        center.signer.on_publish_signed_zone(center);
 
         info!("[CC]: Instructing publication server to publish the signed zone");
         PublicationServer::publish(center, zone, zone_serial);

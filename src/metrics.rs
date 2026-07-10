@@ -15,10 +15,11 @@ use bytes::Bytes;
 use domain::base::Name;
 use prometheus_client::encoding::text::encode;
 use prometheus_client::encoding::{EncodeLabelSet, EncodeLabelValue};
+use prometheus_client::metrics::counter::Counter;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::info::Info;
-use prometheus_client::registry::{Metric, Registry, Unit};
+use prometheus_client::registry::{Registry, Unit};
 
 use crate::center::Center;
 use crate::zone::ZoneByName;
@@ -44,55 +45,60 @@ const PROMETHEUS_PREFIX: &str = "cascade";
 
 //------------ MetricsCollection ---------------------------------------------
 
-// TODO: document how to register metrics
 #[derive(Debug)]
-pub struct MetricsCollection {
+pub struct Metrics {
     /// The metrics registry for all metrics in Cascade. Units need to
     /// register their metrics with this registry.
-    pub cascade: Registry,
+    registry: Registry,
+
+    /// Metrics that are available per zone.
+    per_zone_metrics: PerZoneMetrics,
 
     /// The metrics assemble time only relevant for metrics that get collected
     /// on scraping. If we remove all metrics that get built (from state) on
     /// each scrape, then this timer will be useless and should be removed.
-    _assemble_time_metric: Gauge<u64, AtomicU64>,
+    assemble_time_metric: Gauge<u64, AtomicU64>,
 
     /// A collection of metrics that get collected from state on each metrics
     /// scrape.
-    _state_metrics: StateMetrics,
+    state_metrics: StateMetrics,
 }
 
-impl MetricsCollection {
+impl Metrics {
     pub fn new() -> Self {
         let mut col = Self {
-            cascade: Registry::with_prefix(PROMETHEUS_PREFIX),
-            _assemble_time_metric: Default::default(),
-            _state_metrics: Default::default(),
+            registry: Registry::with_prefix(PROMETHEUS_PREFIX),
+            per_zone_metrics: Default::default(),
+            assemble_time_metric: Default::default(),
+            state_metrics: Default::default(),
         };
 
         // This metric is a "fake" metric and only there to expose the
         // software build information via labels and will always be 1. It
         // cannot be stored inside of `MetricsCollection` as it does not
         // implement Clone.
-        let _cascade_version = Info::new(vec![("version", clap::crate_version!())]);
+        let _cascade_version = Info::new(vec![
+            ("version", clap::crate_version!()),
+            ("commit", env!("CASCADE_BUILD_COMMIT")),
+        ]);
 
-        // The prometheus docs linked to
+        // See the prometheus docs at
         // https://www.robustperception.io/exposing-the-software-version-to-prometheus/
-        // for exposing software version information. And
-        // `prometheus_client` exposes the `Info` type. However, I don't
-        // know if we really need this. It would be more useful if it would
-        // include build information like <branch> and <revision> (but that
-        // requires a build-script).
-        col.cascade
+        // for exposing software version information. And `prometheus_client`
+        // exposes the `Info` type, which we use here to expose cascade
+        // version information just like `cascaded --version`.
+        col.registry
             .register("build", "Cascade build information", _cascade_version);
 
-        col.cascade.register_with_unit(
+        col.registry.register_with_unit(
             "metrics_assemble_duration",
             "The time taken in milliseconds to assemble the last metric snapshot",
             Unit::Other("milliseconds".into()),
-            col._assemble_time_metric.clone(),
+            col.assemble_time_metric.clone(),
         );
 
-        col._state_metrics.register_metrics(&mut col.cascade);
+        col.state_metrics.register_metrics(&mut col.registry);
+        col.per_zone_metrics.register_metrics(&mut col.registry);
 
         col
     }
@@ -102,7 +108,7 @@ impl MetricsCollection {
     pub fn assemble(&self, center: Arc<Center>) -> Result<String, fmt::Error> {
         let start_time = Instant::now();
 
-        let metrics = &self._state_metrics;
+        let metrics = &self.state_metrics;
 
         let zones_configured: i64;
         let mut zones_loaded: i64 = 0;
@@ -175,87 +181,29 @@ impl MetricsCollection {
 
         // u64::MAX milliseconds is around 585_000_000 years
         let assemble_ms = start_time.elapsed().as_millis() as u64;
-        self._assemble_time_metric.set(assemble_ms);
+        self.assemble_time_metric.set(assemble_ms);
         String::try_from(self)
     }
 
-    /// Register a metric with the [`Registry`].
-    ///
-    /// Note: In the Open Metrics text exposition format some metric types
-    /// have a special suffix, e.g. the `Counter` metric with `_total`. These
-    /// suffixes are inferred through the metric type and must not be appended
-    /// to the metric name manually by the user.
-    ///
-    /// Note: A full stop punctuation mark (`.`) is automatically added to the
-    /// passed help text.
-    ///
-    /// Use [`Registry::register_with_unit`] whenever a unit for the given
-    /// metric is known.
-    ///
-    /// ```
-    /// # use prometheus_client::metrics::counter::{Atomic as _, Counter};
-    /// # use prometheus_client::registry::{Registry, Unit};
-    /// # let mut metrics = Registry::default();
-    /// let counter: Counter = Counter::default();
-    ///
-    /// metrics.register("my_counter", "This is my counter", counter.clone());
-    /// ```
-    // This docstring is based on prometheus-client's docstring on the same
-    // method.
-    pub fn register<N: Into<String>, H: Into<String>>(
-        &mut self,
-        name: N,
-        help: H,
-        metric: impl Metric,
-    ) {
-        self.cascade.register(name, help, metric)
-    }
-
-    /// Register a metric with the [`Registry`] specifying the metric's unit.
-    ///
-    /// See [`Registry::register`] for additional documentation.
-    ///
-    /// Note: In the Open Metrics text exposition format units are appended to
-    /// the metric name. This is done automatically. Users must not append the
-    /// unit to the name manually.
-    ///
-    /// ```
-    /// # use prometheus_client::metrics::counter::{Atomic as _, Counter};
-    /// # use prometheus_client::registry::{Registry, Unit};
-    /// # let mut metrics = Registry::default();
-    /// let counter: Counter = Counter::default();
-    ///
-    /// metrics.register_with_unit(
-    ///   "my_counter",
-    ///   "This is my counter",
-    ///   Unit::Seconds,
-    ///   counter.clone(),
-    /// );
-    /// ```
-    // This docstring is based on prometheus-client's docstring on the same
-    // method.
-    pub fn register_with_unit<N: Into<String>, H: Into<String>>(
-        &mut self,
-        name: N,
-        help: H,
-        unit: Unit,
-        metric: impl Metric,
-    ) {
-        self.cascade.register_with_unit(name, help, unit, metric)
+    pub fn get_zone_metrics(&self, name: Name<Bytes>) -> ZoneMetrics {
+        ZoneMetrics {
+            per_zone_metrics: self.per_zone_metrics.clone(),
+            zone_name: name.into(),
+        }
     }
 }
 
-impl TryFrom<&MetricsCollection> for String {
+impl TryFrom<&Metrics> for String {
     type Error = fmt::Error;
 
-    fn try_from(metrics: &MetricsCollection) -> Result<Self, Self::Error> {
+    fn try_from(metrics: &Metrics) -> Result<Self, Self::Error> {
         let mut buffer = String::new();
-        encode(&mut buffer, &metrics.cascade)?;
+        encode(&mut buffer, &metrics.registry)?;
         Ok(buffer)
     }
 }
 
-impl Default for MetricsCollection {
+impl Default for Metrics {
     fn default() -> Self {
         Self::new()
     }
@@ -264,7 +212,7 @@ impl Default for MetricsCollection {
 //------------ StoredName ----------------------------------------------------
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct StoredName(Name<Bytes>);
+pub struct StoredName(Name<Bytes>);
 
 impl EncodeLabelValue for StoredName {
     fn encode(
@@ -275,19 +223,48 @@ impl EncodeLabelValue for StoredName {
     }
 }
 
+impl From<Name<Bytes>> for StoredName {
+    fn from(value: Name<Bytes>) -> Self {
+        Self(value)
+    }
+}
+
+//------------ ZoneLabel -----------------------------------------------------
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct ZoneLabel {
+    pub zone: StoredName,
+}
+
 //------------ ZoneHaltMode --------------------------------------------------
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
-struct ZoneHaltMode {
-    zone: StoredName,
-    mode: HaltMode,
+pub struct ZoneHaltMode {
+    pub zone: StoredName,
+    pub mode: HaltMode,
 }
 
 //------------ HaltMode ------------------------------------------------------
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelValue)]
-enum HaltMode {
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
+pub enum HaltMode {
     HardHalt,
+}
+
+//------------ XfrLabels -----------------------------------------------------
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, EncodeLabelSet)]
+pub struct XfrLabels {
+    pub zone: StoredName,
+    pub r#type: XfrType,
+}
+
+//------------ XfrType -------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, EncodeLabelValue)]
+pub enum XfrType {
+    Axfr,
+    Ixfr,
 }
 
 //------------ StateMetrics --------------------------------------------------
@@ -342,5 +319,215 @@ impl StateMetrics {
             "Number of halted zones",
             self.zones_halted.clone(),
         );
+    }
+}
+
+//------------ PerZoneMetrics ------------------------------------------------
+
+#[derive(Debug, Default, Clone)]
+struct PerZoneMetrics {
+    /// The number of zone transfers attempted by Cascade to the upstream
+    xfr_requests_to_upstream_attempted: Family<XfrLabels, Counter>,
+
+    /// The number of zone transfers succeeded by Cascade to the upstream
+    xfr_requests_to_upstream_succeeded: Family<XfrLabels, Counter>,
+
+    /// The number of records loaded in the last successful load (file or transfer)
+    zone_loaded_last_successful_records: Family<ZoneLabel, Gauge>,
+
+    /// The number of bytes loaded in the last successful load (file or transfer)
+    zone_loaded_last_successful_bytes: Family<ZoneLabel, Gauge>,
+
+    /// The number of records loaded in the last load (file or transfer),
+    /// regardless of wether it was successful or aborted due to failure
+    zone_loaded_last_records: Family<ZoneLabel, Gauge>,
+
+    /// The number of bytes loaded in the last load (file or transfer),
+    /// regardless of wether it was successful or aborted due to failure
+    zone_loaded_last_bytes: Family<ZoneLabel, Gauge>,
+
+    /// Duration of the last load for this zone.
+    zone_last_load_duration: Family<ZoneLabel, Gauge<f64, AtomicU64>>,
+
+    /// Duration of the last load for this zone.
+    zone_last_successful_load_duration: Family<ZoneLabel, Gauge<f64, AtomicU64>>,
+
+    /// Duration of the last successful signing operation for this zone.
+    zone_last_sign_duration: Family<ZoneLabel, Gauge<f64, AtomicU64>>,
+
+    /// Duration of the last signing operations for this zone.
+    zone_last_successful_sign_duration: Family<ZoneLabel, Gauge<f64, AtomicU64>>,
+}
+
+impl PerZoneMetrics {
+    fn register_metrics(&self, metrics: &mut Registry) {
+        metrics.register(
+            "xfr_requests_to_upstream_attempted",
+            "Number of zone transfers attempted by Cascade towards the upstream primary",
+            self.xfr_requests_to_upstream_attempted.clone(),
+        );
+
+        metrics.register(
+            "xfr_requests_to_upstream_succeeded",
+            "Number of succesful zone transfers by Cascade towards the upstream primary",
+            self.xfr_requests_to_upstream_succeeded.clone(),
+        );
+
+        metrics.register(
+            "zone_loaded_last_successful_records",
+            "Number of records loaded in last successful zone transfer or zonefile load",
+            self.zone_loaded_last_successful_records.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_loaded_last_successful_size",
+            "Number of bytes loaded in last successful zone transfer or zonefile load",
+            Unit::Bytes,
+            self.zone_loaded_last_successful_bytes.clone(),
+        );
+
+        metrics.register(
+            "zone_loaded_last_records",
+            "Number of records loaded in last attempted zone transfer or zonefile load",
+            self.zone_loaded_last_records.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_loaded_last_size",
+            "Number of bytes loaded in last attempted zone transfer or zonefile load",
+            Unit::Bytes,
+            self.zone_loaded_last_bytes.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_last_load_duration",
+            "Duration of the last load for this zone",
+            Unit::Seconds,
+            self.zone_last_load_duration.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_last_successful_load_duration",
+            "Duration of the last successful load for this zone",
+            Unit::Seconds,
+            self.zone_last_successful_load_duration.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_last_sign_duration",
+            "Duration of the last signing operation for this zone",
+            Unit::Seconds,
+            self.zone_last_sign_duration.clone(),
+        );
+
+        metrics.register_with_unit(
+            "zone_last_successful_sign_duration",
+            "Duration of the last successful signing operation for this zone",
+            Unit::Seconds,
+            self.zone_last_successful_sign_duration.clone(),
+        );
+    }
+}
+
+//------------ ZoneMetrics ---------------------------------------------------
+
+/// An instantiation of `PerZoneMetrics` for a zone.
+#[derive(Debug, Clone)]
+pub struct ZoneMetrics {
+    per_zone_metrics: PerZoneMetrics,
+    zone_name: StoredName,
+}
+
+impl ZoneMetrics {
+    pub fn inc_xfr_requests_to_upstream_attempted(&self, ty: XfrType) {
+        self.per_zone_metrics
+            .xfr_requests_to_upstream_attempted
+            .get_or_create(&XfrLabels {
+                zone: self.zone_name.clone(),
+                r#type: ty,
+            })
+            .inc();
+    }
+
+    pub fn inc_xfr_requests_to_upstream_succeeded(&self, ty: XfrType) {
+        self.per_zone_metrics
+            .xfr_requests_to_upstream_succeeded
+            .get_or_create(&XfrLabels {
+                zone: self.zone_name.clone(),
+                r#type: ty,
+            })
+            .inc();
+    }
+
+    pub fn zone_loaded_last_successful_records(&self, n: i64) {
+        self.per_zone_metrics
+            .zone_loaded_last_successful_records
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn zone_loaded_last_records(&self, n: i64) {
+        self.per_zone_metrics
+            .zone_loaded_last_records
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn zone_loaded_last_successful_bytes(&self, n: i64) {
+        self.per_zone_metrics
+            .zone_loaded_last_successful_bytes
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn zone_loaded_last_bytes(&self, n: i64) {
+        self.per_zone_metrics
+            .zone_loaded_last_bytes
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn last_load_duration(&self, n: f64) {
+        self.per_zone_metrics
+            .zone_last_load_duration
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn last_successful_load_duration(&self, n: f64) {
+        self.per_zone_metrics
+            .zone_last_successful_load_duration
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn last_sign_duration(&self, n: f64) {
+        self.per_zone_metrics
+            .zone_last_sign_duration
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
+    }
+
+    pub fn last_successful_sign_duration(&self, n: f64) {
+        self.per_zone_metrics
+            .zone_last_successful_sign_duration
+            .get_or_create(&ZoneLabel {
+                zone: self.zone_name.clone(),
+            })
+            .set(n);
     }
 }
