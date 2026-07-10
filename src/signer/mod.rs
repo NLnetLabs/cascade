@@ -89,6 +89,14 @@ fn sign(
 
     match result {
         Ok(()) => {
+            let soa = builder.next_signed().unwrap().soa();
+
+            debug!(
+                zone = %zone.name,
+                serial = ?soa.rdata.serial,
+                "Generated a new signed instance of the zone"
+            );
+
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
             handle.get().finish_signing(built);
             status.status.finish(true);
