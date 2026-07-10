@@ -16,6 +16,7 @@ use tracing::warn;
 
 use crate::{
     loader::zone::LoaderState,
+    persistence::zone::PersistenceState,
     policy::{Policy, PolicyVersion},
     tsig::TsigStore,
     zone::ZoneState,
@@ -115,6 +116,15 @@ impl Spec {
                 }
                 let policy = policy.map(|p| p.latest.clone());
 
+                let persistence = PersistenceState {
+                    loaded_diff_paths: persisted_loaded_diffs,
+                    signed_diff_paths: persisted_signed_diffs
+                        .into_iter()
+                        .map(|(d, s)| (d, s.map(|s| domain::new::base::Serial::from(s.0))))
+                        .collect(),
+                    ..Default::default()
+                };
+
                 Ok(ZoneState {
                     policy,
                     instances: instances.parse(),
@@ -129,8 +139,7 @@ impl Spec {
                     previous_serial,
                     loader,
                     history,
-                    persisted_loaded_diff_paths: persisted_loaded_diffs,
-                    persisted_signed_diff_paths: persisted_signed_diffs,
+                    persistence,
                     ..Default::default()
                 })
             }

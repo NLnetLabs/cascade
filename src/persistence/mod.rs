@@ -42,12 +42,13 @@
 //!
 //! After a diff is persisted successfully:
 //!   - The diff is stored in memory alongside the zone in
-//!     `StorageState::diffs` so that it can be served in response to an IXFR
-//!     request from a downstream nameserver.
+//!     [`StorageState::diffs`](crate::zone::StorageState::diffs) so that it can be served in
+//!     response to an IXFR request from a downstream nameserver.
 //!   - The path that the diff file was written to is appended to
-//!     `ZoneState::persisted_loaded_diff_paths` or
-//!     `ZoneState::persisted_signed_diff_paths` and the zone state is
-//!     immediately saved to disk.
+//!     [`PersistenceState::loaded_diff_paths`](zone::PersistenceState::loaded_diff_paths)
+//!     or
+//!     [`PersistenceState::signed_diff_paths`](zone::PersistenceState::signed_diff_paths)
+//!     and the zone state is immediately saved to disk.
 //!
 //! # Panics
 //!

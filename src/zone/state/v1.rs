@@ -115,7 +115,7 @@ pub struct Spec {
     /// Locations of persisted signed zone diffs to ensure IXFR out toward
     /// downstreams is still possible after restart, and to enable a complete
     /// latest signed version of the zone to be reconsituted.
-    pub persisted_signed_diffs: Vec<PathBuf>,
+    pub persisted_signed_diffs: Vec<(PathBuf, Option<Serial>)>,
 }
 
 //--- Conversion
@@ -137,8 +137,13 @@ impl Spec {
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
             history: zone.history.clone(),
-            persisted_loaded_diffs: zone.persisted_loaded_diff_paths.clone(),
-            persisted_signed_diffs: zone.persisted_signed_diff_paths.clone(),
+            persisted_loaded_diffs: zone.persistence.loaded_diff_paths.clone(),
+            persisted_signed_diffs: zone
+                .persistence
+                .signed_diff_paths
+                .iter()
+                .map(|(p, s)| (p.clone(), s.map(|s| domain::base::Serial(u32::from(s)))))
+                .collect(),
         }
     }
 }

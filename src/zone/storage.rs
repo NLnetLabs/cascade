@@ -35,6 +35,7 @@ use crate::zonedata::{
 };
 use crate::{
     center::Center,
+    persistence::zone::IxfrZoneDiffs,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState, machine::ZoneStateMachine},
@@ -856,15 +857,8 @@ pub struct StorageState {
     // current i.e. published zone instance.
     pub published_loaded_soa: Option<SoaRecord>,
 
-    /// Diffs from one serial to another. Each diff consists of changes in the
-    /// loaded part and changes in the signed part.
-    ///
-    /// A loaded diff is not available if the zone was re-signed due to
-    /// changes in signing key or to refresh expiring signatures.
-    ///
-    /// A signed diff is not available if the zone has been re-loaded and has
-    /// not yet been signed, e.g. is held at review or signing is in-progress.
-    pub diffs: Vec<(Arc<DiffData>, Arc<DiffData>)>,
+    /// Diffs from one serial to another for responding to IXFR requests.
+    pub diffs: IxfrZoneDiffs,
 
     /// Ongoing background tasks.
     ///
