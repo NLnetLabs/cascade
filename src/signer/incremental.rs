@@ -1043,6 +1043,9 @@ impl WorkSpace<'_> {
             previous_serial,
         )?;
 
+        // Save the new SOA serial.
+        self.local_state.previous_serial = Some(signed_serial);
+
         let new_soa = ZoneRecordData::Soa(Soa::new(
             zone_soa.mname().clone(),
             zone_soa.rname().clone(),
