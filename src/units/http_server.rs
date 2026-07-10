@@ -946,17 +946,17 @@ impl HttpServer {
                     .get(zone_name)
                     .expect("zones and policies are consistent");
 
-                zone.write(center).policy = Some(pol.latest.clone());
+                {
+                    let mut handle = zone.write_handle(center);
+                    handle.state.policy = Some(pol.latest.clone());
+                    handle.signer().after_policy_change();
+                }
 
                 center
                     .key_manager
                     .on_zone_policy_changed(center, zone, old.clone(), new.clone());
             }
         }
-
-        // We should have an on_zone_policy_changed per zone. For now, just
-        // call it once.
-        center.signer.on_zone_policy_changed();
 
         let mut changes: Vec<(String, _)> =
             changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
