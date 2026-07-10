@@ -24,7 +24,7 @@
 
 # Merge and release
 - `git checkout main`
-- `git tag -a -m "Release vX.Y.Z[-xxx] '<NAME>'"`
+- `git tag -a -m "Release vX.Y.Z[-xxx] '<NAME>'" vX.Y.Z[-xxx]`
 - Verify that the release tag version is the same as the Cargo.toml version but with a `v` prefix
 - `git push --tags`
 - GH should automatically run the packaging workflow again creating run NNNNNNNN
