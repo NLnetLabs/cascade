@@ -629,10 +629,14 @@ The ``[server.outbound]`` section.
 
 .. option:: max-diffs-size = 20
 
-   The maximum size allowed for in-memory diffs for a single zone, defined as
-   a percentage of the size of the last published version of the zone. If
-   storing a new diff would exceed the limit, diffs will be discarded to make
-   space starting with the oldest diffs first.
+   The maximum size allowed for in-memory diffs for a single zone, defined
+   as a percentage of the size of the last published version of the zone,
+   with zone size measured as the number of records in the zone and diff size
+   measured as the total number of records added by all diffs for the zone
+   plus the total number of records removed by all diffs for the zone.
+
+   If storing a new diff would exceed the limit, diffs will be discarded to
+   make space starting with the oldest diffs first.
 
    This setting has no impact on the number of diffs persisted to disk. See
    max-diffs to control that.
