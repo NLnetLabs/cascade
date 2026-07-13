@@ -85,13 +85,13 @@ forcing them to costly fallback to AXFR transfers.
 Cascade has two policy settings which limit the amount of memory and disk
 space used per zone to store diffs:
 
-- ``server.outbound.max_diffs``
-- ``server.outbound.max_diffs_size``
+- ``server.outbound.max-diffs``
+- ``server.outbound.max-diffs-size``
 
 ``max_diffs`` specifies the maximum numer of IXFR diffs per zone that Cascade
 may keep in memory and on disk.
 
-``max_diffs_size`` specifies the maximum size of all diffs combined that may
+``max-diffs-size`` specifies the maximum size of all diffs combined that may
 be stored in memory per zone and is defined in relation to the size (number of
 records) of the published zone.
 
