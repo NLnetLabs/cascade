@@ -597,6 +597,13 @@ impl SigningStep {
         }
     }
 
+    pub fn signing_strategy(&self) -> &str {
+        match self {
+            SigningStep::Full(_) => "full",
+            SigningStep::Incremental(_) => "incremental",
+        }
+    }
+
     pub fn get_current_step(&self) -> usize {
         match self {
             SigningStep::Full(s) => match s {

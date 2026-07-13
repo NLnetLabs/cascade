@@ -865,15 +865,19 @@ fn print_sign_phase(
             Some(SigningStageReport::Finished(r)) => Some(r.started_at),
         };
 
-        let step = match &signing_report.as_ref().map(|r| &r.stage_report) {
-            None => "step: not started yet".into(),
-            Some(SigningStageReport::Requested(_)) => "step: not started yet".into(),
+        let (strategy, step) = match &signing_report.as_ref().map(|r| &r.stage_report) {
+            None => ("not started yet", "step: not started yet".into()),
+            Some(SigningStageReport::Requested(_)) => {
+                ("not started yet", "step: not started yet".into())
+            }
             Some(SigningStageReport::InProgress(SigningInProgressReport { step, .. })) => {
                 let step_num = step.get_current_step();
                 let step_total = step.get_total_steps();
-                format!("step {step_num}/{step_total}: {}", step.as_str())
+                let strategy = step.signing_strategy();
+                let step = format!("step {step_num}/{step_total}: {}", step.as_str());
+                (strategy, step)
             }
-            Some(SigningStageReport::Finished(_)) => "step: finished".into(),
+            Some(SigningStageReport::Finished(_)) => ("finished", "step: finished".into()),
         };
 
         let unsigned_serial = serial_to_string(unsigned_serial);
@@ -887,6 +891,7 @@ fn print_sign_phase(
         println!("  {Ongoing} sign{short_signed_serial}");
         println!("  |   loaded serial: {unsigned_serial}");
         println!("  |   signed serial: {signed_serial}");
+        println!("  |   strategy: {strategy}");
         println!("  |   {step}");
         println!(
             "  |   start time: {}",
