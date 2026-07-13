@@ -58,8 +58,8 @@
 //!     can be served in response to an IXFR request from a downstream
 //!     nameserver.
 //!   - The path that the diff file was written to is appended to
-//!     [`PersistenceState::loaded_diffs`] or
-//!     [`PersistenceState::signed_diffs`] and the zone state is
+//!     [`PersistenceState::loaded_diffs`](crate::persistence::zone::PersistenceState::loaded_diffs) or
+//!     [`PersistenceState::signed_diffs`](crate::persistence::zone::PersistenceState::signed_diffs) and the zone state is
 //!     immediately saved to disk.
 //!
 //! # Panics
