@@ -436,7 +436,7 @@ impl PersistenceState {
                     });
 
             // Remove the corresponding loaded diffs.
-            for loaded_serial in loaded_serials_to_remove.into_iter() {
+            for loaded_serial in loaded_serials_to_remove {
                 if let Some(found_item) = state
                     .persistence
                     .loaded_diffs
