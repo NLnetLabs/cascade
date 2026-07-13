@@ -84,7 +84,6 @@ pub fn sign_incrementally(
 
     {
         let mut status = status.write().unwrap();
-        status.current_action = "Start incremental signing".to_string();
         status.step = SigningStep::Incremental(IncrementalSigningStep::SigningIncrementally);
     }
 
@@ -185,7 +184,6 @@ pub fn sign_incrementally(
                 domain::new::base::Serial::from(signed_serial.into_int()),
             )
             .unwrap();
-        status.current_action = "Start incremental signing".to_string();
         status.step = SigningStep::Incremental(IncrementalSigningStep::SigningIncrementally);
     }
 

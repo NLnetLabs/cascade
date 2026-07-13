@@ -102,12 +102,10 @@ fn sign(
             handle.get().finish_signing(built);
             status.status.finish(true);
             zone.metrics.last_successful_sign_duration(duration);
-            status.current_action = "Finished".to_string();
         }
         Err(SignerError::NothingToDo) => {
             handle.get().abandon_signing(builder);
             status.status.finish(true);
-            status.current_action = "Nothing to do".to_string();
         }
         Err(SignerError::KeepSerialPolicyViolated) => {
             // Also ignore Keep errors. We can ignore these errors for
@@ -116,8 +114,6 @@ fn sign(
             // Something in status would be good.
             handle.get().abandon_signing(builder);
             status.status.finish(true);
-
-            status.current_action = "Resign failed due to Keep policy".to_string();
 
             // If the sign operation was triggered by a load, the user forgot to increase the
             // serial of the zone, so we should tell them about that by emitting an error.
@@ -141,7 +137,6 @@ fn sign(
             error!("Signing failed: {error}");
             handle.get().signing_failed(builder, error.clone());
             status.status.finish(false);
-            status.current_action = "Aborted".to_string();
 
             handle.state.record_event(
                 HistoricalEvent::SigningFailed {

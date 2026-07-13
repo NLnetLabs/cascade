@@ -15,7 +15,6 @@ use crate::util::{
 
 #[derive(Debug)]
 pub struct SigningStatusPerZone {
-    pub current_action: String,
     pub step: SigningStep,
     pub status: ZoneSigningStatus,
 }
@@ -118,10 +117,7 @@ impl SigningStatusPerZone {
             ZoneSigningStatus::Aborted => None,
         };
 
-        stage_report.map(|stage_report| SigningReport {
-            current_action: self.current_action.clone(),
-            stage_report,
-        })
+        stage_report.map(|stage_report| SigningReport { stage_report })
     }
 }
 

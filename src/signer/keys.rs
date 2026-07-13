@@ -66,8 +66,6 @@ impl ZoneSigningKeys {
         keyset_state: &KeySetState,
         status: &RwLock<SigningStatusPerZone>,
     ) -> Result<Self, Box<LoadError>> {
-        status.write().unwrap().current_action = "Loading signing keys".to_string();
-
         let mut list = Vec::new();
 
         for (pub_key_name, key_info) in keyset_state.keyset.keys() {
@@ -282,9 +280,6 @@ impl KeyPair {
         let kmip_conn_pool = match kmip_servers.entry(priv_key_url.server_id().to_string()) {
             std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
             std::collections::hash_map::Entry::Vacant(e) => {
-                status.write().unwrap().current_action =
-                    format!("Connecting to KMIP server '{}'", priv_key_url.server_id());
-
                 // Try and load the KMIP server settings.
                 let server_state_path = center
                     .config
@@ -375,11 +370,6 @@ impl KeyPair {
                 e.insert(pool)
             }
         };
-
-        status.write().unwrap().current_action = format!(
-            "Fetching keys from KMIP server '{}'",
-            priv_key_url.server_id()
-        );
 
         let priv_key_url_inner = (*priv_key_url).clone();
         let pub_key_url_inner = (*pub_key_url).clone();

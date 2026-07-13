@@ -528,7 +528,6 @@ pub enum ZoneReviewStatus {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SigningReport {
-    pub current_action: String,
     pub stage_report: SigningStageReport,
 }
 

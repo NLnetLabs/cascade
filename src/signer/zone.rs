@@ -423,7 +423,6 @@ impl SignerZoneHandle<'_> {
         permit: SigningPermit,
     ) {
         let status = Arc::new(RwLock::new(SigningStatusPerZone {
-            current_action: "Initiating signing".into(),
             step: SigningStep::Full(FullSigningStep::CollectingRecords),
             status: ZoneSigningStatus::new(),
         }));

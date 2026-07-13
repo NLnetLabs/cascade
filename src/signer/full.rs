@@ -125,7 +125,6 @@ pub fn sign_zone(
         let mut status = status.write().unwrap();
         // Record the start of signing for this zone.
         status.status.start(loaded_serial, serial).unwrap();
-        status.current_action = "Collecting records to sign".to_string();
         status.step = SigningStep::Full(FullSigningStep::CollectingRecords);
     }
 
@@ -153,7 +152,6 @@ pub fn sign_zone(
     debug!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
     {
         let mut status = status.write().unwrap();
-        status.current_action = "Fetching apex RRs from the key manager".to_string();
         status.step = SigningStep::Full(FullSigningStep::FetchingKeys);
     }
     // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
@@ -207,7 +205,6 @@ pub fn sign_zone(
     debug!("[ZS]: Sorting collected records for zone '{zone_name}'.");
     {
         let mut status = status.write().unwrap();
-        status.current_action = "Sorting records".to_string();
         status.step = SigningStep::Full(FullSigningStep::SortingRecords);
     }
     let sort_start = Instant::now();
@@ -230,7 +227,6 @@ pub fn sign_zone(
     debug!("[ZS]: Generating denial records for zone '{zone_name}'.");
     {
         let mut status = status.write().unwrap();
-        status.current_action = "Generating denial records".to_string();
         status.step = SigningStep::Full(FullSigningStep::GeneratingDenialRecords);
     }
     let denial_start = Instant::now();
@@ -302,7 +298,6 @@ pub fn sign_zone(
     debug!("[ZS]: Generating RRSIG records.");
     {
         let mut status = status.write().unwrap();
-        status.current_action = "Generating signature records".to_string();
         status.step = SigningStep::Full(FullSigningStep::GeneratingSignatureRecords);
     }
 
