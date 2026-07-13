@@ -360,8 +360,8 @@ impl PersistenceState {
         let loaded_snapshot_path = &loaded_snapshot_path.unwrap().path;
         let signed_snapshot_path = &signed_snapshot_path.unwrap().path;
 
-        // Get access to the published records for the zone, so that we
-        // can write new loaded and signed snapshot files to disk.
+        // Get access to the published records for the zone, so that we can
+        // write new loaded and signed snapshot files to disk.
         let Ok(viewer) = viewer.try_read() else {
             return;
         };
@@ -392,21 +392,21 @@ impl PersistenceState {
             );
 
             // Now that we have re-written the snapshots using the latest
-            // published version of the zone we don't need any of the
-            // on-disk persisted diffs that were previously applied on top
-            // of the old snapshot to re-create the zone.
+            // published version of the zone we don't need any of the on-disk
+            // persisted diffs that were previously applied on top of the old
+            // snapshot to re-create the zone.
             //
-            // We might still however need some of those on-disk diffs so
-            // that we can reload them on startup to be able to serve them
-            // as IXFR diffs to downstream nameservers.
+            // We might still however need some of those on-disk diffs so that
+            // we can reload them on startup to be able to serve them as IXFR
+            // diffs to downstream nameservers.
             //
-            // Check which ones we can delete and after deleting them
-            // update our record of the first on-disk diff file that
-            // should be applied on top of the updated snapshot.
+            // Check which ones we can delete and after deleting them update
+            // our record of the first on-disk diff file that should be
+            // applied on top of the updated snapshot.
 
-            // Remove the first N oldest signed diffs and their
-            // corresponding loaded diffs. Skip the first "diff" as it is
-            // the snapshot, not a diff.
+            // Remove the first N oldest signed diffs and their corresponding
+            // loaded diffs. Skip the first "diff" as it is the snapshot, not
+            // a diff.
             let mut idx = 0;
             let mut loaded_serials_to_remove = vec![];
             state
@@ -414,8 +414,8 @@ impl PersistenceState {
                     .signed_diffs
                     .diff_infos
                     .retain(|diff_info| {
-                        // Keep only the snapshot and diffs newer than the ones
-                        // to remove.
+                        // Keep only the snapshot and diffs newer than the
+                        // ones to remove.
                         let keep = idx == 0 || idx > num_diffs_to_remove;
                         trace!("Compaction for zone '{}': removing {num_diffs_to_remove} diffs: retain diff #{idx}: {keep}", zone.name);
                         idx += 1;
