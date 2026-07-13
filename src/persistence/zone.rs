@@ -362,9 +362,11 @@ impl PersistenceState {
 
         // Get access to the published records for the zone, so that we
         // can write new loaded and signed snapshot files to disk.
-        if let Ok(viewer) = viewer.try_read()
-            && let Some(reader) = viewer.read()
-        {
+        let Ok(viewer) = viewer.try_read() else {
+            return;
+        };
+
+        if let Some(reader) = viewer.read() {
             debug!(
                 "Writing loaded zone snapshot to {}",
                 loaded_snapshot_path.display()
