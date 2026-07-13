@@ -162,6 +162,7 @@ impl fmt::Debug for TsigKey {
 //----------- Actions ----------------------------------------------------------
 
 /// Reload the TSIG store.
+#[expect(dead_code, reason = "Pending functionality")]
 pub fn reload(center: &Arc<Center>) {
     let path = &center.config.tsig_store_path;
     let spec = match file::Spec::load(path) {
@@ -228,6 +229,7 @@ pub fn import_key(
 }
 
 /// Generate a TSIG key.
+#[expect(dead_code, reason = "Pending functionality")]
 pub fn generate_key(
     center: &Arc<Center>,
     name: tsig::KeyName,

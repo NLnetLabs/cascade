@@ -6,16 +6,16 @@ use std::{
     sync::Arc,
 };
 
-use cascade_zonedata::{
-    DiffData, LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer,
-};
+use cascade_zonedata::DiffData;
 use domain::new::base::Serial;
 use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
+    server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState, save_state_now},
+    zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
 };
 
 //----------- ZonePersistenceHandle --------------------------------------------
@@ -134,7 +134,22 @@ impl ZonePersistenceHandle<'_> {
                     "Restored diffs: {:?}",
                     handle.state.persistence.loaded_diffs
                 );
-                handle.storage().finish_signed_restoration(restored);
+                let (loaded_reviewer, signed_reviewer, viewer) =
+                    handle.storage().finish_signed_restoration(restored);
+
+                handle.signer().on_restoration();
+
+                // Register the zone against the zone servers.
+                LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+                SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+                PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+                // Mark restoration as complete.
+                handle.state.instances.restore();
+
+                // Send a notification that the state machine is now passive.
+                handle.storage().on_passive();
+
                 handle.state.persistence.ongoing.finish();
             });
     }
@@ -195,7 +210,7 @@ impl ZonePersistenceHandle<'_> {
                 // cannot be taken until the outer function terminates.
                 let mut handle = zone.write_handle(&center);
 
-                handle.get().start_switch(persisted);
+                handle.get().finish_signed_persistence(persisted);
 
                 handle.state.persistence.ongoing.finish();
             });
@@ -209,7 +224,17 @@ fn abandon_loaded_restoration(
 ) {
     reset_state_due_to_abandoned_restore(center, zone);
     let mut handle = zone.write_handle(center);
-    handle.storage().abandon_loaded_restoration(restorer);
+    let (loaded_reviewer, signed_reviewer, viewer) =
+        handle.storage().abandon_loaded_restoration(restorer);
+
+    // Update the zone servers.
+    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+    // Send a notification that the state machine is now passive.
+    handle.storage().on_passive();
+
     handle.state.persistence.ongoing.finish();
 }
 
@@ -220,14 +245,24 @@ fn abandon_signed_restoration(
 ) {
     reset_state_due_to_abandoned_restore(center, zone);
     let mut handle = zone.write_handle(center);
-    handle.storage().abandon_signed_restoration(restorer);
+    let (loaded_reviewer, signed_reviewer, viewer) =
+        handle.storage().abandon_signed_restoration(restorer);
+
+    // Update the zone servers.
+    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+    // Send a notification that the state machine is now passive.
+    handle.storage().on_passive();
+
     handle.state.persistence.ongoing.finish();
 }
 
 fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
     PersistenceState::clear(center, zone);
     {
-        let mut state = zone.write(center);
+        let mut handle = zone.write_handle(center);
 
         // In case this zone was signed in the past we have to make sure that
         // any attempt to enqueue a re-signing operation will be skipped as
@@ -235,13 +270,13 @@ fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) 
         // TODO: Find a better way to prevent this issue as changing the
         // min_expiration timestamps is a very indirect and non-obvious way of
         // preventing re-signing.
-        state.min_expiration = None;
-        state.next_min_expiration = None;
+        handle.state.min_expiration = None;
+        handle.state.next_min_expiration = None;
 
         // Also remove any already enqueued signing operation that is blocked
         // by the ongoing restore as it will otherwise immediately start once
         // the restore completes.
-        state.signer.cancel_enqueued_signing_operations();
+        handle.signer().cancel_enqueued_signing_operations();
     }
     save_state_now(center, zone);
 }
@@ -550,7 +585,11 @@ impl PersistedDiffManager {
         // discarding diff paths that we should not be discarding. So we can't
         // handle this heere and should never get into this state so just
         // abort as something is seriously wrong.
-        assert!(self.diff_infos.is_empty() || loaded_serial.is_some() || signed_serial.is_some());
+        assert!(
+            self.diff_infos.is_empty() || loaded_serial.is_some() || signed_serial.is_some(),
+            "Pushed diff should either be a snapshot or related to a prior diff (# diff infos={}, loaded serial: {loaded_serial:?}, signed serial: {signed_serial:?})",
+            self.diff_infos.len()
+        );
 
         let zone_name = &zone.name;
         let data_file_type = match self.record_source {
@@ -578,19 +617,16 @@ impl PersistedDiffManager {
         // If no serial number is provided we can only cleanup the initial
         // snapshot, and we should only do that if we have only a snapshot
         // and no diffs.
+        let is_snapshot_only = self.diff_infos.len() == 1;
         assert!(!self.is_empty());
-        assert!(self.diff_infos.len() == 1 || serial.is_some());
+        assert!(is_snapshot_only || serial.is_some());
 
         // We can't just remove a diff out of the middle of a sequence,
         // we can only cleanup the last diff. If it's a snapshot we are
         // cleaning up that should be the last entry, we can't orphan diffs
         // by removing the snapshot they apply to.
         let last = self.diff_infos.pop_last().unwrap();
-        if let Some(serial) = serial {
-            // When removing a diff the specified serial must match that of
-            // the last diff that we have.
-            assert_eq!(last.loaded_serial, Some(serial));
-        } else {
+        if is_snapshot_only {
             // In the case of removing a snapshot, set next_idx back to 0
             // so that the snapshot is always numbered 0. Nothing should
             // depend on this but it just feels a bit nicer to see 0 in the
@@ -599,6 +635,10 @@ impl PersistedDiffManager {
             // TODO: Maybe we should separate out snapshot files from diff
             // files.
             self.next_idx = 0;
+        } else {
+            // When removing a diff the specified serial must match that of
+            // the last diff that we have.
+            assert_eq!(last.loaded_serial, serial);
         }
 
         trace!(
@@ -651,7 +691,7 @@ pub struct PersistedDiffFileInfo {
     /// The loaded serial number that the data file relates to.
     ///
     /// This can be None for a signed diff resulting from changes only to the
-    /// signed zone.
+    /// signed zone, or for an initial snapshot of a loaded zone.
     loaded_serial: Option<Serial>,
 
     /// The signed serial number that the data file relates to.

@@ -10,7 +10,6 @@ use cascade_zonedata::{
     DiffData, LoadedZonePersisted, LoadedZonePersister, RegularRecord, SignedZonePersisted,
     SignedZonePersister, SoaRecord,
 };
-
 use domain::new::base::wire::{BuildBytes, TruncationError};
 use tracing::trace;
 
@@ -35,11 +34,6 @@ pub fn persist_loaded(
 ) -> LoadedZonePersisted {
     let loaded_diff = persister.loaded_diff();
     if !loaded_diff.is_empty() {
-        // Determine the path to write to and update the record of written
-        // paths here as we don't want to give responsibility for working with
-        // ZoneState to the persistence crate. Accumulate a set of diffs per
-        // unsigned and signed zone, each stored at a path one suffixed by an
-        // index which rises by one when persisted.
         let destination = {
             let mut handle = zone.write_handle(center);
             let loaded_serial = loaded_diff.removed_soa.as_ref().map(|s| s.rdata.serial);

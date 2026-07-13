@@ -8,15 +8,15 @@ use std::{
 };
 
 use bytes::Bytes;
-use cascade_api::{TsigAddError, TsigAddResult};
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use tracing::{debug, error, info, trace};
 
-use crate::api::KeyImport;
+use crate::api::{self, KeyImport, TsigAddError, TsigAddResult};
 use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::metrics::Metrics;
 use crate::persistence::{Compacter, Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::state::PolicySpec;
@@ -25,7 +25,6 @@ use crate::units::key_manager::KeyManager;
 use crate::units::zone_signer::ZoneSigner;
 use crate::zone::{HistoricalEvent, ZoneByPtr, ZoneHandle};
 use crate::{
-    api,
     config::Config,
     log::Logger,
     policy::Policy,
@@ -40,6 +39,9 @@ use crate::{
 pub struct Center {
     /// Global state.
     pub state: Mutex<State>,
+
+    // The Prometheus metrics
+    pub metrics: Metrics,
 
     /// The configuration.
     pub config: Config,
@@ -113,12 +115,12 @@ pub async fn add_zone(
         }
 
         // Create the zone and initialize its state.
-        zone = Arc::new(Zone::new(name));
+        zone = Arc::new(Zone::new(name, &center.metrics));
 
         source = match api_source {
-            cascade_api::ZoneSource::None => crate::loader::Source::None,
-            cascade_api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
-            cascade_api::ZoneSource::Server { addr, tsig_key } => {
+            api::ZoneSource::None => crate::loader::Source::None,
+            api::ZoneSource::Zonefile { path } => crate::loader::Source::Zonefile { path },
+            api::ZoneSource::Server { addr, tsig_key } => {
                 let tsig_key = if let Some(key_name) = tsig_key {
                     // Lookup the key in the TSIG key store.
                     let key = state
@@ -155,15 +157,22 @@ pub async fn add_zone(
 
             // Don't try to restore zone data, since it's a completely new zone.
             //
-            // This will clear the data for the zone and register it against the
-            // zone servers.
-            ZoneHandle {
+            // This will clear the data for the zone.
+            let mut handle = ZoneHandle {
                 zone: &zone,
                 state: &mut zone_state,
                 center,
-            }
-            .storage()
-            .abandon_loaded_restoration(restorer);
+            };
+            let (loaded_reviewer, signed_reviewer, viewer) =
+                handle.storage().abandon_loaded_restoration(restorer);
+
+            // Update the zone servers.
+            LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+            SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+            PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+            // Send a notification that the state machine is now passive.
+            handle.storage().on_passive();
         }
 
         // Insert the zone in the global set.
@@ -251,7 +260,18 @@ async fn register_zone(
 /// Remove a zone.
 pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRemoveError> {
     let mut state = center.state.lock().unwrap();
-    let zone = state.zones.take(&name).ok_or(ZoneRemoveError::NotFound)?.0;
+
+    let ZoneByName(zone) = state.zones.get(&name).ok_or(ZoneRemoveError::NotFound)?;
+
+    // TODO(#871): support removing a zone during restoration.
+    if zone.read().storage.is_restoring() {
+        return Err(ZoneRemoveError::MidRestoration);
+    }
+
+    let ZoneByName(zone) = state
+        .zones
+        .take(&name)
+        .expect("the zone was found just above");
 
     // Remove the zone from all the places it might be stored.
     // The zone might not have made it to these places, but that's not an issue
@@ -482,6 +502,9 @@ impl From<ZoneAddError> for api::ZoneAddError {
 pub enum ZoneRemoveError {
     /// No such name could be found.
     NotFound,
+
+    /// The zone is being restored from disk.
+    MidRestoration,
 }
 
 impl std::error::Error for ZoneRemoveError {}
@@ -490,6 +513,7 @@ impl fmt::Display for ZoneRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
+            Self::MidRestoration => "the zone is being restored from disk",
         })
     }
 }
@@ -498,6 +522,7 @@ impl From<ZoneRemoveError> for api::ZoneRemoveError {
     fn from(value: ZoneRemoveError) -> Self {
         match value {
             ZoneRemoveError::NotFound => Self::NotFound,
+            ZoneRemoveError::MidRestoration => Self::MidRestoration,
         }
     }
 }

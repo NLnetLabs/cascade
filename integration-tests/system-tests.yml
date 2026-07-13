@@ -68,7 +68,7 @@ jobs:
     - uses: ./.github/actions/prepare-systest-env
     - uses: ./.github/actions/set-build-profile
       with:
-        build-profile: release
+        build-profile: ${{ inputs.build-profile }}
     - run: cascade --version
     - run: file $(which cascade)
 
@@ -81,6 +81,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/set-build-profile
+      with:
+        build-profile: ${{ inputs.build-profile }}
     - run: cascade --version
     - run: file $(which cascade)
 
@@ -226,7 +229,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
         with:
-          build-profile: release
+          build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/notify-in-for-unknown-zone
         with:
           log-level: ${{ inputs.log-level }}
@@ -376,5 +379,37 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/strip-dnssec-rrs
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  load-signed-apex-cname:
+    name: Load a zonefile containing a signed apex CNAME
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/load-signed-apex-cname
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  multipart-axfr:
+    name: Receive a large zone via multi-part AXFR from the NSD primary.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/multipart-axfr
         with:
           log-level: ${{ inputs.log-level }}

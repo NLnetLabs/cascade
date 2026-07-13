@@ -2,13 +2,13 @@
 
 use std::time::{Duration, SystemTime};
 
-use cascade_api::{
-    SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
-    SigningStageReport,
-};
 use serde::Serialize;
 use tokio::time::Instant;
 
+use crate::api::{
+    SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
+    SigningStageReport,
+};
 use crate::util::{
     serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
 };
