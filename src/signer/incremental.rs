@@ -1642,6 +1642,11 @@ impl<'a> IncrementalSigningState<'a> {
                 }
                 DataChange::Modified { new, .. } => {
                     let key = (key.0.as_ref(), key.1);
+
+                    // Check if RRSIGs exist for the RRset. RRSIGs do not
+                    // exist for glue, or in generate all RRsets below a
+                    // delegation. Only sign the modified RRset if there are
+                    // existing RRSIGs.
                     if self.rrsigs.remove(&key).is_some() {
                         let new_rrset: Vec<_> = new.iter().map(|r| (*r).clone().into()).collect();
                         sign_records(
@@ -2300,14 +2305,7 @@ impl<'a> Data<'a> {
     fn insert_existing_record(&mut self, record: &'a RegularRecord) {
         let box_owner = record.owner().unsized_copy_into();
         let key = (box_owner, record.data().rtype());
-        match self.old_data.entry(key) {
-            btree_map::Entry::Vacant(entry) => {
-                entry.insert(vec![record]);
-            }
-            btree_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().push(record);
-            }
-        }
+        self.old_data.entry(key).or_default().push(record);
     }
 
     fn add_record(&mut self, record: RegularRecord) {
