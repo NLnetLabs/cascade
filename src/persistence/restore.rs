@@ -40,23 +40,24 @@ pub fn restore_loaded(
     center: &Arc<Center>,
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<bool> {
-    // Remove any existing diffs.
+    let diff_infos;
+    let restore_base_idx;
+
+    // Use a block so that we don't hold the zone state lock longer than
+    // necessary.
     {
-        let mut state = zone.write(center);
-        state.storage.diffs.clear();
+        let state = zone.read();
+        diff_infos = state.persistence.loaded_diffs.diffs().clone();
+        restore_base_idx = state.persistence.loaded_diffs.restore_base_idx();
     }
 
-    let state = zone.read();
-    let mut diff_infos = state.persistence.loaded_diffs.diffs().iter();
-    let Some(snapshot_path) = diff_infos.next().map(|d| d.path()) else {
+    let mut diff_infos_iter = diff_infos.iter();
+    let Some(snapshot_path) = diff_infos_iter.next().map(|d| d.path()) else {
         return io::Result::Ok(false);
     };
 
     info!("Restoring persisted loaded data for zone '{}'", zone.name);
-    trace!(
-        "Restoring from loaded diffs: {:?}",
-        state.persistence.loaded_diffs
-    );
+    trace!("Restoring from loaded diffs: {diff_infos:?}");
 
     // Determine the paths to read from. Each zone is persisted as an AXFR
     // plus zero or more IXFRs. The restorer takes a base path ending in an
@@ -88,9 +89,8 @@ pub fn restore_loaded(
 
     let mut all_serials = vec![];
     let mut diffs_to_store: Vec<Arc<DiffData>> = vec![];
-    let restore_base_idx = state.persistence.loaded_diffs.restore_base_idx();
 
-    for (idx, diff_info) in diff_infos.enumerate() {
+    for (idx, diff_info) in diff_infos_iter.enumerate() {
         let (start_serial, end_serial) = if idx < restore_base_idx {
             trace!(
                 "Building standalone IXFR diff #{idx} from '{}'",
@@ -152,12 +152,11 @@ pub fn restore_loaded(
         let end_serial: u32 = end_serial.into();
         all_serials.push((start_serial, end_serial));
     }
-    drop(state);
 
     let num_diffs_to_restore = diffs_to_store.len();
     trace!(
-        "Restoring {} loaded diffs for zone {} with serials: {all_serials:?}",
-        num_diffs_to_restore, zone.name
+        "Restoring {num_diffs_to_restore} loaded diffs for zone {} with serials: {all_serials:?}",
+        zone.name
     );
 
     let mut state = zone.write(center);
@@ -173,7 +172,7 @@ pub fn restore_loaded(
     io::Result::Ok(true)
 }
 
-/// Restore the loaded instance data of a zone.
+/// Restore the signed instance data of a zone.
 ///
 /// Returns Ok(true) if data was stored, Ok(false) if there was nothing to
 /// restore, or Err(..) on error.
@@ -187,17 +186,24 @@ pub fn restore_signed(
     center: &Arc<Center>,
     restorer: &mut SignedZoneRestorer,
 ) -> io::Result<bool> {
-    let state = zone.read();
-    let mut diff_infos = state.persistence.signed_diffs.diffs().iter();
-    let Some(snapshot_path) = diff_infos.next().map(|d| d.path()) else {
+    let diff_infos;
+    let restore_base_idx;
+
+    // Use a block so that we don't hold the zone state lock longer than
+    // necessary.
+    {
+        let state = zone.read();
+        diff_infos = state.persistence.signed_diffs.diffs().clone();
+        restore_base_idx = state.persistence.signed_diffs.restore_base_idx();
+    }
+
+    let mut diff_infos_iter = diff_infos.iter();
+    let Some(snapshot_path) = diff_infos_iter.next().map(|d| d.path()) else {
         return io::Result::Ok(false);
     };
 
     info!("Restoring persisted signed data for zone '{}'", zone.name);
-    trace!(
-        "Restoring from signed paths: {:?}",
-        state.persistence.signed_diffs
-    );
+    trace!("Restoring from signed diffs: {diff_infos:?}",);
 
     // Determine the paths to read from. Each zone is persisted as an AXFR
     // plus zero or more IXFRs. The restorer takes a base path ending in an
@@ -229,7 +235,6 @@ pub fn restore_signed(
 
     let mut all_serials = vec![];
     let mut diffs_to_store: Vec<(Option<Serial>, Arc<DiffData>)> = vec![];
-    let restore_base_idx = state.persistence.signed_diffs.restore_base_idx();
 
     // Load each diff and apply it to the zone, retrieving a single DiffData
     // per signed diff. Store each signed DiffData alongside the corresponding
@@ -239,7 +244,7 @@ pub fn restore_signed(
     // AXFR requests. Skip diffs that were included in the snapshot during the
     // last compaction event but still need to be loaded into memory to serve
     // in IXFR responses.
-    for (idx, diff_info) in diff_infos.enumerate() {
+    for (idx, diff_info) in diff_infos_iter.enumerate() {
         let (start_serial, end_serial) = if idx < restore_base_idx {
             trace!(
                 "Building standalone IXFR diff #{idx} from '{}'",
@@ -302,12 +307,11 @@ pub fn restore_signed(
         let end_serial: u32 = end_serial.into();
         all_serials.push((start_serial, end_serial));
     }
-    drop(state);
 
     let num_diffs_to_restore = diffs_to_store.len();
     trace!(
-        "Restoring {} signed diffs for zone {} with serials: {all_serials:?}",
-        num_diffs_to_restore, zone.name
+        "Restoring {num_diffs_to_restore} signed diffs for zone {} with serials: {all_serials:?}",
+        zone.name
     );
 
     if let Some((_, last_diff)) = diffs_to_store.last() {

@@ -249,23 +249,27 @@ fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) 
 //----------- PersistenceState -----------------------------------------------
 
 /// State related to data persistence for a zone.
+///
+/// Each zone consists of records from the loaded zone and, once signed,
+/// changes in the set of records that result from signing.
+///
+/// Each time a zone is reloaded from the source records may change resulting
+/// in a loaded diff. Each time a zone is (re)signed records that were created
+/// by the last signing operation may be changed resulting in a signed diff.
+///
+/// The set of loaded and signed diffs are each stored in two sets of files
+/// per zone, the loaded set and the signed set. The first file in each set
+/// is a diff against nothing aka a snapshot. Each subsequent file is a diff
+/// against the previous file.
 #[derive(Debug)]
 pub struct PersistenceState {
     /// Ongoing persist/restore operations.
     pub ongoing: BackgroundTasks,
 
-    /// Locations of persisted unsigned zone diffs to enable IXFR from
-    /// the upstream to resume on restart, and to enable a complete latest
-    /// unsigned version of the zone to be reconstituted.
+    /// Metadata about the persisted loaded zone data files for a zone.
     pub loaded_diffs: PersistedDiffManager,
 
-    /// Locations of persisted signed zone diffs to ensure IXFR out toward
-    /// downstreams is still possible after restart, and to enable a complete
-    /// latest signed version of the zone to be reconsituted. For each path
-    /// we also remember the associated loaded zone serial otherwise we lose
-    /// track of which loaded serial the signed diff relates to. Only signed
-    /// diffs triggered by a change in the loaded zone actually has an
-    /// associated loaded diff serial.
+    /// Metadata about the persisted signed zone data files for a zone.
     pub signed_diffs: PersistedDiffManager,
 }
 
@@ -939,6 +943,14 @@ impl std::fmt::Display for IxfrZoneDiffs {
     }
 }
 
+fn log_stored_diff(r#type: &'static str, updating: bool, from: Serial, to: Serial) {
+    if updating {
+        trace!("Updating existing IXFR in-memory diff for SOA {type} serial -{from:?}:+{to:?}");
+    } else {
+        trace!("Storing IXFR in-memory diff for SOA {type} serial -{from:?}:+{to:?}");
+    }
+}
+
 //------------ RelatedSignedDiff ---------------------------------------------
 
 struct RelatedSignedDiff {
@@ -956,13 +968,5 @@ impl RelatedSignedDiff {
             diff,
             related_loaded_serial: loaded_serial.map(Into::into),
         }
-    }
-}
-
-fn log_stored_diff(r#type: &'static str, updating: bool, from: Serial, to: Serial) {
-    if updating {
-        trace!("Updating existing IXFR in-memory diff for SOA {type} serial -{from:?}:+{to:?}");
-    } else {
-        trace!("Storing IXFR in-memory diff for SOA {type} serial -{from:?}:+{to:?}");
     }
 }

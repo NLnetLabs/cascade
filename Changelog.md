@@ -14,28 +14,113 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-beta5 'Got that holiday feeling'
 
-Released yyyy-mm-dd.
+Released 2026-07-10.
 
 ### Breaking changes
 
-### New
+- Persist zone fixes and improvements. ([#804] by @ximon18)
 
 ### Bug fixes
+
+- Overhaul how re-signing timers are managed, preventing race conditions causing
+  crashes when zones are removed. ([#863] by @bal-e, reported in [#730] by
+  @jpmens)
+- Prohibit removing a zone while it is being restored from disk.
+  ([#886] by @bal-e)
+
+### Other changes
+
+- Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
+- Make logging during zone restoration consistent. ([#874] by @ximon18)
+- Improve memory use of NSEC(3) in incremental signing. ([#842] by
+  @Philip-NLnetLabs)
+- Log the reason when unable to restore zone state on startup. ([#878] by
+  @ximon18)
+- Add metrics for the duration of the last loading and signing operations.
+  ([#876] by @tertsdiepraam)
+
+### Known issues
+
+- Removing a zone whilst it is being signed causes a panic. ([#888])
+- Removing a zone does not cleanup its persisted state files. ([#889])
+
+### Acknowledgements
+
+Thanks to @bortzmeyer, @bzwitt, @gryphius and @jpmens for testing Cascade and
+providing valuable feedback!
+
+[#730]: https://github.com/NLnetLabs/cascade/issues/730
+[#804]: https://github.com/NLnetLabs/cascade/pull/804
+[#842]: https://github.com/NLnetLabs/cascade/pull/842
+[#863]: https://github.com/NLnetLabs/cascade/pull/863
+[#872]: https://github.com/NLnetLabs/cascade/pull/872
+[#874]: https://github.com/NLnetLabs/cascade/pull/874
+[#876]: https://github.com/NLnetLabs/cascade/pull/876
+[#878]: https://github.com/NLnetLabs/cascade/pull/878
+[#888]: https://github.com/NLnetLabs/cascade/pull/888
+[#889]: https://github.com/NLnetLabs/cascade/pull/889
+
+## 0.1.0-beta4 'Irish Goodbye'
+
+Released 2026-07-03.
+
+### Breaking changes
+
+- Remove systemd socket binding to port 53 in supplied packages ([#847] by
+  @ximon18).
+
+- Add prometheus metrics for zone transfers and loaded zone bytes and records.
+  ([#538] by @mozzieongit and @tertsdiepraam)
+
+### Bug fixes
+
+- If the input zone contains DNSSEC records, they are removed during signing,
+  but (changes to them) were still showing up in IXFR output from the signed
+  zone; remove them from IXFRs ([#835] by @bal-e, reported in [#798] by
+  @gryphius).
+
+- Overhaul how signing operations are enqueued for concurrency control,
+  preventing aborted signing operations from accumulating memory ([#789] by
+  @bal-e, reported in [#675] by @Philip-NLnetLabs)
 
 ### Other changes
 
 - Extend cascade tsig remove error to report the users of the key. ([#719] by
   @ximon18)
+- Reduce the memory use of RRSIGs during incremental signing. ([#824] by
+  @Philip-NLnetLabs)
 
 ### Documentation improvements
 
+- Update note about compatibility with NetHSM. ([#621] by @jans23)
+- Document the `cascade info` command ([#838] by @ximon18)
+- Add a `CONTRIBUTING.md` ([#850] by @tertsdiepraam)
+
 ### Known issues
+
+- Cascade can crash due to a race condition when removing a zone. ([#730],
+  reported by @jpmens)
 
 ### Acknowledgements
 
+Thanks to @jpmens, @gryphius, and @jans23 for testing Cascade and providing
+valuable feedback and contributions!
+
+[#621]: https://github.com/NLnetLabs/cascade/pull/621
 [#719]: https://github.com/NLnetLabs/cascade/pull/719
+[#824]: https://github.com/NLnetLabs/cascade/pull/824
+[#835]: https://github.com/NLnetLabs/cascade/pull/835
+[#838]: https://github.com/NLnetLabs/cascade/pull/838
+[#789]: https://github.com/NLnetLabs/cascade/pull/789
+[#841]: https://github.com/NLnetLabs/cascade/pull/841
+[#847]: https://github.com/NLnetLabs/cascade/pull/847
+[#850]: https://github.com/NLnetLabs/cascade/pull/850
+
+[#730]: https://github.com/NLnetLabs/cascade/issues/730
+[#798]: https://github.com/NLnetLabs/cascade/issues/798
+[#675]: https://github.com/NLnetLabs/cascade/issues/675
 
 ## 0.1.0-beta3 'Villa Volta'
 
@@ -76,8 +161,8 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 
 ### Acknowledgements
 
-Thanks to @davidgroves, @jpmens, @gryphius, and @marcgweg for testing Cascade and providing
-valuable feedback!
+Thanks to @davidgroves, @jpmens, @gryphius, and @marcgweg for testing Cascade
+and providing valuable feedback!
 
 [#639]: https://github.com/NLnetLabs/cascade/pull/639
 [#738]: https://github.com/NLnetLabs/cascade/pull/738
@@ -117,6 +202,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 - Ignore re-signing without a published signed instance. ([#795] by @bal-e)
 - Account for TTL-only changes in incremental re-signing. ([#803] by
   @Philip-NLnetLabs)
+- Actually use changes on policy reload. ([#606] by @bal-e)
 
 ### Documentation improvements
 
@@ -135,6 +221,7 @@ raised at https://github.com/NLnetLabs/cascade/issues.
 Thanks to @jpmens and @gryphius for testing Cascade and providing valuable
 feedback and contributions to the documentation.
 
+[#606]: https://github.com/NLnetLabs/cascade/pull/606
 [#704]: https://github.com/NLnetLabs/cascade/pull/704
 [#708]: https://github.com/NLnetLabs/cascade/pull/708
 [#711]: https://github.com/NLnetLabs/cascade/pull/711
@@ -322,6 +409,7 @@ Our continued thanks to @jpmens, @bortzmeyer, @gryphius and also to @alarig,
 [#518]: https://github.com/NLnetLabs/cascade/pull/518
 [#521]: https://github.com/NLnetLabs/cascade/pull/521
 [#536]: https://github.com/NLnetLabs/cascade/pull/536
+[#538]: https://github.com/NLnetLabs/cascade/pull/538
 [#539]: https://github.com/NLnetLabs/cascade/pull/539
 [#550]: https://github.com/NLnetLabs/cascade/pull/550
 [#555]: https://github.com/NLnetLabs/cascade/pull/555

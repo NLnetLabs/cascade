@@ -20,6 +20,9 @@ use crate::{
 };
 
 /// Persist the data for a loaded instance of a zone.
+///
+/// Data is persisted in the form of an AXFR wire format snapshot file plus
+/// zero or more IXFR wire format diff files.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -85,6 +88,9 @@ pub fn persist_loaded(
 }
 
 /// Persist the data for a signed instance of a zone.
+///
+/// Data is persisted in the form of an AXFR wire format snapshot file plus
+/// zero or more IXFR wire format diff files.
 #[tracing::instrument(
     level = "trace",
     skip_all,
