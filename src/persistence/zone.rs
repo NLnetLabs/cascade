@@ -607,10 +607,7 @@ impl PersistedDiffManager {
         let file_info = PersistedDiffFileInfo::new(path.clone(), loaded_serial, signed_serial);
 
         assert!(self.diff_infos.insert(file_info));
-
-        // replace with strict_add() once our MSRV reaches 1.91.0.
-        assert_ne!(self.next_idx, usize::MAX);
-        self.next_idx += 1;
+        self.next_idx.checked_add(1).unwrap();
 
         path
     }
