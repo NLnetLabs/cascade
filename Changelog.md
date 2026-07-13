@@ -14,6 +14,23 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Breaking changes
+### New
+### Bug fixes
+### Other changes
+
+- Improve memory use for unsigned data in incremental signing. (#866)
+
+### Documentation improvements
+### Known issues
+### Acknowledgements
+
+[#866]: https://github.com/NLnetLabs/cascade/pull/866
+
 ## 0.1.0-beta5 'Got that holiday feeling'
 
 Released 2026-07-10.
