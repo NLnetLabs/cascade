@@ -178,7 +178,7 @@ pub fn sign_zone(
 
     debug!("Loading dnst keyset signing keys");
     // Load the signing keys indicated by the keyset state.
-    let signing_keys = ZoneSigningKeys::load(center, zone, &state, &status)?;
+    let signing_keys = ZoneSigningKeys::load(center, zone, &state)?;
 
     // Save the current zone signing keys and clear key_roll
     let mut key_tags = HashSet::new();

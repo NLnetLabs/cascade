@@ -570,7 +570,10 @@ pub enum FullSigningStep {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum IncrementalSigningStep {
-    SigningIncrementally,
+    CollectingRecords,
+    GeneratingSignatures,
+    GeneratingDiffs,
+    DeterminingMinExpirationTime,
 }
 
 impl SigningStep {
@@ -584,7 +587,12 @@ impl SigningStep {
                 FullSigningStep::GeneratingSignatureRecords => "generating signature records",
             },
             SigningStep::Incremental(s) => match s {
-                IncrementalSigningStep::SigningIncrementally => "signing incrementally",
+                IncrementalSigningStep::CollectingRecords => "collecting records",
+                IncrementalSigningStep::GeneratingSignatures => "generating signatures",
+                IncrementalSigningStep::GeneratingDiffs => "generating diffs",
+                IncrementalSigningStep::DeterminingMinExpirationTime => {
+                    "determining min expiration time"
+                }
             },
         }
     }
@@ -599,7 +607,10 @@ impl SigningStep {
                 FullSigningStep::GeneratingSignatureRecords => 5,
             },
             SigningStep::Incremental(s) => match s {
-                IncrementalSigningStep::SigningIncrementally => 1,
+                IncrementalSigningStep::CollectingRecords => 1,
+                IncrementalSigningStep::GeneratingSignatures => 2,
+                IncrementalSigningStep::GeneratingDiffs => 3,
+                IncrementalSigningStep::DeterminingMinExpirationTime => 4,
             },
         }
     }
@@ -607,7 +618,7 @@ impl SigningStep {
     pub fn get_total_steps(&self) -> usize {
         match self {
             SigningStep::Full(_) => 5,
-            SigningStep::Incremental(_) => 1,
+            SigningStep::Incremental(_) => 4,
         }
     }
 }

@@ -84,7 +84,7 @@ pub fn sign_incrementally(
 
     {
         let mut status = status.write().unwrap();
-        status.step = SigningStep::Incremental(IncrementalSigningStep::SigningIncrementally);
+        status.step = SigningStep::Incremental(IncrementalSigningStep::CollectingRecords);
     }
 
     let load_unsigned = patch.next_loaded().is_some();
@@ -153,8 +153,7 @@ pub fn sign_incrementally(
         return Err(SignerError::NothingToDo);
     }
 
-    let mut iss =
-        IncrementalSigningState::new(zone, &policy, center, &ws.keyset_state, status.clone())?;
+    let mut iss = IncrementalSigningState::new(zone, &policy, center, &ws.keyset_state)?;
 
     let start = Instant::now();
     let patch_curr = ws.patch.curr();
@@ -184,7 +183,7 @@ pub fn sign_incrementally(
                 domain::new::base::Serial::from(signed_serial.into_int()),
             )
             .unwrap();
-        status.step = SigningStep::Incremental(IncrementalSigningStep::SigningIncrementally);
+        status.step = SigningStep::Incremental(IncrementalSigningStep::GeneratingSignatures);
     }
 
     iss.initial_diffs()?;
@@ -211,6 +210,11 @@ pub fn sign_incrementally(
     }
     debug!("incremental signing took {:?}", start.elapsed());
 
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Incremental(IncrementalSigningStep::GeneratingDiffs)
+    }
+
     let start = Instant::now();
     ws.incremental_generate_diffs(&iss)?;
     debug!("generating diffs took {:?}", start.elapsed());
@@ -218,6 +222,11 @@ pub fn sign_incrementally(
     ws.patch
         .apply()
         .map_err(|e| SignerError::PatchFailed(format!("apply failed: {e}")))?;
+
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Incremental(IncrementalSigningStep::DeterminingMinExpirationTime)
+    }
 
     debug!("SIGNER: Determining min expiration time");
     let min_expiration = Arc::new(MinTimestamp::new());
@@ -1369,9 +1378,8 @@ impl<'a> IncrementalSigningState<'a> {
         policy: &PolicyVersion,
         center: &Arc<Center>,
         keyset_state: &KeySetState,
-        status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Result<Self, SignerError> {
-        let keys = ZoneSigningKeys::load(center, zone, keyset_state, &status)?;
+        let keys = ZoneSigningKeys::load(center, zone, keyset_state)?;
 
         let now = faketime_or_now();
         let now_u32 = Into::<Duration>::into(now.clone()).as_secs() as u32;

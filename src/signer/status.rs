@@ -36,8 +36,10 @@ pub enum FullSigningStep {
 
 #[derive(Debug)]
 pub enum IncrementalSigningStep {
-    // TODO: Add more steps here.
-    SigningIncrementally,
+    CollectingRecords,
+    GeneratingSignatures,
+    GeneratingDiffs,
+    DeterminingMinExpirationTime,
 }
 
 impl SigningStep {
@@ -57,8 +59,17 @@ impl SigningStep {
                 }
             }),
             SigningStep::Incremental(s) => cascade_api::SigningStep::Incremental(match s {
-                IncrementalSigningStep::SigningIncrementally => {
-                    cascade_api::IncrementalSigningStep::SigningIncrementally
+                IncrementalSigningStep::CollectingRecords => {
+                    cascade_api::IncrementalSigningStep::CollectingRecords
+                }
+                IncrementalSigningStep::GeneratingSignatures => {
+                    cascade_api::IncrementalSigningStep::GeneratingSignatures
+                }
+                IncrementalSigningStep::GeneratingDiffs => {
+                    cascade_api::IncrementalSigningStep::GeneratingDiffs
+                }
+                IncrementalSigningStep::DeterminingMinExpirationTime => {
+                    cascade_api::IncrementalSigningStep::DeterminingMinExpirationTime
                 }
             }),
         }
