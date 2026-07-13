@@ -40,7 +40,6 @@ use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
 use domain::utils::base32;
 use domain::utils::dst::UnsizedCopy;
 use domain::zonefile::inplace::Entry;
-use domain::zonetree::StoredRecord;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
@@ -1547,7 +1546,7 @@ impl<'a> IncrementalSigningState<'a> {
                     let key = (key.0.as_ref(), key.1);
 
                     // Check if RRSIGs exist for the RRset. RRSIGs do not
-                    // exist for glue, or in generate all RRsets below a
+                    // exist for glue, or in general, all RRsets below a
                     // delegation. Only sign the modified RRset if there are
                     // existing RRSIGs.
                     if self.rrsigs.remove(&key).is_some() {
