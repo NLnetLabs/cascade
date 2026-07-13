@@ -1,7 +1,6 @@
 //! Zone-specific state and management.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::{
     borrow::Borrow,
     cmp::Ordering,
@@ -37,6 +36,9 @@ use crate::units::zone_signer::faketime_or_now;
 
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
+
+mod instance;
+pub use instance::{Instances, LoadedInstance, SignedInstance};
 
 pub mod machine;
 pub mod state;
@@ -387,20 +389,11 @@ pub struct ZoneState {
     /// Signed versions of the zone.
     pub signed: foldhash::HashMap<Serial, SignedZoneVersionState>,
 
+    /// Instances of the zone.
+    pub instances: Instances,
+
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
-
-    /// Locations of persisted unsigned zone diffs to enable IXFR from
-    /// the upstream to resume on restart, and to enable a complete latest
-    /// unsigned version of the zone to be reconstituted.
-    // TODO: Move into `PersistenceState`.
-    pub persisted_loaded_diff_paths: Vec<PathBuf>,
-
-    /// Locations of persisted signed zone diffs to ensure IXFR out toward
-    /// downstreams is still possible after restart, and to enable a complete
-    /// latest signed version of the zone to be reconsituted.
-    // TODO: Move into `PersistenceState`.
-    pub persisted_signed_diff_paths: Vec<PathBuf>,
 
     /// Loading new versions of the zone.
     pub loader: LoaderState,
@@ -460,13 +453,12 @@ impl Default for ZoneState {
             previous_serial: Default::default(),
             unsigned: Default::default(),
             signed: Default::default(),
+            instances: Default::default(),
             history: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
             storage: Default::default(),
             persistence: Default::default(),
-            persisted_loaded_diff_paths: Default::default(),
-            persisted_signed_diff_paths: Default::default(),
         }
     }
 }

@@ -20,12 +20,16 @@
 use std::{
     ops::{BitOr, BitOrAssign},
     sync::{Arc, RwLock},
+    time::Instant,
 };
 
+use domain::base::Serial;
+use jiff::{Timestamp as JiffTimestamp, Zoned, tz::TimeZone};
 use tracing::{debug, error};
 
 use crate::{
     center::Center,
+    policy::SignerSerialPolicy,
     signer::{queue::SigningPermit, status::SigningStatusPerZone},
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, Zone},
@@ -65,11 +69,17 @@ fn sign(
     permit: SigningPermit,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
+    let start = Instant::now();
+
     let result = if let Some(patcher) = builder.patch() {
         self::incremental::sign_incrementally(patcher, &zone, &center, trigger, status.clone())
     } else {
         self::full::sign_zone(&center, &zone, &mut builder, trigger, status.clone())
     };
+
+    let end = Instant::now();
+    let duration = (end - start).as_secs_f64();
+    zone.metrics.last_sign_duration(duration);
 
     let mut status = status.write().unwrap();
     let mut handle = zone.write_handle(&center);
@@ -79,9 +89,18 @@ fn sign(
 
     match result {
         Ok(()) => {
+            let soa = builder.next_signed().unwrap().soa();
+
+            debug!(
+                zone = %zone.name,
+                serial = ?soa.rdata.serial,
+                "Generated a new signed instance of the zone"
+            );
+
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
             handle.get().finish_signing(built);
             status.status.finish(true);
+            zone.metrics.last_successful_sign_duration(duration);
             status.current_action = "Finished".to_string();
         }
         Err(SignerError::NothingToDo) => {
@@ -130,6 +149,69 @@ fn sign(
                 },
                 None, // TODO
             );
+        }
+    }
+}
+
+/// Compute the SOA serial for a signed zone.
+///
+/// There are four policies:
+///
+/// 1) Keep. Copy the serial from the unsigned zone. Refuse to sign
+///    if the serial did not change.
+/// 2) Increment. Copy the serial from the unsigned zone but increment
+///    the serial if the zone needs to be signed an the serial in
+///    the unsigned zone did not change.
+/// 3) Unix timestamp. The current time in Unix seconds. Increment if
+///    that does not result in a higher serial.
+/// 4) Broken down time (YYYYMMDDnn). The current day plus a serial
+///    number. Implies increment to generate different serial numbers
+///    over a day.
+fn next_signed_soa_serial(
+    policy: SignerSerialPolicy,
+    loaded_serial: Serial,
+    previous_serial: Option<Serial>,
+) -> Result<Serial, SignerError> {
+    match policy {
+        SignerSerialPolicy::Keep => {
+            if let Some(previous_serial) = previous_serial
+                && loaded_serial <= previous_serial
+            {
+                return Err(SignerError::KeepSerialPolicyViolated);
+            }
+
+            Ok(loaded_serial)
+        }
+        SignerSerialPolicy::Counter => {
+            // Always increment the serial number, ignore the serial
+            // number in the unsigned zone.
+            let previous_serial = previous_serial.unwrap_or(Serial::from(0));
+            Ok(previous_serial.add(1))
+        }
+        SignerSerialPolicy::UnixTime => {
+            let mut serial = Serial::now();
+            if let Some(previous_serial) = previous_serial
+                && serial <= previous_serial
+            {
+                serial = previous_serial.add(1);
+            }
+
+            Ok(serial)
+        }
+        SignerSerialPolicy::DateCounter => {
+            let ts = JiffTimestamp::now();
+            let zone = Zoned::new(ts, TimeZone::UTC);
+            let serial =
+                ((zone.year() as u32 * 100 + zone.month() as u32) * 100 + zone.day() as u32) * 100;
+            let mut serial: Serial = serial.into();
+
+            if let Some(previous_serial) = previous_serial
+                && serial <= previous_serial
+            {
+                serial = previous_serial.add(1);
+            }
+
+            Ok(serial)
         }
     }
 }

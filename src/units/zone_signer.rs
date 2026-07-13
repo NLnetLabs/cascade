@@ -1,9 +1,8 @@
-use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::env::{self, VarError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use domain::base::Rtype;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
@@ -11,16 +10,14 @@ use domain::rdata::dnssec::Timestamp;
 use domain_kmip::dep::kmip::client::pool::SyncConnPool;
 use domain_kmip::{self, ClientCertificate, ConnectionSettings};
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
-use tokio::time::Instant;
-use tracing::trace;
 
 use crate::center::Center;
+use crate::common::scheduler::Scheduler;
 use crate::signer::ResigningTrigger;
 use crate::signer::keys::LoadError;
 use crate::signer::queue::SigningQueue;
 use crate::util::AbortOnDrop;
-use crate::zone::ZoneByName;
+use crate::zone::ZoneByPtr;
 
 // Re-signing zones before signatures expire works as follows:
 // - compute when the first zone needs to be re-signed. Loop over unsigned
@@ -41,9 +38,8 @@ use crate::zone::ZoneByName;
 pub struct ZoneSigner {
     pub kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
 
-    /// A live view of the next scheduled global resigning time.
-    next_resign_time_tx: watch::Sender<Option<tokio::time::Instant>>,
-    next_resign_time_rx: watch::Receiver<Option<tokio::time::Instant>>,
+    /// The re-signing scheduler.
+    pub resign_scheduler: Scheduler<ZoneByPtr>,
 
     /// The signing queue.
     pub queue: SigningQueue,
@@ -52,201 +48,35 @@ pub struct ZoneSigner {
 impl ZoneSigner {
     pub fn new() -> Self {
         let max_concurrent_operations = 1;
-        let (next_resign_time_tx, next_resign_time_rx) = watch::channel(None);
+        let resign_scheduler = Scheduler::new();
         let queue = SigningQueue::new(max_concurrent_operations.try_into().unwrap());
 
         Self {
             kmip_servers: Default::default(),
-            next_resign_time_tx,
-            next_resign_time_rx,
+            resign_scheduler,
             queue,
         }
     }
 
     /// Launch the zone signer.
     pub fn run(center: Arc<Center>) -> AbortOnDrop {
-        let this = &center.signer;
-        let resign_time = this.next_resign_time(&center);
-        this.next_resign_time_tx.send(resign_time).unwrap();
+        AbortOnDrop::from(tokio::spawn(async move {
+            center
+                .signer
+                .resign_scheduler
+                .run(|_time, ZoneByPtr(zone)| {
+                    let mut handle = zone.write_handle(&center);
 
-        AbortOnDrop::from(tokio::spawn({
-            let mut next_resign_time = this.next_resign_time_rx.clone();
-            let mut resign_time = resign_time;
-            async move {
-                async fn sleep_until(time: Option<tokio::time::Instant>) {
-                    if let Some(time) = time {
-                        tokio::time::sleep_until(time).await
-                    } else {
-                        std::future::pending().await
-                    }
-                }
+                    // The zone has been removed from the schedule, so update
+                    // its state.
+                    handle.state.signer.scheduled_resign_time = None;
 
-                // Sleep until the resign time and then resign, but also watch
-                // for changes to the resign time.
-                loop {
-                    tokio::select! {
-                        _ = next_resign_time.changed() => {
-                            // Update the resign time and keep going.
-                            resign_time = *next_resign_time.borrow_and_update();
-                        }
-
-                        _ = sleep_until(resign_time) => {
-                            // It's time to resign.
-                            center.signer.resign_zones(&center);
-
-                            // TODO: Should 'resign_zones()' do this?
-                            center.signer.next_resign_time_tx.send(center.signer.next_resign_time(&center)).unwrap();
-                        }
-                    }
-                }
-            }
+                    handle
+                        .signer()
+                        .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
+                })
+                .await
         }))
-    }
-
-    pub fn on_publish_signed_zone(&self, center: &Arc<Center>) {
-        trace!("[ZS]: a zone is published, recompute next time to re-sign");
-        let _ = self.next_resign_time_tx.send(self.next_resign_time(center));
-    }
-
-    pub fn on_zone_policy_changed(&self) {
-        // Just recompute the resign timer. In the future we may want to
-        // react to changes in policy, for example, whether NSEC is used
-        // or NSEC3.
-        let _ = self.next_resign_time_tx.send(Some(Instant::now()));
-    }
-
-    fn next_resign_time(&self, center: &Arc<Center>) -> Option<Instant> {
-        let mut min_time = None;
-
-        #[allow(clippy::mutable_key_type)]
-        let zones = {
-            let state = center.state.lock().unwrap();
-            state.zones.clone()
-        };
-
-        // Compute when to incrementally sign a zone again to refresh
-        // signatures.
-        for ZoneByName(zone) in zones {
-            let zone_name = &zone.name;
-
-            let last_signature_refresh;
-            let signature_refresh_interval;
-            {
-                // Use a block to make sure that the lock is clearly dropped.
-                let zone_state = zone.read();
-
-                last_signature_refresh = zone_state.last_signature_refresh.clone();
-
-                // TODO: what if there is no policy?
-                signature_refresh_interval = zone_state
-                    .policy
-                    .as_ref()
-                    .unwrap()
-                    .signer
-                    .signature_refresh_interval;
-            }
-
-            let curr_refresh_time = last_signature_refresh.clone()
-                + Duration::from_secs(signature_refresh_interval as u64);
-
-            // Start a new block to make sure the mutex is released.
-            {
-                let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_refresh_time = resign_busy.get(zone_name);
-                if let Some(saved_refresh_time) = opt_refresh_time {
-                    if *saved_refresh_time == curr_refresh_time {
-                        // This zone is busy.
-                        trace!("[ZS]: resign: zone {zone_name} is busy");
-                        continue;
-                    }
-
-                    // Zone has been resigned. Remove this entry.
-                    resign_busy.remove(zone_name);
-                }
-            }
-
-            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time);
-
-            min_time = if let Some(time) = min_time {
-                Some(min(time, refresh_time))
-            } else {
-                Some(refresh_time)
-            };
-        }
-        min_time.map(|t| {
-            // We need to go from SystemTime to Tokio Instant, is there a
-            // better way?
-
-            // We are computing a timeout value. If the timeout is in the
-            // past then we can just as well use zero.
-            let since_now = t
-                .duration_since(SystemTime::now())
-                .unwrap_or(Duration::ZERO);
-
-            Instant::now() + since_now
-        })
-    }
-
-    fn resign_zones(&self, center: &Arc<Center>) {
-        let now = SystemTime::now();
-
-        #[allow(clippy::mutable_key_type)]
-        let zones = {
-            let state = center.state.lock().unwrap();
-            state.zones.clone()
-        };
-
-        for zone in zones {
-            let zone = &zone.0;
-            let zone_name = &zone.name;
-
-            let last_signature_refresh;
-            let signature_refresh_interval;
-            {
-                // Use a block to make sure that the lock is clearly dropped.
-                let zone_state = zone.read();
-
-                last_signature_refresh = zone_state.last_signature_refresh.clone();
-
-                // TODO: what if there is no policy?
-                signature_refresh_interval = zone_state
-                    .policy
-                    .as_ref()
-                    .unwrap()
-                    .signer
-                    .signature_refresh_interval;
-            }
-
-            let curr_refresh_time = last_signature_refresh.clone()
-                + Duration::from_secs(signature_refresh_interval as u64);
-
-            // Start a new block to make sure the mutex is released.
-            {
-                let resign_busy = center.resign_busy.lock().expect("should not fail");
-                let opt_refresh_time = resign_busy.get(zone_name);
-                if let Some(saved_refresh_time) = opt_refresh_time
-                    && *saved_refresh_time == curr_refresh_time
-                {
-                    // This zone is busy.
-                    continue;
-                }
-            }
-
-            let refresh_time = UNIX_EPOCH + Duration::from(curr_refresh_time.clone());
-
-            if refresh_time < now {
-                trace!("[ZS]: re-signing: request signing of zone {zone_name}");
-
-                // Start a new block to make sure the mutex is released.
-                {
-                    let mut resign_busy = center.resign_busy.lock().expect("should not fail");
-                    resign_busy.insert(zone_name.clone(), curr_refresh_time);
-                }
-                zone.write_handle(center)
-                    .signer()
-                    .enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
-            }
-        }
     }
 }
 

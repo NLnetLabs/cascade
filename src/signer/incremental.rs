@@ -14,9 +14,7 @@ use domain::base::iana::{Class, ZonemdAlgorithm, ZonemdScheme};
 use domain::base::name::FlattenInto;
 use domain::base::rdata::ComposeRecordData;
 use domain::base::wire::Composer;
-use domain::base::{
-    CanonicalOrd, Name, NameBuilder, Record, Rtype, Serial as DomainSerial, ToName, Ttl,
-};
+use domain::base::{CanonicalOrd, Name, NameBuilder, Record, Rtype, ToName, Ttl};
 use domain::dep::octseq::builder::with_infallible;
 use domain::dep::octseq::{OctetsFrom, Parser};
 use domain::dnssec::common::nsec3_hash;
@@ -42,8 +40,7 @@ use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
 use domain::utils::base32;
 use domain::utils::dst::UnsizedCopy;
 use domain::zonefile::inplace::Entry;
-use jiff::tz::TimeZone;
-use jiff::{Timestamp as JiffTimestamp, Zoned};
+use domain::zonetree::StoredRecord;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
@@ -52,7 +49,7 @@ use tracing::error;
 
 use crate::center::Center;
 use crate::manager::record_zone_event;
-use crate::policy::{PolicyVersion, SignerDenialPolicy, SignerSerialPolicy};
+use crate::policy::{PolicyVersion, SignerDenialPolicy};
 use crate::signer::SigningTrigger;
 use crate::signer::keys::ZoneSigningKeys;
 use crate::signer::status::SigningStatusPerZone;
@@ -1068,134 +1065,40 @@ impl WorkSpace<'_> {
     }
 
     fn update_soa_serial(&mut self, old_soa: &Zrd) -> Result<Zrd, SignerError> {
-        // Implement SOA serial policies. There are four policies:
-        // 1) Keep. Copy the serial from the unsigned zone. Refuse to sign
-        //    if the serial did not change.
-        // 2) Increment. Copy the serial from the unsigned zone but increment
-        //    the serial if the zone needs to be signed an the serial in
-        //    the unsigned zone did not change.
-        // 3) Unix timestamp. The current time in Unix seconds. Increment if
-        //    that does not result in a higher serial.
-        // 4) Broken down time (YYYYMMDDnn). The current day plus a serial
-        //    number. Implies increment to generate different serial numbers
-        //    over a day.
-
         let ZoneRecordData::Soa(zone_soa) = old_soa.data() else {
             unreachable!();
         };
 
-        let curr_previous_serial = &self.local_state.previous_serial;
-        match self.policy.signer.serial_policy {
-            SignerSerialPolicy::Keep => {
-                if let Some(previous_serial) = curr_previous_serial
-                    && zone_soa.serial() <= *previous_serial
-                {
-                    return Err(SignerError::KeepSerialPolicyViolated);
-                }
+        let loaded_serial = zone_soa.serial();
+        let previous_serial = self.local_state.previous_serial;
 
-                // Save the new SOA serial.
-                self.local_state.previous_serial = Some(zone_soa.serial());
-                Ok(old_soa.clone())
-            }
-            SignerSerialPolicy::Counter => {
-                // Always increment the serial number, ignore the serial
-                // number in the unsigned zone.
-                let previous_serial = if let Some(serial) = curr_previous_serial {
-                    *serial
-                } else {
-                    DomainSerial::from(0)
-                };
+        let signed_serial = super::next_signed_soa_serial(
+            self.policy.signer.serial_policy,
+            loaded_serial,
+            previous_serial,
+        )?;
 
-                let serial = previous_serial.add(1);
+        // Save the new SOA serial.
+        self.local_state.previous_serial = Some(signed_serial);
 
-                // Save the new SOA serial.
-                self.local_state.previous_serial = Some(serial);
+        let new_soa = ZoneRecordData::Soa(Soa::new(
+            zone_soa.mname().clone(),
+            zone_soa.rname().clone(),
+            signed_serial,
+            zone_soa.refresh(),
+            zone_soa.retry(),
+            zone_soa.expire(),
+            zone_soa.minimum(),
+        ));
 
-                let new_soa = ZoneRecordData::Soa(Soa::new(
-                    zone_soa.mname().clone(),
-                    zone_soa.rname().clone(),
-                    serial,
-                    zone_soa.refresh(),
-                    zone_soa.retry(),
-                    zone_soa.expire(),
-                    zone_soa.minimum(),
-                ));
-                let record = RecordFullCmp::new(
-                    old_soa.owner().clone(),
-                    old_soa.class(),
-                    old_soa.ttl(),
-                    new_soa,
-                );
+        let record = RecordFullCmp::new(
+            old_soa.owner().clone(),
+            old_soa.class(),
+            old_soa.ttl(),
+            new_soa,
+        );
 
-                Ok(record)
-            }
-            SignerSerialPolicy::UnixTime => {
-                let mut serial = DomainSerial::now();
-                if let Some(previous_serial) = curr_previous_serial
-                    && serial <= *previous_serial
-                {
-                    serial = previous_serial.add(1);
-                }
-
-                // Save the new SOA serial.
-                self.local_state.previous_serial = Some(serial);
-
-                let new_soa = ZoneRecordData::Soa(Soa::new(
-                    zone_soa.mname().clone(),
-                    zone_soa.rname().clone(),
-                    serial,
-                    zone_soa.refresh(),
-                    zone_soa.retry(),
-                    zone_soa.expire(),
-                    zone_soa.minimum(),
-                ));
-
-                let record = RecordFullCmp::new(
-                    old_soa.owner().clone(),
-                    old_soa.class(),
-                    old_soa.ttl(),
-                    new_soa,
-                );
-
-                Ok(record)
-            }
-            SignerSerialPolicy::DateCounter => {
-                let ts = JiffTimestamp::now();
-                let zone = Zoned::new(ts, TimeZone::UTC);
-                let serial = ((zone.year() as u32 * 100 + zone.month() as u32) * 100
-                    + zone.day() as u32)
-                    * 100;
-                let mut serial: DomainSerial = serial.into();
-
-                if let Some(previous_serial) = curr_previous_serial
-                    && serial <= *previous_serial
-                {
-                    serial = previous_serial.add(1);
-                }
-
-                // Save the new SOA serial.
-                self.local_state.previous_serial = Some(serial);
-
-                let new_soa = ZoneRecordData::Soa(Soa::new(
-                    zone_soa.mname().clone(),
-                    zone_soa.rname().clone(),
-                    serial,
-                    zone_soa.refresh(),
-                    zone_soa.retry(),
-                    zone_soa.expire(),
-                    zone_soa.minimum(),
-                ));
-
-                let record = RecordFullCmp::new(
-                    old_soa.owner().clone(),
-                    old_soa.class(),
-                    old_soa.ttl(),
-                    new_soa,
-                );
-
-                Ok(record)
-            }
-        }
+        Ok(record)
     }
 
     pub fn sign_pass_through(&mut self) -> Result<(), SignerError> {

@@ -10,7 +10,7 @@ documentation = "https://cascade.docs.nlnetlabs.nl"
 repository = "https://github.com/NLnetLabs/cascade"
 license = "BSD-3-Clause"
 
-version = "0.1.0-beta5-dev"
+version = "0.1.0-beta6-dev"
 rust-version = "1.88"
 edition = "2024"
 

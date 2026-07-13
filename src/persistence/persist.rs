@@ -20,6 +20,9 @@ use crate::{
 };
 
 /// Persist the data for a loaded instance of a zone.
+///
+/// Data is persisted in the form of an AXFR wire format snapshot file plus
+/// zero or more IXFR wire format diff files.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -30,7 +33,8 @@ pub fn persist_loaded(
     center: &Arc<Center>,
     persister: LoadedZonePersister,
 ) -> LoadedZonePersisted {
-    if !persister.loaded_diff().is_empty() {
+    let loaded_diff = persister.loaded_diff();
+    if !loaded_diff.is_empty() {
         // Determine the path to write to and update the record of written
         // paths here as we don't want to give responsibility for working with
         // ZoneState to the persistence crate. Accumulate a set of diffs per
@@ -40,7 +44,7 @@ pub fn persist_loaded(
         // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
-            let next_idx = handle.state.persisted_loaded_diff_paths.len();
+            let next_idx = handle.state.persistence.loaded_diff_paths.len();
             let destination = center
                 .config
                 .zone_state_dir
@@ -48,7 +52,8 @@ pub fn persist_loaded(
 
             handle
                 .state
-                .persisted_loaded_diff_paths
+                .persistence
+                .loaded_diff_paths
                 .push(destination.clone().into());
 
             destination
@@ -79,48 +84,25 @@ pub fn persist_loaded(
         // the Option is Some the referred to path can just be deleted.
         save_state_now(center, zone);
 
-        persist_to_file(destination.as_std_path(), persister.loaded_diff().clone());
-    }
+        persist_to_file(destination.as_std_path(), loaded_diff.clone());
 
-    // Store the loaded diff in-memory for serving IXFR out.
-
-    let loaded_diff = persister.loaded_diff();
-
-    // Only store a diff if something has changed compared to the previous
-    // version of the loaded zone, otherwise this is not a diff to a previous
-    // version of the zone but actually a snapshot of the zone after having
-    // been loaded for the first time. If the SOA serial didn't change
-    // (which is legal for a loaded zone) don't store a diff because the IXFR
-    // protocol requires a SOA serial number change so we won't be able to
-    // serve the diff anyway.
-    if !loaded_diff.is_empty() && loaded_diff.removed_soa.is_some() {
-        // Store anything that changed when the zone was re-loaded, i.e.
-        // unsigned zone content changes. Note that the SOA SERIAL is not
-        // required to change unless using 'keep' policy and so we should not
-        // require the SOA to have been removed and a new one added.
-        let mut handle = zone.write_handle(center);
-
-        let loaded_only_diff = (persister.loaded_diff().clone(), DiffData::new().into());
-        trace!(
-            "Storing IXFR in-memory diff for SOA loaded serial -{:?}:+{:?}",
-            loaded_only_diff
-                .0
-                .removed_soa
-                .as_ref()
-                .map(|soa_rr| soa_rr.rdata.serial),
-            loaded_only_diff
-                .0
-                .added_soa
-                .as_ref()
-                .map(|soa_rr| soa_rr.rdata.serial),
-        );
-        handle.state.storage.diffs.push(loaded_only_diff);
+        if loaded_diff.removed_soa.is_some() && loaded_diff.removed_soa != loaded_diff.added_soa {
+            let mut handle = zone.write_handle(center);
+            handle
+                .state
+                .storage
+                .diffs
+                .store_loaded_diff(loaded_diff.clone());
+        }
     }
 
     persister.mark_complete()
 }
 
 /// Persist the data for a signed instance of a zone.
+///
+/// Data is persisted in the form of an AXFR wire format snapshot file plus
+/// zero or more IXFR wire format diff files.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -134,17 +116,21 @@ pub fn persist_signed(
     if !persister.signed_diff().is_empty() {
         let loaded_diff = persister.loaded_diff();
         let signed_diff = persister.signed_diff();
+        let loaded_serial =
+            loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
 
         // Determine the path to write to and update the record of written
         // paths here as we don't want to give responsibility for working with
-        // ZoneState to the persistence crate. Accumulate a set of diffs per
-        // unsigned and signed zone, each stored at a path one suffixed by an
-        // index which rises by one when persisted.
+        // ZoneState to the persistence crate.
         // TODO: Don't keep an unlimited number of diffs.
         // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
-            let next_idx = handle.state.persisted_signed_diff_paths.len();
+            let next_idx = handle.state.persistence.signed_diff_paths.len();
+            // Determine the path to persist the diff to. The path consists
+            // of the zone name, the part of the zone that persisted records
+            // relate to (loaded or signed) and a rising index number that
+            // serves to make each path unique.
             let destination = center
                 .config
                 .zone_state_dir
@@ -152,8 +138,9 @@ pub fn persist_signed(
 
             handle
                 .state
-                .persisted_signed_diff_paths
-                .push(destination.clone().into());
+                .persistence
+                .signed_diff_paths
+                .push((destination.clone().into(), loaded_serial));
 
             destination
         };
@@ -226,41 +213,11 @@ pub fn persist_signed(
             // diff to the in-memory collection without dropping an existing
             // diff first.
 
-            let mut action = "Storing new";
-            if let Some(potentially_partial_diff) = handle.state.storage.diffs.last()
-                && potentially_partial_diff.1.is_empty()
-            {
-                // Remove the partial diff, it will be replaced by a
-                // complete diff.
-                let _partial_diff = handle.state.storage.diffs.pop();
-                action = "Updating existing";
-            }
-
-            let loaded_diff = loaded_diff.cloned().unwrap_or(DiffData::new().into());
-            trace!(
-                "{action} IXFR in-memory diff for SOA loaded serial -{:?}:+{:?} -> signed serial -{:?}:+{:?}",
-                loaded_diff
-                    .removed_soa
-                    .as_ref()
-                    .map(|soa_rr| soa_rr.rdata.serial),
-                loaded_diff
-                    .added_soa
-                    .as_ref()
-                    .map(|soa_rr| soa_rr.rdata.serial),
-                signed_diff
-                    .removed_soa
-                    .as_ref()
-                    .map(|soa_rr| soa_rr.rdata.serial),
-                signed_diff
-                    .added_soa
-                    .as_ref()
-                    .map(|soa_rr| soa_rr.rdata.serial),
-            );
             handle
                 .state
                 .storage
                 .diffs
-                .push((loaded_diff, signed_diff.clone()));
+                .store_signed_diff(loaded_serial, signed_diff.clone());
         }
     }
 

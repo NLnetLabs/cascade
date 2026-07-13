@@ -353,12 +353,14 @@ pub struct ZoneRemoveResult {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ZoneRemoveError {
     NotFound,
+    MidRestoration,
 }
 
 impl fmt::Display for ZoneRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
+            Self::MidRestoration => "the zone is being restored from disk",
         })
     }
 }

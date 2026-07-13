@@ -14,28 +14,55 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-beta5 'Got that holiday feeling'
 
-Released yyyy-mm-dd.
+Released 2026-07-10.
 
 ### Breaking changes
-### New
+
+- Persist zone fixes and improvements. ([#804] by @ximon18)
+
 ### Bug fixes
+
+- Overhaul how re-signing timers are managed, preventing race conditions causing
+  crashes when zones are removed. ([#863] by @bal-e, reported in [#730] by
+  @jpmens)
+- Prohibit removing a zone while it is being restored from disk.
+  ([#886] by @bal-e)
+
 ### Other changes
 
 - Speedup zone restore by parallelizing sorting. ([#872] by @ximon18)
 - Make logging during zone restoration consistent. ([#874] by @ximon18)
-- Improve memory use of NSEC(3) in incremental signing (#842)
+- Improve memory use of NSEC(3) in incremental signing. ([#842] by
+  @Philip-NLnetLabs)
+- Log the reason when unable to restore zone state on startup. ([#878] by
+  @ximon18)
+- Add metrics for the duration of the last loading and signing operations.
+  ([#876] by @tertsdiepraam)
 
-### Documentation improvements
 ### Known issues
+
+- Removing a zone whilst it is being signed causes a panic. ([#888])
+- Removing a zone does not cleanup its persisted state files. ([#889])
+
 ### Acknowledgements
 
+Thanks to @bortzmeyer, @bzwitt, @gryphius and @jpmens for testing Cascade and
+providing valuable feedback!
+
+[#730]: https://github.com/NLnetLabs/cascade/issues/730
+[#804]: https://github.com/NLnetLabs/cascade/pull/804
 [#842]: https://github.com/NLnetLabs/cascade/pull/842
+[#863]: https://github.com/NLnetLabs/cascade/pull/863
 [#872]: https://github.com/NLnetLabs/cascade/pull/872
 [#874]: https://github.com/NLnetLabs/cascade/pull/874
+[#876]: https://github.com/NLnetLabs/cascade/pull/876
+[#878]: https://github.com/NLnetLabs/cascade/pull/878
+[#888]: https://github.com/NLnetLabs/cascade/pull/888
+[#889]: https://github.com/NLnetLabs/cascade/pull/889
 
-## Version 0.1.0-beta4 'Irish Goodbye'
+## 0.1.0-beta4 'Irish Goodbye'
 
 Released 2026-07-03.
 

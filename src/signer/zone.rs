@@ -2,10 +2,10 @@
 
 use std::{
     sync::{Arc, RwLock},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use crate::{
     center::Center,
@@ -15,7 +15,7 @@ use crate::{
         status::{SigningStatusPerZone, ZoneSigningStatus},
     },
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{Zone, ZoneByPtr, ZoneHandle, ZoneState},
     zonedata::SignedZoneBuilder,
 };
 
@@ -42,7 +42,85 @@ impl SignerZoneHandle<'_> {
             center: self.center,
         }
     }
+}
 
+/// # Reacting to changes
+impl SignerZoneHandle<'_> {
+    /// React to a change in the zone's policy.
+    pub fn after_policy_change(&mut self) {
+        // TODO: Try to reschedule re-signing in fewer cases.
+        self.reschedule_resigning();
+    }
+
+    /// React to the zone being restored from disk.
+    ///
+    /// This is called upon startup when a loaded+signed instance of the zone is
+    /// successfully restored from disk. It schedules the zone for re-signing.
+    pub fn on_restoration(&mut self) {
+        assert!(
+            self.state.signer.scheduled_resign_time.is_none(),
+            "A zone cannot be scheduled for re-signing until restoration completes"
+        );
+
+        self.reschedule_resigning();
+    }
+
+    /// React to the upcoming (signed) instance of the zone being published.
+    ///
+    /// This schedules the zone for re-signing as needed.
+    pub fn on_publication(&mut self) {
+        self.reschedule_resigning();
+    }
+
+    /// React to a signed instance of the zone being abandoned.
+    pub fn before_signed_abandonment(&mut self) {
+        // TODO: Make the caller pass in the right `SigningTrigger`.
+        // TODO: Only enqueue a re-sign if a re-sign was abandoned.
+        //
+        // TODO: Decide what the semantically correct thing to do is. For now,
+        // we just try to re-sign again, in an infinite loop.
+        self.enqueue_resign(ResigningTrigger::SIGS_NEED_REFRESH);
+    }
+
+    /// (Re-)schedule a zone for re-signing.
+    ///
+    /// This will recompute when the zone should be scheduled (if at all) and
+    /// update its schedule in the global state.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(%zone = self.zone.name),
+    )]
+    fn reschedule_resigning(&mut self) {
+        // TODO: Make `Scheduler` work with `SystemTime` directly.
+        fn to_instant(time: SystemTime) -> std::time::Instant {
+            // We are computing a timeout value. If the timeout is in the
+            // past then we can just as well use zero.
+            let since_now = time
+                .duration_since(SystemTime::now())
+                .unwrap_or(Duration::ZERO);
+
+            std::time::Instant::now() + since_now
+        }
+
+        let new_time = resign_time(self.state);
+        let old_time = self.state.signer.scheduled_resign_time;
+
+        trace!(?new_time, ?old_time, "Rescheduling re-signing");
+
+        let zone = ZoneByPtr(self.zone.clone());
+        self.center.signer.resign_scheduler.update(
+            &zone,
+            old_time.map(to_instant),
+            new_time.map(to_instant),
+        );
+
+        self.state.signer.scheduled_resign_time = new_time;
+    }
+}
+
+/// # Initiating signing
+impl SignerZoneHandle<'_> {
     /// Enqueue a new-signing operation.
     ///
     /// When a new instance of the zone is loaded, reviewed, and approved, this
@@ -375,6 +453,12 @@ pub struct SignerState {
     /// An enqueued re-signing operation, if any.
     pub enqueued_resign: Option<EnqueuedResign>,
 
+    /// When a zone is scheduled to be re-signed.
+    ///
+    /// If this is [`Some`], the zone is currently scheduled for re-signing, at
+    /// the specified time.
+    pub scheduled_resign_time: Option<SystemTime>,
+
     /// Status for an active signing operation, if any.
     //
     // TODO: Embed in a state machine.
@@ -433,4 +517,19 @@ pub struct EnqueuedResign {
     // TODO:
     // - The ID of the signed instance to re-sign.
     //   Panic if the actual obtained instance does not match this.
+}
+
+//------------------------------------------------------------------------------
+
+/// Compute when a zone should be re-signed.
+///
+/// Returns [`None`] if the zone does not need re-signing.
+fn resign_time(state: &ZoneState) -> Option<SystemTime> {
+    let policy = state.policy.as_ref()?;
+
+    let last_refresh_time =
+        SystemTime::UNIX_EPOCH + Duration::from(state.last_signature_refresh.clone());
+    let refresh_interval = Duration::from_secs(policy.signer.signature_refresh_interval as u64);
+
+    Some(last_refresh_time + refresh_interval)
 }
