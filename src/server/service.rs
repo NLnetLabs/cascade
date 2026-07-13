@@ -97,6 +97,7 @@ mod compat {
         tsig,
     };
     use futures::Stream;
+    use futures_util as futures;
     use tracing::{Level, debug, trace, warn};
 
     use crate::{
