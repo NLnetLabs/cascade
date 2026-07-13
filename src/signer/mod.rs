@@ -100,12 +100,12 @@ fn sign(
 
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
             handle.get().finish_signing(built);
-            status.status.finish(true);
+            status.status.finish();
             zone.metrics.last_successful_sign_duration(duration);
         }
         Err(SignerError::NothingToDo) => {
             handle.get().abandon_signing(builder);
-            status.status.finish(true);
+            status.status.finish();
         }
         Err(SignerError::KeepSerialPolicyViolated) => {
             // Also ignore Keep errors. We can ignore these errors for
@@ -113,7 +113,7 @@ fn sign(
             // TODO: But if nothing happens for too long we should warn.
             // Something in status would be good.
             handle.get().abandon_signing(builder);
-            status.status.finish(true);
+            status.status.finish();
 
             // If the sign operation was triggered by a load, the user forgot to increase the
             // serial of the zone, so we should tell them about that by emitting an error.
@@ -136,7 +136,7 @@ fn sign(
         Err(error) => {
             error!("Signing failed: {error}");
             handle.get().signing_failed(builder, error.clone());
-            status.status.finish(false);
+            status.status.finish();
 
             handle.state.record_event(
                 HistoricalEvent::SigningFailed {

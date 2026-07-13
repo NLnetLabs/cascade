@@ -1,6 +1,6 @@
 //! Tracking the status of zone signing.
 
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use serde::Serialize;
 use tokio::time::Instant;
@@ -9,9 +9,7 @@ use crate::api::{
     SigningFinishedReport, SigningInProgressReport, SigningReport, SigningRequestedReport,
     SigningStageReport,
 };
-use crate::util::{
-    serialize_duration_as_secs, serialize_instant_as_duration_secs, serialize_opt_duration_as_secs,
-};
+use crate::util::serialize_instant_as_duration_secs;
 
 #[derive(Debug)]
 pub struct SigningStatusPerZone {
@@ -93,16 +91,6 @@ impl SigningStatusPerZone {
                     loaded_serial: domain::base::Serial(s.loaded_serial.into()),
                     signed_serial: domain::base::Serial(s.signed_serial.into()),
                     started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
-                    unsigned_rr_count: s.unsigned_rr_count,
-                    walk_time: s.walk_time,
-                    sort_time: s.sort_time,
-                    denial_rr_count: s.denial_rr_count,
-                    denial_time: s.denial_time,
-                    rrsig_count: s.rrsig_count,
-                    rrsig_reused_count: s.rrsig_reused_count,
-                    rrsig_time: s.rrsig_time,
-                    total_time: s.total_time,
-                    threads_used: s.threads_used,
                 }))
             }
             ZoneSigningStatus::Finished(s) => {
@@ -111,18 +99,7 @@ impl SigningStatusPerZone {
                     loaded_serial: domain::base::Serial(s.loaded_serial.into()),
                     signed_serial: domain::base::Serial(s.signed_serial.into()),
                     started_at: now_t.checked_sub(now.duration_since(s.started_at))?,
-                    unsigned_rr_count: s.unsigned_rr_count,
-                    walk_time: s.walk_time,
-                    sort_time: s.sort_time,
-                    denial_rr_count: s.denial_rr_count,
-                    denial_time: s.denial_time,
-                    rrsig_count: s.rrsig_count,
-                    rrsig_reused_count: s.rrsig_reused_count,
-                    rrsig_time: s.rrsig_time,
-                    total_time: s.total_time,
-                    threads_used: s.threads_used,
                     finished_at: now_t.checked_sub(now.duration_since(s.finished_at))?,
-                    succeeded: s.succeeded,
                 }))
             }
             ZoneSigningStatus::Aborted => None,
@@ -167,13 +144,13 @@ impl ZoneSigningStatus {
         }
     }
 
-    pub fn finish(&mut self, succeeded: bool) {
+    pub fn finish(&mut self) {
         match *self {
             ZoneSigningStatus::Requested(_) => {
                 *self = Self::Aborted;
             }
             ZoneSigningStatus::InProgress(status) => {
-                *self = Self::Finished(FinishedStatus::new(status, succeeded))
+                *self = Self::Finished(FinishedStatus::new(status))
             }
             ZoneSigningStatus::Finished(_) | ZoneSigningStatus::Aborted => { /* Nothing to do */ }
         }
@@ -214,21 +191,6 @@ pub struct InProgressStatus {
     pub signed_serial: domain::base::Serial,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub started_at: tokio::time::Instant,
-    pub unsigned_rr_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    pub walk_time: Option<Duration>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    pub sort_time: Option<Duration>,
-    pub denial_rr_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    pub denial_time: Option<Duration>,
-    pub rrsig_count: Option<usize>,
-    pub rrsig_reused_count: Option<usize>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    pub rrsig_time: Option<Duration>,
-    #[serde(serialize_with = "serialize_opt_duration_as_secs")]
-    pub total_time: Option<Duration>,
-    pub threads_used: Option<usize>,
 }
 
 impl InProgressStatus {
@@ -242,16 +204,6 @@ impl InProgressStatus {
             loaded_serial: domain::base::Serial(loaded_serial.into()),
             signed_serial: domain::base::Serial(signed_serial.into()),
             started_at: Instant::now(),
-            unsigned_rr_count: None,
-            walk_time: None,
-            sort_time: None,
-            denial_rr_count: None,
-            denial_time: None,
-            rrsig_count: None,
-            rrsig_reused_count: None,
-            rrsig_time: None,
-            total_time: None,
-            threads_used: None,
         }
     }
 }
@@ -262,47 +214,20 @@ pub struct FinishedStatus {
     pub requested_at: tokio::time::Instant,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub started_at: tokio::time::Instant,
-    pub loaded_serial: domain::base::Serial,
-    pub signed_serial: domain::base::Serial,
-    pub unsigned_rr_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    pub walk_time: Duration,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    pub sort_time: Duration,
-    pub denial_rr_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    pub denial_time: Duration,
-    pub rrsig_count: usize,
-    pub rrsig_reused_count: usize,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    pub rrsig_time: Duration,
-    #[serde(serialize_with = "serialize_duration_as_secs")]
-    pub total_time: Duration,
-    pub threads_used: usize,
     #[serde(serialize_with = "serialize_instant_as_duration_secs")]
     pub finished_at: tokio::time::Instant,
-    pub succeeded: bool,
+    pub loaded_serial: domain::base::Serial,
+    pub signed_serial: domain::base::Serial,
 }
 
 impl FinishedStatus {
-    fn new(in_progress_status: InProgressStatus, succeeded: bool) -> Self {
+    fn new(in_progress_status: InProgressStatus) -> Self {
         Self {
             requested_at: in_progress_status.requested_at,
             loaded_serial: in_progress_status.loaded_serial,
             signed_serial: in_progress_status.signed_serial,
-            started_at: Instant::now(),
-            unsigned_rr_count: in_progress_status.unsigned_rr_count.unwrap_or_default(),
-            walk_time: in_progress_status.walk_time.unwrap_or_default(),
-            sort_time: in_progress_status.sort_time.unwrap_or_default(),
-            denial_rr_count: in_progress_status.denial_rr_count.unwrap_or_default(),
-            denial_time: in_progress_status.denial_time.unwrap_or_default(),
-            rrsig_count: in_progress_status.rrsig_count.unwrap_or_default(),
-            rrsig_reused_count: in_progress_status.rrsig_reused_count.unwrap_or_default(),
-            rrsig_time: in_progress_status.rrsig_time.unwrap_or_default(),
-            total_time: in_progress_status.total_time.unwrap_or_default(),
-            threads_used: in_progress_status.threads_used.unwrap_or_default(),
+            started_at: in_progress_status.started_at,
             finished_at: Instant::now(),
-            succeeded,
         }
     }
 }

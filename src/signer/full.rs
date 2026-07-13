@@ -49,7 +49,7 @@ use crate::{
         SigningTrigger,
         incremental::LocalState,
         keys::ZoneSigningKeys,
-        status::{FullSigningStep, SigningStatusPerZone, SigningStep, ZoneSigningStatus},
+        status::{FullSigningStep, SigningStatusPerZone, SigningStep},
     },
     units::{
         key_manager::mk_dnst_keyset_state_file_path,
@@ -138,16 +138,6 @@ pub fn sign_zone(
         .collect::<Vec<_>>();
     records.push(new_soa.clone().into());
     let walk_time = walk_start.elapsed();
-    let unsigned_rr_count = records.len();
-
-    {
-        let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.unsigned_rr_count = Some(unsigned_rr_count);
-            s.walk_time = Some(walk_time);
-        }
-    }
 
     debug!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
     {
@@ -213,14 +203,6 @@ pub fn sign_zone(
     let sort_time = sort_start.elapsed();
     let unsigned_rr_count = records.len();
 
-    {
-        let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.sort_time = Some(sort_time);
-        }
-    }
-
     //
     // Generate NSEC(3) RRs.
     //
@@ -278,15 +260,6 @@ pub fn sign_zone(
     let denial_time = denial_start.elapsed();
     let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
 
-    {
-        let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.denial_rr_count = Some(denial_rr_count);
-            s.denial_time = Some(denial_time);
-        }
-    }
-
     //
     // Generate RRSIG RRs concurrently.
     //
@@ -304,14 +277,6 @@ pub fn sign_zone(
     // TODO: Configure Rayon's thread pool to set the number of threads. By
     // default, it relies on 'std::thread::available_parallelism()'.
     let parallelism = rayon::current_num_threads();
-
-    {
-        let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.threads_used = Some(parallelism);
-        }
-    }
 
     let generation_start = Instant::now();
 
@@ -424,14 +389,7 @@ pub fn sign_zone(
 
     {
         let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.rrsig_count = Some(total_signatures);
-            s.rrsig_reused_count = Some(0); // Not implemented yet
-            s.rrsig_time = Some(generation_time);
-            s.total_time = Some(total_time);
-        }
-        v.status.finish(true);
+        v.status.finish();
     }
 
     // Log signing statistics.

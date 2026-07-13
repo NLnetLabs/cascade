@@ -637,16 +637,6 @@ pub struct SigningInProgressReport {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,
     pub started_at: SystemTime,
-    pub unsigned_rr_count: Option<usize>,
-    pub walk_time: Option<Duration>,
-    pub sort_time: Option<Duration>,
-    pub denial_rr_count: Option<usize>,
-    pub denial_time: Option<Duration>,
-    pub rrsig_count: Option<usize>,
-    pub rrsig_reused_count: Option<usize>,
-    pub rrsig_time: Option<Duration>,
-    pub total_time: Option<Duration>,
-    pub threads_used: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -655,18 +645,7 @@ pub struct SigningFinishedReport {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,
     pub started_at: SystemTime,
-    pub unsigned_rr_count: usize,
-    pub walk_time: Duration,
-    pub sort_time: Duration,
-    pub denial_rr_count: usize,
-    pub denial_time: Duration,
-    pub rrsig_count: usize,
-    pub rrsig_reused_count: usize,
-    pub rrsig_time: Duration,
-    pub total_time: Duration,
-    pub threads_used: usize,
     pub finished_at: SystemTime,
-    pub succeeded: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
