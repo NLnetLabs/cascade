@@ -348,63 +348,66 @@ impl PersistenceState {
             "Checking if compaction is needed for zone '{}': {num_signed_diffs} > {max_diffs}",
             zone.name
         );
-        if num_signed_diffs > max_diffs {
+        if num_signed_diffs <= max_diffs {
+            return;
+        }
+
+        debug!(
+            "Compacting persisted diffs for zone '{}' with {} diffs > {} max diffs",
+            zone.name, num_signed_diffs, max_diffs
+        );
+        let num_diffs_to_remove = num_signed_diffs - max_diffs;
+        let loaded_snapshot_path = &loaded_snapshot_path.unwrap().path;
+        let signed_snapshot_path = &signed_snapshot_path.unwrap().path;
+
+        // Get access to the published records for the zone, so that we
+        // can write new loaded and signed snapshot files to disk.
+        if let Ok(viewer) = viewer.try_read()
+            && let Some(reader) = viewer.read()
+        {
             debug!(
-                "Compacting persisted diffs for zone '{}' with {} diffs > {} max diffs",
-                zone.name, num_signed_diffs, max_diffs
+                "Writing loaded zone snapshot to {}",
+                loaded_snapshot_path.display()
             );
-            let num_diffs_to_remove = num_signed_diffs.abs_diff(max_diffs);
-            let loaded_snapshot_path = &loaded_snapshot_path.unwrap().path;
-            let signed_snapshot_path = &signed_snapshot_path.unwrap().path;
+            crate::persistence::persist_to_file_from_parts(
+                loaded_snapshot_path,
+                None,
+                reader.soa().clone(),
+                [].iter(),
+                reader.loaded_records(),
+            );
 
-            // Get access to the published records for the zone, so that we
-            // can write new loaded and signed snapshot files to disk.
-            if let Ok(viewer) = viewer.try_read()
-                && let Some(reader) = viewer.read()
-            {
-                debug!(
-                    "Writing loaded zone snapshot to {}",
-                    loaded_snapshot_path.display()
-                );
-                crate::persistence::persist_to_file_from_parts(
-                    loaded_snapshot_path,
-                    None,
-                    reader.soa().clone(),
-                    [].iter(),
-                    reader.loaded_records(),
-                );
+            debug!(
+                "Writing new signed zone snapshot to {}",
+                signed_snapshot_path.display()
+            );
+            crate::persistence::persist_to_file_from_parts(
+                signed_snapshot_path,
+                None,
+                reader.soa().clone(),
+                [].iter(),
+                reader.generated_records().iter(),
+            );
 
-                debug!(
-                    "Writing new signed zone snapshot to {}",
-                    signed_snapshot_path.display()
-                );
-                crate::persistence::persist_to_file_from_parts(
-                    signed_snapshot_path,
-                    None,
-                    reader.soa().clone(),
-                    [].iter(),
-                    reader.generated_records().iter(),
-                );
+            // Now that we have re-written the snapshots using the latest
+            // published version of the zone we don't need any of the
+            // on-disk persisted diffs that were previously applied on top
+            // of the old snapshot to re-create the zone.
+            //
+            // We might still however need some of those on-disk diffs so
+            // that we can reload them on startup to be able to serve them
+            // as IXFR diffs to downstream nameservers.
+            //
+            // Check which ones we can delete and after deleting them
+            // update our record of the first on-disk diff file that
+            // should be applied on top of the updated snapshot.
 
-                // Now that we have re-written the snapshots using the latest
-                // published version of the zone we don't need any of the
-                // on-disk persisted diffs that were previously applied on top
-                // of the old snapshot to re-create the zone.
-                //
-                // We might still however need some of those on-disk diffs so
-                // that we can reload them on startup to be able to serve them
-                // as IXFR diffs to downstream nameservers.
-                //
-                // Check which ones we can delete and after deleting them
-                // update our record of the first on-disk diff file that
-                // should be applied on top of the updated snapshot.
-
-                // Remove the first N oldest signed diffs and their
-                // corresponding loaded diffs. Skip the first "diff" as it is
-                // the snapshot, not a diff.
-                let mut idx = 0;
-                let mut loaded_serials_to_remove = vec![];
-                state
+            // Remove the first N oldest signed diffs and their
+            // corresponding loaded diffs. Skip the first "diff" as it is
+            // the snapshot, not a diff.
+            let mut idx = 0;
+            let mut loaded_serials_to_remove = vec![];
+            state
                     .persistence
                     .signed_diffs
                     .diff_infos
@@ -430,47 +433,44 @@ impl PersistenceState {
                         keep
                     });
 
-                // Remove the corresponding loaded diffs.
-                for loaded_serial in loaded_serials_to_remove.into_iter() {
-                    if let Some(found_item) = state
+            // Remove the corresponding loaded diffs.
+            for loaded_serial in loaded_serials_to_remove.into_iter() {
+                if let Some(found_item) = state
+                    .persistence
+                    .loaded_diffs
+                    .diffs()
+                    .iter()
+                    .find(|item| item.loaded_serial == Some(loaded_serial))
+                    .cloned()
+                {
+                    trace!(
+                        "Compaction for zone '{}': removing loaded diff for loaded serial {loaded_serial}",
+                        zone.name
+                    );
+                    let _ = state
                         .persistence
                         .loaded_diffs
-                        .diffs()
-                        .iter()
-                        .find(|item| item.loaded_serial == Some(loaded_serial))
-                        .cloned()
-                    {
-                        trace!(
-                            "Compaction for zone '{}': removing loaded diff for loaded serial {loaded_serial}",
-                            zone.name
+                        .diff_infos
+                        .remove(&found_item);
+                    if let Err(err) = std::fs::remove_file(&found_item.path) {
+                        warn!(
+                            "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
+                            zone.name,
+                            found_item.path.display()
                         );
-                        let _ = state
-                            .persistence
-                            .loaded_diffs
-                            .diff_infos
-                            .remove(&found_item);
-                        if let Err(err) = std::fs::remove_file(&found_item.path) {
-                            warn!(
-                                "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
-                                zone.name,
-                                found_item.path.display()
-                            );
-                        }
                     }
                 }
-
-                state.persistence.loaded_diffs.restore_base_idx =
-                    state.persistence.loaded_diffs.len();
-                state.persistence.signed_diffs.restore_base_idx =
-                    state.persistence.signed_diffs.len();
-                trace!(
-                    "Compaction complete: next_idx: loaded={}, signed={}, restore_base_idx: loaded={}, signed={}",
-                    state.persistence.loaded_diffs.next_idx,
-                    state.persistence.signed_diffs.next_idx,
-                    state.persistence.loaded_diffs.restore_base_idx,
-                    state.persistence.signed_diffs.restore_base_idx
-                );
             }
+
+            state.persistence.loaded_diffs.restore_base_idx = state.persistence.loaded_diffs.len();
+            state.persistence.signed_diffs.restore_base_idx = state.persistence.signed_diffs.len();
+            trace!(
+                "Compaction complete: next_idx: loaded={}, signed={}, restore_base_idx: loaded={}, signed={}",
+                state.persistence.loaded_diffs.next_idx,
+                state.persistence.signed_diffs.next_idx,
+                state.persistence.loaded_diffs.restore_base_idx,
+                state.persistence.signed_diffs.restore_base_idx
+            );
         }
     }
 
