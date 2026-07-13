@@ -645,6 +645,9 @@ The ``[server.outbound]`` section.
    diffs for a zone always exceed the limit, then no diffs will be stored in
    memory and IXFR requests will be responded to with an AXFR instead.
 
+   .. note:: The `max-diffs` limit is applied first, then additional diffs
+             will be discarded as needed to meet the `max-diffs-size` limit.
+
 Files
 -----
 
