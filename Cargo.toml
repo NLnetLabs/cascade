@@ -160,6 +160,8 @@ lazy_static = { version = "1.5" }
 # support-color checks various environment variables and terminal settings for
 # whether ANSI escape codes should be emitted. It is also used by `anstream`
 # (and therefore `clap`).
+#
+# TODO: `anstream` now uses `anstyle-query` instead of `supports-color`.
 supports-color = "3.0.2"
 
 # `hostname` is a very popular crate to get the hostname of the current process.
