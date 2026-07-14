@@ -480,8 +480,8 @@ mode = "off"
 #provide-xfr-to = ["127.0.0.1", "127.0.0.1^my-tsig-key"]
 
 # The maximum number of "sequences of differential information" (diffs) that
-# the server may store per zone in order to respond to RFC 1995 Incremental
-# Zone Transfer (IXFR) requests.
+# the server may store per zone **in-memory** in order to respond to RFC 1995
+# Incremental Zone Transfer (IXFR) requests.
 # 
 # A diff is created when changes to the input zone are received and when
 # re-signing alters the signed records generated when signing last occurred.
@@ -489,15 +489,21 @@ mode = "off"
 # Diffs are persisted to disk once approved and will be restored on next start
 # of the Cascade daemon.
 # 
-# Excess in-memory diffs are discarded as soon as possible after approval of a
-# new diff, or on policy reload if the diff maximums were reduced compared to
-# previous version of the policy.
+# Excess **in-memory** diffs are discarded as soon as possible after approval
+# of a new diff, or on policy reload if the diff maximums were reduced
+# compared to previous version of the policy.
 # 
-# Persisted diffs are discarded periodically to reduce the impact of persisted
-# diff compaction. The number of persisted diffs may therefore temporarily
-# exceed the limit specified here until purging of persisted diffs next
-# occurs. Discarding of persisted diffs will be skipped for zones that are in
-# maintenance mode.
+# Diffs persisted to disk will also be deleted if above the specified
+# max-diffs limit, but not immediately, and if not needed to restore the
+# zone on Cascade restart. Deletion of diffs on disk (so-called 'compaction')
+# requires re-writing the entire zone to disk which for large zones could take
+# time and for rapidly changing zones is thus not desirable to do on every
+# change to the zone, and therefore is done periodically rather than on every
+# change. Diffs that exceed the max-diffs limit but which are still required
+# to restore the zone (because compactiion has not occurred yet) will remain
+# on disk until it is safe to delete them.
+#
+# Compaction will be skipped for zones that are in maintenance mode.
 # 
 # Note that while RFC 1955 section 5 suggests that diffs be purged based on
 # total IXFR response size and/or if older than the SOA expire period, Cascade
@@ -505,15 +511,15 @@ mode = "off"
 # support for RFC 1995 section 6 condensation of multiple versions.
 #max-diffs = 5
 
-# The maximum size allowed for in-memory diffs for a single zone, defined as a
-# percentage of the size of the last published version of the zone. If storing
-# a new diff would exceed the limit, diffs will be discarded to make space
-# starting with the oldest diffs first.
+# The maximum size allowed for **in-memory** diffs for a single zone, defined
+# as a percentage of the size (by record count) of the last published version
+# of the zone. If storing a new diff would exceed the limit, **in-memory**
+# diffs will be discarded to make space starting with the oldest diffs first.
 #
 # This setting has no impact on the number of diffs persisted to disk. See
 # max-diffs to control that.
 #
-# The default is 20%. If set to 0, or a value low enough such that the set of
-# diffs for a zone always exceed the limit, then no diffs will be stored in
-# memory and IXFR requests will be responded to with an AXFR instead.
+# The default is 20%. If set to 0, or a value low enough such that the set
+# of diffs for a zone always exceed the limit, then no diffs will be stored
+# **in-memory** and IXFR requests will be responded to with an AXFR instead.
 #max-diffs-size = 20
