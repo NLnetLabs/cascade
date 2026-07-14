@@ -33,13 +33,13 @@ specifies the zone name.
   last successful zone transfer or zonefile load.
 - ``zone_loaded_last_records`` (gauge): Number of records loaded in last
   attempted zone transfer or zonefile load.
-- ``zone_loaded_last_size`` (gauge): Number of bytes loaded in last attempted
-  zone transfer or zonefile load.
-- ``zone_last_load_duration_seconds`` (gauge): Duration of the last load for
-  this zone.
+- ``zone_loaded_last_size_bytes`` (gauge): Number of bytes loaded in last
+  attempted zone transfer or zonefile load.
 - ``zone_last_successful_load_duration_seconds`` (gauge): Duration of the last
   successful load for this zone.
-- ``zone_last_sign_duration_seconds`` (gauge): Duration of the last signing
-  operation for this zone.
 - ``zone_last_successful_sign_duration_seconds`` (gauge): Duration of the last
   successful signing operation for this zone.
+- ``zone_last_load_duration_seconds`` (gauge): Duration of the last load for
+  this zone.
+- ``zone_last_sign_duration_seconds`` (gauge): Duration of the last signing
+  operation for this zone.
