@@ -54,6 +54,7 @@ version = "1.1.6"
 # TODO: Maintenance?
 [workspace.dependencies.clap]
 version = "4.5"
+default-features = false
 
 # 'domain' is a general-purpose library for DNS.
 #
@@ -114,15 +115,17 @@ version = "0.3.20"
 [dependencies]
 axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio", "tracing"] }
 bytes              = "1.0"
-crossbeam-utils    = "0.8"
 daemonbase         = { version = "0.1.5", features = ["tokio"] }
-futures            = "0.3.17"
-futures-util       = "0.3"
 serde              = { workspace = true, features = ["derive", "rc"] }
 rayon = "1.10.0"
 serde_json         = "1.0"
 serde_with         = "3"
 url                = { version = "2.4", features = ["serde"] }
+
+# `futures` provides some async functionality not available in `std` yet. It's
+# quite a big crate, and we only need a subset of the functionality, so we only
+# import the `-util` subcrate.
+futures-util = "0.3"
 
 # Jiff is used by zone_signer for the DateCounter serial policy.
 jiff.workspace = true
@@ -155,8 +158,11 @@ tracing-subscriber.workspace = true
 lazy_static = { version = "1.5" }
 
 # support-color checks various environment variables and terminal settings for
-# whether ANSI escape codes should be emitted. It is also used by `anstream`
-# (and therefore `clap`).
+# whether ANSI escape codes should be emitted.
+#
+# TODO: This dependency was chosen because `anstream` (which we depend on
+# elsewhere) used it, but `anstream` now uses `anstyle-query`. We now have two
+# crates in our dependency graph that have the same functionality.
 supports-color = "3.0.2"
 
 # `hostname` is a very popular crate to get the hostname of the current process.
@@ -166,6 +172,14 @@ hostname = "0.4.1"
 # `prometheus-client` is used for metrics and is maintained by the Prometheus
 # organization.
 prometheus-client = "0.24.0"
+
+# `idna`, which provides internationalized domain names, is pulled in by `url`.
+# It adds a significant number of dependencies. But Cascade only uses pure-ASCII
+# URLs, so IDN support is unnecessary. `url` does not offer a way to disable
+# `idna` directly; instead, the documented (albeit hacky) method to disable IDN
+# support is to force the version of the `idna_adapter` dependency.
+# See <https://crates.io/crates/idna_adapter>.
+idna_adapter = { version = "=1.0.0" }
 
 cascade-api = { path = "crates/api" }
 cascade-cfg = { path = "crates/cfg" }
