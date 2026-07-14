@@ -85,6 +85,7 @@ impl Spec {
         match self {
             Self::V1(v1::Spec {
                 policy,
+                maintenance_mode,
                 instances,
                 source,
                 min_expiration,
@@ -138,6 +139,7 @@ impl Spec {
                     loader,
                     history,
                     persistence,
+                    maintenance_mode,
                     ..Default::default()
                 })
             }
