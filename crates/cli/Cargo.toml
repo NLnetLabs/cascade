@@ -41,11 +41,6 @@ path = "../api"
 workspace = true
 features = ["cargo", "derive", "env", "wrap_help"]
 
-# TODO: Evaluate this choice.
-[dependencies.futures-util]
-version = "0.3"
-default-features = false
-
 # The CLI uses 'jiff' to process timestamps and durations, and to print them in
 # human-readable terms.
 [dependencies.jiff]

@@ -31,7 +31,7 @@ use crate::zonedata::{
     DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
     LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
     SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
-    SignedZoneReviewer, SoaRecord, ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    SignedZoneReviewer, ZoneCleaner, ZoneDataStorage, ZoneViewer,
 };
 use crate::{
     center::Center,
@@ -847,33 +847,6 @@ pub struct StorageState {
     /// passed to [`StorageZoneHandle::abandon_loaded_restoration()`].
     pub restorer: Option<LoadedZoneRestorer>,
 
-    /// The SOA record of the loaded instance of the zone being reviewed, if
-    /// any.
-    //
-    // TODO: This should move into a component of 'ZoneState' tracking the
-    // upcoming zone instance.
-    pub loaded_review_soa: Option<SoaRecord>,
-
-    /// The SOA record of the signed instance of the zone being reviewed, if
-    /// any.
-    //
-    // TODO: This should move into a component of 'ZoneState' tracking the
-    // upcoming zone instance.
-    pub signed_review_soa: Option<SoaRecord>,
-
-    /// The SOA record of the published instance of the zone, if any.
-    //
-    // TODO: This should move into a component of 'ZoneState' tracking the
-    // current i.e. published zone instance.
-    pub published_soa: Option<SoaRecord>,
-
-    /// The SOA record of the loaded instance underlying the published instance
-    /// of the zone, if any.
-    //
-    // TODO: This should move into a component of 'ZoneState' tracking the
-    // current i.e. published zone instance.
-    pub published_loaded_soa: Option<SoaRecord>,
-
     /// Diffs from one serial to another for responding to IXFR requests.
     pub diffs: IxfrZoneDiffs,
 
@@ -892,10 +865,6 @@ impl StorageState {
         Self {
             machine,
             restorer: Some(restorer),
-            loaded_review_soa: None,
-            signed_review_soa: None,
-            published_soa: None,
-            published_loaded_soa: None,
             diffs: Default::default(),
             background_tasks: Default::default(),
         }

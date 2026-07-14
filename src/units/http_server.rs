@@ -449,20 +449,24 @@ impl HttpServer {
                 });
 
             unsigned_serial = zone_state
-                .storage
-                .loaded_review_soa
+                .instances
+                .upcoming
                 .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+                .and_then(|i| i.loaded.as_ref())
+                .map(|i| Serial(i.serial().into()));
+
             signed_serial = zone_state
-                .storage
-                .signed_review_soa
+                .instances
+                .upcoming
                 .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+                .and_then(|i| i.signed.as_ref())
+                .map(|i| Serial(i.serial().into()));
+
             published_serial = zone_state
-                .storage
-                .published_soa
+                .instances
+                .current
                 .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+                .map(|i| Serial(i.signed.serial().into()));
 
             progress = match zone_state.machine {
                 ZoneStateMachine::Waiting(..) => {
@@ -494,13 +498,14 @@ impl HttpServer {
             };
 
             last_published = zone_state
-                .last_published
+                .instances
+                .current
                 .as_ref()
-                .map(|p| LastPublishedZone {
-                    loaded_serial: p.loaded_serial,
-                    signed_serial: p.signed_serial,
-                    num_records: p.num_records,
-                    timestamp: p.timestamp,
+                .map(|i| LastPublishedZone {
+                    loaded_serial: Serial(i.loaded.serial().into()),
+                    signed_serial: Serial(i.signed.serial().into()),
+                    num_records: i.signed.num_records().get() as usize,
+                    timestamp: i.pub_time,
                 });
 
             let mut found_error = None;

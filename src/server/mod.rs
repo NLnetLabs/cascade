@@ -3,18 +3,20 @@
 use std::{fmt, sync::Arc};
 
 use domain::base::Serial;
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-    api::{ZoneReviewDecision, ZoneReviewResult},
     center::Center,
     daemon::SocketProvider,
     manager::Terminated,
+    policy::OnReject,
     units::zone_server::{Source, ZoneServer},
     util::AbortOnDrop,
-    zone::Zone,
+    zone::{Zone, ZoneHandle, machine::ZoneStateMachine},
     zonedata::{LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer},
 };
 
+mod notify;
 mod request;
 mod service;
 
@@ -63,14 +65,75 @@ impl LoadedReviewServer {
     }
 
     /// Process a review of a served instance.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %zone.name, serial = %zone_serial.0, ?decision),
+    )]
     pub fn process_review(
         center: &Arc<Center>,
         zone: &Arc<Zone>,
         zone_serial: Serial,
-        decision: ZoneReviewDecision,
-    ) -> ZoneReviewResult {
-        // TODO: Inline.
-        ZoneServer::new(Source::Unsigned).on_zone_review(center, zone, zone_serial, decision)
+        decision: crate::api::ZoneReviewDecision,
+    ) -> crate::api::ZoneReviewResult {
+        let mut handle = zone.write_handle(center);
+
+        if !matches!(handle.state.machine, ZoneStateMachine::LoadedReview(_)) {
+            debug!("The zone is not undergoing loaded review");
+            return Err(crate::api::ZoneReviewError::NotUnderReview);
+        }
+
+        let instance = handle
+            .state
+            .instances
+            .upcoming
+            .as_ref()
+            .and_then(|i| i.loaded.as_ref())
+            .expect("There must be an upcoming instance in the `LoadedReview` state");
+
+        if instance.serial().get() != zone_serial.0 {
+            debug!(
+                "A review of a loaded instance with SOA serial {} was received, \
+                but the loaded instance under review actually has SOA serial {}",
+                zone_serial.0,
+                instance.serial().get()
+            );
+            return Err(crate::api::ZoneReviewError::NotUnderReview);
+        }
+
+        let Some(policy) = handle.state.policy.as_ref() else {
+            warn!("Bug: zone has no policy, it might be mid removal");
+            return Err(crate::api::ZoneReviewError::NoSuchZone);
+        };
+
+        match decision {
+            crate::api::ZoneReviewDecision::Approve => {
+                info!(
+                    "The loaded instance of zone '{}' (SOA serial {}) has been approved.",
+                    zone.name, zone_serial.0
+                );
+
+                handle.get().approve_loaded();
+            }
+
+            crate::api::ZoneReviewDecision::Reject => {
+                error!(
+                    "The loaded instance of zone '{}' (SOA serial {}) has been rejected.",
+                    zone.name, zone_serial.0
+                );
+
+                match policy.loader.review.on_reject {
+                    OnReject::Discard => {
+                        handle.get().soft_reject_loaded();
+                    }
+                    OnReject::Halt => {
+                        handle.get().hard_reject_loaded();
+                    }
+                }
+            }
+        }
+
+        Ok(crate::api::ZoneReviewOutput {})
     }
 
     /// Register a new zone.
@@ -152,14 +215,75 @@ impl SignedReviewServer {
     }
 
     /// Process a review of a served instance.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %zone.name, serial = %zone_serial.0, ?decision),
+    )]
     pub fn process_review(
         center: &Arc<Center>,
         zone: &Arc<Zone>,
         zone_serial: Serial,
-        decision: ZoneReviewDecision,
-    ) -> ZoneReviewResult {
-        // TODO: Inline.
-        ZoneServer::new(Source::Signed).on_zone_review(center, zone, zone_serial, decision)
+        decision: crate::api::ZoneReviewDecision,
+    ) -> crate::api::ZoneReviewResult {
+        let mut handle = zone.write_handle(center);
+
+        if !matches!(handle.state.machine, ZoneStateMachine::SignedReview(_)) {
+            debug!("The zone is not undergoing signed review");
+            return Err(crate::api::ZoneReviewError::NotUnderReview);
+        }
+
+        let instance = handle
+            .state
+            .instances
+            .upcoming
+            .as_ref()
+            .and_then(|i| i.signed.as_ref())
+            .expect("There must be an upcoming instance in the `SignedReview` state");
+
+        if instance.serial().get() != zone_serial.0 {
+            debug!(
+                "A review of a signed instance with SOA serial {} was received, \
+                but the signed instance under review actually has SOA serial {}",
+                zone_serial.0,
+                instance.serial().get()
+            );
+            return Err(crate::api::ZoneReviewError::NotUnderReview);
+        }
+
+        let Some(policy) = handle.state.policy.as_ref() else {
+            warn!("Bug: zone has no policy, it might be mid removal");
+            return Err(crate::api::ZoneReviewError::NoSuchZone);
+        };
+
+        match decision {
+            crate::api::ZoneReviewDecision::Approve => {
+                info!(
+                    "The signed instance of zone '{}' (SOA serial {}) has been approved.",
+                    zone.name, zone_serial.0
+                );
+
+                handle.get().approve_signed();
+            }
+
+            crate::api::ZoneReviewDecision::Reject => {
+                error!(
+                    "The signed instance of zone '{}' (SOA serial {}) has been rejected.",
+                    zone.name, zone_serial.0
+                );
+
+                match policy.signer.review.on_reject {
+                    OnReject::Discard => {
+                        handle.get().soft_reject_signed();
+                    }
+                    OnReject::Halt => {
+                        handle.get().hard_reject_signed();
+                    }
+                }
+            }
+        }
+
+        Ok(crate::api::ZoneReviewOutput {})
     }
 
     /// Register a new zone.
@@ -229,10 +353,52 @@ impl PublicationServer {
         )
     }
 
-    /// Publish an instance.
-    pub fn publish(center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
-        // TODO: Inline.
-        ZoneServer::new(Source::Published).on_publish_signed_zone(center, zone, zone_serial)
+    /// React to the publication of an instance.
+    ///
+    /// Sends NOTIFY messages to downstream servers if configured to do so.
+    #[tracing::instrument(
+        level = "trace",
+        skip_all,
+        fields(zone = %handle.zone.name),
+    )]
+    pub fn after_publication(handle: &mut ZoneHandle<'_>) {
+        let instance = handle
+            .state
+            .instances
+            .current
+            .as_ref()
+            .expect("A published zone must have a current instance");
+        let policy = handle
+            .state
+            .policy
+            .as_ref()
+            .expect("A published zone always has a policy");
+
+        let targets = policy
+            .server
+            .outbound
+            .send_notify_to
+            .iter()
+            .filter(|&s| s.addr.port() != 0)
+            .collect::<Vec<_>>();
+
+        debug!(
+            "Sending NOTIFY messages to {} downstream name servers",
+            targets.len()
+        );
+
+        if targets.is_empty() {
+            return;
+        }
+
+        trace!("Target name servers: {targets:?}");
+
+        self::notify::send_notify_to_addrs(
+            handle.zone.name.clone(),
+            instance.signed.soa.clone(),
+            targets.into_iter(),
+            handle.center,
+        );
     }
 
     /// Register a new zone.

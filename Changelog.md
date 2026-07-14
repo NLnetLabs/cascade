@@ -14,6 +14,29 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Breaking changes
+### New
+### Bug fixes
+### Other changes
+
+- Improve memory use for unsigned data in incremental signing. ([#866] by
+  @Philip-NLnetLabs)
+
+### Documentation improvements
+
+- RST markup fixes to systemd socket activation quick start notes. ([#858] by
+  @ximon18)
+
+### Known issues
+### Acknowledgements
+
+[#858]: https://github.com/NLnetLabs/cascade/pull/858
+[#866]: https://github.com/NLnetLabs/cascade/pull/866
+
 ## 0.1.0-beta5 'Got that holiday feeling'
 
 Released 2026-07-10.

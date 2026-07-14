@@ -4,14 +4,10 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
 
 use bytes::Bytes;
-use domain::base::iana::{Class, Opcode};
-use domain::base::{MessageBuilder, Name, Rtype, Serial, ToName};
-use domain::net::client::dgram::Connection;
-use domain::net::client::protocol::UdpConnect;
-use domain::net::client::request::{RequestMessage, SendRequest};
+use domain::base::iana::Class;
+use domain::base::{Name, Serial, ToName};
 use domain::net::server::ConnectionConfig;
 use domain::net::server::buf::VecBufSource;
 use domain::net::server::dgram::{self, DgramServer};
@@ -23,24 +19,18 @@ use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
 use domain::net::server::service::Service;
 use domain::net::server::stream::{self, StreamServer};
 use domain::tsig::{Algorithm, KeyStore};
-use domain::zonetree::StoredName;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
-use crate::api::{
-    ZoneReviewDecision, ZoneReviewError, ZoneReviewOutput, ZoneReviewResult, ZoneReviewStatus,
-};
+use crate::api::{ZoneReviewDecision, ZoneReviewStatus};
 use crate::center::Center;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
-use crate::policy::{NameserverCommsPolicy, OnReject, ReviewMode};
-use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
+use crate::policy::ReviewMode;
+use crate::server::{LoadedReviewServer, SignedReviewServer};
 use crate::util::AbortOnDrop;
-use crate::zone::{
-    HistoricalEvent, SignedZoneVersionState, UnsignedZoneVersionState, Zone, ZoneVersionReviewState,
-};
-use crate::zonedata::{OldRecord, SoaRecord};
+use crate::zone::{HistoricalEvent, Zone};
 
 /// The source of a zone server.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -209,55 +199,6 @@ impl ZoneServer {
         }
     }
 
-    pub fn on_publish_signed_zone(
-        &self,
-        center: &Arc<Center>,
-        zone: &Arc<Zone>,
-        zone_serial: Serial,
-    ) {
-        let unit_name = self.unit_name();
-        let zone_name = &zone.name;
-        info!("[{unit_name}]: Publishing signed zone '{zone_name}' at serial {zone_serial}.",);
-
-        // Move next_min_expiration to min_expiration, and determine policy.
-        let (policy, soa) = {
-            // Use a block to make sure that the lock is clearly dropped.
-            let mut zone_state = zone.write(center);
-
-            // Save as next_min_expiration. After the signed zone is approved
-            // this value should be move to min_expiration.
-            zone_state.min_expiration = zone_state.next_min_expiration;
-            zone_state.next_min_expiration = None;
-
-            (
-                zone_state.policy.clone(),
-                zone_state.storage.signed_review_soa.clone().unwrap(),
-            )
-        };
-
-        // Send NOTIFY if configured to do so.
-        if let Some(policy) = policy {
-            info!(
-                "[{unit_name}]: Found {} NOTIFY targets",
-                policy.server.outbound.send_notify_to.len()
-            );
-            trace!(
-                "NOTIFY targets: {:?}",
-                policy.server.outbound.send_notify_to
-            );
-            if !policy.server.outbound.send_notify_to.is_empty() {
-                let addrs = policy
-                    .server
-                    .outbound
-                    .send_notify_to
-                    .iter()
-                    .filter(|s| s.addr.port() != 0);
-
-                send_notify_to_addrs(zone_name.clone(), soa.clone(), addrs, center);
-            }
-        }
-    }
-
     pub fn on_seek_approval_for_zone(
         &self,
         center: &Arc<Center>,
@@ -332,37 +273,6 @@ impl ZoneServer {
                 );
             }
         };
-
-        // Mark this version of the zone as pending approval.
-        //
-        // TODO: These entries should have been created a long time ago, but
-        // not all components use these fields yet.  For now, they need to be
-        // created over here -- hence 'or_insert_with()'.
-        {
-            let mut zone_state = zone.write(center);
-            match self.source {
-                Source::Unsigned => {
-                    zone_state
-                        .unsigned
-                        .entry(zone_serial)
-                        .or_insert_with(|| UnsignedZoneVersionState {
-                            review: Default::default(),
-                        })
-                        .review = ZoneVersionReviewState::Pending;
-                }
-                Source::Signed => {
-                    zone_state
-                        .signed
-                        .entry(zone_serial)
-                        .or_insert_with(|| SignedZoneVersionState {
-                            unsigned_serial: Serial::from(0), // TODO
-                            review: Default::default(),
-                        })
-                        .review = ZoneVersionReviewState::Pending;
-                }
-                Source::Published => unreachable!(),
-            }
-        }
 
         record_zone_event(center, zone, pending_event, Some(zone_serial));
 
@@ -457,27 +367,25 @@ impl ZoneServer {
                 );
 
                 {
-                    let mut zone_state = zone.write(center);
+                    let mut handle = zone.write_handle(center);
                     match self.source {
                         Source::Unsigned => {
-                            zone_state.record_event(
+                            handle.state.record_event(
                                 HistoricalEvent::UnsignedHookFailed {
                                     err: err.to_string(),
                                 },
                                 Some(zone_serial),
                             );
-                            zone_state.unsigned.get_mut(&zone_serial).unwrap().review =
-                                ZoneVersionReviewState::Rejected;
+                            handle.get().hard_reject_loaded();
                         }
                         Source::Signed => {
-                            zone_state.record_event(
+                            handle.state.record_event(
                                 HistoricalEvent::SignedHookFailed {
                                     err: err.to_string(),
                                 },
                                 Some(zone_serial),
                             );
-                            zone_state.signed.get_mut(&zone_serial).unwrap().review =
-                                ZoneVersionReviewState::Rejected;
+                            handle.get().hard_reject_signed();
                         }
                         Source::Published => unreachable!(),
                     }
@@ -498,12 +406,11 @@ impl ZoneServer {
     }
 
     fn on_signed_zone_approved(&self, center: &Arc<Center>, zone: &Arc<Zone>, zone_serial: Serial) {
+        let _ = zone_serial;
+
         {
             zone.write_handle(center).get().approve_signed();
         }
-
-        info!("[CC]: Instructing publication server to publish the signed zone");
-        PublicationServer::publish(center, zone, zone_serial);
     }
 
     async fn process_output(
@@ -522,124 +429,6 @@ impl ZoneServer {
             }
         }
         Ok(())
-    }
-
-    pub fn on_zone_review(
-        &self,
-        center: &Arc<Center>,
-        zone: &Arc<Zone>,
-        zone_serial: Serial,
-        decision: ZoneReviewDecision,
-    ) -> ZoneReviewResult {
-        let unit_name = self.unit_name();
-        let zone_name = &zone.name;
-
-        // Look up the zone.
-
-        let new_review_state = match decision {
-            ZoneReviewDecision::Approve => ZoneVersionReviewState::Approved,
-            ZoneReviewDecision::Reject => ZoneVersionReviewState::Rejected,
-        };
-
-        // Look up the version of the zone being reviewed.
-        match self.source {
-            Source::Unsigned => {
-                {
-                    let mut zone_state = zone.write(center);
-                    let Some(version) = zone_state.unsigned.get_mut(&zone_serial) else {
-                        // 'on_seek_approval_for_zone_cmd()' should have created
-                        // this.  Since it doesn't exist, the zone is not under
-                        // review.
-
-                        debug!(
-                            "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
-                        );
-                        return Err(ZoneReviewError::NotUnderReview);
-                    };
-
-                    // Check that the zone was not already approved.
-                    if matches!(version.review, ZoneVersionReviewState::Approved) {
-                        // This version of the zone is no longer being reviewed.
-                        //
-                        // TODO: Differentiate this from 'NotUnderReview'?
-
-                        return Err(ZoneReviewError::NotUnderReview);
-                    }
-
-                    version.review = new_review_state;
-                }
-                if matches!(decision, ZoneReviewDecision::Approve) {
-                    info!(
-                        "Unsigned zone '{zone_name}' with serial {zone_serial} has been approved."
-                    );
-                    self.on_unsigned_zone_approved(center, zone, zone_serial);
-                } else {
-                    error!(
-                        "Unsigned zone '{zone_name}' with serial {zone_serial} has been rejected."
-                    );
-
-                    let mut handle = zone.write_handle(center);
-                    let policy = handle.state.policy.as_ref().unwrap();
-                    match policy.loader.review.on_reject {
-                        OnReject::Discard => {
-                            handle.get().soft_reject_loaded();
-                        }
-                        OnReject::Halt => {
-                            handle.get().hard_reject_loaded();
-                        }
-                    }
-                }
-            }
-
-            Source::Signed => {
-                {
-                    let mut zone_state = zone.write(center);
-                    let Some(version) = zone_state.signed.get_mut(&zone_serial) else {
-                        // 'on_seek_approval_for_zone_cmd()' should have created
-                        // this.  Since it doesn't exist, the zone is not under
-                        // review.
-
-                        debug!(
-                            "[{unit_name}] Got a review for {zone_name}/{zone_serial}, but it was not pending review"
-                        );
-                        return Err(ZoneReviewError::NotUnderReview);
-                    };
-
-                    // Check that the zone was not already approved.
-                    if matches!(version.review, ZoneVersionReviewState::Approved) {
-                        // This version of the zone is no longer being reviewed.
-                        //
-                        // TODO: Differentiate this from 'NotUnderReview'?
-
-                        return Err(ZoneReviewError::NotUnderReview);
-                    }
-
-                    version.review = new_review_state;
-                }
-                if matches!(decision, ZoneReviewDecision::Approve) {
-                    info!("Signed zone '{zone_name}' with serial {zone_serial} has been approved.");
-                    self.on_signed_zone_approved(center, zone, zone_serial);
-                } else {
-                    error!(
-                        "Signed zone '{zone_name}' with serial {zone_serial} has been rejected."
-                    );
-                    let mut handle = zone.write_handle(center);
-                    let policy = handle.state.policy.as_ref().unwrap();
-                    match policy.signer.review.on_reject {
-                        OnReject::Discard => {
-                            handle.get().soft_reject_signed();
-                        }
-                        OnReject::Halt => {
-                            handle.get().hard_reject_signed();
-                        }
-                    }
-                }
-            }
-
-            Source::Published => unreachable!(),
-        };
-
-        Ok(ZoneReviewOutput {})
     }
 }
 
@@ -744,83 +533,5 @@ impl Notifiable for LoaderNotifier {
         }
 
         Box::pin(std::future::ready(Ok(())))
-    }
-}
-
-pub fn send_notify_to_addrs<'a>(
-    apex_name: StoredName,
-    soa: SoaRecord,
-    notify_set: impl Iterator<Item = &'a NameserverCommsPolicy>,
-    center: &Arc<Center>,
-) {
-    let mut dgram_config = domain::net::client::dgram::Config::new();
-    dgram_config.set_max_parallel(1);
-    dgram_config.set_read_timeout(Duration::from_millis(1000));
-    dgram_config.set_max_retries(1);
-    dgram_config.set_udp_payload_size(Some(1400));
-
-    let mut msg = MessageBuilder::new_vec();
-    msg.header_mut().set_opcode(Opcode::NOTIFY);
-    let mut msg = msg.question();
-    msg.push((apex_name, Rtype::SOA)).unwrap();
-
-    // Include the current zone SOA as an RFC 1996 "unsecure hint" (see
-    // section 3.7) to the receiving nameserver so that it can choose to avoid
-    // sending a SOA query if it deems that it has this version of the zone
-    // already.
-    let mut msg = msg.answer();
-    msg.push(OldRecord::from(soa)).unwrap();
-
-    for nameserver in notify_set {
-        let dgram_config = dgram_config.clone();
-        let req = RequestMessage::new(msg.clone()).unwrap();
-
-        let nameserver = nameserver.clone();
-        let center = center.clone();
-        tokio::spawn(async move {
-            // TODO: Use the connection factory here.
-            let udp_connect = UdpConnect::new(nameserver.addr);
-            let client = Connection::with_config(udp_connect, dgram_config.clone());
-
-            trace!("Sending NOTIFY to nameserver {nameserver}");
-            let span = tracing::trace_span!("auth", addr = %nameserver);
-            let _guard = span.enter();
-
-            // https://datatracker.ietf.org/doc/html/rfc1996
-            //   "4.8 Master Receives a NOTIFY Response from Slave
-            //
-            //    When a master server receives a NOTIFY response, it deletes this
-            //    query from the retry queue, thus completing the "notification
-            //    process" of "this" RRset change to "that" server."
-            //
-            // TODO: We have no retry queue at the moment. Do we need one?
-
-            let tsig_key = {
-                let state = center.state.lock().unwrap();
-                nameserver
-                    .tsig_key_name
-                    .as_ref()
-                    .and_then(|tsig_key_name| state.tsig_store.get(tsig_key_name))
-                    .map(|key| key.inner.clone())
-            };
-
-            if let Some(key) = &tsig_key {
-                debug!(
-                    "Found TSIG key '{}' (algorithm {}) for NOTIFY to {nameserver}",
-                    key.name(),
-                    key.algorithm()
-                );
-            }
-            let res = if let Some(key) = tsig_key {
-                let client = domain::net::client::tsig::Connection::new(key.clone(), client);
-                client.send_request(req.clone()).get_response().await
-            } else {
-                client.send_request(req.clone()).get_response().await
-            };
-
-            if let Err(err) = res {
-                warn!("Unable to send NOTIFY to nameserver {nameserver}: {err}");
-            }
-        });
     }
 }

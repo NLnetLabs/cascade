@@ -325,9 +325,6 @@ pub struct ZoneState {
     /// operations automatically.
     pub maintenance_mode: bool,
 
-    /// Metadata related to the last published zone version.
-    pub last_published: Option<LastPublished>,
-
     /// An enqueued save of this state.
     ///
     /// The enqueued save operation will persist the current state in a short
@@ -383,12 +380,6 @@ pub struct ZoneState {
     /// serial for the Increment serial policy.
     pub previous_serial: Option<Serial>,
 
-    /// Unsigned versions of the zone.
-    pub unsigned: foldhash::HashMap<Serial, UnsignedZoneVersionState>,
-
-    /// Signed versions of the zone.
-    pub signed: foldhash::HashMap<Serial, SignedZoneVersionState>,
-
     /// Instances of the zone.
     pub instances: Instances,
 
@@ -441,7 +432,6 @@ impl Default for ZoneState {
             machine: Default::default(),
             policy: Default::default(),
             maintenance_mode: Default::default(),
-            last_published: Default::default(),
             enqueued_save: Default::default(),
             min_expiration: Default::default(),
             next_min_expiration: Default::default(),
@@ -451,8 +441,6 @@ impl Default for ZoneState {
             key_roll: Default::default(),
             last_signature_refresh: faketime_or_now(),
             previous_serial: Default::default(),
-            unsigned: Default::default(),
-            signed: Default::default(),
             instances: Default::default(),
             history: Default::default(),
             loader: Default::default(),
@@ -461,61 +449,6 @@ impl Default for ZoneState {
             persistence: Default::default(),
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LastPublished {
-    pub loaded_serial: Serial,
-    pub signed_serial: Serial,
-
-    /// Time of publication
-    pub timestamp: SystemTime,
-
-    /// Number of records in the signed zone
-    pub num_records: usize,
-    //
-    // TODO: add the size
-    // /// Size in bytes
-    // pub size: usize,
-}
-
-/// The state of an unsigned version of a zone.
-#[derive(Clone, Debug)]
-pub struct UnsignedZoneVersionState {
-    /// The review state of the zone version.
-    pub review: ZoneVersionReviewState,
-}
-
-/// The state of a signed version of a zone.
-#[derive(Clone, Debug)]
-pub struct SignedZoneVersionState {
-    /// The serial number of the corresponding unsigned version of the zone.
-    pub unsigned_serial: Serial,
-
-    /// The review state of the zone version.
-    pub review: ZoneVersionReviewState,
-}
-
-/// The review state of a version of a zone.
-#[derive(Clone, Debug, Default)]
-pub enum ZoneVersionReviewState {
-    /// The zone is pending review.
-    ///
-    /// If a review script has been configured, it is running now.  Otherwise,
-    /// the zone must be manually reviewed.
-    #[default]
-    Pending,
-
-    /// The zone has been approved.
-    ///
-    /// This is a terminal state.  The zone may have progressed further through
-    /// the pipeline, so it is no longer possible to reject it.
-    Approved,
-
-    /// The zone has been rejected.
-    ///
-    /// The zone has not yet been approved; it can be approved at any time.
-    Rejected,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

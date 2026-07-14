@@ -110,6 +110,7 @@ Examples of things we're interested in:
    review-hooks
    zone-transfers
    maintenance-mode
+   metrics
 
 .. toctree::
    :maxdepth: 2
