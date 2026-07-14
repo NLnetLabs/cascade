@@ -170,6 +170,13 @@ hostname = "0.4.1"
 # organization.
 prometheus-client = "0.24.0"
 
+# `idna`, which provides internationalized domain names, is pulled in by `url`.
+# It adds a significant number of dependencies. But Cascade only uses pure-ASCII
+# URLs, so IDN support is unnecessary. `url` does not offer a way to disable
+# `idna` directly; instead, the documented (albeit hacky) method to disable IDN
+# support is to force the version of the `idna_adapter` dependency.
+idna_adapter = { version = "=1.0.0" }
+
 cascade-api = { path = "crates/api" }
 cascade-cfg = { path = "crates/cfg" }
 cascade-zonedata = { path = "crates/zonedata" }
