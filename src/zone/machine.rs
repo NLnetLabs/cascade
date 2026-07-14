@@ -104,14 +104,10 @@ impl ZoneStateMachine {
 /// # Initiating operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
-        // If we're in maintenance mode, then we don't start this operation.
-        // TODO: distinguish between a manual load and an automatic one.
-        if self.state.maintenance_mode {
-            return None;
-        }
-
-        let ZoneStateMachine::Waiting(_) = &self.state.machine else {
-            info!("Could not start load since an operation is in progress on the zone.");
+        if !self.state.ready_for_operation() {
+            info!(
+                "Could not start load since an operation is in progress on the zone or the zone is in maintenance mode."
+            );
             return None;
         };
 
@@ -138,13 +134,7 @@ impl<'a> ZoneHandle<'a> {
     }
 
     pub(crate) fn try_start_resign(&mut self) -> Option<SignedZoneBuilder> {
-        // If we're in maintenance mode, then we don't start this operation.
-        // TODO: distinguish between a manual resign and an automatic one.
-        if self.state.maintenance_mode {
-            return None;
-        }
-
-        let ZoneStateMachine::Waiting(_) = &self.state.machine else {
+        if !self.state.ready_for_operation() {
             info!("Could not start load since an operation is in progress on the zone.");
             return None;
         };

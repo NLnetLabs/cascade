@@ -798,7 +798,7 @@ impl StorageZoneHandle<'_> {
         // loading a new instance.
 
         // Ensure a new operation can be started.
-        let ZoneStateMachine::Waiting(_) = &self.state.machine else {
+        if !self.state.ready_for_operation() {
             trace!("Ignoring `on_passive()` because the pipeline is busy");
             return;
         };
