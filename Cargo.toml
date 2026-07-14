@@ -122,7 +122,9 @@ serde_json         = "1.0"
 serde_with         = "3"
 url                = { version = "2.4", features = ["serde"] }
 
-# `futures` provides some async functionality not available in `std` yet.
+# `futures` provides some async functionality not available in `std` yet. It's
+# quite a big crate, and we only need a subset of the functionality, so we only
+# import the `-util` subcrate.
 futures-util = "0.3"
 
 # Jiff is used by zone_signer for the DateCounter serial policy.
