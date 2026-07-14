@@ -120,6 +120,9 @@ runs:
       run: |
         dig @127.0.0.1 -p 4542 example.test SOA | grep -F 'status: NOERROR'
 
+    - name: Kill Cascade so that coverage metrics, if enabled, get written out.
+      run: pkill cascaded
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()

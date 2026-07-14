@@ -204,6 +204,9 @@ runs:
         grep -qF "www.example.test.,5,IN,A,192.168.0.1" dig-query.log
         grep -qF "mail.example.test.,5,IN,MX,20,example.test." dig-query.log
 
+    - name: Kill Cascade so that coverage metrics, if enabled, get written out.
+      run: pkill cascaded
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()

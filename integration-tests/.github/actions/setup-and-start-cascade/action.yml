@@ -39,6 +39,19 @@ runs:
         export CASCADE_FAKETIME=${{ inputs.fake-time }}
       fi
 
+      # If code coverage generation is enabled, configure where the
+      # instrumented binaries will write coverage counter metrics to. The path
+      # /tmp/cov is expected to be mounted from the host into the container
+      # in order to be able to access the counters once the test has completed
+      # and to aggregate them across multiple test jobs. However this means
+      # that we need to make sure that the files we write to have unique paths
+      # per job invocation, even different matrix invocations of the same job,
+      # so that they don't overwrite each others data.
+      export LLVM_PROFILE_FILE="/tmp/cov/${GITHUB_JOB}/$(uuid)/cascade-%p-%h-%m.profraw"
+
+      # Does this work?
+      echo "LLVM_PROFILE_FILE=${LLVM_PROFILE_FILE}" >> "$GITHUB_ENV"
+
       mkdir -p "${CASCADE_DIR}/policies"
       # We need to create a custom config for cascade because the default paths are not available/permitted in this environment
       cascade template config | \

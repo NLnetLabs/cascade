@@ -49,6 +49,9 @@ runs:
         dig +noall +answer +onesoa @127.0.0.1 -p 4542 example.test AXFR > example-test.axfr.log
         dnssec-verify -o example.test example-test.axfr.log | tee dnssec-verify.log
 
+    - name: Kill Cascade so that coverage metrics, if enabled, get written out.
+      run: pkill cascaded
+
     - name: Print log files on any failure in this job
       uses: ./.github/actions/print-logfiles
       if: failure()
