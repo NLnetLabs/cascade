@@ -115,7 +115,6 @@ version = "0.3.20"
 [dependencies]
 axum               = { version = "0.8.4", default-features = false, features = ["http1", "http2", "query", "original-uri", "json", "tokio", "tracing"] }
 bytes              = "1.0"
-crossbeam-utils    = "0.8"
 daemonbase         = { version = "0.1.5", features = ["tokio"] }
 serde              = { workspace = true, features = ["derive", "rc"] }
 rayon = "1.10.0"
