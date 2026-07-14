@@ -295,7 +295,7 @@ fn print_server_policy(
     println!("    outbound:");
     print_nameserver_comms_policy("provide XFR to", provide_xfr_to);
     print_nameserver_comms_policy("send NOTIFY to", send_notify_to);
-    println!("      max diffs: {max_diffs} ({max_diffs_size}%)");
+    println!("      max diffs: {max_diffs} totaling less than {max_diffs_size}% of the published record count");
 }
 
 fn print_review(ReviewPolicyInfo { mode, on_reject }: &ReviewPolicyInfo) {
