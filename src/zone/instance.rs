@@ -519,4 +519,11 @@ impl SignedInstance {
     pub fn serial(&self) -> Serial {
         self.soa.rdata.serial
     }
+
+    /// The total number of records in this instance.
+    pub fn num_records(&self) -> NonZeroU64 {
+        self.num_generated_records
+            .checked_add(self.num_loaded_records)
+            .unwrap()
+    }
 }

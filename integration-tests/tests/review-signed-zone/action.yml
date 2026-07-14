@@ -112,7 +112,9 @@ runs:
       env:
         EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
       run: |
-        cascade zone approve --signed example.test ${EXPECTED_SERIAL}
+        # `EXPECTED_SERIAL` was used when the zone was first signed; it has
+        # since been re-signed, so the serial number has increased.
+        cascade zone approve --signed example.test $((EXPECTED_SERIAL + 1))
         
     - name: Querying the zone at the publication server should succeed
       run: |

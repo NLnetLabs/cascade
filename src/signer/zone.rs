@@ -193,23 +193,15 @@ impl SignerZoneHandle<'_> {
         // needs re-signing (i.e. that the signing keys used for building that
         // instance are different from the latest ones).
         //
-        // TODO: Stop relying on `{next_,}min_expiration` to tell us about the
-        // published and upcoming instances of the zone.
-        //
-        // TODO: Verify that `min_expiration` is set to `None` when Cascade is
-        // starting up and trying to restoring zones from the disk.
-        //
         // If a published instance of the zone exists, we definitely want to
         // re-sign it. If a published instance of the zone does not exist, but
-        // an upcoming signed instance does, we should try re-signing it too.
-        // But before re-signing is actually initiated, we will verify that
-        // the upcoming instance was accepted and published (and ignore the
-        // re-signing request otherwise).
-        if self
-            .state
-            .min_expiration
-            .or(self.state.next_min_expiration)
-            .is_none()
+        // an upcoming signed instance does (or if the zone is being restored
+        // from disk), we should try re-signing it too. Before re-signing is
+        // actually initiated, we will verify that the upcoming instance was
+        // accepted and published (and ignore the re-signing request otherwise).
+        if self.state.instances.current.is_none()
+            && self.state.instances.upcoming.is_none()
+            && !self.state.storage.is_restoring()
         {
             debug!(
                 "Ignoring re-signing request; \
@@ -226,17 +218,9 @@ impl SignerZoneHandle<'_> {
             return;
         }
 
-        // TODO: Track expiration time in 'SignerState'.
-        let expiration_time = self
-            .state
-            .next_min_expiration
-            .or(self.state.min_expiration)
-            .unwrap_or_else(|| panic!("re-sign enqueued but the zone has not been signed"))
-            .to_system_time(SystemTime::now());
-
         // Make sure a published instance exists.
         // Then, try to obtain a `SignedZoneBuilder` so building can begin.
-        if self.state.min_expiration.is_some()
+        if self.state.instances.current.is_some()
             && let Some(builder) = self.zone().try_start_resign()
         {
             // A zone can have at most one 'SignedZoneBuilder' at a time.
@@ -263,7 +247,6 @@ impl SignerZoneHandle<'_> {
                         builder: Some(builder),
                         pending: Some(pending),
                         trigger,
-                        expiration_time,
                     });
                 }
             }
@@ -273,7 +256,6 @@ impl SignerZoneHandle<'_> {
                 builder: None,
                 pending: None,
                 trigger,
-                expiration_time,
             });
         }
     }
@@ -303,7 +285,6 @@ impl SignerZoneHandle<'_> {
             builder,
             pending,
             trigger,
-            expiration_time,
         }) = self.state.signer.enqueued_resign.take()
         else {
             // A re-sign is not enqueued, nothing to do.
@@ -322,7 +303,7 @@ impl SignerZoneHandle<'_> {
         // of the zone. If a published signed instance does not exist either,
         // there is nothing to re-sign, and we should just abandon the existing
         // re-signing operation.
-        if self.state.min_expiration.is_none() {
+        if self.state.instances.current.is_none() {
             debug!(
                 ?trigger,
                 "Dropping previously enqueued re-signing request; \
@@ -354,7 +335,6 @@ impl SignerZoneHandle<'_> {
                     builder: Some(builder),
                     pending: Some(pending),
                     trigger,
-                    expiration_time,
                 });
             }
         }
@@ -383,7 +363,6 @@ impl SignerZoneHandle<'_> {
                 builder,
                 pending,
                 trigger,
-                expiration_time: _, // TODO
             } = op;
 
             let Some(pending) = pending else {
@@ -505,16 +484,6 @@ pub struct EnqueuedResign {
 
     /// The trigger causing this operation.
     pub trigger: ResigningTrigger,
-
-    /// When signatures in the zone will expire.
-    ///
-    /// `self` represents an enqueued re-sign, which means that a current signed
-    /// instance of the zone exists. This field tracks the expiration time (not
-    /// the time to enqueue re-signing) for that instance, to ensure it will be
-    /// re-signed in time.
-    //
-    // TODO: Force loading to cancel if this gets too close?
-    pub expiration_time: SystemTime,
     //
     // TODO:
     // - The ID of the signed instance to re-sign.

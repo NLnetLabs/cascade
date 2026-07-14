@@ -139,8 +139,7 @@ impl Metrics {
                 }
 
                 // Check whether an instance has been published.
-                // TODO: Use a more appropriate check.
-                if zone_state.min_expiration.is_some() {
+                if zone_state.instances.current.is_some() {
                     zones_published += 1;
                     zones_signed += 1;
                     zones_unsigned += 1;
