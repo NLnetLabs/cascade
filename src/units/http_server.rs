@@ -479,10 +479,12 @@ impl HttpServer {
                 ZoneStateMachine::Loading(..) => Progress::Loading,
                 ZoneStateMachine::LoadedReview(..) => Progress::LoadedReview,
                 ZoneStateMachine::HaltLoaded(..) => Progress::HaltLoaded,
+                ZoneStateMachine::PersistingLoaded(..) => Progress::PersistingLoaded,
                 ZoneStateMachine::Signing(..) => Progress::Signing,
                 ZoneStateMachine::SigningFailed(..) => Progress::SigningFailed,
                 ZoneStateMachine::SignedReview(..) => Progress::SignedReview,
                 ZoneStateMachine::HaltSigned(..) => Progress::HaltSigned,
+                ZoneStateMachine::PersistingSigned(..) => Progress::PersistingSigned,
                 ZoneStateMachine::Poisoned => unreachable!(),
             };
 

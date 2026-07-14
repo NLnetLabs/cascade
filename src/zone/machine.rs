@@ -67,10 +67,12 @@ pub enum ZoneStateMachine {
     Loading(Loading),
     LoadedReview(LoadedReview),
     HaltLoaded(HaltLoaded),
+    PersistingLoaded(PersistingLoaded),
     Signing(Signing),
     SigningFailed(SigningFailed),
     SignedReview(SignedReview),
     HaltSigned(HaltSigned),
+    PersistingSigned(PersistingSigned),
 
     /// A value to leave the state in when we take it by value.
     ///
@@ -236,7 +238,7 @@ impl<'a> ZoneHandle<'a> {
         let ZoneStateMachine::LoadedReview(loaded) = state else {
             panic!("cannot approve loaded in this state");
         };
-        transition.move_to(ZoneStateMachine::Signing(loaded.approve()));
+        transition.move_to(ZoneStateMachine::PersistingLoaded(loaded.approve()));
 
         // We move to the signing state and start persisting. The actual signing
         // will be triggered by the zone storage when persisting is done.
@@ -289,6 +291,14 @@ impl<'a> ZoneHandle<'a> {
 impl<'a> ZoneHandle<'a> {
     /// Begin signing a new approved and persisted loaded instance.
     pub(crate) fn start_new_sign(&mut self, persisted: LoadedZonePersisted) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::PersistingLoaded(persisting) = state else {
+            panic!("cannot start signing in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::Signing(persisting.done()));
+
         let builder = self.storage().start_new_sign(persisted);
         self.signer().enqueue_new_sign(builder);
     }
@@ -366,7 +376,7 @@ impl<'a> ZoneHandle<'a> {
         let ZoneStateMachine::SignedReview(signed) = state else {
             panic!("The zone must be in signer review")
         };
-        transition.move_to(ZoneStateMachine::Waiting(signed.approve()));
+        transition.move_to(ZoneStateMachine::PersistingSigned(signed.approve()));
 
         // Persist the signed instance while we are already in the Waiting state.
         // The state machine will only start a new operation when the zone storage
@@ -429,6 +439,14 @@ impl<'a> ZoneHandle<'a> {
 impl<'a> ZoneHandle<'a> {
     /// Finish persisting an approved signed instance.
     pub(crate) fn finish_signed_persistence(&mut self, persisted: SignedZonePersisted) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::PersistingSigned(persisting) = state else {
+            panic!("cannot start publishing in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::Waiting(persisting.done()));
+
         let viewer = self.storage().finish_signed_persistence(persisted);
 
         self.state.instances.switch();
@@ -521,7 +539,9 @@ impl<'a> ZoneHandle<'a> {
             return Err(());
         };
 
-        transition.move_to(ZoneStateMachine::Signing(halt.override_rejection()));
+        transition.move_to(ZoneStateMachine::PersistingLoaded(
+            halt.override_rejection(),
+        ));
 
         // We move to the signing state and start persisting. The actual signing
         // will be triggered by the zone storage when persisting is done.
@@ -542,7 +562,9 @@ impl<'a> ZoneHandle<'a> {
             return Err(());
         };
 
-        transition.move_to(ZoneStateMachine::Waiting(halt_signed.override_rejection()));
+        transition.move_to(ZoneStateMachine::PersistingSigned(
+            halt_signed.override_rejection(),
+        ));
 
         // Persist the signed instance while we are already in the Waiting state.
         // The state machine will only start a new operation when the zone storage
@@ -576,10 +598,12 @@ impl ZoneStateMachine {
             ZoneStateMachine::Loading(_) => "loading",
             ZoneStateMachine::LoadedReview(_) => "loaded review",
             ZoneStateMachine::HaltLoaded(_) => "halt loaded",
+            ZoneStateMachine::PersistingLoaded(_) => "persisting loaded",
             ZoneStateMachine::Signing(_) => "signing",
             ZoneStateMachine::SigningFailed(_) => "signing failed",
             ZoneStateMachine::SignedReview(_) => "signed review",
             ZoneStateMachine::HaltSigned(_) => "halt signed",
+            ZoneStateMachine::PersistingSigned(_) => "persisting signed",
             ZoneStateMachine::Poisoned => "poisoned",
         }
     }
@@ -648,8 +672,8 @@ impl Loading {
 pub struct LoadedReview {}
 
 impl LoadedReview {
-    fn approve(self) -> Signing {
-        Signing {}
+    fn approve(self) -> PersistingLoaded {
+        PersistingLoaded {}
     }
 
     fn soft_reject(self) -> Waiting {
@@ -665,12 +689,21 @@ impl LoadedReview {
 pub struct HaltLoaded {}
 
 impl HaltLoaded {
-    fn override_rejection(self) -> Signing {
-        Signing {}
+    fn override_rejection(self) -> PersistingLoaded {
+        PersistingLoaded {}
     }
 
     fn reset(self) -> Waiting {
         Waiting {}
+    }
+}
+
+#[derive(Debug)]
+pub struct PersistingLoaded {}
+
+impl PersistingLoaded {
+    fn done(self) -> Signing {
+        Signing {}
     }
 }
 
@@ -707,8 +740,8 @@ impl SigningFailed {
 pub struct SignedReview {}
 
 impl SignedReview {
-    fn approve(self) -> Waiting {
-        Waiting {}
+    fn approve(self) -> PersistingSigned {
+        PersistingSigned {}
     }
 
     fn hard_reject(self) -> HaltSigned {
@@ -724,11 +757,20 @@ impl SignedReview {
 pub struct HaltSigned {}
 
 impl HaltSigned {
-    fn override_rejection(self) -> Waiting {
-        Waiting {}
+    fn override_rejection(self) -> PersistingSigned {
+        PersistingSigned {}
     }
 
     fn reset(self) -> Waiting {
+        Waiting {}
+    }
+}
+
+#[derive(Debug)]
+pub struct PersistingSigned {}
+
+impl PersistingSigned {
+    fn done(self) -> Waiting {
         Waiting {}
     }
 }
