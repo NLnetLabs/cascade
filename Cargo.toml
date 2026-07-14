@@ -158,10 +158,11 @@ tracing-subscriber.workspace = true
 lazy_static = { version = "1.5" }
 
 # support-color checks various environment variables and terminal settings for
-# whether ANSI escape codes should be emitted. It is also used by `anstream`
-# (and therefore `clap`).
+# whether ANSI escape codes should be emitted.
 #
-# TODO: `anstream` now uses `anstyle-query` instead of `supports-color`.
+# TODO: This dependency was chosen because `anstream` (which we depend on
+# elsewhere) used it, but `anstream` now uses `anstyle-query`. We now have two
+# crates in our dependency graph that have the same functionality.
 supports-color = "3.0.2"
 
 # `hostname` is a very popular crate to get the hostname of the current process.
@@ -177,6 +178,7 @@ prometheus-client = "0.24.0"
 # URLs, so IDN support is unnecessary. `url` does not offer a way to disable
 # `idna` directly; instead, the documented (albeit hacky) method to disable IDN
 # support is to force the version of the `idna_adapter` dependency.
+# See <https://crates.io/crates/idna_adapter>.
 idna_adapter = { version = "=1.0.0" }
 
 cascade-api = { path = "crates/api" }
