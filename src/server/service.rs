@@ -97,6 +97,7 @@ mod compat {
         tsig,
     };
     use futures::Stream;
+    use futures_util as futures;
     use tracing::{Level, debug, trace, warn};
 
     use crate::{
@@ -842,6 +843,16 @@ impl<V> ZoneServiceHandle<V> {
             "distinct 'Arc<Zone>'s had the same name"
         );
         let _ = viewer;
+    }
+
+    /// Get a viewer for a zone.
+    ///
+    /// If Cascade is still starting up there may not be a viewer for the zone
+    /// yet.
+    pub fn viewer(&self, zone: &Arc<Zone>) -> Option<Arc<tokio::sync::RwLock<V>>> {
+        let state = self.state.read().unwrap();
+        let name = RevNameBuf::parse_bytes(zone.name.as_slice()).unwrap();
+        state.zones.get(&*name).map(|z| z.viewer.clone())
     }
 }
 

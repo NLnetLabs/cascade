@@ -20,6 +20,9 @@ use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
+use crate::persistence::zone::{
+    PersistedDiffFileInfo, PersistedDiffManager, PersistedDiffRecordSource,
+};
 use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
 use crate::tsig::TsigStore;
@@ -113,12 +116,12 @@ pub struct Spec {
     /// Locations of persisted unsigned zone diffs to enable IXFR from
     /// the upstream to resume on restart, and to enable a complete latest
     /// unsigned version of the zone to be reconstituted.
-    pub persisted_loaded_diffs: Vec<PathBuf>,
+    pub persisted_loaded_diffs: PersistedDiffsSpec,
 
     /// Locations of persisted signed zone diffs to ensure IXFR out toward
     /// downstreams is still possible after restart, and to enable a complete
     /// latest signed version of the zone to be reconsituted.
-    pub persisted_signed_diffs: Vec<(PathBuf, Option<Serial>)>,
+    pub persisted_signed_diffs: PersistedDiffsSpec,
 }
 
 //--- Conversion
@@ -140,13 +143,12 @@ impl Spec {
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
             history: zone.history.clone(),
-            persisted_loaded_diffs: zone.persistence.loaded_diff_paths.clone(),
-            persisted_signed_diffs: zone
-                .persistence
-                .signed_diff_paths
-                .iter()
-                .map(|(p, s)| (p.clone(), s.map(|s| domain::base::Serial(u32::from(s)))))
-                .collect(),
+            persisted_loaded_diffs: PersistedDiffsSpec::build_loaded(
+                &zone.persistence.loaded_diffs,
+            ),
+            persisted_signed_diffs: PersistedDiffsSpec::build_signed(
+                &zone.persistence.signed_diffs,
+            ),
         }
     }
 }
@@ -857,6 +859,100 @@ impl ZoneLoadSourceSpec {
                 addr,
                 tsig_key: tsig_key.map(|key| key.name().clone().into()),
             },
+        }
+    }
+}
+
+//------------ PersistedDiffsSpec --------------------------------------------
+
+/// Information about a collection of persisted diffs.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistedDiffsSpec {
+    pub is_signed: bool,
+    pub next_idx: usize,
+    pub restore_base_idx: usize,
+    pub diff_infos: Vec<PersistedDiffFileInfoSpec>,
+}
+
+impl PersistedDiffsSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> PersistedDiffManager {
+        let diff_infos = self
+            .diff_infos
+            .into_iter()
+            .map(PersistedDiffFileInfoSpec::parse)
+            .collect();
+        let is_signed = match self.is_signed {
+            true => PersistedDiffRecordSource::Signed,
+            false => PersistedDiffRecordSource::Loaded,
+        };
+        PersistedDiffManager::for_existing_diffs(
+            is_signed,
+            self.next_idx,
+            self.restore_base_idx,
+            diff_infos,
+        )
+    }
+
+    /// Build into this specification.
+    fn build_loaded(loaded_diffs: &PersistedDiffManager) -> Self {
+        Self {
+            is_signed: false,
+            next_idx: loaded_diffs.next_idx(),
+            restore_base_idx: loaded_diffs.first_diff_to_apply_on_restore(),
+            diff_infos: loaded_diffs
+                .diffs()
+                .iter()
+                .map(PersistedDiffFileInfoSpec::build)
+                .collect(),
+        }
+    }
+
+    /// Build into this specification.
+    fn build_signed(signed_diffs: &PersistedDiffManager) -> Self {
+        Self {
+            is_signed: true,
+            next_idx: signed_diffs.next_idx(),
+            restore_base_idx: signed_diffs.first_diff_to_apply_on_restore(),
+            diff_infos: signed_diffs
+                .diffs()
+                .iter()
+                .map(PersistedDiffFileInfoSpec::build)
+                .collect(),
+        }
+    }
+}
+
+/// Information a single persisted diff.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistedDiffFileInfoSpec {
+    path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    loaded_serial: Option<Serial>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signed_serial: Option<Serial>,
+}
+
+impl PersistedDiffFileInfoSpec {
+    /// Parse from this specification.
+    fn parse(self) -> PersistedDiffFileInfo {
+        PersistedDiffFileInfo::new(
+            self.path,
+            self.loaded_serial
+                .map(|s| domain::new::base::Serial::from(s.0)),
+            self.signed_serial
+                .map(|s| domain::new::base::Serial::from(s.0)),
+        )
+    }
+
+    /// Build into this specification.
+    fn build(info: &PersistedDiffFileInfo) -> Self {
+        Self {
+            path: info.path().to_path_buf(),
+            loaded_serial: info.loaded_serial().map(|s| Serial(s.into())),
+            signed_serial: info.signed_serial().map(|s| Serial(s.into())),
         }
     }
 }

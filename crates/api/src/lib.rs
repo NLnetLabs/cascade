@@ -961,6 +961,8 @@ pub struct ServerPolicyInfo {
 pub struct OutboundPolicyInfo {
     pub provide_xfr_to: Vec<NameserverCommsPolicyInfo>,
     pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
+    pub max_diffs: usize,
+    pub max_diffs_size: usize,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
