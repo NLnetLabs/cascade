@@ -477,14 +477,26 @@ impl PersistenceState {
                 }
             }
 
-            state.persistence.loaded_diffs.restore_base_idx = state.persistence.loaded_diffs.len();
-            state.persistence.signed_diffs.restore_base_idx = state.persistence.signed_diffs.len();
+            state
+                .persistence
+                .loaded_diffs
+                .first_diff_to_apply_on_restore = state.persistence.loaded_diffs.len();
+            state
+                .persistence
+                .signed_diffs
+                .first_diff_to_apply_on_restore = state.persistence.signed_diffs.len();
             trace!(
                 "Compaction complete: next_idx: loaded={}, signed={}, restore_base_idx: loaded={}, signed={}",
-                state.persistence.loaded_diffs.next_idx,
-                state.persistence.signed_diffs.next_idx,
-                state.persistence.loaded_diffs.restore_base_idx,
-                state.persistence.signed_diffs.restore_base_idx
+                state.persistence.loaded_diffs.next_uniqifier,
+                state.persistence.signed_diffs.next_uniqifier,
+                state
+                    .persistence
+                    .loaded_diffs
+                    .first_diff_to_apply_on_restore,
+                state
+                    .persistence
+                    .signed_diffs
+                    .first_diff_to_apply_on_restore
             );
         }
     }
@@ -548,9 +560,10 @@ pub struct PersistedDiffManager {
     /// Which kind of data are we storing, loaded or signed?
     record_source: PersistedDiffRecordSource,
 
-    /// The index value to use when constructing the next file name to write
-    /// to.
-    next_idx: usize,
+    /// A value that when included in the construction of a path for a persisted
+    /// file will make that path unique for the zone that this instance of
+    /// PersistedDiffManager relates to.
+    next_uniqifier: usize,
 
     /// The index of the first diff_info to apply to the snapshot when restoring.
     ///
@@ -559,9 +572,19 @@ pub struct PersistedDiffManager {
     /// still track their paths so that we can load them for use in responding to
     /// IXFR client requests. So we need to remember which index to start applying
     /// diffs to the snapshot from.
-    restore_base_idx: usize,
+    first_diff_to_apply_on_restore: usize,
 
     /// The collection of persisted data file paths in this set.
+    ///
+    /// The first entry always refers to a persisted snapshot of the zone records
+    /// at a point in time.
+    ///
+    /// Subsequent entries refer to persisted diffs that should be applied in
+    /// sequence to the snapshot upon restore. However, if the [`Compacter`] has
+    /// replaced the snapshot content such that it includes some of the persisted
+    /// diffs, entries [1..restore_base_idx] may only be needed to respond to IXFR
+    /// requests (see [`Self::gete_diffs()`] and [`Service::ixfr()`]) and must not
+    /// be used for restoration.
     diff_infos: BTreeSet<PersistedDiffFileInfo>,
 }
 
@@ -572,14 +595,14 @@ impl PersistedDiffManager {
 
     pub fn from_parts(
         record_source: PersistedDiffRecordSource,
-        next_idx: usize,
-        restore_base_idx: usize,
+        next_uniqifier: usize,
+        first_diff_to_apply_on_restore: usize,
         diff_infos: BTreeSet<PersistedDiffFileInfo>,
     ) -> Self {
         Self {
             record_source,
-            next_idx,
-            restore_base_idx,
+            next_uniqifier,
+            first_diff_to_apply_on_restore,
             diff_infos,
         }
     }
@@ -615,7 +638,10 @@ impl PersistedDiffManager {
         let path = center
             .config
             .zone_state_dir
-            .join(format!("{zone_name}.{data_file_type}.{}", self.next_idx))
+            .join(format!(
+                "{zone_name}.{data_file_type}.{}",
+                self.next_uniqifier
+            ))
             .into_std_path_buf();
         let file_info = PersistedDiffFileInfo::new(path.clone(), loaded_serial, signed_serial);
 
@@ -625,7 +651,7 @@ impl PersistedDiffManager {
             path.display()
         );
         assert!(self.diff_infos.insert(file_info));
-        self.next_idx = self.next_idx.checked_add(1).unwrap();
+        self.next_uniqifier = self.next_uniqifier.checked_add(1).unwrap();
 
         path
     }
@@ -651,7 +677,7 @@ impl PersistedDiffManager {
             // snapshot.
             // TODO: Maybe we should separate out snapshot files from diff
             // files.
-            self.next_idx = 0;
+            self.next_uniqifier = 0;
         } else {
             // When removing a diff the specified serial must match that of
             // the last diff that we have.
@@ -672,8 +698,8 @@ impl PersistedDiffManager {
 
     pub fn clear(&mut self) {
         self.diff_infos.clear();
-        self.next_idx = 0;
-        self.restore_base_idx = 0;
+        self.next_uniqifier = 0;
+        self.first_diff_to_apply_on_restore = 0;
     }
 
     pub fn is_empty(&self) -> bool {
@@ -681,7 +707,7 @@ impl PersistedDiffManager {
     }
 
     pub fn next_idx(&self) -> usize {
-        self.next_idx
+        self.next_uniqifier
     }
 
     pub fn diffs(&self) -> &BTreeSet<PersistedDiffFileInfo> {
@@ -693,7 +719,7 @@ impl PersistedDiffManager {
     }
 
     pub fn restore_base_idx(&self) -> usize {
-        self.restore_base_idx
+        self.first_diff_to_apply_on_restore
     }
 }
 
