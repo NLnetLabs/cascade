@@ -20,6 +20,9 @@ Released yyyy-mm-dd.
 
 ### Breaking changes
 ### New
+
+- Purging of excess diffs. ([#657] by @ximon18)
+
 ### Bug fixes
 ### Other changes
 
@@ -34,6 +37,7 @@ Released yyyy-mm-dd.
 ### Known issues
 ### Acknowledgements
 
+[#657]: https://github.com/NLnetLabs/cascade/pull/657
 [#858]: https://github.com/NLnetLabs/cascade/pull/858
 [#866]: https://github.com/NLnetLabs/cascade/pull/866
 
