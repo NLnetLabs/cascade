@@ -612,7 +612,7 @@ impl PersistedDiffManager {
         let file_info = PersistedDiffFileInfo::new(path.clone(), loaded_serial, signed_serial);
 
         assert!(self.diff_infos.insert(file_info));
-        self.next_idx.checked_add(1).unwrap();
+        self.next_idx = self.next_idx.checked_add(1).unwrap();
 
         path
     }
