@@ -606,7 +606,7 @@ impl PersistedDiffManager {
         }
     }
 
-    pub fn for_exisitng_diffs(
+    pub fn for_existing_diffs(
         record_source: PersistedDiffRecordSource,
         next_uniqifier: usize,
         first_diff_to_apply_on_restore: usize,
