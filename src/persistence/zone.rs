@@ -587,12 +587,12 @@ pub struct PersistedDiffManager {
     /// The first entry always refers to a persisted snapshot of the zone records
     /// at a point in time.
     ///
-    /// Subsequent entries refer to persisted diffs that should be applied in
-    /// sequence to the snapshot upon restore. However, if the [`Compacter`] has
-    /// replaced the snapshot content such that it includes some of the persisted
-    /// diffs, entries [1..restore_base_idx] may only be needed to respond to IXFR
-    /// requests (see [`Self::gete_diffs()`] and [`Service::ixfr()`]) and must not
-    /// be used for restoration.
+    /// Subsequent entries refer to persisted diffs that should be
+    /// applied in sequence to the snapshot upon restore. However, if the
+    /// [`Compacter`](crate::persistence::Compacter) has replaced the snapshot
+    /// content such that it includes some of the persisted diffs, entries
+    /// [1..restore_base_idx] may only be needed to respond to IXFR requests
+    /// and must not be used for restoration.
     diff_infos: BTreeSet<PersistedDiffFileInfo>,
 }
 
