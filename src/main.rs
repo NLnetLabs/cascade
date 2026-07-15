@@ -1,11 +1,14 @@
+use crate::{
+    metrics::Metrics,
+    persistence::{Compacter, Persister, Restorer},
+};
+
 use self::{
     center::Center,
     config::{Config, SocketConfig},
     daemon::{PreBindError, SocketProvider, daemonize},
     loader::Loader,
     manager::Manager,
-    metrics::Metrics,
-    persistence::{Persister, Restorer},
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     units::{key_manager::KeyManager, zone_signer::ZoneSigner},
     zone::{Zone, ZoneByName},
@@ -290,6 +293,7 @@ fn main() -> ExitCode {
         key_manager: KeyManager::new(),
         persister: Persister::new(),
         restorer: Restorer::new(),
+        compacter: Compacter::new(),
         loaded_review_server: LoadedReviewServer::new(),
         signed_review_server: SignedReviewServer::new(),
         publication_server: PublicationServer::new(),

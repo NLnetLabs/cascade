@@ -17,7 +17,7 @@ use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::metrics::Metrics;
-use crate::persistence::{Persister, Restorer};
+use crate::persistence::{Compacter, Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::state::PolicySpec;
 use crate::tsig::ImportError;
@@ -63,6 +63,9 @@ pub struct Center {
 
     /// The zone data restorer.
     pub restorer: Restorer,
+
+    /// The zone data compacter.
+    pub compacter: Compacter,
 
     /// The review server for loaded instances of zones.
     pub loaded_review_server: LoadedReviewServer,

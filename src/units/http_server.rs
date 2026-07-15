@@ -958,6 +958,10 @@ impl HttpServer {
                 }
 
                 center
+                    .persister
+                    .on_zone_policy_changed(center, zone, old.clone(), new.clone());
+
+                center
                     .key_manager
                     .on_zone_policy_changed(center, zone, old.clone(), new.clone());
             }
@@ -1138,6 +1142,8 @@ impl HttpServer {
                         .iter()
                         .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
                         .collect(),
+                    max_diffs: outbound.max_diffs,
+                    max_diffs_size: outbound.max_diffs_size,
                 },
             }
         };

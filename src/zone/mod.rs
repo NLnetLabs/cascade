@@ -424,6 +424,19 @@ impl ZoneState {
             .rev()
             .find(|item| item.event.is_of_type(typ) && (serial.is_none() || item.serial == serial))
     }
+
+    /// Get the most recent signed metadata for the zone.
+    ///
+    /// During restore the metadata for the currently published instance is
+    /// not available yet so use the last persisted zone metadata instead.
+    pub fn signed_metadata(&self) -> Option<&SignedInstance> {
+        match (&self.instances.persisted, &self.instances.current) {
+            (None, None) => None,
+            (None, Some(i)) => Some(&i.signed),
+            (Some(i), None) => Some(&i.signed),
+            (Some(_), Some(i)) => Some(&i.signed),
+        }
+    }
 }
 
 impl Default for ZoneState {
