@@ -372,6 +372,14 @@ impl PersistenceState {
         };
 
         if let Some(reader) = viewer.read() {
+            // TODO: The steps below if interrupted (e.g. by crash, OOM
+            // kill, system failure or power outage) could lead to zone data
+            // corruption on restore. One possible solution could be to write
+            // persisted records for a zone to a directory specific to that
+            // zone, and during compaction create a new directory with all
+            // the necessary data then update in state on disk the path to
+            // the directory to use to be the new directory and delete the
+            // old directory.
             debug!(
                 "Writing loaded zone snapshot to {}",
                 loaded_snapshot_path.display()
@@ -844,6 +852,8 @@ impl IxfrZoneDiffs {
         let to_serial = diff.added_soa.as_ref().map(|s| s.rdata.serial).unwrap();
         let old = self.loaded_diffs.insert(from_serial.into(), diff);
         log_stored_diff("loaded", old.is_some(), from_serial, to_serial);
+        // TODO: Ideally we would invoke self.trim() here but we lack the
+        // necessary information to do so.
     }
 
     pub fn store_signed_diff(&mut self, loaded_serial: Option<Serial>, diff: Arc<DiffData>) {
@@ -852,6 +862,8 @@ impl IxfrZoneDiffs {
         let related_diff = RelatedSignedDiff::new(diff, loaded_serial);
         let old = self.signed_diffs.insert(from_serial.into(), related_diff);
         log_stored_diff("signed", old.is_some(), from_serial, to_serial);
+        // TODO: Ideally we would invoke self.trim() here but we lack the
+        // necessary information to do so.
     }
 
     pub fn get(&self, from_serial: Serial) -> Vec<(Arc<DiffData>, Arc<DiffData>)> {
