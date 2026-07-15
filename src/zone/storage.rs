@@ -38,7 +38,7 @@ use crate::{
     persistence::zone::IxfrZoneDiffs,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState, machine::ZoneStateMachine},
+    zone::{Zone, ZoneHandle, ZoneState},
 };
 
 //----------- StorageZoneHandle ------------------------------------------------
