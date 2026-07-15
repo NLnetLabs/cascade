@@ -151,6 +151,15 @@
 //! - Track diffs left behind after compaction but still required for IXFR
 //!   responses separately to diffs that should be applied on restore to the
 //!   persistedsnapshot.
+//! - Storing persistent diff info could possibly be done as a Vec-like type
+//!   instead of as a BTreeSet. Attempts to do so introduced confusing error
+//!   prone index logic but that was before serial number relationships were
+//!   stored with diffs and included error prone assumptions involved in
+//!   attempting to determine such relationships from vec indices alone. It
+//!   may now require less and simpler index calculation logic. However, the
+//!   set type currrently also ensures no duplicate entries by diff path. If
+//!   next_idx were replaced by a UUID the paths would always be unique which
+//!   would diminish or remove the need for a 'set' type.
 use std::{sync::Arc, time::Duration};
 
 use crate::{
