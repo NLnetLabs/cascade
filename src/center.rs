@@ -14,8 +14,8 @@ use tracing::{debug, error, info, trace};
 
 use crate::api::{self, KeyImport, TsigAddError, TsigAddResult};
 use crate::config::RuntimeConfig;
-use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
+use crate::loader::{Loader, Source};
 use crate::metrics::Metrics;
 use crate::persistence::{Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
@@ -239,6 +239,18 @@ pub async fn add_zone(
 
     info!("Added zone '{}'", zone.name);
     Ok(())
+}
+
+pub fn change_zone_source(center: &Arc<Center>, zone: &Arc<Zone>, source: Source) {
+    let mut state = zone.write(center);
+
+    // Set the source of the zone, and begin loading it.
+    LoaderZoneHandle {
+        zone,
+        state: &mut state,
+        center,
+    }
+    .set_source(source);
 }
 
 async fn register_zone(
