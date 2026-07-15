@@ -500,7 +500,7 @@ mode = "off"
 # time and for rapidly changing zones is thus not desirable to do on every
 # change to the zone, and therefore is done periodically rather than on every
 # change. Diffs that exceed the max-diffs limit but which are still required
-# to restore the zone (because compactiion has not occurred yet) will remain
+# to restore the zone (because compaction has not occurred yet) will remain
 # on disk until it is safe to delete them.
 #
 # Compaction will be skipped for zones that are in maintenance mode.
