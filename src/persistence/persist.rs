@@ -15,7 +15,8 @@ use tracing::trace;
 
 use crate::{
     center::Center,
-    zone::{LastPublished, Zone, save_state_now},
+    persistence::discard_excess_diffs,
+    zone::{Zone, save_state_now},
 };
 
 /// Persist the data for a loaded instance of a zone.
@@ -329,77 +330,4 @@ fn store_diff(
         diffs.store_loaded_diff(loaded_diff.clone());
     }
     diffs.store_signed_diff(loaded_serial, signed_diff.clone());
-}
-
-//------------ discard_excess_diffs() ----------------------------------------
-
-pub fn discard_excess_diffs(center: &Arc<Center>, zone: &Arc<Zone>) {
-    let mut state = zone.write(center);
-    if let Some(policy) = state.policy.as_ref()
-        && let Some(last_published) = state.last_published.as_ref()
-    {
-        // Fetch diff purging settings from policy.
-        let max_diffs = policy.server.outbound.max_diffs;
-        let max_size_percentage = policy.server.outbound.max_diffs_size;
-
-        // Calculate the maximum number of records that a set of diffs can be based on
-        // the policy settings. IxfrZoneDiffs can't do this for us as it has
-        // no access to `last_published`.
-        let max_size = calc_max_diff_size(max_size_percentage, last_published);
-
-        trace!(
-            "Discarding excess in-memory diffs for zone '{}' with settings max_diffs={max_diffs}, current_size={}, max_size={max_size_percentage}% ({max_size} RRs)",
-            zone.name, last_published.num_records
-        );
-        state.storage.diffs.trim(max_diffs, max_size);
-    }
-}
-
-/// Calculate the maximum size a diff can be as a percentage of the last
-/// published zone.
-fn calc_max_diff_size(max_size_percentage: usize, last_published: &LastPublished) -> usize {
-    let current_size = last_published.num_records as f64;
-    let percentage = max_size_percentage as f64 / 100.0;
-    (current_size * percentage) as usize
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::SystemTime;
-
-    use domain::base::Serial;
-
-    use crate::zone::LastPublished;
-
-    use super::calc_max_diff_size;
-
-    #[test]
-    pub fn test_calc_max_diff_size() {
-        let empty_zone = last_published(0);
-        assert_eq!(calc_max_diff_size(0, &empty_zone), 0);
-        assert_eq!(calc_max_diff_size(50, &empty_zone), 0);
-        assert_eq!(calc_max_diff_size(100, &empty_zone), 0);
-        assert_eq!(calc_max_diff_size(1000, &empty_zone), 0);
-
-        let small_zone = last_published(5);
-        assert_eq!(calc_max_diff_size(0, &small_zone), 0);
-        assert_eq!(calc_max_diff_size(50, &small_zone), 2);
-        assert_eq!(calc_max_diff_size(100, &small_zone), 5);
-        assert_eq!(calc_max_diff_size(1000, &small_zone), 50);
-
-        let large_zone = last_published(500000);
-        assert_eq!(calc_max_diff_size(0, &large_zone), 0);
-        assert_eq!(calc_max_diff_size(50, &large_zone), 250000);
-        assert_eq!(calc_max_diff_size(100, &large_zone), 500000);
-        assert_eq!(calc_max_diff_size(1000, &large_zone), 5000000);
-    }
-
-    fn last_published(num_records: usize) -> LastPublished {
-        LastPublished {
-            loaded_serial: Serial::from(0),
-            signed_serial: Serial::from(0),
-            timestamp: SystemTime::now(),
-            num_records,
-        }
-    }
 }

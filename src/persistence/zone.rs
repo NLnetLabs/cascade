@@ -12,6 +12,7 @@ use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
+    persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{Zone, ZoneHandle, ZoneState, save_state_now},
@@ -137,6 +138,10 @@ impl ZonePersistenceHandle<'_> {
                 let (loaded_reviewer, signed_reviewer, viewer) =
                     handle.storage().finish_signed_restoration(restored);
 
+                // The call to instances.restore() below will update current
+                // instance metadata to match restored persisted instance
+                // metadata so we don't handle that here.
+
                 handle.signer().on_restoration();
 
                 // Register the zone against the zone servers.
@@ -172,7 +177,7 @@ impl ZonePersistenceHandle<'_> {
             .ongoing
             .spawn_blocking(span, move || {
                 debug!("Persisting the loaded instance");
-                let persisted = super::persist_loaded(&zone, &center, persister);
+                let persisted = persist_loaded(&zone, &center, persister);
                 debug!("Persisting the loaded instance completed");
 
                 // NOTE: The outer function, which is spawning the background
@@ -202,7 +207,7 @@ impl ZonePersistenceHandle<'_> {
             .ongoing
             .spawn_blocking(span, move || {
                 debug!("Persisting the signed instance");
-                let persisted = super::persist_signed(&zone, &center, persister);
+                let persisted = persist_signed(&zone, &center, persister);
                 debug!("Persisting the signed instance completed");
 
                 // NOTE: The outer function, which is spawning the background
@@ -371,7 +376,7 @@ impl PersistenceState {
                 "Writing loaded zone snapshot to {}",
                 loaded_snapshot_path.display()
             );
-            crate::persistence::persist_to_file_from_parts(
+            persist_to_file_from_parts(
                 loaded_snapshot_path,
                 None,
                 reader.soa().clone(),
@@ -383,7 +388,7 @@ impl PersistenceState {
                 "Writing new signed zone snapshot to {}",
                 signed_snapshot_path.display()
             );
-            crate::persistence::persist_to_file_from_parts(
+            persist_to_file_from_parts(
                 signed_snapshot_path,
                 None,
                 reader.soa().clone(),

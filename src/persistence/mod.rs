@@ -142,12 +142,9 @@ use crate::{
 };
 
 mod persist;
-pub use persist::{
-    discard_excess_diffs, persist_loaded, persist_signed, persist_to_file_from_parts,
-};
-
 mod restore;
 use restore::{restore_loaded, restore_signed};
+use tracing::trace;
 
 pub mod zone;
 
@@ -305,5 +302,70 @@ impl Restorer {
 impl Default for Restorer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+//------------ discard_excess_diffs() ----------------------------------------
+
+/// Calculate from policy and published zone metadata the limits to apply
+/// and then trim zone diffs to be within those limits.
+//
+// TODO: Ideally this would be done as part of PersistentDiffManager::trim()
+// but PersistentDiffManager has no access to policy or instance signed
+// metadata.
+pub fn discard_excess_diffs(center: &Arc<Center>, zone: &Arc<Zone>) {
+    let mut state = zone.write(center);
+
+    if let Some(policy) = state.policy.as_ref()
+        && let Some(signed_metadata) = state.signed_metadata()
+    {
+        // Fetch diff purging settings from policy.
+        let max_diffs = policy.server.outbound.max_diffs;
+        let max_size_percentage = policy.server.outbound.max_diffs_size;
+
+        // Calculate the maximum number of records that a set of diffs can be based on
+        // the policy settings. IxfrZoneDiffs can't do this for us as it has
+        // no access to `last_published`.
+        let current_size = signed_metadata.num_records().get();
+        let max_size = calc_max_diff_size(max_size_percentage, current_size);
+
+        trace!(
+            "Discarding excess in-memory diffs for zone '{}' with settings max_diffs={max_diffs}, current_size={current_size}, max_size={max_size_percentage}% ({max_size} RRs)",
+            zone.name,
+        );
+        state.storage.diffs.trim(max_diffs, max_size);
+    }
+}
+
+/// Calculate the maximum size a diff can be as a percentage of the last
+/// published zone.
+fn calc_max_diff_size(max_size_percentage: usize, current_size: u64) -> usize {
+    let percentage = max_size_percentage as f64 / 100.0;
+    (current_size as f64 * percentage) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calc_max_diff_size;
+
+    #[test]
+    pub fn test_calc_max_diff_size() {
+        let empty_zone = 0;
+        assert_eq!(calc_max_diff_size(0, empty_zone), 0);
+        assert_eq!(calc_max_diff_size(50, empty_zone), 0);
+        assert_eq!(calc_max_diff_size(100, empty_zone), 0);
+        assert_eq!(calc_max_diff_size(1000, empty_zone), 0);
+
+        let small_zone = 5;
+        assert_eq!(calc_max_diff_size(0, small_zone), 0);
+        assert_eq!(calc_max_diff_size(50, small_zone), 2);
+        assert_eq!(calc_max_diff_size(100, small_zone), 5);
+        assert_eq!(calc_max_diff_size(1000, small_zone), 50);
+
+        let large_zone = 500000;
+        assert_eq!(calc_max_diff_size(0, large_zone), 0);
+        assert_eq!(calc_max_diff_size(50, large_zone), 250000);
+        assert_eq!(calc_max_diff_size(100, large_zone), 500000);
+        assert_eq!(calc_max_diff_size(1000, large_zone), 5000000);
     }
 }
