@@ -69,6 +69,21 @@
 //! no way of knowing what else may be failing and abort as it is not safe to
 //! continue under such circumstances.
 //!
+//! # Compaction
+//!
+//! The `Compacter` replaces an existing snapshot and diffs with an
+//! up-tao-date snapshot. It may leave some diffs behind [1..N] such that entry
+//! 0 is still the snapshot but the first applicable diff is entry N. Diffs
+//! 1..N can be left behind in the case that they are still required to
+//! respond to IXFR requests but not for restoration (as they have been folded
+//! into the updated snapshot).
+//!
+//! Compaction is done as a background operation periodically. This is to
+//! prevent a situation where a rapdily changing large zone has to be locked
+//! for compaction after every small change and being a large zone the
+//! compaction process would be comparatively slow. Given that compaction is
+//! an optimization it does not need to be done on every change to the zone.
+//!
 //! # Restoration
 //!
 //! Zones are created in memory at Cascade startup in storage state
@@ -89,10 +104,11 @@
 //! logged as a WARNing and Cascade will continue.
 //!
 //! Restoration of a zone is achieved by replacing the current (empty) zone
-//! content with the loaded snapshot, then applying each loaded diff file
-//! to the snapshot one at a time. The diffs are also kept in-memory for
-//! responding to IXFR requests from downstream nameservers. The signed
-//! snapshot and diffs are also restored like this.
+//! content with the loaded snapshot, then applying each applicable loaded
+//! diff file to the snapshot one at a time. If the `Compacter` has folded
+//! diffs into the snapshot it may be that restoration must skip some diffs
+//! as they exist already in the snapshot and were kept only because they
+//! are still needed to respond to IXFR requests.
 //!
 //! Any diff that was available at a review server will have been lost.
 //! However as only approved data gets persisted, there should be no need
@@ -160,6 +176,7 @@
 //!   set type currrently also ensures no duplicate entries by diff path. If
 //!   next_idx were replaced by a UUID the paths would always be unique which
 //!   would diminish or remove the need for a 'set' type.
+//! - Make compaction occur when a zone is idle, rather than periodically.
 use std::{sync::Arc, time::Duration};
 
 use crate::{
