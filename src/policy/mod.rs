@@ -618,7 +618,7 @@ impl Display for NameserverCommsPolicy {
 pub enum KeyParameters {
     /// The RSASHA256 algorithm with the key length in bits.
     RsaSha256(usize),
-    /// The RSASHA512 w algorithmith the key length in bits.
+    /// The RSASHA512 algorithm with the key length in bits.
     RsaSha512(usize),
     /// The ECDSAP256SHA256 algorithm.
     ///
