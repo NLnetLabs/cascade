@@ -880,7 +880,7 @@ impl PersistedDiffsSpec {
             true => PersistedDiffRecordSource::Signed,
             false => PersistedDiffRecordSource::Loaded,
         };
-        PersistedDiffManager::from_parts(
+        PersistedDiffManager::for_exisitng_diffs(
             is_signed,
             self.next_idx,
             self.restore_base_idx,

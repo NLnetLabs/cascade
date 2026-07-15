@@ -590,10 +590,15 @@ pub struct PersistedDiffManager {
 
 impl PersistedDiffManager {
     pub fn new(record_source: PersistedDiffRecordSource) -> Self {
-        Self::from_parts(record_source, 0, 0, Default::default())
+        Self {
+            record_source,
+            next_uniqifier: 0,
+            first_diff_to_apply_on_restore: 0,
+            diff_infos: BTreeSet::new(),
+        }
     }
 
-    pub fn from_parts(
+    pub fn for_exisitng_diffs(
         record_source: PersistedDiffRecordSource,
         next_uniqifier: usize,
         first_diff_to_apply_on_restore: usize,
