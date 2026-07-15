@@ -656,7 +656,12 @@ impl PersistedDiffManager {
                 self.next_uniqifier
             ))
             .into_std_path_buf();
-        let file_info = PersistedDiffFileInfo::new(path.clone(), loaded_serial, signed_serial);
+        let file_info = PersistedDiffFileInfo::new(
+            self.next_uniqifier,
+            path.clone(),
+            loaded_serial,
+            signed_serial,
+        );
 
         trace!(
             "Pushing diff with loaded serial {loaded_serial:?} and signed serial {signed_serial:?} for zone '{}' with path '{}'",
@@ -741,6 +746,8 @@ impl PersistedDiffManager {
 /// Information about a single persisted zone data file.
 #[derive(Clone, Debug)]
 pub struct PersistedDiffFileInfo {
+    id: usize,
+
     /// The location on disk where the zone data file exists.
     path: PathBuf,
 
@@ -758,15 +765,21 @@ pub struct PersistedDiffFileInfo {
 
 impl PersistedDiffFileInfo {
     pub fn new(
+        id: usize,
         path: PathBuf,
         loaded_serial: Option<Serial>,
         signed_serial: Option<Serial>,
     ) -> Self {
         Self {
+            id,
             path,
             loaded_serial,
             signed_serial,
         }
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     pub fn path(&self) -> &PathBuf {
@@ -798,7 +811,7 @@ impl PartialOrd for PersistedDiffFileInfo {
 
 impl Ord for PersistedDiffFileInfo {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.path.cmp(&other.path)
+        self.id.cmp(&other.id)
     }
 }
 
