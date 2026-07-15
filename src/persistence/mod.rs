@@ -132,6 +132,25 @@
 //!   viewer for the zone.
 //! - `IxfrZoneDiffs` stores diffs used when responding to an RFC 1995 IXFR
 //!   request, and offers lookup and trim operations.
+//!
+//! # TODO
+//!
+//! The current implementation could be improved by:
+//!
+//! - Removing next_idx and instead using a UUID to make persistence paths
+//!   unique. This would avoid the need for incrementing the id, and keeping
+//!   track of the last id both in memory and in persisted state.
+//! - Don't access and mutate the state of PersistedDiffManager from outside
+//!   the type as this makes it dangerous to change the way
+//!   PersistedDiffManager manipulates its own state as code outside
+//!   PersistedDiffManager may depend on assumptions about how the internal
+//!   state is constructed.
+//! - Track snapshots separately to diffs rather than treating the first diff
+//!   as a snapshot, to make it clearer which logic applies only to snapshots
+//!   which logic applies only to diffs, and which logic applies to both.
+//! - Track diffs left behind after compaction but still required for IXFR
+//!   responses separately to diffs that should be applied on restore to the
+//!   persistedsnapshot.
 use std::{sync::Arc, time::Duration};
 
 use crate::{
