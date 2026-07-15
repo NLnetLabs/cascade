@@ -41,14 +41,17 @@ pub fn restore_loaded(
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<bool> {
     let diff_infos;
-    let restore_base_idx;
+    let first_diff_to_apply_on_restore;
 
     // Use a block so that we don't hold the zone state lock longer than
     // necessary.
     {
         let state = zone.read();
         diff_infos = state.persistence.loaded_diffs.diffs().clone();
-        restore_base_idx = state.persistence.loaded_diffs.restore_base_idx();
+        first_diff_to_apply_on_restore = state
+            .persistence
+            .loaded_diffs
+            .first_diff_to_apply_on_restore();
     }
 
     let mut diff_infos_iter = diff_infos.iter();
@@ -91,7 +94,9 @@ pub fn restore_loaded(
     let mut diffs_to_store: Vec<Arc<DiffData>> = vec![];
 
     for (idx, diff_info) in diff_infos_iter.enumerate() {
-        let (start_serial, end_serial) = if idx < restore_base_idx {
+        // Note: idx is zero-based but as we skipped over the first entry (the
+        // snapshot) we need to add one to get a correct index.
+        let (start_serial, end_serial) = if (idx + 1) < first_diff_to_apply_on_restore {
             trace!(
                 "Building standalone IXFR diff #{idx} from '{}'",
                 diff_info.path().display()
@@ -194,7 +199,10 @@ pub fn restore_signed(
     {
         let state = zone.read();
         diff_infos = state.persistence.signed_diffs.diffs().clone();
-        restore_base_idx = state.persistence.signed_diffs.restore_base_idx();
+        restore_base_idx = state
+            .persistence
+            .signed_diffs
+            .first_diff_to_apply_on_restore();
     }
 
     let mut diff_infos_iter = diff_infos.iter();

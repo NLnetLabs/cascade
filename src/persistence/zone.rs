@@ -477,6 +477,14 @@ impl PersistenceState {
                 }
             }
 
+            // As we may have folded diffs into the snapshot, upon next
+            // restoration the first diff to apply to the snapshot is no
+            // longer the first after the snapshot but the first after
+            // we skip diffs that have been retained for responding to IXFR
+            // requests but are now part of the snapshot.
+            //
+            // Update the index of the first diff to apply on restore to
+            // account for the compaction done above.
             state
                 .persistence
                 .loaded_diffs
@@ -593,7 +601,7 @@ impl PersistedDiffManager {
         Self {
             record_source,
             next_uniqifier: 0,
-            first_diff_to_apply_on_restore: 0,
+            first_diff_to_apply_on_restore: 1,
             diff_infos: BTreeSet::new(),
         }
     }
@@ -723,7 +731,7 @@ impl PersistedDiffManager {
         self.diff_infos.len()
     }
 
-    pub fn restore_base_idx(&self) -> usize {
+    pub fn first_diff_to_apply_on_restore(&self) -> usize {
         self.first_diff_to_apply_on_restore
     }
 }

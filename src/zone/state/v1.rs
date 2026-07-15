@@ -893,7 +893,7 @@ impl PersistedDiffsSpec {
         Self {
             is_signed: false,
             next_idx: loaded_diffs.next_idx(),
-            restore_base_idx: loaded_diffs.restore_base_idx(),
+            restore_base_idx: loaded_diffs.first_diff_to_apply_on_restore(),
             diff_infos: loaded_diffs
                 .diffs()
                 .iter()
@@ -907,7 +907,7 @@ impl PersistedDiffsSpec {
         Self {
             is_signed: true,
             next_idx: signed_diffs.next_idx(),
-            restore_base_idx: signed_diffs.restore_base_idx(),
+            restore_base_idx: signed_diffs.first_diff_to_apply_on_restore(),
             diff_infos: signed_diffs
                 .diffs()
                 .iter()
