@@ -313,8 +313,8 @@ fn store_for_ixfr_out(
     // Ignore the diff if it is not acceptable, e.g. if it changes more than
     // X% of the records in the zone or crosses some other threshold.
     if signed_diff.removed_soa.is_some() && signed_diff.added_soa.is_some() {
-        discard_excess_diffs(center, zone);
         store_diff(center, zone, loaded_diff, signed_diff);
+        discard_excess_diffs(center, zone);
     }
 }
 
