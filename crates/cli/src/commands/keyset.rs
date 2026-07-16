@@ -55,6 +55,7 @@ enum KeySetCommand {
     /// Get the zones key(s).
     Get {
         /// Which key RRset to print.
+        #[arg(ignore_case = true)]
         rr: KeyGetType,
     },
 }
