@@ -223,6 +223,8 @@ fn main() -> ExitCode {
                 }
             }
 
+            let mut warnings = Vec::new();
+
             // Load all policies.
             let mut updates = Vec::new();
             let res = policy::reload_all(
@@ -232,7 +234,12 @@ fn main() -> ExitCode {
                 |name, _| {
                     updates.push(name.clone());
                 },
+                &mut warnings,
             );
+
+            // We don't need to use the warnings as they have already
+            // been logged.
+            drop(warnings);
 
             if let Err(err) = res {
                 error!("Cascade couldn't load all policies: {err}");

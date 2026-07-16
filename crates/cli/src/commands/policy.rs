@@ -4,6 +4,7 @@ use cascade_api::{
     AutoConfigPolicyInfo, KeyManagerPolicyInfo, LoaderPolicyInfo, ReviewPolicyMode,
     ServerPolicyInfo, SignerPolicyInfo,
 };
+use tracing::warn;
 
 use crate::{
     ansi,
@@ -101,6 +102,14 @@ impl Policy {
                         width = max_width,
                         reset = ansi::RESET
                     );
+                }
+
+                if !res.warnings.is_empty() {
+                    println!();
+                }
+
+                for w in res.warnings {
+                    warn!("{w}");
                 }
             }
         }
