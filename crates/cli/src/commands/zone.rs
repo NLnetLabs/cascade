@@ -56,6 +56,23 @@ pub enum ZoneCommand {
         import_csk_kmip: Vec<String>,
     },
 
+    /// Edit the configuration for a zone
+    #[command(name = "edit")]
+    Edit {
+        name: ZoneName,
+
+        /// The source to obtain the zone content from:
+        /// `IP:[PORT][^TSIG_KEY_NAME]` (port defaults to 53) or the path to
+        /// a zone file locally available to the `cascaded` daemon.
+        // TODO: allow supplying different tcp and/or udp port?
+        #[arg(long = "source")]
+        source: Option<ZoneSource>,
+
+        /// Policy to use for this zone
+        #[arg(long = "policy")]
+        policy: Option<String>,
+    },
+
     /// Remove a zone
     #[command(name = "remove")]
     Remove { name: ZoneName },
@@ -239,6 +256,43 @@ impl Zone {
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to add zone: {e}")),
+                }
+            }
+            ZoneCommand::Edit {
+                name,
+                mut source,
+                policy,
+            } => {
+                if policy.is_none() && source.is_none() {
+                    return Err("nothing to do".into());
+                }
+
+                if let Some(ZoneSource::Zonefile { path }) = &mut source {
+                    let canonicalized_path = path.canonicalize().map_err(|err| {
+                        format!("Failed to canonicalize zonefile path '{}': {err}", path)
+                    })?;
+                    let path_str = canonicalized_path.to_str().ok_or_else(|| {
+                        format!("Failed to convert path '{}'", canonicalized_path.display())
+                    })?;
+                    *path = Utf8PathBuf::from(path_str).into_boxed_path();
+                }
+
+                let res: Result<ZoneEditResult, ZoneEditError> = client
+                    .post_json_with(
+                        &format!("zone/{name}/edit"),
+                        &ZoneEdit {
+                            source: source.map(|s| s.try_into().unwrap()),
+                            policy,
+                        },
+                    )
+                    .await?;
+
+                match res {
+                    Ok(res) => {
+                        println!("Edited zone {}: {}", res.name, res.status);
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to edit zone: {e}")),
                 }
             }
             ZoneCommand::Remove { name } => {
