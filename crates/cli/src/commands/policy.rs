@@ -4,7 +4,6 @@ use cascade_api::{
     AutoConfigPolicyInfo, KeyManagerPolicyInfo, LoaderPolicyInfo, ReviewPolicyMode,
     ServerPolicyInfo, SignerPolicyInfo,
 };
-use tracing::warn;
 
 use crate::{
     ansi,
