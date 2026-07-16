@@ -237,9 +237,9 @@ fn main() -> ExitCode {
                 &mut warnings,
             );
 
-            // We don't need to use the warnings as they have already
-            // been logged.
-            drop(warnings);
+            for w in warnings {
+                warn!("{w}");
+            }
 
             if let Err(err) = res {
                 error!("Cascade couldn't load all policies: {err}");

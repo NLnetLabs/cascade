@@ -109,7 +109,7 @@ impl Policy {
                 }
 
                 for w in res.warnings {
-                    warn!("{w}");
+                    println!("{}WARNING{}: {w}", ansi::YELLOW, ansi::RESET);
                 }
             }
         }

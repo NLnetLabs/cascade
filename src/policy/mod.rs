@@ -11,7 +11,7 @@ use domain::base::Name;
 use domain::base::Ttl;
 use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::tsig::TsigStore;
 use crate::{api::PolicyReloadError, config::Config};
@@ -97,9 +97,6 @@ pub fn reload_all(
     for (name, policy) in policies.drain() {
         // If any zones are using this policy, keep it.
         if !policy.zones.is_empty() {
-            warn!(
-                "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
-            );
             warnings.push(format!(
                 "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
             ));
@@ -150,10 +147,6 @@ pub fn load_all(
 
         // Filter for UTF-8 paths.
         let Ok(path) = Utf8PathBuf::from_path_buf(entry.path()) else {
-            warn!(
-                "Ignoring potential policy '{}' as the path is non-UTF-8",
-                entry.path().display()
-            );
             warnings.push(format!(
                 "Ignoring potential policy '{}' as the path is non-UTF-8",
                 entry.path().display()
@@ -167,7 +160,6 @@ pub fn load_all(
             .expect("this path has a known parent directory")
             .starts_with('.')
         {
-            warn!("Ignoring hidden file '{path}' among policies");
             warnings.push(format!("Ignoring hidden file '{path}' among policies"));
             continue;
         }
@@ -177,7 +169,6 @@ pub fn load_all(
             .extension()
             .is_none_or(|e| !e.eq_ignore_ascii_case("toml"))
         {
-            warn!("Ignoring potential policy '{path}'; policies must end in '.toml'");
             warnings.push(format!(
                 "Ignoring potential policy '{path}'; policies must end in '.toml'"
             ));
@@ -192,7 +183,6 @@ pub fn load_all(
             Ok(spec) => spec,
             // Ignore a directory ending in '.toml'.
             Err(err) if err.kind() == io::ErrorKind::IsADirectory => {
-                warn!("Ignoring potential policy '{path}'; policies must be files");
                 warnings.push(format!(
                     "Ignoring potential policy '{path}'; policies must be files"
                 ));
