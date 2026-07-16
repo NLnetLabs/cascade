@@ -246,6 +246,12 @@ From the above you can see that the signed zone can be retrieved from
 
     dig @127.0.0.1 -p 4542 AXFR example.com
 
+Ask Cascade for more detail if you want to view the state of the key manager:
+
+.. code-block:: bash
+
+   cascade zone status --detailed <zone-name>
+
 If you have the BIND `dnssec-verify
 <https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_
 tool installed, you can check that the zone is correctly DNSSEC signed:
