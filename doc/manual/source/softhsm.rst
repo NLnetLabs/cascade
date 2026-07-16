@@ -53,7 +53,7 @@ Start the Cascade daemon:
 
 .. code-block:: bash
 
-   # systemctl start cascaded
+   # systemctl start cascade
    # cascade policy reload
 
 Configure a HSM in Cascade called ``cascade-hsm-bridge`` that will connect to

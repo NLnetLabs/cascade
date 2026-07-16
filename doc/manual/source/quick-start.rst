@@ -46,12 +46,12 @@ systemd features should be used instead.
         To support binding to privileged ports without requiring elevated
         privileges Cascade supports the systemd `socket activation feature <https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html#>`_.
         To use this you will need to create a ``socket`` unit. An example
-        ``cascaded.socket`` unit might look as follows:
+        ``cascade.socket`` unit might look as follows:
 
         .. code-block::
 
           [Unit]
-          Description=Cascaded Sockets
+          Description=Cascade Sockets
           
           [Socket]
           # To prevent listening on localhost replace 127.0.0.1:53 with a
@@ -72,7 +72,7 @@ systemd features should be used instead.
         .. code-block::
 
            [Unit]
-           Requires=cascaded.socket
+           Requires=cascade.socket
 
         To start Cascade use the following command: (you may need elevated
         privileges to run this command, e.g. run it as ``root`` or use a
@@ -80,7 +80,7 @@ systemd features should be used instead.
 
         .. code-block::
 
-           systemctl start cascaded
+           systemctl start cascade
 
    .. group-tab:: Without systemd
 
