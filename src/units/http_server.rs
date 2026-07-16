@@ -325,7 +325,7 @@ impl HttpServer {
                 .map(|policy| {
                     let pol = state
                         .policies
-                        .get(&policy.into_boxed_str())
+                        .get_mut(&policy.into_boxed_str())
                         .ok_or(ZoneEditError::NoSuchPolicy)?;
 
                     if pol.mid_deletion {
@@ -373,15 +373,32 @@ impl HttpServer {
 
             if let Some(policy) = policy {
                 let mut handle = zone.write_handle(center);
-                let old = handle.state.policy.replace(policy.latest.clone());
+
+                let old = handle
+                    .state
+                    .policy
+                    .replace(policy.latest.clone())
+                    .expect("a policy was in use");
+
+                let old_name = old.name.clone();
+
+                policy.zones.insert(zone.name.clone());
+
                 handle.signer().after_policy_change();
 
                 center.key_manager.on_zone_policy_changed(
                     center,
                     &zone,
-                    old,
+                    Some(old),
                     policy.latest.clone(),
                 );
+
+                state
+                    .policies
+                    .get_mut(&old_name)
+                    .expect("policy should exist")
+                    .zones
+                    .remove(&zone.name);
 
                 changes.push("policy");
             }
