@@ -905,6 +905,7 @@ impl HttpServer {
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
         let mut updates = Vec::new();
+        let mut warnings = Vec::new();
         let res = crate::policy::reload_all(
             &mut state.policies,
             &center.config,
@@ -923,6 +924,7 @@ impl HttpServer {
 
                 updates.push((name.clone(), change));
             },
+            &mut warnings,
         );
 
         if let Err(err) = res {
@@ -971,7 +973,7 @@ impl HttpServer {
             changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
         changes.sort_unstable_by(|l, r| l.0.cmp(&r.0));
 
-        Json(Ok(PolicyChanges { changes }))
+        Json(Ok(PolicyChanges { changes, warnings }))
     }
 
     async fn policy_show(
