@@ -252,6 +252,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cascade-policy-file"
+version = "0.1.0-beta6-dev"
+dependencies = [
+ "camino",
+ "foldhash",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "cascade-zonedata"
 version = "0.1.0-beta6-dev"
 dependencies = [
