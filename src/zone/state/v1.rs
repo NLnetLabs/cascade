@@ -50,6 +50,12 @@ pub struct Spec {
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
 
+    /// Whether the zone is in maintenance mode
+    ///
+    /// Maintenance mode means that Cascade won't start loading and signing
+    /// operations automatically.
+    pub maintenance_mode: bool,
+
     /// Instances of the zone.
     pub instances: InstancesSpec,
 
@@ -125,6 +131,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
+            maintenance_mode: zone.maintenance_mode,
             instances: InstancesSpec::build(&zone.instances),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
             min_expiration: zone.min_expiration,
