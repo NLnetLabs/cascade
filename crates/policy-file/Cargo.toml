@@ -26,8 +26,16 @@ readme = "README.md"
 workspace = true
 features = ["serde1"]
 
+[dependencies.domain]
+workspace = true
+features = ["tsig", "serde"]
+
 # 'foldhash' offers fast, non-cryptographic hash tables.
 [dependencies.foldhash]
+workspace = true
+
+# 'jiff' is a general-purpose time library.
+[dependencies.jiff]
 workspace = true
 
 # 'serde' and 'toml' are used for parsing TOML configuration files.
@@ -35,4 +43,8 @@ workspace = true
 workspace = true
 features = ["derive"]
 [dependencies.toml]
+workspace = true
+
+# 'serde-with' provides helpers for 'serde'.
+[dependencies.serde_with]
 workspace = true
