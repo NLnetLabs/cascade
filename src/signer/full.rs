@@ -49,7 +49,7 @@ use crate::{
         SigningTrigger,
         incremental::LocalState,
         keys::ZoneSigningKeys,
-        status::{SigningStatusPerZone, ZoneSigningStatus},
+        status::{FullSigningStep, SigningStatusPerZone, SigningStep},
     },
     units::{
         key_manager::mk_dnst_keyset_state_file_path,
@@ -113,18 +113,6 @@ pub fn sign_zone(
     );
 
     //
-    // Record the start of signing for this zone.
-    //
-    {
-        status
-            .write()
-            .unwrap()
-            .status
-            .start(loaded_serial)
-            .map_err(|_| SignerError::InternalError("Invalid status".to_string()))?;
-    }
-
-    //
     // Create a signing configuration.
     //
     let signing_config = signing_config(&policy)?;
@@ -133,7 +121,13 @@ pub fn sign_zone(
     //
     // Convert zone records into a form we can sign.
     //
-    status.write().unwrap().current_action = "Collecting records to sign".to_string();
+    {
+        let mut status = status.write().unwrap();
+        // Record the start of signing for this zone.
+        status.status.start(loaded_serial, serial).unwrap();
+        status.step = SigningStep::Full(FullSigningStep::CollectingRecords);
+    }
+
     debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
     let walk_start = Instant::now();
     let mut records = loaded
@@ -144,19 +138,12 @@ pub fn sign_zone(
         .collect::<Vec<_>>();
     records.push(new_soa.clone().into());
     let walk_time = walk_start.elapsed();
-    let unsigned_rr_count = records.len();
-
-    {
-        let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.unsigned_rr_count = Some(unsigned_rr_count);
-            s.walk_time = Some(walk_time);
-        }
-    }
 
     debug!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
-    status.write().unwrap().current_action = "Fetching apex RRs from the key manager".to_string();
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Full(FullSigningStep::FetchingKeys);
+    }
     // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
     let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
     let state = std::fs::read_to_string(&state_path)
@@ -181,7 +168,7 @@ pub fn sign_zone(
 
     debug!("Loading dnst keyset signing keys");
     // Load the signing keys indicated by the keyset state.
-    let signing_keys = ZoneSigningKeys::load(center, zone, &state, &status)?;
+    let signing_keys = ZoneSigningKeys::load(center, zone, &state)?;
 
     // Save the current zone signing keys and clear key_roll
     let mut key_tags = HashSet::new();
@@ -206,26 +193,24 @@ pub fn sign_zone(
     // Sort them into DNSSEC order ready for NSEC(3) generation.
     //
     debug!("[ZS]: Sorting collected records for zone '{zone_name}'.");
-    status.write().unwrap().current_action = "Sorting records".to_string();
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Full(FullSigningStep::SortingRecords);
+    }
     let sort_start = Instant::now();
     // Note: This may briefly use lots of CPU and many CPU cores.
     records.par_sort_by(CanonicalOrd::canonical_cmp);
     let sort_time = sort_start.elapsed();
     let unsigned_rr_count = records.len();
 
-    {
-        let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.sort_time = Some(sort_time);
-        }
-    }
-
     //
     // Generate NSEC(3) RRs.
     //
     debug!("[ZS]: Generating denial records for zone '{zone_name}'.");
-    status.write().unwrap().current_action = "Generating denial records".to_string();
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Full(FullSigningStep::GeneratingDenialRecords);
+    }
     let denial_start = Instant::now();
     match &signing_config.denial {
         DenialConfig::AlreadyPresent => {}
@@ -275,15 +260,6 @@ pub fn sign_zone(
     let denial_time = denial_start.elapsed();
     let denial_rr_count = unsigned_records.len() - unsigned_rr_count;
 
-    {
-        let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.denial_rr_count = Some(denial_rr_count);
-            s.denial_time = Some(denial_time);
-        }
-    }
-
     //
     // Generate RRSIG RRs concurrently.
     //
@@ -293,19 +269,14 @@ pub fn sign_zone(
     // mpsc::channel and accumulates them into the signed zone.
     //
     debug!("[ZS]: Generating RRSIG records.");
-    status.write().unwrap().current_action = "Generating signature records".to_string();
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Full(FullSigningStep::GeneratingSignatureRecords);
+    }
 
     // TODO: Configure Rayon's thread pool to set the number of threads. By
     // default, it relies on 'std::thread::available_parallelism()'.
     let parallelism = rayon::current_num_threads();
-
-    {
-        let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.threads_used = Some(parallelism);
-        }
-    }
 
     let generation_start = Instant::now();
 
@@ -418,14 +389,7 @@ pub fn sign_zone(
 
     {
         let mut v = status.write().unwrap();
-        let v2 = &mut v.status;
-        if let ZoneSigningStatus::InProgress(s) = v2 {
-            s.rrsig_count = Some(total_signatures);
-            s.rrsig_reused_count = Some(0); // Not implemented yet
-            s.rrsig_time = Some(generation_time);
-            s.total_time = Some(total_time);
-        }
-        v.status.finish(true);
+        v.status.finish();
     }
 
     // Log signing statistics.

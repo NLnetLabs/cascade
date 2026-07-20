@@ -43,15 +43,15 @@ use domain::zonefile::inplace::Entry;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
-use tracing::debug;
 use tracing::error;
+use tracing::{debug, info};
 
 use crate::center::Center;
 use crate::manager::record_zone_event;
 use crate::policy::{PolicyVersion, SignerDenialPolicy};
 use crate::signer::SigningTrigger;
 use crate::signer::keys::ZoneSigningKeys;
-use crate::signer::status::SigningStatusPerZone;
+use crate::signer::status::{IncrementalSigningStep, SigningStatusPerZone, SigningStep};
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
     KeySetState, MinTimestamp, PassThroughMode, SignerError, faketime_or_now,
@@ -76,8 +76,8 @@ pub fn sign_incrementally(
     // signatures need to be updated.
     // Resign using the unsigned zonefile when load_unsigned is true.
 
-    status.write().expect("should not fail").current_action =
-        "Start incremental signing".to_string();
+    info!("Start signing zone '{}' incrementally", zone.name);
+
     let load_unsigned = patch.next_loaded().is_some();
 
     let origin = &zone.name;
@@ -90,6 +90,19 @@ pub fn sign_incrementally(
     let policy = zone.read().policy.clone().unwrap();
 
     let use_nsec3 = matches!(policy.signer.denial, SignerDenialPolicy::NSec3 { .. });
+
+    // If we have a new loaded version then the loaded serial is the one that
+    // we just loaded, otherwise it's the one that we loaded before.
+    let loaded_serial = patch
+        .next_loaded()
+        .or_else(|| patch.curr_loaded())
+        .unwrap()
+        .soa()
+        .rdata
+        .serial;
+
+    let previous_serial = patch.curr().soa().rdata.serial;
+    let previous_serial = Serial::from(previous_serial.0.get());
 
     let local_state = LocalState::new(zone)?;
     let mut ws = WorkSpace {
@@ -133,7 +146,25 @@ pub fn sign_incrementally(
         return Err(SignerError::NothingToDo);
     }
 
-    let mut iss = IncrementalSigningState::new(zone, &policy, center, &ws.keyset_state, status)?;
+    let signed_serial = super::next_signed_soa_serial(
+        policy.signer.serial_policy,
+        Serial::from(loaded_serial.0.get()),
+        Some(previous_serial),
+    )?;
+
+    {
+        let mut status = status.write().unwrap();
+        status
+            .status
+            .start(
+                loaded_serial,
+                domain::new::base::Serial::from(signed_serial.0),
+            )
+            .unwrap();
+        status.step = SigningStep::Incremental(IncrementalSigningStep::CollectingRecords);
+    }
+
+    let mut iss = IncrementalSigningState::new(zone, &policy, center, &ws.keyset_state)?;
 
     let start = Instant::now();
     let patch_curr = ws.patch.curr();
@@ -152,7 +183,12 @@ pub fn sign_incrementally(
     }
 
     let start = Instant::now();
-    ws.load_apex_records(&mut iss)?;
+    ws.load_apex_records(signed_serial, &mut iss)?;
+
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Incremental(IncrementalSigningStep::GeneratingSignatures);
+    }
 
     iss.initial_diffs()?;
 
@@ -178,6 +214,11 @@ pub fn sign_incrementally(
     }
     debug!("incremental signing took {:?}", start.elapsed());
 
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Incremental(IncrementalSigningStep::GeneratingDiffs)
+    }
+
     let start = Instant::now();
     ws.incremental_generate_diffs(&iss)?;
     debug!("generating diffs took {:?}", start.elapsed());
@@ -185,6 +226,11 @@ pub fn sign_incrementally(
     ws.patch
         .apply()
         .map_err(|e| SignerError::PatchFailed(format!("apply failed: {e}")))?;
+
+    {
+        let mut status = status.write().unwrap();
+        status.step = SigningStep::Incremental(IncrementalSigningStep::DeterminingMinExpirationTime)
+    }
 
     debug!("SIGNER: Determining min expiration time");
     let min_expiration = Arc::new(MinTimestamp::new());
@@ -213,6 +259,11 @@ pub fn sign_incrementally(
         "SIGNER: Determined min expiration time: {:?}",
         ws.local_state.next_min_expiration
     );
+
+    {
+        let mut status = status.write().unwrap();
+        status.status.finish();
+    }
 
     record_zone_event(
         center,
@@ -1063,19 +1114,14 @@ impl WorkSpace<'_> {
         Ok(())
     }
 
-    fn update_soa_serial(&mut self, old_soa: &Zrd) -> Result<Zrd, SignerError> {
+    fn update_soa_serial(
+        &mut self,
+        old_soa: &Zrd,
+        signed_serial: Serial,
+    ) -> Result<Zrd, SignerError> {
         let ZoneRecordData::Soa(zone_soa) = old_soa.data() else {
             unreachable!();
         };
-
-        let loaded_serial = zone_soa.serial();
-        let previous_serial = self.local_state.previous_serial;
-
-        let signed_serial = super::next_signed_soa_serial(
-            self.policy.signer.serial_policy,
-            loaded_serial,
-            previous_serial,
-        )?;
 
         // Save the new SOA serial.
         self.local_state.previous_serial = Some(signed_serial);
@@ -1135,6 +1181,7 @@ impl WorkSpace<'_> {
 
     pub fn load_apex_records(
         &mut self,
+        signed_serial: Serial,
         iss: &mut IncrementalSigningState,
     ) -> Result<(), SignerError> {
         // Assume that the apex records have been copied from KeySetState to
@@ -1215,7 +1262,7 @@ impl WorkSpace<'_> {
         // Update the SOA serial.
         let zone_soa_rr = &iss.new_apex.get(&NewRtype::SOA).expect("SOA should exist")[0];
         let old_zone_soa_rr: Zrd = (*zone_soa_rr).clone().into();
-        let new_soa = self.update_soa_serial(&old_zone_soa_rr)?;
+        let new_soa = self.update_soa_serial(&old_zone_soa_rr, signed_serial)?;
         let new_rrset: Vec<RegularRecord> = vec![new_soa.into()];
         iss.new_apex.insert(NewRtype::SOA, new_rrset);
 
@@ -1368,9 +1415,8 @@ impl<'a> IncrementalSigningState<'a> {
         policy: &PolicyVersion,
         center: &Arc<Center>,
         keyset_state: &KeySetState,
-        status: Arc<RwLock<SigningStatusPerZone>>,
     ) -> Result<Self, SignerError> {
-        let keys = ZoneSigningKeys::load(center, zone, keyset_state, &status)?;
+        let keys = ZoneSigningKeys::load(center, zone, keyset_state)?;
 
         let now = faketime_or_now();
         let now_u32 = Into::<Duration>::into(now.clone()).as_secs() as u32;

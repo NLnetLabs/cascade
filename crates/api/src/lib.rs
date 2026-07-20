@@ -528,7 +528,6 @@ pub enum ZoneReviewStatus {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SigningReport {
-    pub current_action: String,
     pub stage_report: SigningStageReport,
 }
 
@@ -555,39 +554,98 @@ pub struct SigningRequestedReport {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SigningStep {
+    Full(FullSigningStep),
+    Incremental(IncrementalSigningStep),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum FullSigningStep {
+    CollectingRecords,
+    FetchingKeys,
+    SortingRecords,
+    GeneratingDenialRecords,
+    GeneratingSignatureRecords,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum IncrementalSigningStep {
+    CollectingRecords,
+    GeneratingSignatures,
+    GeneratingDiffs,
+    DeterminingMinExpirationTime,
+}
+
+impl SigningStep {
+    pub fn as_str(&self) -> &str {
+        match self {
+            SigningStep::Full(s) => match s {
+                FullSigningStep::CollectingRecords => "collecting records",
+                FullSigningStep::FetchingKeys => "fetching keys",
+                FullSigningStep::SortingRecords => "sorting records",
+                FullSigningStep::GeneratingDenialRecords => "generating denial records",
+                FullSigningStep::GeneratingSignatureRecords => "generating signature records",
+            },
+            SigningStep::Incremental(s) => match s {
+                IncrementalSigningStep::CollectingRecords => "collecting records",
+                IncrementalSigningStep::GeneratingSignatures => "generating signatures",
+                IncrementalSigningStep::GeneratingDiffs => "generating diffs",
+                IncrementalSigningStep::DeterminingMinExpirationTime => {
+                    "determining min expiration time"
+                }
+            },
+        }
+    }
+
+    pub fn signing_strategy(&self) -> &str {
+        match self {
+            SigningStep::Full(_) => "full",
+            SigningStep::Incremental(_) => "incremental",
+        }
+    }
+
+    pub fn get_current_step(&self) -> usize {
+        match self {
+            SigningStep::Full(s) => match s {
+                FullSigningStep::CollectingRecords => 1,
+                FullSigningStep::FetchingKeys => 2,
+                FullSigningStep::SortingRecords => 3,
+                FullSigningStep::GeneratingDenialRecords => 4,
+                FullSigningStep::GeneratingSignatureRecords => 5,
+            },
+            SigningStep::Incremental(s) => match s {
+                IncrementalSigningStep::CollectingRecords => 1,
+                IncrementalSigningStep::GeneratingSignatures => 2,
+                IncrementalSigningStep::GeneratingDiffs => 3,
+                IncrementalSigningStep::DeterminingMinExpirationTime => 4,
+            },
+        }
+    }
+
+    pub fn get_total_steps(&self) -> usize {
+        match self {
+            SigningStep::Full(_) => 5,
+            SigningStep::Incremental(_) => 4,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SigningInProgressReport {
+    pub step: SigningStep,
     pub requested_at: SystemTime,
-    pub zone_serial: Serial,
+    pub loaded_serial: Serial,
+    pub signed_serial: Serial,
     pub started_at: SystemTime,
-    pub unsigned_rr_count: Option<usize>,
-    pub walk_time: Option<Duration>,
-    pub sort_time: Option<Duration>,
-    pub denial_rr_count: Option<usize>,
-    pub denial_time: Option<Duration>,
-    pub rrsig_count: Option<usize>,
-    pub rrsig_reused_count: Option<usize>,
-    pub rrsig_time: Option<Duration>,
-    pub total_time: Option<Duration>,
-    pub threads_used: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SigningFinishedReport {
     pub requested_at: SystemTime,
-    pub zone_serial: Serial,
+    pub loaded_serial: Serial,
+    pub signed_serial: Serial,
     pub started_at: SystemTime,
-    pub unsigned_rr_count: usize,
-    pub walk_time: Duration,
-    pub sort_time: Duration,
-    pub denial_rr_count: usize,
-    pub denial_time: Duration,
-    pub rrsig_count: usize,
-    pub rrsig_reused_count: usize,
-    pub rrsig_time: Duration,
-    pub total_time: Duration,
-    pub threads_used: usize,
     pub finished_at: SystemTime,
-    pub succeeded: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]

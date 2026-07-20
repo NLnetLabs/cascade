@@ -487,7 +487,7 @@ impl HttpServer {
             };
 
             // Query signing status
-            signing_report = if progress >= Progress::SignedReview {
+            signing_report = if progress >= Progress::Signing {
                 zone_state
                     .signer
                     .active_signing_status
