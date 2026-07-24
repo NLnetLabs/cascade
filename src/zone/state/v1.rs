@@ -921,6 +921,7 @@ impl PersistedDiffsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PersistedDiffFileInfoSpec {
+    id: usize,
     path: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     loaded_serial: Option<Serial>,
@@ -932,6 +933,7 @@ impl PersistedDiffFileInfoSpec {
     /// Parse from this specification.
     fn parse(self) -> PersistedDiffFileInfo {
         PersistedDiffFileInfo::new(
+            self.id,
             self.path,
             self.loaded_serial
                 .map(|s| domain::new::base::Serial::from(s.0)),
@@ -943,6 +945,7 @@ impl PersistedDiffFileInfoSpec {
     /// Build into this specification.
     fn build(info: &PersistedDiffFileInfo) -> Self {
         Self {
+            id: info.id(),
             path: info.path().to_path_buf(),
             loaded_serial: info.loaded_serial().map(|s| Serial(s.into())),
             signed_serial: info.signed_serial().map(|s| Serial(s.into())),
