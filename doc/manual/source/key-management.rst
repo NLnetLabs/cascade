@@ -64,7 +64,7 @@ files for keys that are stored in the filesystem.
 Updating Keys 
 """""""""""""
 
-The signatures of the DNSKEY, CDS and CDNSKEY RRsets need to updated
+The signatures of the DNSKEY, CDS and CDNSKEY RRsets need to be updated
 periodically. In addition, key roll automation requires periodic invocation
 of the key manager to start new key rolls and to make progress on ones that
 are currently executing. For this purpose, Cascade invokes the key manager
