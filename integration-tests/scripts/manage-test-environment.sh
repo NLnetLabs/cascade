@@ -299,7 +299,7 @@ pattern:
   zonefile: "%s.secondary-zone"
   allow-notify: 127.0.0.1 NOKEY
   # Until Cascade supports IXFR we always use AXFR
-  request-xfr: AXFR 127.0.0.1@${_cascade_port} NOKEY
+  request-xfr: 127.0.0.1@${_cascade_port} NOKEY
   provide-xfr: 127.0.0.1 NOKEY
 
 zone:
@@ -310,21 +310,21 @@ zone:
   name: notify-tsig.test
   zonefile: "notify-tsig.test.secondary-zone"
   allow-notify: 127.0.0.1 tsig-key
-  request-xfr: AXFR 127.0.0.1@${_cascade_port} NOKEY
+  request-xfr: 127.0.0.1@${_cascade_port} NOKEY
   provide-xfr: 127.0.0.1 NOKEY
 
 zone:
   name: xfr-tsig.test
   zonefile: "xfr-tsig.test.secondary-zone"
   allow-notify: 127.0.0.1 NOKEY
-  request-xfr: AXFR 127.0.0.1@${_cascade_port} tsig-key
+  request-xfr: 127.0.0.1@${_cascade_port} tsig-key
   provide-xfr: 127.0.0.1 NOKEY
 
 zone:
   name: notify-and-xfr-tsig.test
   zonefile: "notify-and-xfr-tsig.test.secondary-zone"
   allow-notify: 127.0.0.1 tsig-key
-  request-xfr: AXFR 127.0.0.1@${_cascade_port} tsig-key
+  request-xfr: 127.0.0.1@${_cascade_port} tsig-key
   provide-xfr: 127.0.0.1 NOKEY
 EOF
 
