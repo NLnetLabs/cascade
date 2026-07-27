@@ -2,7 +2,8 @@
 
 use core::fmt;
 use std::{
-    sync::{Arc, RwLock},
+    collections::HashMap,
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 
@@ -19,20 +20,18 @@ use domain::{
 };
 use domain_kmip::{
     ConnectionSettings, KeyUrl,
-    dep::kmip::client::pool::{ConnectionManager, KmipConnError},
+    dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool},
 };
 use tracing::{debug, error, warn};
 use url::Url;
 
 use crate::{
-    center::Center,
     signer::status::SigningStatusPerZone,
     units::{
         http_server::KmipServerState,
         key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode},
         zone_signer::KeySetState,
     },
-    zone::Zone,
 };
 
 //----------- ZoneSigningKeys --------------------------------------------------
@@ -58,11 +57,12 @@ impl ZoneSigningKeys {
     #[tracing::instrument(
         level = "debug",
         skip_all,
-        fields(zone = %zone.name),
+        fields(zone = %zone_name),
     )]
     pub fn load(
-        center: &Center,
-        zone: &Zone,
+        config: &crate::config::Config,
+        zone_name: &Name<Bytes>,
+        kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
         keyset_state: &KeySetState,
         status: &RwLock<SigningStatusPerZone>,
     ) -> Result<Self, Box<LoadError>> {
@@ -98,7 +98,7 @@ impl ZoneSigningKeys {
 
             let keypair = match priv_url.scheme() {
                 "file" => KeyPair::load_from_disk(
-                    zone,
+                    zone_name,
                     priv_url.path().as_ref(),
                     pub_url.path().as_ref(),
                 )?,
@@ -115,14 +115,14 @@ impl ZoneSigningKeys {
                             error,
                         })
                     })?;
-                    KeyPair::load_kmip(center, priv_url, pub_url, status)?
+                    KeyPair::load_kmip(config, kmip_servers, priv_url, pub_url, status)?
                 }
                 _ => {
                     return Err(Box::new(LoadError::UnsupportedScheme { url: pub_url }));
                 }
             };
 
-            let key = SigningKey::new(zone.name.clone(), keypair.dnskey().flags(), keypair);
+            let key = SigningKey::new(zone_name.clone(), keypair.dnskey().flags(), keypair);
 
             debug!("Successfully loaded key '{priv_url}' + '{pub_url}'");
             list.push(key);
@@ -183,7 +183,7 @@ impl SignRaw for KeyPair {
 impl KeyPair {
     /// Load a key-pair from the disk.
     pub fn load_from_disk(
-        zone: &Zone,
+        zone_name: &Name<Bytes>,
         priv_key_path: &Utf8Path,
         pub_key_path: &Utf8Path,
     ) -> Result<Self, Box<LoadError>> {
@@ -202,9 +202,8 @@ impl KeyPair {
                 })
             })?;
 
-        if pub_key.owner() != &zone.name {
+        if pub_key.owner() != zone_name {
             let encoded_owner = pub_key.owner();
-            let zone_name = &zone.name;
             warn!(
                 "The public key at '{pub_key_path}' \
                 encodes the owner name '{encoded_owner}', \
@@ -270,7 +269,8 @@ impl KeyPair {
 impl KeyPair {
     /// Load a KMIP key-pair.
     pub fn load_kmip(
-        center: &Center,
+        config: &crate::config::Config,
+        kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
         priv_key_url: KeyUrl,
         pub_key_url: KeyUrl,
         status: &RwLock<SigningStatusPerZone>,
@@ -278,7 +278,7 @@ impl KeyPair {
         // TODO: Replace the connection pool if the persisted KMIP server settings
         // were updated more recently than the pool was created.
 
-        let mut kmip_servers = center.signer.kmip_servers.lock().unwrap();
+        let mut kmip_servers = kmip_servers.lock().unwrap();
         let kmip_conn_pool = match kmip_servers.entry(priv_key_url.server_id().to_string()) {
             std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
             std::collections::hash_map::Entry::Vacant(e) => {
@@ -286,10 +286,7 @@ impl KeyPair {
                     format!("Connecting to KMIP server '{}'", priv_key_url.server_id());
 
                 // Try and load the KMIP server settings.
-                let server_state_path = center
-                    .config
-                    .kmip_server_state_dir
-                    .join(priv_key_url.server_id());
+                let server_state_path = config.kmip_server_state_dir.join(priv_key_url.server_id());
                 debug!("Reading KMIP server state from '{server_state_path}'");
                 let f = std::fs::File::open(&server_state_path).map_err(|error| {
                     Box::new(LoadError::UnreadableKmipServerState {
@@ -319,7 +316,7 @@ impl KeyPair {
                 let mut username = None;
                 let mut password = None;
                 if has_credentials {
-                    let creds_path = &center.config.kmip_credentials_store_path;
+                    let creds_path = &config.kmip_credentials_store_path;
                     let creds_file = KmipClientCredentialsFile::new(
                         creds_path.as_std_path(),
                         KmipServerCredentialsFileMode::ReadOnly,

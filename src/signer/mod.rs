@@ -29,8 +29,8 @@ use tracing::{debug, error};
 
 use crate::{
     center::Center,
-    policy::SignerSerialPolicy,
-    signer::{queue::SigningPermit, status::SigningStatusPerZone},
+    policy::{PolicyVersion, SignerSerialPolicy},
+    signer::{incremental::LocalState, queue::SigningPermit, status::SigningStatusPerZone},
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, Zone},
     zonedata::SignedZoneBuilder,
@@ -64,17 +64,36 @@ pub mod zone;
 fn sign(
     center: Arc<Center>,
     zone: Arc<Zone>,
+    policy: Arc<PolicyVersion>,
     mut builder: SignedZoneBuilder,
     trigger: SigningTrigger,
     permit: SigningPermit,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
     let start = Instant::now();
+    let mut local_state = LocalState::new(&zone);
+    let kmip_servers = &center.signer.kmip_servers;
 
     let result = if let Some(patcher) = builder.patch() {
-        self::incremental::sign_incrementally(patcher, &zone, &center, trigger, status.clone())
+        self::incremental::sign_incrementally(
+            &center.config,
+            &zone.name,
+            &policy,
+            kmip_servers,
+            patcher,
+            &mut local_state,
+            status.clone(),
+        )
     } else {
-        self::full::sign_zone(&center, &zone, &mut builder, trigger, status.clone())
+        self::full::sign_zone(
+            &center.config,
+            &zone.name,
+            &policy,
+            kmip_servers,
+            &mut builder,
+            &mut local_state,
+            status.clone(),
+        )
     };
 
     let end = Instant::now();
@@ -96,6 +115,15 @@ fn sign(
                 serial = ?soa.rdata.serial,
                 "Generated a new signed instance of the zone"
             );
+
+            handle.state.record_event(
+                HistoricalEvent::SigningSucceeded {
+                    trigger: trigger.into(),
+                },
+                local_state.previous_serial,
+            );
+
+            local_state.save(&mut handle.state);
 
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
             handle.get().finish_signing(built);
