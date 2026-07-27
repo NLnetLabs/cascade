@@ -19,6 +19,11 @@ Released yyyy-mm-dd.
 Released yyyy-mm-dd.
 
 ### Breaking changes
+
+- Rename `cascaded.service` to `cascade.service` ([#913] by @maertsen). If you
+  are using systemd, you will need to refer to `cascade` instead of `cascaded`
+  now.
+
 ### New
 
 - Purging of excess diffs. ([#657] by @ximon18)
@@ -40,6 +45,7 @@ Released yyyy-mm-dd.
 [#657]: https://github.com/NLnetLabs/cascade/pull/657
 [#858]: https://github.com/NLnetLabs/cascade/pull/858
 [#866]: https://github.com/NLnetLabs/cascade/pull/866
+[#913]: https://github.com/NLnetLabs/cascade/pull/913
 
 ## 0.1.0-beta5 'Got that holiday feeling'
 
