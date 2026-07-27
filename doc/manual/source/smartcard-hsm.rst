@@ -120,7 +120,7 @@ Start the Cascade daemon:
 
 .. code-block:: bash
 
-   # systemctl start cascaded
+   # systemctl start cascade
    # cascade policy reload
    Policies reloaded:
    - smartcard added
