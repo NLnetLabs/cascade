@@ -199,6 +199,7 @@ where
     serializer.serialize_u64(duration.as_secs())
 }
 
+#[expect(dead_code)]
 pub fn serialize_opt_duration_as_secs<S>(
     instant: &Option<Duration>,
     serializer: S,

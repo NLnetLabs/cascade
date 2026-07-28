@@ -105,16 +105,16 @@ impl Status {
                     println!("  {:>2}:   {:<25} {:<16} Action", "#", "When", "Zone");
                     for (i, report) in response.signing_queue.iter().enumerate() {
                         let zone_name = report.zone_name.to_string();
-                        let action = &report.signing_report.current_action;
-                        let (colour, state, when) = match &report.signing_report.stage_report {
+                        let (colour, state, when, step) = match &report.signing_report.stage_report
+                        {
                             SigningStageReport::Requested(r) => {
-                                (ansi::GRAY, "\u{23F8}", r.requested_at)
+                                (ansi::GRAY, "\u{23F8}", r.requested_at, "requested")
                             }
                             SigningStageReport::InProgress(r) => {
-                                (ansi::YELLOW, "\u{23F5}", r.started_at)
+                                (ansi::YELLOW, "\u{23F5}", r.started_at, r.step.as_str())
                             }
                             SigningStageReport::Finished(r) => {
-                                (ansi::GREEN, "\u{2714}", r.finished_at)
+                                (ansi::GREEN, "\u{2714}", r.finished_at, "finished")
                             }
                         };
                         let when = jiff::Timestamp::try_from(when)
@@ -122,7 +122,7 @@ impl Status {
                             .round(jiff::Unit::Second)
                             .unwrap();
                         println!(
-                            "  {i:>2}: {colour}{state}{} {when:<25} {zone_name:<16} {action}",
+                            "  {i:>2}: {colour}{state}{} {when:<25} {zone_name:<16} {step}",
                             ansi::RESET
                         );
                     }

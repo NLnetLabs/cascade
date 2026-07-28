@@ -25,7 +25,7 @@ use std::{
 
 use domain::base::Serial;
 use jiff::{Timestamp as JiffTimestamp, Zoned, tz::TimeZone};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::{
     center::Center,
@@ -70,6 +70,7 @@ fn sign(
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) {
     let start = Instant::now();
+    info!("Starting a sign operation for '{}'", zone.name);
 
     let result = if let Some(patcher) = builder.patch() {
         self::incremental::sign_incrementally(patcher, &zone, &center, trigger, status.clone())
@@ -99,14 +100,12 @@ fn sign(
 
             let built = builder.finish().unwrap_or_else(|_| unreachable!());
             handle.get().finish_signing(built);
-            status.status.finish(true);
+            status.status.finish();
             zone.metrics.last_successful_sign_duration(duration);
-            status.current_action = "Finished".to_string();
         }
         Err(SignerError::NothingToDo) => {
             handle.get().abandon_signing(builder);
-            status.status.finish(true);
-            status.current_action = "Nothing to do".to_string();
+            status.status.finish();
         }
         Err(SignerError::KeepSerialPolicyViolated) => {
             // Also ignore Keep errors. We can ignore these errors for
@@ -114,9 +113,7 @@ fn sign(
             // TODO: But if nothing happens for too long we should warn.
             // Something in status would be good.
             handle.get().abandon_signing(builder);
-            status.status.finish(true);
-
-            status.current_action = "Resign failed due to Keep policy".to_string();
+            status.status.finish();
 
             // If the sign operation was triggered by a load, the user forgot to increase the
             // serial of the zone, so we should tell them about that by emitting an error.
@@ -139,8 +136,7 @@ fn sign(
         Err(error) => {
             error!("Signing failed: {error}");
             handle.get().signing_failed(builder, error.clone());
-            status.status.finish(false);
-            status.current_action = "Aborted".to_string();
+            status.status.finish();
 
             handle.state.record_event(
                 HistoricalEvent::SigningFailed {
