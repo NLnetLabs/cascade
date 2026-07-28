@@ -844,6 +844,7 @@ impl Display for PolicyReloadError {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PolicyChanges {
     pub changes: Vec<(String, PolicyChange)>,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

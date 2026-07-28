@@ -102,6 +102,14 @@ impl Policy {
                         reset = ansi::RESET
                     );
                 }
+
+                if !res.warnings.is_empty() {
+                    println!();
+                }
+
+                for w in res.warnings {
+                    println!("{}WARNING{}: {w}", ansi::YELLOW, ansi::RESET);
+                }
             }
         }
         Ok(())
