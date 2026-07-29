@@ -45,7 +45,7 @@ const SIGNATURE_REMAIN_TIME: u32 = SIGNATURE_VALIDITY_TIME / 2;
 // security risks. No official reference.
 const SIGNATURE_INCEPTION_OFFSET: u32 = 24 * 3600;
 
-// Try to find the right comprise between zones that hardly ever changes and
+// Try to find the right compromise between zones that hardly ever changes and
 // zones that are changed frequently. This should be a safe default, though
 // big zones that change frequently may set it to around 15 minutes to
 // avoid jitter in signing performance.
