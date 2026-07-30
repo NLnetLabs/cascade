@@ -585,7 +585,7 @@ impl Display for KeyGenerationParametersSpec {
             Self::RsaSha512(2048) => "RSASHA512",
             Self::EcdsaP256Sha256 => "ECDSAP256SHA256",
             Self::EcdsaP384Sha384 => "ECDSAP384SHA384",
-            Self::Ed25519 => "Ed25519",
+            Self::Ed25519 => "ED25519",
             Self::Ed448 => "ED448",
 
             Self::RsaSha256(bits) => return write!(f, "RSASHA256:{bits}"),
