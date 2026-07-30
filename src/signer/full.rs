@@ -2,9 +2,9 @@
 
 use std::{
     cmp::Ordering,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env::{self, VarError},
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     time::Instant,
 };
 
@@ -35,6 +35,7 @@ use domain::{
     },
     rdata::ZoneRecordData,
 };
+use domain_kmip::dep::kmip::client::pool::SyncConnPool;
 use rayon::{
     iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelExtend, ParallelIterator},
     slice::ParallelSliceMut,
@@ -42,11 +43,8 @@ use rayon::{
 use tracing::{debug, info};
 
 use crate::{
-    center::Center,
-    manager::record_zone_event,
     policy::{PolicyVersion, SignerDenialPolicy},
     signer::{
-        SigningTrigger,
         incremental::LocalState,
         keys::ZoneSigningKeys,
         status::{SigningStatusPerZone, ZoneSigningStatus},
@@ -55,30 +53,21 @@ use crate::{
         key_manager::mk_dnst_keyset_state_file_path,
         zone_signer::{KeySetState, MinTimestamp, SignerError},
     },
-    zone::{HistoricalEvent, Zone},
     zonedata::{OldRecord, RegularRecord, SignedZoneBuilder},
 };
 
 pub fn sign_zone(
-    center: &Arc<Center>,
-    zone: &Arc<Zone>,
+    config: &crate::config::Config,
+    zone_name: &domain::base::Name<Bytes>,
+    policy: &PolicyVersion,
+    kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
     builder: &mut SignedZoneBuilder,
-    trigger: SigningTrigger,
+    local_state: &mut LocalState,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) -> Result<(), SignerError> {
-    let zone_name = &zone.name;
-
     info!("[ZS]: Starting signing operation for zone '{zone_name}'");
     let start = Instant::now();
 
-    let mut local_state = LocalState::new(zone)?;
-
-    let policy = {
-        // Use a block to make sure that the lock is clearly dropped.
-        let zone_state = zone.read();
-
-        zone_state.policy.clone().unwrap()
-    };
     let previous_serial = local_state.previous_serial;
 
     //
@@ -127,7 +116,7 @@ pub fn sign_zone(
     //
     // Create a signing configuration.
     //
-    let signing_config = signing_config(&policy)?;
+    let signing_config = signing_config(policy)?;
     let rrsig_cfg = GenerateRrsigConfig::new(signing_config.inception, signing_config.expiration);
 
     //
@@ -158,7 +147,7 @@ pub fn sign_zone(
     debug!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
     status.write().unwrap().current_action = "Fetching apex RRs from the key manager".to_string();
     // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
-    let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
+    let state_path = mk_dnst_keyset_state_file_path(&config.keys_dir, zone_name);
     let state = std::fs::read_to_string(&state_path)
         .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
     let state: KeySetState = serde_json::from_str(&state).unwrap();
@@ -181,7 +170,7 @@ pub fn sign_zone(
 
     debug!("Loading dnst keyset signing keys");
     // Load the signing keys indicated by the keyset state.
-    let signing_keys = ZoneSigningKeys::load(center, zone, &state, &status)?;
+    let signing_keys = ZoneSigningKeys::load(config, zone_name, kmip_servers, &state, &status)?;
 
     // Save the current zone signing keys and clear key_roll
     let mut key_tags = HashSet::new();
@@ -231,7 +220,7 @@ pub fn sign_zone(
         DenialConfig::AlreadyPresent => {}
 
         DenialConfig::Nsec(cfg) => {
-            let nsecs = generate_nsecs(&zone.name, RecordsIter::new_from_owned(&records), cfg)
+            let nsecs = generate_nsecs(zone_name, RecordsIter::new_from_owned(&records), cfg)
                 .map_err(|err: SigningError| {
                     SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
                 })?;
@@ -249,7 +238,7 @@ pub fn sign_zone(
             // order." We store the NSEC3s as we create them and sort them
             // afterwards.
             let Nsec3Records { nsec3s, nsec3param } =
-                generate_nsec3s(&zone.name, RecordsIter::new_from_owned(&records), cfg).map_err(
+                generate_nsec3s(zone_name, RecordsIter::new_from_owned(&records), cfg).map_err(
                     |err: SigningError| {
                         SignerError::SigningError(format!("Failed to generate denial RRs: {err}"))
                     },
@@ -337,7 +326,7 @@ pub fn sign_zone(
         // Generate signatures from each segment.
         let signatures = segments.map(|range| {
             sign_sorted_zone_records(
-                &zone.name,
+                zone_name,
                 RecordsIter::new_from_owned(&unsigned_records[range]),
                 &keys,
                 &rrsig_cfg,
@@ -358,7 +347,7 @@ pub fn sign_zone(
             .map_err(|err| SignerError::SigningError(err.to_string()))?
     } else {
         let signatures = sign_sorted_zone_records(
-            &zone.name,
+            zone_name,
             RecordsIter::new_from_owned(&unsigned_records),
             &keys,
             &rrsig_cfg,
@@ -414,6 +403,8 @@ pub fn sign_zone(
     }
     local_state.next_min_expiration = saved_min_expiration.get();
 
+    local_state.last_signature_refresh = UnixTime::now();
+
     let total_time = start.elapsed();
 
     {
@@ -441,18 +432,6 @@ pub fn sign_zone(
         generation_time.as_secs_f64(),
         total_time.as_secs_f64()
     );
-
-    record_zone_event(
-        center,
-        zone,
-        HistoricalEvent::SigningSucceeded {
-            trigger: trigger.into(),
-        },
-        Some(Serial(serial.into())),
-    );
-
-    local_state.last_signature_refresh = UnixTime::now();
-    local_state.save(center, zone);
 
     Ok(())
 }

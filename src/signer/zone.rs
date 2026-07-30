@@ -403,6 +403,7 @@ impl SignerZoneHandle<'_> {
             current_action: "Initiating signing".into(),
             status: ZoneSigningStatus::new(),
         }));
+        let policy = self.state.policy.clone().unwrap();
 
         // The current logging span is nested fairly deep within the logic for
         // initiating signing operations, and does not really matter for the
@@ -412,7 +413,7 @@ impl SignerZoneHandle<'_> {
             let center = self.center.clone();
             let zone = self.zone.clone();
             let status = status.clone();
-            move || super::sign(center, zone, builder, trigger, permit, status)
+            move || super::sign(center, zone, policy, builder, trigger, permit, status)
         });
         self.state.signer.active_signing_status = Some(status);
     }
