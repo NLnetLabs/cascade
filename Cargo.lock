@@ -283,6 +283,7 @@ dependencies = [
  "camino",
  "cascade-api",
  "cascade-cfg",
+ "cascade-policy-file",
  "cascade-zonedata",
  "clap",
  "daemonbase",

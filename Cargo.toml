@@ -195,6 +195,7 @@ idna_adapter = { version = "=1.0.0" }
 
 cascade-api = { path = "crates/api" }
 cascade-cfg = { path = "crates/cfg" }
+cascade-policy-file = { path = "crates/policy-file" }
 cascade-zonedata = { path = "crates/zonedata" }
 
 # 'clap' is used for top-level configuration of the command-line interface (most

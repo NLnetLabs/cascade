@@ -34,7 +34,7 @@ const SIGNATURE_REMAIN_TIME: u32 = SIGNATURE_VALIDITY_TIME / 2;
 /// and not introduce any security risks. No official reference.
 const SIGNATURE_INCEPTION_OFFSET: u32 = 24 * 3600;
 
-/// Try to find the right comprise between zones that hardly ever changes and
+/// Try to find the right compromise between zones that hardly ever changes and
 /// zones that are changed frequently. This should be a safe default, though big
 /// zones that change frequently may set it to around 15 minutes to avoid jitter
 /// in signing performance.
@@ -412,7 +412,7 @@ impl Display for KeyGenerationParametersSpec {
             Self::RsaSha512(2048) => "RSASHA512",
             Self::EcdsaP256Sha256 => "ECDSAP256SHA256",
             Self::EcdsaP384Sha384 => "ECDSAP384SHA384",
-            Self::Ed25519 => "Ed25519",
+            Self::Ed25519 => "ED25519",
             Self::Ed448 => "ED448",
 
             Self::RsaSha256(bits) => return write!(f, "RSASHA256:{bits}"),

@@ -9,7 +9,7 @@ use crate::{
     center::Center,
     daemon::SocketProvider,
     manager::Terminated,
-    policy::OnReject,
+    policy::RejectionPolicy,
     units::zone_server::{Source, ZoneServer},
     util::AbortOnDrop,
     zone::{Zone, ZoneHandle, machine::ZoneStateMachine},
@@ -123,10 +123,10 @@ impl LoadedReviewServer {
                 );
 
                 match policy.loader.review.on_reject {
-                    OnReject::Discard => {
+                    RejectionPolicy::Discard => {
                         handle.get().soft_reject_loaded();
                     }
-                    OnReject::Halt => {
+                    RejectionPolicy::Halt => {
                         handle.get().hard_reject_loaded();
                     }
                 }
@@ -273,10 +273,10 @@ impl SignedReviewServer {
                 );
 
                 match policy.signer.review.on_reject {
-                    OnReject::Discard => {
+                    RejectionPolicy::Discard => {
                         handle.get().soft_reject_signed();
                     }
-                    OnReject::Halt => {
+                    RejectionPolicy::Halt => {
                         handle.get().hard_reject_signed();
                     }
                 }
