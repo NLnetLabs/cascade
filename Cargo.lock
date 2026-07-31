@@ -265,6 +265,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cascade-tests"
+version = "0.1.0-beta6-dev"
+dependencies = [
+ "camino",
+ "cascade-api",
+ "cascade-cfg",
+ "cascade-policy-file",
+ "command-fds",
+ "nix",
+ "reqwest",
+ "serde",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "cascade-zonedata"
 version = "0.1.0-beta7-dev"
 dependencies = [
@@ -284,9 +300,9 @@ dependencies = [
  "cascade-api",
  "cascade-cfg",
  "cascade-policy-file",
+ "cascade-tests",
  "cascade-zonedata",
  "clap",
- "command-fds",
  "daemonbase",
  "domain",
  "domain-kmip",
@@ -298,7 +314,6 @@ dependencies = [
  "lazy_static",
  "prometheus-client",
  "rayon",
- "reqwest",
  "ring",
  "serde",
  "serde_json",

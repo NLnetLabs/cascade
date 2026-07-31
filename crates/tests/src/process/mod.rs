@@ -222,7 +222,7 @@ pub struct DaemonFilesystem {
 }
 
 impl DaemonFilesystem {
-    /// Build a new [`DaemonFs`].
+    /// Build a new [`DaemonFilesystem`].
     ///
     /// ## Panics
     ///
