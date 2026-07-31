@@ -100,9 +100,9 @@ Finally, an algorithm roll is similar to a CSK roll, but it is designed in a
 specific way to handle the case where the new key or keys have an algorithm
 that is different from one used by the current signing keys.
 
-Cascade uses the ``double-signature-ksk-roll`` and ``pre-publish-zsk-roll``
-roll types as implemented by the :subcmd:`keyset` subcommand of
-:program:`dnst`.
+Cascade uses the ``double-signature-ksk-roll`` (RFC 7583 Double-KSK) and
+``pre-publish-zsk-roll`` (RFC 7583 Double-Signature) roll types as implemented
+by the :subcmd:`keyset` subcommand of :program:`dnst`.
 
 The KSK and ZSK rolls are completely independent and can run in parallel.
 Consistency checks are performed at the start of a key roll. For example, a
