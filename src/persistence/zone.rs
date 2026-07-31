@@ -901,11 +901,11 @@ impl IxfrZoneDiffs {
 
         // Do we actually have a diff from the given removed loaded SOA
         // serial? We won't have one if the loaded zone has never changed.
-        if let Some(serial) = loaded_serial {
-            if !self.loaded_diffs.contains_key(&serial.get()) {
-                // Don't store a reference to a loaded diff that we don't have.
-                loaded_serial = None;
-            }
+        if let Some(serial) = loaded_serial
+            && !self.loaded_diffs.contains_key(&serial.get())
+        {
+            // Don't store a reference to a loaded diff that we don't have.
+            loaded_serial = None;
         }
 
         let related_diff = RelatedSignedDiff::new(diff, loaded_serial);
