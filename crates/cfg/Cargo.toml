@@ -15,6 +15,11 @@ edition.workspace = true
 readme = "README.md"
 
 
+[features]
+default = ["args"]
+args = ["dep:clap"]
+
+
 # --- Dependencies -------------------------------------------------------------
 
 [dependencies]
@@ -28,6 +33,7 @@ features = ["serde1"]
 
 # 'clap' is used for defining and parsing command-line arguments.
 [dependencies.clap]
+optional = true
 workspace = true
 default-features = false
 
