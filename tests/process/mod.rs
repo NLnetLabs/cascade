@@ -17,6 +17,9 @@ use std::{
 use camino::{Utf8Path, Utf8PathBuf};
 use command_fds::{CommandFdExt, FdMapping};
 
+pub mod client;
+pub use client::DaemonClient;
+
 //----------- Daemon -----------------------------------------------------------
 
 /// A running Cascade daemon.
@@ -24,6 +27,9 @@ use command_fds::{CommandFdExt, FdMapping};
 pub struct Daemon {
     /// The daemon process.
     pub process: std::process::Child,
+
+    /// A client for controlling the daemon.
+    pub client: DaemonClient,
 
     /// The configuration used by the daemon.
     pub config: cascade_cfg::file::Spec,
@@ -41,6 +47,8 @@ impl Daemon {
             .take()
             .unwrap_or_else(|| builder.default_config());
         config.save_compact(&builder.filesystem.config).unwrap();
+
+        let client = DaemonClient::for_sockets(&builder.sockets);
 
         // Launch the daemon.
         let fds = builder
@@ -67,6 +75,7 @@ impl Daemon {
 
         Self {
             process,
+            client,
             config,
             filesystem: builder.filesystem,
         }
@@ -178,6 +187,7 @@ impl Default for DaemonBuilder {
 #[derive(Debug)]
 pub struct DaemonFilesystem {
     /// The temporary directory containing everything else.
+    #[allow(dead_code)]
     pub tempdir: tempfile::TempDir,
 
     /// The path to the root of `tempdir`.

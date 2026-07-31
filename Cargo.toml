@@ -288,6 +288,11 @@ version = "3.24.0"
 [target.'cfg(unix)'.dev-dependencies.command-fds]
 version = "0.3.2"
 
+[dev-dependencies.reqwest]
+version = "0.13.3"
+default-features = false
+features = ["http2", "blocking", "json"]
+
 
 # --- Packaging ----------------------------------------------------------------
 
