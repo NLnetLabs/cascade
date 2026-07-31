@@ -61,7 +61,8 @@ impl Daemon {
                 child_fd,
             })
             .collect::<Vec<_>>();
-        let process = Command::new(&*builder.path)
+        let process = Command::new("set_listen_pid")
+            .arg(&*builder.path)
             .arg("--config")
             .arg(&*builder.filesystem.config)
             .arg("--state")
