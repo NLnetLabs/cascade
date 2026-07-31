@@ -271,7 +271,7 @@ mod compat {
     /// Note: Also used by [`axfr()`] and [`ixfr()`] as well as in response to
     /// a direct SOA query.
     ///
-    /// Returns an SERVFAIL response if we have the zone but no data for it.
+    /// Returns a SERVFAIL response if we have the zone but no data for it.
     fn soa<V: Viewer>(request: &Message<Vec<u8>>, viewer: &V) -> ResponseStream {
         if viewer.is_empty() {
             return error(
