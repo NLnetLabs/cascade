@@ -3,7 +3,7 @@
 // Only available on Unix machines.
 #![cfg(unix)]
 
-mod process;
+use cascade_tests::process;
 
 #[test]
 fn launch() {

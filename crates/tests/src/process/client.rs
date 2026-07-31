@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use api::dep::domain;
 use cascade_api as api;
 use domain::base::Serial;
 use serde::{Serialize, de::DeserializeOwned};
