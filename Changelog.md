@@ -29,6 +29,10 @@ Released yyyy-mm-dd.
 - Purging of excess diffs. ([#657] by @ximon18)
 
 ### Bug fixes
+
+- Improve DNS errors and add EDEs. In particular do not return NXDOMAIN for
+  SOA queries when no zone data is available. ([#934])
+
 ### Other changes
 
 - Improve memory use for unsigned data in incremental signing. ([#866] by
@@ -46,6 +50,7 @@ Released yyyy-mm-dd.
 [#858]: https://github.com/NLnetLabs/cascade/pull/858
 [#866]: https://github.com/NLnetLabs/cascade/pull/866
 [#913]: https://github.com/NLnetLabs/cascade/pull/913
+[#934]: https://github.com/NLnetLabs/cascade/pull/934
 
 ## 0.1.0-beta5 'Got that holiday feeling'
 
