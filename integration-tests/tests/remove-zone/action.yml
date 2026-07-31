@@ -80,7 +80,7 @@ runs:
 
     - name: Querying the zone should now fail
       run: |
-        dig @127.0.0.1 -p 4542 example.test SOA | grep NXDOMAIN
+        dig @127.0.0.1 -p 4542 example.test SOA | grep REFUSED
 
     - name: Check that Cascade is still running
       run: cascade health
