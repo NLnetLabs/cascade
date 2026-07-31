@@ -928,13 +928,15 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
         strs!["cds-lifetime", seconds(km.cds_signature_lifetime)],
         strs!["cds-remain-time", seconds(km.cds_remain_time)],
         strs!["ds-algorithm", km.ds_algorithm],
-        strs!["default-ttl".to_string(), km.default_ttl.as_secs(),],
+        strs!["default-ttl", km.default_ttl.as_secs(),],
         strs!["autoremove", km.auto_remove],
         strs![
             "autoremove-delay",
             seconds(km.auto_remove_delay.as_secs() as u32)
         ],
         publication_nameservers_cmd,
+        strs!["ksk-roll-type", "double-signature-ksk-roll"],
+        strs!["zsk-roll-type", "pre-publish-zsk-roll"],
     ]);
     cmds
 }
