@@ -12,6 +12,7 @@ use std::{
 
 use camino::Utf8Path;
 
+#[cfg(feature = "args")]
 pub mod args;
 pub mod env;
 pub mod file;
@@ -91,11 +92,13 @@ impl Default for Config {
 
 impl Config {
     /// Set up a [`clap::Command`] with config-related arguments.
+    #[cfg(feature = "args")]
     pub fn setup_cli(cmd: clap::Command) -> clap::Command {
         args::ArgsSpec::setup(cmd)
     }
 
     /// Initialize Cascade's configuration.
+    #[cfg(feature = "args")]
     pub fn init(cli_matches: &clap::ArgMatches) -> Result<Self, ConfigError> {
         // Process environment variables and command-line arguments.
         let env = env::EnvSpec::process()?;
