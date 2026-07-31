@@ -84,6 +84,8 @@ impl<V> Clone for ZoneService<V> {
 mod compat {
     use std::{pin::Pin, sync::Arc};
 
+    use domain::base::iana::ExtendedErrorCode;
+    use domain::base::opt::ExtendedError;
     use domain::{
         base::{Message, MessageBuilder, iana::Rcode},
         net::server::{
@@ -130,6 +132,7 @@ mod compat {
                     return Box::pin(std::future::ready(error(
                         old_request.message(),
                         Rcode::FORMERR,
+                        None,
                     )));
                 }
             };
@@ -142,18 +145,30 @@ mod compat {
                     let Some(zone) = state.zones.get(&*zone_request.name) else {
                         // No such zone could be found.
                         let rcode = match zone_request.kind {
-                            // Return NXDOMAIN for normal queries.
-                            ZoneRequestKind::Soa => Rcode::NXDOMAIN,
+                            // Return REFUSED for normal queries.
+                            ZoneRequestKind::Soa => Rcode::REFUSED,
                             // Return NOTAUTH for zone transfers.
                             ZoneRequestKind::Axfr | ZoneRequestKind::Ixfr { .. } => Rcode::NOTAUTH,
                         };
-                        return Box::pin(std::future::ready(error(old_request.message(), rcode)));
+                        let opt_ede = Some(
+                            ExtendedError::<Vec<u8>>::new_with_str(
+                                ExtendedErrorCode::NOT_AUTHORITATIVE,
+                                "zone not configured",
+                            )
+                            .expect("should fit"),
+                        );
+                        return Box::pin(std::future::ready(error(
+                            old_request.message(),
+                            rcode,
+                            opt_ede,
+                        )));
                     };
 
                     if self.mode == ServiceMode::Publication && !is_permitted(zone, &old_request) {
                         return Box::pin(std::future::ready(error(
                             old_request.message(),
                             Rcode::REFUSED,
+                            None,
                         )));
                     }
 
@@ -256,10 +271,20 @@ mod compat {
     /// Note: Also used by [`axfr()`] and [`ixfr()`] as well as in response to
     /// a direct SOA query.
     ///
-    /// Returns an NXDOMAIN response if we have the zone but no data for it.
+    /// Returns an SERVFAIL response if we have the zone but no data for it.
     fn soa<V: Viewer>(request: &Message<Vec<u8>>, viewer: &V) -> ResponseStream {
         if viewer.is_empty() {
-            return error(request, Rcode::NXDOMAIN);
+            return error(
+                request,
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
         let soa = viewer.soa().clone();
 
@@ -280,7 +305,7 @@ mod compat {
     ) -> ResponseStream {
         // Refuse AXFR requests over UDP.
         if request.transport_ctx().is_udp() {
-            return error(request.message(), Rcode::NOTIMP);
+            return error(request.message(), Rcode::NOTIMP, None);
         }
 
         // Obtain a read lock to read the zone for an extended duration.
@@ -293,7 +318,17 @@ mod compat {
                 request.client_addr().ip(),
                 zone.handle.name,
             );
-            return error(request.message(), Rcode::SERVFAIL);
+            return error(
+                request.message(),
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
 
         // NOTE: The following code is a bit tricky. Ideally, we would elide
@@ -386,7 +421,17 @@ mod compat {
                 request.client_addr().ip(),
                 zone.handle.name,
             );
-            return error(request.message(), Rcode::SERVFAIL);
+            return error(
+                request.message(),
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
 
         // UDP is unlikely to work for any but the smallest of diffs,
@@ -694,10 +739,19 @@ mod compat {
         trace_diff("Signed", diff_idx, signed_diff);
     }
 
-    fn error(request: &Message<Vec<u8>>, rcode: Rcode) -> ResponseStream {
-        let response = MessageBuilder::new_stream_vec()
+    fn error(
+        request: &Message<Vec<u8>>,
+        rcode: Rcode,
+        opt_ede: Option<ExtendedError<Vec<u8>>>,
+    ) -> ResponseStream {
+        let mut response = MessageBuilder::new_stream_vec()
             .start_error(request, rcode)
             .additional();
+        if let Some(ede) = opt_ede
+            && let Err(err) = response.opt(|opt_builder| opt_builder.push(&ede))
+        {
+            return Box::new(futures::stream::once(std::future::ready(Err(err.into())))) as _;
+        }
         let result = Ok(CallResult::new(response));
         Box::new(futures::stream::once(std::future::ready(result))) as _
     }
