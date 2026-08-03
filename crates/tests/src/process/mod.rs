@@ -273,6 +273,22 @@ impl Default for DaemonFilesystem {
     }
 }
 
+impl Drop for DaemonFilesystem {
+    fn drop(&mut self) {
+        const KEEP_DIR_VAR: &str = "CASCADE_TESTS_KEEP_DIR";
+        let Some(_) = std::env::var_os(KEEP_DIR_VAR) else {
+            if std::thread::panicking() {
+                tracing::info!("Set `{KEEP_DIR_VAR}` to keep temporary state");
+            }
+
+            return;
+        };
+
+        tracing::info!("Temporary state retained at {}", self.root);
+        self.tempdir.disable_cleanup(true);
+    }
+}
+
 //----------- DaemonSockets ----------------------------------------------------
 
 /// The sockets used by a Cascade daemon.
