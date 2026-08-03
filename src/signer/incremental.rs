@@ -55,7 +55,9 @@ use crate::units::zone_signer::{
     KeySetState, MinTimestamp, PassThroughMode, SignerError, faketime_or_now,
 };
 use crate::zone::{Zone, ZoneState};
-use crate::zonedata::{DiffData, RegularRecord, SignedZonePatcher, SignedZoneReader, SoaRecord};
+use crate::zonedata::{
+    DiffData, LoadedZoneReader, RegularRecord, SignedZonePatcher, SignedZoneReader, SoaRecord,
+};
 
 pub fn sign_incrementally(
     config: &crate::config::Config,
@@ -145,7 +147,10 @@ pub fn sign_incrementally(
 
     if load_unsigned {
         let start = Instant::now();
-        iss.load_unsigned_diffs(ws.patch.unsigned_diff().expect("should be there"))?;
+        iss.load_unsigned_diffs(
+            ws.patch.unsigned_diff().expect("should be there"),
+            ws.patch.curr_loaded().expect("should be there"),
+        )?;
         debug!("loading new unsigned diffs took {:?}", start.elapsed());
     } else {
         // Re-use the signed data.
@@ -1431,7 +1436,11 @@ impl<'a> IncrementalSigningState<'a> {
         Ok(())
     }
 
-    pub fn load_unsigned_diffs(&mut self, diffs: DiffData) -> Result<(), SignerError> {
+    pub fn load_unsigned_diffs(
+        &mut self,
+        diffs: DiffData,
+        curr_loaded: LoadedZoneReader,
+    ) -> Result<(), SignerError> {
         let origin_revnamebuf = old_base_name_to_revnamebuf(self.origin);
 
         self.new_apex = self.old_apex.clone();
@@ -1476,6 +1485,13 @@ impl<'a> IncrementalSigningState<'a> {
             } else {
                 self.data.add_record(record);
             }
+        }
+
+        if self.new_apex.contains_key(&NewRtype::SOA) {
+            // There was no change in the SOA. Try to get the SOA directly
+            // from the loaded zone.
+            self.new_apex
+                .insert(NewRtype::SOA, vec![curr_loaded.soa().clone().into()]);
         }
 
         // Save a copy of the loaded new_apex to create a diff later.
