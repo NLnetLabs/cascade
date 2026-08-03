@@ -90,7 +90,7 @@ mod compat {
         base::{Message, MessageBuilder, iana::Rcode},
         net::server::{
             message::Request,
-            service::{CallResult, Service, ServiceResult},
+            service::{CallResult, Service, ServiceFeedback, ServiceResult},
         },
         new::{
             base::{name::Name, wire::ParseBytesZC},
@@ -384,12 +384,28 @@ mod compat {
                 Some(CallResult::new(response))
             });
 
+            // Enable transaction mode so that the connection handler will
+            // block if we try to enqueue more messages than the response
+            // buffer can hold, which can happen if the responses cannot be
+            // sent to the client fast enough, rather than abort with a queue
+            // full error.
+            if tx
+                .send(ServiceFeedback::BeginTransaction.into())
+                .await
+                .is_err()
+            {
+                // The channel has closed; stop.
+                return;
+            }
+
             for message in messages {
                 if tx.send(message).await.is_err() {
                     // The channel has closed; stop.
                     break;
                 }
             }
+
+            let _ = tx.send(ServiceFeedback::EndTransaction.into()).await;
         });
 
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
@@ -703,12 +719,28 @@ mod compat {
                 Some(CallResult::new(response))
             });
 
+            // Enable transaction mode so that the connection handler will
+            // block if we try to enqueue more messages than the response
+            // buffer can hold, which can happen if the responses cannot be
+            // sent to the client fast enough, rather than abort with a queue
+            // full error.
+            if tx
+                .send(ServiceFeedback::BeginTransaction.into())
+                .await
+                .is_err()
+            {
+                // The channel has closed; stop.
+                return;
+            }
+
             for message in messages {
                 if tx.send(message).await.is_err() {
                     // The channel has closed; stop.
                     break;
                 }
             }
+
+            let _ = tx.send(ServiceFeedback::EndTransaction.into()).await;
         });
 
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
