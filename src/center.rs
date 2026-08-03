@@ -17,6 +17,7 @@ use crate::config::RuntimeConfig;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::metrics::Metrics;
+use crate::persistence::zone::PersistenceState;
 use crate::persistence::{Compacter, Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::state::PolicySpec;
@@ -280,6 +281,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     LoadedReviewServer::remove_zone(center, &zone);
     SignedReviewServer::remove_zone(center, &zone);
     PublicationServer::remove_zone(center, &zone);
+    PersistenceState::clear(center, &zone);
 
     let mut zone_state = zone.state.write_cleanly();
 
