@@ -37,11 +37,14 @@ Released yyyy-mm-dd.
 
 - Improve memory use for unsigned data in incremental signing. ([#866] by
   @Philip-NLnetLabs)
+- Specify key roll strategies explicitly rather than using `dnst keyset`
+  defaults. ([#933] by @ximon18)
 
 ### Documentation improvements
 
 - RST markup fixes to systemd socket activation quick start notes. ([#858] by
   @ximon18)
+- Document key roll strategies used by Cascade. ([#933] by @ximon18)
 
 ### Known issues
 ### Acknowledgements
@@ -50,6 +53,7 @@ Released yyyy-mm-dd.
 [#858]: https://github.com/NLnetLabs/cascade/pull/858
 [#866]: https://github.com/NLnetLabs/cascade/pull/866
 [#913]: https://github.com/NLnetLabs/cascade/pull/913
+[#933]: https://github.com/NLnetLabs/cascade/pull/933
 [#934]: https://github.com/NLnetLabs/cascade/pull/934
 
 ## 0.1.0-beta5 'Got that holiday feeling'
