@@ -278,6 +278,8 @@ dependencies = [
  "serde",
  "tempfile",
  "toml",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
