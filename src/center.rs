@@ -281,7 +281,6 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     LoadedReviewServer::remove_zone(center, &zone);
     SignedReviewServer::remove_zone(center, &zone);
     PublicationServer::remove_zone(center, &zone);
-    PersistenceState::clear(center, &zone);
 
     let mut zone_state = zone.state.write_cleanly();
 
@@ -323,6 +322,8 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     zone_state.record_event(HistoricalEvent::Removed, None);
     std::mem::drop(zone_state);
     crate::zone::save_state_now(center, &zone);
+
+    PersistenceState::clear(center, &zone);
 
     // TODO: Remove the zone state file?
 
