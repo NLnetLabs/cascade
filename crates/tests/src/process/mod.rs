@@ -40,12 +40,16 @@ pub struct Daemon {
 
 impl Daemon {
     /// Launch the daemon.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn launch(mut builder: DaemonBuilder) -> Self {
+        tracing::trace!("Filesystem: {:?}", builder.filesystem);
+
         // Prepare the configuration file.
         let config = builder
             .config
             .take()
             .unwrap_or_else(|| builder.default_config());
+        tracing::trace!("Configuration: {config:?}");
         config.save_compact(&builder.filesystem.config).unwrap();
 
         let client = DaemonClient::for_sockets(&builder.sockets);
@@ -61,8 +65,8 @@ impl Daemon {
                 child_fd,
             })
             .collect::<Vec<_>>();
-        let process = Command::new("set_listen_pid")
-            .arg(&*builder.path)
+        let mut cmd = Command::new("set_listen_pid");
+        cmd.arg(&*builder.path)
             .arg("--config")
             .arg(&*builder.filesystem.config)
             .arg("--state")
@@ -70,9 +74,12 @@ impl Daemon {
             .env("LISTEN_FDS", fds.len().to_string())
             .fd_mappings(fds)
             .unwrap()
-            .current_dir(&*builder.filesystem.root)
-            .spawn()
-            .unwrap();
+            .current_dir(&*builder.filesystem.root);
+
+        tracing::debug!("Spawning Cascade");
+        tracing::trace!("Command: {cmd:?}");
+
+        let process = cmd.spawn().unwrap();
 
         Self {
             process,
@@ -87,7 +94,7 @@ impl Drop for Daemon {
     fn drop(&mut self) {
         // Stop the daemon.
         if let Ok(Some(status)) = self.process.try_wait() {
-            eprintln!("Daemon already exited: {status:?}");
+            tracing::error!("Daemon already exited: {status:?}");
         }
         // TODO: Use SIGTERM instead of SIGKILL?
         let _ = self.process.kill();
@@ -95,7 +102,7 @@ impl Drop for Daemon {
         if std::thread::panicking()
             && let Ok(text) = std::fs::read_to_string(&*self.filesystem.log)
         {
-            eprintln!("Daemon logs:\n{text}\n");
+            tracing::info!("Daemon logs:\n{text}\n");
         }
     }
 }
@@ -302,6 +309,8 @@ impl DaemonSockets {
                 let Ok(udp) = UdpSocket::bind(addr) else {
                     continue;
                 };
+
+                tracing::trace!(?udp, ?tcp, "Bound UDP+TCP sockets at {addr:?}");
 
                 return (udp, tcp);
             }

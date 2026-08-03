@@ -77,3 +77,8 @@ features = ["process"]
 workspace = true
 [dependencies.toml]
 workspace = true
+
+[dependencies.tracing]
+workspace = true
+[dependencies.tracing-subscriber]
+workspace = true

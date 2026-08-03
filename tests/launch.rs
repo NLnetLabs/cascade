@@ -4,9 +4,11 @@
 #![cfg(unix)]
 
 use cascade_tests::process;
+use tracing::info;
 
 #[test]
 fn launch() {
+    let _ = tracing_subscriber::fmt::try_init();
     let daemon = process::DaemonBuilder::new().build();
 
     // Set up a simple policy.
@@ -15,8 +17,8 @@ fn launch() {
     let policy = toml::to_string(&policy).unwrap();
     let path = daemon.filesystem.policies.join("simple.toml");
     std::fs::write(path, policy).unwrap();
-    println!("reload policies: {:?}", daemon.client.reload_policies());
+    info!("reload policies: {:?}", daemon.client.reload_policies());
 
-    println!("zone names: {:?}", daemon.client.zone_names());
-    println!("policy names: {:?}", daemon.client.policy_names());
+    info!("zone names: {:?}", daemon.client.zone_names());
+    info!("policy names: {:?}", daemon.client.policy_names());
 }
