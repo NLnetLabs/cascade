@@ -32,6 +32,8 @@ Released yyyy-mm-dd.
 
 - Improve DNS errors and add EDEs. In particular do not return NXDOMAIN for
   SOA queries when no zone data is available. ([#934])
+- Don't abort XFR transfers if the response buffer is full. ([#941] by
+  @ximon18)
 
 ### Other changes
 
@@ -55,6 +57,7 @@ Released yyyy-mm-dd.
 [#913]: https://github.com/NLnetLabs/cascade/pull/913
 [#933]: https://github.com/NLnetLabs/cascade/pull/933
 [#934]: https://github.com/NLnetLabs/cascade/pull/934
+[#941]: https://github.com/NLnetLabs/cascade/pull/941
 
 ## 0.1.0-beta5 'Got that holiday feeling'
 
