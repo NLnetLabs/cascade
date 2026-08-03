@@ -1487,12 +1487,11 @@ impl<'a> IncrementalSigningState<'a> {
             }
         }
 
-        if self.new_apex.contains_key(&NewRtype::SOA) {
-            // There was no change in the SOA. Try to get the SOA directly
-            // from the loaded zone.
-            self.new_apex
-                .insert(NewRtype::SOA, vec![curr_loaded.soa().clone().into()]);
-        }
+        // If there was no change in the SOA, then get the SOA directly
+        // from the loaded zone.
+        self.new_apex
+            .entry(NewRtype::SOA)
+            .or_insert_with(|| vec![curr_loaded.soa().clone().into()]);
 
         // Save a copy of the loaded new_apex to create a diff later.
         for (k, v) in &self.new_apex {
