@@ -278,6 +278,20 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     // The zone might not have made it to these places, but that's not an issue
     // so we just ignore any errors.
 
+    // Note: Persisted zone content files are removed first so that there
+    // is no risk of them being left behind if the process is terminated
+    // after the zone is removed from Cascade state as that would leave the
+    // persisted zone content files behind while it would appear that the
+    // zone had been fully removed. If Cascade is terminated after removal of
+    // persisted zone content files but before the zone had been fully removed
+    // from state Cascade will still know the zone but be unable to serve it,
+    // which would be no worse than operators intended effect of completely
+    // removing the zone, but with the benefit that the operator can see that
+    // zone removal didn't fully complete as expected and leaving them able to
+    // retry the zone removal at a later moment. An alternative could be to
+    // track 'mid-removal' of a zone so that we can detect an incomplete
+    // attempt to remove a zone.
+    PersistenceState::clear(center, &zone);
     LoadedReviewServer::remove_zone(center, &zone);
     SignedReviewServer::remove_zone(center, &zone);
     PublicationServer::remove_zone(center, &zone);
@@ -322,8 +336,6 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     zone_state.record_event(HistoricalEvent::Removed, None);
     std::mem::drop(zone_state);
     crate::zone::save_state_now(center, &zone);
-
-    PersistenceState::clear(center, &zone);
 
     // TODO: Remove the zone state file?
 
