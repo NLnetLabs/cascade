@@ -902,9 +902,19 @@ impl IxfrZoneDiffs {
         // necessary information to do so.
     }
 
-    pub fn store_signed_diff(&mut self, loaded_serial: Option<Serial>, diff: Arc<DiffData>) {
+    pub fn store_signed_diff(&mut self, mut loaded_serial: Option<Serial>, diff: Arc<DiffData>) {
         let from_serial = diff.removed_soa.as_ref().map(|s| s.rdata.serial).unwrap();
         let to_serial = diff.added_soa.as_ref().map(|s| s.rdata.serial).unwrap();
+
+        // Do we actually have a diff from the given removed loaded SOA
+        // serial? We won't have one if the loaded zone has never changed.
+        if let Some(serial) = loaded_serial
+            && !self.loaded_diffs.contains_key(&serial.get())
+        {
+            // Don't store a reference to a loaded diff that we don't have.
+            loaded_serial = None;
+        }
+
         let related_diff = RelatedSignedDiff::new(diff, loaded_serial);
         let old = self.signed_diffs.insert(from_serial.into(), related_diff);
         log_stored_diff("signed", old.is_some(), from_serial, to_serial);
