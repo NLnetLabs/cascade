@@ -125,7 +125,7 @@ async fn refresh(
 
     // Perform the source-specific reload into the zone contents.
     let result = match source {
-        Source::None => Ok(false),
+        Source::None => Ok(()),
         Source::Zonefile { path } => {
             // Zonefile loading is a synchronous process, so it is executing on
             // its own blocking task. It cannot borrow 'builder', so 'builder'
@@ -139,13 +139,12 @@ async fn refresh(
             })
             .await
             .unwrap();
-            result.map(|()| true).map_err(Into::into)
+            result.map_err(Into::into)
         }
         Source::Server { addr, tsig_key } if force => {
             let tsig_key = tsig_key.as_deref().cloned();
             server::axfr(&zone, &addr, tsig_key, &mut builder, &metrics)
                 .await
-                .map(|()| true)
                 .map_err(Into::into)
         }
         Source::Server { addr, tsig_key } => {
@@ -186,11 +185,7 @@ async fn refresh(
     // (re)loaded by user request.
     if matches!(handle.state.loader.source, Source::Server { .. }) {
         // Load the SOA.
-        let soa = if matches!(result, Ok(true)) {
-            Some(builder.next().unwrap().soa().clone())
-        } else {
-            builder.curr().map(|r| r.soa().clone())
-        };
+        let soa = builder.next().or(builder.curr()).map(|r| r.soa().clone());
 
         let refresh_timer = &mut handle.state.loader.refresh_timer;
         let refresh_monitor = &center.loader.refresh_scheduler;
@@ -216,8 +211,9 @@ async fn refresh(
     );
 
     // Process the result of the reload.
+    let built = builder.diff().is_some_and(|d| !d.is_empty());
     match result {
-        Ok(false) => {
+        Ok(()) if !built => {
             debug!(
                 zone = %zone.name,
                 "The zone is up-to-date"
@@ -227,7 +223,7 @@ async fn refresh(
             handle.get().abandon_load(builder);
         }
 
-        Ok(true) => {
+        Ok(()) => {
             zone.metrics.last_successful_load_duration(duration);
 
             let soa = builder.next().unwrap().soa();
