@@ -24,7 +24,7 @@ use crate::{
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{HistoricalEvent, Zone, ZoneByName, ZoneByPtr},
+    zone::{Zone, ZoneByName, ZoneByPtr},
     zonedata::LoadedZoneBuilder,
 };
 
@@ -162,17 +162,23 @@ async fn refresh(
 
     // Finalize the load metrics.
     let start_time = metrics.start.0;
+    debug_assert!(
+        handle
+            .state
+            .loader
+            .active_load_metrics
+            .as_ref()
+            .is_some_and(|x| Arc::ptr_eq(x, &metrics)),
+        "the active load metrics were set when starting the load"
+    );
     handle.state.loader.active_load_metrics = None;
-    handle.state.loader.last_load_metrics = Some(metrics.finish());
-
-    {
-        let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
-        // Copy generated loader metrics to prometheus metrics
-        zone.metrics
-            .zone_loaded_last_bytes(loader_metrics.num_loaded_bytes as i64);
-        zone.metrics
-            .zone_loaded_last_records(loader_metrics.num_loaded_records as i64);
-    }
+    let metrics = metrics.finish();
+    // Copy generated loader metrics to prometheus metrics
+    zone.metrics
+        .zone_loaded_last_bytes(metrics.num_loaded_bytes as i64);
+    zone.metrics
+        .zone_loaded_last_records(metrics.num_loaded_records as i64);
+    handle.state.loader.last_load_metrics = Some(metrics);
 
     // Update the SOA refresh timer state.
     //
