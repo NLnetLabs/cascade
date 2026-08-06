@@ -496,10 +496,12 @@ pub enum Progress {
     Loading,
     LoadedReview,
     HaltLoaded,
+    PersistingLoaded,
     Signing,
     SigningFailed,
     SignedReview,
     HaltSigned,
+    PersistingSigned,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

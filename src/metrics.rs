@@ -149,12 +149,14 @@ impl Metrics {
 
                         ZoneStateMachine::LoadedReview(_)
                         | ZoneStateMachine::HaltLoaded(_)
+                        | ZoneStateMachine::PersistingLoaded(_)
                         | ZoneStateMachine::Signing(_) => {
                             zones_unsigned += 1;
                         }
 
                         ZoneStateMachine::SigningFailed(_)
                         | ZoneStateMachine::SignedReview(_)
+                        | ZoneStateMachine::PersistingSigned(_)
                         | ZoneStateMachine::HaltSigned(_) => {
                             zones_signed += 1;
                             zones_unsigned += 1;
