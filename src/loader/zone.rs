@@ -112,8 +112,9 @@ impl LoaderZoneHandle<'_> {
     /// Start a pending enqueued refresh.
     ///
     /// This should be called when the zone data storage is in the passive
-    /// state. If a load has been enqueued, it will be initiated (making the
-    /// data storage busy), and `true` will be returned.
+    /// state and the zone is not in maintenance mode. If a load has been
+    /// enqueued, it will be initiated (making the data storage busy), and
+    /// `true` will be returned.
     ///
     /// ## Panics
     ///

@@ -261,8 +261,9 @@ impl SignerZoneHandle<'_> {
     /// Start a pending enqueued re-sign.
     ///
     /// This should be called when the zone state machine is in the waiting
-    /// state. If a re-sign has been enqueued, it will be initiated (making the
-    /// data storage busy), and `true` will be returned.
+    /// state and the zone is not in maintenance mode. If a re-sign has been
+    /// enqueued, it will be initiated (making the data storage busy), and
+    /// `true` will be returned.
     ///
     /// This method cannot initiate enqueued new-signing operations (see
     /// [`Self::enqueue_new_sign()`]); when a new-signing operation is enqueued,

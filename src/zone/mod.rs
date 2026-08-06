@@ -425,6 +425,14 @@ impl ZoneState {
             .find(|item| item.event.is_of_type(typ) && (serial.is_none() || item.serial == serial))
     }
 
+    /// Whether the zone state is ready to start a new loading or signing operation
+    ///
+    /// This checks the maintenance mode and the zone state machine.
+    pub fn ready_for_operation(&self) -> bool {
+        // TODO: distinguish between a manual load/sign and an automatic one.
+        !self.maintenance_mode && matches!(&self.machine, ZoneStateMachine::Waiting(_))
+    }
+
     /// Get the most recent signed metadata for the zone.
     ///
     /// During restore the metadata for the currently published instance is
