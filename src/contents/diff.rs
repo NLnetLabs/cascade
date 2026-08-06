@@ -5,6 +5,10 @@ use std::iter::FusedIterator;
 use domain::new::base::{RClass, RType, name::RevName};
 
 use cascade_zonedata::{RegularRecord, SoaRecord, is_signing};
+use rayon::{
+    iter::{IntoParallelRefIterator, ParallelIterator},
+    slice::ParallelSlice,
+};
 
 //----------- InstanceDiff -----------------------------------------------------
 
@@ -42,6 +46,81 @@ pub struct InstanceDiff {
     /// **also** include the added SOA record. They are sorted in DNSSEC
     /// canonical order.
     pub added_records: Vec<RegularRecord>,
+}
+
+impl InstanceDiff {
+    /// Check invariants.
+    pub fn check_invariants(&self, origin: &RevName) {
+        for (prefix, soa, records) in [
+            ("removed_", &self.removed_soa, &self.removed_records),
+            ("added_", &self.added_soa, &self.added_records),
+        ] {
+            if let Some(soa) = soa {
+                assert_eq!(*soa.rname, *origin);
+                assert_eq!(soa.rtype, RType::SOA);
+                assert_eq!(soa.rclass, RClass::IN);
+            }
+
+            assert_eq!(
+                records
+                    .par_iter()
+                    .filter(|&r| r.rtype == RType::SOA && *r.rname == *origin)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                soa.iter()
+                    .map(|r| RegularRecord::from((**r).clone()))
+                    .collect::<Vec<_>>(),
+                "`self.{prefix}records` must contain `self.{prefix}soa` and no other apex SOA records"
+            );
+
+            self.removed_records.par_iter().for_each(|r| {
+                assert!(
+                    r.rname.as_bytes().starts_with(origin.as_bytes()),
+                    "{r:?} falls outside the zone origin {origin:?}"
+                );
+                assert_eq!(r.rclass, RClass::IN);
+            });
+
+            assert_eq!(
+                records.par_array_windows::<2>().find_any(|&[a, b]| a > b),
+                None,
+                "`self.{prefix}records` must be sorted"
+            );
+
+            assert_eq!(
+                records.par_array_windows::<2>().find_any(|&[a, b]| a == b),
+                None,
+                "`self.{prefix}records` must not contain duplicates"
+            );
+
+            assert_eq!(
+                records
+                    .par_array_windows::<2>()
+                    .find_any(|&[a, b]| (&a.rname, a.rtype) == (&b.rname, b.rtype)
+                        && a.rtype != RType::RRSIG
+                        && a.ttl != b.ttl),
+                None,
+                "Non-RRSIG RRsets in `self.{prefix}records` must have consistent TTLs",
+            );
+        }
+
+        let removed = self
+            .removed_records
+            .par_iter()
+            .collect::<hashbrown::HashSet<_>>();
+        let added = self
+            .added_records
+            .par_iter()
+            .collect::<hashbrown::HashSet<_>>();
+        assert_eq!(
+            removed
+                .par_intersection(&added)
+                .copied()
+                .collect::<Vec<_>>(),
+            &[] as &[&RegularRecord],
+            "`self.removed_records` and `self.added_records` must be disjoint"
+        );
+    }
 }
 
 impl InstanceDiff {
