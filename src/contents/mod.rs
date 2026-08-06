@@ -8,3 +8,6 @@ pub use diff::InstanceDiff;
 
 mod reader;
 pub use reader::{LoadedZoneReader, SignedZoneReader};
+
+mod apply;
+pub use apply::Inconsistency;
