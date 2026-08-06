@@ -2,6 +2,7 @@ use tracing::{info, trace};
 
 use crate::{
     api::ZoneReviewStatus,
+    loader::RefreshError,
     server::PublicationServer,
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, ZoneHandle},
@@ -178,6 +179,7 @@ impl<'a> ZoneHandle<'a> {
 
 /// # Loading operations
 impl<'a> ZoneHandle<'a> {
+    /// Abandon a load operation (but not due to failure).
     pub(crate) fn abandon_load(&mut self, builder: LoadedZoneBuilder) {
         let (transition, state) = self.state.machine.transition();
 
@@ -191,6 +193,28 @@ impl<'a> ZoneHandle<'a> {
 
         // Abandon the entire upcoming instance.
         self.state.instances.abandon();
+    }
+
+    pub(crate) fn loading_failed(&mut self, builder: LoadedZoneBuilder, err: RefreshError) {
+        let (transition, state) = self.state.machine.transition();
+
+        let ZoneStateMachine::Loading(loaded) = state else {
+            panic!("cannot abandon load in this state");
+        };
+
+        transition.move_to(ZoneStateMachine::Waiting(loaded.abandon_load()));
+
+        self.storage().abandon_load(builder);
+
+        // Abandon the entire upcoming instance.
+        self.state.instances.abandon();
+
+        self.state.record_event(
+            HistoricalEvent::LoadingFailed {
+                reason: err.to_string(),
+            },
+            None,
+        );
     }
 
     pub(crate) fn finish_load(&mut self, built: LoadedZoneBuilt) {

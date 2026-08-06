@@ -255,14 +255,7 @@ async fn refresh(
             );
 
             // Cancel the load
-            handle.get().abandon_load(builder);
-
-            handle.state.record_event(
-                HistoricalEvent::LoadingFailed {
-                    reason: err.to_string(),
-                },
-                None,
-            );
+            handle.get().loading_failed(builder, err);
         }
     }
 }
