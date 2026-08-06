@@ -20,6 +20,10 @@ txt.modify		TXT	"Original zone"
 ; Test whether just changing the TTL gets signed properly.
 ttl.modify	3600	TXT	"Only the TTL changes"
 
+; Modify an RRset with two records
+txt2.modify		TXT	"before first"
+			TXT	"before second"
+
 ; A delegation to be able to create RRsets that are not authoritative in this
 ; zone. Set TTL explictly to deal with ttl.modify having a different TTL.
 not-auth	3600	NS	ns
@@ -30,6 +34,10 @@ dname.modify.not-auth	DNAME	dname-target
 a.modify.not-auth	A	192.0.2.0
 aaaa.modify.not-auth	AAAA	2001:db8::
 txt.modify.not-auth	TXT	"Original zone"
+
+; A collection of records that will not be modified.
+txt.unchanged		TXT	"first"
+			TXT	"second"
 
 ; A delegation that obtains a DS RRset.
 delegation1		NS	ns
@@ -43,6 +51,8 @@ txt.nt2ent		TXT	"NT to become ENT"
 nt2ent			TXT	"to be removed to become ENT"
 txt.nt2ent.not-auth	TXT	"NT to become ENT"
 nt2ent.not-auth		TXT	"to be removed to become ENT"
+
+; Add an RRset with two records
 
 ; Add just an NS record
 

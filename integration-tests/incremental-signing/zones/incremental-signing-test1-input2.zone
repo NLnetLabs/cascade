@@ -19,6 +19,10 @@ txt.modify              TXT     "Modified zone"
 ; Test whether just changing the TTL gets signed properly.
 ttl.modify	600	TXT	"Only the TTL changes"
 
+; Modify an RRset with two records
+txt2.modify		TXT	"after first"
+			TXT	"after second"
+
 ; A delegation to be able to create RRsets that are not authoritative in this
 ; zone. Set TTL explictly to deal with ttl.modify having a different TTL.
 not-auth	3600	NS	ns
@@ -29,6 +33,10 @@ dname.modify.not-auth   DNAME   dname-target2
 a.modify.not-auth       A       192.0.2.1
 aaaa.modify.not-auth    AAAA    2001:db8::1
 txt.modify.not-auth     TXT     "Modified zone"
+
+; A collection of records that will not be modified.
+txt.unchanged		TXT	"first"
+			TXT	"second"
 
 ; Add a new record at APEX.
 @			TXT	"New apex record"
@@ -48,6 +56,10 @@ txt.ent2nt.not-auth	TXT	"ENT to become NT"
 ; Extisting NTs to be converted to ENTs.
 txt.nt2ent		TXT	"NT to become ENT"
 txt.nt2ent.not-auth	TXT	"NT to become ENT"
+
+; Add an RRset with two records
+txt.new-ent		TXT	"first"
+			TXT	"second"
 
 ; Add just an NS record
 ns.new-ent		NS	ns1
