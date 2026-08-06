@@ -77,6 +77,9 @@ Commands
 
    Get the status of a single zone.
 
+   Also reports any issues that occured with recent operations on the zone
+   and whether the zone is being restored from disk.
+
 .. subcmd:: reset
 
    Reset the pipeline for a zone to get it out of a halted state.
@@ -135,28 +138,31 @@ Options for :subcmd:`zone add`
 
    Import a key pair as a KSK.
 
-   The file path needs to be the public key file of the KSK. The private key
-   file name is derived from the public key file. Key files are not
-   actually copied from the specified paths and must remain accessible
-   to the server.
+   The file path needs to either be a public key file of the KSK with
+   extension .key, or a private key file of the KSK with extension .private.
+   The path to the other half of the key will be derived by replacing .key
+   with .private or vice versa. Key files are not actually copied from the
+   specified paths and must remain accessible to the server.
 
 .. option:: --import-zsk-file <IMPORT_ZSK_FILE>
 
    Import a key pair as a ZSK.
 
-   The file path needs to be the public key file of the ZSK. The private key
-   file name is derived from the public key file. Key files are not
-   actually copied from the specified paths and must remain accessible
-   to the server.
+   The file path needs to either be a public key file of the ZSK with
+   extension .key, or a private key file of the ZSK with extension .private.
+   The path to the other half of the key will be derived by replacing .key
+   with .private or vice versa. Key files are not actually copied from the
+   specified paths and must remain accessible to the server.
 
 .. option:: --import-csk-file <IMPORT_CSK_FILE>
 
    Import a key pair as a CSK.
 
-   The file path needs to be the public key file of the CSK. The private key
-   file name is derived from the public key file. Key files are not
-   actually copied from the specified paths and must remain accessible
-   to the server.
+   The file path needs to either be a public key file of the CSK with
+   extension .key, or a private key file of the CSK with extension .private.
+   The path to the other half of the key will be derived by replacing .key
+   with .private or vice versa. Key files are not actually copied from the
+   specified paths and must remain accessible to the server.
 
 .. option:: --import-ksk-kmip <server> <public_id> <private_id> <algorithm> <flags>
 

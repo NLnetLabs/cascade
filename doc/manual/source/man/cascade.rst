@@ -16,7 +16,8 @@ Global Options
 
 .. option:: -s, --server <IP:PORT>
 
-   The cascade server instance to connect to [default: 127.0.0.1:4539].
+   The Cascade server instance to connect to. This option takes priority
+   over the ``CASCADE_DAEMON`` environment variable. [default: 127.0.0.1:4539]
 
 .. option:: --log-level <LEVEL>
 
@@ -29,8 +30,14 @@ Global Options
 
 .. option:: -V, --version
 
-   Print version.
+   Print client version.
 
+Environment Variables
+---------------------
+
+.. envvar:: CASCADE_DAEMON
+
+   The Cascade server instance to connect to.
 
 Commands
 --------
@@ -71,6 +78,10 @@ Commands
 
           Print example config or policy files.
 
+        :doc:`cascade-info <cascade-info>`\ (1)
+
+          Show daemon information.
+
 .. only:: man or text
 
     **cascade-health**\ (1)
@@ -96,6 +107,9 @@ Commands
 
     **cascade-template**\ (1)
         Print example config or policy files.
+
+    **cascade-info**\ (1)
+        Show daemon information.
 
 See Also
 --------

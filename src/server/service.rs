@@ -2,9 +2,6 @@
 
 use std::sync::{Arc, RwLock};
 
-use cascade_zonedata::{
-    LoadedZoneReviewer, RegularRecord, SignedZoneReviewer, SoaRecord, ZoneViewer,
-};
 use domain::{
     new::base::{
         name::{RevName, RevNameBuf},
@@ -13,7 +10,10 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 
-use crate::zone::Zone;
+use crate::{
+    zone::Zone,
+    zonedata::{LoadedZoneReviewer, RegularRecord, SignedZoneReviewer, SoaRecord, ZoneViewer},
+};
 
 //----------- ZoneService ------------------------------------------------------
 
@@ -84,12 +84,13 @@ impl<V> Clone for ZoneService<V> {
 mod compat {
     use std::{pin::Pin, sync::Arc};
 
-    use cascade_zonedata::{DiffData, OldRecord};
+    use domain::base::iana::ExtendedErrorCode;
+    use domain::base::opt::ExtendedError;
     use domain::{
         base::{Message, MessageBuilder, iana::Rcode},
         net::server::{
             message::Request,
-            service::{CallResult, Service, ServiceResult},
+            service::{CallResult, Service, ServiceFeedback, ServiceResult},
         },
         new::{
             base::{name::Name, wire::ParseBytesZC},
@@ -98,11 +99,15 @@ mod compat {
         tsig,
     };
     use futures::Stream;
+    use futures_util as futures;
     use tracing::{Level, debug, trace, warn};
 
-    use crate::server::{
-        request::{RequestKind, ZoneRequestKind},
-        service::ServiceMode,
+    use crate::{
+        server::{
+            request::{RequestKind, ZoneRequestKind},
+            service::ServiceMode,
+        },
+        zonedata::{DiffData, OldRecord},
     };
 
     use super::{ServedZone, Viewer, ZoneService};
@@ -127,6 +132,7 @@ mod compat {
                     return Box::pin(std::future::ready(error(
                         old_request.message(),
                         Rcode::FORMERR,
+                        None,
                     )));
                 }
             };
@@ -139,18 +145,30 @@ mod compat {
                     let Some(zone) = state.zones.get(&*zone_request.name) else {
                         // No such zone could be found.
                         let rcode = match zone_request.kind {
-                            // Return NXDOMAIN for normal queries.
-                            ZoneRequestKind::Soa => Rcode::NXDOMAIN,
+                            // Return REFUSED for normal queries.
+                            ZoneRequestKind::Soa => Rcode::REFUSED,
                             // Return NOTAUTH for zone transfers.
                             ZoneRequestKind::Axfr | ZoneRequestKind::Ixfr { .. } => Rcode::NOTAUTH,
                         };
-                        return Box::pin(std::future::ready(error(old_request.message(), rcode)));
+                        let opt_ede = Some(
+                            ExtendedError::<Vec<u8>>::new_with_str(
+                                ExtendedErrorCode::NOT_AUTHORITATIVE,
+                                "zone not configured",
+                            )
+                            .expect("should fit"),
+                        );
+                        return Box::pin(std::future::ready(error(
+                            old_request.message(),
+                            rcode,
+                            opt_ede,
+                        )));
                     };
 
                     if self.mode == ServiceMode::Publication && !is_permitted(zone, &old_request) {
                         return Box::pin(std::future::ready(error(
                             old_request.message(),
                             Rcode::REFUSED,
+                            None,
                         )));
                     }
 
@@ -253,10 +271,20 @@ mod compat {
     /// Note: Also used by [`axfr()`] and [`ixfr()`] as well as in response to
     /// a direct SOA query.
     ///
-    /// Returns an NXDOMAIN response if we have the zone but no data for it.
+    /// Returns a SERVFAIL response if we have the zone but no data for it.
     fn soa<V: Viewer>(request: &Message<Vec<u8>>, viewer: &V) -> ResponseStream {
         if viewer.is_empty() {
-            return error(request, Rcode::NXDOMAIN);
+            return error(
+                request,
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
         let soa = viewer.soa().clone();
 
@@ -277,7 +305,7 @@ mod compat {
     ) -> ResponseStream {
         // Refuse AXFR requests over UDP.
         if request.transport_ctx().is_udp() {
-            return error(request.message(), Rcode::NOTIMP);
+            return error(request.message(), Rcode::NOTIMP, None);
         }
 
         // Obtain a read lock to read the zone for an extended duration.
@@ -290,7 +318,17 @@ mod compat {
                 request.client_addr().ip(),
                 zone.handle.name,
             );
-            return error(request.message(), Rcode::SERVFAIL);
+            return error(
+                request.message(),
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
 
         // NOTE: The following code is a bit tricky. Ideally, we would elide
@@ -346,12 +384,28 @@ mod compat {
                 Some(CallResult::new(response))
             });
 
+            // Enable transaction mode so that the connection handler will
+            // block if we try to enqueue more messages than the response
+            // buffer can hold, which can happen if the responses cannot be
+            // sent to the client fast enough, rather than abort with a queue
+            // full error.
+            if tx
+                .send(ServiceFeedback::BeginTransaction.into())
+                .await
+                .is_err()
+            {
+                // The channel has closed; stop.
+                return;
+            }
+
             for message in messages {
                 if tx.send(message).await.is_err() {
                     // The channel has closed; stop.
                     break;
                 }
             }
+
+            let _ = tx.send(ServiceFeedback::EndTransaction.into()).await;
         });
 
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
@@ -383,7 +437,17 @@ mod compat {
                 request.client_addr().ip(),
                 zone.handle.name,
             );
-            return error(request.message(), Rcode::SERVFAIL);
+            return error(
+                request.message(),
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
 
         // UDP is unlikely to work for any but the smallest of diffs,
@@ -406,13 +470,6 @@ mod compat {
         // Remember the latest SOA.
         let new_soa = viewer.soa().clone();
 
-        // https://datatracker.ietf.org/doc/html/rfc1995#section-4
-        // 4. Response Format
-        //    "If incremental zone transfer is not available, the entire zone
-        //     is returned.  The first and the last RR of the response is the
-        //     SOA record of the zone. I.e. the behavior is the same as an
-        //     AXFR response except the query type is IXFR."
-
         // https://datatracker.ietf.org/doc/html/rfc1995#section-2
         // 2. Brief Description of the Protocol
         //   "If an IXFR query with the same or newer version number than that
@@ -430,22 +487,22 @@ mod compat {
 
             match mode {
                 ServiceMode::LoadedReview => {
-                    let mut diffs = Vec::with_capacity(1);
                     if let Some(loaded_diff) = zone_state.storage.current_loaded_diff() {
-                        let empty_signed_diff = Arc::new(DiffData::new());
-                        diffs.push((loaded_diff, empty_signed_diff));
+                        vec![(loaded_diff, DiffData::new().into())]
+                    } else {
+                        vec![]
                     }
-                    diffs
                 }
                 ServiceMode::SignedReview => {
-                    let mut diffs = Vec::with_capacity(1);
-                    if let Some(signed_diff) = zone_state.storage.current_signed_diff() {
-                        let empty_loaded_diff = Arc::new(DiffData::new());
-                        diffs.push((empty_loaded_diff, signed_diff));
+                    match (
+                        zone_state.storage.current_loaded_diff(),
+                        zone_state.storage.current_signed_diff(),
+                    ) {
+                        (Some(loaded_diff), Some(signed_diff)) => vec![(loaded_diff, signed_diff)],
+                        _ => vec![],
                     }
-                    diffs
                 }
-                ServiceMode::Publication => zone_state.storage.diffs.clone(),
+                ServiceMode::Publication => zone_state.storage.diffs.get(client_soa.serial),
             }
         };
 
@@ -463,60 +520,53 @@ mod compat {
         // messages.
 
         if tracing::enabled!(Level::DEBUG) {
-            debug!("IXFR out: client serial: {}", client_soa.serial);
+            let zone_state = zone.handle.read();
             debug!(
-                "IXFR out: {} diffs available for zone {}:",
-                diffs.len(),
+                "IXFR out: client has serial {} for zone {}, server has {}",
+                client_soa.serial, zone.handle.name, our_soa_serial,
+            );
+            debug!(
+                "IXFR out: server has {} loaded diffs and {} signed diffs for zone {}",
+                zone_state.storage.diffs.num_loaded_diffs(),
+                zone_state.storage.diffs.num_signed_diffs(),
                 zone.handle.name
             );
-            for (i, (loaded_diff, signed_diff)) in diffs.iter().enumerate() {
-                debug!(
-                    "IXFR out: Diff #{i}: loaded serial -{:?}+{:?} => signed serial -{:?}+{:?}, loaded -{}+{}, signed -{}+{}",
-                    loaded_diff
-                        .removed_soa
-                        .as_ref()
-                        .map(|soa_rr| soa_rr.0.rdata.serial),
-                    loaded_diff
-                        .added_soa
-                        .as_ref()
-                        .map(|soa_rr| soa_rr.0.rdata.serial),
-                    signed_diff
-                        .removed_soa
-                        .as_ref()
-                        .map(|soa_rr| soa_rr.0.rdata.serial),
-                    signed_diff
-                        .added_soa
-                        .as_ref()
-                        .map(|soa_rr| soa_rr.0.rdata.serial),
-                    loaded_diff.removed_records.len(),
-                    loaded_diff.added_records.len(),
-                    signed_diff.removed_records.len(),
-                    signed_diff.added_records.len(),
+            trace!("IXFR diffs available:\n{}", zone_state.storage.diffs);
+            trace!("IXFR diffs selected:");
+            for (i, (loaded, signed)) in diffs.iter().enumerate() {
+                trace!(
+                    "Selected: #{i}: loaded diff: -{:?}+{:?} (-{}+{} records), signed diff: -{:?}+{:?} (-{}+{} records)",
+                    loaded.removed_soa.as_ref().map(|s| s.rdata.serial),
+                    loaded.added_soa.as_ref().map(|s| s.rdata.serial),
+                    loaded.removed_records.len(),
+                    loaded.added_records.len(),
+                    signed.removed_soa.as_ref().map(|s| s.rdata.serial),
+                    signed.added_soa.as_ref().map(|s| s.rdata.serial),
+                    signed.removed_records.len(),
+                    signed.added_records.len(),
                 );
             }
         }
 
-        // Find the diff, if we have it, that removes the SOA serial number
-        // that the client currently has. That will be the start of the diff
-        // that we need to serve. The SOA serial has to match the one seen
-        // by the client, i.e. we need to know if the client requested the
-        // IXFR from a loaded review server and thus the client SOA serial
-        // should be matched against a loaded SOA serial, or if the client
-        // requested the IXFR from a signed review or publication server in
-        // which case the client SOA serial should be matched against a signed
-        // SOA serial.
-        let start_idx = {
-            diffs.iter().position(|(loaded_diff, signed_diff)| {
-                let d = if mode == ServiceMode::LoadedReview {
-                    loaded_diff
-                } else {
-                    signed_diff
-                };
-                d.removed_soa.as_ref().map(|rr| rr.0.rdata.serial) == Some(client_soa.serial)
-            })
-        };
-
-        let Some(start_idx) = start_idx else {
+        // https://datatracker.ietf.org/doc/html/rfc1995#section-4
+        // 4. Response Format
+        //    "If incremental zone transfer is not available, the entire zone
+        //     is returned.  The first and the last RR of the response is the
+        //     SOA record of the zone. I.e. the behavior is the same as an
+        //     AXFR response except the query type is IXFR."
+        if diffs.is_empty() ||
+            // The starting diff SOA serial must match that of the client
+            diffs
+                .first()
+                .unwrap()
+                .1
+                .removed_soa
+                .as_ref()
+                .map(|s| &s.rdata.serial)
+                != Some(&client_soa.serial)
+            // The ending diff SOA serial must match that of the zone
+            || diffs.last().unwrap().1.added_soa.as_ref().map(|s| s.rdata.serial) != Some(viewer.soa().rdata.serial)
+        {
             debug!(
                 "Falling back from IXFR to AXFR because no diff is available for zone '{}' from serial {}",
                 zone.handle.name, client_soa.serial,
@@ -557,9 +607,7 @@ mod compat {
             let mut last_removed_soa = None;
             let mut last_added_soa = None;
 
-            for (i, (loaded_diff, signed_diff)) in diffs[start_idx..].iter().enumerate() {
-                let abs_idx = start_idx + i;
-
+            for (i, (loaded_diff, signed_diff)) in diffs.iter().enumerate() {
                 // Select the appropriate diff as the SOA source to use.
                 let soa_source_diff = if mode == ServiceMode::LoadedReview {
                     loaded_diff
@@ -593,7 +641,7 @@ mod compat {
                     && let Some(last_removed_soa) = last_removed_soa
                     && removed_soa == last_removed_soa
                 {
-                    trace!("Skipping unchanged loaded diff #{abs_idx}.");
+                    trace!("Skipping unchanged loaded diff #{i}.");
                     continue;
                 }
 
@@ -605,77 +653,35 @@ mod compat {
                 }
 
                 if tracing::enabled!(Level::TRACE) {
-                    trace_diff_pair(abs_idx, loaded_diff, signed_diff);
+                    trace_diff_pair(i, loaded_diff, signed_diff);
                 }
 
-                trace!("Serving diff #{abs_idx} for loaded review server IXFR out",);
+                let origin = &*removed_soa.rname;
 
                 if mode == ServiceMode::LoadedReview {
+                    trace!("Serving diff #{i} for loaded review server IXFR out");
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    rrs.extend(
-                        soa_source_diff
-                            .removed_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
+                    rrs.extend(loaded_diff.removed_non_soa(origin).cloned());
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    rrs.extend(
-                        soa_source_diff
-                            .added_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
+                    rrs.extend(loaded_diff.added_non_soa(origin).cloned());
                 } else {
+                    if mode == ServiceMode::SignedReview {
+                        trace!("Serving diff #{i} for signed review server IXFR out");
+                    } else {
+                        trace!("Serving diff #{i} for publication server IXFR out");
+                    }
                     // Remove old records.
                     rrs.push(removed_soa.clone().into());
-                    rrs.extend(
-                        loaded_diff
-                            .removed_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
-                    rrs.extend(
-                        soa_source_diff
-                            .removed_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
+                    rrs.extend(loaded_diff.unsigned_removed_non_soa(origin).cloned());
+                    rrs.extend(signed_diff.removed_non_soa(origin).cloned());
 
                     // Add new records.
                     rrs.push(added_soa.clone().into());
-                    rrs.extend(
-                        loaded_diff
-                            .added_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
-                    rrs.extend(
-                        soa_source_diff
-                            .added_records
-                            .iter()
-                            .filter(|&r| {
-                                r.rname != removed_soa.rname || r.rtype != removed_soa.rtype
-                            })
-                            .cloned(),
-                    );
+                    rrs.extend(loaded_diff.unsigned_added_non_soa(origin).cloned());
+                    rrs.extend(signed_diff.added_non_soa(origin).cloned());
                 }
 
                 last_removed_soa = Some(removed_soa);
@@ -713,12 +719,28 @@ mod compat {
                 Some(CallResult::new(response))
             });
 
+            // Enable transaction mode so that the connection handler will
+            // block if we try to enqueue more messages than the response
+            // buffer can hold, which can happen if the responses cannot be
+            // sent to the client fast enough, rather than abort with a queue
+            // full error.
+            if tx
+                .send(ServiceFeedback::BeginTransaction.into())
+                .await
+                .is_err()
+            {
+                // The channel has closed; stop.
+                return;
+            }
+
             for message in messages {
                 if tx.send(message).await.is_err() {
                     // The channel has closed; stop.
                     break;
                 }
             }
+
+            let _ = tx.send(ServiceFeedback::EndTransaction.into()).await;
         });
 
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
@@ -729,8 +751,7 @@ mod compat {
     fn trace_diff_pair(diff_idx: usize, loaded_diff: &Arc<DiffData>, signed_diff: &Arc<DiffData>) {
         fn trace_diff(prefix: &str, diff_idx: usize, d: &Arc<DiffData>) {
             trace!(
-                "{prefix} diff #{}: {:?}->{:?}: {:?}->{:?}",
-                diff_idx,
+                "{prefix} diff #{diff_idx}: {:?}->{:?}: {:?}->{:?}",
                 d.removed_soa.as_ref().map(|s| s.rdata.serial),
                 d.added_soa.as_ref().map(|s| s.rdata.serial),
                 d.removed_records
@@ -750,10 +771,19 @@ mod compat {
         trace_diff("Signed", diff_idx, signed_diff);
     }
 
-    fn error(request: &Message<Vec<u8>>, rcode: Rcode) -> ResponseStream {
-        let response = MessageBuilder::new_stream_vec()
+    fn error(
+        request: &Message<Vec<u8>>,
+        rcode: Rcode,
+        opt_ede: Option<ExtendedError<Vec<u8>>>,
+    ) -> ResponseStream {
+        let mut response = MessageBuilder::new_stream_vec()
             .start_error(request, rcode)
             .additional();
+        if let Some(ede) = opt_ede
+            && let Err(err) = response.opt(|opt_builder| opt_builder.push(&ede))
+        {
+            return Box::new(futures::stream::once(std::future::ready(Err(err.into())))) as _;
+        }
         let result = Ok(CallResult::new(response));
         Box::new(futures::stream::once(std::future::ready(result))) as _
     }
@@ -899,6 +929,16 @@ impl<V> ZoneServiceHandle<V> {
             "distinct 'Arc<Zone>'s had the same name"
         );
         let _ = viewer;
+    }
+
+    /// Get a viewer for a zone.
+    ///
+    /// If Cascade is still starting up there may not be a viewer for the zone
+    /// yet.
+    pub fn viewer(&self, zone: &Arc<Zone>) -> Option<Arc<tokio::sync::RwLock<V>>> {
+        let state = self.state.read().unwrap();
+        let name = RevNameBuf::parse_bytes(zone.name.as_slice()).unwrap();
+        state.zones.get(&*name).map(|z| z.viewer.clone())
     }
 }
 

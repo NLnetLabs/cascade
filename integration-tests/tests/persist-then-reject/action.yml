@@ -1,0 +1,202 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Restore after discard of the loaded zone should still work.'
+description: 'Restore after discard of the loaded zone should still work.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    # In https://github.com/NLnetLabs/cascade/issues/825 we discovered that
+    # rejecting the signed zone leaves the persisted loaded zone behind even
+    # though Cascade internally deletes the in-memory loaded zone. When a
+    # loaded zone is again approved a second loaded zone snapshot will be
+    # persisted which will cause restore on restart to fail as it expects to
+    # find a snapshot + diffs, not a snapshot + snapshot. The failed restore
+    # then means that the zone is no longer served from the publication
+    # server. This test exercises that flow and verifies that the problem no
+    # longer exists.
+    - uses: ./.github/actions/prepare-systest-env
+
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    # By default Casade policy uses the 'date-counter' serial policy which
+    # makes it possible to predict the serial number it will generate.
+    - name: Predict the SOA SERIAL that Cascade will generate for the signed zone
+      id: expected-serial
+      run: |
+        EXPECTED_SERIAL=$(date +'%Y%m%d00')
+        echo "serial=${EXPECTED_SERIAL}" >> "$GITHUB_OUTPUT"
+
+    - name: Create a manual signed review policy.
+      run: |
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/integration-tests/persist-then-reject"
+        cp "${TEST_DIR}/policies/manual-signed-review.toml" "${POLICY_DIR}/"
+        cascade policy reload
+
+    - name: Add a zone served by the NSD primary
+      run: |
+        cascade zone add --policy manual-signed-review --source 127.0.0.1:1055 example.test
+
+    - name: Wait for Cascade to serve the signed zone at the signed review server
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +noall +answer @127.0.0.1 -p 4541 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed review zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4541 example.test AXFR
+            cascade zone status example.test
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Reject the signed review
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        cascade zone reject --signed example.test ${EXPECTED_SERIAL}
+
+    - name: Reload the zone
+      run:
+        cascade zone reload example.test
+
+    - name: Wait for Cascade to serve the signed zone at the signed review server
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        # The previous serial number was used already by Cascade (even though
+        # it was not published) so expect the next serial number to be used
+        # now.
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +noall +answer @127.0.0.1 -p 4541 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed review zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4541 example.test AXFR
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Approve the signed review
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        # The previous serial number was used already by Cascade (even though
+        # it was not published) so expect the next serial number to be used
+        # now.
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        cascade zone approve --signed example.test ${EXPECTED_SERIAL}
+
+    - name: Wait for Cascade to serve the published signed zone with the newer serial number
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        # The previous serial number was used already by Cascade (even though
+        # it was not published) so expect the next serial number to be used
+        # now.
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        timeout=10 # seconds
+        start=$(date +%s)
+
+        until dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Stop Cascade
+      run: |
+        pkill cascaded
+
+    - name: Wait for Cascade to exit again
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until ! cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade health
+            echo "::error:: timeout: health check did not indicate Cascade had stopped"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Restart Cascade
+      run: |
+        CASCADE_DIR=${{ github.workspace }}/cascade-dir
+        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log" 
+
+    - name: Wait for Cascade to become healthy
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade health; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: health check did not indicate Cascade had started"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Check that Cascade still knows the zone
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone list | grep -q example.test; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone list
+            echo "::error:: timeout: Cascade no longer knows the zone"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Wait for Cascade to serve the signed zone
+      env:
+        EXPECTED_SERIAL: ${{ steps.expected-serial.outputs.serial }}
+      run: |
+        # The previous serial number was used already by Cascade (even though
+        # it was not published) so expect the next serial number to be used
+        # now.
+        let EXPECTED_SERIAL=$(( EXPECTED_SERIAL + 1 ))
+        timeout=10 # seconds
+        start=$(date +%s)
+
+        until dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR | grep -q "${EXPECTED_SERIAL}" ; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: signed zone did not become available for AXFR with expected SOA '${EXPECTED_SERIAL}'"
+            dig +noall +answer @127.0.0.1 -p 4542 example.test AXFR
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

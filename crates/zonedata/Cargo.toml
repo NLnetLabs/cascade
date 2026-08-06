@@ -29,6 +29,7 @@ bytes = ["dep:bytes", "domain/bytes"]
 # --- Dependencies -------------------------------------------------------------
 
 [dependencies]
+rayon = "1.12.0"
 
 # The zone storage needs a way to represent DNS records.  'domain' is a
 # general-purpose library offering those types, that we use across Cascade.

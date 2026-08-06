@@ -27,15 +27,15 @@ test-image:
 extra_build_args: '--config env.CASCADE_SKIP_VERSION_COMMIT="1"'
 include:
   - image: 'almalinux:9'
-    systemd_service_unit_file: pkg/common/cascaded.s*
+    systemd_service_unit_file: pkg/common/cascade.s*
     rpm_rpmlint_check_filters: bad-manual-page-folder
 
   - image: 'almalinux:8'
-    systemd_service_unit_file: pkg/common/cascaded.s*
+    systemd_service_unit_file: pkg/common/cascade.s*
     rpm_rpmlint_check_filters: bad-manual-page-folder
 
   - image: 'almalinux:10'
-    systemd_service_unit_file: pkg/common/cascaded.s*
+    systemd_service_unit_file: pkg/common/cascade.s*
     rpm_rpmlint_check_filters: bad-manual-page-folder
 
 # 'mode' is not used by the package building workflow job, but is used by the package testing workflow job.

@@ -1,10 +1,14 @@
-use cascade_api::ZoneReviewStatus;
-use cascade_zonedata::{LoadedZoneBuilder, LoadedZoneBuilt, SignedZoneBuilder};
 use tracing::{info, trace};
 
 use crate::{
+    api::ZoneReviewStatus,
+    server::PublicationServer,
     units::zone_signer::SignerError,
     zone::{HistoricalEvent, ZoneHandle},
+    zonedata::{
+        LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, SignedZoneBuilder,
+        SignedZoneBuilt, SignedZonePersisted,
+    },
 };
 
 /// State machine for a particular zone
@@ -100,17 +104,16 @@ impl ZoneStateMachine {
 /// # Initiating operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn try_start_load(&mut self) -> Option<LoadedZoneBuilder> {
-        // If we're in maintenance mode, then we don't start this operation.
-        // TODO: distinguish between a manual load and an automatic one.
-        if self.state.maintenance_mode {
+        if !self.state.ready_for_operation() {
+            info!(
+                "Could not start load since an operation is in progress on the zone or the zone is in maintenance mode."
+            );
             return None;
-        }
+        };
 
-        // It's important that we first check the storage here instead of the
-        // zone state machine. The reason is that while the zone state machine
-        // is in the waiting state, the storage might still be persisting or
-        // cleaning the zone and we shouldn't start a new operation if that's
-        // the case.
+        // The zone state machine may be in the waiting state, but the storage
+        // might still be persisting or cleaning the zone, and we shouldn't
+        // start a new operation if that's the case.
         let Some(builder) = self.storage().start_load() else {
             info!("Could not start load since an operation is in progress on the zone.");
             return None;
@@ -118,12 +121,12 @@ impl<'a> ZoneHandle<'a> {
 
         let (transition, state) = self.state.machine.transition();
         let ZoneStateMachine::Waiting(waiting) = state else {
-            panic!(
-                "The storage was in the passive state but the state machine wasn't in the waiting state"
-            );
+            unreachable!("already checked that the state machine is `Waiting`")
         };
 
         transition.move_to(ZoneStateMachine::Loading(waiting.start_load()));
+
+        self.state.instances.start_load();
 
         self.state.record_event(HistoricalEvent::StartedLoad, None);
 
@@ -131,17 +134,14 @@ impl<'a> ZoneHandle<'a> {
     }
 
     pub(crate) fn try_start_resign(&mut self) -> Option<SignedZoneBuilder> {
-        // If we're in maintenance mode, then we don't start this operation.
-        // TODO: distinguish between a manual resign and an automatic one.
-        if self.state.maintenance_mode {
+        if !self.state.ready_for_operation() {
+            info!("Could not start load since an operation is in progress on the zone.");
             return None;
-        }
+        };
 
-        // It's important that we first check the storage here instead of the
-        // zone state machine. The reason is that while the zone state machine
-        // is in the waiting state, the storage might still be persisting or
-        // cleaning the zone and we shouldn't start a new operation if that's
-        // the case.
+        // The zone state machine may be in the waiting state, but the storage
+        // might still be persisting or cleaning the zone, and we shouldn't
+        // start a new operation if that's the case.
         let Some(builder) = self.storage().start_resign() else {
             info!("Could not start resign since an operation is in progress on the zone.");
             return None;
@@ -156,6 +156,8 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Signing(waiting.start_resign()));
+
+        self.state.instances.start_resign();
 
         self.state
             .record_event(HistoricalEvent::StartedResign, None);
@@ -176,6 +178,9 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::Waiting(loaded.abandon_load()));
 
         self.storage().abandon_load(builder);
+
+        // Abandon the entire upcoming instance.
+        self.state.instances.abandon();
     }
 
     pub(crate) fn finish_load(&mut self, built: LoadedZoneBuilt) {
@@ -187,7 +192,20 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::LoadedReview(loaded.finish_load()));
 
-        self.storage().finish_load(built);
+        let soa = built.next().unwrap().soa();
+        let serial = soa.rdata.serial;
+
+        self.state.instances.finish_load(&built);
+
+        let loaded_reviewer = self.storage().finish_load(built);
+
+        // TODO: Use the instance ID here.
+        self.state.record_event(
+            HistoricalEvent::NewVersionReceived,
+            Some(domain::base::Serial(serial.into())),
+        );
+
+        self.storage().start_loaded_review(loaded_reviewer);
     }
 }
 
@@ -231,7 +249,12 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::Waiting(loaded.soft_reject()));
-        self.storage().abandon_loaded_review();
+        let loaded_reviewer = self.storage().abandon_loaded_review();
+        // Abandon the entire upcoming instance.
+        self.state.instances.abandon();
+        // Stop serving the abandoned instance.
+        self.storage()
+            .start_rewinding_loaded_review(loaded_reviewer);
     }
 
     pub(crate) fn hard_reject_loaded(&mut self) {
@@ -255,12 +278,12 @@ impl<'a> ZoneHandle<'a> {
 /// # Signing operations
 impl<'a> ZoneHandle<'a> {
     /// Begin signing a new approved and persisted loaded instance.
-    pub(crate) fn start_new_sign(&mut self, persisted: cascade_zonedata::LoadedZonePersisted) {
+    pub(crate) fn start_new_sign(&mut self, persisted: LoadedZonePersisted) {
         let builder = self.storage().start_new_sign(persisted);
         self.signer().enqueue_new_sign(builder);
     }
 
-    pub(crate) fn finish_signing(&mut self, built: cascade_zonedata::SignedZoneBuilt) {
+    pub(crate) fn finish_signing(&mut self, built: SignedZoneBuilt) {
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
@@ -269,10 +292,14 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::SignedReview(signing.finish_signing()));
 
-        self.storage().finish_sign(built);
+        self.state.instances.finish_sign(&built);
+
+        let signed_reviewer = self.storage().finish_sign(built);
+        // Begin reviewing the prepared instance.
+        self.storage().start_signed_review(signed_reviewer);
     }
 
-    // Abandon the ongoing signing operation (but not due to failure).
+    /// Abandon the ongoing signing operation (but not due to failure).
     pub(crate) fn abandon_signing(&mut self, builder: SignedZoneBuilder) {
         let (transition, state) = self.state.machine.transition();
 
@@ -284,10 +311,17 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Waiting(signing.abandon()));
 
-        self.storage().abandon_sign(builder);
+        let loaded_reviewer = self.storage().abandon_sign(builder);
+        // Abandon the entire upcoming instance.
+        self.state.instances.abandon();
+        // Stop serving the abandoned instance.
+        self.storage()
+            .start_rewinding_loaded_review(loaded_reviewer);
     }
 
     pub(crate) fn signing_failed(&mut self, builder: SignedZoneBuilder, err: SignerError) {
+        self.signer().before_signed_abandonment();
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::Signing(signing) = state else {
@@ -296,14 +330,19 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::SigningFailed(signing.signing_failed(err)));
 
-        self.storage().abandon_sign(builder);
+        let loaded_reviewer = self.storage().abandon_sign(builder);
+        // Abandon the entire upcoming instance.
+        self.state.instances.abandon();
+        // Stop serving the abandoned instance.
+        self.storage()
+            .start_rewinding_loaded_review(loaded_reviewer);
     }
 }
 
 /// # Signed Review operations
 impl<'a> ZoneHandle<'a> {
     pub(crate) fn approve_signed(&mut self) {
-        info!("The signed instance has been approved");
+        info!("The signed instance has been approved; publishing");
 
         self.state.record_event(
             HistoricalEvent::SignedZoneReview {
@@ -334,6 +373,8 @@ impl<'a> ZoneHandle<'a> {
             None, // TODO
         );
 
+        self.signer().before_signed_abandonment();
+
         let (transition, state) = self.state.machine.transition();
 
         let ZoneStateMachine::SignedReview(signed) = state else {
@@ -342,10 +383,15 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Waiting(signed.soft_reject()));
 
+        let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
+
+        // Abandon the entire upcoming instance.
+        self.state.instances.abandon();
         // TODO: This should be handled by 'Instances'.
         self.state.next_min_expiration = None;
 
-        self.storage().abandon_signed_review();
+        self.storage()
+            .start_rewinding_review(loaded_reviewer, signed_reviewer);
     }
 
     pub(crate) fn hard_reject_signed(&mut self) {
@@ -363,19 +409,43 @@ impl<'a> ZoneHandle<'a> {
         };
 
         transition.move_to(ZoneStateMachine::HaltSigned(review.hard_reject()));
+
+        // Abandon the entire upcoming instance.
+        self.state.instances.abandon();
     }
 }
 
 /// # Switching operations
 impl<'a> ZoneHandle<'a> {
-    /// Begin switching to an approved instance of the zone.
-    pub(crate) fn start_switch(&mut self, persisted: cascade_zonedata::SignedZonePersisted) {
-        self.storage().start_switch(persisted);
-    }
+    /// Finish persisting an approved signed instance.
+    pub(crate) fn finish_signed_persistence(&mut self, persisted: SignedZonePersisted) {
+        let viewer = self.storage().finish_signed_persistence(persisted);
 
-    /// Finish switching to a new instance of the zone.
-    pub(crate) fn finish_switch(&mut self, cleaner: cascade_zonedata::ZoneCleaner) {
-        self.storage().start_cleanup(cleaner);
+        self.state.instances.switch();
+        // TODO: Handle this with `Instances`.
+        self.state.min_expiration = self.state.next_min_expiration;
+        self.state.next_min_expiration = None;
+
+        let serial = self
+            .state
+            .instances
+            .current
+            .as_ref()
+            .unwrap()
+            .signed
+            .serial();
+
+        info!(
+            "Published a signed instance of '{}' with SOA serial {}",
+            self.zone.name,
+            serial.get()
+        );
+
+        self.signer().on_publication();
+
+        self.storage().start_publishing(viewer);
+
+        PublicationServer::after_publication(self);
     }
 }
 
@@ -388,30 +458,44 @@ impl<'a> ZoneHandle<'a> {
             ZoneStateMachine::HaltLoaded(halt_loaded) => {
                 let waiting = halt_loaded.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
-                self.storage().abandon_loaded_review();
+                let loaded_reviewer = self.storage().abandon_loaded_review();
+                self.state.instances.abandon();
+                self.storage()
+                    .start_rewinding_loaded_review(loaded_reviewer);
             }
             ZoneStateMachine::HaltSigned(halt_signed) => {
                 let waiting = halt_signed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
 
+                self.signer().before_signed_abandonment();
+                self.state.instances.abandon();
                 // TODO: This should be handled by 'Instances'.
                 self.state.next_min_expiration = None;
 
-                self.storage().abandon_signed_review();
+                let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
+                self.storage()
+                    .start_rewinding_review(loaded_reviewer, signed_reviewer);
             }
             ZoneStateMachine::SigningFailed(signing_failed) => {
                 let waiting = signing_failed.reset();
+                transition.move_to(ZoneStateMachine::Waiting(waiting));
 
                 // TODO: This should be handled by 'Instances'.
                 self.state.next_min_expiration = None;
 
-                transition.move_to(ZoneStateMachine::Waiting(waiting));
+                self.state.instances.abandon();
+
+                // The signing operation has already been abandoned, so the zone
+                // data storage is already passive. Its call to `on_passive()`
+                // was ignored because the zone state machine was busy at the
+                // time. Call it again now.
+                self.storage().on_passive();
             }
             _ => {
                 transition.move_to(state);
                 return Err(());
             }
-        };
+        }
 
         Ok(())
     }

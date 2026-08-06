@@ -39,12 +39,7 @@ path = "../api"
 # The CLI delegates to Clap to handle basic concerns like argument parsing.
 [dependencies.clap]
 workspace = true
-features = ["cargo", "derive", "wrap_help"]
-
-# TODO: Evaluate this choice.
-[dependencies.futures-util]
-version = "0.3"
-default-features = false
+features = ["cargo", "derive", "env", "wrap_help"]
 
 # The CLI uses 'jiff' to process timestamps and durations, and to print them in
 # human-readable terms.

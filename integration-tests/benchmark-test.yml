@@ -1,0 +1,95 @@
+name: System/Benchmark test
+
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+
+on:
+  workflow_dispatch:
+    inputs:
+      log-level:
+        description: The level of logging that Cascade should output.
+        required: false
+        default: debug
+        type: choice
+        options:
+          - error
+          - warning
+          - info
+          - debug
+          - trace
+      zone-name:
+        description: The name of a zone file (and zone) in integration-tests/benchmark/ to load.
+        required: true
+        type: string
+      policy-name:
+        description: The name of a policy file minus .toml in integration-tests/benchmark/ to use.
+        required: true
+        type: string
+      timeout-seconds:
+        description: The maximum number of seconds to wait for loading and signing to complete.
+        required: false
+        type: number
+        default: 60
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: release
+
+      - uses: ./.github/actions/setup-and-start-cascade
+        with:
+          log-level: ${{ inputs.log-level }}
+
+      - name: Add policy '${{ inputs.policy-name }}'
+        run: |
+          TEST_DIR="${PWD}/integration-tests/benchmark"
+          POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+          cp "${TEST_DIR}/${{ inputs.policy-name }}.toml" "${POLICY_DIR}/"
+          cascade policy reload
+
+      - name: Add zone '${{ inputs.zone-name }}'
+        run: |
+          TEST_DIR="${PWD}/integration-tests/benchmark"
+          cascade zone add --policy ${{ inputs.policy-name }} --source "${TEST_DIR}/${{ inputs.zone-name }}" ${{ inputs.zone-name }}
+
+      - name: Cascade should list the zone
+        run: |
+          timeout=10 # seconds
+          start=$(date +%s)
+          until cascade zone list | grep -q "${{ inputs.zone-name }}"; do
+            if (($(date +%s) > (start + timeout))); then
+              cascade zone list
+              echo "timeout: zone list output did not include the zone" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Check zone status
+        run: |
+          timeout=${{ inputs.timeout-seconds }}
+          start=$(date +%s)
+          until cascade zone status ${{ inputs.zone-name }} | grep -q "Published zone available"; do
+            if (($(date +%s) > (start + timeout))); then
+              cascade zone status ${{ inputs.zone-name }}
+              echo "timeout: zone status did not report published zone available" >&2
+              exit 1
+            fi
+            sleep 1
+            NOW="$(date)"
+            echo -n "${NOW}: "
+            cascade zone status ${{ inputs.zone-name }} 2>&1 | tail -n 1
+            tail -n 1 ${{ github.workspace }}/cascade-dir/cascade.log
+          done
+
+      - name: Print log files on any failure in this job
+        uses: ./.github/actions/print-logfiles
+        if: failure()

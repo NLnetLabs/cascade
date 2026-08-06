@@ -38,7 +38,7 @@ use crate::center::Center;
 use crate::center::get_zone;
 use crate::loader;
 use crate::manager::Terminated;
-use crate::metrics::MetricsCollection;
+use crate::policy::AutoConfig;
 use crate::policy::SignerDenialPolicy;
 use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
@@ -60,13 +60,6 @@ pub const HTTP_UNIT_NAME: &str = "HS";
 
 pub struct HttpServer {
     pub center: Arc<Center>,
-    pub metrics: Arc<MetricsCollection>,
-    pub http_metrics: HttpMetrics,
-}
-
-#[derive(Default)]
-pub struct HttpMetrics {
-    // http_api_last_connection: Counter,
 }
 
 impl HttpServer {
@@ -74,30 +67,12 @@ impl HttpServer {
     pub fn launch(
         center: Arc<Center>,
         http_sockets: Vec<TcpListener>,
-        /* mut */ metrics: MetricsCollection,
     ) -> Result<Arc<Self>, Terminated> {
-        // TODO: register metrics here
-
-        let http_metrics = HttpMetrics::default();
-
-        // This would require some work in tracking the last API access. I did
-        // not find a way to call something on every route in axum. Maybe we
-        // need a wrapper function that sets the last_connection timestamp.
-        // // - last time a CLI connection was made
-        // metrics.register(
-        //     "http_api_last_connection",
-        //     "The last unix epoch time an API HTTP connection was made (excl. /metrics and /)",
-        //     http_metrics.http_api_last_connection.clone()
-        // );
-
-        let this = Arc::new(Self {
-            center,
-            metrics: Arc::new(metrics),
-            http_metrics,
-        });
+        let this = Arc::new(Self { center });
 
         let app = Router::new()
             .route("/health", get(Self::health))
+            .route("/info", get(Self::info))
             .route("/metrics", get(Self::metrics))
             .route("/status", get(Self::status))
             .route("/status/keys", get(Self::status_keys))
@@ -189,12 +164,19 @@ impl HttpServer {
     }
 
     /// If this endpoint responds, the daemon is considered healthy.
-    async fn health() -> Json<()> {
-        Json(())
+    async fn health() -> Json<api::Health> {
+        Json(Health { healthy: true })
+    }
+
+    /// Get server info
+    async fn info() -> Json<api::Info> {
+        Json(Info {
+            version: env!("CASCADE_BUILD_VERSION").into(),
+        })
     }
 
     async fn metrics(State(state): State<Arc<HttpServer>>) -> impl IntoResponse {
-        match state.metrics.assemble(state.center.clone()) {
+        match state.center.metrics.assemble(state.center.clone()) {
             Ok(b) => Ok((
                 StatusCode::OK,
                 [(
@@ -223,9 +205,29 @@ impl HttpServer {
         }
 
         // Fetch the signing queue.
-        let signing_queue = center.signer.on_queue_report(center);
+        let signing_queue = {
+            let mut report = Vec::new();
 
-        let f = |x: &Vec<cascade_cfg::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
+            // Get a list of zones in the queue.
+            let zones = center.signer.queue.export();
+
+            for zone in zones {
+                let zone_state = zone.read();
+                if let Some(status) = &zone_state.signer.active_signing_status
+                    && let Some(stage_report) = status.read().unwrap().mk_signing_report()
+                {
+                    report.push(SigningQueueReport {
+                        zone_name: zone.name.clone(),
+                        signing_report: stage_report,
+                    });
+                }
+            }
+
+            report
+        };
+
+        let f =
+            |x: &Vec<crate::config::SocketConfig>| x.iter().map(|s| s.addr()).collect::<Vec<_>>();
         let loaded_review_addrs = f(&center.config.loader.review.servers);
         let signed_review_addrs = f(&center.config.signer.review.servers);
         let server_addrs = f(&center.config.server.servers);
@@ -447,20 +449,24 @@ impl HttpServer {
                 });
 
             unsigned_serial = zone_state
-                .storage
-                .loaded_review_soa
+                .instances
+                .upcoming
                 .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+                .and_then(|i| i.loaded.as_ref())
+                .map(|i| Serial(i.serial().into()));
+
             signed_serial = zone_state
-                .storage
-                .signed_review_soa
+                .instances
+                .upcoming
                 .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+                .and_then(|i| i.signed.as_ref())
+                .map(|i| Serial(i.serial().into()));
+
             published_serial = zone_state
-                .storage
-                .published_soa
+                .instances
+                .current
                 .as_ref()
-                .map(|r| Serial::from(u32::from(r.rdata.serial)));
+                .map(|i| Serial(i.signed.serial().into()));
 
             progress = match zone_state.machine {
                 ZoneStateMachine::Waiting(..) => {
@@ -492,13 +498,14 @@ impl HttpServer {
             };
 
             last_published = zone_state
-                .last_published
+                .instances
+                .current
                 .as_ref()
-                .map(|p| LastPublishedZone {
-                    loaded_serial: p.loaded_serial,
-                    signed_serial: p.signed_serial,
-                    num_records: p.num_records,
-                    timestamp: p.timestamp,
+                .map(|i| LastPublishedZone {
+                    loaded_serial: Serial(i.loaded.serial().into()),
+                    signed_serial: Serial(i.signed.serial().into()),
+                    num_records: i.signed.num_records().get() as usize,
+                    timestamp: i.pub_time,
                 });
 
             let mut found_error = None;
@@ -898,6 +905,7 @@ impl HttpServer {
             .collect::<foldhash::HashMap<_, _>>();
         let mut changed = false;
         let mut updates = Vec::new();
+        let mut warnings = Vec::new();
         let res = crate::policy::reload_all(
             &mut state.policies,
             &center.config,
@@ -916,6 +924,7 @@ impl HttpServer {
 
                 updates.push((name.clone(), change));
             },
+            &mut warnings,
         );
 
         if let Err(err) = res {
@@ -944,7 +953,15 @@ impl HttpServer {
                     .get(zone_name)
                     .expect("zones and policies are consistent");
 
-                zone.write(center).policy = Some(pol.latest.clone());
+                {
+                    let mut handle = zone.write_handle(center);
+                    handle.state.policy = Some(pol.latest.clone());
+                    handle.signer().after_policy_change();
+                }
+
+                center
+                    .persister
+                    .on_zone_policy_changed(center, zone, old.clone(), new.clone());
 
                 center
                     .key_manager
@@ -952,15 +969,11 @@ impl HttpServer {
             }
         }
 
-        // We should have an on_zone_policy_changed per zone. For now, just
-        // call it once.
-        center.signer.on_zone_policy_changed();
-
         let mut changes: Vec<(String, _)> =
             changes.into_iter().map(|(p, c)| (p.into(), c)).collect();
         changes.sort_unstable_by(|l, r| l.0.cmp(&r.0));
 
-        Json(Ok(PolicyChanges { changes }))
+        Json(Ok(PolicyChanges { changes, warnings }))
     }
 
     async fn policy_show(
@@ -973,68 +986,172 @@ impl HttpServer {
         };
 
         let zones = p.zones.iter().cloned().collect();
-        let loader = LoaderPolicyInfo {
-            review: ReviewPolicyInfo {
-                mode: match p.latest.loader.review.mode.clone() {
-                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
-                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
-                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+
+        let crate::policy::PolicyVersion {
+            name,
+            loader,
+            key_manager,
+            signer,
+            server,
+        } = &*p.latest;
+
+        let loader = {
+            let crate::policy::LoaderPolicy { review } = loader;
+
+            LoaderPolicyInfo {
+                review: ReviewPolicyInfo {
+                    mode: match review.mode.clone() {
+                        crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                        crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                        crate::policy::ReviewMode::Script { hook } => {
+                            ReviewPolicyMode::Script { hook }
+                        }
+                    },
+                    on_reject: match review.on_reject {
+                        crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                        crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                    },
                 },
-                on_reject: match p.latest.loader.review.on_reject {
-                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
-                },
-            },
+            }
         };
 
-        let signer = SignerPolicyInfo {
-            serial_policy: match p.latest.signer.serial_policy {
-                SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
-                SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
-                SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
-                SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
-            },
-            sig_inception_offset: p.latest.signer.sig_inception_offset,
-            sig_validity_offset: p.latest.signer.sig_validity_time,
-            denial: match p.latest.signer.denial {
-                SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
-                SignerDenialPolicy::NSec3 { opt_out } => SignerDenialPolicyInfo::NSec3 { opt_out },
-            },
-            review: ReviewPolicyInfo {
-                mode: match p.latest.signer.review.mode.clone() {
-                    crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
-                    crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
-                    crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
+        let signer = {
+            let &crate::policy::SignerPolicy {
+                serial_policy,
+                sig_inception_offset,
+                sig_validity_time,
+                sig_remain_time,
+                signature_refresh_interval,
+                key_roll_time,
+                ref denial,
+                ref review,
+            } = signer;
+
+            SignerPolicyInfo {
+                serial_policy: match serial_policy {
+                    SignerSerialPolicy::Keep => SignerSerialPolicyInfo::Keep,
+                    SignerSerialPolicy::Counter => SignerSerialPolicyInfo::Counter,
+                    SignerSerialPolicy::UnixTime => SignerSerialPolicyInfo::UnixTime,
+                    SignerSerialPolicy::DateCounter => SignerSerialPolicyInfo::DateCounter,
                 },
-                on_reject: match p.latest.signer.review.on_reject {
-                    crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                    crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                sig_inception_offset,
+                sig_validity_offset: sig_validity_time,
+                sig_remain_time,
+                signature_refresh_interval,
+                key_roll_time,
+                denial: match denial {
+                    SignerDenialPolicy::NSec => SignerDenialPolicyInfo::NSec,
+                    &SignerDenialPolicy::NSec3 { opt_out } => {
+                        SignerDenialPolicyInfo::NSec3 { opt_out }
+                    }
                 },
-            },
+                review: ReviewPolicyInfo {
+                    mode: match review.mode.clone() {
+                        crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                        crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                        crate::policy::ReviewMode::Script { hook } => {
+                            ReviewPolicyMode::Script { hook }
+                        }
+                    },
+                    on_reject: match review.on_reject {
+                        crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
+                        crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                    },
+                },
+            }
         };
 
-        let key_manager = KeyManagerPolicyInfo {
-            hsm_server_id: p.latest.key_manager.hsm_server_id.clone(),
-        };
+        let key_manager = {
+            let &crate::policy::KeyManagerPolicy {
+                ref hsm_server_id,
+                use_csk,
+                ref algorithm,
+                ksk_validity,
+                zsk_validity,
+                csk_validity,
+                ref auto_ksk,
+                ref auto_zsk,
+                ref auto_csk,
+                ref auto_algorithm,
+                dnskey_inception_offset,
+                dnskey_signature_lifetime,
+                dnskey_remain_time,
+                cds_inception_offset,
+                cds_signature_lifetime,
+                cds_remain_time,
+                ref ds_algorithm,
+                default_ttl,
+                auto_remove,
+                auto_remove_delay,
+                ref publication_nameservers,
+            } = key_manager;
 
-        let p_outbound = &p.latest.server.outbound;
-        let server = ServerPolicyInfo {
-            outbound: OutboundPolicyInfo {
-                provide_xfr_to: p_outbound
-                    .provide_xfr_to
+            fn map_auto(
+                &AutoConfig {
+                    start,
+                    report,
+                    expire,
+                    done,
+                }: &AutoConfig,
+            ) -> AutoConfigPolicyInfo {
+                AutoConfigPolicyInfo {
+                    start,
+                    report,
+                    expire,
+                    done,
+                }
+            }
+
+            KeyManagerPolicyInfo {
+                hsm_server_id: hsm_server_id.clone(),
+                algorithm: algorithm.to_string(),
+                use_csk,
+                ksk_validity,
+                zsk_validity,
+                csk_validity,
+                auto_ksk: map_auto(auto_ksk),
+                auto_zsk: map_auto(auto_zsk),
+                auto_csk: map_auto(auto_csk),
+                auto_algorithm: map_auto(auto_algorithm),
+                dnskey_inception_offset,
+                dnskey_signature_lifetime,
+                dnskey_remain_time,
+                cds_inception_offset,
+                cds_signature_lifetime,
+                cds_remain_time,
+                ds_algorithm: ds_algorithm.to_string(),
+                default_ttl: default_ttl.as_secs(),
+                auto_remove,
+                auto_remove_delay,
+                publication_nameservers: publication_nameservers
                     .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                    .map(ToString::to_string)
                     .collect(),
-                send_notify_to: p_outbound
-                    .send_notify_to
-                    .iter()
-                    .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
-                    .collect(),
-            },
+            }
+        };
+
+        let server = {
+            let crate::policy::ServerPolicy { outbound } = server;
+            ServerPolicyInfo {
+                outbound: OutboundPolicyInfo {
+                    provide_xfr_to: outbound
+                        .provide_xfr_to
+                        .iter()
+                        .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                        .collect(),
+                    send_notify_to: outbound
+                        .send_notify_to
+                        .iter()
+                        .map(|v| NameserverCommsPolicyInfo { addr: v.addr })
+                        .collect(),
+                    max_diffs: outbound.max_diffs,
+                    max_diffs_size: outbound.max_diffs_size,
+                },
+            }
         };
 
         Json(Ok(PolicyInfo {
-            name: p.latest.name.clone(),
+            name: name.clone(),
             zones,
             loader,
             key_manager,
@@ -1246,7 +1363,22 @@ impl HttpServer {
             .map(|_| TsigRemoveResult)
             .map_err(|e| match e {
                 RemoveError::NotFound => TsigRemoveError::NotFound,
-                RemoveError::Used => TsigRemoveError::InUse,
+                RemoveError::InUse(usage_references) => TsigRemoveError::InUse(
+                    usage_references
+                        .into_iter()
+                        .map(|usage| match usage {
+                            tsig::UsageReference::ZoneSource(zone) => {
+                                TsigKeyUsageReference::ZoneSource(zone.0.name.clone())
+                            }
+                            tsig::UsageReference::ZoneOther(zone) => {
+                                TsigKeyUsageReference::ZoneOther(zone.0.name.clone())
+                            }
+                            tsig::UsageReference::Policy(policy) => {
+                                TsigKeyUsageReference::Policy(policy.name.clone())
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                ),
             });
         Json(res)
     }

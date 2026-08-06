@@ -45,7 +45,7 @@ const SIGNATURE_REMAIN_TIME: u32 = SIGNATURE_VALIDITY_TIME / 2;
 // security risks. No official reference.
 const SIGNATURE_INCEPTION_OFFSET: u32 = 24 * 3600;
 
-// Try to find the right comprise between zones that hardly ever changes and
+// Try to find the right compromise between zones that hardly ever changes and
 // zones that are changed frequently. This should be a safe default, though
 // big zones that change frequently may set it to around 15 minutes to
 // avoid jitter in signing performance.
@@ -59,6 +59,22 @@ const KEY_ROLL_TIME: u32 = 24 * 3600;
 
 // When auto remove is enabled, remove old keys after one week.
 const AUTO_REMOVE_DELAY: u32 = 7 * 24 * 3600;
+
+// Defaults for diff purging.
+//
+// The maximum number of diffs to keep per zone.
+// Based on the NSD default of ixfr-number: 5.
+const MAX_DIFFS: usize = 5;
+
+// The maximum size that in-memory diffs may reach as a percentage of the
+// published zone.
+//
+// IXFR diffs that describe larger changes (compared to the last published
+// version of the zone) than this limit will be kept in-memory to to serve to
+// IXFR clients.
+//
+// Based on https://github.com/NLnetLabs/cascade/issues/830#issuecomment-4752275415
+const MAX_DIFFS_SIZE: usize = 20;
 
 //----------- Spec -------------------------------------------------------------
 
@@ -569,7 +585,7 @@ impl Display for KeyGenerationParametersSpec {
             Self::RsaSha512(2048) => "RSASHA512",
             Self::EcdsaP256Sha256 => "ECDSAP256SHA256",
             Self::EcdsaP384Sha384 => "ECDSAP384SHA384",
-            Self::Ed25519 => "Ed25519",
+            Self::Ed25519 => "ED25519",
             Self::Ed448 => "ED448",
 
             Self::RsaSha256(bits) => return write!(f, "RSASHA256:{bits}"),
@@ -945,10 +961,32 @@ pub struct OutboundSpec {
     /// TODO: support the RFC 1996 "Notify Set"?
     #[serde(default = "empty_list")]
     pub send_notify_to: Vec<NameserverCommsSpec>,
+
+    /// The maximum number of IXFR diffs to keep.
+    ///
+    /// Excess diffs will be discarded.
+    #[serde(default = "default_max_diffs")]
+    pub max_diffs: usize,
+
+    /// The maximum percentage of change allowed for a single IXFR diff.
+    ///
+    /// Only diffs that desribe smaller changes (compared to the last
+    /// published version of the zone) than this limit will be stored and
+    /// served to clients.
+    #[serde(default = "default_max_diffs_size")]
+    max_diffs_size: usize,
 }
 
 fn empty_list() -> Vec<NameserverCommsSpec> {
     vec![]
+}
+
+fn default_max_diffs() -> usize {
+    MAX_DIFFS
+}
+
+fn default_max_diffs_size() -> usize {
+    MAX_DIFFS_SIZE
 }
 
 //--- Conversion
@@ -959,6 +997,8 @@ impl OutboundSpec {
         OutboundPolicy {
             provide_xfr_to: self.provide_xfr_to.into_iter().map(|v| v.parse()).collect(),
             send_notify_to: self.send_notify_to.into_iter().map(|v| v.parse()).collect(),
+            max_diffs: self.max_diffs,
+            max_diffs_size: self.max_diffs_size,
         }
     }
 
@@ -975,6 +1015,8 @@ impl OutboundSpec {
                 .iter()
                 .map(NameserverCommsSpec::build)
                 .collect(),
+            max_diffs: policy.max_diffs,
+            max_diffs_size: policy.max_diffs_size,
         }
     }
 }

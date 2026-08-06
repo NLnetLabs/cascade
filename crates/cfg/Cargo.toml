@@ -29,7 +29,7 @@ features = ["serde1"]
 # 'clap' is used for defining and parsing command-line arguments.
 [dependencies.clap]
 workspace = true
-features = ["wrap_help"]
+default-features = false
 
 # 'foldhash' offers fast, non-cryptographic hash tables.
 [dependencies.foldhash]

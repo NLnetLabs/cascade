@@ -119,20 +119,37 @@ impl fmt::Debug for BackgroundTasks {
     }
 }
 
-//------------------------------------------------------------------------------
+//----------- FmtBy() ----------------------------------------------------------
 
-/// Force a [`Future`] to evaluate synchronously.
-pub fn force_future<F: IntoFuture>(future: F) -> F::Output {
-    let waker = std::task::Waker::noop();
-    let mut cx = std::task::Context::from_waker(waker);
-    let future = std::pin::pin!(future.into_future());
-    match future.poll(&mut cx) {
-        std::task::Poll::Ready(output) => output,
-        std::task::Poll::Pending => {
-            panic!("Could not evaluate the future synchronously")
-        }
+/// Format using the given closure.
+///
+/// This is a polyfill for [`std::fmt::from_fn()`], which does not yet fit in
+/// our MSRV.
+///
+/// [`std::fmt::from_fn()`]: https://doc.rust-lang.org/stable/std/fmt/fn.from_fn.html
+pub struct FmtBy<F>(pub F)
+where
+    F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result;
+
+impl<F> fmt::Debug for FmtBy<F>
+where
+    F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (self.0)(f)
     }
 }
+
+impl<F> fmt::Display for FmtBy<F>
+where
+    F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (self.0)(f)
+    }
+}
+
+//------------------------------------------------------------------------------
 
 /// Atomically write a file.
 ///
@@ -156,15 +173,6 @@ pub fn write_file(path: &Utf8Path, contents: &[u8]) -> io::Result<()> {
     let _ = tmp_file.persist(path)?;
 
     Ok(())
-}
-
-/// Update a value.
-#[inline]
-pub fn update_value<T: Eq>(dst: &mut T, value: T, changed: &mut bool) {
-    if *dst != value {
-        *changed = true;
-        *dst = value;
-    }
 }
 
 pub fn instant_to_duration_secs(instant: Instant) -> u64 {

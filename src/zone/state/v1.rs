@@ -2,21 +2,32 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::num::NonZeroU64;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use camino::Utf8Path;
+use cascade_zonedata::SoaRecord;
 use domain::base::{Rtype, Serial, Ttl};
 use domain::dep::octseq::Array;
 use domain::dnssec::sign::keys::keyset::UnixTime;
+use domain::new::base::Record;
+use domain::new::base::name::{NameBuf, RevNameBuf};
+use domain::new::base::wire::{BuildBytes, ParseBytes};
+use domain::new::rdata::Soa;
+use domain::utils::dst::UnsizedCopy;
 use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
+use crate::persistence::zone::{
+    PersistedDiffFileInfo, PersistedDiffManager, PersistedDiffRecordSource,
+};
 use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
 use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
 use crate::tsig::TsigStore;
-use crate::zone::{HistoryItem, LastPublished};
+use crate::zone::instance::PersistedInstance;
+use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
 use crate::{
     policy::{
         KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
@@ -39,8 +50,14 @@ pub struct Spec {
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
 
-    /// Metadata related to the last published zone version.
-    pub last_published: Option<LastPublished>,
+    /// Whether the zone is in maintenance mode
+    ///
+    /// Maintenance mode means that Cascade won't start loading and signing
+    /// operations automatically.
+    pub maintenance_mode: bool,
+
+    /// Instances of the zone.
+    pub instances: InstancesSpec,
 
     /// The source of the zone.
     pub source: ZoneLoadSourceSpec,
@@ -99,12 +116,12 @@ pub struct Spec {
     /// Locations of persisted unsigned zone diffs to enable IXFR from
     /// the upstream to resume on restart, and to enable a complete latest
     /// unsigned version of the zone to be reconstituted.
-    pub persisted_loaded_diffs: Vec<PathBuf>,
+    pub persisted_loaded_diffs: PersistedDiffsSpec,
 
     /// Locations of persisted signed zone diffs to ensure IXFR out toward
     /// downstreams is still possible after restart, and to enable a complete
     /// latest signed version of the zone to be reconsituted.
-    pub persisted_signed_diffs: Vec<PathBuf>,
+    pub persisted_signed_diffs: PersistedDiffsSpec,
 }
 
 //--- Conversion
@@ -114,7 +131,8 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
-            last_published: zone.last_published.clone(),
+            maintenance_mode: zone.maintenance_mode,
+            instances: InstancesSpec::build(&zone.instances),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
             min_expiration: zone.min_expiration,
             next_min_expiration: zone.next_min_expiration,
@@ -125,8 +143,12 @@ impl Spec {
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
             history: zone.history.clone(),
-            persisted_loaded_diffs: zone.persisted_loaded_diff_paths.clone(),
-            persisted_signed_diffs: zone.persisted_signed_diff_paths.clone(),
+            persisted_loaded_diffs: PersistedDiffsSpec::build_loaded(
+                &zone.persistence.loaded_diffs,
+            ),
+            persisted_signed_diffs: PersistedDiffsSpec::build_signed(
+                &zone.persistence.signed_diffs,
+            ),
         }
     }
 }
@@ -579,6 +601,206 @@ impl ServerPolicySpec {
     }
 }
 
+//----------- InstancesSpec ----------------------------------------------------
+
+/// Known instances of a zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct InstancesSpec {
+    /// The persisted instance of the zone.
+    pub persisted: Option<PersistedInstanceSpec>,
+    //
+    // TODO:
+    // - The next usable loaded/signed instance IDs.
+    // - Obsolete instances.
+    // - Abandoned instances.
+}
+
+// TODO: It's frustrating that the `current`->`persisted` switch happens here,
+// rather than at some higher level. It feels like a good place for it could
+// be a version-independent persistence format, but that would introduce even
+// more boilerplate.
+
+impl InstancesSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> Instances {
+        let Self { persisted } = self;
+
+        Instances {
+            upcoming: None,
+            current: None,
+            persisted: persisted.map(|p| p.parse()),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instances: &Instances) -> Self {
+        let Instances {
+            upcoming: _,
+            current,
+            persisted: _,
+        } = instances;
+
+        Self {
+            persisted: current
+                .as_ref()
+                .map(|i| PersistedInstanceSpec::build(&i.to_persisted())),
+        }
+    }
+}
+
+//----------- PersistedInstanceSpec --------------------------------------------
+
+/// The persisted instance of a zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistedInstanceSpec {
+    /// The loaded instance.
+    pub loaded: LoadedInstanceSpec,
+
+    /// The signed instance.
+    pub signed: SignedInstanceSpec,
+
+    /// When the instance was published.
+    pub pub_time: SystemTime,
+}
+
+impl PersistedInstanceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> PersistedInstance {
+        let Self {
+            loaded,
+            signed,
+            pub_time,
+        } = self;
+
+        PersistedInstance {
+            loaded: loaded.parse(),
+            signed: signed.parse(),
+            pub_time,
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instance: &PersistedInstance) -> Self {
+        let PersistedInstance {
+            ref loaded,
+            ref signed,
+            pub_time,
+        } = *instance;
+
+        Self {
+            loaded: LoadedInstanceSpec::build(loaded),
+            signed: SignedInstanceSpec::build(signed),
+            pub_time,
+        }
+    }
+}
+
+//----------- LoadedInstanceSpec -----------------------------------------------
+
+/// A loaded instance of a zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LoadedInstanceSpec {
+    /// The SOA record of this instance.
+    ///
+    /// The record is serialized to the DNS wire format.
+    pub soa: Box<[u8]>,
+
+    /// The number of loaded records.
+    pub num_records: NonZeroU64,
+}
+
+impl LoadedInstanceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> LoadedInstance {
+        let Self { soa, num_records } = self;
+
+        // TODO: Don't panic on failure; move this into Serde.
+        let soa = SoaRecord(Record::parse_bytes(&soa).unwrap().transform(
+            |name: RevNameBuf| name.unsized_copy_into(),
+            |data: Soa<NameBuf>| data.map_names(|n| n.unsized_copy_into()),
+        ));
+
+        LoadedInstance { soa, num_records }
+    }
+
+    /// Build into this specification.
+    pub fn build(instance: &LoadedInstance) -> Self {
+        let LoadedInstance {
+            ref soa,
+            num_records,
+        } = *instance;
+
+        let mut buffer = vec![0u8; soa.0.built_bytes_size()];
+        assert!(soa.0.build_bytes(&mut buffer).unwrap().is_empty());
+        let soa = buffer.into_boxed_slice();
+
+        Self { soa, num_records }
+    }
+}
+
+//----------- SignedInstanceSpec -----------------------------------------------
+
+/// A signed instance of a zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SignedInstanceSpec {
+    /// The SOA record of this instance.
+    ///
+    /// The record is serialized to the DNS wire format.
+    pub soa: Box<[u8]>,
+
+    /// The number of generated records.
+    pub num_generated_records: NonZeroU64,
+
+    /// The number of records included from the loaded instance.
+    pub num_loaded_records: u64,
+}
+
+impl SignedInstanceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> SignedInstance {
+        let Self {
+            soa,
+            num_generated_records,
+            num_loaded_records,
+        } = self;
+
+        // TODO: Don't panic on failure; move this into Serde.
+        let soa = SoaRecord(Record::parse_bytes(&soa).unwrap().transform(
+            |name: RevNameBuf| name.unsized_copy_into(),
+            |data: Soa<NameBuf>| data.map_names(|n| n.unsized_copy_into()),
+        ));
+
+        SignedInstance {
+            soa,
+            num_generated_records,
+            num_loaded_records,
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instance: &SignedInstance) -> Self {
+        let SignedInstance {
+            ref soa,
+            num_generated_records,
+            num_loaded_records,
+        } = *instance;
+
+        let mut buffer = vec![0u8; soa.0.built_bytes_size()];
+        assert!(soa.0.build_bytes(&mut buffer).unwrap().is_empty());
+        let soa = buffer.into_boxed_slice();
+
+        Self {
+            soa,
+            num_generated_records,
+            num_loaded_records,
+        }
+    }
+}
+
 //----------- ZoneLoadSourceSpec -----------------------------------------------
 
 /// Where to load a zone from.
@@ -637,6 +859,100 @@ impl ZoneLoadSourceSpec {
                 addr,
                 tsig_key: tsig_key.map(|key| key.name().clone().into()),
             },
+        }
+    }
+}
+
+//------------ PersistedDiffsSpec --------------------------------------------
+
+/// Information about a collection of persisted diffs.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistedDiffsSpec {
+    pub is_signed: bool,
+    pub next_idx: usize,
+    pub restore_base_idx: usize,
+    pub diff_infos: Vec<PersistedDiffFileInfoSpec>,
+}
+
+impl PersistedDiffsSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> PersistedDiffManager {
+        let diff_infos = self
+            .diff_infos
+            .into_iter()
+            .map(PersistedDiffFileInfoSpec::parse)
+            .collect();
+        let is_signed = match self.is_signed {
+            true => PersistedDiffRecordSource::Signed,
+            false => PersistedDiffRecordSource::Loaded,
+        };
+        PersistedDiffManager::for_existing_diffs(
+            is_signed,
+            self.next_idx,
+            self.restore_base_idx,
+            diff_infos,
+        )
+    }
+
+    /// Build into this specification.
+    fn build_loaded(loaded_diffs: &PersistedDiffManager) -> Self {
+        Self {
+            is_signed: false,
+            next_idx: loaded_diffs.next_idx(),
+            restore_base_idx: loaded_diffs.first_diff_to_apply_on_restore(),
+            diff_infos: loaded_diffs
+                .diffs()
+                .iter()
+                .map(PersistedDiffFileInfoSpec::build)
+                .collect(),
+        }
+    }
+
+    /// Build into this specification.
+    fn build_signed(signed_diffs: &PersistedDiffManager) -> Self {
+        Self {
+            is_signed: true,
+            next_idx: signed_diffs.next_idx(),
+            restore_base_idx: signed_diffs.first_diff_to_apply_on_restore(),
+            diff_infos: signed_diffs
+                .diffs()
+                .iter()
+                .map(PersistedDiffFileInfoSpec::build)
+                .collect(),
+        }
+    }
+}
+
+/// Information a single persisted diff.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistedDiffFileInfoSpec {
+    path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    loaded_serial: Option<Serial>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signed_serial: Option<Serial>,
+}
+
+impl PersistedDiffFileInfoSpec {
+    /// Parse from this specification.
+    fn parse(self) -> PersistedDiffFileInfo {
+        PersistedDiffFileInfo::new(
+            self.path,
+            self.loaded_serial
+                .map(|s| domain::new::base::Serial::from(s.0)),
+            self.signed_serial
+                .map(|s| domain::new::base::Serial::from(s.0)),
+        )
+    }
+
+    /// Build into this specification.
+    fn build(info: &PersistedDiffFileInfo) -> Self {
+        Self {
+            path: info.path().to_path_buf(),
+            loaded_serial: info.loaded_serial().map(|s| Serial(s.into())),
+            signed_serial: info.signed_serial().map(|s| Serial(s.into())),
         }
     }
 }

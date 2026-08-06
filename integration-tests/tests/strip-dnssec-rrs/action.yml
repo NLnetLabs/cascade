@@ -1,0 +1,54 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'strip-dnssec-rrs'
+description: 'Sign using an already signed input zone.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+
+    - name: Load a zone that contains DNSSEC RRs.
+      run: |
+        INTEGRATION_TEST_DIR="${PWD}/integration-tests/strip-dnssec-rrs"
+        ZONE_FILE="${INTEGRATION_TEST_DIR}/example.test"
+        cascade zone add --policy default --source "${ZONE_FILE}" example.test
+
+    - name: Check zone status
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status example.test | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Verify the DNSSEC signed zone
+      run: |
+        dig +noall +answer +onesoa @127.0.0.1 -p 4542 example.test AXFR > example-test.axfr.log
+        dnssec-verify -o example.test example-test.axfr.log | tee dnssec-verify.log
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()

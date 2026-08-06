@@ -11,7 +11,7 @@ use domain::base::Name;
 use domain::base::Ttl;
 use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
+use tracing::info;
 
 use crate::tsig::TsigStore;
 use crate::{api::PolicyReloadError, config::Config};
@@ -40,6 +40,7 @@ pub struct Policy {
 //--- Loading / Saving
 
 pub enum PolicyChange {
+    #[expect(dead_code)]
     Removed(Arc<PolicyVersion>),
     Updated {
         old: Arc<PolicyVersion>,
@@ -60,8 +61,9 @@ pub fn reload_all(
     config: &Config,
     tsig_store: &TsigStore,
     mut on_change: impl FnMut(&Box<str>, PolicyChange),
+    warnings: &mut Vec<String>,
 ) -> Result<(), PolicyReloadError> {
-    let new_versions = load_all(policies, config, tsig_store)?;
+    let new_versions = load_all(policies, config, tsig_store, warnings)?;
 
     let mut new_policies = foldhash::HashMap::default();
 
@@ -95,9 +97,9 @@ pub fn reload_all(
     for (name, policy) in policies.drain() {
         // If any zones are using this policy, keep it.
         if !policy.zones.is_empty() {
-            error!(
+            warnings.push(format!(
                 "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
-            );
+            ));
             let prev = new_policies.insert(name, policy);
             assert!(
                 prev.is_none(),
@@ -130,6 +132,7 @@ pub fn load_all(
     policies: &foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
     tsig_store: &TsigStore,
+    warnings: &mut Vec<String>,
 ) -> Result<foldhash::HashMap<Box<str>, PolicyVersion>, PolicyReloadError> {
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
@@ -144,10 +147,10 @@ pub fn load_all(
 
         // Filter for UTF-8 paths.
         let Ok(path) = Utf8PathBuf::from_path_buf(entry.path()) else {
-            warn!(
+            warnings.push(format!(
                 "Ignoring potential policy '{}' as the path is non-UTF-8",
                 entry.path().display()
-            );
+            ));
             continue;
         };
 
@@ -157,7 +160,7 @@ pub fn load_all(
             .expect("this path has a known parent directory")
             .starts_with('.')
         {
-            debug!("Ignoring hidden file '{path}' among policies");
+            warnings.push(format!("Ignoring hidden file '{path}' among policies"));
             continue;
         }
 
@@ -166,7 +169,9 @@ pub fn load_all(
             .extension()
             .is_none_or(|e| !e.eq_ignore_ascii_case("toml"))
         {
-            warn!("Ignoring potential policy '{path}'; policies must end in '.toml'");
+            warnings.push(format!(
+                "Ignoring potential policy '{path}'; policies must end in '.toml'"
+            ));
             continue;
         }
 
@@ -178,7 +183,9 @@ pub fn load_all(
             Ok(spec) => spec,
             // Ignore a directory ending in '.toml'.
             Err(err) if err.kind() == io::ErrorKind::IsADirectory => {
-                warn!("Ignoring potential policy '{path}'; policies must be files");
+                warnings.push(format!(
+                    "Ignoring potential policy '{path}'; policies must be files"
+                ));
                 continue;
             }
             Err(err) => return Err(PolicyReloadError::Io(path, err.to_string())),
@@ -562,6 +569,19 @@ pub struct OutboundPolicy {
     ///
     /// TODO: support the RFC 1996 "Notify Set"?
     pub send_notify_to: Vec<NameserverCommsPolicy>,
+
+    /// The maximum number of IXFR diffs to keep.
+    ///
+    /// Excess diffs will be discarded.
+    pub max_diffs: usize,
+
+    /// The maximum size that in-memory diffs may reach as a percentage
+    /// of the published zone.
+    ///
+    /// IXFR diffs that describe larger changes (compared to the last
+    /// published version of the zone) than this limit will be kept in-memory
+    /// to to serve to IXFR clients.
+    pub max_diffs_size: usize,
 }
 
 //----------- NameserverCommsPolicy -------------------------------------------
@@ -604,7 +624,7 @@ impl Display for NameserverCommsPolicy {
 pub enum KeyParameters {
     /// The RSASHA256 algorithm with the key length in bits.
     RsaSha256(usize),
-    /// The RSASHA512 w algorithmith the key length in bits.
+    /// The RSASHA512 algorithm with the key length in bits.
     RsaSha512(usize),
     /// The ECDSAP256SHA256 algorithm.
     ///

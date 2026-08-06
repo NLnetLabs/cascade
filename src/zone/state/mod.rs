@@ -16,6 +16,7 @@ use tracing::warn;
 
 use crate::{
     loader::zone::LoaderState,
+    persistence::zone::PersistenceState,
     policy::{Policy, PolicyVersion},
     tsig::TsigStore,
     zone::ZoneState,
@@ -84,7 +85,8 @@ impl Spec {
         match self {
             Self::V1(v1::Spec {
                 policy,
-                last_published,
+                maintenance_mode,
+                instances,
                 source,
                 min_expiration,
                 next_min_expiration,
@@ -114,9 +116,15 @@ impl Spec {
                 }
                 let policy = policy.map(|p| p.latest.clone());
 
+                let persistence = PersistenceState {
+                    loaded_diffs: persisted_loaded_diffs.parse(),
+                    signed_diffs: persisted_signed_diffs.parse(),
+                    ..Default::default()
+                };
+
                 Ok(ZoneState {
                     policy,
-                    last_published,
+                    instances: instances.parse(),
                     min_expiration,
                     next_min_expiration,
                     apex_remove,
@@ -127,8 +135,8 @@ impl Spec {
                     previous_serial,
                     loader,
                     history,
-                    persisted_loaded_diff_paths: persisted_loaded_diffs,
-                    persisted_signed_diff_paths: persisted_signed_diffs,
+                    persistence,
+                    maintenance_mode,
                     ..Default::default()
                 })
             }

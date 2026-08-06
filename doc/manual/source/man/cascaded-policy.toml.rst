@@ -597,6 +597,57 @@ The ``[server.outbound]`` section.
 
    `"<IP>[^<TSIG_KEY_NAME>]"`
 
+.. option:: max-diffs = 5
+
+   The maximum number of "sequences of differential information" (diffs) that
+   the server may store per zone in order to respond to RFC 1995 Incremental
+   Zone Transfer (IXFR) requests.
+   
+   A diff is created when changes to the input zone are received and when
+   re-signing alters the signed records generated when signing last occurred.
+
+   Diffs are persisted to disk once approved and will be restored on next
+   start of the Cascade daemon.
+   
+   Excess in-memory diffs are discarded as soon as possible after approval of
+   a new diff, or on policy reload if the diff maximums were reduced compared
+   to previous version of the policy.
+   
+   Persisted diffs are discarded periodically to reduce the impact of
+   persisted diff compaction. The number of persisted diffs may therefore
+   temporarily exceed the limit specified here until purging of persisted
+   diffs next occurs. Discarding of persisted diffs will be skipped for
+   zones that are in maintenance mode.
+   
+   Note that while RFC 1955 section 5 suggests that diffs be purged based on
+   total IXFR response size and/or if older than the SOA expire period, Cascade
+   does not currently implement this behaviour. Cascade also currently has no
+   support for RFC 1995 section 6 condensation of multiple versions.
+   
+   The default is to limits diffs to 5 per zone. If set to 0, storage of diffs
+   will be disabled.
+
+.. option:: max-diffs-size = 20
+
+   The maximum size allowed for in-memory diffs for a single zone, defined
+   as a percentage of the size of the last published version of the zone,
+   with zone size measured as the number of records in the zone and diff size
+   measured as the total number of records added by all diffs for the zone
+   plus the total number of records removed by all diffs for the zone.
+
+   If storing a new diff would exceed the limit, diffs will be discarded to
+   make space starting with the oldest diffs first.
+
+   This setting has no impact on the number of diffs persisted to disk. See
+   max-diffs to control that.
+
+   The default is 20%. If set to 0, or a value low enough such that the set of
+   diffs for a zone always exceed the limit, then no diffs will be stored in
+   memory and IXFR requests will be responded to with an AXFR instead.
+
+   .. note:: The `max-diffs` limit is applied first, then additional diffs
+             will be discarded as needed to meet the `max-diffs-size` limit.
+
 Files
 -----
 

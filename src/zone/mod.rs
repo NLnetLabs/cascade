@@ -1,7 +1,6 @@
 //! Zone-specific state and management.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::{
     borrow::Borrow,
     cmp::Ordering,
@@ -12,7 +11,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use cascade_cfg::Config;
 use domain::base::{Name, Rtype, Serial};
 use domain::dnssec::sign::keys::keyset::UnixTime;
 use domain::rdata::dnssec::Timestamp;
@@ -22,7 +20,9 @@ use tracing::{debug, error, trace};
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
+    config::Config,
     loader::zone::{LoaderState, LoaderZoneHandle},
+    metrics::{Metrics, ZoneMetrics},
     persistence::zone::{PersistenceState, ZonePersistenceHandle},
     policy::{Policy, PolicyVersion},
     signer::zone::{SignerState, SignerZoneHandle},
@@ -36,6 +36,9 @@ use crate::units::zone_signer::faketime_or_now;
 
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
+
+mod instance;
+pub use instance::{Instances, LoadedInstance, SignedInstance};
 
 pub mod machine;
 pub mod state;
@@ -57,6 +60,9 @@ pub struct Zone {
     /// [`ZoneState`].
     pub state: ZoneStateLock,
 
+    /// The metrics for this zone.
+    pub metrics: ZoneMetrics,
+
     /// Whether the zone was restored from the state file.
     ///
     /// This is set if the zone originates from a previous execution of Cascade
@@ -70,10 +76,12 @@ impl Zone {
     ///
     /// The zone is initialized to an empty state, where nothing is known about
     /// it and Cascade won't act on it.
-    pub fn new(name: Name<Bytes>) -> Self {
+    pub fn new(name: Name<Bytes>, metrics: &Metrics) -> Self {
+        let metrics = metrics.get_zone_metrics(name.clone());
         Self {
             name,
             state: ZoneStateLock::new(ZoneState::default()),
+            metrics,
             restored: false,
         }
     }
@@ -100,6 +108,7 @@ impl Zone {
         name: Name<Bytes>,
         policies: &mut foldhash::HashMap<Box<str>, Policy>,
         tsig_store: &TsigStore,
+        metrics: &Metrics,
     ) -> Result<Self, state::LoadError> {
         let path = config.zone_state_dir.join(format!("{name}.db"));
 
@@ -115,10 +124,13 @@ impl Zone {
             }
         };
 
+        let metrics = metrics.get_zone_metrics(name.clone());
+
         debug!("Restored the state of zone '{name}' (from '{path}')");
 
         Ok(Self {
             name,
+            metrics,
             state: ZoneStateLock::new(state),
             restored: true,
         })
@@ -313,9 +325,6 @@ pub struct ZoneState {
     /// operations automatically.
     pub maintenance_mode: bool,
 
-    /// Metadata related to the last published zone version.
-    pub last_published: Option<LastPublished>,
-
     /// An enqueued save of this state.
     ///
     /// The enqueued save operation will persist the current state in a short
@@ -371,26 +380,11 @@ pub struct ZoneState {
     /// serial for the Increment serial policy.
     pub previous_serial: Option<Serial>,
 
-    /// Unsigned versions of the zone.
-    pub unsigned: foldhash::HashMap<Serial, UnsignedZoneVersionState>,
-
-    /// Signed versions of the zone.
-    pub signed: foldhash::HashMap<Serial, SignedZoneVersionState>,
+    /// Instances of the zone.
+    pub instances: Instances,
 
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
-
-    /// Locations of persisted unsigned zone diffs to enable IXFR from
-    /// the upstream to resume on restart, and to enable a complete latest
-    /// unsigned version of the zone to be reconstituted.
-    // TODO: Move into `PersistenceState`.
-    pub persisted_loaded_diff_paths: Vec<PathBuf>,
-
-    /// Locations of persisted signed zone diffs to ensure IXFR out toward
-    /// downstreams is still possible after restart, and to enable a complete
-    /// latest signed version of the zone to be reconsituted.
-    // TODO: Move into `PersistenceState`.
-    pub persisted_signed_diff_paths: Vec<PathBuf>,
 
     /// Loading new versions of the zone.
     pub loader: LoaderState,
@@ -430,6 +424,27 @@ impl ZoneState {
             .rev()
             .find(|item| item.event.is_of_type(typ) && (serial.is_none() || item.serial == serial))
     }
+
+    /// Whether the zone state is ready to start a new loading or signing operation
+    ///
+    /// This checks the maintenance mode and the zone state machine.
+    pub fn ready_for_operation(&self) -> bool {
+        // TODO: distinguish between a manual load/sign and an automatic one.
+        !self.maintenance_mode && matches!(&self.machine, ZoneStateMachine::Waiting(_))
+    }
+
+    /// Get the most recent signed metadata for the zone.
+    ///
+    /// During restore the metadata for the currently published instance is
+    /// not available yet so use the last persisted zone metadata instead.
+    pub fn signed_metadata(&self) -> Option<&SignedInstance> {
+        match (&self.instances.persisted, &self.instances.current) {
+            (None, None) => None,
+            (None, Some(i)) => Some(&i.signed),
+            (Some(i), None) => Some(&i.signed),
+            (Some(_), Some(i)) => Some(&i.signed),
+        }
+    }
 }
 
 impl Default for ZoneState {
@@ -438,7 +453,6 @@ impl Default for ZoneState {
             machine: Default::default(),
             policy: Default::default(),
             maintenance_mode: Default::default(),
-            last_published: Default::default(),
             enqueued_save: Default::default(),
             min_expiration: Default::default(),
             next_min_expiration: Default::default(),
@@ -448,72 +462,14 @@ impl Default for ZoneState {
             key_roll: Default::default(),
             last_signature_refresh: faketime_or_now(),
             previous_serial: Default::default(),
-            unsigned: Default::default(),
-            signed: Default::default(),
+            instances: Default::default(),
             history: Default::default(),
             loader: Default::default(),
             signer: Default::default(),
             storage: Default::default(),
             persistence: Default::default(),
-            persisted_loaded_diff_paths: Default::default(),
-            persisted_signed_diff_paths: Default::default(),
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LastPublished {
-    pub loaded_serial: Serial,
-    pub signed_serial: Serial,
-
-    /// Time of publication
-    pub timestamp: SystemTime,
-
-    /// Number of records in the signed zone
-    pub num_records: usize,
-    //
-    // TODO: add the size
-    // /// Size in bytes
-    // pub size: usize,
-}
-
-/// The state of an unsigned version of a zone.
-#[derive(Clone, Debug)]
-pub struct UnsignedZoneVersionState {
-    /// The review state of the zone version.
-    pub review: ZoneVersionReviewState,
-}
-
-/// The state of a signed version of a zone.
-#[derive(Clone, Debug)]
-pub struct SignedZoneVersionState {
-    /// The serial number of the corresponding unsigned version of the zone.
-    pub unsigned_serial: Serial,
-
-    /// The review state of the zone version.
-    pub review: ZoneVersionReviewState,
-}
-
-/// The review state of a version of a zone.
-#[derive(Clone, Debug, Default)]
-pub enum ZoneVersionReviewState {
-    /// The zone is pending review.
-    ///
-    /// If a review script has been configured, it is running now.  Otherwise,
-    /// the zone must be manually reviewed.
-    #[default]
-    Pending,
-
-    /// The zone has been approved.
-    ///
-    /// This is a terminal state.  The zone may have progressed further through
-    /// the pipeline, so it is no longer possible to reject it.
-    Approved,
-
-    /// The zone has been rejected.
-    ///
-    /// The zone has not yet been approved; it can be approved at any time.
-    Rejected,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -581,10 +537,10 @@ pub enum HistoricalEvent {
         reason: String,
     },
     SigningSucceeded {
-        trigger: cascade_api::SigningTrigger,
+        trigger: api::SigningTrigger,
     },
     SigningFailed {
-        trigger: cascade_api::SigningTrigger,
+        trigger: api::SigningTrigger,
         reason: String,
     },
     UnsignedZoneReview {
@@ -917,6 +873,7 @@ impl fmt::Debug for ZoneByPtr {
 
 /// An error in changing the policy of a zone.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(dead_code, reason = "Pending functionality")] // TODO
 pub enum ChangePolicyError {
     /// The specified zone does not exist.
     NoSuchZone,
@@ -944,6 +901,7 @@ impl fmt::Display for ChangePolicyError {
 
 /// An error in changing the source of a zone.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(dead_code, reason = "Pending functionality")] // TODO
 pub enum ChangeSourceError {
     /// The specified zone does not exist.
     NoSuchZone,

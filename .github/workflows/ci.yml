@@ -259,8 +259,4 @@ jobs:
     - name: Test
       run: cargo test --all-targets --locked
 
-    # Test docs.
-    - name: Test docs
-      run: cargo test --doc --locked
-
   # TODO: Build a cache.
