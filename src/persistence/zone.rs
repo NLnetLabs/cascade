@@ -748,6 +748,13 @@ pub struct PersistedDiffFileInfo {
     ///
     /// This can be None for a signed diff resulting from changes only to the
     /// signed zone, or for an initial snapshot of a loaded zone.
+    ///
+    /// TODO: This is fundamentally broken because we support reloading of
+    /// zone files from disk when records have been changed but the SOA serial
+    /// has not been bumped, which in turn means that there can be newer
+    /// versions of a loaded zone but without a change in serial number, so
+    /// storing diffs by serial number isn't safe as the serial number doesn't
+    /// uniquely identify the version of the _loaded_ zone.
     loaded_serial: Option<Serial>,
 
     /// The signed serial number that the data file relates to.
