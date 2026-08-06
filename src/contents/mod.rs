@@ -5,3 +5,6 @@ pub use data::{LoadedInstanceData, SignedInstanceData};
 
 mod diff;
 pub use diff::InstanceDiff;
+
+mod reader;
+pub use reader::{LoadedZoneReader, SignedZoneReader};
