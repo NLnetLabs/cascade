@@ -14,9 +14,9 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-beta6 'Leonard Shelby'
 
-Released yyyy-mm-dd.
+Released 2026-08-07.
 
 ### Breaking changes
 
@@ -64,7 +64,18 @@ Released yyyy-mm-dd.
 - Document key roll strategies used by Cascade. ([#933] by @ximon18)
 
 ### Known issues
+
+- We are investigating scenarios where Cascade crashes after restarting, due
+  to how it persists and restores internal state and zone contents.
+
+- Removing a zone while an operation is ongoing (e.g. loading or signing) may
+  cause Cascade to crash. In the next release, we will only allow zones in
+  maintenance mode to be removed.
+
 ### Acknowledgements
+
+Thanks to @bortzmeyer and @gryphius for testing Cascade and providing valuable
+feedback!
 
 [#657]: https://github.com/NLnetLabs/cascade/pull/657
 [#848]: https://github.com/NLnetLabs/cascade/pull/848
