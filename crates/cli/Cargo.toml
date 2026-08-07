@@ -60,6 +60,18 @@ features = ["http2", "json"]
 [dependencies.url]
 version = "2.4"
 
+
+# The CLI uses yaml_serde to load YAML documents.
+#
+# This is a fork of the original serde_yaml project which is currently
+# deprecated. The yaml_serde project is maintained by the official YAML
+# organization.
+[dependencies.yaml_serde]
+version = "0.10.4"
+
+[dependencies.serde]
+workspace = true
+
 # The CLI talks to the daemon over the network, and uses 'async' as it's the
 # most idiomatic option.  'tokio' is the perfect 'async' runtime for this.
 [dependencies.tokio]
@@ -73,3 +85,6 @@ workspace = true
 [dependencies.tracing-subscriber]
 workspace = true
 features = ["env-filter"]
+
+[dev-dependencies.assert_fs]
+version = "1.1.4"
