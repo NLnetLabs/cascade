@@ -27,13 +27,25 @@ Released yyyy-mm-dd.
 ### New
 
 - Purging of excess diffs. ([#657] by @ximon18)
+- Show persistence operations in `cascade zone status`. ([#901] by
+  @tertsdiepraam)
+- Remove persisted zone files when a zone is removed. ([#942] by @ximon18)
 
 ### Bug fixes
 
+- Persist the maintenance mode setting. ([#900] by @tertsdiepraam)
+- Use IDs to sort persisted diffs instead of file paths. ([#907] by
+  @tertsdiepraam, fixes [#908])
 - Improve DNS errors and add EDEs. In particular do not return NXDOMAIN for
-  SOA queries when no zone data is available. ([#934])
+  SOA queries when no zone data is available. ([#934] by @Philip-NLnetLabs)
+- Don't store references to non-existing loaded IXFR diffs. ([#936] by @ximon18)
+- During incremental signing, allow re-signing a zone whose SOA record is
+  unchanged. ([#940] by @Philip-NLnetLabs)
 - Don't abort XFR transfers if the response buffer is full. ([#941] by
   @ximon18)
+- If a zone is reloaded, and is read from a zonefile or via AXFR, check whether
+  the zone has changed and cancel the load operation if it has not. ([#945] by
+  @bal-e, fixes [#937])
 - Wrong serial requested from upstream via IXFR due to compaction bug.
   ([#952] by @ximon18, fixes [#948])
 - Correctly restore SOAs for standalone diffs. ([#955] by @bal-e,
@@ -47,6 +59,7 @@ Released yyyy-mm-dd.
 
 - Improve memory use for unsigned data in incremental signing. ([#866] by
   @Philip-NLnetLabs)
+- Enhance signing tests. ([#848], [#946] by @Philip-NLnetLabs)
 - Specify key roll strategies explicitly rather than using `dnst keyset`
   defaults. ([#933] by @ximon18)
 - Add some DEBUG and TRACE logging about IXFR outbound request activity.
@@ -61,21 +74,34 @@ Released yyyy-mm-dd.
 ### Known issues
 ### Acknowledgements
 
+[#908]: https://github.com/NLnetLabs/cascade/issues/908
+[#937]: https://github.com/NLnetLabs/cascade/issues/937
+[#948]: https://github.com/NLnetLabs/cascade/issues/948
+[#953]: https://github.com/NLnetLabs/cascade/issues/953
+[#956]: https://github.com/NLnetLabs/cascade/issues/956
+[#960]: https://github.com/NLnetLabs/cascade/issues/960
+
 [#657]: https://github.com/NLnetLabs/cascade/pull/657
+[#848]: https://github.com/NLnetLabs/cascade/pull/848
 [#858]: https://github.com/NLnetLabs/cascade/pull/858
 [#866]: https://github.com/NLnetLabs/cascade/pull/866
+[#900]: https://github.com/NLnetLabs/cascade/pull/900
+[#901]: https://github.com/NLnetLabs/cascade/pull/901
+[#907]: https://github.com/NLnetLabs/cascade/pull/907
 [#913]: https://github.com/NLnetLabs/cascade/pull/913
 [#933]: https://github.com/NLnetLabs/cascade/pull/933
+[#933]: https://github.com/NLnetLabs/cascade/pull/933
 [#934]: https://github.com/NLnetLabs/cascade/pull/934
+[#936]: https://github.com/NLnetLabs/cascade/pull/936
+[#940]: https://github.com/NLnetLabs/cascade/pull/940
 [#941]: https://github.com/NLnetLabs/cascade/pull/941
+[#942]: https://github.com/NLnetLabs/cascade/pull/942
+[#945]: https://github.com/NLnetLabs/cascade/pull/945
+[#946]: https://github.com/NLnetLabs/cascade/pull/946
 [#947]: https://github.com/NLnetLabs/cascade/pull/947
-[#948]: https://github.com/NLnetLabs/cascade/pull/948
 [#952]: https://github.com/NLnetLabs/cascade/pull/952
-[#953]: https://github.com/NLnetLabs/cascade/pull/953
 [#955]: https://github.com/NLnetLabs/cascade/pull/955
-[#956]: https://github.com/NLnetLabs/cascade/pull/956
 [#959]: https://github.com/NLnetLabs/cascade/pull/959
-[#960]: https://github.com/NLnetLabs/cascade/pull/960
 [#961]: https://github.com/NLnetLabs/cascade/pull/961
 
 ## 0.1.0-beta5 'Got that holiday feeling'
