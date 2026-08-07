@@ -1,6 +1,6 @@
 [package]
-name = "cascade-cfg"
-description = "Configuring Cascade."
+name = "cascade-policy-file"
+description = "Cascade's policy files."
 
 authors.workspace = true
 homepage.workspace = true
@@ -15,30 +15,27 @@ edition.workspace = true
 readme = "README.md"
 
 
-[features]
-default = ["args"]
-args = ["dep:clap"]
-
-
 # --- Dependencies -------------------------------------------------------------
 
 [dependencies]
 
-# The user can specify filesystem paths to Cascade.  Paths need to be
-# represented in a platform-independent way, ruling out 'std::path::Path'.
-# 'camino' offers UTF-8-only paths that match this requirement.
+# The user can specify filesystem paths to Cascade. Paths need to be represented
+# in a platform-independent way, ruling out 'std::path::Path'. 'camino' offers
+# UTF-8-only paths that match this requirement.
 [dependencies.camino]
 workspace = true
 features = ["serde1"]
 
-# 'clap' is used for defining and parsing command-line arguments.
-[dependencies.clap]
-optional = true
+[dependencies.domain]
 workspace = true
-default-features = false
+features = ["tsig", "serde"]
 
 # 'foldhash' offers fast, non-cryptographic hash tables.
 [dependencies.foldhash]
+workspace = true
+
+# 'jiff' is a general-purpose time library.
+[dependencies.jiff]
 workspace = true
 
 # 'serde' and 'toml' are used for parsing TOML configuration files.
@@ -46,4 +43,8 @@ workspace = true
 workspace = true
 features = ["derive"]
 [dependencies.toml]
+workspace = true
+
+# 'serde-with' provides helpers for 'serde'.
+[dependencies.serde_with]
 workspace = true

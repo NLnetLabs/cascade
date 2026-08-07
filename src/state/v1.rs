@@ -1,22 +1,24 @@
 //! Version 1 of the state file.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
 use domain::base::Name;
 use domain::base::Ttl;
+use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 
-use crate::policy;
-use crate::policy::file::v1::NameserverCommsSpec;
-use crate::policy::file::v1::OutboundSpec;
-use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
+use crate::policy::KeyValidity;
+use crate::policy::NameserverCommsPolicy;
+use crate::policy::OutboundPolicy;
 use crate::{
     center::State,
     policy::{
-        KeyManagerPolicy, LoaderPolicy, Policy, PolicyVersion, ReviewPolicy, ServerPolicy,
-        SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+        AutoConfig, DsAlgorithm, KeyManagerPolicy, KeyParameters, LoaderPolicy, Policy,
+        PolicyVersion, ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy,
+        SignerSerialPolicy,
     },
 };
 
@@ -157,7 +159,7 @@ impl PolicyVersionSpec {
     }
 }
 
-//----------- LoaderSpec -------------------------------------------------------
+//----------- LoaderPolicySpec -------------------------------------------------
 
 /// Policy for loading zones.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -201,11 +203,11 @@ pub struct KeyManagerPolicySpec {
     algorithm: KeyParameters,
 
     /// Validity of KSKs.
-    ksk_validity: Option<u32>,
+    ksk_validity: KeyValiditySpec,
     /// Validity of ZSKs.
-    zsk_validity: Option<u32>,
+    zsk_validity: KeyValiditySpec,
     /// Validity of CSKs.
-    csk_validity: Option<u32>,
+    csk_validity: KeyValiditySpec,
 
     /// Configuration variable for automatic KSK rolls.
     auto_ksk: AutoConfig,
@@ -236,19 +238,19 @@ pub struct KeyManagerPolicySpec {
     cds_remain_time: u32,
 
     /// The DS hash algorithm.
-    ds_algorithm: DsAlgorithm,
+    ds_algorithm: DsAlgorithmSpec,
 
     /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
     default_ttl: Ttl,
 
-    /// Automatically remove keys that are no long in use.
+    /// Automatically remove keys that are no longer in use.
     auto_remove: bool,
 
     /// Remove old keys after this amount of time.
     auto_remove_delay: u64,
 
     /// Nameservers to check for RRSIG propagation during a key roll.
-    pub publication_nameservers: Vec<NameserverCommsSpec>,
+    publication_nameservers: Vec<NameserverCommsSpec>,
 }
 
 //--- Conversion
@@ -260,9 +262,9 @@ impl KeyManagerPolicySpec {
             hsm_server_id: self.hsm_server_id,
             use_csk: self.use_csk,
             algorithm: self.algorithm,
-            ksk_validity: self.ksk_validity,
-            zsk_validity: self.zsk_validity,
-            csk_validity: self.csk_validity,
+            ksk_validity: self.ksk_validity.into(),
+            zsk_validity: self.zsk_validity.into(),
+            csk_validity: self.csk_validity.into(),
             auto_ksk: self.auto_ksk,
             auto_zsk: self.auto_zsk,
             auto_csk: self.auto_csk,
@@ -273,14 +275,14 @@ impl KeyManagerPolicySpec {
             cds_inception_offset: self.cds_inception_offset,
             cds_signature_lifetime: self.cds_signature_lifetime,
             cds_remain_time: self.cds_remain_time,
-            ds_algorithm: self.ds_algorithm,
+            ds_algorithm: self.ds_algorithm.into(),
             default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
             auto_remove_delay: Duration::from_secs(self.auto_remove_delay),
             publication_nameservers: self
                 .publication_nameservers
                 .into_iter()
-                .map(|v| v.parse())
+                .map(Into::into)
                 .collect(),
         }
     }
@@ -291,9 +293,9 @@ impl KeyManagerPolicySpec {
             hsm_server_id: policy.hsm_server_id.clone(),
             use_csk: policy.use_csk,
             algorithm: policy.algorithm.clone(),
-            ksk_validity: policy.ksk_validity,
-            zsk_validity: policy.zsk_validity,
-            csk_validity: policy.csk_validity,
+            ksk_validity: policy.ksk_validity.clone().into(),
+            zsk_validity: policy.zsk_validity.clone().into(),
+            csk_validity: policy.csk_validity.clone().into(),
             auto_ksk: policy.auto_ksk.clone(),
             auto_zsk: policy.auto_zsk.clone(),
             auto_csk: policy.auto_csk.clone(),
@@ -304,15 +306,82 @@ impl KeyManagerPolicySpec {
             cds_inception_offset: policy.cds_inception_offset,
             cds_signature_lifetime: policy.cds_signature_lifetime,
             cds_remain_time: policy.cds_remain_time,
-            ds_algorithm: policy.ds_algorithm.clone(),
+            ds_algorithm: policy.ds_algorithm.clone().into(),
             default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
             auto_remove_delay: policy.auto_remove_delay.as_secs(),
             publication_nameservers: policy
                 .publication_nameservers
                 .iter()
-                .map(NameserverCommsSpec::build)
+                .cloned()
+                .map(Into::into)
                 .collect(),
+        }
+    }
+}
+
+//----------- KeyValiditySpec --------------------------------------------------
+
+/// The validity of a key.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum KeyValiditySpec {
+    /// The key is valid for a finite duration.
+    Finite(u32),
+
+    /// The key is valid forever.
+    Forever,
+}
+
+impl From<KeyValiditySpec> for KeyValidity {
+    fn from(value: KeyValiditySpec) -> Self {
+        match value {
+            KeyValiditySpec::Finite(span) => Self::Finite(span),
+            KeyValiditySpec::Forever => Self::Forever,
+        }
+    }
+}
+
+impl From<KeyValidity> for KeyValiditySpec {
+    fn from(value: KeyValidity) -> Self {
+        match value {
+            KeyValidity::Finite(span) => Self::Finite(span),
+            KeyValidity::Forever => Self::Forever,
+        }
+    }
+}
+
+//----------- DsAlgorithmSpec --------------------------------------------------
+
+/// The hash algorithm to use for DS records.
+///
+/// Note the RFC 8624 has (for DNSSEC delegation use) a MUST for SHA-256,
+/// a MAY for SHA-384 and a MUST NOT for SHA-1 and GOST R 34.11-94.
+/// Therefore, we only support SHA-256 and SHA-384 and the default is
+/// SHA-256.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum DsAlgorithmSpec {
+    /// Hash the public key using SHA-256.
+    Sha256,
+
+    /// Hash the public key using SHA-384.
+    Sha384,
+}
+
+impl From<DsAlgorithmSpec> for DsAlgorithm {
+    fn from(value: DsAlgorithmSpec) -> Self {
+        match value {
+            DsAlgorithmSpec::Sha256 => Self::Sha256,
+            DsAlgorithmSpec::Sha384 => Self::Sha384,
+        }
+    }
+}
+
+impl From<DsAlgorithm> for DsAlgorithmSpec {
+    fn from(value: DsAlgorithm) -> Self {
+        match value {
+            DsAlgorithm::Sha256 => Self::Sha256,
+            DsAlgorithm::Sha384 => Self::Sha384,
         }
     }
 }
@@ -327,20 +396,20 @@ pub struct SignerPolicySpec {
     pub serial_policy: SignerSerialPolicySpec,
 
     /// The offset for record signature inceptions, in seconds.
-    pub sig_inception_offset: Duration,
+    pub sig_inception_offset: u32,
 
     /// How long record signatures will be valid for, in seconds.
-    pub sig_validity_time: Duration,
+    pub sig_validity_time: u32,
 
     /// How long before expiration a new signature has to be generated, in seconds.
-    pub sig_remain_time: Duration,
+    pub sig_remain_time: u32,
 
     /// How often to refresh some amount of signatures to make resigning
     /// smoother.
-    pub signature_refresh_interval: Duration,
+    pub signature_refresh_interval: u32,
 
     /// How long should it take to resign a zone during a ZSK or CSK roll.
-    pub key_roll_time: Duration,
+    pub key_roll_time: u32,
 
     /// How denial-of-existence records are generated.
     pub denial: SignerDenialPolicySpec,
@@ -356,11 +425,11 @@ impl SignerPolicySpec {
     pub fn parse(self) -> SignerPolicy {
         SignerPolicy {
             serial_policy: self.serial_policy.parse(),
-            sig_inception_offset: self.sig_inception_offset.as_secs() as u32,
-            sig_validity_time: self.sig_validity_time.as_secs() as u32,
-            sig_remain_time: self.sig_remain_time.as_secs() as u32,
-            signature_refresh_interval: self.signature_refresh_interval.as_secs() as u32,
-            key_roll_time: self.key_roll_time.as_secs() as u32,
+            sig_inception_offset: self.sig_inception_offset,
+            sig_validity_time: self.sig_validity_time,
+            sig_remain_time: self.sig_remain_time,
+            signature_refresh_interval: self.signature_refresh_interval,
+            key_roll_time: self.key_roll_time,
             denial: self.denial.parse(),
             review: self.review.parse(),
         }
@@ -370,13 +439,11 @@ impl SignerPolicySpec {
     pub fn build(policy: &SignerPolicy) -> Self {
         Self {
             serial_policy: SignerSerialPolicySpec::build(policy.serial_policy),
-            sig_inception_offset: Duration::from_secs(policy.sig_inception_offset.into()),
-            sig_validity_time: Duration::from_secs(policy.sig_validity_time.into()),
-            sig_remain_time: Duration::from_secs(policy.sig_remain_time.into()),
-            signature_refresh_interval: Duration::from_secs(
-                policy.signature_refresh_interval.into(),
-            ),
-            key_roll_time: Duration::from_secs(policy.key_roll_time.into()),
+            sig_inception_offset: policy.sig_inception_offset,
+            sig_validity_time: policy.sig_validity_time,
+            sig_remain_time: policy.sig_remain_time,
+            signature_refresh_interval: policy.signature_refresh_interval,
+            key_roll_time: policy.key_roll_time,
             denial: SignerDenialPolicySpec::build(&policy.denial),
             review: ReviewPolicySpec::build(&policy.review),
         }
@@ -439,7 +506,7 @@ pub enum SignerDenialPolicySpec {
 
     /// Generate NSEC3 records.
     NSec3 {
-        /// Whether to enable NSEC3 Opt-Out.
+        /// Whether and how to enable NSEC3 Opt-Out.
         opt_out: bool,
     },
 }
@@ -464,26 +531,36 @@ impl SignerDenialPolicySpec {
     }
 }
 
-//----------- ReviewSpec -------------------------------------------------------
+//--- Default
+
+impl Default for SignerDenialPolicySpec {
+    fn default() -> Self {
+        Self::NSec3 { opt_out: false }
+    }
+}
+
+//----------- ReviewPolicySpec -------------------------------------------------
 
 /// Policy for reviewing loaded/signed zones.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ReviewPolicySpec {
-    pub mode: ReviewMode,
+    /// Whether review is required.
+    pub mode: ReviewPolicyMode,
 
-    pub on_reject: OnReject,
+    /// A command hook for reviewing a new version of the zone.
+    pub on_reject: ReviewPolicyOnReject,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum ReviewMode {
+pub enum ReviewPolicyMode {
     Off,
     Manual,
     Script { hook: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum OnReject {
+pub enum ReviewPolicyOnReject {
     Discard,
     Halt,
 }
@@ -495,13 +572,13 @@ impl ReviewPolicySpec {
     pub fn parse(self) -> ReviewPolicy {
         ReviewPolicy {
             mode: match self.mode {
-                ReviewMode::Off => policy::ReviewMode::Off,
-                ReviewMode::Manual => policy::ReviewMode::Manual,
-                ReviewMode::Script { hook } => policy::ReviewMode::Script { hook },
+                ReviewPolicyMode::Off => crate::policy::ReviewMode::Off,
+                ReviewPolicyMode::Manual => crate::policy::ReviewMode::Manual,
+                ReviewPolicyMode::Script { hook } => crate::policy::ReviewMode::Script { hook },
             },
             on_reject: match self.on_reject {
-                OnReject::Discard => policy::OnReject::Discard,
-                OnReject::Halt => policy::OnReject::Halt,
+                ReviewPolicyOnReject::Discard => crate::policy::RejectionPolicy::Discard,
+                ReviewPolicyOnReject::Halt => crate::policy::RejectionPolicy::Halt,
             },
         }
     }
@@ -510,25 +587,24 @@ impl ReviewPolicySpec {
     pub fn build(policy: &ReviewPolicy) -> Self {
         Self {
             mode: match policy.mode.clone() {
-                policy::ReviewMode::Off => ReviewMode::Off,
-                policy::ReviewMode::Manual => ReviewMode::Manual,
-                policy::ReviewMode::Script { hook } => ReviewMode::Script { hook },
+                crate::policy::ReviewMode::Off => ReviewPolicyMode::Off,
+                crate::policy::ReviewMode::Manual => ReviewPolicyMode::Manual,
+                crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
             },
             on_reject: match policy.on_reject {
-                policy::OnReject::Discard => OnReject::Discard,
-                policy::OnReject::Halt => OnReject::Halt,
+                crate::policy::RejectionPolicy::Discard => ReviewPolicyOnReject::Discard,
+                crate::policy::RejectionPolicy::Halt => ReviewPolicyOnReject::Halt,
             },
         }
     }
 }
 
-//----------- ServerSpec -------------------------------------------------------
+//----------- ServerPolicySpec -------------------------------------------------
 
 /// Policy for serving zones.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ServerPolicySpec {
-    /// Outbound policy.
     pub outbound: OutboundSpec,
 }
 
@@ -538,14 +614,109 @@ impl ServerPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> ServerPolicy {
         ServerPolicy {
-            outbound: self.outbound.parse(),
+            outbound: self.outbound.into(),
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ServerPolicy) -> Self {
         Self {
-            outbound: OutboundSpec::build(&policy.outbound),
+            outbound: policy.outbound.clone().into(),
+        }
+    }
+}
+
+//----------- OutboundSpec ---------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OutboundSpec {
+    /// The set of nameservers to which zone transfers may be provided.
+    pub provide_xfr_to: Vec<NameserverCommsSpec>,
+
+    /// The set of nameservers to which NOTIFY messages should be sent.
+    pub send_notify_to: Vec<NameserverCommsSpec>,
+
+    /// The maximum number of IXFR diffs to keep.
+    pub max_diffs: usize,
+
+    /// The maximum percentage of change allowed for a single IXFR diff.
+    pub max_diffs_size: usize,
+}
+
+impl From<OutboundSpec> for OutboundPolicy {
+    fn from(
+        OutboundSpec {
+            provide_xfr_to,
+            send_notify_to,
+            max_diffs,
+            max_diffs_size,
+        }: OutboundSpec,
+    ) -> Self {
+        Self {
+            provide_xfr_to: provide_xfr_to.into_iter().map(Into::into).collect(),
+            send_notify_to: send_notify_to.into_iter().map(Into::into).collect(),
+            max_diffs,
+            max_diffs_size,
+        }
+    }
+}
+
+impl From<OutboundPolicy> for OutboundSpec {
+    fn from(
+        OutboundPolicy {
+            provide_xfr_to,
+            send_notify_to,
+            max_diffs,
+            max_diffs_size,
+        }: OutboundPolicy,
+    ) -> Self {
+        Self {
+            provide_xfr_to: provide_xfr_to.into_iter().map(Into::into).collect(),
+            send_notify_to: send_notify_to.into_iter().map(Into::into).collect(),
+            max_diffs,
+            max_diffs_size,
+        }
+    }
+}
+
+//----------- NameserverCommsSpec --------------------------------------------
+
+/// Policy for communicating with another namesever.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct NameserverCommsSpec {
+    /// The address to send NOTIFYs to or allow XFRs from.
+    pub addr: SocketAddr,
+
+    /// An optional TSIG key to sign and authenticate messages with.
+    pub tsig_key_name: Option<KeyName>,
+}
+
+impl From<NameserverCommsSpec> for NameserverCommsPolicy {
+    fn from(
+        NameserverCommsSpec {
+            addr,
+            tsig_key_name,
+        }: NameserverCommsSpec,
+    ) -> Self {
+        Self {
+            addr,
+            tsig_key_name,
+        }
+    }
+}
+
+impl From<NameserverCommsPolicy> for NameserverCommsSpec {
+    fn from(
+        NameserverCommsPolicy {
+            addr,
+            tsig_key_name,
+        }: NameserverCommsPolicy,
+    ) -> Self {
+        Self {
+            addr,
+            tsig_key_name,
         }
     }
 }

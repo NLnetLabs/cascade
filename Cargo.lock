@@ -252,6 +252,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "cascade-policy-file"
+version = "0.1.0-beta6-dev"
+dependencies = [
+ "camino",
+ "domain",
+ "foldhash",
+ "jiff",
+ "serde",
+ "serde_with",
+ "toml",
+]
+
+[[package]]
+name = "cascade-tests"
+version = "0.1.0-beta6-dev"
+dependencies = [
+ "camino",
+ "cascade-api",
+ "cascade-cfg",
+ "cascade-policy-file",
+ "command-fds",
+ "nix",
+ "reqwest",
+ "serde",
+ "tempfile",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "cascade-zonedata"
 version = "0.1.0-beta6-dev"
 dependencies = [
@@ -270,6 +301,8 @@ dependencies = [
  "camino",
  "cascade-api",
  "cascade-cfg",
+ "cascade-policy-file",
+ "cascade-tests",
  "cascade-zonedata",
  "clap",
  "daemonbase",
@@ -387,6 +420,16 @@ name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
+
+[[package]]
+name = "command-fds"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b60b5124979fccd9addd89d8b97a1d6eebb4950694520c75ddd722535ea443f"
+dependencies = [
+ "nix",
+ "thiserror",
+]
 
 [[package]]
 name = "constant_time_eq"
@@ -687,6 +730,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07bbe89c50d7a535e539b8c17bc0b49bdb77747034daa8087407d655f3f7cc1d"
 dependencies = [
  "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -694,6 +738,12 @@ name = "futures-core"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
+
+[[package]]
+name = "futures-io"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
 
 [[package]]
 name = "futures-macro"
@@ -725,8 +775,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6"
 dependencies = [
  "futures-core",
+ "futures-io",
  "futures-macro",
+ "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -1507,7 +1560,9 @@ checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
 dependencies = [
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "h2",
  "http",
  "http-body",

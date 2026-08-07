@@ -253,6 +253,14 @@ jobs:
         toolchain: ${{ matrix.rust }}
         cache: false
 
+    # Install the `set_listen_pid` helper.
+    - name: Install `set_listen_pid`
+      run: cargo install --path crates/tests --bin set_listen_pid
+
+    # Install `dnst` for `dnst keyset`.
+    - name: Install `dnst`
+      run: cargo install --locked --bin dnst --git https://github.com/nlnetlabs/dnst dnst
+
     # TODO: Restore a cache of dependencies and 'target'.
 
     # Build and run the test suite.

@@ -1,0 +1,84 @@
+[package]
+name = "cascade-tests"
+description = "Test infrastructure for Cascade."
+
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+
+version.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+readme = "README.md"
+
+
+# --- Dependencies -------------------------------------------------------------
+
+[dependencies]
+
+[dependencies.camino]
+workspace = true
+
+[dependencies.cascade-api]
+path = "../api"
+
+[dependencies.cascade-cfg]
+path = "../cfg"
+default-features = false
+features = []
+
+[dependencies.cascade-policy-file]
+path = "../policy-file"
+
+# When spawning the daemon for testing, a temporary directory is needed to hold
+# configuration and state files (including those of the HSM).
+#
+# - 'tempfile' is a Rust crate providing scoped temporary files and directories.
+#
+#   2025-01-19: It is maintained by <https://github.com/stebalien> (Steven
+#   Allen). While their source of income/funding is unclear, they appear to be
+#   sponsoring several other developers on GitHub. The crate is incredibly
+#   popular and ecosystem dependence means that it should be maintained for
+#   the forseeable future.
+[target.'cfg(unix)'.dependencies.tempfile]
+version = "3.24.0"
+
+# When spawning the daemon for testing, it is more reliable to pass in a KMIP
+# server socket directly (following systemd socket activation) than to select
+# a port in the configuration file.
+#
+# - 'std' would be an ideal candidate for this, but it does not currently
+#   provide such functionality.
+#
+# - 'command-fds' is a Rust crate allowing file descriptors to be passed in to
+#   spawned processes.
+#
+#   2025-01-19: It is maintained by <https://github.com/qwandor> (Andrew
+#   Walbran), and is part of the Android Open Source Project (AOSP, maintained
+#   by Google). It does not see much activity, but it is a small crate with a
+#   stable implementation, that would be easy to vendor if needed.
+[target.'cfg(unix)'.dependencies.command-fds]
+version = "0.3.2"
+
+[dependencies.reqwest]
+version = "0.13.3"
+default-features = false
+features = ["http2", "blocking", "json"]
+
+[dependencies.nix]
+version = "0.31"
+default-features = false
+features = ["process"]
+
+[dependencies.serde]
+workspace = true
+[dependencies.toml]
+workspace = true
+
+[dependencies.tracing]
+workspace = true
+[dependencies.tracing-subscriber]
+workspace = true
