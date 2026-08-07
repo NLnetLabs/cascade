@@ -75,10 +75,19 @@ pub async fn refresh(
 
     if let Some(curr) = builder.curr() {
         // Check the SOA record upfront.
+        trace!(
+            "Querying SOA record of zone '{}' at server {addr:?}",
+            zone.name
+        );
         let new_soa = query_soa(zone, addr, tsig_key.clone()).await?;
+        trace!("Received SOA record with serial '{}'", new_soa.rdata.serial);
 
         if *curr.soa() == new_soa {
             // The local copy of the zone appears to be up-to-date.
+            debug!(
+                "No need to refresh the zone, we have the most recent serial {} already",
+                new_soa.rdata.serial
+            );
             return Ok(());
         }
     }
@@ -174,6 +183,10 @@ pub async fn ixfr(
         };
 
     // Attempt the IXFR, possibly with TSIG.
+    debug!(
+        "Sending IXFR request for zone '{}' to server {addr:?} with serial {}",
+        zone.name, local_soa.rdata.serial
+    );
     let request = RequestMessageMulti::new(message).unwrap();
     let mut response = SendRequestMulti::send_request(&*client, request);
     let mut interpreter = XfrResponseInterpreter::new();
@@ -190,7 +203,6 @@ pub async fn ixfr(
     // If the server does not support IXFR, fall back to an AXFR.
     if initial.header().rcode() == Rcode::NOTIMP {
         trace!("The server does not support IXFR, falling back to AXFR");
-
         axfr(zone, addr, tsig_key, builder, metrics).await?;
         return Ok(());
     }
