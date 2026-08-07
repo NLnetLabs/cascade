@@ -41,6 +41,8 @@ Released yyyy-mm-dd.
   @Philip-NLnetLabs)
 - Specify key roll strategies explicitly rather than using `dnst keyset`
   defaults. ([#933] by @ximon18)
+- Add some DEBUG and TRACE logging about IXFR outbound request activity.
+  ([#947] by @ximon18)
 
 ### Documentation improvements
 
@@ -58,6 +60,7 @@ Released yyyy-mm-dd.
 [#933]: https://github.com/NLnetLabs/cascade/pull/933
 [#934]: https://github.com/NLnetLabs/cascade/pull/934
 [#941]: https://github.com/NLnetLabs/cascade/pull/941
+[#947]: https://github.com/NLnetLabs/cascade/pull/947
 
 ## 0.1.0-beta5 'Got that holiday feeling'
 
