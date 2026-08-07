@@ -345,6 +345,43 @@ impl fmt::Display for ZoneAddError {
     }
 }
 
+//----------- ZoneEdit -------------------------------------------------------
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneEdit {
+    pub source: Option<ZoneSource>,
+    pub policy: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneEditResult {
+    pub name: ZoneName,
+    pub status: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneEditError {
+    NoSuchZone,
+    NoSuchPolicy,
+    NoSuchTsigKey,
+    PolicyMidDeletion,
+    Other(String),
+}
+
+impl fmt::Display for ZoneEditError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NoSuchZone => "no zone with that name exists",
+            Self::NoSuchPolicy => "no policy with that name exists",
+            Self::NoSuchTsigKey => "no TSIG key with that name exists",
+            Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::Other(reason) => reason,
+        })
+    }
+}
+
+//----------- ZoneRemove -----------------------------------------------------
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneRemoveResult {
     pub name: ZoneName,
