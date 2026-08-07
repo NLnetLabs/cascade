@@ -163,7 +163,7 @@ use crate::api::keyset::{KeyRollCommand, KeyRollVariant};
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError, get_zone};
 use crate::manager::record_zone_event;
-use crate::policy::{KeyParameters, PolicyVersion};
+use crate::policy::{KeyParameters, KeyValidity, PolicyVersion};
 use crate::signer::ResigningTrigger;
 use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
@@ -854,9 +854,9 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
         | KeyParameters::Ed448 => algorithm_cmd.push(km.algorithm.to_string()),
     };
 
-    let validity = |x| match x {
-        Some(validity) => format!("{validity}s"),
-        None => "off".to_string(),
+    let validity = |x: &KeyValidity| match x {
+        KeyValidity::Finite(validity) => format!("{validity}s"),
+        KeyValidity::Forever => "off".to_string(),
     };
 
     let seconds = |x| format!("{x}s");
@@ -887,9 +887,9 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
     cmds.extend([
         strs!["use-csk", km.use_csk],
         algorithm_cmd,
-        strs!["ksk-validity", validity(km.ksk_validity)],
-        strs!["zsk-validity", validity(km.zsk_validity)],
-        strs!["csk-validity", validity(km.csk_validity)],
+        strs!["ksk-validity", validity(&km.ksk_validity)],
+        strs!["zsk-validity", validity(&km.zsk_validity)],
+        strs!["csk-validity", validity(&km.csk_validity)],
         strs![
             "auto-ksk",
             km.auto_ksk.start,

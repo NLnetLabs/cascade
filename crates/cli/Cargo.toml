@@ -39,6 +39,7 @@ path = "../api"
 # The CLI delegates to Clap to handle basic concerns like argument parsing.
 [dependencies.clap]
 workspace = true
+default-features = true
 features = ["cargo", "derive", "env", "wrap_help"]
 
 # The CLI uses 'jiff' to process timestamps and durations, and to print them in
