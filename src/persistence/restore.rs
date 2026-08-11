@@ -581,9 +581,15 @@ fn apply_ixfr_event_to_signed_data(patcher: &mut SignedZonePatcher<'_>, event: I
 
 fn apply_ixfr_event_to_diff_data(diff: &mut Box<DiffData>, event: IxfrEvent) {
     match event {
-        IxfrEvent::Remove(r) if r.rtype == RType::SOA => diff.removed_soa = Some(r.into()),
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
+            diff.removed_records.push(r.clone());
+            diff.removed_soa = Some(r.into());
+        }
         IxfrEvent::Remove(r) => diff.removed_records.push(r),
-        IxfrEvent::Add(r) if r.rtype == RType::SOA => diff.added_soa = Some(r.into()),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
+            diff.added_records.push(r.clone());
+            diff.added_soa = Some(r.into());
+        }
         IxfrEvent::Add(r) => diff.added_records.push(r),
         IxfrEvent::EndOfUpdate => {}
     }
