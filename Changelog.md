@@ -34,6 +34,8 @@ Released yyyy-mm-dd.
   SOA queries when no zone data is available. ([#934])
 - Don't abort XFR transfers if the response buffer is full. ([#941] by
   @ximon18)
+- Wrong serial requested from upstream via IXFR due to compaction bug.
+  ([#952] by @ximon18, fixes [#948])
 
 ### Other changes
 
@@ -61,6 +63,8 @@ Released yyyy-mm-dd.
 [#934]: https://github.com/NLnetLabs/cascade/pull/934
 [#941]: https://github.com/NLnetLabs/cascade/pull/941
 [#947]: https://github.com/NLnetLabs/cascade/pull/947
+[#948]: https://github.com/NLnetLabs/cascade/pull/948
+[#952]: https://github.com/NLnetLabs/cascade/pull/952
 
 ## 0.1.0-beta5 'Got that holiday feeling'
 
