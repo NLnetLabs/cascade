@@ -36,6 +36,10 @@ Released yyyy-mm-dd.
   @ximon18)
 - Wrong serial requested from upstream via IXFR due to compaction bug.
   ([#952] by @ximon18, fixes [#948])
+- Correctly restore SOAs for standalone diffs. ([#955] by @bal-e,
+  fixes [#953])
+- 'a patchset could not be applied' error during zone restoration.
+  ([#959] by @ximon18, fixes [#956])
 
 ### Other changes
 
@@ -65,6 +69,10 @@ Released yyyy-mm-dd.
 [#947]: https://github.com/NLnetLabs/cascade/pull/947
 [#948]: https://github.com/NLnetLabs/cascade/pull/948
 [#952]: https://github.com/NLnetLabs/cascade/pull/952
+[#953]: https://github.com/NLnetLabs/cascade/pull/953
+[#955]: https://github.com/NLnetLabs/cascade/pull/955
+[#956]: https://github.com/NLnetLabs/cascade/pull/956
+[#959]: https://github.com/NLnetLabs/cascade/pull/959
 
 ## 0.1.0-beta5 'Got that holiday feeling'
 
