@@ -252,6 +252,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cascade-policy-file"
+version = "0.1.0-beta6-dev"
+dependencies = [
+ "camino",
+ "domain",
+ "foldhash",
+ "jiff",
+ "serde",
+ "serde_with",
+ "toml",
+]
+
+[[package]]
 name = "cascade-zonedata"
 version = "0.1.0-beta6-dev"
 dependencies = [
@@ -270,6 +283,7 @@ dependencies = [
  "camino",
  "cascade-api",
  "cascade-cfg",
+ "cascade-policy-file",
  "cascade-zonedata",
  "clap",
  "daemonbase",

@@ -369,11 +369,11 @@ pub struct KeyManagerPolicy {
     pub algorithm: KeyParameters,
 
     /// Validity of KSKs.
-    pub ksk_validity: Option<u32>,
+    pub ksk_validity: KeyValidity,
     /// Validity of ZSKs.
-    pub zsk_validity: Option<u32>,
+    pub zsk_validity: KeyValidity,
     /// Validity of CSKs.
-    pub csk_validity: Option<u32>,
+    pub csk_validity: KeyValidity,
 
     /// Configuration variable for automatic KSK rolls.
     pub auto_ksk: AutoConfig,
@@ -417,6 +417,18 @@ pub struct KeyManagerPolicy {
 
     /// Nameservers to check for RRSIG propagation during a key roll.
     pub publication_nameservers: Vec<NameserverCommsPolicy>,
+}
+
+//----------- KeyValidity ------------------------------------------------------
+
+/// How long a key is valid for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyValidity {
+    /// The key is valid for a finite duration.
+    Finite(u32),
+
+    /// The key is valid forever.
+    Forever,
 }
 
 //----------- SignerPolicy -----------------------------------------------------
@@ -524,7 +536,7 @@ pub enum SignerDenialPolicy {
 pub struct ReviewPolicy {
     pub mode: ReviewMode,
 
-    pub on_reject: OnReject,
+    pub on_reject: RejectionPolicy,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -538,7 +550,7 @@ pub enum ReviewMode {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum OnReject {
+pub enum RejectionPolicy {
     #[default]
     Discard,
     Halt,
@@ -691,14 +703,13 @@ impl Default for AutoConfig {
 /// a MAY for SHA-384 and a MUST NOT for SHA-1 and GOST R 34.11-94.
 /// Therefore, we only support SHA-256 and SHA-384 and the default is
 /// SHA-256.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum DsAlgorithm {
     /// Hash the public key using SHA-256.
-    #[serde(rename = "SHA-256")]
     #[default]
     Sha256,
+
     /// Hash the public key using SHA-384.
-    #[serde(rename = "SHA-384")]
     Sha384,
 }
 

@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = [".", "crates/api", "crates/cfg", "crates/cli", "crates/zonedata"]
+members = [
+    ".",
+    "crates/cli",
+
+    "crates/api",
+    "crates/cfg",
+    "crates/policy-file",
+    "crates/zonedata",
+]
 default-members = [".", "crates/cli"]
 
 [workspace.package]
@@ -91,6 +99,9 @@ version = "0.2.15"
 [workspace.dependencies.serde]
 version = "1.0"
 
+[workspace.dependencies.serde_with]
+version = "3"
+
 # 'toml' is a Serde-compatible library for working with TOML documents.
 #
 # It is used throughout the Rust ecosystem and is maintained accordingly.
@@ -119,8 +130,9 @@ daemonbase         = { version = "0.1.5", features = ["tokio"] }
 serde              = { workspace = true, features = ["derive", "rc"] }
 rayon = "1.10.0"
 serde_json         = "1.0"
-serde_with         = "3"
 url                = { version = "2.4", features = ["serde"] }
+
+serde_with.workspace = true
 
 # `futures` provides some async functionality not available in `std` yet. It's
 # quite a big crate, and we only need a subset of the functionality, so we only
@@ -183,6 +195,7 @@ idna_adapter = { version = "=1.0.0" }
 
 cascade-api = { path = "crates/api" }
 cascade-cfg = { path = "crates/cfg" }
+cascade-policy-file = { path = "crates/policy-file" }
 cascade-zonedata = { path = "crates/zonedata" }
 
 # 'clap' is used for top-level configuration of the command-line interface (most

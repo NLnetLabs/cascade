@@ -1010,8 +1010,8 @@ impl HttpServer {
                         }
                     },
                     on_reject: match review.on_reject {
-                        crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                        crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                        crate::policy::RejectionPolicy::Discard => ReviewPolicyOnReject::Discard,
+                        crate::policy::RejectionPolicy::Halt => ReviewPolicyOnReject::Halt,
                     },
                 },
             }
@@ -1056,8 +1056,8 @@ impl HttpServer {
                         }
                     },
                     on_reject: match review.on_reject {
-                        crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                        crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                        crate::policy::RejectionPolicy::Discard => ReviewPolicyOnReject::Discard,
+                        crate::policy::RejectionPolicy::Halt => ReviewPolicyOnReject::Halt,
                     },
                 },
             }
@@ -1068,9 +1068,9 @@ impl HttpServer {
                 ref hsm_server_id,
                 use_csk,
                 ref algorithm,
-                ksk_validity,
-                zsk_validity,
-                csk_validity,
+                ref ksk_validity,
+                ref zsk_validity,
+                ref csk_validity,
                 ref auto_ksk,
                 ref auto_zsk,
                 ref auto_csk,
@@ -1108,9 +1108,18 @@ impl HttpServer {
                 hsm_server_id: hsm_server_id.clone(),
                 algorithm: algorithm.to_string(),
                 use_csk,
-                ksk_validity,
-                zsk_validity,
-                csk_validity,
+                ksk_validity: match *ksk_validity {
+                    crate::policy::KeyValidity::Finite(span) => Some(span),
+                    crate::policy::KeyValidity::Forever => None,
+                },
+                zsk_validity: match *zsk_validity {
+                    crate::policy::KeyValidity::Finite(span) => Some(span),
+                    crate::policy::KeyValidity::Forever => None,
+                },
+                csk_validity: match *csk_validity {
+                    crate::policy::KeyValidity::Finite(span) => Some(span),
+                    crate::policy::KeyValidity::Forever => None,
+                },
                 auto_ksk: map_auto(auto_ksk),
                 auto_zsk: map_auto(auto_zsk),
                 auto_csk: map_auto(auto_csk),
