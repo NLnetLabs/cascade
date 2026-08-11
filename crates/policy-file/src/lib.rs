@@ -8,7 +8,7 @@ pub mod v1;
 
 //--- Helpers
 
-mod datetime;
+pub mod datetime;
 
 //----------- VersionedSpec ----------------------------------------------------
 
