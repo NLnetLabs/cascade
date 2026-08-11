@@ -387,7 +387,7 @@ impl PersistenceState {
             persist_to_file_from_parts(
                 loaded_snapshot_path,
                 None,
-                reader.soa().clone(),
+                reader.loaded().soa().clone(),
                 [].iter(),
                 reader.loaded_records(),
             );
