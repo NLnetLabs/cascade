@@ -389,7 +389,7 @@ impl PersistenceState {
                 None,
                 reader.loaded().soa().clone(),
                 [].iter(),
-                reader.loaded_records(),
+                reader.loaded().regular_records().iter(),
             );
 
             debug!(
