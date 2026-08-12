@@ -1,8 +1,11 @@
 use std::fmt::{Display, Write};
 
+use cascade_api::{ZoneName, ZoneStatusError, ZoneXfrStatus};
+
 use crate::{
     api::{self, ChangeLogging, ChangeLoggingResult, TraceTarget},
     client::CascadeApiClient,
+    commands::zone::to_rfc3339,
 };
 
 #[derive(Clone, Debug, clap::Args)]
@@ -31,6 +34,10 @@ pub enum Command {
         #[arg(long = "trace-targets", value_delimiter = ',')]
         trace_targets: Option<Vec<String>>,
     },
+
+    /// Inspect internal XFR status information.
+    #[command(name = "xfr-status")]
+    XfrStatus { zone: ZoneName },
 }
 
 impl Debug {
@@ -66,6 +73,41 @@ impl Debug {
 
                 print!("{msg}");
                 Ok(())
+            }
+
+            Command::XfrStatus { zone } => {
+                let url = format!("zone/{}/xfr-status", zone);
+                let response: Result<ZoneXfrStatus, ZoneStatusError> =
+                    client.get_json(&url).await?;
+                match response {
+                    Ok(report) => {
+                        println!("zone: {}", report.name);
+                        print!("refresh status: ");
+                        match report.refresh_timer_state {
+                            cascade_api::RefreshTimerState::Disabled => println!("disabled"),
+                            cascade_api::RefreshTimerState::Refresh {
+                                previous,
+                                scheduled,
+                            } => {
+                                let previous = to_rfc3339(previous);
+                                let scheduled = to_rfc3339(scheduled);
+                                println!("refreshing: last={previous}, next={scheduled}");
+                            }
+                            cascade_api::RefreshTimerState::Retry {
+                                previous,
+                                scheduled,
+                            } => {
+                                let previous = to_rfc3339(previous);
+                                let scheduled = to_rfc3339(scheduled);
+                                println!("retrying: last={previous}, next={scheduled}");
+                            }
+                        }
+                        Ok(())
+                    }
+                    Err(ZoneStatusError::ZoneDoesNotExist) => {
+                        Err(format!("zone `{zone}` does not exist"))
+                    }
+                }
             }
         }
     }
