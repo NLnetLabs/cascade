@@ -36,6 +36,7 @@ use crate::api::*;
 use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
+use crate::config::Config;
 use crate::loader;
 use crate::manager::Terminated;
 use crate::policy::AutoConfig;
@@ -1723,4 +1724,17 @@ impl HttpServer {
 
         Json(Err(()))
     }
+}
+
+pub fn kmip_server_exists(hsm_server_id: &str, config: &Config) -> bool {
+    let kmip_server_state_dir = &config.kmip_server_state_dir;
+
+    let p = kmip_server_state_dir.join(hsm_server_id);
+    if let Ok(f) = std::fs::File::open(p)
+        && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
+    {
+        return server.server_id == hsm_server_id;
+    }
+
+    false
 }

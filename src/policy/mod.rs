@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::tsig::TsigStore;
+use crate::units::http_server::kmip_server_exists;
 use crate::{api::PolicyReloadError, config::Config};
 
 pub mod file;
@@ -198,7 +199,7 @@ pub fn load_all(
 
         let policy = spec.parse(name);
 
-        check_policy(&policy, tsig_store)?;
+        check_policy(&policy, tsig_store, config)?;
         if policies.contains_key(name) {
             info!("Reloaded policy '{name}'");
         } else {
@@ -218,7 +219,11 @@ pub fn load_all(
 // to avoid the conversions that would be needed if Name<Bytes> were to be
 // used instead.
 #[allow(clippy::result_large_err)]
-fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
+fn check_policy(
+    policy: &PolicyVersion,
+    tsig_store: &TsigStore,
+    config: &Config,
+) -> Result<(), PolicyReloadError> {
     // Check the publication nameservers for the key manager. Any TSIG key
     // that is part of those nameservers has to exist in the TSIG key store.
     let tsig_names = policy
@@ -321,6 +326,16 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     //
     // It is fine to set this value to zero, the key roll will just complete
     // the next time the refresh timer expires.
+
+    // Check if the HSM server ID refers to a configured HSM.
+    if let Some(hsm_server_id) = &policy.key_manager.hsm_server_id
+        && !kmip_server_exists(hsm_server_id, config)
+    {
+        return Err(PolicyReloadError::BadValue(format!(
+            "unknown HSM server ID '{hsm_server_id}'",
+        )));
+    }
+
     Ok(())
 }
 
