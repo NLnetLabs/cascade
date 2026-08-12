@@ -5,6 +5,7 @@ use std::future::IntoFuture;
 use std::sync::Arc;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
+use std::time::Instant;
 use std::time::SystemTime;
 
 use axum::Json;
@@ -86,6 +87,7 @@ impl HttpServer {
             .route("/zone/{name}/remove", post(Self::zone_remove))
             .route("/zone/{name}/reset", post(Self::zone_reset))
             .route("/zone/{name}/status", get(Self::zone_status))
+            .route("/zone/{name}/xfr-status", get(Self::zone_xfr_status))
             .route("/zone/{name}/history", get(Self::zone_history))
             .route("/zone/{name}/reload", post(Self::zone_reload))
             .route(
@@ -670,6 +672,48 @@ impl HttpServer {
             halted_reason,
             error,
         })
+    }
+
+    async fn zone_xfr_status(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+    ) -> Json<Result<ZoneXfrStatus, ZoneStatusError>> {
+        let zone = match get_zone(&state.center, &name) {
+            Some(zone) => zone,
+            None => return Json(Err(ZoneStatusError::ZoneDoesNotExist)),
+        };
+        let instant_now = Instant::now();
+        let system_time_now = SystemTime::now();
+        match zone.read().loader.refresh_timer {
+            loader::zone::RefreshTimerState::Disabled => Json(Ok(ZoneXfrStatus {
+                name: zone.name.clone(),
+                refresh_timer_state: RefreshTimerState::Disabled,
+            })),
+            loader::zone::RefreshTimerState::Refresh {
+                previous,
+                scheduled,
+            } => Json(Ok(ZoneXfrStatus {
+                name: zone.name.clone(),
+                refresh_timer_state: RefreshTimerState::Refresh {
+                    previous: system_time_now.checked_sub(previous.elapsed()).unwrap(),
+                    scheduled: system_time_now
+                        .checked_add(scheduled.duration_since(instant_now))
+                        .unwrap(),
+                },
+            })),
+            loader::zone::RefreshTimerState::Retry {
+                previous,
+                scheduled,
+            } => Json(Ok(ZoneXfrStatus {
+                name: zone.name.clone(),
+                refresh_timer_state: RefreshTimerState::Retry {
+                    previous: system_time_now.checked_sub(previous.elapsed()).unwrap(),
+                    scheduled: system_time_now
+                        .checked_add(scheduled.duration_since(instant_now))
+                        .unwrap(),
+                },
+            })),
+        }
     }
 
     async fn zone_history(
