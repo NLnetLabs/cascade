@@ -6,6 +6,7 @@ use crate::{
     api::{self, ChangeLogging, ChangeLoggingResult, TraceTarget},
     client::CascadeApiClient,
     commands::zone::to_rfc3339,
+    println,
 };
 
 #[derive(Clone, Debug, clap::Args)]
