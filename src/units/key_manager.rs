@@ -175,7 +175,7 @@ use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env::{VarError, var};
 use std::ffi::OsStr;
 use std::fmt::Formatter;
@@ -187,6 +187,12 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::{debug, error, warn};
+
+macro_rules! strs {
+    ($($e:expr),*$(,)?) => {
+        vec![$($e.to_string()),*]
+    };
+}
 
 //------------ KeyManager ----------------------------------------------------
 
@@ -406,9 +412,61 @@ impl KeyManager {
 
         let zone_name = zone.name.clone();
 
+        // Check if we need to send the KMIP server to the key manager.
+        let kmip_cmd = if let Some(hsm_server_id) = &new.key_manager.hsm_server_id {
+            // XXX - Do we need to store this somewhere?
+
+            let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
+            let kmip_info = match KeySetKmipInfo::try_from(&state_path) {
+                Err(e) => {
+                    error!("KeySetKmipInfo::try_from failed: {e}");
+                    // XXX mark zone as failed
+                    return;
+                }
+                Ok(info) => info,
+            };
+            if !kmip_info.kmip_server_ids.contains(hsm_server_id) {
+                let args = match keyset_kmip_add_server_cmd(hsm_server_id, &center) {
+                    Err(string) => {
+                        error!("keyset_kmip_add_server_cmd failed: {string}");
+                        // XXX mark zone as failed
+                        return;
+                    }
+                    Ok(a) => a,
+                };
+
+                let mut cmd = Self::keyset_cmd(&center, zone_name.clone(), RecordingMode::Record);
+                for a in args {
+                    cmd.arg(a);
+                }
+
+                Some(cmd)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         tokio::spawn(async move {
             // Keep it simple, just send all config items to keyset even
             // if they didn't change.
+
+            if let Some(mut cmd) = kmip_cmd {
+                let res = cmd.output().await;
+
+                // Use match to make sure the pattern s exhaustive.
+                #[allow(clippy::single_match)]
+                match res {
+                    Err(KeySetCommandError { err, output, .. }) => {
+                        error!("{}", format_cmd_error(&err, output));
+                        // XXX mark zone as failed
+                        return;
+                    }
+                    Ok(_) => (),
+                };
+            }
+
             let config_commands = policy_to_commands(&center, &new);
             for c in config_commands {
                 let mut cmd = Self::keyset_cmd(&center, zone_name.clone(), RecordingMode::Record);
@@ -425,11 +483,33 @@ impl KeyManager {
                 match res {
                     Err(KeySetCommandError { err, output, .. }) => {
                         error!("{}", format_cmd_error(&err, output));
+                        // XXX mark zone as failed
                         return;
                     }
                     Ok(_) => (),
-                }
+                };
             }
+
+            // Send the KMIP server to use.
+            let cmd_args = match &new.key_manager.hsm_server_id {
+                None => strs!["kmip", "disable"],
+                Some(hsm_server_id) => strs!["kmip", "set-default-server", &hsm_server_id],
+            };
+            let mut cmd = Self::keyset_cmd(&center, zone_name.clone(), RecordingMode::Record);
+            for a in cmd_args {
+                cmd.arg(a);
+            }
+            let res = cmd.output().await;
+
+            // Use match to make sure the pattern s exhaustive.
+            #[allow(clippy::single_match)]
+            match res {
+                Err(KeySetCommandError { err, output, .. }) => {
+                    error!("{}", format_cmd_error(&err, output));
+                    // XXX mark zone as failed
+                }
+                Ok(_) => (),
+            };
         });
     }
 
@@ -453,9 +533,6 @@ impl KeyManager {
             kmip_server_id = policy.latest.key_manager.hsm_server_id.clone();
         };
 
-        let kmip_server_state_dir = &center.config.kmip_server_state_dir;
-        let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
-
         let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &name);
 
         let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
@@ -476,64 +553,16 @@ impl KeyManager {
         // the `dnst keyset create`d state already exists?
 
         if let Some(kmip_server_id) = kmip_server_id {
-            let kmip_server_state_path = kmip_server_state_dir.join(kmip_server_id);
-
-            debug!("Reading KMIP server state from '{kmip_server_state_path}'");
-            let f = File::open(&kmip_server_state_path)
-                .map_err(|err| ZoneAddError::Other(format!("Unable to open KMIP server state file '{kmip_server_state_path}' for reading: {err}")))?;
-            let kmip_server: KmipServerState = serde_json::from_reader(f).map_err(|err| {
-                ZoneAddError::Other(format!(
-                    "Unable to read KMIP server state from file '{kmip_server_state_path}': {err}"
-                ))
+            let args = keyset_kmip_add_server_cmd(&kmip_server_id, center).map_err(|err| {
+                ZoneAddError::Other(format!("keyset_kmip_add_server_cmd failed: {err}"))
             })?;
-
-            let KmipServerState {
-                server_id,
-                ip_host_or_fqdn,
-                port,
-                insecure,
-                connect_timeout,
-                read_timeout,
-                write_timeout,
-                max_response_bytes,
-                key_label_prefix,
-                key_label_max_bytes,
-                has_credentials,
-            } = kmip_server;
 
             let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
 
-            cmd.arg("kmip")
-                .arg("add-server")
-                .arg(server_id.clone())
-                .arg(ip_host_or_fqdn)
-                .arg("--port")
-                .arg(port.to_string())
-                .arg("--connect-timeout")
-                .arg(format!("{}s", connect_timeout.as_secs()))
-                .arg("--read-timeout")
-                .arg(format!("{}s", read_timeout.as_secs()))
-                .arg("--write-timeout")
-                .arg(format!("{}s", write_timeout.as_secs()))
-                .arg("--max-response-bytes")
-                .arg(max_response_bytes.to_string())
-                .arg("--key-label-max-bytes")
-                .arg(key_label_max_bytes.to_string());
-
-            if insecure {
-                cmd.arg("--insecure");
+            for a in args {
+                cmd.arg(a);
             }
 
-            if has_credentials {
-                cmd.arg("--credential-store")
-                    .arg(kmip_credentials_store_path.as_str());
-            }
-
-            if let Some(key_label_prefix) = key_label_prefix {
-                cmd.arg("--key-label-prefix").arg(key_label_prefix);
-            }
-
-            // TODO: --client-cert, --client-key, --server-cert and --ca-cert
             cmd.output()
                 .await
                 .map_err(|err| ZoneAddError::Other(err.err))?;
@@ -809,6 +838,49 @@ impl TryFrom<&Utf8PathBuf> for KeySetInfo {
     }
 }
 
+//------------ KeySetInfo ----------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct KeySetKmipInfo {
+    kmip_server_ids: HashSet<String>,
+}
+
+impl TryFrom<&Utf8PathBuf> for KeySetKmipInfo {
+    type Error = String;
+
+    fn try_from(state_path: &Utf8PathBuf) -> Result<Self, Self::Error> {
+        /// KMIP state for the keyset command.
+        /// Copied from dnst.
+        #[derive(Deserialize)]
+        struct KmipServerConnectionConfig;
+
+        /// KMIP state for the keyset command.
+        /// Copied from dnst.
+        #[derive(Deserialize)]
+        struct KmipState {
+            servers: HashMap<String, KmipServerConnectionConfig>,
+        }
+
+        /// Persistent state for the keyset command.
+        /// Copied from dnst.
+        #[allow(dead_code)]
+        #[derive(Deserialize)]
+        struct KeySetState {
+            kmip: KmipState,
+        }
+
+        let state = std::fs::read_to_string(state_path)
+            .map_err(|err| format!("Failed to read file '{state_path}': {err}"))?;
+        let state: KeySetState = serde_json::from_str(&state).map_err(|err| {
+            format!("Failed to parse keyset JSON from file '{state_path}': {err}")
+        })?;
+
+        let kmip_server_ids: HashSet<_> = state.kmip.servers.keys().cloned().collect();
+
+        Ok(KeySetKmipInfo { kmip_server_ids })
+    }
+}
+
 // Maximum number of times to try the cron command when the state file does
 // not change.
 const CRON_MAX_RETRIES: u32 = 5;
@@ -829,12 +901,6 @@ fn file_modified(filename: impl AsRef<Path>) -> Result<UnixTime, String> {
     modified
         .try_into()
         .map_err(|err| format!("Failed to query modified timestamp for file '{}': unable to convert from SystemTime: {err}", filename.as_ref().display()))
-}
-
-macro_rules! strs {
-    ($($e:expr),*$(,)?) => {
-        vec![$($e.to_string()),*]
-    };
 }
 
 fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<String>> {
@@ -1393,4 +1459,74 @@ fn imports_to_commands(key_imports: &[KeyImport]) -> Vec<Vec<String>> {
             }
         })
         .collect()
+}
+
+fn keyset_kmip_add_server_cmd(
+    kmip_server_id: &str,
+    center: &Arc<Center>,
+) -> Result<Vec<String>, String> {
+    let kmip_server_state_dir = &center.config.kmip_server_state_dir;
+    let kmip_server_state_path = kmip_server_state_dir.join(kmip_server_id);
+    let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
+
+    debug!("Reading KMIP server state from '{kmip_server_state_path}'");
+    let f = File::open(&kmip_server_state_path).map_err(|err| {
+        format!(
+            "Unable to open KMIP server state file '{kmip_server_state_path}' for reading: {err}"
+        )
+    })?;
+    let kmip_server: KmipServerState = serde_json::from_reader(f).map_err(|err| {
+        format!("Unable to read KMIP server state from file '{kmip_server_state_path}': {err}")
+    })?;
+
+    let KmipServerState {
+        server_id,
+        ip_host_or_fqdn,
+        port,
+        insecure,
+        connect_timeout,
+        read_timeout,
+        write_timeout,
+        max_response_bytes,
+        key_label_prefix,
+        key_label_max_bytes,
+        has_credentials,
+    } = kmip_server;
+
+    let mut args = strs![
+        "kmip",
+        "add-server",
+        server_id.clone(),
+        ip_host_or_fqdn,
+        "--port",
+        port.to_string(),
+        "--connect-timeout",
+        format!("{}s", connect_timeout.as_secs()),
+        "--read-timeout",
+        format!("{}s", read_timeout.as_secs()),
+        "--write-timeout",
+        format!("{}s", write_timeout.as_secs()),
+        "--max-response-bytes",
+        max_response_bytes.to_string(),
+        "--key-label-max-bytes",
+        key_label_max_bytes.to_string(),
+    ];
+
+    if insecure {
+        args.push("--insecure".to_string());
+    }
+
+    if has_credentials {
+        args.append(&mut strs![
+            "--credential-store",
+            kmip_credentials_store_path.as_str(),
+        ]);
+    }
+
+    if let Some(key_label_prefix) = key_label_prefix {
+        args.append(&mut strs!["--key-label-prefix", key_label_prefix]);
+    }
+
+    // TODO: --client-cert, --client-key, --server-cert and --ca-cert
+    Ok(args)
 }
