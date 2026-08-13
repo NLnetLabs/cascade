@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-POLICY.TOML" "5" "Jan 01, 2026" "0.1.0-beta5" "Cascade"
+.TH "CASCADED-POLICY.TOML" "5" "Jan 01, 2026" "0.1.0-beta6" "Cascade"
 .SH NAME
 cascaded-policy.toml \- Cascade policy file format
 .sp
@@ -773,10 +773,14 @@ will be disabled.
 .INDENT 0.0
 .TP
 .B max\-diffs\-size = 20
-The maximum size allowed for in\-memory diffs for a single zone, defined as
-a parcentage of the size of the last published version of the zone. If
-storing a new diff would exceed the limit, diffs will be discarded to make
-space starting with the oldest diffs first.
+The maximum size allowed for in\-memory diffs for a single zone, defined
+as a percentage of the size of the last published version of the zone,
+with zone size measured as the number of records in the zone and diff size
+measured as the total number of records added by all diffs for the zone
+plus the total number of records removed by all diffs for the zone.
+.sp
+If storing a new diff would exceed the limit, diffs will be discarded to
+make space starting with the oldest diffs first.
 .sp
 This setting has no impact on the number of diffs persisted to disk. See
 max\-diffs to control that.
@@ -784,6 +788,14 @@ max\-diffs to control that.
 The default is 20%. If set to 0, or a value low enough such that the set of
 diffs for a zone always exceed the limit, then no diffs will be stored in
 memory and IXFR requests will be responded to with an AXFR instead.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+The \fImax\-diffs\fP limit is applied first, then additional diffs
+will be discarded as needed to meet the \fImax\-diffs\-size\fP limit.
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .SH FILES
 .INDENT 0.0
