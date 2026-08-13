@@ -18,6 +18,7 @@ use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
 
+use crate::contents::ZoneContents;
 use crate::{
     api::{self, ZoneReviewStatus},
     center::Center,
@@ -61,6 +62,9 @@ pub struct Zone {
     /// [`ZoneState`].
     pub state: ZoneStateLock,
 
+    /// The contents of this zone.
+    pub contents: ZoneContents,
+
     /// The metrics for this zone.
     pub metrics: ZoneMetrics,
 
@@ -82,6 +86,7 @@ impl Zone {
         Self {
             name,
             state: ZoneStateLock::new(ZoneState::default()),
+            contents: ZoneContents::new(),
             metrics,
             restored: false,
         }
@@ -131,8 +136,9 @@ impl Zone {
 
         Ok(Self {
             name,
-            metrics,
             state: ZoneStateLock::new(state),
+            contents: ZoneContents::new(),
+            metrics,
             restored: true,
         })
     }
