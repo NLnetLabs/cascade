@@ -26,9 +26,9 @@ use tracing::{debug, error, warn};
 use url::Url;
 
 use crate::{
+    hsm::KmipServerState,
     signer::status::SigningStatusPerZone,
     units::{
-        http_server::KmipServerState,
         key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode},
         zone_signer::KeySetState,
     },
