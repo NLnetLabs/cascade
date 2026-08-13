@@ -16,7 +16,7 @@ Released yyyy-mm-dd.
 
 ## 0.1.0-beta6 'Leonard Shelby'
 
-Released 2026-08-07.
+Released 2026-08-13.
 
 ### Breaking changes
 
@@ -53,7 +53,7 @@ Released 2026-08-07.
 - 'a patchset could not be applied' error during zone restoration.
   ([#959] by @ximon18, fixes [#956])
 - Include DNSSEC records in the loaded zone when compacting.
-  ([#961] by @ximon, fixes [#960])
+  ([#961] by @ximon18, fixes [#960])
 
 ### Other changes
 
