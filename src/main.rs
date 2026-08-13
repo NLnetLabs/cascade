@@ -1,4 +1,5 @@
 use crate::{
+    hsm::{Hsm, HsmState},
     metrics::Metrics,
     persistence::{Compacter, Persister, Restorer},
 };
@@ -104,8 +105,9 @@ fn main() -> ExitCode {
     // Load the global state file or build one from scratch.
     let mut zones = Default::default();
     let mut policies = Default::default();
+    let mut hsms = Default::default();
     let metrics = Metrics::new();
-    let state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
+    let state = match center::State::init_from_file(&config, &mut zones, &mut policies, &mut hsms) {
         Ok(mut state) => {
             info!(
                 "Loaded the global state file (from '{}')",
@@ -129,6 +131,15 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             }
+
+            // Restore pending HSMs.
+            state.hsms.map.extend(hsms.into_iter().map(|(name, spec)| {
+                let kmip = spec.parse(&name);
+                let hsm = Arc::new(Hsm {
+                    state: Mutex::new(HsmState { kmip }),
+                });
+                (name, hsm)
+            }));
 
             // Restore pending policies.
             state
