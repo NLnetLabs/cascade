@@ -40,6 +40,8 @@ Released yyyy-mm-dd.
   fixes [#953])
 - 'a patchset could not be applied' error during zone restoration.
   ([#959] by @ximon18, fixes [#956])
+- Include DNSSEC records in the loaded zone when compacting.
+  ([#961] by @ximon, fixes [#960])
 
 ### Other changes
 
@@ -73,6 +75,8 @@ Released yyyy-mm-dd.
 [#955]: https://github.com/NLnetLabs/cascade/pull/955
 [#956]: https://github.com/NLnetLabs/cascade/pull/956
 [#959]: https://github.com/NLnetLabs/cascade/pull/959
+[#960]: https://github.com/NLnetLabs/cascade/pull/960
+[#961]: https://github.com/NLnetLabs/cascade/pull/961
 
 ## 0.1.0-beta5 'Got that holiday feeling'
 
