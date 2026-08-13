@@ -30,6 +30,7 @@ use cascade_zonedata as zonedata;
 
 mod center;
 mod common;
+mod contents;
 mod daemon;
 mod loader;
 mod log;
