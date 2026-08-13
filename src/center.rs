@@ -14,6 +14,7 @@ use tracing::{debug, error, info, trace};
 
 use crate::api::{self, KeyImport, TsigAddError, TsigAddResult};
 use crate::config::RuntimeConfig;
+use crate::hsm::HsmStore;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::metrics::Metrics;
@@ -390,6 +391,9 @@ pub struct State {
     ///
     /// Like global configuration, these are only reloaded on user request.
     pub policies: foldhash::HashMap<Box<str>, Policy>,
+
+    /// HSMs.
+    pub hsms: HsmStore,
 
     /// The TSIG key store.
     ///

@@ -1,12 +1,48 @@
 //! Hardware Security Modules (HSMs).
 
 use std::{
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
 
 use crate::api;
+
+//----------- HsmStore ---------------------------------------------------------
+
+/// A store of known [`Hsm`]s.
+#[derive(Debug, Default)]
+pub struct HsmStore {
+    /// A map of known HSMs by name.
+    pub map: foldhash::HashMap<Box<str>, Arc<Hsm>>,
+}
+
+impl HsmStore {
+    /// Construct a new [`HsmStore`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    // TODO: Methods to get, modify, add, remove HSMs?
+}
+
+//----------- Hsm --------------------------------------------------------------
+
+/// A Hardware Security Module (HSM).
+#[derive(Debug)]
+pub struct Hsm {
+    /// The state of the HSM.
+    pub state: Mutex<HsmState>,
+}
+
+//----------- HsmState ---------------------------------------------------------
+
+/// The state of an [`Hsm`].
+#[derive(Debug)]
+pub struct HsmState {
+    pub kmip: KmipServerState,
+}
 
 /// Non-sensitive KMIP server settings to be persisted.
 ///
