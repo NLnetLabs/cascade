@@ -134,7 +134,7 @@ async fn refresh(
             let metrics = metrics.clone();
             let result;
             (builder, result) = tokio::task::spawn_blocking(move || {
-                let result = zonefile::load(&zone, &path, &mut builder, &metrics);
+                let result = zonefile::load(&zone.name, &path, &mut builder, &metrics);
                 (builder, result)
             })
             .await
