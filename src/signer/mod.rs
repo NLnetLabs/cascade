@@ -31,7 +31,10 @@ use crate::{
     center::Center,
     policy::{PolicyVersion, SignerSerialPolicy},
     signer::{incremental::LocalState, queue::SigningPermit, status::SigningStatusPerZone},
-    units::zone_signer::SignerError,
+    units::{
+        key_manager::mk_dnst_keyset_state_file_path,
+        zone_signer::{KeySetState, SignerError},
+    },
     zone::{HistoricalEvent, Zone},
     zonedata::SignedZoneBuilder,
 };
@@ -75,29 +78,42 @@ fn sign(
     let hsm_store = center.state.lock().unwrap().hsms.clone();
     let kmip_servers = &center.signer.kmip_servers;
 
-    let result = if let Some(patcher) = builder.patch() {
-        self::incremental::sign_incrementally(
-            &center.config,
-            &zone.name,
-            &policy,
-            &hsm_store,
-            kmip_servers,
-            patcher,
-            &mut local_state,
-            status.clone(),
-        )
-    } else {
-        self::full::sign_zone(
-            &center.config,
-            &zone.name,
-            &policy,
-            &hsm_store,
-            kmip_servers,
-            &mut builder,
-            &mut local_state,
-            status.clone(),
-        )
-    };
+    // TODO: Store this in `ZoneState` and only fetch it when keyset is invoked.
+    let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
+    let keyset_state = std::fs::read_to_string(&state_path)
+        .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))
+        .and_then(|state| {
+            serde_json::from_str::<KeySetState>(&state)
+                .map_err(|e| SignerError::SigningError(format!("loading keyset state failed: {e}")))
+        });
+
+    let result = keyset_state.and_then(|keyset_state| {
+        if let Some(patcher) = builder.patch() {
+            self::incremental::sign_incrementally(
+                &center.config,
+                &zone.name,
+                &policy,
+                &hsm_store,
+                kmip_servers,
+                patcher,
+                &mut local_state,
+                keyset_state,
+                status.clone(),
+            )
+        } else {
+            self::full::sign_zone(
+                &center.config,
+                &zone.name,
+                &policy,
+                &hsm_store,
+                kmip_servers,
+                &mut builder,
+                &mut local_state,
+                keyset_state,
+                status.clone(),
+            )
+        }
+    });
 
     let end = Instant::now();
     let duration = (end - start).as_secs_f64();

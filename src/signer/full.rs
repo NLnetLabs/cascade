@@ -50,10 +50,7 @@ use crate::{
         keys::ZoneSigningKeys,
         status::{SigningStatusPerZone, ZoneSigningStatus},
     },
-    units::{
-        key_manager::mk_dnst_keyset_state_file_path,
-        zone_signer::{KeySetState, MinTimestamp, SignerError},
-    },
+    units::zone_signer::{KeySetState, MinTimestamp, SignerError},
     zonedata::{OldRecord, RegularRecord, SignedZoneBuilder},
 };
 
@@ -66,6 +63,7 @@ pub fn sign_zone(
     kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
     builder: &mut SignedZoneBuilder,
     local_state: &mut LocalState,
+    keyset_state: KeySetState,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) -> Result<(), SignerError> {
     info!("[ZS]: Starting signing operation for zone '{zone_name}'");
@@ -147,20 +145,12 @@ pub fn sign_zone(
         }
     }
 
-    debug!("Reading dnst keyset DNSKEY RRs and RRSIG RRs");
-    status.write().unwrap().current_action = "Fetching apex RRs from the key manager".to_string();
-    // Read the DNSKEY RRs and DNSKEY RRSIG RR from the keyset state.
-    let state_path = mk_dnst_keyset_state_file_path(&config.keys_dir, zone_name);
-    let state = std::fs::read_to_string(&state_path)
-        .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
-    let state: KeySetState = serde_json::from_str(&state).unwrap();
-
-    local_state.apex_remove = state.apex_remove.clone();
-    let mut apex_extra = state.apex_extra.clone();
+    local_state.apex_remove = keyset_state.apex_remove.clone();
+    let mut apex_extra = keyset_state.apex_extra.clone();
     apex_extra.sort();
     local_state.apex_extra = apex_extra;
 
-    for rr in &state.apex_extra {
+    for rr in &keyset_state.apex_extra {
         let mut zonefile = Zonefile::new();
         zonefile.extend_from_slice(rr.as_bytes());
         zonefile.extend_from_slice(b"\n");
@@ -173,12 +163,18 @@ pub fn sign_zone(
 
     debug!("Loading dnst keyset signing keys");
     // Load the signing keys indicated by the keyset state.
-    let signing_keys =
-        ZoneSigningKeys::load(config, zone_name, hsm_store, kmip_servers, &state, &status)?;
+    let signing_keys = ZoneSigningKeys::load(
+        config,
+        zone_name,
+        hsm_store,
+        kmip_servers,
+        &keyset_state,
+        &status,
+    )?;
 
     // Save the current zone signing keys and clear key_roll
     let mut key_tags = HashSet::new();
-    for v in state.keyset.keys().values() {
+    for v in keyset_state.keyset.keys().values() {
         let signer = match v.keytype() {
             KeyType::Ksk(_) => false,
             KeyType::Zsk(key_state) => key_state.signer(),

@@ -51,7 +51,6 @@ use crate::hsm::HsmStore;
 use crate::policy::{PolicyVersion, SignerDenialPolicy};
 use crate::signer::keys::ZoneSigningKeys;
 use crate::signer::status::SigningStatusPerZone;
-use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
     KeySetState, MinTimestamp, PassThroughMode, SignerError, faketime_or_now,
 };
@@ -69,6 +68,7 @@ pub fn sign_incrementally(
     kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
     patch: SignedZonePatcher,
     local_state: &mut LocalState,
+    keyset_state: KeySetState,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) -> Result<(), SignerError> {
     // Check what work needs to be done. If the keyset state
@@ -84,12 +84,6 @@ pub fn sign_incrementally(
     status.write().expect("should not fail").current_action =
         "Start incremental signing".to_string();
     let load_unsigned = patch.next_loaded().is_some();
-
-    let state_path = mk_dnst_keyset_state_file_path(&config.keys_dir, zone_name);
-    let state = std::fs::read_to_string(&state_path)
-        .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
-    let keyset_state: KeySetState = serde_json::from_str(&state)
-        .map_err(|e| SignerError::SigningError(format!("loading keyset state failed: {e}")))?;
 
     let use_nsec3 = matches!(policy.signer.denial, SignerDenialPolicy::NSec3 { .. });
 
