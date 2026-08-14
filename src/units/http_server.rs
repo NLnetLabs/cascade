@@ -1623,21 +1623,17 @@ impl HttpServer {
     }
 
     async fn kmip_server_list(State(state): State<Arc<HttpServer>>) -> Json<HsmServerListResult> {
-        let kmip_server_state_dir = &*state.center.config.kmip_server_state_dir;
-
-        let mut servers = Vec::<String>::new();
-
-        if let Ok(entries) = std::fs::read_dir(kmip_server_state_dir) {
-            for entry in entries {
-                let Ok(entry) = entry else { continue };
-
-                if let Ok(f) = std::fs::File::open(entry.path())
-                    && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
-                {
-                    servers.push(server.server_id);
-                }
-            }
-        }
+        // TODO: Present more information here?
+        let mut servers = state
+            .center
+            .state
+            .lock()
+            .unwrap()
+            .hsms
+            .map
+            .keys()
+            .map(|n| (**n).into())
+            .collect::<Vec<_>>();
 
         // We don't _have_ to sort, but seems useful for consistent output
         servers.sort();
@@ -1649,17 +1645,14 @@ impl HttpServer {
         State(state): State<Arc<HttpServer>>,
         Path(name): Path<Box<str>>,
     ) -> Json<Result<HsmServerGetResult, ()>> {
-        let kmip_server_state_dir = &*state.center.config.kmip_server_state_dir;
-
-        let p = kmip_server_state_dir.join(&*name);
-        if let Ok(f) = std::fs::File::open(p)
-            && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
-        {
-            return Json(Ok(HsmServerGetResult {
-                server: server.into(),
-            }));
-        }
-
-        Json(Err(()))
+        let state = state.center.state.lock().unwrap();
+        let Some(hsm) = state.hsms.map.get(&*name) else {
+            // TODO: More informative error?
+            return Json(Err(()));
+        };
+        let server = hsm.state.lock().unwrap().kmip.clone();
+        Json(Ok(HsmServerGetResult {
+            server: server.into(),
+        }))
     }
 }
