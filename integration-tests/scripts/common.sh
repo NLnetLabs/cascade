@@ -21,10 +21,7 @@ function get-cascade-config-option() {
       echo "${_base_dir}/tsig-keys.db"
       ;;
     kmip-credentials-store-path)
-      echo "${_base_dir}/kmip/credentials.db"
-      ;;
-    kmip-server-state-dir)
-      echo "${_base_dir}/kmip"
+      echo "${_base_dir}/kmip-credentials.db"
       ;;
     keys-dir)
       echo "${_base_dir}/keys"

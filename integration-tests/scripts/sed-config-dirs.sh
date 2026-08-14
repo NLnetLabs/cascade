@@ -54,7 +54,6 @@ sed -e "s_^policy-dir.*_policy-dir = \"$(get-cascade-config-option "${_base_dir}
   -e "s_^zone-state-dir.*_zone-state-dir = \"$(get-cascade-config-option "${_base_dir}" "zone-state-dir")\"_" \
   -e "s_^tsig-store-path.*_tsig-store-path = \"$(get-cascade-config-option "${_base_dir}" "tsig-store-path")\"_" \
   -e "s_^kmip-credentials-store-path.*_kmip-credentials-store-path = \"$(get-cascade-config-option "${_base_dir}" "kmip-credentials-store-path")\"_" \
-  -e "s_^kmip-server-state-dir.*_kmip-server-state-dir = \"$(get-cascade-config-option "${_base_dir}" "kmip-server-state-dir")\"_" \
   -e "s_^keys-dir.*_keys-dir = \"$(get-cascade-config-option "${_base_dir}" "keys-dir")\"_" \
   -e "s_^dnst-binary-path.*_dnst-binary-path = \"$(get-cascade-config-option "${_base_dir}" "dnst-binary-path")\"_" \
   -e "s_^log-level.*_log-level = \"${_log_level}\"_" \
