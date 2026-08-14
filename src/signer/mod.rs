@@ -46,6 +46,9 @@ pub mod queue;
 pub mod status;
 pub mod zone;
 
+#[cfg(test)]
+mod tests;
+
 //----------- sign() -----------------------------------------------------------
 
 /// Sign a zone.

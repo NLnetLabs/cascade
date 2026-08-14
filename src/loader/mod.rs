@@ -30,7 +30,7 @@ use crate::{
 
 mod server;
 pub mod zone;
-mod zonefile;
+pub mod zonefile;
 
 //----------- Loader -----------------------------------------------------------
 
