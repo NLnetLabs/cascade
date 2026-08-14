@@ -26,7 +26,7 @@ use tracing::{debug, error, warn};
 use url::Url;
 
 use crate::{
-    hsm::KmipServerState,
+    hsm::{HsmStore, KmipServerState},
     signer::status::SigningStatusPerZone,
     units::{
         key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode},
@@ -62,6 +62,7 @@ impl ZoneSigningKeys {
     pub fn load(
         config: &crate::config::Config,
         zone_name: &Name<Bytes>,
+        hsm_store: &HsmStore,
         kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
         keyset_state: &KeySetState,
         status: &RwLock<SigningStatusPerZone>,
@@ -115,7 +116,7 @@ impl ZoneSigningKeys {
                             error,
                         })
                     })?;
-                    KeyPair::load_kmip(config, kmip_servers, priv_url, pub_url, status)?
+                    KeyPair::load_kmip(config, hsm_store, kmip_servers, priv_url, pub_url, status)?
                 }
                 _ => {
                     return Err(Box::new(LoadError::UnsupportedScheme { url: pub_url }));
@@ -270,6 +271,7 @@ impl KeyPair {
     /// Load a KMIP key-pair.
     pub fn load_kmip(
         config: &crate::config::Config,
+        hsm_store: &HsmStore,
         kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
         priv_key_url: KeyUrl,
         pub_key_url: KeyUrl,
@@ -285,21 +287,14 @@ impl KeyPair {
                 status.write().unwrap().current_action =
                     format!("Connecting to KMIP server '{}'", priv_key_url.server_id());
 
-                // Try and load the KMIP server settings.
-                let server_state_path = config.kmip_server_state_dir.join(priv_key_url.server_id());
-                debug!("Reading KMIP server state from '{server_state_path}'");
-                let f = std::fs::File::open(&server_state_path).map_err(|error| {
-                    Box::new(LoadError::UnreadableKmipServerState {
-                        path: server_state_path.clone().into(),
-                        error,
+                // Load the KMIP server settings.
+                let hsm_name = priv_key_url.server_id();
+                let hsm = hsm_store.map.get(hsm_name).ok_or_else(|| {
+                    Box::new(LoadError::HsmDisappeared {
+                        name: hsm_name.into(),
                     })
                 })?;
-                let kmip_server: KmipServerState = serde_json::from_reader(f).map_err(|error| {
-                    Box::new(LoadError::MalformedKmipServerState {
-                        path: server_state_path.clone().into(),
-                        error,
-                    })
-                })?;
+                let kmip_server = hsm.state.lock().unwrap().kmip.clone();
                 let KmipServerState {
                     server_id,
                     ip_host_or_fqdn: host,
@@ -473,22 +468,10 @@ pub enum LoadError {
         error: String,
     },
 
-    /// Could not read the KMIP server state.
-    UnreadableKmipServerState {
-        /// The path to the state file.
-        path: Box<Utf8Path>,
-
-        /// The underlying error.
-        error: std::io::Error,
-    },
-
-    /// Could not parse the KMIP server state.
-    MalformedKmipServerState {
-        /// The path to the state file.
-        path: Box<Utf8Path>,
-
-        /// The underlying error.
-        error: serde_json::Error,
+    /// The named HSM disappeared due to a race condition.
+    HsmDisappeared {
+        /// The name of the HSM.
+        name: String,
     },
 
     /// Could not load the KMIP client credentials file.
@@ -542,8 +525,7 @@ impl core::error::Error for LoadError {
             Self::MalformedPublicKeyFile { error, .. } => Some(error),
             Self::MalformedOnDiskKeyPair { error, .. } => Some(error),
             Self::MalformedKmipKeyUrl { .. } => None, // TODO
-            Self::UnreadableKmipServerState { error, .. } => Some(error),
-            Self::MalformedKmipServerState { error, .. } => Some(error),
+            Self::HsmDisappeared { .. } => None,
             Self::KmipClientCredentials { .. } => None, // TODO
             Self::MissingKmipClientCredentials { .. } => None,
             Self::KmipConnection { .. } => None,       // TODO
@@ -605,16 +587,10 @@ impl fmt::Display for LoadError {
             Self::MalformedKmipKeyUrl { url, error } => {
                 write!(f, "The KMIP key URL '{url}' is malformed: {error}")
             }
-            Self::UnreadableKmipServerState { path, error } => {
+            Self::HsmDisappeared { name } => {
                 write!(
                     f,
-                    "The KMIP server state file '{path}' could not be read: {error}"
-                )
-            }
-            Self::MalformedKmipServerState { path, error } => {
-                write!(
-                    f,
-                    "The KMIP server state file '{path}' was malformed: {error}"
+                    "Internal error: the HSM '{name}' is not available due to a race condition"
                 )
             }
             Self::KmipClientCredentials { path, error } => {

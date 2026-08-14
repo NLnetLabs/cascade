@@ -12,7 +12,7 @@ use crate::api;
 //----------- HsmStore ---------------------------------------------------------
 
 /// A store of known [`Hsm`]s.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct HsmStore {
     /// A map of known HSMs by name.
     pub map: foldhash::HashMap<Box<str>, Arc<Hsm>>,
