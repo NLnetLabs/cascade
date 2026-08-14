@@ -211,7 +211,6 @@ fn main() -> ExitCode {
             for dir in [
                 &*config.keys_dir,
                 config.kmip_credentials_store_path.parent().unwrap(),
-                &*config.kmip_server_state_dir,
                 &*config.policy_dir,
                 &*config.zone_state_dir,
             ] {
