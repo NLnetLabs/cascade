@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::future::IntoFuture;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -26,7 +27,7 @@ use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 use crate::api;
 use crate::api::KeyInfo;
@@ -35,6 +36,8 @@ use crate::api::*;
 use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
+use crate::hsm::Hsm;
+use crate::hsm::HsmState;
 use crate::hsm::KmipServerState;
 use crate::loader;
 use crate::manager::Terminated;
@@ -1479,8 +1482,21 @@ impl HttpServer {
         // TODO: Create a single common way to store secrets.
         let server_id = req.server_id.clone();
         let config = &state.center.config;
-        let kmip_server_state_file = config.kmip_server_state_dir.join(server_id.clone());
         let kmip_credentials_store_path = config.kmip_credentials_store_path.clone();
+
+        // Ensure the HSM does not already exist.
+        // TODO: TOCTOU race, the HSM could be added after this check.
+        if state
+            .center
+            .state
+            .lock()
+            .unwrap()
+            .hsms
+            .map
+            .contains_key(&*req.server_id)
+        {
+            return Json(Err(HsmServerAddError::AlreadyExists));
+        }
 
         // Test the connection before using the HSM.
         let conn_settings = {
@@ -1588,28 +1604,20 @@ impl HttpServer {
             }
         }
 
-        // Extract just the settings that do not need to be
-        // stored separately.
-        let kmip_state = KmipServerState::from(req);
+        // Register the HSM in global state.
+        {
+            let name: Box<str> = req.server_id.as_str().into();
+            let kmip = KmipServerState::from(req);
+            let hsm = Hsm {
+                state: Mutex::new(HsmState { kmip }),
+            };
 
-        info!("Writing to KMIP server file '{kmip_server_state_file}");
-        let f = match std::fs::File::create_new(kmip_server_state_file.clone()) {
-            Ok(f) => f,
-            Err(err) => {
-                return Json(Err(
-                    HsmServerAddError::KmipServerStateFileCouldNotBeCreated {
-                        path: kmip_server_state_file.into_string(),
-                        err: err.to_string(),
-                    },
-                ));
-            }
-        };
-        if let Err(err) = serde_json::to_writer_pretty(&f, &kmip_state) {
-            return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeSaved {
-                path: kmip_server_state_file.into_string(),
-                err: err.to_string(),
-            }));
+            let mut state = state.center.state.lock().unwrap();
+            state.hsms.map.insert(name, Arc::new(hsm));
         }
+
+        // Ensure the HSM is persisted to disk immediately.
+        crate::state::save_now(&state.center);
 
         Json(Ok(HsmServerAddResult { vendor_id }))
     }
