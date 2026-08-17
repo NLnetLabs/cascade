@@ -264,12 +264,13 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 
     let ZoneByName(zone) = state.zones.get(&name).ok_or(ZoneRemoveError::NotFound)?;
 
-    // TODO(#871): support removing a zone during restoration.
-    // The zone must be halted or in maintenance mode.
-    if let zone = zone.read()
-        && !(zone.maintenance_mode && (zone.machine.is_waiting() || zone.machine.is_halted()))
     {
-        return Err(ZoneRemoveError::NotInMaintenanceMode);
+        let zone = zone.read();
+        // The zone must be in maintenance mode, and passive/halted.
+        // TODO(#871): support removing a zone during restoration.
+        if !zone.maintenance_mode || !zone.machine.is_waiting() && !zone.machine.is_halted() {
+            return Err(ZoneRemoveError::NotInMaintenanceMode);
+        }
     }
 
     let ZoneByName(zone) = state
