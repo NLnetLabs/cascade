@@ -88,6 +88,19 @@ Commands
 
    Get the history of a single zone.
 
+.. subcmd:: maintenance
+
+   Enable or disable maintenance mode for the zone.
+
+   In maintenance mode, Cascade will not act on the zone autonomously (e.g. to
+   load new zone data or refresh signatures). This quiet state is helpful for
+   debugging and changing zone configuration.
+
+   .. note:: If maintenance mode is enabled while a new instance of the zone
+             is being built (i.e. loading, signing, review, etc. is ongoing),
+             it will not be canceled; maintenance mode will go into effect once
+             the operation completes.
+
 Options for :subcmd:`zone add`
 ------------------------------
 
