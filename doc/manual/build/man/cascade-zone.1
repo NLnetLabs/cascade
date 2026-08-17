@@ -54,7 +54,7 @@ cascade-zone \- Manage zones
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%history\fP \fB<NAME>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBmaintenance\fP \fB<enable|disable>\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%maintenance\fP \fB<enable|disable>\fP \fB<NAME>\fP
 .SH DESCRIPTION
 .sp
 Manage Cascade\(aqs zones.
@@ -72,6 +72,9 @@ Add a new zone.
 .TP
 .B remove
 Remove a zone.
+.sp
+Maintenance mode must be enabled (see \fBzone maintenance\fP). The
+zone must be passive (with no ongoing operations) or in a hard\-halt state.
 .sp
 \fBNOTE:\fP
 .INDENT 7.0
@@ -123,6 +126,25 @@ Reset the pipeline for a zone to get it out of a halted state.
 .TP
 .B history
 Get the history of a single zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B maintenance
+Enable or disable maintenance mode for the zone.
+.sp
+In maintenance mode, Cascade will not act on the zone autonomously (e.g. to
+load new zone data or refresh signatures). This quiet state is helpful for
+debugging and changing zone configuration.
+.sp
+\fBNOTE:\fP
+.INDENT 7.0
+.INDENT 3.5
+If maintenance mode is enabled while a new instance of the zone
+is being built (i.e. loading, signing, review, etc. is ongoing),
+it will not be canceled; maintenance mode will go into effect once
+the operation completes.
+.UNINDENT
+.UNINDENT
 .UNINDENT
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0
