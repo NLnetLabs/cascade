@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::future::IntoFuture;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -24,10 +25,9 @@ use domain::utils::base64;
 use domain_kmip::ConnectionSettings;
 use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
-use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 use crate::api;
 use crate::api::KeyInfo;
@@ -36,6 +36,9 @@ use crate::api::*;
 use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
+use crate::hsm::Hsm;
+use crate::hsm::HsmState;
+use crate::hsm::KmipServerState;
 use crate::loader;
 use crate::manager::Terminated;
 use crate::policy::AutoConfig;
@@ -1470,75 +1473,6 @@ impl HttpServer {
 
 //------------ HttpServer Handler for /kmip ----------------------------------
 
-/// Non-sensitive KMIP server settings to be persisted.
-///
-/// Sensitive details such as certificates and credentials should be stored
-/// separately.
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct KmipServerState {
-    pub server_id: String,
-    pub ip_host_or_fqdn: String,
-    pub port: u16,
-    pub insecure: bool,
-    pub connect_timeout: Duration,
-    pub read_timeout: Duration,
-    pub write_timeout: Duration,
-    pub max_response_bytes: u32,
-    pub key_label_prefix: Option<String>,
-    pub key_label_max_bytes: u8,
-    pub has_credentials: bool,
-}
-
-impl From<HsmServerAdd> for KmipServerState {
-    fn from(srv: HsmServerAdd) -> Self {
-        KmipServerState {
-            server_id: srv.server_id,
-            ip_host_or_fqdn: srv.ip_host_or_fqdn,
-            port: srv.port,
-            insecure: srv.insecure,
-            connect_timeout: srv.connect_timeout,
-            read_timeout: srv.read_timeout,
-            write_timeout: srv.write_timeout,
-            max_response_bytes: srv.max_response_bytes,
-            key_label_prefix: srv.key_label_prefix,
-            key_label_max_bytes: srv.key_label_max_bytes,
-            has_credentials: srv.username.is_some(),
-        }
-    }
-}
-
-impl From<KmipServerState> for api::KmipServerState {
-    fn from(value: KmipServerState) -> Self {
-        let KmipServerState {
-            server_id,
-            ip_host_or_fqdn,
-            port,
-            insecure,
-            connect_timeout,
-            read_timeout,
-            write_timeout,
-            max_response_bytes,
-            key_label_prefix,
-            key_label_max_bytes,
-            has_credentials,
-        } = value;
-
-        Self {
-            server_id,
-            ip_host_or_fqdn,
-            port,
-            insecure,
-            connect_timeout,
-            read_timeout,
-            write_timeout,
-            max_response_bytes,
-            key_label_prefix,
-            key_label_max_bytes,
-            has_credentials,
-        }
-    }
-}
-
 impl HttpServer {
     async fn kmip_server_add(
         State(state): State<Arc<HttpServer>>,
@@ -1548,8 +1482,21 @@ impl HttpServer {
         // TODO: Create a single common way to store secrets.
         let server_id = req.server_id.clone();
         let config = &state.center.config;
-        let kmip_server_state_file = config.kmip_server_state_dir.join(server_id.clone());
         let kmip_credentials_store_path = config.kmip_credentials_store_path.clone();
+
+        // Ensure the HSM does not already exist.
+        // TODO: TOCTOU race, the HSM could be added after this check.
+        if state
+            .center
+            .state
+            .lock()
+            .unwrap()
+            .hsms
+            .map
+            .contains_key(&*req.server_id)
+        {
+            return Json(Err(HsmServerAddError::AlreadyExists));
+        }
 
         // Test the connection before using the HSM.
         let conn_settings = {
@@ -1657,48 +1604,36 @@ impl HttpServer {
             }
         }
 
-        // Extract just the settings that do not need to be
-        // stored separately.
-        let kmip_state = KmipServerState::from(req);
+        // Register the HSM in global state.
+        {
+            let name: Box<str> = req.server_id.as_str().into();
+            let kmip = KmipServerState::from(req);
+            let hsm = Hsm {
+                state: Mutex::new(HsmState { kmip }),
+            };
 
-        info!("Writing to KMIP server file '{kmip_server_state_file}");
-        let f = match std::fs::File::create_new(kmip_server_state_file.clone()) {
-            Ok(f) => f,
-            Err(err) => {
-                return Json(Err(
-                    HsmServerAddError::KmipServerStateFileCouldNotBeCreated {
-                        path: kmip_server_state_file.into_string(),
-                        err: err.to_string(),
-                    },
-                ));
-            }
-        };
-        if let Err(err) = serde_json::to_writer_pretty(&f, &kmip_state) {
-            return Json(Err(HsmServerAddError::KmipServerStateFileCouldNotBeSaved {
-                path: kmip_server_state_file.into_string(),
-                err: err.to_string(),
-            }));
+            let mut state = state.center.state.lock().unwrap();
+            state.hsms.map.insert(name, Arc::new(hsm));
         }
+
+        // Ensure the HSM is persisted to disk immediately.
+        crate::state::save_now(&state.center);
 
         Json(Ok(HsmServerAddResult { vendor_id }))
     }
 
     async fn kmip_server_list(State(state): State<Arc<HttpServer>>) -> Json<HsmServerListResult> {
-        let kmip_server_state_dir = &*state.center.config.kmip_server_state_dir;
-
-        let mut servers = Vec::<String>::new();
-
-        if let Ok(entries) = std::fs::read_dir(kmip_server_state_dir) {
-            for entry in entries {
-                let Ok(entry) = entry else { continue };
-
-                if let Ok(f) = std::fs::File::open(entry.path())
-                    && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
-                {
-                    servers.push(server.server_id);
-                }
-            }
-        }
+        // TODO: Present more information here?
+        let mut servers = state
+            .center
+            .state
+            .lock()
+            .unwrap()
+            .hsms
+            .map
+            .keys()
+            .map(|n| (**n).into())
+            .collect::<Vec<_>>();
 
         // We don't _have_ to sort, but seems useful for consistent output
         servers.sort();
@@ -1710,17 +1645,14 @@ impl HttpServer {
         State(state): State<Arc<HttpServer>>,
         Path(name): Path<Box<str>>,
     ) -> Json<Result<HsmServerGetResult, ()>> {
-        let kmip_server_state_dir = &*state.center.config.kmip_server_state_dir;
-
-        let p = kmip_server_state_dir.join(&*name);
-        if let Ok(f) = std::fs::File::open(p)
-            && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
-        {
-            return Json(Ok(HsmServerGetResult {
-                server: server.into(),
-            }));
-        }
-
-        Json(Err(()))
+        let state = state.center.state.lock().unwrap();
+        let Some(hsm) = state.hsms.map.get(&*name) else {
+            // TODO: More informative error?
+            return Json(Err(()));
+        };
+        let server = hsm.state.lock().unwrap().kmip.clone();
+        Json(Ok(HsmServerGetResult {
+            server: server.into(),
+        }))
     }
 }

@@ -13,6 +13,7 @@ use tracing::{debug, error};
 
 use crate::{
     center::{Center, State},
+    hsm::KmipServerState,
     policy::Policy,
 };
 
@@ -62,18 +63,25 @@ impl Spec {
     /// `zones` will be set to the names of zones that need to be loaded.
     /// `policies` will be set to the set of policies from the global state
     /// file, that need to be parsed and inserted in the state.
+    /// `hsms` will be set to the set of known HSMs from the global state file,
+    /// that need to be parsed and inserted in the state.
     pub fn parse(
         self,
         zones: &mut foldhash::HashSet<Name<Bytes>>,
         policies: &mut foldhash::HashMap<Box<str>, PolicySpec>,
+        hsms: &mut foldhash::HashMap<Box<str>, HsmSpec>,
     ) -> State {
         match self {
             Self::V1(mut spec) => {
-                // Extract and write out 'zones' and 'policies'.
+                // Extract and write out 'zones', 'policies', and 'hsms'.
                 *zones = std::mem::take(&mut spec.zones);
                 *policies = std::mem::take(&mut spec.policies)
                     .into_iter()
                     .map(|(k, v)| (k, PolicySpec::V1(v)))
+                    .collect();
+                *hsms = std::mem::take(&mut spec.hsms)
+                    .into_iter()
+                    .map(|(k, v)| (k, HsmSpec::V1(v)))
                     .collect();
 
                 spec.parse()
@@ -121,6 +129,25 @@ pub enum PolicySpec {
 impl PolicySpec {
     /// Parse from this specification.
     pub fn parse(self, name: &str) -> Policy {
+        match self {
+            Self::V1(spec) => spec.parse(name),
+        }
+    }
+}
+
+//----------- HsmSpec ----------------------------------------------------------
+
+/// HSM details serialized in global state.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "version")]
+pub enum HsmSpec {
+    /// The version 1 format.
+    V1(v1::HsmSpec),
+}
+
+impl HsmSpec {
+    /// Parse from this specification.
+    pub fn parse(self, name: &str) -> KmipServerState {
         match self {
             Self::V1(spec) => spec.parse(name),
         }

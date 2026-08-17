@@ -1019,6 +1019,7 @@ pub struct HsmServerAddResult {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum HsmServerAddError {
+    AlreadyExists,
     UnableToConnect {
         server_id: String,
         host: String,
@@ -1052,6 +1053,7 @@ pub enum HsmServerAddError {
 impl std::fmt::Display for HsmServerAddError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            HsmServerAddError::AlreadyExists => f.write_str("The named HSM already exists"),
             HsmServerAddError::UnableToConnect {
                 server_id,
                 host,

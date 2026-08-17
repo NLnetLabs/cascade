@@ -162,10 +162,10 @@ use crate::api;
 use crate::api::keyset::{KeyRollCommand, KeyRollVariant};
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError, get_zone};
+use crate::hsm::KmipServerState;
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, KeyValidity, PolicyVersion};
 use crate::signer::ResigningTrigger;
-use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, Zone};
 use bytes::Bytes;
@@ -453,7 +453,6 @@ impl KeyManager {
             kmip_server_id = policy.latest.key_manager.hsm_server_id.clone();
         };
 
-        let kmip_server_state_dir = &center.config.kmip_server_state_dir;
         let kmip_credentials_store_path = &center.config.kmip_credentials_store_path;
 
         let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &name);
@@ -476,17 +475,15 @@ impl KeyManager {
         // the `dnst keyset create`d state already exists?
 
         if let Some(kmip_server_id) = kmip_server_id {
-            let kmip_server_state_path = kmip_server_state_dir.join(kmip_server_id);
-
-            debug!("Reading KMIP server state from '{kmip_server_state_path}'");
-            let f = File::open(&kmip_server_state_path)
-                .map_err(|err| ZoneAddError::Other(format!("Unable to open KMIP server state file '{kmip_server_state_path}' for reading: {err}")))?;
-            let kmip_server: KmipServerState = serde_json::from_reader(f).map_err(|err| {
-                ZoneAddError::Other(format!(
-                    "Unable to read KMIP server state from file '{kmip_server_state_path}': {err}"
-                ))
-            })?;
-
+            let kmip_server = {
+                let state = center.state.lock().unwrap();
+                let hsm = state.hsms.map.get(&*kmip_server_id).ok_or_else(|| {
+                    ZoneAddError::Other(format!(
+                        "Internal error: HSM '{kmip_server_id}' disappared due to a race condition"
+                    ))
+                })?;
+                hsm.state.lock().unwrap().kmip.clone()
+            };
             let KmipServerState {
                 server_id,
                 ip_host_or_fqdn,

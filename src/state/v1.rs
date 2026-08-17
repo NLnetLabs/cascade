@@ -10,6 +10,7 @@ use domain::base::Ttl;
 use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 
+use crate::hsm::KmipServerState;
 use crate::policy::KeyValidity;
 use crate::policy::NameserverCommsPolicy;
 use crate::policy::OutboundPolicy;
@@ -36,6 +37,9 @@ pub struct Spec {
 
     /// Policies.
     pub policies: foldhash::HashMap<Box<str>, PolicySpec>,
+
+    /// HSMs.
+    pub hsms: foldhash::HashMap<Box<str>, HsmSpec>,
 }
 
 //--- Conversion
@@ -43,17 +47,17 @@ pub struct Spec {
 impl Spec {
     /// Parse from this specification.
     ///
-    /// [`Self::zones`] and [`Self::policies`] are ignored; these should be
-    /// extracted from `self` before calling this function.
+    /// [`Self::zones`], [`Self::policies`], and [`Self::hsms`] are ignored;
+    /// these should be extracted from `self` before calling this function.
     pub fn parse(self) -> State {
         let Self {
-            // The caller will extract 'zones' and 'policies' beforehand.
+            // Fields extracted by the caller beforehand:
             zones: _,
             policies: _,
-            // TODO: More fields.
+            hsms: _,
+            // Other fields:
         };
 
-        // TODO: Initialize fields from 'Spec'.
         State::default()
     }
 
@@ -65,6 +69,15 @@ impl Spec {
                 .policies
                 .iter()
                 .map(|(name, policy)| (name.clone(), PolicySpec::build(policy)))
+                .collect(),
+            hsms: state
+                .hsms
+                .map
+                .iter()
+                .map(|(name, hsm)| {
+                    let kmip = &hsm.state.lock().unwrap().kmip;
+                    (name.clone(), HsmSpec::build(kmip))
+                })
                 .collect(),
         }
     }
@@ -717,6 +730,88 @@ impl From<NameserverCommsPolicy> for NameserverCommsSpec {
         Self {
             addr,
             tsig_key_name,
+        }
+    }
+}
+
+//----------- HsmSpec ----------------------------------------------------------
+
+/// A known HSM.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct HsmSpec {
+    pub ip_host_or_fqdn: String,
+    pub port: u16,
+    pub insecure: bool,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
+    pub max_response_bytes: u32,
+    pub key_label_prefix: Option<String>,
+    pub key_label_max_bytes: u8,
+    pub has_credentials: bool,
+}
+
+//--- Conversion
+
+impl HsmSpec {
+    /// Parse from this specification.
+    pub fn parse(self, name: &str) -> KmipServerState {
+        let Self {
+            ip_host_or_fqdn,
+            port,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            key_label_prefix,
+            key_label_max_bytes,
+            has_credentials,
+        } = self;
+
+        KmipServerState {
+            server_id: name.into(),
+            ip_host_or_fqdn,
+            port,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            key_label_prefix,
+            key_label_max_bytes,
+            has_credentials,
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(kmip: &KmipServerState) -> Self {
+        let KmipServerState {
+            server_id: _,
+            ip_host_or_fqdn,
+            port,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            key_label_prefix,
+            key_label_max_bytes,
+            has_credentials,
+        } = kmip.clone();
+
+        Self {
+            ip_host_or_fqdn,
+            port,
+            insecure,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
+            key_label_prefix,
+            key_label_max_bytes,
+            has_credentials,
         }
     }
 }
