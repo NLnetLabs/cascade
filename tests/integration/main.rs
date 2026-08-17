@@ -1,13 +1,12 @@
 //! Integration tests.
 
-use std::{env, path::PathBuf};
-
 use testcontainers::{
-    GenericBuildableImage,
     core::{ContainerPort, ExecCommand},
-    runners::{AsyncBuilder, AsyncRunner},
+    runners::AsyncRunner,
 };
 use tracing_subscriber::EnvFilter;
+
+mod infra;
 
 #[tokio::main]
 async fn main() {
@@ -20,19 +19,7 @@ async fn main() {
         )
         .init();
 
-    let base: PathBuf = env::var_os("CARGO_MANIFEST_DIR").unwrap().into();
-    let daemon: PathBuf = env::var_os("CARGO_BIN_EXE_cascaded").unwrap().into();
-
-    tracing::info!("Building image");
-
-    let image = GenericBuildableImage::new("nlnetlabs/cascade-tests-runner", "latest")
-        .with_dockerfile(base.join("tests/integration/Dockerfile"))
-        .with_file(daemon, "cascaded")
-        .build_image()
-        .await
-        .unwrap();
-
-    tracing::info!("Built image");
+    let image = infra::build_image().await;
 
     let container = image
         .clone()
