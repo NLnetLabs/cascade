@@ -5,6 +5,33 @@ use testcontainers::{
     core::RawContainer,
 };
 
+//----------- ports ------------------------------------------------------------
+
+/// Important hard-coded port numbers within the container.
+#[allow(dead_code)]
+pub mod ports {
+    /// The system resolver.
+    pub const RESOLVER: u16 = 53;
+
+    /// The primary name server.
+    pub const PRIMARY: u16 = 1055;
+
+    /// The secondary name server.
+    pub const SECONDARY: u16 = 1054;
+
+    /// The Cascade remote control server.
+    pub const REMOTE_CONTROL: u16 = 4539;
+
+    /// The Cascade loaded review server.
+    pub const LOADED_REVIEW: u16 = 4540;
+
+    /// The Cascade signed review server.
+    pub const SIGNED_REVIEW: u16 = 4541;
+
+    /// The Cascade publication server.
+    pub const PUBLICATION: u16 = 4542;
+}
+
 //----------- UnboundResolver --------------------------------------------------
 
 /// The system resolver (Unbound).
@@ -145,8 +172,8 @@ async fn exec_detached(
 }
 
 macro_rules! strs {
-    ($($e:expr),*$(,)?) => {
+    [$($e:expr),*$(,)?] => {
         vec![$($e.to_string()),*]
     };
 }
-use strs;
+pub(crate) use strs;

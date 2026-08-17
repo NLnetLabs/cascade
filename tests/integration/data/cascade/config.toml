@@ -6,10 +6,10 @@ kmip-credentials-store-path = "/test/cascade/kmip-credentials.db"
 keys-dir = "/test/cascade/keys"
 dnst-binary-path = "/test/bin/dnst"
 
-remote-control.servers = ["0.0.0.0:4539", "[::]:4539"]
-loader.review.servers = ["0.0.0.0:4540", "[::]:4540"]
-signer.review.servers = ["0.0.0.0:4541", "[::]:4541"]
-server.servers = ["0.0.0.0:4542", "[::]:4542"]
+remote-control.servers = ["0.0.0.0:4539"]
+loader.review.servers = ["0.0.0.0:4540"]
+signer.review.servers = ["0.0.0.0:4541"]
+server.servers = ["0.0.0.0:4542"]
 
 [daemon]
 log-level = "trace"

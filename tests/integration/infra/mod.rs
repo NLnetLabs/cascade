@@ -1,8 +1,16 @@
 //! Infrastructure for integration tests.
 
+use core::fmt;
 use std::{env, path::PathBuf};
 
-use testcontainers::{GenericBuildableImage, GenericImage, runners::AsyncBuilder};
+use testcontainers::{
+    GenericBuildableImage, GenericImage,
+    core::{ContainerPort, ports::Ports},
+    runners::AsyncBuilder,
+};
+
+mod cascade;
+pub use cascade::*;
 
 mod services;
 pub use services::*;
@@ -74,4 +82,91 @@ fn walkdir(path: PathBuf) -> impl Iterator<Item = std::fs::DirEntry> {
 
         Some(entry)
     })
+}
+
+/// An exposed DNS server port.
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct ExposedDnsPort {
+    /// The exposed UDP port.
+    pub over_udp: ExposedPort,
+
+    /// The exposed TCP port.
+    pub over_tcp: ExposedPort,
+}
+
+impl ExposedDnsPort {
+    /// Look up an exposed DNS port.
+    pub fn get(ports: &Ports, port: u16) -> Self {
+        Self {
+            over_udp: ExposedPort::get(ports, ContainerPort::Udp(port)),
+            over_tcp: ExposedPort::get(ports, ContainerPort::Tcp(port)),
+        }
+    }
+}
+
+impl fmt::Debug for ExposedDnsPort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.over_udp == self.over_tcp {
+            write!(f, "ExposedDnsPort({})", self.over_udp)
+        } else {
+            f.debug_struct("ExposedDnsPort")
+                .field("over_udp", &self.over_udp)
+                .field("over_tcp", &self.over_tcp)
+                .finish()
+        }
+    }
+}
+
+impl fmt::Display for ExposedDnsPort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.over_udp == self.over_tcp {
+            write!(f, "{}", self.over_udp)
+        } else {
+            write!(f, "{}(udp)/{}(tcp)", self.over_udp, self.over_tcp)
+        }
+    }
+}
+
+/// An exposed port.
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct ExposedPort {
+    /// The port number exposed on IPv4.
+    pub on_ipv4: u16,
+
+    /// The port number exposed on IPv6.
+    pub on_ipv6: u16,
+}
+
+impl ExposedPort {
+    /// Look up an exposed port.
+    pub fn get(ports: &Ports, port: impl Into<ContainerPort>) -> Self {
+        let port = port.into();
+        Self {
+            on_ipv4: ports.map_to_host_port_ipv4(port).unwrap(),
+            on_ipv6: ports.map_to_host_port_ipv6(port).unwrap(),
+        }
+    }
+}
+
+impl fmt::Debug for ExposedPort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.on_ipv4 == self.on_ipv6 {
+            write!(f, "ExposedPort({})", self.on_ipv4)
+        } else {
+            f.debug_struct("ExposedPort")
+                .field("on_ipv4", &self.on_ipv4)
+                .field("on_ipv6", &self.on_ipv6)
+                .finish()
+        }
+    }
+}
+
+impl fmt::Display for ExposedPort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.on_ipv4 == self.on_ipv6 {
+            write!(f, "{}", self.on_ipv4)
+        } else {
+            write!(f, "{}(v4)/{}(v6)", self.on_ipv4, self.on_ipv6)
+        }
+    }
 }

@@ -24,11 +24,13 @@ async fn main() {
 
     let container = image
         .clone()
-        .with_exposed_port(ContainerPort::Tcp(53))
         .with_exposed_port(ContainerPort::Tcp(4539))
         .with_exposed_port(ContainerPort::Tcp(4540))
+        .with_exposed_port(ContainerPort::Udp(4540))
         .with_exposed_port(ContainerPort::Tcp(4541))
+        .with_exposed_port(ContainerPort::Udp(4541))
         .with_exposed_port(ContainerPort::Tcp(4542))
+        .with_exposed_port(ContainerPort::Udp(4542))
         .with_host_config_modifier(|config| {
             // Use the system resolver we spawn for DNS.
             config.dns = Some(vec!["127.0.0.1".into()]);
@@ -49,6 +51,10 @@ async fn main() {
     let parent = infra::BindParent::start(&bollard, &container).await;
     let primary = infra::NsdPrimary::start(&bollard, &container).await;
     let secondary = infra::NsdSecondary::start(&bollard, &container).await;
+
+    let cascade = infra::Cascade::start(&bollard, &container).await;
+
+    tracing::info!("Policy names: {:?}", cascade.policy_names().await);
 
     let mut spawned = container
         .exec(ExecCommand::new(["echo", "hi"]))

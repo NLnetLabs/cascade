@@ -425,6 +425,7 @@ dependencies = [
  "lazy_static",
  "prometheus-client",
  "rayon",
+ "reqwest",
  "ring",
  "serde",
  "serde_json",
