@@ -4,6 +4,9 @@ use std::{env, path::PathBuf};
 
 use testcontainers::{GenericBuildableImage, GenericImage, runners::AsyncBuilder};
 
+mod services;
+pub use services::*;
+
 /// Build the OCI image.
 ///
 /// Identical in function to `tests/integration/build-image.sh`.

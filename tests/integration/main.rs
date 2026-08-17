@@ -1,6 +1,7 @@
 //! Integration tests.
 
 use testcontainers::{
+    ImageExt,
     core::{ContainerPort, ExecCommand},
     runners::AsyncRunner,
 };
@@ -28,12 +29,26 @@ async fn main() {
         .with_exposed_port(ContainerPort::Tcp(4540))
         .with_exposed_port(ContainerPort::Tcp(4541))
         .with_exposed_port(ContainerPort::Tcp(4542))
-        // TODO: `.with_network()`?
+        .with_host_config_modifier(|config| {
+            // Use the system resolver we spawn for DNS.
+            config.dns = Some(vec!["127.0.0.1".into()]);
+            // TODO: Copied from old `resolv.conf` file, are these needed?
+            config.dns_options = Some(vec!["edns0".into(), "trust-ad".into()]);
+        })
         .start()
         .await
         .unwrap();
 
     tracing::info!(id = container.id(), "Launched container");
+
+    let bollard = testcontainers::core::client::docker_client_instance()
+        .await
+        .unwrap();
+
+    let resolver = infra::UnboundResolver::start(&bollard, &container).await;
+    let parent = infra::BindParent::start(&bollard, &container).await;
+    let primary = infra::NsdPrimary::start(&bollard, &container).await;
+    let secondary = infra::NsdSecondary::start(&bollard, &container).await;
 
     let mut spawned = container
         .exec(ExecCommand::new(["echo", "hi"]))
