@@ -265,8 +265,11 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     let ZoneByName(zone) = state.zones.get(&name).ok_or(ZoneRemoveError::NotFound)?;
 
     // TODO(#871): support removing a zone during restoration.
-    if zone.read().storage.is_restoring() {
-        return Err(ZoneRemoveError::MidRestoration);
+    // The zone must be halted or in maintenance mode.
+    if let zone = zone.read()
+        && !(zone.maintenance_mode && (zone.machine.is_waiting() || zone.machine.is_halted()))
+    {
+        return Err(ZoneRemoveError::NotInMaintenanceMode);
     }
 
     let ZoneByName(zone) = state
@@ -518,8 +521,8 @@ pub enum ZoneRemoveError {
     /// No such name could be found.
     NotFound,
 
-    /// The zone is being restored from disk.
-    MidRestoration,
+    /// The zone is not in maintenance mode.
+    NotInMaintenanceMode,
 }
 
 impl std::error::Error for ZoneRemoveError {}
@@ -528,7 +531,7 @@ impl fmt::Display for ZoneRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
-            Self::MidRestoration => "the zone is being restored from disk",
+            Self::NotInMaintenanceMode => "the zone is not in maintenance mode",
         })
     }
 }
@@ -537,7 +540,7 @@ impl From<ZoneRemoveError> for api::ZoneRemoveError {
     fn from(value: ZoneRemoveError) -> Self {
         match value {
             ZoneRemoveError::NotFound => Self::NotFound,
-            ZoneRemoveError::MidRestoration => Self::MidRestoration,
+            ZoneRemoveError::NotInMaintenanceMode => Self::NotInMaintenanceMode,
         }
     }
 }
