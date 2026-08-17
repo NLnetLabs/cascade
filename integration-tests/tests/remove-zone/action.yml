@@ -45,6 +45,9 @@ runs:
           sleep 1
         done
 
+    - name: Enable maintenance mode
+      run: cascade zone maintenance enable example.test
+
     - name: Check zone status
       run: |
         timeout=10 # seconds

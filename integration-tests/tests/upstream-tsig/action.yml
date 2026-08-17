@@ -37,6 +37,7 @@ runs:
     - name: Add zone without the required TSIG key.
       run: |
         cascade zone add --policy default --source "127.0.0.1:1055" example-tsig.test
+        cascade zone maintenance enable example-tsig.test
 
     - name: Check zone status
       run: |
@@ -71,6 +72,7 @@ runs:
         esac
 
         cascade zone add --policy default --source "127.0.0.1:1055^tsig-key" example-tsig.test
+        cascade zone maintenance enable example-tsig.test
 
     - name: Check zone status
       run: |
