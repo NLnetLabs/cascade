@@ -50,6 +50,9 @@ Commands
 
    Remove a zone.
 
+   Maintenance mode must be enabled (see :subcmd:`zone maintenance`). The
+   zone must be passive (with no ongoing operations) or in a hard-halt state.
+
    .. note:: Once removed, downstream servers will no longer be able to fetch
              the zone!
 
