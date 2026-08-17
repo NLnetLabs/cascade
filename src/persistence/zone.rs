@@ -389,7 +389,7 @@ impl PersistenceState {
                 None,
                 reader.loaded().soa().clone(),
                 [].iter(),
-                reader.loaded_records(),
+                reader.loaded().regular_records().iter(),
             );
 
             debug!(
@@ -717,7 +717,7 @@ impl PersistedDiffManager {
     pub fn clear(&mut self) {
         self.diff_infos.clear();
         self.next_uniqifier = 0;
-        self.first_diff_to_apply_on_restore = 0;
+        self.first_diff_to_apply_on_restore = 1;
     }
 
     pub fn is_empty(&self) -> bool {

@@ -41,14 +41,14 @@ pub fn restore_loaded(
     restorer: &mut LoadedZoneRestorer,
 ) -> io::Result<bool> {
     let diff_infos;
-    let first_diff_to_apply_on_restore;
+    let restore_base_idx;
 
     // Use a block so that we don't hold the zone state lock longer than
     // necessary.
     {
         let state = zone.read();
         diff_infos = state.persistence.loaded_diffs.diffs().clone();
-        first_diff_to_apply_on_restore = state
+        restore_base_idx = state
             .persistence
             .loaded_diffs
             .first_diff_to_apply_on_restore();
@@ -60,7 +60,7 @@ pub fn restore_loaded(
     };
 
     info!("Restoring persisted loaded data for zone '{}'", zone.name);
-    trace!("Restoring from loaded diffs: {diff_infos:?}");
+    trace!("Restoring from loaded diffs: restore_base_idx={restore_base_idx}, {diff_infos:?}");
 
     // Determine the paths to read from. Each zone is persisted as an AXFR
     // plus zero or more IXFRs. The restorer takes a base path ending in an
@@ -96,9 +96,9 @@ pub fn restore_loaded(
     for (idx, diff_info) in diff_infos_iter.enumerate() {
         // Note: idx is zero-based but as we skipped over the first entry (the
         // snapshot) we need to add one to get a correct index.
-        let (start_serial, end_serial) = if (idx + 1) < first_diff_to_apply_on_restore {
+        let (start_serial, end_serial) = if (idx + 1) < restore_base_idx {
             trace!(
-                "Building standalone IXFR diff #{idx} from '{}'",
+                "Building standalone loaded IXFR diff #{idx} from '{}'",
                 diff_info.path().display()
             );
             let mut diff = Box::new(DiffData::new());
@@ -211,7 +211,7 @@ pub fn restore_signed(
     };
 
     info!("Restoring persisted signed data for zone '{}'", zone.name);
-    trace!("Restoring from signed diffs: {diff_infos:?}",);
+    trace!("Restoring from signed diffs: restore_base_idx={restore_base_idx}, {diff_infos:?}",);
 
     // Determine the paths to read from. Each zone is persisted as an AXFR
     // plus zero or more IXFRs. The restorer takes a base path ending in an
@@ -253,9 +253,11 @@ pub fn restore_signed(
     // last compaction event but still need to be loaded into memory to serve
     // in IXFR responses.
     for (idx, diff_info) in diff_infos_iter.enumerate() {
-        let (start_serial, end_serial) = if idx < restore_base_idx {
+        // Note: idx is zero-based but as we skipped over the first entry (the
+        // snapshot) we need to add one to get a correct index.
+        let (start_serial, end_serial) = if (idx + 1) < restore_base_idx {
             trace!(
-                "Building standalone IXFR diff #{idx} from '{}'",
+                "Building standalone signed IXFR diff #{idx} from '{}'",
                 diff_info.path().display()
             );
             let mut diff = Box::new(DiffData::new());
@@ -581,9 +583,15 @@ fn apply_ixfr_event_to_signed_data(patcher: &mut SignedZonePatcher<'_>, event: I
 
 fn apply_ixfr_event_to_diff_data(diff: &mut Box<DiffData>, event: IxfrEvent) {
     match event {
-        IxfrEvent::Remove(r) if r.rtype == RType::SOA => diff.removed_soa = Some(r.into()),
+        IxfrEvent::Remove(r) if r.rtype == RType::SOA => {
+            diff.removed_records.push(r.clone());
+            diff.removed_soa = Some(r.into());
+        }
         IxfrEvent::Remove(r) => diff.removed_records.push(r),
-        IxfrEvent::Add(r) if r.rtype == RType::SOA => diff.added_soa = Some(r.into()),
+        IxfrEvent::Add(r) if r.rtype == RType::SOA => {
+            diff.added_records.push(r.clone());
+            diff.added_soa = Some(r.into());
+        }
         IxfrEvent::Add(r) => diff.added_records.push(r),
         IxfrEvent::EndOfUpdate => {}
     }

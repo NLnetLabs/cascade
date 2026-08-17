@@ -72,6 +72,7 @@ fn sign(
 ) {
     let start = Instant::now();
     let mut local_state = LocalState::new(&zone);
+    let hsm_store = center.state.lock().unwrap().hsms.clone();
     let kmip_servers = &center.signer.kmip_servers;
 
     let result = if let Some(patcher) = builder.patch() {
@@ -79,6 +80,7 @@ fn sign(
             &center.config,
             &zone.name,
             &policy,
+            &hsm_store,
             kmip_servers,
             patcher,
             &mut local_state,
@@ -89,6 +91,7 @@ fn sign(
             &center.config,
             &zone.name,
             &policy,
+            &hsm_store,
             kmip_servers,
             &mut builder,
             &mut local_state,

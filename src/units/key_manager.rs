@@ -162,10 +162,10 @@ use crate::api;
 use crate::api::keyset::{KeyRollCommand, KeyRollVariant};
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
 use crate::center::{Center, ZoneAddError, get_zone};
+use crate::hsm::KmipServerState;
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, KeyValidity, PolicyVersion};
 use crate::signer::ResigningTrigger;
-use crate::units::http_server::KmipServerState;
 use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, Zone};
 use bytes::Bytes;
@@ -533,6 +533,7 @@ impl KeyManager {
             kmip_server_id = policy.latest.key_manager.hsm_server_id.clone();
         };
 
+        let kmip_server_state_dir = &center.config.kmip_server_state_dir;
         let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &name);
 
         let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
@@ -556,6 +557,34 @@ impl KeyManager {
             let args = keyset_kmip_add_server_cmd(&kmip_server_id, center).map_err(|err| {
                 ZoneAddError::Other(format!("keyset_kmip_add_server_cmd failed: {err}"))
             })?;
+
+            let kmip_server_state_path = kmip_server_state_dir.join(kmip_server_id);
+
+            debug!("Reading KMIP server state from '{kmip_server_state_path}'");
+            let f = File::open(&kmip_server_state_path)
+                .map_err(|err| ZoneAddError::Other(format!("Unable to open KMIP server state file '{kmip_server_state_path}' for reading: {err}")))?;
+            let kmip_server = {
+                let state = center.state.lock().unwrap();
+                let hsm = state.hsms.map.get(&*kmip_server_id).ok_or_else(|| {
+                    ZoneAddError::Other(format!(
+                        "Internal error: HSM '{kmip_server_id}' disappared due to a race condition"
+                    ))
+                })?;
+                hsm.state.lock().unwrap().kmip.clone()
+            };
+            let KmipServerState {
+                server_id,
+                ip_host_or_fqdn,
+                port,
+                insecure,
+                connect_timeout,
+                read_timeout,
+                write_timeout,
+                max_response_bytes,
+                key_label_prefix,
+                key_label_max_bytes,
+                has_credentials,
+            } = kmip_server;
 
             let mut cmd = Self::keyset_cmd(center, name.clone(), RecordingMode::Record);
 
