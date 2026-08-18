@@ -1,26 +1,19 @@
 //! Controlling Cascade.
 
 use std::{
-    collections::HashMap,
     fmt::{self, Debug},
-    io::Write,
-    net::{Ipv4Addr, SocketAddrV4},
+    net::{IpAddr, SocketAddr},
     pin::Pin,
     time::{Duration, SystemTime},
 };
 
-use bollard::{
-    Docker,
-    container::LogOutput,
-    exec::StartExecResults,
-    plugin::{ExecConfig, PortBinding},
-};
+use bollard::{container::LogOutput, exec::StartExecResults, plugin::ExecConfig};
 use cascade_api as api;
 use futures_util::{Stream, StreamExt};
 use serde::{Serialize, de::DeserializeOwned};
 use tracing::Instrument;
 
-use super::{ExposedDnsPort, ExposedPort, strs};
+use super::{Container, ports, strs};
 
 //----------- Cascade ----------------------------------------------------------
 
@@ -32,10 +25,6 @@ pub struct Cascade {
     /// The configuration with which Cascade was launched.
     #[expect(dead_code)]
     config: CascadeConfig,
-
-    /// Exposed ports.
-    #[expect(dead_code)]
-    ports: CascadePorts,
 
     /// An HTTP client for communicating with Cascade.
     control: CascadeControl,
@@ -49,26 +38,20 @@ impl Cascade {
     const HEALTH_PING_INTERVAL: Duration = Duration::from_millis(100);
 
     /// Start Cascade.
-    pub async fn start(client: &Docker, container_id: &str) -> Self {
-        Self::start_with(client, container_id, CascadeConfig::default()).await
+    pub async fn start(container: &Container) -> Self {
+        Self::start_with(container, CascadeConfig::default()).await
     }
 
     /// Start Cascade with the given configuration.
-    pub async fn start_with(client: &Docker, container_id: &str, config: CascadeConfig) -> Self {
+    pub async fn start_with(container: &Container, config: CascadeConfig) -> Self {
         tracing::info!("Starting Cascade");
 
-        let (exec_id, ports) = tokio::join!(self::start(client, container_id, &config), async {
-            let response = client.inspect_container(container_id, None).await.unwrap();
-            let ports = response.network_settings.unwrap().ports.unwrap();
-            CascadePorts::get(&ports)
-        });
-
-        let control = CascadeControl::new(&ports);
+        let exec_id = self::start(container, &config).await;
+        let control = CascadeControl::new(container.ip_addr());
 
         let this = Self {
             exec_id,
             config,
-            ports,
             control,
         };
 
@@ -84,13 +67,6 @@ impl Cascade {
         .await;
         if ready.is_err() {
             tracing::error!("Cascade did not appear ready in time.");
-            let stream = client.export_container(container_id);
-            let mut stream = std::pin::pin!(stream);
-            let mut file = std::fs::File::create("dump.tar").unwrap();
-            while let Some(chunk) = stream.next().await {
-                file.write_all(&chunk.unwrap()).unwrap();
-            }
-            tracing::info!("Container dumped to `dump.tar`");
             panic!("Cascade did not appear ready in time")
         }
 
@@ -123,7 +99,7 @@ pub struct CascadeControl {
 
 impl CascadeControl {
     /// Prepare a new [`CascadeControl`].
-    fn new(ports: &CascadePorts) -> Self {
+    fn new(ip_addr: IpAddr) -> Self {
         let inner = reqwest::ClientBuilder::new()
             .user_agent(Self::USER_AGENT)
             .timeout(Self::REQUEST_TIMEOUT)
@@ -133,7 +109,7 @@ impl CascadeControl {
 
         let base = reqwest::Url::parse(&format!(
             "http://{}/",
-            SocketAddrV4::new(Ipv4Addr::LOCALHOST, ports.remote_control.on_ipv4)
+            SocketAddr::new(ip_addr, ports::REMOTE_CONTROL.0)
         ))
         .unwrap();
 
@@ -413,7 +389,7 @@ impl Cascade {
 //----------- Starting Cascade -------------------------------------------------
 
 /// Start Cascade and return the Docker exec ID.
-async fn start(client: &Docker, container_id: &str, config: &CascadeConfig) -> String {
+async fn start(container: &Container, config: &CascadeConfig) -> String {
     let command = strs![
         "/test/bin/cascaded",
         "--config",
@@ -438,15 +414,20 @@ async fn start(client: &Docker, container_id: &str, config: &CascadeConfig) -> S
         ..Default::default()
     };
 
-    let exec_id = client.create_exec(container_id, exec_cfg).await.unwrap().id;
+    let exec_id = container
+        .docker
+        .create_exec(&container.id, exec_cfg)
+        .await
+        .unwrap()
+        .id;
 
     let StartExecResults::Attached { output, input: _ } =
-        client.start_exec(&exec_id, None).await.unwrap()
+        container.docker.start_exec(&exec_id, None).await.unwrap()
     else {
         unreachable!("Did not enable `detached`")
     };
 
-    tokio::spawn(log_exec_output(container_id, &exec_id, output));
+    tokio::spawn(log_exec_output(container, &exec_id, output));
 
     exec_id
 }
@@ -455,14 +436,14 @@ type LogOutputResult = Result<LogOutput, bollard::errors::Error>;
 
 /// Log unexpected output from Docker exec.
 fn log_exec_output(
-    container_id: &str,
+    container: &Container,
     exec_id: &str,
     mut output: Pin<Box<dyn Stream<Item = LogOutputResult> + Send>>,
 ) -> impl Future<Output = ()> + Send + use<> {
     let span = tracing::debug_span!(
         parent: tracing::Span::none(),
         "cascade_output",
-        container = container_id,
+        %container,
         exec_id);
 
     async move {
@@ -501,37 +482,6 @@ fn log_exec_output(
 pub struct CascadeConfig {
     /// The fake time to set.
     pub faketime: Option<SystemTime>,
-}
-
-/// Exposed ports from Cascade.
-#[derive(Clone, Debug)]
-pub struct CascadePorts {
-    /// The remote control server.
-    pub remote_control: ExposedPort,
-
-    /// The loaded review server.
-    #[expect(dead_code)]
-    pub loaded_review: ExposedDnsPort,
-
-    /// The signed review server.
-    #[expect(dead_code)]
-    pub signed_review: ExposedDnsPort,
-
-    /// The publication server.
-    #[expect(dead_code)]
-    pub publication: ExposedDnsPort,
-}
-
-impl CascadePorts {
-    /// Look up the exposed Cascade ports.
-    fn get(ports: &HashMap<String, Option<Vec<PortBinding>>>) -> Self {
-        Self {
-            remote_control: ExposedPort::get_tcp(ports, super::ports::REMOTE_CONTROL),
-            loaded_review: ExposedDnsPort::get(ports, super::ports::LOADED_REVIEW),
-            signed_review: ExposedDnsPort::get(ports, super::ports::SIGNED_REVIEW),
-            publication: ExposedDnsPort::get(ports, super::ports::PUBLICATION),
-        }
-    }
 }
 
 /// An error controlling Cascade.

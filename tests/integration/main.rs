@@ -1,15 +1,13 @@
 //! Integration tests.
 
-use std::env;
+use std::sync::Arc;
 
-use bollard::plugin::{ContainerCreateBody, HostConfig, Mount, MountType};
+use tokio::sync::Semaphore;
 use tracing_subscriber::EnvFilter;
 
 mod infra;
-use infra::strs;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     tracing_subscriber::fmt()
         // Filter out unnecessary noise.
         .with_env_filter(
@@ -21,63 +19,32 @@ async fn main() {
         )
         .init();
 
-    let bollard = bollard::Docker::connect_with_defaults().unwrap();
-
-    let daemon_path = env::var("CARGO_BIN_EXE_cascaded").unwrap();
-
-    infra::build_image(&bollard).await;
-
-    let response = bollard
-        .create_container(
-            None,
-            ContainerCreateBody {
-                exposed_ports: Some(vec![
-                    format!("{}/tcp", infra::ports::REMOTE_CONTROL),
-                    format!("{}/tcp", infra::ports::LOADED_REVIEW),
-                    format!("{}/udp", infra::ports::LOADED_REVIEW),
-                    format!("{}/tcp", infra::ports::SIGNED_REVIEW),
-                    format!("{}/udp", infra::ports::SIGNED_REVIEW),
-                    format!("{}/tcp", infra::ports::PUBLICATION),
-                    format!("{}/udp", infra::ports::PUBLICATION),
-                ]),
-                env: Some(strs!["RUST_BACKTRACE=1"]),
-                image: Some("nlnetlabs/cascade-tests-runner".into()),
-                host_config: Some(HostConfig {
-                    mounts: Some(vec![Mount {
-                        target: Some("/test/bin/cascaded".into()),
-                        source: Some(daemon_path),
-                        typ: Some(MountType::BIND),
-                        read_only: Some(true),
-                        ..Default::default()
-                    }]),
-                    dns: Some(strs!["127.0.0.1"]),
-                    // TODO: Copied from old `resolv.conf` file, are these needed?
-                    dns_options: Some(strs!["edns0", "trust-ad"]),
-                    publish_all_ports: Some(true),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        )
-        .await
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
         .unwrap();
 
-    for w in response.warnings {
-        tracing::warn!("{w}");
-    }
+    runtime.block_on(async {
+        let docker = Arc::new(bollard::Docker::connect_with_defaults().unwrap());
 
-    let container_id = response.id;
+        let image = infra::ImageBuilder::new(docker).build().await;
 
-    bollard.start_container(&container_id, None).await.unwrap();
+        let container = infra::ContainerBuilder::new(&image).build().await;
 
-    tracing::info!(id = container_id, "Launched container");
+        let resolver = infra::UnboundResolver::start(&container).await;
+        let parent = infra::BindParent::start(&container).await;
+        let primary = infra::NsdPrimary::start(&container).await;
+        let secondary = infra::NsdSecondary::start(&container).await;
 
-    let resolver = infra::UnboundResolver::start(&bollard, &container_id).await;
-    let parent = infra::BindParent::start(&bollard, &container_id).await;
-    let primary = infra::NsdPrimary::start(&bollard, &container_id).await;
-    let secondary = infra::NsdSecondary::start(&bollard, &container_id).await;
+        let cascade = infra::Cascade::start(&container).await;
 
-    let cascade = infra::Cascade::start(&bollard, &container_id).await;
+        tracing::info!("Policy names: {:?}", cascade.policy_names().await);
+    });
 
-    tracing::info!("Policy names: {:?}", cascade.policy_names().await);
+    runtime.block_on(async {
+        let _ = infra::ONGOING_ASYNC_DROPS
+            .acquire_many(Semaphore::MAX_PERMITS as u32)
+            .await
+            .unwrap();
+    });
 }
