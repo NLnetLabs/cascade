@@ -1,6 +1,7 @@
 //! Controlling Cascade.
 
 use std::{
+    collections::HashMap,
     fmt::{self, Debug},
     io::Write,
     net::{Ipv4Addr, SocketAddrV4},
@@ -8,13 +9,15 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use bollard::{
+    Docker,
+    container::LogOutput,
+    exec::StartExecResults,
+    plugin::{ExecConfig, PortBinding},
+};
 use cascade_api as api;
 use futures_util::{Stream, StreamExt};
 use serde::{Serialize, de::DeserializeOwned};
-use testcontainers::{
-    bollard::{Docker, container::LogOutput, exec::StartExecResults, plugin::ExecConfig},
-    core::{RawContainer, ports::Ports},
-};
 use tracing::Instrument;
 
 use super::{ExposedDnsPort, ExposedPort, strs};
@@ -46,20 +49,18 @@ impl Cascade {
     const HEALTH_PING_INTERVAL: Duration = Duration::from_millis(100);
 
     /// Start Cascade.
-    pub async fn start(client: &Docker, container: &RawContainer) -> Self {
-        Self::start_with(client, container, CascadeConfig::default()).await
+    pub async fn start(client: &Docker, container_id: &str) -> Self {
+        Self::start_with(client, container_id, CascadeConfig::default()).await
     }
 
     /// Start Cascade with the given configuration.
-    pub async fn start_with(
-        client: &Docker,
-        container: &RawContainer,
-        config: CascadeConfig,
-    ) -> Self {
+    pub async fn start_with(client: &Docker, container_id: &str, config: CascadeConfig) -> Self {
         tracing::info!("Starting Cascade");
 
-        let (exec_id, ports) = tokio::join!(self::start(client, container, &config), async {
-            CascadePorts::get(&container.ports().await.unwrap())
+        let (exec_id, ports) = tokio::join!(self::start(client, container_id, &config), async {
+            let response = client.inspect_container(container_id, None).await.unwrap();
+            let ports = response.network_settings.unwrap().ports.unwrap();
+            CascadePorts::get(&ports)
         });
 
         let control = CascadeControl::new(&ports);
@@ -83,7 +84,7 @@ impl Cascade {
         .await;
         if ready.is_err() {
             tracing::error!("Cascade did not appear ready in time.");
-            let stream = client.export_container(container.id());
+            let stream = client.export_container(container_id);
             let mut stream = std::pin::pin!(stream);
             let mut file = std::fs::File::create("dump.tar").unwrap();
             while let Some(chunk) = stream.next().await {
@@ -412,7 +413,7 @@ impl Cascade {
 //----------- Starting Cascade -------------------------------------------------
 
 /// Start Cascade and return the Docker exec ID.
-async fn start(client: &Docker, container: &RawContainer, config: &CascadeConfig) -> String {
+async fn start(client: &Docker, container_id: &str, config: &CascadeConfig) -> String {
     let command = strs![
         "/test/bin/cascaded",
         "--config",
@@ -437,11 +438,7 @@ async fn start(client: &Docker, container: &RawContainer, config: &CascadeConfig
         ..Default::default()
     };
 
-    let exec_id = client
-        .create_exec(container.id(), exec_cfg)
-        .await
-        .unwrap()
-        .id;
+    let exec_id = client.create_exec(container_id, exec_cfg).await.unwrap().id;
 
     let StartExecResults::Attached { output, input: _ } =
         client.start_exec(&exec_id, None).await.unwrap()
@@ -449,23 +446,23 @@ async fn start(client: &Docker, container: &RawContainer, config: &CascadeConfig
         unreachable!("Did not enable `detached`")
     };
 
-    tokio::spawn(log_exec_output(container, &exec_id, output));
+    tokio::spawn(log_exec_output(container_id, &exec_id, output));
 
     exec_id
 }
 
-type LogOutputResult = Result<LogOutput, testcontainers::bollard::errors::Error>;
+type LogOutputResult = Result<LogOutput, bollard::errors::Error>;
 
 /// Log unexpected output from Docker exec.
 fn log_exec_output(
-    container: &RawContainer,
+    container_id: &str,
     exec_id: &str,
     mut output: Pin<Box<dyn Stream<Item = LogOutputResult> + Send>>,
 ) -> impl Future<Output = ()> + Send + use<> {
     let span = tracing::debug_span!(
         parent: tracing::Span::none(),
         "cascade_output",
-        container = container.id(),
+        container = container_id,
         exec_id);
 
     async move {
@@ -527,9 +524,9 @@ pub struct CascadePorts {
 
 impl CascadePorts {
     /// Look up the exposed Cascade ports.
-    fn get(ports: &Ports) -> Self {
+    fn get(ports: &HashMap<String, Option<Vec<PortBinding>>>) -> Self {
         Self {
-            remote_control: ExposedPort::get(ports, super::ports::REMOTE_CONTROL),
+            remote_control: ExposedPort::get_tcp(ports, super::ports::REMOTE_CONTROL),
             loaded_review: ExposedDnsPort::get(ports, super::ports::LOADED_REVIEW),
             signed_review: ExposedDnsPort::get(ports, super::ports::SIGNED_REVIEW),
             publication: ExposedDnsPort::get(ports, super::ports::PUBLICATION),

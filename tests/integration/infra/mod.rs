@@ -1,13 +1,14 @@
 //! Infrastructure for integration tests.
 
 use core::fmt;
-use std::{env, path::PathBuf};
+use std::{collections::HashMap, env, net::IpAddr, path::PathBuf};
 
-use testcontainers::{
-    GenericBuildableImage, GenericImage,
-    core::{ContainerPort, ports::Ports},
-    runners::AsyncBuilder,
+use bollard::{
+    Docker,
+    plugin::{BuildInfoAux, ImageId, PortBinding},
+    query_parameters::{BuildImageOptionsBuilder, BuilderVersion},
 };
+use futures_util::StreamExt;
 
 mod cascade;
 pub use cascade::*;
@@ -18,23 +19,24 @@ pub use services::*;
 /// Build the OCI image.
 ///
 /// Identical in function to `tests/integration/build-image.sh`.
-#[tracing::instrument(level = "info")]
-pub async fn build_image() -> GenericImage {
+#[tracing::instrument(level = "info", skip_all)]
+pub async fn build_image(client: &Docker) {
     tracing::info!("Building image");
 
     // Rely on Cargo to discover important sources.
     let base_dir: PathBuf = env::var_os("CARGO_MANIFEST_DIR").unwrap().into();
-    let daemon_path: PathBuf = env::var_os("CARGO_BIN_EXE_cascaded").unwrap().into();
-    tracing::trace!(?base_dir, ?daemon_path, "Identified sources");
+    tracing::trace!(?base_dir, "Identified sources");
 
-    // TODO: Use `bollard` directly so we can show details of the build
-    // process (it takes 1.5s on a perfect rebuild, up to a minute otherwise).
+    tracing::debug!("Preparing image context");
 
-    tracing::debug!("Locating files for image context");
+    let mut context = tar::Builder::new(vec![]);
+    context.follow_symlinks(false);
+    context.sparse(false);
+    context.mode(tar::HeaderMode::Deterministic);
 
-    let mut builder = GenericBuildableImage::new("nlnetlabs/cascade-tests-runner", "latest")
-        .with_dockerfile(base_dir.join("tests/integration/Dockerfile"))
-        .with_file(daemon_path, "bin/cascaded");
+    context
+        .append_path_with_name(base_dir.join("tests/integration/Dockerfile"), "Dockerfile")
+        .unwrap();
 
     // Walk the data directory and add all its files.
     let data_dir = base_dir.join("tests/integration/data");
@@ -43,7 +45,7 @@ pub async fn build_image() -> GenericImage {
         let r#type = entry.file_type().unwrap();
         if r#type.is_file() {
             let dest = path.strip_prefix(&data_dir).unwrap();
-            builder = builder.with_file(&path, dest.to_str().unwrap());
+            context.append_path_with_name(&path, dest).unwrap();
         } else if !r#type.is_dir() {
             tracing::warn!(
                 "Excluding '{}' from image context: not a file or directory",
@@ -52,13 +54,99 @@ pub async fn build_image() -> GenericImage {
         }
     }
 
+    let body = context.into_inner().unwrap();
+    let body = bollard::body_full(body.into());
+
     tracing::debug!("Passing on to Docker");
 
-    let image = builder.build_image().await.unwrap();
+    let session = uuid::Uuid::new_v4();
+    let options = BuildImageOptionsBuilder::new()
+        .t("nlnetlabs/cascade-tests-runner")
+        .version(BuilderVersion::BuilderBuildKit)
+        .session(&session.to_string())
+        .build();
+
+    let stream = client.build_image(options, None, Some(body));
+    let mut stream = std::pin::pin!(stream);
+    let mut image_id = None;
+
+    while let Some(info) = stream.next().await {
+        let info = match info {
+            Ok(info) => info,
+            Err(err) => {
+                tracing::error!("Error while watching build: {err:?}");
+                panic!("Could not build image")
+            }
+        };
+
+        tracing::trace!(?info, "build info");
+
+        let Some(id) = info.id else {
+            tracing::warn!("Bug: missing ID in build info");
+            continue;
+        };
+
+        match &*id {
+            "moby.buildkit.trace" => {
+                let Some(BuildInfoAux::BuildKit(resp)) = info.aux else {
+                    tracing::warn!("Bug: Missing BuildKit aux data");
+                    continue;
+                };
+
+                for v in resp.vertexes {
+                    let digest = v.digest.strip_prefix("sha256:").unwrap_or(&v.digest);
+                    if v.started.is_none() {
+                        tracing::info!("[{digest:.8}] {}", v.name);
+                    }
+                }
+
+                for s in resp.statuses {
+                    let digest = s.vertex.strip_prefix("sha256:").unwrap_or(&s.vertex);
+                    if s.started.is_none() {
+                        tracing::info!("[{digest:.8}] {} {}/{}", s.id, s.current, s.total);
+                    }
+                }
+
+                for l in resp.logs {
+                    let digest = l.vertex.strip_prefix("sha256:").unwrap_or(&l.vertex);
+                    if let Ok(msg) = std::str::from_utf8(&l.msg) {
+                        tracing::info!("[{digest:.8}] {msg}");
+                    } else {
+                        let msg = l.msg.utf8_chunks();
+                        tracing::info!("[{digest:.8}] {msg:?}");
+                    }
+                }
+
+                for w in resp.warnings {
+                    let digest = w.vertex.strip_prefix("sha256:").unwrap_or(&w.vertex);
+                    if let Ok(msg) = std::str::from_utf8(&w.short) {
+                        tracing::warn!("[{digest:.8}] {msg}");
+                    } else {
+                        let msg = w.short.utf8_chunks();
+                        tracing::warn!("[{digest:.8}] {msg:?}");
+                    }
+                }
+            }
+
+            "moby.image.id" => {
+                let Some(BuildInfoAux::Default(ImageId { id: Some(id) })) = info.aux else {
+                    tracing::warn!("Bug: Missing image ID");
+                    continue;
+                };
+                image_id = Some(id);
+            }
+
+            _ => {
+                tracing::warn!("Bug: Unrecognized build info ID {id:?}");
+            }
+        }
+    }
+
+    if image_id.is_none() {
+        panic!("Could not build image")
+    }
 
     tracing::info!("Built image");
-
-    image
 }
 
 /// Simple directory walker.
@@ -84,6 +172,8 @@ fn walkdir(path: PathBuf) -> impl Iterator<Item = std::fs::DirEntry> {
     })
 }
 
+//------------------------------------------------------------------------------
+
 /// An exposed DNS server port.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ExposedDnsPort {
@@ -96,10 +186,10 @@ pub struct ExposedDnsPort {
 
 impl ExposedDnsPort {
     /// Look up an exposed DNS port.
-    pub fn get(ports: &Ports, port: u16) -> Self {
+    pub fn get(ports: &HashMap<String, Option<Vec<PortBinding>>>, port: u16) -> Self {
         Self {
-            over_udp: ExposedPort::get(ports, ContainerPort::Udp(port)),
-            over_tcp: ExposedPort::get(ports, ContainerPort::Tcp(port)),
+            over_udp: ExposedPort::get_udp(ports, port),
+            over_tcp: ExposedPort::get_tcp(ports, port),
         }
     }
 }
@@ -138,12 +228,43 @@ pub struct ExposedPort {
 }
 
 impl ExposedPort {
-    /// Look up an exposed port.
-    pub fn get(ports: &Ports, port: impl Into<ContainerPort>) -> Self {
-        let port = port.into();
+    /// Look up an exposed TCP port.
+    #[tracing::instrument(level = "trace", skip(ports), ret)]
+    pub fn get_tcp(ports: &HashMap<String, Option<Vec<PortBinding>>>, port: u16) -> Self {
+        let bindings = ports.get(&format!("{port}/tcp")).unwrap().as_ref().unwrap();
+        let (mut on_ipv4, mut on_ipv6) = (None, None);
+        for binding in bindings {
+            tracing::trace!(?binding, "Processing exposed port binding");
+            let ip = binding.host_ip.as_ref().unwrap().parse::<IpAddr>().unwrap();
+            let port = binding.host_port.as_ref().unwrap().parse::<u16>().unwrap();
+            match ip {
+                IpAddr::V4(_) => on_ipv4 = Some(port),
+                IpAddr::V6(_) => on_ipv6 = Some(port),
+            }
+        }
         Self {
-            on_ipv4: ports.map_to_host_port_ipv4(port).unwrap(),
-            on_ipv6: ports.map_to_host_port_ipv6(port).unwrap(),
+            on_ipv4: on_ipv4.unwrap(),
+            on_ipv6: on_ipv6.unwrap(),
+        }
+    }
+
+    /// Look up an exposed UDP port.
+    #[tracing::instrument(level = "trace", skip(ports), ret)]
+    pub fn get_udp(ports: &HashMap<String, Option<Vec<PortBinding>>>, port: u16) -> Self {
+        let bindings = ports.get(&format!("{port}/udp")).unwrap().as_ref().unwrap();
+        let (mut on_ipv4, mut on_ipv6) = (None, None);
+        for binding in bindings {
+            tracing::trace!(?binding, "Processing exposed port binding");
+            let ip = binding.host_ip.as_ref().unwrap().parse::<IpAddr>().unwrap();
+            let port = binding.host_port.as_ref().unwrap().parse::<u16>().unwrap();
+            match ip {
+                IpAddr::V4(_) => on_ipv4 = Some(port),
+                IpAddr::V6(_) => on_ipv6 = Some(port),
+            }
+        }
+        Self {
+            on_ipv4: on_ipv4.unwrap(),
+            on_ipv6: on_ipv6.unwrap(),
         }
     }
 }

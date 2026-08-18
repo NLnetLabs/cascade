@@ -1,13 +1,12 @@
 //! Integration tests.
 
-use testcontainers::{
-    ImageExt,
-    core::{ContainerPort, ExecCommand},
-    runners::AsyncRunner,
-};
+use std::env;
+
+use bollard::plugin::{ContainerCreateBody, HostConfig, Mount, MountType};
 use tracing_subscriber::EnvFilter;
 
 mod infra;
+use infra::strs;
 
 #[tokio::main]
 async fn main() {
@@ -16,59 +15,69 @@ async fn main() {
         .with_env_filter(
             EnvFilter::from_default_env()
                 .add_directive("h2=error".parse().unwrap())
+                .add_directive("tonic=error".parse().unwrap())
+                .add_directive("hyper_util=error".parse().unwrap())
                 .add_directive("bollard=error".parse().unwrap()),
         )
         .init();
 
-    let image = infra::build_image().await;
+    let bollard = bollard::Docker::connect_with_defaults().unwrap();
 
-    let container = image
-        .clone()
-        .with_exposed_port(ContainerPort::Tcp(4539))
-        .with_exposed_port(ContainerPort::Tcp(4540))
-        .with_exposed_port(ContainerPort::Udp(4540))
-        .with_exposed_port(ContainerPort::Tcp(4541))
-        .with_exposed_port(ContainerPort::Udp(4541))
-        .with_exposed_port(ContainerPort::Tcp(4542))
-        .with_exposed_port(ContainerPort::Udp(4542))
-        .with_host_config_modifier(|config| {
-            // Use the system resolver we spawn for DNS.
-            config.dns = Some(vec!["127.0.0.1".into()]);
-            // TODO: Copied from old `resolv.conf` file, are these needed?
-            config.dns_options = Some(vec!["edns0".into(), "trust-ad".into()]);
-        })
-        .start()
+    let daemon_path = env::var("CARGO_BIN_EXE_cascaded").unwrap();
+
+    infra::build_image(&bollard).await;
+
+    let response = bollard
+        .create_container(
+            None,
+            ContainerCreateBody {
+                exposed_ports: Some(vec![
+                    format!("{}/tcp", infra::ports::REMOTE_CONTROL),
+                    format!("{}/tcp", infra::ports::LOADED_REVIEW),
+                    format!("{}/udp", infra::ports::LOADED_REVIEW),
+                    format!("{}/tcp", infra::ports::SIGNED_REVIEW),
+                    format!("{}/udp", infra::ports::SIGNED_REVIEW),
+                    format!("{}/tcp", infra::ports::PUBLICATION),
+                    format!("{}/udp", infra::ports::PUBLICATION),
+                ]),
+                env: Some(strs!["RUST_BACKTRACE=1"]),
+                image: Some("nlnetlabs/cascade-tests-runner".into()),
+                host_config: Some(HostConfig {
+                    mounts: Some(vec![Mount {
+                        target: Some("/test/bin/cascaded".into()),
+                        source: Some(daemon_path),
+                        typ: Some(MountType::BIND),
+                        read_only: Some(true),
+                        ..Default::default()
+                    }]),
+                    dns: Some(strs!["127.0.0.1"]),
+                    // TODO: Copied from old `resolv.conf` file, are these needed?
+                    dns_options: Some(strs!["edns0", "trust-ad"]),
+                    publish_all_ports: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
 
-    tracing::info!(id = container.id(), "Launched container");
+    for w in response.warnings {
+        tracing::warn!("{w}");
+    }
 
-    let bollard = testcontainers::core::client::docker_client_instance()
-        .await
-        .unwrap();
+    let container_id = response.id;
 
-    let resolver = infra::UnboundResolver::start(&bollard, &container).await;
-    let parent = infra::BindParent::start(&bollard, &container).await;
-    let primary = infra::NsdPrimary::start(&bollard, &container).await;
-    let secondary = infra::NsdSecondary::start(&bollard, &container).await;
+    bollard.start_container(&container_id, None).await.unwrap();
 
-    let cascade = infra::Cascade::start(&bollard, &container).await;
+    tracing::info!(id = container_id, "Launched container");
+
+    let resolver = infra::UnboundResolver::start(&bollard, &container_id).await;
+    let parent = infra::BindParent::start(&bollard, &container_id).await;
+    let primary = infra::NsdPrimary::start(&bollard, &container_id).await;
+    let secondary = infra::NsdSecondary::start(&bollard, &container_id).await;
+
+    let cascade = infra::Cascade::start(&bollard, &container_id).await;
 
     tracing::info!("Policy names: {:?}", cascade.policy_names().await);
-
-    let mut spawned = container
-        .exec(ExecCommand::new(["echo", "hi"]))
-        .await
-        .unwrap();
-
-    let code = spawned.exit_code().await.unwrap();
-    let stdout = spawned.stdout_to_vec().await.unwrap();
-    let stderr = spawned.stderr_to_vec().await.unwrap();
-
-    tracing::info!(
-        ?spawned,
-        ?code,
-        stdout = ?stdout.utf8_chunks(),
-        stderr = ?stderr.utf8_chunks(),
-        "Ran `echo hi`");
 }
