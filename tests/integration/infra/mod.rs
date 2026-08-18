@@ -1,6 +1,6 @@
 //! Infrastructure for integration tests.
 
-use std::sync::OnceLock;
+use std::{fmt::Debug, sync::OnceLock, time::Duration};
 
 use tokio::sync::Semaphore;
 
@@ -17,6 +17,41 @@ mod services;
 pub use services::*;
 
 pub mod ports;
+
+/// Repeat a measurement until it satisfies a predicate.
+///
+/// ## Panics
+///
+/// Panics if the measured object does not satisfy the predicate for too long.
+pub async fn poll<S, T: Debug>(
+    mut prepare: impl FnMut() -> S,
+    mut measure: impl AsyncFnMut(S) -> T,
+    pred: impl Fn(&T) -> bool,
+) -> T {
+    let timeout = Duration::from_secs(10);
+    let frequency = Duration::from_millis(100);
+
+    let mut last_seen = None::<T>;
+    let result = tokio::time::timeout(timeout, async {
+        loop {
+            let state = (prepare)();
+            let obj = last_seen.insert(measure(state).await);
+            if (pred)(obj) {
+                return last_seen.take().unwrap();
+            }
+            tokio::time::sleep(frequency).await;
+        }
+    })
+    .await;
+
+    match result {
+        Ok(obj) => obj,
+        Err(_) => {
+            tracing::error!(?last_seen, "Polling failed");
+            panic!("Polling failed")
+        }
+    }
+}
 
 /// A counter of ongoing async drops.
 ///
