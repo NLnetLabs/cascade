@@ -37,7 +37,6 @@ use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
 
-use crate::config::Config;
 use crate::hsm::Hsm;
 use crate::hsm::HsmState;
 use crate::hsm::KmipServerState;
@@ -917,6 +916,7 @@ impl HttpServer {
             &mut state.policies,
             &center.config,
             &state.tsig_store,
+            &state.hsms,
             |name, change| {
                 changed = true;
 
@@ -1657,17 +1657,4 @@ impl HttpServer {
             server: server.into(),
         }))
     }
-}
-
-pub fn kmip_server_exists(hsm_server_id: &str, config: &Config) -> bool {
-    let kmip_server_state_dir = &config.kmip_server_state_dir;
-
-    let p = kmip_server_state_dir.join(hsm_server_id);
-    if let Ok(f) = std::fs::File::open(p)
-        && let Ok(server) = serde_json::from_reader::<_, KmipServerState>(f)
-    {
-        return server.server_id == hsm_server_id;
-    }
-
-    false
 }

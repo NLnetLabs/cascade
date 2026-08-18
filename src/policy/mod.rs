@@ -13,8 +13,8 @@ use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use crate::hsm::HsmStore;
 use crate::tsig::TsigStore;
-use crate::units::http_server::kmip_server_exists;
 use crate::{api::PolicyReloadError, config::Config};
 
 pub mod file;
@@ -61,10 +61,11 @@ pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
     tsig_store: &TsigStore,
+    hsms: &HsmStore,
     mut on_change: impl FnMut(&Box<str>, PolicyChange),
     warnings: &mut Vec<String>,
 ) -> Result<(), PolicyReloadError> {
-    let new_versions = load_all(policies, config, tsig_store, warnings)?;
+    let new_versions = load_all(policies, config, tsig_store, hsms, warnings)?;
 
     let mut new_policies = foldhash::HashMap::default();
 
@@ -133,6 +134,7 @@ pub fn load_all(
     policies: &foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
     tsig_store: &TsigStore,
+    hsms: &HsmStore,
     warnings: &mut Vec<String>,
 ) -> Result<foldhash::HashMap<Box<str>, PolicyVersion>, PolicyReloadError> {
     // Write the loaded policies to a new hashmap, so policies that no longer
@@ -199,7 +201,7 @@ pub fn load_all(
 
         let policy = spec.parse(name);
 
-        check_policy(&policy, tsig_store, config)?;
+        check_policy(&policy, tsig_store, hsms)?;
         if policies.contains_key(name) {
             info!("Reloaded policy '{name}'");
         } else {
@@ -222,7 +224,7 @@ pub fn load_all(
 fn check_policy(
     policy: &PolicyVersion,
     tsig_store: &TsigStore,
-    config: &Config,
+    hsms: &HsmStore,
 ) -> Result<(), PolicyReloadError> {
     // Check the publication nameservers for the key manager. Any TSIG key
     // that is part of those nameservers has to exist in the TSIG key store.
@@ -329,7 +331,7 @@ fn check_policy(
 
     // Check if the HSM server ID refers to a configured HSM.
     if let Some(hsm_server_id) = &policy.key_manager.hsm_server_id
-        && !kmip_server_exists(hsm_server_id, config)
+        && !hsms.server_exists(hsm_server_id)
     {
         return Err(PolicyReloadError::BadValue(format!(
             "unknown HSM server ID '{hsm_server_id}'",

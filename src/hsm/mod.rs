@@ -25,6 +25,10 @@ impl HsmStore {
     }
 
     // TODO: Methods to get, modify, add, remove HSMs?
+
+    pub fn server_exists(&self, hsm_server_id: &str) -> bool {
+        self.map.contains_key(hsm_server_id)
+    }
 }
 
 //----------- Hsm --------------------------------------------------------------
