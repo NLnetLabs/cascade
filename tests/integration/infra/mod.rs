@@ -33,27 +33,12 @@ pub async fn build_image(client: &Docker) {
     context.follow_symlinks(false);
     context.sparse(false);
     context.mode(tar::HeaderMode::Deterministic);
-
     context
         .append_path_with_name(base_dir.join("tests/integration/Dockerfile"), "Dockerfile")
         .unwrap();
-
-    // Walk the data directory and add all its files.
-    let data_dir = base_dir.join("tests/integration/data");
-    for entry in walkdir(data_dir.clone()) {
-        let path = entry.path();
-        let r#type = entry.file_type().unwrap();
-        if r#type.is_file() {
-            let dest = path.strip_prefix(&data_dir).unwrap();
-            context.append_path_with_name(&path, dest).unwrap();
-        } else if !r#type.is_dir() {
-            tracing::warn!(
-                "Excluding '{}' from image context: not a file or directory",
-                path.display()
-            );
-        }
-    }
-
+    context
+        .append_dir_all(".", base_dir.join("tests/integration/data"))
+        .unwrap();
     let body = context.into_inner().unwrap();
     let body = bollard::body_full(body.into());
 
@@ -147,29 +132,6 @@ pub async fn build_image(client: &Docker) {
     }
 
     tracing::info!("Built image");
-}
-
-/// Simple directory walker.
-fn walkdir(path: PathBuf) -> impl Iterator<Item = std::fs::DirEntry> {
-    let mut stack = vec![];
-    stack.push(std::fs::read_dir(path).unwrap());
-    std::iter::from_fn(move || {
-        // Find a new entry at the deepest possible level in the stack.
-        let entry = loop {
-            let reader = stack.last_mut()?;
-            if let Some(entry) = reader.next() {
-                break entry.unwrap();
-            }
-            stack.pop();
-        };
-
-        if entry.file_type().unwrap().is_dir() {
-            // Add to the stack.
-            stack.push(std::fs::read_dir(entry.path()).unwrap());
-        }
-
-        Some(entry)
-    })
 }
 
 //------------------------------------------------------------------------------
