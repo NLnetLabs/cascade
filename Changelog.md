@@ -29,11 +29,17 @@ Released yyyy-mm-dd.
 
 ### New
 ### Bug fixes
+
+- Fixed bugs that on reload a policy could refer to a non-existant HSM and
+  the changes in default HSM to use were not propagated to the key manager.
+  ([#964])
+
 ### Other changes
 ### Documentation improvements
 ### Known issues
 ### Acknowledgements
 
+[#964]: https://github.com/NLnetLabs/cascade/pull/964
 [#967]: https://github.com/NLnetLabs/cascade/pull/967
 
 ## 0.1.0-beta6 'Leonard Shelby'
