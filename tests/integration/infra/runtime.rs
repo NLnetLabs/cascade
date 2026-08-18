@@ -28,7 +28,7 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
 
     runtime.block_on(async {
         const TIMEOUT: Duration = Duration::from_secs(5);
-        const WARNING_TIME: Duration = Duration::from_millis(200);
+        const WARNING_TIME: Duration = Duration::from_millis(500);
 
         let drops = pin!(ONGOING_ASYNC_DROPS.acquire_many(Semaphore::MAX_PERMITS as u32));
         let timeout = pin!(tokio::time::sleep(TIMEOUT));

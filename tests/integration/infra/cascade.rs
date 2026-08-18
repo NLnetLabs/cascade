@@ -209,7 +209,7 @@ impl Cascade {
 }
 
 /// # Policy Control
-#[expect(dead_code)]
+#[allow(dead_code)]
 impl Cascade {
     /// The names of all known policies.
     #[tracing::instrument(level = "debug", skip(self), ret)]
@@ -231,6 +231,7 @@ impl Cascade {
     }
 
     /// Reload all policies.
+    #[allow(clippy::result_large_err)]
     #[tracing::instrument(level = "debug", skip(self), ret)]
     pub async fn reload_policies(&self) -> Result<api::PolicyChanges, api::PolicyReloadError> {
         self.control.post_recv_json("policy/reload").await.unwrap()
@@ -238,7 +239,7 @@ impl Cascade {
 }
 
 /// # Zones Control
-#[expect(dead_code)]
+#[allow(dead_code)]
 impl Cascade {
     /// The names of all known zones.
     #[tracing::instrument(level = "debug", skip(self), ret)]

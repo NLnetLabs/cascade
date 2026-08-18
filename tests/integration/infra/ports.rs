@@ -112,7 +112,7 @@ impl fmt::Display for InPort {
 }
 
 /// A TCP port.
-#[expect(dead_code)]
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TcpPort(pub u16);
 
@@ -132,7 +132,7 @@ impl fmt::Display for TcpPort {
 }
 
 /// A UDP port.
-#[expect(dead_code)]
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UdpPort(pub u16);
 

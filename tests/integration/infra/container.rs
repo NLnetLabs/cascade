@@ -83,11 +83,15 @@ impl<'image> ContainerBuilder<'image> {
         let image_name = self.image.name.clone();
         let name = self.name.clone();
 
-        let daemon_path = self.daemon_path.clone().unwrap_or_else(|| {
-            std::env::var("CARGO_BIN_EXE_cascaded")
-                .expect("Cargo sets `CARGO_BIN_EXE_cascaded` automatically")
-                .into()
-        });
+        let daemon_path = self
+            .daemon_path
+            .clone()
+            .map(Into::into)
+            .or_else(|| std::env::var("CARGO_BIN_EXE_cascaded").ok())
+            .unwrap_or_else(|| {
+                let repo_path = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+                format!("{repo_path}/target/debug/cascaded")
+            });
 
         let env = self
             .env
@@ -120,7 +124,7 @@ impl<'image> ContainerBuilder<'image> {
                 host_config: Some(HostConfig {
                     mounts: Some(vec![Mount {
                         target: Some("/usr/local/bin/cascaded".into()),
-                        source: Some(daemon_path.into()),
+                        source: Some(daemon_path),
                         typ: Some(MountType::BIND),
                         read_only: Some(true),
                         ..Default::default()

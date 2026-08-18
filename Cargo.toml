@@ -271,6 +271,22 @@ reqwest = { version = "0.13.3", default-features = false, features = ["http2", "
 uuid = { version = "1.18.0", features = ["v4"] }
 tar = "0.4.45"
 
+# Outdated dependency due to:
+# -> `bollard v0.21` (2026-05)
+# -> `num v0.4.0` (2021-03)
+# -> `num-bigint v0.4.0` (2021-03)
+# ... which does not compile at our MSRV.
+# Bump `num` to prevent this.
+num = { version = "0.4.3", default-features = false }
+
+# Outdated dependency due to:
+# -> `bollard v0.21` (2026-05)
+# -> `bollard-stubs v1.53.1-rc.29.3.1` (2026-05)
+# -> `serde_repr v0.1.0` (2019-01)
+# ... which does not compile at our MSRV.
+# Bump `serde_repr` to prevent this.
+serde_repr = { version = "0.1.20", default-features = false }
+
 
 # --- Packaging ----------------------------------------------------------------
 

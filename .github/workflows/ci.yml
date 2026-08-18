@@ -255,8 +255,14 @@ jobs:
 
     # TODO: Restore a cache of dependencies and 'target'.
 
-    # Build and run the test suite.
-    - name: Test
-      run: cargo test --all-targets --locked
+    # Run unit tests.
+    - name: Unit tests
+      run: cargo test --locked --bins
+
+    # Run integration tests.
+    - name: Integration tests
+      env:
+        RUST_LOG: debug
+      run: cargo test --locked --test integration
 
   # TODO: Build a cache.
