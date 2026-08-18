@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     fmt,
     io::{BufWriter, Write},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::Path,
     sync::Arc,
     time::SystemTime,
@@ -16,6 +16,12 @@ use bollard::{
     query_parameters::{
         CreateContainerOptions, DownloadFromContainerOptionsBuilder, RemoveContainerOptionsBuilder,
     },
+};
+use bytes::Bytes;
+use domain::{
+    base::{Message, MessageBuilder, Name, Rtype},
+    net::client::request::{RequestMessage, RequestMessageMulti, SendRequest, SendRequestMulti},
+    tsig,
 };
 use futures_util::StreamExt;
 use tracing::Instrument;
@@ -72,7 +78,7 @@ impl<'image> ContainerBuilder<'image> {
     }
 
     /// Build a container using this configuration.
-    pub fn build(&self) -> impl Future<Output = Container> + use<> {
+    pub fn build(&self) -> impl Future<Output = Container> + Send + use<> {
         let docker = self.image.docker.clone();
         let image_name = self.image.name.clone();
         let name = self.name.clone();
@@ -252,6 +258,77 @@ impl Container {
         match self.ipv6_addr {
             Some(addr) => IpAddr::V6(addr),
             None => IpAddr::V4(self.ipv4_addr),
+        }
+    }
+
+    /// Query a DNS server.
+    pub async fn dns_query(
+        &self,
+        port: ports::DnsPort,
+        name: &str,
+        rtype: Rtype,
+        tsig_key: Option<Arc<tsig::Key>>,
+    ) -> Result<Message<Bytes>, domain::net::client::request::Error> {
+        let client = self.dns_client(port, tsig_key);
+
+        let mut msg = MessageBuilder::new_vec();
+        msg.header_mut().set_rd(false);
+        msg.header_mut().set_ad(true);
+        let mut msg = msg.question();
+        msg.push((Name::vec_from_str(name).unwrap(), rtype))
+            .unwrap();
+        let req = RequestMessage::new(msg).unwrap();
+
+        client.send_request(req).get_response().await
+    }
+
+    /// Build a simple DNS client for single-response requests.
+    pub fn dns_client(
+        &self,
+        port: ports::DnsPort,
+        tsig_key: Option<Arc<tsig::Key>>,
+    ) -> Box<dyn SendRequest<RequestMessage<Vec<u8>>> + Send + Sync> {
+        use domain::net::client;
+
+        let addr = SocketAddr::new(self.ip_addr(), port.0);
+        let udp_conn = client::protocol::UdpConnect::new(addr);
+        let tcp_conn = client::protocol::TcpConnect::new(addr);
+        if let Some(tsig_key) = tsig_key {
+            let (client, transport) = client::dgram_stream::Connection::new(udp_conn, tcp_conn);
+            tokio::task::spawn(transport.run());
+            Box::new(client::tsig::Connection::new(tsig_key, client)) as _
+        } else {
+            let (client, transport) = client::dgram_stream::Connection::new(udp_conn, tcp_conn);
+            tokio::task::spawn(transport.run());
+            Box::new(client) as _
+        }
+    }
+
+    /// Build a DNS client for XFR requests.
+    #[allow(dead_code)]
+    pub async fn dns_xfr_client(
+        &self,
+        port: ports::DnsPort,
+        tsig_key: Option<Arc<tsig::Key>>,
+    ) -> Box<dyn SendRequestMulti<RequestMessageMulti<Vec<u8>>> + Send + Sync> {
+        use domain::net::client;
+
+        let addr = SocketAddr::new(self.ip_addr(), port.0);
+        let tcp_conn = tokio::net::TcpStream::connect(addr).await.unwrap();
+        if let Some(tsig_key) = tsig_key {
+            let (client, transport) = client::stream::Connection::<
+                RequestMessage<Vec<u8>>,
+                client::tsig::RequestMessage<RequestMessageMulti<Vec<u8>>, Arc<tsig::Key>>,
+            >::new(tcp_conn);
+            tokio::task::spawn(transport.run());
+            Box::new(client::tsig::Connection::new(tsig_key, client)) as _
+        } else {
+            let (client, transport) = client::stream::Connection::<
+                RequestMessage<Vec<u8>>,
+                RequestMessageMulti<Vec<u8>>,
+            >::new(tcp_conn);
+            tokio::task::spawn(transport.run());
+            Box::new(client) as _
         }
     }
 
