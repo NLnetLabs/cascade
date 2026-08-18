@@ -915,6 +915,7 @@ impl HttpServer {
             &mut state.policies,
             &center.config,
             &state.tsig_store,
+            &state.hsms,
             |name, change| {
                 changed = true;
 

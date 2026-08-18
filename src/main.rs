@@ -242,6 +242,7 @@ fn main() -> ExitCode {
                 &mut state.policies,
                 &config,
                 &state.tsig_store,
+                &state.hsms,
                 |name, _| {
                     updates.push(name.clone());
                 },
