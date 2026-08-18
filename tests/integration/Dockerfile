@@ -83,6 +83,6 @@ SHELL ["/bin/bash", "--login", "-e", "-o", "pipefail", "-c"]
 # HACK: Allow the container to be started and run indefinitely.
 ENTRYPOINT ["sleep", "inf"]
 
-COPY --from=dnst /dnst /test/bin/
-COPY --from=cascade-hsm-bridge /cascade-hsm-bridge /test/bin/
+COPY --from=dnst /dnst /usr/local/bin/
+COPY --from=cascade-hsm-bridge /cascade-hsm-bridge /usr/local/bin/
 COPY --link . /test

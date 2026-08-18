@@ -47,7 +47,7 @@ impl BindParent {
                 "-c",
                 "/test/parent/bind.conf",
                 "-d",
-                "-1",
+                "1",
                 "-L",
                 "/test/parent/bind.log",
             ],

@@ -391,7 +391,7 @@ impl Cascade {
 /// Start Cascade and return the Docker exec ID.
 async fn start(container: &Container, config: &CascadeConfig) -> String {
     let command = strs![
-        "/test/bin/cascaded",
+        "/usr/local/bin/cascaded",
         "--config",
         "/test/cascade/config.toml",
         "--state",

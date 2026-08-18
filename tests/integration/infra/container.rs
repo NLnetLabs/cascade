@@ -119,7 +119,7 @@ impl<'image> ContainerBuilder<'image> {
                 image: Some(image_name.into()),
                 host_config: Some(HostConfig {
                     mounts: Some(vec![Mount {
-                        target: Some("/test/bin/cascaded".into()),
+                        target: Some("/usr/local/bin/cascaded".into()),
                         source: Some(daemon_path.into()),
                         typ: Some(MountType::BIND),
                         read_only: Some(true),
@@ -272,7 +272,7 @@ impl Container {
         let client = self.dns_client(port, tsig_key);
 
         let mut msg = MessageBuilder::new_vec();
-        msg.header_mut().set_rd(false);
+        msg.header_mut().set_rd(true);
         msg.header_mut().set_ad(true);
         let mut msg = msg.question();
         msg.push((Name::vec_from_str(name).unwrap(), rtype))
@@ -384,7 +384,7 @@ impl Container {
                 }
                 let trunc_len = max_size - size;
                 writer.write_all(&chunk[..trunc_len])?;
-                return Ok(());
+                break;
             }
 
             tracing::trace!(size = chunk.len(), new_total, "Saving chunk");
@@ -399,7 +399,7 @@ impl Container {
         let target = format!("./test-dump-{name}-{offset}");
         file.persist(&target).unwrap();
 
-        tracing::debug!("Dumped {:?}", Path::new(&target).canonicalize().unwrap());
+        tracing::info!("Dumped {:?}", Path::new(&target).canonicalize().unwrap());
 
         Ok(())
     }
@@ -444,40 +444,38 @@ impl Drop for Container {
             return;
         }
 
+        let drop_span = tracing::debug_span!("drop_container");
         let mut dump = false;
         let mut cleanup = true;
 
         if std::thread::panicking() {
             // A failure has occurred. Dump the container data out for
             // inspection, and determine whether to remove it.
-            dump = true;
+            dump = !drop_span.is_disabled();
             let config = super::CURRENT_CONFIG.get().unwrap();
             match config.leave_containers_on_failure {
                 Some(true) => {
-                    tracing::info!(id = %self.id, addr = %self.ip_addr(), "Leaving container");
+                    tracing::info!(id = %self.id, name = %self.name, addr = %self.ip_addr(), "Leaving container");
                     cleanup = false;
                 }
                 Some(false) => {}
                 None => {
                     tracing::warn!("Cleaning up container, see `leave-containers-on-failure`");
-                    return;
                 }
             }
         }
 
-        let drop_permit = super::ONGOING_ASYNC_DROPS.try_acquire().unwrap();
         let docker = self.docker.clone();
         let id = self.id.clone();
         let name = self.name.clone();
         let start_time = self.start_time;
-        tokio::spawn(async move {
+        super::async_drop(drop_span, async move {
             if dump {
                 let _ = Self::dump_impl(&docker, &id, &name, &start_time, "/test").await;
             }
             if cleanup {
                 Self::cleanup_impl(&docker, &id).await;
             }
-            std::mem::drop(drop_permit);
         });
     }
 }

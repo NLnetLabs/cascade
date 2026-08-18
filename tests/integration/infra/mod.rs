@@ -2,8 +2,6 @@
 
 use std::{fmt::Debug, sync::OnceLock, time::Duration};
 
-use tokio::sync::Semaphore;
-
 mod image;
 pub use image::*;
 
@@ -17,6 +15,12 @@ mod services;
 pub use services::*;
 
 pub mod ports;
+
+mod test;
+pub use test::*;
+
+pub mod runtime;
+pub use runtime::async_drop;
 
 /// Repeat a measurement until it satisfies a predicate.
 ///
@@ -53,18 +57,13 @@ pub async fn poll<S, T: Debug>(
     }
 }
 
-/// A counter of ongoing async drops.
-///
-/// When an object needs to be dropped asynchronously, it takes a permit from
-/// this semaphore and executes the drop code in a Tokio task. When it finishes,
-/// it returns the semaphore. The top-level runner code will wait (up to some
-/// limit) for all async drops to finish before exiting.
-pub static ONGOING_ASYNC_DROPS: Semaphore =
-    Semaphore::const_new(Semaphore::MAX_PERMITS as u32 as usize);
-
 /// Test configuration.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct TestConfig {
+    /// Correct tests where data mismatches occur.
+    #[expect(dead_code)]
+    pub bless: Option<bool>,
+
     /// Leave containers behind on failure.
     pub leave_containers_on_failure: Option<bool>,
 
