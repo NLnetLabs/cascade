@@ -31,11 +31,6 @@ fn main() {
 
         let container = infra::ContainerBuilder::new(&image).build().await;
 
-        let resolver = infra::UnboundResolver::start(&container).await;
-        let parent = infra::BindParent::start(&container).await;
-        let primary = infra::NsdPrimary::start(&container).await;
-        let secondary = infra::NsdSecondary::start(&container).await;
-
         let cascade = infra::Cascade::start(&container).await;
 
         tracing::info!("Policy names: {:?}", cascade.policy_names().await);

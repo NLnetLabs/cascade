@@ -1,8 +1,6 @@
 //! Supporting services.
 
-use bollard::{exec::StartExecOptions, plugin::ExecConfig};
-
-use super::Container;
+use bollard::{Docker, exec::StartExecOptions, plugin::ExecConfig};
 
 //----------- UnboundResolver --------------------------------------------------
 
@@ -16,9 +14,10 @@ pub struct UnboundResolver {
 impl UnboundResolver {
     /// Start the service.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub async fn start(container: &Container) -> Self {
+    pub async fn start(docker: &Docker, container_id: &str) -> Self {
         let exec_id = exec_detached(
-            container,
+            docker,
+            container_id,
             strs!["unbound", "-c", "/test/resolver/unbound.conf"],
             "/test/resolver",
         )
@@ -39,9 +38,10 @@ pub struct BindParent {
 impl BindParent {
     /// Start the service.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub async fn start(container: &Container) -> Self {
+    pub async fn start(docker: &Docker, container_id: &str) -> Self {
         let exec_id = exec_detached(
-            container,
+            docker,
+            container_id,
             strs![
                 "named",
                 "-c",
@@ -70,9 +70,10 @@ pub struct NsdPrimary {
 impl NsdPrimary {
     /// Start the service.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub async fn start(container: &Container) -> Self {
+    pub async fn start(docker: &Docker, container_id: &str) -> Self {
         let exec_id = exec_detached(
-            container,
+            docker,
+            container_id,
             strs!["nsd", "-c", "/test/primary/nsd.conf"],
             "/test/primary",
         )
@@ -93,9 +94,10 @@ pub struct NsdSecondary {
 impl NsdSecondary {
     /// Start the service.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub async fn start(container: &Container) -> Self {
+    pub async fn start(docker: &Docker, container_id: &str) -> Self {
         let exec_id = exec_detached(
-            container,
+            docker,
+            container_id,
             strs!["nsd", "-c", "/test/secondary/nsd.conf"],
             "/test/secondary",
         )
@@ -110,20 +112,19 @@ impl NsdSecondary {
 ///
 /// Returns the Docker exec ID.
 #[tracing::instrument(level = "debug", ret)]
-async fn exec_detached(container: &Container, command: Vec<String>, working_dir: &str) -> String {
+async fn exec_detached(
+    docker: &Docker,
+    container_id: &str,
+    command: Vec<String>,
+    working_dir: &str,
+) -> String {
     let exec_cfg = ExecConfig {
         cmd: Some(command),
         working_dir: Some(working_dir.into()),
         ..Default::default()
     };
-    let exec_id = container
-        .docker
-        .create_exec(&container.id, exec_cfg)
-        .await
-        .unwrap()
-        .id;
-    container
-        .docker
+    let exec_id = docker.create_exec(container_id, exec_cfg).await.unwrap().id;
+    docker
         .start_exec(
             &exec_id,
             Some(StartExecOptions {

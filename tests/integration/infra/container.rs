@@ -11,10 +11,10 @@ use std::{
 };
 
 use bollard::{
+    Docker,
     plugin::{ContainerCreateBody, ContainerCreateResponse, HostConfig, Mount, MountType},
     query_parameters::{
         CreateContainerOptions, DownloadFromContainerOptionsBuilder, RemoveContainerOptionsBuilder,
-        StopContainerOptionsBuilder,
     },
 };
 use futures_util::StreamExt;
@@ -141,7 +141,15 @@ impl<'image> ContainerBuilder<'image> {
             // the entrypoint to `sleep inf`.
             docker.start_container(&id, None).await.unwrap();
 
-            let details = docker.inspect_container(&id, None).await.unwrap();
+            let (details, resolver, parent, primary, secondary) = tokio::join!(
+                docker.inspect_container(&id, None),
+                super::UnboundResolver::start(&docker, &id),
+                super::BindParent::start(&docker, &id),
+                super::NsdPrimary::start(&docker, &id),
+                super::NsdSecondary::start(&docker, &id),
+            );
+
+            let details = details.unwrap();
 
             // If `self.name` was empty, Docker will provide a name for us.
             // Read from its output even if `self.name` was not empty.
@@ -183,6 +191,10 @@ impl<'image> ContainerBuilder<'image> {
                 ipv4_addr,
                 ipv6_addr,
                 start_time,
+                resolver,
+                parent,
+                primary,
+                secondary,
                 dropped: false,
             }
         }
@@ -212,6 +224,22 @@ pub struct Container {
     /// When the container was started.
     pub start_time: SystemTime,
 
+    /// The system resolver.
+    #[expect(dead_code)]
+    pub resolver: super::UnboundResolver,
+
+    /// The parent name server.
+    #[expect(dead_code)]
+    pub parent: super::BindParent,
+
+    /// The primary name server.
+    #[expect(dead_code)]
+    pub primary: super::NsdPrimary,
+
+    /// The secondary name server.
+    #[expect(dead_code)]
+    pub secondary: super::NsdSecondary,
+
     /// Whether the container has been dropped manually.
     dropped: bool,
 }
@@ -232,8 +260,19 @@ impl Container {
     /// The contents of the specified path in the container will be snapshotted
     /// as a tarball and saved to the user's current directory, with a unique
     /// filename.
-    #[tracing::instrument(level = "trace")]
+    #[expect(dead_code)]
     pub async fn dump(&self, path: &str) -> Result<(), bollard::errors::Error> {
+        Self::dump_impl(&self.docker, &self.id, &self.name, &self.start_time, path).await
+    }
+
+    #[tracing::instrument(level = "trace", name = "dump")]
+    async fn dump_impl(
+        docker: &Docker,
+        id: &str,
+        name: &str,
+        start_time: &SystemTime,
+        path: &str,
+    ) -> Result<(), bollard::errors::Error> {
         tracing::trace!("Dumping contents of container");
 
         let options = Some(
@@ -241,7 +280,7 @@ impl Container {
                 .path(path)
                 .build(),
         );
-        let stream = self.docker.download_from_container(&self.id, options);
+        let stream = docker.download_from_container(id, options);
 
         let max_size_setting = super::CURRENT_CONFIG.get().unwrap().max_dump_size;
         let max_size = max_size_setting.unwrap_or(2 << 20);
@@ -279,8 +318,7 @@ impl Container {
         writer.flush()?;
         std::mem::drop(writer);
 
-        let name = &self.name;
-        let offset = self.start_time.elapsed().unwrap().as_millis() as u32;
+        let offset = start_time.elapsed().unwrap().as_millis() as u32;
         let target = format!("./test-dump-{name}-{offset}");
         file.persist(&target).unwrap();
 
@@ -292,30 +330,18 @@ impl Container {
     /// Clean up the container.
     ///
     /// This is performed automatically (under certain conditions) on drop.
-    #[tracing::instrument(level = "trace")]
+    #[expect(dead_code)]
     pub async fn cleanup(&mut self) {
-        tracing::trace!("Stopping container");
-        let result = self
-            .docker
-            .stop_container(
-                &self.id,
-                Some(
-                    StopContainerOptionsBuilder::new()
-                        .signal("SIGINT")
-                        .t(5)
-                        .build(),
-                ),
-            )
-            .await;
-        if let Err(error) = result {
-            tracing::error!("Failed to stop container: {error}");
-        }
+        Self::cleanup_impl(&self.docker, &self.id).await;
+        self.dropped = true;
+    }
 
+    #[tracing::instrument(level = "trace", name = "cleanup")]
+    async fn cleanup_impl(docker: &Docker, id: &str) {
         tracing::trace!("Removing container");
-        let result = self
-            .docker
+        let result = docker
             .remove_container(
-                &self.id,
+                id,
                 Some(RemoveContainerOptionsBuilder::new().force(true).build()),
             )
             .await;
@@ -324,8 +350,6 @@ impl Container {
         }
 
         tracing::debug!("Removed container");
-
-        self.dropped = true;
     }
 }
 
@@ -365,23 +389,16 @@ impl Drop for Container {
         }
 
         let drop_permit = super::ONGOING_ASYNC_DROPS.try_acquire().unwrap();
-        let mut this = Self {
-            docker: self.docker.clone(),
-            id: self.id.clone(),
-            name: self.name.clone(),
-            ipv4_addr: self.ipv4_addr,
-            ipv6_addr: self.ipv6_addr,
-            start_time: self.start_time,
-            // NOTE: If this is `false` and the spawned task gets canceled, it
-            // will recursively spawn new tasks and cause a stack overflow.
-            dropped: true,
-        };
+        let docker = self.docker.clone();
+        let id = self.id.clone();
+        let name = self.name.clone();
+        let start_time = self.start_time;
         tokio::spawn(async move {
             if dump {
-                let _ = this.dump("/test").await;
+                let _ = Self::dump_impl(&docker, &id, &name, &start_time, "/test").await;
             }
             if cleanup {
-                this.cleanup().await;
+                Self::cleanup_impl(&docker, &id).await;
             }
             std::mem::drop(drop_permit);
         });
