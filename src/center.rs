@@ -14,13 +14,14 @@ use tracing::{debug, error, info, trace};
 
 use crate::api::{self, KeyImport, TsigAddError, TsigAddResult};
 use crate::config::RuntimeConfig;
+use crate::hsm::HsmStore;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::metrics::Metrics;
 use crate::persistence::zone::PersistenceState;
 use crate::persistence::{Compacter, Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
-use crate::state::PolicySpec;
+use crate::state::{HsmSpec, PolicySpec};
 use crate::tsig::ImportError;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_signer::ZoneSigner;
@@ -391,6 +392,9 @@ pub struct State {
     /// Like global configuration, these are only reloaded on user request.
     pub policies: foldhash::HashMap<Box<str>, Policy>,
 
+    /// HSMs.
+    pub hsms: HsmStore,
+
     /// The TSIG key store.
     ///
     /// TSIG keys are used for authenticating Cascade to zone sources, and for
@@ -413,15 +417,18 @@ impl State {
     /// `zones` will be set to the names of zones that need to be loaded.
     /// `policies` will be set to the set of policies from the global state
     /// file, that need to be parsed and inserted in the state.
+    /// `hsms` will be set to the set of known HSMs from the global state file,
+    /// that need to be parsed and inserted in the state.
     pub fn init_from_file(
         config: &Config,
         zones: &mut foldhash::HashSet<Name<Bytes>>,
         policies: &mut foldhash::HashMap<Box<str>, PolicySpec>,
+        hsms: &mut foldhash::HashMap<Box<str>, HsmSpec>,
     ) -> io::Result<Self> {
         let path = config.daemon.state_file.value();
         let spec = crate::state::Spec::load(path)?;
 
-        Ok(spec.parse(zones, policies))
+        Ok(spec.parse(zones, policies, hsms))
     }
 
     /// Mark the global state as dirty.

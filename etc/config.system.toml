@@ -10,9 +10,8 @@ version = "v1"
 policy-dir = "/etc/cascade/policies"
 zone-state-dir = "/var/lib/cascade/zone-state"
 tsig-store-path = "/var/lib/cascade/tsig-keys.db"
-kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
+kmip-credentials-store-path = "/var/lib/cascade/kmip-credentials.db"
 keys-dir = "/var/lib/cascade/keys"
-kmip-server-state-dir = "/var/lib/cascade/kmip"
 dnst-binary-path = "dnst"
 
 [daemon]

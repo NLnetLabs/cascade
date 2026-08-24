@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADED-CONFIG.TOML" "5" "Jan 01, 2026" "0.1.0-beta6" "Cascade"
+.TH "CASCADED-CONFIG.TOML" "5" "Jan 01, 2026" "0.1.0-beta7-dev" "Cascade"
 .SH NAME
 cascaded-config.toml \- Cascade configuration file
 .sp
@@ -52,9 +52,8 @@ version = \(dqv1\(dq
 policy\-dir = \(dq/etc/cascade/policies\(dq
 zone\-state\-dir = \(dq/var/lib/cascade/zone\-state\(dq
 tsig\-store\-path = \(dq/var/lib/cascade/tsig\-keys.db\(dq
-kmip\-credentials\-store\-path = \(dq/var/lib/cascade/kmip/credentials.db\(dq
+kmip\-credentials\-store\-path = \(dq/var/lib/cascade/kmip\-credentials.db\(dq
 keys\-dir = \(dq/var/lib/cascade/keys\(dq
-kmip\-server\-state\-dir = \(dq/var/lib/cascade/kmip\(dq
 dnst\-binary\-path = \(dqdnst\(dq
 
 [daemon]
@@ -130,7 +129,7 @@ does not yet support TSIG keys.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B kmip\-credentials\-store\-path = \(dq/var/lib/cascade/kmip/credentials.db\(dq
+.B kmip\-credentials\-store\-path = \(dq/var/lib/cascade/kmip\-credentials.db\(dq
 The file storing KMIP credentials.
 .sp
 This is an internal state file containing sensitive KMIP server login
@@ -151,17 +150,6 @@ The organization of this directory (file names and file formats) constitutes
 internal implementation details.  It should not be modified manually, but it
 can be backed up and restored in the event of filesystem corruption.
 Carefully consider its security.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B kmip\-server\-state\-dir = \(dq/var/lib/cascade/kmip\(dq
-The directory containing KMIP server state.
-.sp
-Information about known KMIP servers is stored in this directory.
-.sp
-The organization of this directory (file names and file formats) constitutes
-internal implementation details.  It should not be modified manually, but it
-can be backed up and restored in the event of filesystem corruption.
 .UNINDENT
 .INDENT 0.0
 .TP

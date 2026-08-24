@@ -83,11 +83,8 @@ Files
 /var/lib/cascade/keys
     Default directory for on-disk zone keys
 
-/var/lib/cascade/kmip/credentials.db
+/var/lib/cascade/kmip-credentials.db
     Default file for KMIP credentials
-
-/var/lib/cascade/kmip
-    Default directory for KMIP state files
 
 See Also
 --------

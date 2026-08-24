@@ -29,7 +29,6 @@ Arguments:
                     - tsig-store-path
                     - tsig-store-path
                     - kmip-credentials-store-path
-                    - kmip-server-state-dir
                     - keys-dir
                     - dnst-binary-path
                     - log-target

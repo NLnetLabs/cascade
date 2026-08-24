@@ -60,9 +60,6 @@ pub struct Config {
 
     /// The file storing KMIP server credentials.
     pub kmip_credentials_store_path: Box<Utf8Path>,
-
-    /// The directory storing KMIP server state.
-    pub kmip_server_state_dir: Box<Utf8Path>,
 }
 
 //--- Defaults
@@ -75,8 +72,7 @@ impl Default for Config {
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
             dnst_binary_path: "dnst".into(),
-            kmip_credentials_store_path: "/var/lib/cascade/kmip/credentials.db".into(),
-            kmip_server_state_dir: "/var/lib/cascade/kmip".into(),
+            kmip_credentials_store_path: "/var/lib/cascade/kmip-credentials.db".into(),
             remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),

@@ -27,7 +27,7 @@ consider the current :doc:`limitations`.
 
 .. tip:: To see at a glance what's new in the beta1 release read our
          `"Cascade: Start your engines!" <https://blog.nlnetlabs.nl/cascade-beta1-release/>`_
-         blog post.
+         blog post. For subsequent releases checkout the `release notes <https://github.com/NLnetLabs/cascade/releases/>`_.
 
 Cascade has the following design goals:
 

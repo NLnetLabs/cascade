@@ -41,7 +41,7 @@ tsig-store-path = "/var/lib/cascade/tsig-keys.db"
 # This is an internal state file containing sensitive cryptographic material.
 # It should not be modified manually, but it can be backed up and restored in
 # the event of filesystem corruption.  Carefully consider its security.
-kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
+kmip-credentials-store-path = "/var/lib/cascade/kmip-credentials.db"
 
 # The directory storing rollover states and on-disk DNSSEC keys.
 #
@@ -56,15 +56,6 @@ kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
 #
 # TODO: Move rollover state files to a separate directory?
 keys-dir = "/var/lib/cascade/keys"
-
-# The directory containing KMIP server state.
-#
-# Information about known KMIP servers is stored in this directory.
-# 
-# The organization of this directory (file names and file formats) constitutes
-# internal implementation details.  It should not be modified manually, but
-# it can be backed up and restored in the event of filesystem corruption.
-kmip-server-state-dir = "/var/lib/cascade/kmip"
 
 # The path to the dnst binary Cascade should use.
 #

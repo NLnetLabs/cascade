@@ -43,6 +43,7 @@ use rayon::{
 use tracing::{debug, info};
 
 use crate::{
+    hsm::HsmStore,
     policy::{PolicyVersion, SignerDenialPolicy},
     signer::{
         incremental::LocalState,
@@ -56,10 +57,12 @@ use crate::{
     zonedata::{OldRecord, RegularRecord, SignedZoneBuilder},
 };
 
+#[expect(clippy::too_many_arguments)] // TODO
 pub fn sign_zone(
     config: &crate::config::Config,
     zone_name: &domain::base::Name<Bytes>,
     policy: &PolicyVersion,
+    hsm_store: &HsmStore,
     kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
     builder: &mut SignedZoneBuilder,
     local_state: &mut LocalState,
@@ -170,7 +173,8 @@ pub fn sign_zone(
 
     debug!("Loading dnst keyset signing keys");
     // Load the signing keys indicated by the keyset state.
-    let signing_keys = ZoneSigningKeys::load(config, zone_name, kmip_servers, &state, &status)?;
+    let signing_keys =
+        ZoneSigningKeys::load(config, zone_name, hsm_store, kmip_servers, &state, &status)?;
 
     // Save the current zone signing keys and clear key_roll
     let mut key_tags = HashSet::new();

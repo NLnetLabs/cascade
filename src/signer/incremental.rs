@@ -47,6 +47,7 @@ use tokio::time::Instant;
 use tracing::debug;
 use tracing::error;
 
+use crate::hsm::HsmStore;
 use crate::policy::{PolicyVersion, SignerDenialPolicy};
 use crate::signer::keys::ZoneSigningKeys;
 use crate::signer::status::SigningStatusPerZone;
@@ -59,10 +60,12 @@ use crate::zonedata::{
     DiffData, LoadedZoneReader, RegularRecord, SignedZonePatcher, SignedZoneReader, SoaRecord,
 };
 
+#[expect(clippy::too_many_arguments)] // TODO
 pub fn sign_incrementally(
     config: &crate::config::Config,
     zone_name: &Name<Bytes>,
     policy: &PolicyVersion,
+    hsm_store: &HsmStore,
     kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
     patch: SignedZonePatcher,
     local_state: &mut LocalState,
@@ -132,6 +135,7 @@ pub fn sign_incrementally(
     let mut iss = IncrementalSigningState::new(
         config,
         zone_name,
+        hsm_store,
         kmip_servers,
         policy,
         &ws.keyset_state,
@@ -1357,12 +1361,20 @@ impl<'a> IncrementalSigningState<'a> {
     pub fn new(
         config: &crate::config::Config,
         zone_name: &'a Name<Bytes>,
+        hsm_store: &HsmStore,
         kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
         policy: &PolicyVersion,
         keyset_state: &KeySetState,
         status: &RwLock<SigningStatusPerZone>,
     ) -> Result<Self, SignerError> {
-        let keys = ZoneSigningKeys::load(config, zone_name, kmip_servers, keyset_state, status)?;
+        let keys = ZoneSigningKeys::load(
+            config,
+            zone_name,
+            hsm_store,
+            kmip_servers,
+            keyset_state,
+            status,
+        )?;
 
         let now = faketime_or_now();
         let now_u32 = Into::<Duration>::into(now.clone()).as_secs() as u32;

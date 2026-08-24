@@ -1,4 +1,5 @@
 use crate::{
+    hsm::{Hsm, HsmState},
     metrics::Metrics,
     persistence::{Compacter, Persister, Restorer},
 };
@@ -31,6 +32,7 @@ use cascade_zonedata as zonedata;
 mod center;
 mod common;
 mod daemon;
+mod hsm;
 mod loader;
 mod log;
 mod manager;
@@ -103,8 +105,9 @@ fn main() -> ExitCode {
     // Load the global state file or build one from scratch.
     let mut zones = Default::default();
     let mut policies = Default::default();
+    let mut hsms = Default::default();
     let metrics = Metrics::new();
-    let state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
+    let state = match center::State::init_from_file(&config, &mut zones, &mut policies, &mut hsms) {
         Ok(mut state) => {
             info!(
                 "Loaded the global state file (from '{}')",
@@ -128,6 +131,15 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             }
+
+            // Restore pending HSMs.
+            state.hsms.map.extend(hsms.into_iter().map(|(name, spec)| {
+                let kmip = spec.parse(&name);
+                let hsm = Arc::new(Hsm {
+                    state: Mutex::new(HsmState { kmip }),
+                });
+                (name, hsm)
+            }));
 
             // Restore pending policies.
             state
@@ -199,7 +211,6 @@ fn main() -> ExitCode {
             for dir in [
                 &*config.keys_dir,
                 config.kmip_credentials_store_path.parent().unwrap(),
-                &*config.kmip_server_state_dir,
                 &*config.policy_dir,
                 &*config.zone_state_dir,
             ] {
@@ -231,6 +242,7 @@ fn main() -> ExitCode {
                 &mut state.policies,
                 &config,
                 &state.tsig_store,
+                &state.hsms,
                 |name, _| {
                     updates.push(name.clone());
                 },

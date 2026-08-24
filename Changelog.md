@@ -14,6 +14,34 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Breaking changes
+
+- Information about HSMs (previously stored in one file per HSM in
+  `kmip-server-state-dir`) is now stored in the global state file.
+  ([#967] by @bal-e)
+
+  The `kmip-server-state-dir` configuration option has been removed and the
+  default value for `kmip-credentials-store-path` has changed.
+
+### New
+### Bug fixes
+
+- Fixed bugs that on reload a policy could refer to a non-existant HSM and
+  the changes in default HSM to use were not propagated to the key manager.
+  ([#964])
+
+### Other changes
+### Documentation improvements
+### Known issues
+### Acknowledgements
+
+[#964]: https://github.com/NLnetLabs/cascade/pull/964
+[#967]: https://github.com/NLnetLabs/cascade/pull/967
+
 ## 0.1.0-beta6 'Leonard Shelby'
 
 Released 2026-08-13.
