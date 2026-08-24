@@ -1,30 +1,44 @@
+use std::collections::HashMap;
 use std::future::Future;
-use std::marker::Sync;
+use std::marker::{PhantomData, Sync};
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use domain::base::iana::Class;
-use domain::base::{Name, Serial, ToName};
+use domain::base::iana::{Class, ExtendedErrorCode, Opcode, Rcode};
+use domain::base::opt::ExtendedError;
+use domain::base::wire::Composer;
+use domain::base::{Message, Name, Rtype, Serial, ToName};
+use domain::dep::octseq::Octets;
+use domain::dep::octseq::OctetsBuilder;
 use domain::net::server::ConnectionConfig;
 use domain::net::server::buf::VecBufSource;
 use domain::net::server::dgram::{self, DgramServer};
+use domain::net::server::message::Request;
 use domain::net::server::middleware::cookies::CookiesMiddlewareSvc;
 use domain::net::server::middleware::edns::EdnsMiddlewareSvc;
 use domain::net::server::middleware::mandatory::MandatoryMiddlewareSvc;
 use domain::net::server::middleware::notify::{Notifiable, NotifyError, NotifyMiddlewareSvc};
+use domain::net::server::middleware::stream::MiddlewareStream;
 use domain::net::server::middleware::tsig::TsigMiddlewareSvc;
-use domain::net::server::service::Service;
+use domain::net::server::service::{CallResult, Service, ServiceResult};
 use domain::net::server::stream::{self, StreamServer};
+use domain::net::server::util::mk_builder_for_target;
+use domain::tsig::Key;
 use domain::tsig::{Algorithm, KeyStore};
-use tracing::{debug, error, info, warn};
+use futures_util::Stream;
+use futures_util::future::{Ready, ready};
+use futures_util::stream::{Once, once};
+use tracing::Level;
+use tracing::{debug, error, info, trace, warn};
 
 use crate::api::{ZoneReviewDecision, ZoneReviewStatus};
 use crate::center::Center;
 use crate::config::SocketConfig;
 use crate::daemon::SocketProvider;
+use crate::loader;
 use crate::manager::Terminated;
 use crate::manager::record_zone_event;
 use crate::policy::ReviewMode;
@@ -170,10 +184,21 @@ impl ZoneServer {
             center: center.clone(),
         };
 
+        let zones = HashMap::from_iter(
+            center
+                .state
+                .lock()
+                .unwrap()
+                .zones
+                .iter()
+                .map(|z| (z.0.name.clone(), z.0.clone())),
+        );
+
         let svc = service;
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
         let svc = CookiesMiddlewareSvc::with_random_secret(svc);
         let svc = EdnsMiddlewareSvc::new(svc);
+        let svc = AccessControlSvc::new(svc, zones);
         let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
         let svc = Arc::new(svc);
@@ -534,4 +559,350 @@ impl Notifiable for LoaderNotifier {
 
         Box::pin(std::future::ready(Ok(())))
     }
+}
+
+//----------- AccessControlSvc -----------------------------------------------
+
+struct AccessControlSvc<RequestOctets, NextSvc>
+where
+    RequestOctets: AsRef<[u8]> + Send + Sync + Unpin,
+    NextSvc: Clone + Service<RequestOctets, Option<Arc<Key>>>,
+    Key: Clone,
+{
+    nextsvc: NextSvc,
+    zones: HashMap<Name<Bytes>, Arc<Zone>>,
+
+    _phantom: PhantomData<(RequestOctets, NextSvc, Key)>,
+}
+
+impl<RequestOctets, NextSvc> AccessControlSvc<RequestOctets, NextSvc>
+where
+    RequestOctets: AsRef<[u8]> + Send + Sync + Unpin,
+    NextSvc: Clone + Service<RequestOctets, Option<Arc<Key>>>,
+    Key: Clone,
+{
+    fn new(svc: NextSvc, zones: HashMap<Name<Bytes>, Arc<Zone>>) -> Self {
+        Self {
+            nextsvc: svc,
+            zones,
+            _phantom: Default::default(),
+        }
+    }
+}
+
+impl<RequestOctets, NextSvc> Service<RequestOctets, Option<Arc<Key>>>
+    for AccessControlSvc<RequestOctets, NextSvc>
+where
+    RequestOctets: AsRef<[u8]> + Octets + Send + Sync + Unpin + 'static,
+    NextSvc: Clone + Service<RequestOctets, Option<Arc<Key>>>,
+    NextSvc::Future: Unpin + Send + Sync,
+    NextSvc::Stream: Send + Sync,
+    Key: Clone + Send + Sync + 'static,
+{
+    type Target = NextSvc::Target;
+    type Stream = MiddlewareStream<
+        NextSvc::Future,
+        NextSvc::Stream,
+        NextSvc::Stream,
+        Once<Ready<ServiceResult<Self::Target>>>,
+        <NextSvc::Stream as Stream>::Item,
+    >;
+    type Future = Pin<Box<dyn Future<Output = Self::Stream> + Send + Sync>>;
+
+    fn call(&self, request: Request<RequestOctets, Option<Arc<Key>>>) -> Self::Future {
+        let tmp_request = request.clone();
+        let message = tmp_request.message();
+        let header = message.header();
+        let opcode = header.opcode();
+
+        if opcode != Opcode::QUERY && opcode != Opcode::NOTIFY {
+            // Weird opcode.
+            let rcode = Rcode::NOTIMP;
+            let opt_ede = Some(
+                ExtendedError::<Vec<u8>>::new_with_str(
+                    ExtendedErrorCode::NOT_SUPPORTED,
+                    "opcode not supported",
+                )
+                .expect("should fit"),
+            );
+            return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
+                request.message(),
+                rcode,
+                opt_ede,
+            ))))));
+        }
+
+        let question = message.sole_question().unwrap();
+        let qname = question.qname();
+        let qname: Name<Bytes> = qname.to_name();
+        let qtype = question.qtype();
+
+        if opcode == Opcode::NOTIFY {
+            // Find the right zone.
+            let Some(zone) = self.zones.get(&qname) else {
+                // No such zone could be found.
+                let rcode = Rcode::REFUSED;
+                let opt_ede = Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_AUTHORITATIVE,
+                        "zone not configured",
+                    )
+                    .expect("should fit"),
+                );
+                return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
+                    request.message(),
+                    rcode,
+                    opt_ede,
+                ))))));
+            };
+
+            if !is_permitted_notify(zone, &request) {
+                return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
+                    request.message(),
+                    Rcode::REFUSED,
+                    None,
+                ))))));
+            }
+
+            let nextsvc = self.nextsvc.clone();
+            let future = nextsvc.call(request);
+            let future = ready(MiddlewareStream::IdentityFuture(future));
+            return Box::pin(future);
+        }
+
+        // Find the right zone.
+        let Some(zone) = self.zones.get(&qname) else {
+            // No such zone could be found.
+            let rcode = if qtype == Rtype::AXFR || qtype == Rtype::IXFR {
+                // Return NOTAUTH for zone transfers.
+                Rcode::NOTAUTH
+            } else {
+                // Return REFUSED for normal queries.
+                Rcode::REFUSED
+            };
+            let opt_ede = Some(
+                ExtendedError::<Vec<u8>>::new_with_str(
+                    ExtendedErrorCode::NOT_AUTHORITATIVE,
+                    "zone not configured",
+                )
+                .expect("should fit"),
+            );
+            return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
+                request.message(),
+                rcode,
+                opt_ede,
+            ))))));
+        };
+
+        if qtype == Rtype::AXFR || qtype == Rtype::IXFR {
+            if !is_permitted(zone, &request, true) {
+                return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
+                    request.message(),
+                    Rcode::REFUSED,
+                    None,
+                ))))));
+            }
+
+            let nextsvc = self.nextsvc.clone();
+            let future = async move {
+                let stream = nextsvc.call(request).await;
+                MiddlewareStream::IdentityStream(stream)
+            };
+            return Box::pin(future);
+        }
+
+        if !is_permitted(zone, &request, false) {
+            return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
+                request.message(),
+                Rcode::REFUSED,
+                None,
+            ))))));
+        }
+
+        let nextsvc = self.nextsvc.clone();
+        let future = nextsvc.call(request);
+        let future = ready(MiddlewareStream::IdentityFuture(future));
+        Box::pin(future)
+    }
+}
+
+fn is_permitted<RequestOctets>(
+    zone: &Zone,
+    request: &Request<RequestOctets, Option<Arc<Key>>>,
+    is_xfr: bool,
+) -> bool
+where
+    RequestOctets: AsRef<[u8]> + Octets + Send + Sync,
+{
+    let zone_state = zone.read();
+
+    if tracing::enabled!(Level::TRACE) {
+        let tsig_key = request.metadata().as_ref().map(|key| key.name());
+        trace!(
+            "Received request {} from {} for {} in zone {} with TSIG key {tsig_key:?}",
+            request.message().header().id(),
+            request.client_addr().ip(),
+            request
+                .message()
+                .qtype()
+                .map(|rtype| rtype.to_string())
+                .unwrap_or("<NO QTYPE>".to_string()),
+            zone.name,
+        );
+    }
+
+    let wanted_tsig_key_name = request.metadata().as_ref().map(|key| key.name());
+    if let Some(acls) = zone_state
+        .policy
+        .as_ref()
+        .map(|p| &p.server.outbound.provide_xfr_to)
+    {
+        // If at least one ACL was specified, enforce it.
+        if !acls.is_empty() {
+            for acl in acls {
+                // Does the client address match the allowed address?
+                if acl.addr.ip() == request.client_addr().ip() {
+                    // Is the request signed with the right TSIG key?
+                    if acl.tsig_key_name.as_ref() == wanted_tsig_key_name {
+                        // Allow the request.
+                        return true;
+                    }
+                }
+            }
+
+            // No ACL matched, reject the request if do_xfr is set.
+            // Other queries are allow to proceed without match the ACL.
+            if is_xfr {
+                if tracing::enabled!(Level::DEBUG) {
+                    let extra = if tracing::enabled!(Level::TRACE) {
+                        &format!(
+                            " (TSIG key={wanted_tsig_key_name:?}) [no matching ACL found: {acls:?}]"
+                        )
+                    } else {
+                        ""
+                    };
+                    debug!(
+                        "Rejecting request {} from {} for {} in zone {}: access denied{extra}",
+                        request.message().header().id(),
+                        request.client_addr().ip(),
+                        request
+                            .message()
+                            .qtype()
+                            .map(|rtype| rtype.to_string())
+                            .unwrap_or("<NO QTYPE>".to_string()),
+                        zone.name,
+                    );
+                }
+
+                return false;
+            }
+        }
+    }
+
+    // No ACL defined, accept the request if it was not TSIG signed.
+    if wanted_tsig_key_name.is_some() {
+        if tracing::enabled!(Level::DEBUG) {
+            let extra = if tracing::enabled!(Level::TRACE) {
+                &format!(" (TSIG key={wanted_tsig_key_name:?}) [no key expected]")
+            } else {
+                ""
+            };
+            debug!(
+                "Rejecting request {} from {} for {} in zone {}: access denied{extra}",
+                request.message().header().id(),
+                request.client_addr().ip(),
+                request
+                    .message()
+                    .qtype()
+                    .map(|rtype| rtype.to_string())
+                    .unwrap_or("<NO QTYPE>".to_string()),
+                zone.name,
+            );
+        }
+
+        return false;
+    }
+    true
+}
+
+fn is_permitted_notify<RequestOctets>(
+    zone: &Zone,
+    request: &Request<RequestOctets, Option<Arc<Key>>>,
+) -> bool
+where
+    RequestOctets: AsRef<[u8]> + Octets + Send + Sync,
+{
+    let zone_state = zone.read();
+
+    if tracing::enabled!(Level::TRACE) {
+        let tsig_key = request.metadata().as_ref().map(|key| key.name());
+        trace!(
+            "Received NOTIFY request {} from {} in zone {} with TSIG key {tsig_key:?}",
+            request.message().header().id(),
+            request.client_addr().ip(),
+            zone.name,
+        );
+    }
+
+    let wanted_tsig_key_name = request.metadata().as_ref().map(|key| key.name().clone());
+
+    let opt_tsig_key = match &zone_state.loader.source {
+        loader::Source::None | loader::Source::Zonefile { .. } => {
+            if tracing::enabled!(Level::DEBUG) {
+                debug!(
+                    "Rejecting NOTIFY request {} from {} in zone {}: not expected for source",
+                    request.message().header().id(),
+                    request.client_addr().ip(),
+                    zone.name,
+                );
+            }
+
+            return false;
+        }
+        loader::Source::Server { tsig_key, .. } => tsig_key,
+    };
+
+    let tsig_key = opt_tsig_key.as_ref().map(|key| key.name().clone());
+    // Check if we got the right TSIG key
+    if tsig_key == wanted_tsig_key_name {
+        true
+    } else {
+        if tracing::enabled!(Level::DEBUG) {
+            let extra = if tracing::enabled!(Level::TRACE) {
+                &format!(
+                    " (TSIG key={wanted_tsig_key_name:?}) [expected {:?}]",
+                    tsig_key
+                )
+            } else {
+                ""
+            };
+            debug!(
+                "Rejecting NOTIFY request {} from {} in zone {}: access denied{extra}",
+                request.message().header().id(),
+                request.client_addr().ip(),
+                zone.name,
+            );
+        }
+        false
+    }
+}
+
+fn error<RequestOctets, TargetOctets>(
+    request: &Message<RequestOctets>,
+    rcode: Rcode,
+    opt_ede: Option<ExtendedError<Vec<u8>>>,
+) -> ServiceResult<TargetOctets>
+where
+    RequestOctets: Octets,
+    TargetOctets: AsRef<[u8]> + AsMut<[u8]> + Default + Composer + OctetsBuilder,
+{
+    let mut response = mk_builder_for_target()
+        .start_error(request, rcode)
+        .additional();
+    if let Some(ede) = opt_ede
+        && let Err(err) = response.opt(|opt_builder| opt_builder.push(&ede))
+    {
+        return Err(err.into());
+    }
+    Ok(CallResult::new(response))
 }
