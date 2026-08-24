@@ -18,13 +18,14 @@ inputs:
       - info
       - debug
       - trace
-  key-source:
-    description: Where to take the TSIG key from.
+  key-source-format:
+    description: Determine format used to read the file from.
     required: true
     type: choice
     options:
-      - cmdline
-      - file
+      - nsd
+      - bind
+      - knot
       - none
 runs:
   using: "composite"
@@ -56,17 +57,50 @@ runs:
         done
         exit 0
 
+    - name: Prepare tsig-key file (NSD format).
+      run: |
+        # Prepare the tsig key.
+        cat >tsig-key.nsd.yaml <<EOL
+        key:
+          name: "tsig-key"
+          algorithm: hmac-sha256
+          secret: "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+        EOL
+
+    - name: Prepare tsig-key file (BIND format).
+      run: |
+        # Prepare the tsig key.
+        cat >tsig-key.bind <<EOL
+        key "tsig-key" {
+            algorithm hmac-sha256;
+            secret "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0=";
+        };
+        EOL
+
+    - name: Prepare tsig-key file (KNOT format).
+      run: |
+        # Prepare the tsig key.
+        cat >tsig-key.knot.yaml <<EOL
+        # hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0=
+        key:
+          - id: tsig-key
+            algorithm: hmac-sha256
+            secret: COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0=
+        EOL
+
     - name: Remove and re-add the zone with the required TSIG key.
       run: |
         cascade zone remove example-tsig.test
-        
-        case "${{ inputs.key-source }}" in
-          "cmdline")
-            cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+
+        case "${{ inputs.key-source-format }}" in
+          "nsd")
+            cascade tsig add tsig-key.nsd.yaml
             ;;
-          "file")
-            echo -n "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0=" >/tmp/tsig.key
-            cascade tsig add tsig-key hmac-sha256 /tmp/tsig.key
+          "bind")
+            cascade tsig add tsig-key.bind --format=bind
+            ;;
+          "knot")
+            cascade tsig add tsig-key.knot.yaml --format=knot
             ;;
         esac
 
