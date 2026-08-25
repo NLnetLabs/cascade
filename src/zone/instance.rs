@@ -63,10 +63,11 @@ pub struct Instances {
     /// restoration fails, it remains untouched here; thus this field is never
     /// modified.
     pub persisted: Option<PersistedInstance>,
+
+    /// The next usable loaded instance ID.
+    pub next_loaded_id: u64,
     //
     // TODO:
-    // - The next usable loaded/signed instance IDs.
-    //   These increase monotonically, even if instances are abandoned.
     // - Obsolete instances.
     // - Abandoned instances.
 }
@@ -165,7 +166,16 @@ impl Instances {
             NonZeroU64::new(n).expect("the zone is non-empty")
         };
 
-        upcoming.loaded = Some(LoadedInstance { soa, num_records });
+        let id = LoadedInstanceId(self.next_loaded_id);
+        self.next_loaded_id += 1;
+        let next_signed_id = 0;
+
+        upcoming.loaded = Some(LoadedInstance {
+            id,
+            next_signed_id,
+            soa,
+            num_records,
+        });
     }
 }
 
@@ -178,6 +188,7 @@ impl Instances {
     /// Panics if:
     /// - There is no upcoming instance of the zone.
     /// - An upcoming signed instance already exists.
+    /// - An upcoming/current loaded instance does not exist.
     pub fn finish_sign(&mut self, built: &cascade_zonedata::SignedZoneBuilt) {
         let Some(upcoming) = &mut self.upcoming else {
             panic!("There is no upcoming instance of the zone");
@@ -201,7 +212,16 @@ impl Instances {
             u64::try_from(n).unwrap()
         };
 
+        let loaded = upcoming
+            .loaded
+            .as_mut()
+            .or(self.current.as_mut().map(|i| &mut i.loaded))
+            .unwrap_or_else(|| panic!("There is no current or upcoming instance!"));
+        let id = SignedInstanceId(loaded.id, loaded.next_signed_id);
+        loaded.next_signed_id += 1;
+
         upcoming.signed = Some(SignedInstance {
+            id,
             soa,
             num_generated_records,
             num_loaded_records,
@@ -441,6 +461,12 @@ impl PersistedInstance {
 /// A loaded instance of a zone.
 #[derive(Debug, Clone)]
 pub struct LoadedInstance {
+    /// The ID of this instance.
+    pub id: LoadedInstanceId,
+
+    /// The next usable signed instance ID relative to this.
+    pub next_signed_id: u64,
+
     /// The SOA record of this instance.
     ///
     /// The primary purpose of this field is to provide the SOA serial. We still
@@ -455,7 +481,6 @@ pub struct LoadedInstance {
     pub num_records: NonZeroU64,
     //
     // TODO:
-    // - Instance ID.
     // - How the instance was loaded (time, source, duration, size).
     // - Whether the zone contains DNSSEC records (for pass-through mode).
     // - Basic details of the zone:
@@ -470,11 +495,20 @@ impl LoadedInstance {
     }
 }
 
+/// The ID of a loaded instance.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LoadedInstanceId(pub u64);
+
 //----------- SignedInstance ---------------------------------------------------
 
 /// A signed instance of a zone.
 #[derive(Debug, Clone)]
 pub struct SignedInstance {
+    /// The ID of this instance.
+    ///
+    /// This includes the ID of the loaded instance this is relative to.
+    pub id: SignedInstanceId,
+
     /// The SOA record of this instance.
     ///
     /// The primary purpose of this field is to provide the SOA serial. We still
@@ -499,7 +533,6 @@ pub struct SignedInstance {
     pub num_loaded_records: u64,
     //
     // TODO:
-    // - Instance ID.
     // - How the instance was signed:
     //   - time, source, duration, size
     //   - Whether re-signing occurred, and what was re-signed.
@@ -527,3 +560,7 @@ impl SignedInstance {
             .unwrap()
     }
 }
+
+/// The ID of a signed instance.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SignedInstanceId(pub LoadedInstanceId, pub u64);

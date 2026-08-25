@@ -26,7 +26,7 @@ use crate::persistence::zone::{
 };
 use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
-use crate::zone::instance::PersistedInstance;
+use crate::zone::instance::{LoadedInstanceId, PersistedInstance, SignedInstanceId};
 use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
 use crate::{
     policy::{
@@ -772,9 +772,11 @@ impl From<NameserverCommsPolicy> for NameserverCommsSpec {
 pub struct InstancesSpec {
     /// The persisted instance of the zone.
     pub persisted: Option<PersistedInstanceSpec>,
+
+    /// The next usable loaded instance ID.
+    pub next_loaded_id: u64,
     //
     // TODO:
-    // - The next usable loaded/signed instance IDs.
     // - Obsolete instances.
     // - Abandoned instances.
 }
@@ -787,12 +789,16 @@ pub struct InstancesSpec {
 impl InstancesSpec {
     /// Parse from this specification.
     pub fn parse(self) -> Instances {
-        let Self { persisted } = self;
+        let Self {
+            persisted,
+            next_loaded_id,
+        } = self;
 
         Instances {
             upcoming: None,
             current: None,
             persisted: persisted.map(|p| p.parse()),
+            next_loaded_id,
         }
     }
 
@@ -800,14 +806,16 @@ impl InstancesSpec {
     pub fn build(instances: &Instances) -> Self {
         let Instances {
             upcoming: _,
-            current,
+            ref current,
             persisted: _,
-        } = instances;
+            next_loaded_id,
+        } = *instances;
 
         Self {
             persisted: current
                 .as_ref()
                 .map(|i| PersistedInstanceSpec::build(&i.to_persisted())),
+            next_loaded_id,
         }
     }
 }
@@ -866,6 +874,12 @@ impl PersistedInstanceSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct LoadedInstanceSpec {
+    /// The ID of the loaded instance.
+    pub id: LoadedInstanceIdSpec,
+
+    /// The next usable signed instance ID relative to this.
+    pub next_signed_id: u64,
+
     /// The SOA record of this instance.
     ///
     /// The record is serialized to the DNS wire format.
@@ -878,7 +892,14 @@ pub struct LoadedInstanceSpec {
 impl LoadedInstanceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> LoadedInstance {
-        let Self { soa, num_records } = self;
+        let Self {
+            id,
+            next_signed_id,
+            soa,
+            num_records,
+        } = self;
+
+        let id = id.parse();
 
         // TODO: Don't panic on failure; move this into Serde.
         let soa = SoaRecord(Record::parse_bytes(&soa).unwrap().transform(
@@ -886,21 +907,52 @@ impl LoadedInstanceSpec {
             |data: Soa<NameBuf>| data.map_names(|n| n.unsized_copy_into()),
         ));
 
-        LoadedInstance { soa, num_records }
+        LoadedInstance {
+            id,
+            next_signed_id,
+            soa,
+            num_records,
+        }
     }
 
     /// Build into this specification.
     pub fn build(instance: &LoadedInstance) -> Self {
         let LoadedInstance {
+            id,
+            next_signed_id,
             ref soa,
             num_records,
         } = *instance;
+
+        let id = LoadedInstanceIdSpec::build(id);
 
         let mut buffer = vec![0u8; soa.0.built_bytes_size()];
         assert!(soa.0.build_bytes(&mut buffer).unwrap().is_empty());
         let soa = buffer.into_boxed_slice();
 
-        Self { soa, num_records }
+        Self {
+            id,
+            next_signed_id,
+            soa,
+            num_records,
+        }
+    }
+}
+
+/// The ID of a loaded instance.
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct LoadedInstanceIdSpec(pub u64);
+
+impl LoadedInstanceIdSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> LoadedInstanceId {
+        LoadedInstanceId(self.0)
+    }
+
+    /// Build into this specification.
+    pub fn build(id: LoadedInstanceId) -> Self {
+        Self(id.0)
     }
 }
 
@@ -910,6 +962,9 @@ impl LoadedInstanceSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SignedInstanceSpec {
+    /// The ID of the instance.
+    pub id: SignedInstanceIdSpec,
+
     /// The SOA record of this instance.
     ///
     /// The record is serialized to the DNS wire format.
@@ -926,10 +981,13 @@ impl SignedInstanceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> SignedInstance {
         let Self {
+            id,
             soa,
             num_generated_records,
             num_loaded_records,
         } = self;
+
+        let id = id.parse();
 
         // TODO: Don't panic on failure; move this into Serde.
         let soa = SoaRecord(Record::parse_bytes(&soa).unwrap().transform(
@@ -938,6 +996,7 @@ impl SignedInstanceSpec {
         ));
 
         SignedInstance {
+            id,
             soa,
             num_generated_records,
             num_loaded_records,
@@ -947,20 +1006,41 @@ impl SignedInstanceSpec {
     /// Build into this specification.
     pub fn build(instance: &SignedInstance) -> Self {
         let SignedInstance {
+            id,
             ref soa,
             num_generated_records,
             num_loaded_records,
         } = *instance;
+
+        let id = SignedInstanceIdSpec::build(id);
 
         let mut buffer = vec![0u8; soa.0.built_bytes_size()];
         assert!(soa.0.build_bytes(&mut buffer).unwrap().is_empty());
         let soa = buffer.into_boxed_slice();
 
         Self {
+            id,
             soa,
             num_generated_records,
             num_loaded_records,
         }
+    }
+}
+
+/// The ID of a signed instance.
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SignedInstanceIdSpec(pub LoadedInstanceIdSpec, pub u64);
+
+impl SignedInstanceIdSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> SignedInstanceId {
+        SignedInstanceId(self.0.parse(), self.1)
+    }
+
+    /// Build into this specification.
+    pub fn build(id: SignedInstanceId) -> Self {
+        Self(LoadedInstanceIdSpec::build(id.0), id.1)
     }
 }
 
