@@ -26,7 +26,10 @@ use crate::persistence::zone::{
 };
 use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
-use crate::zone::instance::{LoadedInstanceId, PersistedInstance, SignedInstanceId};
+use crate::zone::instance::{
+    LoadedInstanceId, ObsoleteInstance, ObsoleteInstances, ObsoleteLoadedInstance,
+    ObsoleteSignedInstance, PersistedInstance, SignedInstanceId,
+};
 use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
 use crate::{
     policy::{
@@ -773,6 +776,9 @@ pub struct InstancesSpec {
     /// The persisted instance of the zone.
     pub persisted: Option<PersistedInstanceSpec>,
 
+    /// Obsolete instances.
+    pub obsolete: ObsoleteInstancesSpec,
+
     /// The next usable loaded instance ID.
     pub next_loaded_id: u64,
     //
@@ -791,12 +797,14 @@ impl InstancesSpec {
     pub fn parse(self) -> Instances {
         let Self {
             persisted,
+            obsolete,
             next_loaded_id,
         } = self;
 
         Instances {
             upcoming: None,
             current: None,
+            obsolete: obsolete.parse(),
             persisted: persisted.map(|p| p.parse()),
             next_loaded_id,
         }
@@ -807,6 +815,7 @@ impl InstancesSpec {
         let Instances {
             upcoming: _,
             ref current,
+            ref obsolete,
             persisted: _,
             next_loaded_id,
         } = *instances;
@@ -815,6 +824,7 @@ impl InstancesSpec {
             persisted: current
                 .as_ref()
                 .map(|i| PersistedInstanceSpec::build(&i.to_persisted())),
+            obsolete: ObsoleteInstancesSpec::build(obsolete),
             next_loaded_id,
         }
     }
@@ -864,6 +874,131 @@ impl PersistedInstanceSpec {
             loaded: LoadedInstanceSpec::build(loaded),
             signed: SignedInstanceSpec::build(signed),
             pub_time,
+        }
+    }
+}
+
+//----------- ObsoleteInstancesSpec --------------------------------------------
+
+/// Obselete instances of a zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ObsoleteInstancesSpec {
+    /// The instances, from oldest to newest.
+    pub instances: Vec<ObsoleteInstanceSpec>,
+}
+
+impl ObsoleteInstancesSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> ObsoleteInstances {
+        let Self { instances } = self;
+
+        ObsoleteInstances {
+            instances: instances.into_iter().map(|i| i.parse()).collect(),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instances: &ObsoleteInstances) -> Self {
+        let ObsoleteInstances { ref instances } = *instances;
+
+        Self {
+            instances: instances.iter().map(ObsoleteInstanceSpec::build).collect(),
+        }
+    }
+}
+
+/// An obsolete instance.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum ObsoleteInstanceSpec {
+    /// An obsolete loaded instance.
+    Loaded(ObsoleteLoadedInstanceSpec),
+
+    /// An obsolete signed instance.
+    Signed(ObsoleteSignedInstanceSpec),
+}
+
+impl ObsoleteInstanceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> ObsoleteInstance {
+        match self {
+            Self::Loaded(spec) => ObsoleteInstance::Loaded(spec.parse()),
+            Self::Signed(spec) => ObsoleteInstance::Signed(spec.parse()),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instance: &ObsoleteInstance) -> Self {
+        match instance {
+            ObsoleteInstance::Loaded(instance) => {
+                Self::Loaded(ObsoleteLoadedInstanceSpec::build(instance))
+            }
+            ObsoleteInstance::Signed(instance) => {
+                Self::Signed(ObsoleteSignedInstanceSpec::build(instance))
+            }
+        }
+    }
+}
+
+//----------- ObsoleteLoadedInstanceSpec ---------------------------------------
+
+/// An obsolete loaded instance.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ObsoleteLoadedInstanceSpec {
+    /// The inner loaded instance.
+    pub inner: LoadedInstanceSpec,
+}
+
+impl ObsoleteLoadedInstanceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> ObsoleteLoadedInstance {
+        let Self { inner } = self;
+
+        ObsoleteLoadedInstance {
+            inner: inner.parse(),
+            diff: None,
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instance: &ObsoleteLoadedInstance) -> Self {
+        let ObsoleteLoadedInstance { ref inner, diff: _ } = *instance;
+
+        Self {
+            inner: LoadedInstanceSpec::build(inner),
+        }
+    }
+}
+
+//----------- ObsoleteSignedInstanceSpec ---------------------------------------
+
+/// An obsolete signed instance.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct ObsoleteSignedInstanceSpec {
+    /// The inner signed instance.
+    pub inner: SignedInstanceSpec,
+}
+
+impl ObsoleteSignedInstanceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> ObsoleteSignedInstance {
+        let Self { inner } = self;
+
+        ObsoleteSignedInstance {
+            inner: inner.parse(),
+            diff: None,
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instance: &ObsoleteSignedInstance) -> Self {
+        let ObsoleteSignedInstance { ref inner, diff: _ } = *instance;
+
+        Self {
+            inner: SignedInstanceSpec::build(inner),
         }
     }
 }
