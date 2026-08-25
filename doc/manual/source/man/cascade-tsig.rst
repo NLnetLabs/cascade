@@ -8,7 +8,7 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` tsig ``<COMMAND>``
 
-:program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`add` ``<TSIG_KEY_NAME>`` ``<ALGORITHM>`` ``<SECRET>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`add` ``<PATH>``
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`list`
 
@@ -55,40 +55,40 @@ Commands
 Arguments for :subcmd:`tsig add`
 --------------------------------
 
-.. option:: <TSIG_KEY_NAME>
-.. option:: [<ALGORITHM>:]<TSIG_KEY_NAME>:<SECRET>
+.. option:: <PATH>
 
-   The name of the TSIG key to add, or a complete TSIG key specification.
+   Path to the file containing the TSIG key.
 
-   TSIG key names must be valid domain names.
+   The file format is specified by ``--format``.
 
-   A complete TSIG key specification consists of an optional algorithm
-   (default ``hmac-sha256``), a key name and the secret key material. When a
-   complete TSIG key specification is supplied, supplying the ``<ALGORITHM>``
-   and ``<SECRET>`` arguments as well will result in an error.
+   Regardless of the file format the file must contain all the following
+   values exactly once.
 
-   Secret key material must be the correct length for the specified algorithm
-   and must be encoded using the :RFC:`4648` Base64 encoding.
+   The name of the key to add, TSIG key names must be valid domain names.
 
-   .. warning:: Secret key material supplied via a command-line argument may
-                be visible to other processes running on the same computer as
-                the Cascade CLI.
-
-.. option:: <ALGORITHM>
-
-   The TSIG algorithm of the specified TSIG key. Can be one of: ``hmac-sha1``,
+   The algorithm of the specified TSIG key. Can be one of: ``hmac-sha1``,
    ``hmac-sha256``, ``hmac-sha384`` or ``hmac-sha512``.
 
-.. option:: <SECRET>
+   The secret key material must be the correct length for the specified algorithm
+   and must be encoded using the :RFC:`4648` Base64 encoding.
 
-   :RFC:`4648` Base64 encoded secret key material. The number of bytes prior
-   to encoding must be correct for the specified ``<ALGORITHM>``.
+.. option:: --format <FORMAT>
 
-   Can also be a path to a file containing the Base64 encoded secret material.
+   Format used in the TSIG file.
 
-   .. note:: Secret key material supplied via a command-line argument may be
-             visible to other processes running on the same computer as the
-             Cascade CLI. Consider supplying a file name instead.
+   The **NSD** and **Knot** formats are not parsed with full YAML compliance.
+
+   Possible values:
+
+   - **nsd**:  `NSD TSIG Documentation`_
+   - **bind**: `BIND TSIG Documentation`_
+   - **knot**: `Knot TSIG Documentation`_
+
+   [default: nsd]
+
+   .. _NSD TSIG Documentation: https://nsd.docs.nlnetlabs.nl/en/latest/running/using-tsig.html
+   .. _BIND TSIG Documentation: https://bind9.readthedocs.io/en/stable/reference.html#namedconf-statement-key
+   .. _Knot TSIG Documentation: https://www.knot-dns.cz/docs/latest/html/reference.html#key-section
 
 See Also
 --------
