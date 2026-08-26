@@ -38,10 +38,13 @@ include:
     systemd_service_unit_file: pkg/common/cascade.s*
     rpm_rpmlint_check_filters: bad-manual-page-folder
 
-  # Lintian is wrong on Ubuntu Noble to require --home when invoking adduser with --system.
+  # Lintian is wrong on Ubuntu Noble and Debian Bookworm to require --home when invoking adduser with --system.
   # See: https://lists.debian.org/debian-lint-maint/2025/08/msg00042.html
+  - image: 'debian:bookworm'
+    deb_extra_lintian_args: "--suppress-tags maintainer-script-lacks-home-in-adduser"
+
   - image: 'ubuntu:noble'
-    deb_extra_lintian_args: "--suppress-tags maintainer-script-lacks-home-in-adduser"    
+    deb_extra_lintian_args: "--suppress-tags maintainer-script-lacks-home-in-adduser"
 
 # 'mode' is not used by the package building workflow job, but is used by the package testing workflow job.
 # Ploutos will not include this key when using this matrix definition to generate package building matrix
