@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::future::Future;
 use std::marker::{PhantomData, Sync};
 use std::net::IpAddr;
@@ -184,21 +183,11 @@ impl ZoneServer {
             center: center.clone(),
         };
 
-        let zones = HashMap::from_iter(
-            center
-                .state
-                .lock()
-                .unwrap()
-                .zones
-                .iter()
-                .map(|z| (z.0.name.clone(), z.0.clone())),
-        );
-
         let svc = service;
         let svc = NotifyMiddlewareSvc::new(svc, notifier);
         let svc = CookiesMiddlewareSvc::with_random_secret(svc);
         let svc = EdnsMiddlewareSvc::new(svc);
-        let svc = AccessControlSvc::new(svc, zones);
+        let svc = AccessControlSvc::new(svc, center.clone(), matches!(source, Source::Published));
         let svc = TsigMiddlewareSvc::new(svc, CenterKeyStore(center.clone()));
         let svc = MandatoryMiddlewareSvc::<_, _, ()>::new(svc);
         let svc = Arc::new(svc);
@@ -570,7 +559,8 @@ where
     Key: Clone,
 {
     nextsvc: NextSvc,
-    zones: HashMap<Name<Bytes>, Arc<Zone>>,
+    center: Arc<Center>,
+    enabled: bool,
 
     _phantom: PhantomData<(RequestOctets, NextSvc, Key)>,
 }
@@ -581,10 +571,11 @@ where
     NextSvc: Clone + Service<RequestOctets, Option<Arc<Key>>>,
     Key: Clone,
 {
-    fn new(svc: NextSvc, zones: HashMap<Name<Bytes>, Arc<Zone>>) -> Self {
+    fn new(svc: NextSvc, center: Arc<Center>, enabled: bool) -> Self {
         Self {
             nextsvc: svc,
-            zones,
+            center,
+            enabled,
             _phantom: Default::default(),
         }
     }
@@ -615,7 +606,20 @@ where
         let header = message.header();
         let opcode = header.opcode();
 
+        if !self.enabled {
+            trace!("AccessControlSvc::call: not enabled");
+            let nextsvc = self.nextsvc.clone();
+            let future = async move {
+                let stream = nextsvc.call(request).await;
+                MiddlewareStream::IdentityStream(stream)
+            };
+            return Box::pin(future);
+        }
+
+        trace!("AccessControlSvc::call: enabled, checking access");
+
         if opcode != Opcode::QUERY && opcode != Opcode::NOTIFY {
+            trace!("AccessControlSvc::call: neither QUERY nor NOTIFY");
             // Weird opcode.
             let rcode = Rcode::NOTIMP;
             let opt_ede = Some(
@@ -638,8 +642,12 @@ where
         let qtype = question.qtype();
 
         if opcode == Opcode::NOTIFY {
+            trace!("AccessControlSvc::call: NOTIFY");
+
             // Find the right zone.
-            let Some(zone) = self.zones.get(&qname) else {
+            #[allow(clippy::mutable_key_type)]
+            let zones = &self.center.state.lock().unwrap().zones;
+            let Some(zone) = zones.get(&qname).map(|z| &z.0) else {
                 // No such zone could be found.
                 let rcode = Rcode::REFUSED;
                 let opt_ede = Some(
@@ -671,7 +679,11 @@ where
         }
 
         // Find the right zone.
-        let Some(zone) = self.zones.get(&qname) else {
+        #[allow(clippy::mutable_key_type)]
+        let zones = &self.center.state.lock().unwrap().zones;
+        let Some(zone) = zones.get(&qname).map(|z| &z.0) else {
+            trace!("AccessControlSvc::call: zone not found for {qname}");
+
             // No such zone could be found.
             let rcode = if qtype == Rtype::AXFR || qtype == Rtype::IXFR {
                 // Return NOTAUTH for zone transfers.
