@@ -13,7 +13,7 @@ create_user() {
     # and to prevent adduser failing due to the missing argument/to have
     # consistent behaviour in the case of the older O/S versions.
     # See: https://lists.debian.org/debian-lint-maint/2025/08/msg00042.html
-    adduser --system --group ${USER_ID} --home /nonexistent
+    adduser --system --group ${USER_ID} --home /nonexistent --no-create-home
 }
 
 case "$1" in
