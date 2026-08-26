@@ -4,7 +4,27 @@ USER_ID="cascade"
 
 create_user() {
     if id ${USER_ID} > /dev/null 2>&1; then return; fi
-    adduser --system --group ${USER_ID}
+
+    # Set the VERSION_CODENAME environment variable that describes which O/S
+    # version we are running on.
+    . /etc/os-release
+
+    case ${VERSION_CODENAME} in
+        bullseye|jammy)
+            # Newer versions of Debian/Ubuntu use /nonexistent as the home
+            # directory by default, and don't actually create it. However,
+            # the version of Lintian in these older Debian/Ubuntu versions
+            # requires --home to be specified when calling adduser with
+            # --system so we explicitly set home to /nonexistent in these
+            # cases. The older O/S versions that don't default --home include
+            # that we package Cascade for include Debian Bullseye and Ubuntu
+            # Jammy so these are the versions we handle separately.
+            adduser --system --group ${USER_ID} --home /nonexistent
+            ;;
+        *)
+            adduser --system --group ${USER_ID}
+            ;;
+    esac
 }
 
 case "$1" in
