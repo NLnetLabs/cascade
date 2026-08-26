@@ -636,60 +636,32 @@ where
             ))))));
         }
 
-        let question = message.sole_question().unwrap();
-        let qname = question.qname();
-        let qname: Name<Bytes> = qname.to_name();
-        let qtype = question.qtype();
-
-        if opcode == Opcode::NOTIFY {
-            trace!("AccessControlSvc::call: NOTIFY");
-
-            // Find the right zone.
-            #[allow(clippy::mutable_key_type)]
-            let zones = &self.center.state.lock().unwrap().zones;
-            let Some(zone) = zones.get(&qname).map(|z| &z.0) else {
-                // No such zone could be found.
-                let rcode = Rcode::REFUSED;
-                let opt_ede = Some(
-                    ExtendedError::<Vec<u8>>::new_with_str(
-                        ExtendedErrorCode::NOT_AUTHORITATIVE,
-                        "zone not configured",
-                    )
-                    .expect("should fit"),
-                );
+        let question = match message.sole_question() {
+            Ok(question) => question,
+            Err(_) => {
+                // Just map all errors to FORMERR.
                 return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
                     request.message(),
-                    rcode,
-                    opt_ede,
-                ))))));
-            };
-
-            if !is_permitted_notify(zone, &request) {
-                return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
-                    request.message(),
-                    Rcode::REFUSED,
+                    Rcode::FORMERR,
                     None,
                 ))))));
             }
-
-            let nextsvc = self.nextsvc.clone();
-            let future = nextsvc.call(request);
-            let future = ready(MiddlewareStream::IdentityFuture(future));
-            return Box::pin(future);
-        }
+        };
+        let qname = question.qname();
+        let qname: Name<Bytes> = qname.to_name();
+        let qtype = question.qtype();
 
         // Find the right zone.
         #[allow(clippy::mutable_key_type)]
         let zones = &self.center.state.lock().unwrap().zones;
         let Some(zone) = zones.get(&qname).map(|z| &z.0) else {
-            trace!("AccessControlSvc::call: zone not found for {qname}");
-
             // No such zone could be found.
-            let rcode = if qtype == Rtype::AXFR || qtype == Rtype::IXFR {
+            let rcode = if opcode == Opcode::QUERY && (qtype == Rtype::AXFR || qtype == Rtype::IXFR)
+            {
                 // Return NOTAUTH for zone transfers.
                 Rcode::NOTAUTH
             } else {
-                // Return REFUSED for normal queries.
+                // Return REFUSED for normal queries and NOTIFY.
                 Rcode::REFUSED
             };
             let opt_ede = Some(
@@ -705,6 +677,23 @@ where
                 opt_ede,
             ))))));
         };
+
+        if opcode == Opcode::NOTIFY {
+            trace!("AccessControlSvc::call: NOTIFY");
+
+            if !is_permitted_notify(zone, &request) {
+                return Box::pin(ready(MiddlewareStream::Result(once(ready(error(
+                    request.message(),
+                    Rcode::REFUSED,
+                    None,
+                ))))));
+            }
+
+            let nextsvc = self.nextsvc.clone();
+            let future = nextsvc.call(request);
+            let future = ready(MiddlewareStream::IdentityFuture(future));
+            return Box::pin(future);
+        }
 
         if qtype == Rtype::AXFR || qtype == Rtype::IXFR {
             if !is_permitted(zone, &request, true) {
