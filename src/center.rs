@@ -22,7 +22,6 @@ use crate::hsm::HsmStore;
 use crate::loader::Loader;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::metrics::Metrics;
-use crate::persistence::zone::PersistenceState;
 use crate::persistence::{Compacter, Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
 use crate::state::{HsmSpec, PolicySpec};
@@ -309,7 +308,7 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     // retry the zone removal at a later moment. An alternative could be to
     // track 'mid-removal' of a zone so that we can detect an incomplete
     // attempt to remove a zone.
-    PersistenceState::clear(center, &zone);
+    zone.write_handle(center).persistence().clear();
     LoadedReviewServer::remove_zone(center, &zone);
     SignedReviewServer::remove_zone(center, &zone);
     PublicationServer::remove_zone(center, &zone);

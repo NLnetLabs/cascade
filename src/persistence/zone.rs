@@ -43,6 +43,90 @@ impl ZonePersistenceHandle<'_> {
         }
     }
 
+    fn abandon_loaded_restoration(&mut self, restorer: LoadedZoneRestorer) {
+        self.reset_state_due_to_abandoned_restore();
+        let (loaded_reviewer, signed_reviewer, viewer) =
+            self.zone().storage().abandon_loaded_restoration(restorer);
+
+        // Update the zone servers.
+        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
+        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
+        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
+
+        // Send a notification that the state machine is now passive.
+        self.zone().storage().on_passive();
+
+        self.state.persistence.ongoing.finish();
+    }
+
+    fn abandon_signed_restoration(&mut self, restorer: SignedZoneRestorer) {
+        self.reset_state_due_to_abandoned_restore();
+        let (loaded_reviewer, signed_reviewer, viewer) =
+            self.zone().storage().abandon_signed_restoration(restorer);
+
+        // Update the zone servers.
+        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
+        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
+        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
+
+        // Send a notification that the state machine is now passive.
+        self.zone().storage().on_passive();
+
+        self.state.persistence.ongoing.finish();
+    }
+
+    fn reset_state_due_to_abandoned_restore(&mut self) {
+        self.clear();
+
+        // In case this zone was signed in the past we have to make sure that
+        // any attempt to enqueue a re-signing operation will be skipped as
+        // doing so will fail due to the lack of loaded zone content.
+        // TODO: Find a better way to prevent this issue as changing the
+        // min_expiration timestamps is a very indirect and non-obvious way of
+        // preventing re-signing.
+        self.state.min_expiration = None;
+        self.state.next_min_expiration = None;
+
+        // Also remove any already enqueued signing operation that is blocked
+        // by the ongoing restore as it will otherwise immediately start once
+        // the restore completes.
+        self.zone().signer().cancel_enqueued_signing_operations();
+
+        // TODO: self the error?
+        let _ = self.zone().save_state_now();
+    }
+
+    pub fn clear(&mut self) {
+        for file_info in self
+            .state
+            .persistence
+            .loaded_diffs
+            .diff_infos
+            .iter()
+            .chain(self.state.persistence.signed_diffs.diff_infos.iter())
+        {
+            if file_info.path.exists()
+                && file_info
+                    .path
+                    .starts_with(self.center.config.zone_state_dir.as_std_path())
+            {
+                info!(
+                    "Removing persisted zone data file '{}'",
+                    file_info.path.display()
+                );
+                if let Err(err) = std::fs::remove_file(&file_info.path) {
+                    warn!(
+                        "Failed to remove persisted zone data file '{}': {err}",
+                        file_info.path.display()
+                    );
+                }
+            }
+        }
+        self.state.persistence.loaded_diffs.clear();
+        self.state.persistence.signed_diffs.clear();
+        self.state.storage.diffs.clear();
+    }
+
     /// Compact persisted data for the zone.
     #[tracing::instrument(
         level = "info",
@@ -84,7 +168,9 @@ impl ZonePersistenceHandle<'_> {
 
                 // Try to restore the loaded instance.
                 let mut restorer = restorer;
-                let restored = match super::restore_loaded(&zone, &center, &mut restorer) {
+                let result = super::restore_loaded(&zone, &center, &mut restorer);
+                let mut handle = zone.write_handle(&center);
+                let restored = match result {
                     Ok(true) => {
                         // Data was restored. Use it.
                         restorer.finish().unwrap_or_else(|_| {
@@ -93,25 +179,25 @@ impl ZonePersistenceHandle<'_> {
                     }
                     Ok(false) => {
                         // There was nothing to restore.
-                        abandon_loaded_restoration(&center, &zone, restorer);
+                        handle.persistence().abandon_loaded_restoration(restorer);
                         return;
                     }
                     Err(err) => {
                         warn!("Abandoning loaded restoration: {err}");
-                        abandon_loaded_restoration(&center, &zone, restorer);
+                        handle.persistence().abandon_loaded_restoration(restorer);
                         return;
                     }
                 };
 
                 // Obtain the signed zone restorer.
-                let mut restorer = {
-                    zone.write_handle(&center)
-                        .storage()
-                        .finish_loaded_restoration(restored)
-                };
+                let mut restorer = handle.storage().finish_loaded_restoration(restored);
+
+                std::mem::drop(handle);
 
                 // Try to restore the signed instance.
-                let restored = match super::restore_signed(&zone, &center, &mut restorer) {
+                let result = super::restore_signed(&zone, &center, &mut restorer);
+                let mut handle = zone.write_handle(&center);
+                let restored = match result {
                     Ok(true) => {
                         // Data was restored. Use it.
                         restorer.finish().unwrap_or_else(|_| {
@@ -120,17 +206,16 @@ impl ZonePersistenceHandle<'_> {
                     }
                     Ok(false) => {
                         // There was nothing to restore.
-                        abandon_signed_restoration(&center, &zone, restorer);
+                        handle.persistence().abandon_signed_restoration(restorer);
                         return;
                     }
                     Err(err) => {
                         warn!("Abandoning signed restoration: {err}");
-                        abandon_signed_restoration(&center, &zone, restorer);
+                        handle.persistence().abandon_signed_restoration(restorer);
                         return;
                     }
                 };
 
-                let mut handle = zone.write_handle(&center);
                 trace!(
                     "Restored diffs: {:?}",
                     handle.state.persistence.loaded_diffs
@@ -220,70 +305,6 @@ impl ZonePersistenceHandle<'_> {
                 handle.state.persistence.ongoing.finish();
             });
     }
-}
-
-fn abandon_loaded_restoration(
-    center: &Arc<Center>,
-    zone: &Arc<Zone>,
-    restorer: LoadedZoneRestorer,
-) {
-    reset_state_due_to_abandoned_restore(center, zone);
-    let mut handle = zone.write_handle(center);
-    let (loaded_reviewer, signed_reviewer, viewer) =
-        handle.storage().abandon_loaded_restoration(restorer);
-
-    // Update the zone servers.
-    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
-    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
-    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
-
-    // Send a notification that the state machine is now passive.
-    handle.storage().on_passive();
-
-    handle.state.persistence.ongoing.finish();
-}
-
-fn abandon_signed_restoration(
-    center: &Arc<Center>,
-    zone: &Arc<Zone>,
-    restorer: SignedZoneRestorer,
-) {
-    reset_state_due_to_abandoned_restore(center, zone);
-    let mut handle = zone.write_handle(center);
-    let (loaded_reviewer, signed_reviewer, viewer) =
-        handle.storage().abandon_signed_restoration(restorer);
-
-    // Update the zone servers.
-    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
-    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
-    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
-
-    // Send a notification that the state machine is now passive.
-    handle.storage().on_passive();
-
-    handle.state.persistence.ongoing.finish();
-}
-
-fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
-    PersistenceState::clear(center, zone);
-    let mut handle = zone.write_handle(center);
-
-    // In case this zone was signed in the past we have to make sure that
-    // any attempt to enqueue a re-signing operation will be skipped as
-    // doing so will fail due to the lack of loaded zone content.
-    // TODO: Find a better way to prevent this issue as changing the
-    // min_expiration timestamps is a very indirect and non-obvious way of
-    // preventing re-signing.
-    handle.state.min_expiration = None;
-    handle.state.next_min_expiration = None;
-
-    // Also remove any already enqueued signing operation that is blocked
-    // by the ongoing restore as it will otherwise immediately start once
-    // the restore completes.
-    handle.signer().cancel_enqueued_signing_operations();
-
-    // TODO: Handle the error?
-    let _ = handle.get().save_state_now();
 }
 
 //----------- PersistenceState -----------------------------------------------
@@ -507,37 +528,6 @@ impl PersistenceState {
                     .first_diff_to_apply_on_restore
             );
         }
-    }
-
-    pub fn clear(center: &Arc<Center>, zone: &Arc<Zone>) {
-        let mut state = zone.write(center);
-        for file_info in state
-            .persistence
-            .loaded_diffs
-            .diff_infos
-            .iter()
-            .chain(state.persistence.signed_diffs.diff_infos.iter())
-        {
-            if file_info.path.exists()
-                && file_info
-                    .path
-                    .starts_with(center.config.zone_state_dir.as_std_path())
-            {
-                info!(
-                    "Removing persisted zone data file '{}'",
-                    file_info.path.display()
-                );
-                if let Err(err) = std::fs::remove_file(&file_info.path) {
-                    warn!(
-                        "Failed to remove persisted zone data file '{}': {err}",
-                        file_info.path.display()
-                    );
-                }
-            }
-        }
-        state.persistence.loaded_diffs.clear();
-        state.persistence.signed_diffs.clear();
-        state.storage.diffs.clear();
     }
 }
 
