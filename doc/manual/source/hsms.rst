@@ -71,6 +71,7 @@ to stress or performance test the interface. The tested HSMs are\:
    Fortanix, DSM, Cloud, KMIP,
    Nitrokey, NetHSM [1]_, "Server, Docker image", PKCS#11, :doc:`view <nethsm>`
    Thales, "Cloud HSM", Cloud, PKCS#11, :doc:`view <thales>`
+   Securosys, "Primus HSM, CloudHSM", "Server, Cloud", PKCS#11, `view <https://docs.securosys.com/cascade/overview>`_
    SoftHSM, "SoftHSM v2.6.1", Software, PKCS#11, :doc:`view <softhsm>`
    Yubico, "YubiHSM 2", "USB key", PKCS#11,
 
