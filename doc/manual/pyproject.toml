@@ -1,7 +1,7 @@
 [project]
 name = "cascade-manual"
 version = "0.1.0"
-description = "Building the Cascade manual"
+description = "The official Cascade user manual"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,4 +13,11 @@ dependencies = [
     "sphinx-tabs>=3.4.7",
     "sphinx>=8.1.3",
     "toml>=0.10.2",
+]
+
+[dependency-groups]
+# Separate group, so that devs can install it but it doesn't go into
+# requirements.txt (which is used by the ReadTheDocs build).
+livehtml = [
+    "sphinx-autobuild>=2025.8.25",
 ]
