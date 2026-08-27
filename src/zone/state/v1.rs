@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
 use crate::persistence::zone::{
-    PersistedDiffFileInfo, PersistedDiffManager, PersistedDiffRecordSource,
+    PersistedDiffFileInfo, PersistedDiffManager, PersistedDiffRecordSource, PersistenceState,
 };
 use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
@@ -117,15 +117,8 @@ pub struct Spec {
     /// History of interesting events that occurred for this zone.
     pub history: Vec<HistoryItem>,
 
-    /// Locations of persisted unsigned zone diffs to enable IXFR from
-    /// the upstream to resume on restart, and to enable a complete latest
-    /// unsigned version of the zone to be reconstituted.
-    pub persisted_loaded_diffs: PersistedDiffsSpec,
-
-    /// Locations of persisted signed zone diffs to ensure IXFR out toward
-    /// downstreams is still possible after restart, and to enable a complete
-    /// latest signed version of the zone to be reconsituted.
-    pub persisted_signed_diffs: PersistedDiffsSpec,
+    /// How the zone is persisted to disk.
+    pub persistence: PersistenceSpec,
 }
 
 //--- Conversion
@@ -150,12 +143,7 @@ impl Spec {
                 let offset = zone.history.len().min(1024);
                 zone.history[offset..].to_vec()
             },
-            persisted_loaded_diffs: PersistedDiffsSpec::build_loaded(
-                &zone.persistence.loaded_diffs,
-            ),
-            persisted_signed_diffs: PersistedDiffsSpec::build_signed(
-                &zone.persistence.signed_diffs,
-            ),
+            persistence: PersistenceSpec::build(&zone.persistence),
         }
     }
 }
@@ -786,7 +774,6 @@ pub struct InstancesSpec {
     pub next_loaded_id: u64,
     //
     // TODO:
-    // - Obsolete instances.
     // - Abandoned instances.
 }
 
@@ -1240,6 +1227,60 @@ impl ZoneLoadSourceSpec {
                 addr,
                 tsig_key: tsig_key.map(|key| key.name().clone().into()),
             },
+        }
+    }
+}
+
+//------------ PersistenceSpec -------------------------------------------------
+
+/// How zone contents have been persisted to disk.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistenceSpec {
+    /// The ID of an instance whose snapshot has been persisted to disk.
+    pub snapshot_id: Option<SignedInstanceIdSpec>,
+
+    /// Locations of persisted unsigned zone diffs to enable IXFR from
+    /// the upstream to resume on restart, and to enable a complete latest
+    /// unsigned version of the zone to be reconstituted.
+    pub loaded_diffs: PersistedDiffsSpec,
+
+    /// Locations of persisted signed zone diffs to ensure IXFR out toward
+    /// downstreams is still possible after restart, and to enable a complete
+    /// latest signed version of the zone to be reconsituted.
+    pub signed_diffs: PersistedDiffsSpec,
+}
+
+impl PersistenceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> PersistenceState {
+        let Self {
+            snapshot_id,
+            loaded_diffs,
+            signed_diffs,
+        } = self;
+
+        PersistenceState {
+            ongoing: Default::default(),
+            snapshot_id: snapshot_id.map(|id| id.parse()),
+            loaded_diffs: loaded_diffs.parse(),
+            signed_diffs: signed_diffs.parse(),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(state: &PersistenceState) -> Self {
+        let PersistenceState {
+            ongoing: _,
+            snapshot_id: persisted_snapshot_id,
+            ref loaded_diffs,
+            ref signed_diffs,
+        } = *state;
+
+        Self {
+            snapshot_id: persisted_snapshot_id.map(SignedInstanceIdSpec::build),
+            loaded_diffs: PersistedDiffsSpec::build_loaded(loaded_diffs),
+            signed_diffs: PersistedDiffsSpec::build_signed(signed_diffs),
         }
     }
 }

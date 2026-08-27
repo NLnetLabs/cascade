@@ -15,7 +15,7 @@ use crate::{
     persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState},
+    zone::{SignedInstanceId, Zone, ZoneHandle, ZoneState},
     zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
 };
 
@@ -327,6 +327,13 @@ pub struct PersistenceState {
     /// Ongoing persist/restore operations.
     pub ongoing: BackgroundTasks,
 
+    /// The ID of an instance whose snapshot has been persisted to disk.
+    ///
+    /// If this is [`Some`], snapshots of the loaded and signed instance have
+    /// been persisted to disk. When Cascade restarts, they will be used to
+    /// restore zone data. The field is cleared if the snapshots are unusable.
+    pub snapshot_id: Option<SignedInstanceId>,
+
     /// Metadata about the persisted loaded zone data files for a zone.
     pub loaded_diffs: PersistedDiffManager,
 
@@ -535,6 +542,7 @@ impl Default for PersistenceState {
     fn default() -> Self {
         Self {
             ongoing: Default::default(),
+            snapshot_id: None,
             loaded_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Loaded),
             signed_diffs: PersistedDiffManager::new(PersistedDiffRecordSource::Signed),
         }
