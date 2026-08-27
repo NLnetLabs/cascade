@@ -45,11 +45,11 @@ running on host 192.168.0.2 listening on the default port 4542:
 
    zone:
      name: example.com
-	 zonefile: /etc/nsd/example.com.zone
-	 notify: 192.168.0.2@4542 NOKEY
-	 provide-xfr: 192.168.0.2 NOKEY
-	 store-ixfr: yes
- 	 create-ixfr: yes
+     zonefile: /etc/nsd/example.com.zone
+     notify: 192.168.0.2@4542 NOKEY
+     provide-xfr: 192.168.0.2 NOKEY
+     store-ixfr: yes
+     create-ixfr: yes
 
 A TSIG key can be used to authenticate the NOTIFY and XFR communications. For
 example\:
@@ -61,13 +61,13 @@ example\:
     algorithm: hmac-sha256
     secret: "..."
 
-   zone:
+  zone:
      name: example.com
-	 zonefile: /etc/nsd/example.com.zone
-	 notify: 192.168.0.2@4542 sec1_key
-	 provide-xfr: 192.168.0.2 sec1_key
-	 store-ixfr: yes
- 	 create-ixfr: yes
+     zonefile: /etc/nsd/example.com.zone
+     notify: 192.168.0.2@4542 sec1_key
+     provide-xfr: 192.168.0.2 sec1_key
+     store-ixfr: yes
+     create-ixfr: yes
 
 See https://nsd.docs.nlnetlabs.nl/en/latest/running/using-tsig.html for more
 information.
@@ -75,11 +75,25 @@ information.
 .. tip:: Remember to reload the NSD configuration or restart NSD so that
          changes to the configuration take effect.
 
-To add the TSIG key to Cascade use :program:`cascade` :subcmd:`tsig add`:
+To add the TSIG key to Cascade use :program:`cascade` :subcmd:`tsig add`.
+
+First create a file containing only the TSIG key. In this case the ``nsd`` file
+format is used.
+
+.. code-block::
+
+   key:
+     name: "sec1_key"
+     algorithm: hmac-sha256
+     secret: "..."
+
+Then pass the filename to the :program:`cascade` :subcmd:`tsig add` command.
+See the commands documentation for all available formats, ``nsd`` is the
+default format.
 
 .. code-block:: bash
 
-   $ cascade tsig add --name sec1_key --alg hmac-sha256 --secret "...=="
+   $ cascade tsig add tsig-key.yaml
 
 To use the new TSIG key it must be specified when adding a zone to
 Cascade. Assuming that NSD is running on host 192.168.0.1 on port 53,
@@ -109,8 +123,8 @@ running at 192.168.0.2 listening on the default port 4542:
 
    zone:
      name: example.com
-	 allow-notify: 192.168.0.2
-	 request-xfr: 192.168.0.2@4542
+     allow-notify: 192.168.0.2
+     request-xfr: 192.168.0.2@4542
 
 To authenticate zone transfer related messages using TSIG you must first have
 added the key to both Cascade and NSD using the same :program:`cascade` :subcmd:`tsig add`
