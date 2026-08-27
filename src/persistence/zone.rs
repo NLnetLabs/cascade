@@ -392,142 +392,142 @@ impl PersistenceState {
             return;
         };
 
-        if let Some(reader) = viewer.read() {
-            // TODO: The steps below if interrupted (e.g. by crash, OOM
-            // kill, system failure or power outage) could lead to zone data
-            // corruption on restore. One possible solution could be to write
-            // persisted records for a zone to a directory specific to that
-            // zone, and during compaction create a new directory with all
-            // the necessary data then update in state on disk the path to
-            // the directory to use to be the new directory and delete the
-            // old directory.
-            debug!(
-                "Writing loaded zone snapshot to {}",
-                loaded_snapshot_path.display()
-            );
-            persist_to_file_from_parts(
-                loaded_snapshot_path,
-                None,
-                reader.loaded().soa().clone(),
-                [].iter(),
-                reader.loaded().regular_records().iter(),
-            );
+        let Some(reader) = viewer.read() else { return };
 
-            debug!(
-                "Writing new signed zone snapshot to {}",
-                signed_snapshot_path.display()
-            );
-            persist_to_file_from_parts(
-                signed_snapshot_path,
-                None,
-                reader.soa().clone(),
-                [].iter(),
-                reader.generated_records().iter(),
-            );
+        // TODO: The steps below if interrupted (e.g. by crash, OOM
+        // kill, system failure or power outage) could lead to zone data
+        // corruption on restore. One possible solution could be to write
+        // persisted records for a zone to a directory specific to that
+        // zone, and during compaction create a new directory with all
+        // the necessary data then update in state on disk the path to
+        // the directory to use to be the new directory and delete the
+        // old directory.
+        debug!(
+            "Writing loaded zone snapshot to {}",
+            loaded_snapshot_path.display()
+        );
+        persist_to_file_from_parts(
+            loaded_snapshot_path,
+            None,
+            reader.loaded().soa().clone(),
+            [].iter(),
+            reader.loaded().regular_records().iter(),
+        );
 
-            // Now that we have re-written the snapshots using the latest
-            // published version of the zone we don't need any of the on-disk
-            // persisted diffs that were previously applied on top of the old
-            // snapshot to re-create the zone.
-            //
-            // We might still however need some of those on-disk diffs so that
-            // we can reload them on startup to be able to serve them as IXFR
-            // diffs to downstream nameservers.
-            //
-            // Check which ones we can delete and after deleting them update
-            // our record of the first on-disk diff file that should be
-            // applied on top of the updated snapshot.
+        debug!(
+            "Writing new signed zone snapshot to {}",
+            signed_snapshot_path.display()
+        );
+        persist_to_file_from_parts(
+            signed_snapshot_path,
+            None,
+            reader.soa().clone(),
+            [].iter(),
+            reader.generated_records().iter(),
+        );
 
-            // Remove the first N oldest signed diffs and their corresponding
-            // loaded diffs. Skip the first "diff" as it is the snapshot, not
-            // a diff.
-            let mut idx = 0;
-            let mut loaded_serials_to_remove = vec![];
-            state
-                    .persistence
-                    .signed_diffs
-                    .diff_infos
-                    .retain(|diff_info| {
-                        // Keep only the snapshot and diffs newer than the
-                        // ones to remove.
-                        let keep = idx == 0 || idx > num_diffs_to_remove;
-                        trace!("Compaction for zone '{}': removing {num_diffs_to_remove} diffs: retain diff #{idx}: {keep}", zone.name);
-                        idx += 1;
+        // Now that we have re-written the snapshots using the latest
+        // published version of the zone we don't need any of the on-disk
+        // persisted diffs that were previously applied on top of the old
+        // snapshot to re-create the zone.
+        //
+        // We might still however need some of those on-disk diffs so that
+        // we can reload them on startup to be able to serve them as IXFR
+        // diffs to downstream nameservers.
+        //
+        // Check which ones we can delete and after deleting them update
+        // our record of the first on-disk diff file that should be
+        // applied on top of the updated snapshot.
 
-                        if !keep {
-                            // Remove the corresponding loaded diff.
-                            if let Some(loaded_serial) = diff_info.loaded_serial {
-                                loaded_serials_to_remove.push(loaded_serial);
-                            }
-                            if let Err(err) = std::fs::remove_file(&diff_info.path) {
-                                warn!(
-                                    "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
-                                    zone.name, diff_info.path.display()
-                                );
-                            }
-                        }
-                        keep
-                    });
+        // Remove the first N oldest signed diffs and their corresponding
+        // loaded diffs. Skip the first "diff" as it is the snapshot, not
+        // a diff.
+        let mut idx = 0;
+        let mut loaded_serials_to_remove = vec![];
+        state
+            .persistence
+            .signed_diffs
+            .diff_infos
+            .retain(|diff_info| {
+                // Keep only the snapshot and diffs newer than the
+                // ones to remove.
+                let keep = idx == 0 || idx > num_diffs_to_remove;
+                trace!("Compaction for zone '{}': removing {num_diffs_to_remove} diffs: retain diff #{idx}: {keep}", zone.name);
+                idx += 1;
 
-            // Remove the corresponding loaded diffs.
-            for loaded_serial in loaded_serials_to_remove {
-                if let Some(found_item) = state
-                    .persistence
-                    .loaded_diffs
-                    .diffs()
-                    .iter()
-                    .find(|item| item.loaded_serial == Some(loaded_serial))
-                    .cloned()
-                {
-                    trace!(
-                        "Compaction for zone '{}': removing loaded diff for loaded serial {loaded_serial}",
-                        zone.name
-                    );
-                    let _ = state
-                        .persistence
-                        .loaded_diffs
-                        .diff_infos
-                        .remove(&found_item);
-                    if let Err(err) = std::fs::remove_file(&found_item.path) {
+                if !keep {
+                    // Remove the corresponding loaded diff.
+                    if let Some(loaded_serial) = diff_info.loaded_serial {
+                        loaded_serials_to_remove.push(loaded_serial);
+                    }
+                    if let Err(err) = std::fs::remove_file(&diff_info.path) {
                         warn!(
                             "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
-                            zone.name,
-                            found_item.path.display()
+                            zone.name, diff_info.path.display()
                         );
                     }
                 }
-            }
+                keep
+            });
 
-            // As we may have folded diffs into the snapshot, upon next
-            // restoration the first diff to apply to the snapshot is no
-            // longer the first after the snapshot but the first after
-            // we skip diffs that have been retained for responding to IXFR
-            // requests but are now part of the snapshot.
-            //
-            // Update the index of the first diff to apply on restore to
-            // account for the compaction done above.
+        // Remove the corresponding loaded diffs.
+        for loaded_serial in loaded_serials_to_remove {
+            if let Some(found_item) = state
+                .persistence
+                .loaded_diffs
+                .diffs()
+                .iter()
+                .find(|item| item.loaded_serial == Some(loaded_serial))
+                .cloned()
+            {
+                trace!(
+                    "Compaction for zone '{}': removing loaded diff for loaded serial {loaded_serial}",
+                    zone.name
+                );
+                let _ = state
+                    .persistence
+                    .loaded_diffs
+                    .diff_infos
+                    .remove(&found_item);
+                if let Err(err) = std::fs::remove_file(&found_item.path) {
+                    warn!(
+                        "Failed to remove persisted zone data file '{}' while compacting zone '{}': {err}",
+                        zone.name,
+                        found_item.path.display()
+                    );
+                }
+            }
+        }
+
+        // As we may have folded diffs into the snapshot, upon next
+        // restoration the first diff to apply to the snapshot is no
+        // longer the first after the snapshot but the first after
+        // we skip diffs that have been retained for responding to IXFR
+        // requests but are now part of the snapshot.
+        //
+        // Update the index of the first diff to apply on restore to
+        // account for the compaction done above.
+        state
+            .persistence
+            .loaded_diffs
+            .first_diff_to_apply_on_restore = state.persistence.loaded_diffs.len();
+        state
+            .persistence
+            .signed_diffs
+            .first_diff_to_apply_on_restore = state.persistence.signed_diffs.len();
+        trace!(
+            "Compaction complete: next_idx: loaded={}, signed={}, restore_base_idx: loaded={}, signed={}",
+            state.persistence.loaded_diffs.next_uniqifier,
+            state.persistence.signed_diffs.next_uniqifier,
             state
                 .persistence
                 .loaded_diffs
-                .first_diff_to_apply_on_restore = state.persistence.loaded_diffs.len();
+                .first_diff_to_apply_on_restore,
             state
                 .persistence
                 .signed_diffs
-                .first_diff_to_apply_on_restore = state.persistence.signed_diffs.len();
-            trace!(
-                "Compaction complete: next_idx: loaded={}, signed={}, restore_base_idx: loaded={}, signed={}",
-                state.persistence.loaded_diffs.next_uniqifier,
-                state.persistence.signed_diffs.next_uniqifier,
-                state
-                    .persistence
-                    .loaded_diffs
-                    .first_diff_to_apply_on_restore,
-                state
-                    .persistence
-                    .signed_diffs
-                    .first_diff_to_apply_on_restore
-            );
-        }
+                .first_diff_to_apply_on_restore
+        );
     }
 }
 
