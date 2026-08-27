@@ -1,3 +1,5 @@
+use clap::ValueEnum;
+use core::fmt;
 use std::str::FromStr;
 
 use camino::Utf8PathBuf;
@@ -16,38 +18,22 @@ pub struct Tsig {
 }
 
 #[derive(Clone, Debug, clap::Subcommand)]
+#[cfg_attr(test, derive(PartialEq))]
 #[allow(clippy::large_enum_variant)]
 pub enum TsigCommand {
     /// Add a TSIG key
     #[command(name = "add")]
     Add {
-        /// The name of the TSIG key to add.
+        /// Path to the file containing the TSIG key.
         ///
-        /// Can also be in the form `[algorithm:]keyname:secret`.
-        name: String,
+        /// The file format is specified by `--format`.
+        path: Utf8PathBuf,
 
-        /// The TSIG algorithm to use.
+        /// Format used in the TSIG file.
         ///
-        /// Can be omitted if provided as part of the name.
-        /// Required if `[SECRET]` is provided.
-        ///
-        /// Must be one of:
-        ///   hmac-sha1
-        ///   hmac-sha256
-        ///   hmac-sha384
-        ///   hmac-sha512
-        #[arg(requires = "secret")]
-        alg: Option<TsigAlgorithm>,
-
-        /// Base64 encoded secret key material.
-        ///
-        /// Can be omitted if provided as part of the name.
-        /// Required if `[ALG]` is provided.
-        ///
-        /// Can also be a path to a file containing the Base64 encoded secret
-        /// key material.
-        #[arg(requires = "alg")]
-        secret: Option<String>,
+        /// The NSD and Knot formats are not parsed with full YAML compliance.
+        #[arg(long, default_value_t=TsigFileFormat::Nsd, ignore_case=true, required=false)]
+        format: TsigFileFormat,
     },
 
     /// Remove a TSIG key
@@ -60,82 +46,43 @@ pub enum TsigCommand {
 }
 
 impl Tsig {
+    pub fn tsig_add(
+        path: Utf8PathBuf,
+        format: TsigFileFormat,
+    ) -> Result<(TsigKeyName, TsigAlgorithm, String), String> {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read TSIG file '{path}' in '{format}' format: {e}"))?;
+
+        let (tsig_name_raw, tsig_alg_raw, tsig_secret) = parse_tsig(&content, format)?;
+
+        let tsig_alg = TsigAlgorithm::from_str(&tsig_alg_raw, true).map_err(|_| {
+            format!(
+                "Unable to parse algorithm '{}'; possible values are {:?}",
+                tsig_alg_raw,
+                all_possible_values::<TsigAlgorithm>()
+            )
+        })?;
+
+        let tsig_name = TsigKeyName::from_str(&tsig_name_raw)
+            .map_err(|err| format!("Invalid TSIG key name '{tsig_name_raw}': {err}"))?;
+
+        Ok((tsig_name, tsig_alg, tsig_secret))
+    }
+
     pub async fn execute(self, client: CascadeApiClient) -> Result<(), String> {
         match self.command {
             // Add a TSIG key to Cascade.
-            TsigCommand::Add { name, alg, secret } => {
-                let (name, alg, secret) = match (alg, secret) {
-                    // No separate algorithm or secret argument values
-                    // were provided, instead they must be extracted
-                    // from the name string which should be in the form
-                    // [algorithm]:keyname:secret.
-                    (None, None) => {
-                        let parts: Vec<&str> = name.split(':').collect();
-                        match parts.as_slice() {
-                            // The algorithm was provided.
-                            [alg_part, name_part, secret_part] => {
-                                let alg = TsigAlgorithm::from_str(alg_part)?;
-                                let name = name_part.to_string();
-                                let secret = secret_part.to_string();
-                                (name, alg, secret)
-                            }
-
-                            // The algorithm was not provided, use the default.
-                            [name_part, secret_part] => {
-                                let alg = TsigAlgorithm::HmacSha256;
-                                let name = name_part.to_string();
-                                let secret = secret_part.to_string();
-                                (name, alg, secret)
-                            }
-
-                            // The name value was not in the expected format.
-                            _ => {
-                                return Err(
-                                    "Invalid TSIG key format, should be: [algorithm]:keyname:secret"
-                                        .to_string(),
-                                );
-                            }
-                        }
-                    }
-
-                    // Separate name, algorithm and secret argument values
-                    // were provided.
-                    (Some(alg), Some(secret)) => {
-                        let path = Utf8PathBuf::from_str(&secret).unwrap();
-                        if path.exists() {
-                            // Assume that the secret is contained in the
-                            // specified file.
-                            let secret = std::fs::read_to_string(&path)
-                                .map_err(|err| {
-                                    format!("Failed to read TSIG key file '{path}': {err}")
-                                })?
-                                .trim()
-                                .to_string();
-                            (name, alg, secret)
-                        } else {
-                            // Assume that the secret was provided directly.
-                            (name, alg, secret)
-                        }
-                    }
-
-                    // An unsupported combination of arguments was provided
-                    // but this should not be possible due to the Clap
-                    // attributes that we used.
-                    _ => unreachable!("Excluded via Clap 'requires' rules"),
-                };
-
-                // Parse the TSIG key name as a domain name.
-                let tsig_key_name = TsigKeyName::from_str(&name)
-                    .map_err(|err| format!("Invalid TSIG key name: {err}"))?;
+            TsigCommand::Add { path, format } => {
+                let (tsig_name, tsig_alg, tsig_secret) = Tsig::tsig_add(path, format)?;
 
                 // Send a TSIG add message to the Cascade HTTP API.
                 let res: Result<TsigAddResult, TsigAddError> = client
                     .post_json_with(
                         "tsig/add",
                         &crate::api::TsigAdd {
-                            name: tsig_key_name,
-                            alg: alg.into(),
-                            secret,
+                            name: tsig_name.clone(),
+                            alg: tsig_alg.into(),
+                            secret: tsig_secret,
                         },
                     )
                     .await?;
@@ -144,12 +91,11 @@ impl Tsig {
                 match res {
                     // Success, the key was added!
                     Ok(TsigAddResult) => {
-                        println!("Added TSIG key '{name}'");
+                        println!("Added TSIG key '{tsig_name}'");
                         Ok(())
                     }
-
                     // Failure, something went wrong.
-                    Err(err) => Err(format!("Failed to add TSIG key '{name}': {err}")),
+                    Err(err) => Err(format!("Failed to add TSIG key '{tsig_name}': {err}")),
                 }
             }
 
@@ -247,25 +193,12 @@ impl Tsig {
 
 /// The TSIG key algorithms supported by Cascade.
 #[derive(Clone, Debug, clap::ValueEnum)]
+#[clap(rename_all = "kebab")]
 pub enum TsigAlgorithm {
     HmacSha1,
     HmacSha256,
     HmacSha384,
     HmacSha512,
-}
-
-impl FromStr for TsigAlgorithm {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "hmac-sha1" => Ok(TsigAlgorithm::HmacSha1),
-            "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
-            "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
-            "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
-            other => Err(format!("'{other}' is not a supported TSIG algorithm")),
-        }
-    }
 }
 
 impl From<TsigAlgorithm> for crate::api::TsigAlgorithm {
@@ -276,5 +209,386 @@ impl From<TsigAlgorithm> for crate::api::TsigAlgorithm {
             TsigAlgorithm::HmacSha384 => cascade_api::TsigAlgorithm::HmacSha384,
             TsigAlgorithm::HmacSha512 => cascade_api::TsigAlgorithm::HmacSha512,
         }
+    }
+}
+
+//------------ TsigFileFormat ------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
+pub enum TsigFileFormat {
+    /// NSD TSIG Documentation
+    /// <https://nsd.docs.nlnetlabs.nl/en/latest/running/using-tsig.html>
+    ///
+    /// ```text
+    /// key:
+    ///   name: "sec1_key"
+    ///   algorithm: hmac-sha256
+    ///   secret: "B22jiD30pKL541XsOZ28y+NxbcIRoGqnumH2SFC8QDE="
+    /// ```
+    ///
+    /// Note: Changed algorithm because the original is not supported.
+    Nsd,
+    /// BIND TSIG Documentation
+    /// <https://bind9.readthedocs.io/en/stable/reference.html#namedconf-statement-key>
+    ///
+    /// ```text
+    /// key <string> {
+    ///     algorithm <string>;
+    ///     secret <string>;
+    /// };
+    /// ```
+    Bind,
+    /// Knot TSIG Documentation
+    /// <https://www.knot-dns.cz/docs/latest/html/reference.html#key-section>
+    ///
+    /// ```text
+    /// key:
+    ///  - id: DNAME
+    ///    algorithm: ALGORITHM
+    ///    secret: BASE64
+    /// ```
+    Knot,
+}
+
+impl fmt::Display for TsigFileFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TsigFileFormat::Bind => write!(f, "bind"),
+            TsigFileFormat::Knot => write!(f, "knot"),
+            TsigFileFormat::Nsd => write!(f, "nsd"),
+        }
+    }
+}
+impl TsigFileFormat {
+    fn keywords(&self) -> (&'static str, &'static str, &'static str, &'static str) {
+        match self {
+            TsigFileFormat::Bind => ("key", "algorithm", "secret", "//"),
+            TsigFileFormat::Knot => ("id", "algorithm", "secret", "#"),
+            TsigFileFormat::Nsd => ("name", "algorithm", "secret", "#"),
+        }
+    }
+}
+
+// Used to print all possible values the enum could have in case of
+// unrecognised value.
+fn all_possible_values<E: ValueEnum>() -> Vec<String> {
+    E::value_variants()
+        .iter()
+        .filter_map(|v| v.to_possible_value())
+        .map(|v| v.get_name().to_string())
+        .collect::<Vec<_>>()
+}
+
+// Parse TSIG key values from a file.
+//
+// The function searches for the certain keywords, each at the beginning of
+// the line - ignoring whitespaces. The line is then split on the first
+// whitespace and first consecutive sequence of non-whitespace characters is
+// taken as the value. Quotes lead to a preemptive match on the value.
+//
+// The keywords depend on the format used.
+fn parse_tsig(content: &str, format: TsigFileFormat) -> Result<(String, String, String), String> {
+    // Used to split on whitespaces, a line doesn't contain '\n'.
+    fn is_whitespace(c: char) -> bool {
+        c == ' ' || c == '\t'
+    }
+
+    // Split on the first whitespace. It assumes that the first part is key
+    // and the second part is value. The value is cleaned up by removing
+    // whitespaces, comments and extracting only the relevant characters.
+    fn value_cleanup(line: &str, format: &TsigFileFormat) -> Result<String, String> {
+        let mut output = String::new();
+        let mut in_quote = false;
+
+        let (key, value) = line
+            .split_once(is_whitespace)
+            .ok_or::<String>(format!("Unable to split on whitespace for line '{line}'"))?;
+
+        for character in value.trim().chars() {
+            match character {
+                c if is_whitespace(c) => {
+                    if !in_quote {
+                        // Break if the whitespace is not in a quote.
+                        break;
+                    }
+                }
+                ';' if format == &TsigFileFormat::Bind => break,
+                '"' => {
+                    if in_quote {
+                        // End of quotation reached.
+                        break;
+                    }
+                    // Now inside of quotes, only go until the end of the quote.
+                    in_quote = true;
+                    continue;
+                }
+                _ => (),
+            }
+
+            output.push(character);
+        }
+        if output.is_empty() {
+            return Err(format!("Value is empty for keyword '{key}'!"));
+        };
+        Ok(output)
+    }
+
+    // Check if the matched line is something that was matched before.
+    fn matched_line(
+        keyword: &str,
+        cur_value: &Option<String>,
+        line: &str,
+        format: &TsigFileFormat,
+    ) -> Result<String, String> {
+        let new_value = value_cleanup(line, format)?;
+
+        if let Some(cur_value_innner) = cur_value {
+            return Err(format!(
+                "Encountered keyword '{keyword}' again. \
+                Value '{cur_value_innner}' would be overwritten by '{new_value}'."
+            ));
+        }
+        Ok(new_value)
+    }
+
+    let lines = content.trim().lines();
+
+    let mut name: Option<String> = None;
+    let mut algorithm: Option<String> = None;
+    let mut secret: Option<String> = None;
+
+    let keywords = format.keywords();
+    for line in lines {
+        // Remove the whitespaces around the content.
+        let mut line_trimmed = line.trim();
+
+        // If the format is Knot there might be a '- ' at the beginning.
+        if matches!(format, TsigFileFormat::Knot) {
+            line_trimmed = line_trimmed.trim_start_matches('-').trim();
+        }
+
+        match line_trimmed {
+            line_name if line_name.starts_with(keywords.0) => {
+                name = Some(matched_line(keywords.0, &name, line_name, &format)?);
+            }
+            line_algo if line_algo.starts_with(keywords.1) => {
+                algorithm = Some(matched_line(keywords.1, &algorithm, line_algo, &format)?);
+            }
+            line_secret if line_secret.starts_with(keywords.2) => {
+                secret = Some(matched_line(keywords.2, &secret, line_secret, &format)?);
+            }
+
+            // Comments will be ignored according to the format.
+            line_comment if line_comment.starts_with(keywords.3) => (),
+
+            // The following lines will be ignored. There is no distinction
+            // made between either formats.
+            line_ignore if line_ignore.starts_with("---") => (),
+            line_ignore if line_ignore.starts_with("key:") => (),
+            line_ignore if line_ignore.starts_with("tsig-key:") => (),
+            line_ignore if line_ignore.starts_with("};") => (),
+            "" => (),
+            ";" => (),
+            "}" => (),
+
+            line_unknown => return Err(format!("Encountered unexpected line '{line_unknown}'")),
+        }
+    }
+
+    match (name, algorithm, secret) {
+        (Some(n), Some(a), Some(s)) => Ok((n, a, s)),
+        _ => Err("Unable to parse all three values.".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use clap::Parser;
+
+    use crate::{
+        args::Args,
+        commands::{Command::Tsig, tsig::TsigCommand},
+    };
+    /// Parse against the binary name only, so tests read as plain argument lists.
+    #[track_caller]
+    fn parse(args: &[&str]) -> Result<Args, clap::Error> {
+        Args::try_parse_from(std::iter::once("cascade").chain(args.iter().copied()))
+    }
+
+    /// Validate TSIG command values parsed from command line arguments.
+    #[track_caller]
+    fn validate_arguments(cli: &[&str], tsig_expected: TsigCommand) {
+        let cli = parse(cli).unwrap();
+        let tsig_cmd = match cli.command {
+            Tsig(tsig) => tsig,
+            other => panic!("Wrong command parsed. {other:?}"),
+        };
+
+        assert_eq!(tsig_cmd.command, tsig_expected);
+    }
+
+    /// --- Command line parsing tests.
+
+    #[test]
+    fn parse_tsig_add_command_1() {
+        validate_arguments(
+            &["tsig", "add", "file.key"],
+            TsigCommand::Add {
+                path: "file.key".into(),
+                format: TsigFileFormat::Nsd,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_tsig_add_command_2() {
+        validate_arguments(
+            &["tsig", "add", "file.key", "--format=nsD"],
+            TsigCommand::Add {
+                path: "file.key".into(),
+                format: TsigFileFormat::Nsd,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_tsig_add_command_3() {
+        validate_arguments(
+            &["tsig", "add", "file.key", "--format=knoT"],
+            TsigCommand::Add {
+                path: "file.key".into(),
+                format: TsigFileFormat::Knot,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_tsig_add_command_4() {
+        validate_arguments(
+            &["tsig", "add", "file.key", "--format=binD"],
+            TsigCommand::Add {
+                path: "file.key".into(),
+                format: TsigFileFormat::Bind,
+            },
+        );
+    }
+
+    /// --- File parsing tests in different formats.
+
+    #[test]
+    fn parse_tsig_nsd_invalid_1() {
+        let result = parse_tsig("name:", TsigFileFormat::Nsd).unwrap_err();
+        assert!(result.contains("split on whitespace"), "{}", result);
+    }
+
+    #[test]
+    fn parse_tsig_nsd_invalid_2() {
+        let result = parse_tsig("name: ", TsigFileFormat::Nsd).unwrap_err();
+        assert!(result.contains("split on whitespace"), "{}", result);
+    }
+
+    #[test]
+    fn parse_tsig_nsd_invalid_3() {
+        let result = parse_tsig("name: f", TsigFileFormat::Nsd).unwrap_err();
+        assert!(result.contains("parse all three values"), "{}", result);
+    }
+    #[test]
+    fn parse_tsig_nsd_invalid_4() {
+        let result = parse_tsig("name: f\nname: g", TsigFileFormat::Nsd).unwrap_err();
+        assert!(
+            result.contains(
+                "Encountered keyword 'name' again. Value 'f' would be overwritten by 'g'."
+            ),
+            "{}",
+            result
+        );
+    }
+
+    #[test]
+    fn parse_tsig_nsd_minimal() {
+        let result = parse_tsig("name f\nalgorithm: f\nsecret: f", TsigFileFormat::Nsd).unwrap();
+        assert_eq!(result, ("f".into(), "f".into(), "f".into()));
+    }
+
+    #[test]
+    fn parse_tsig_nsd_space_in_value() {
+        let result =
+            parse_tsig("name f\nalgorithm: f\nsecret: \"f s\"", TsigFileFormat::Nsd).unwrap();
+        assert_eq!(result, ("f".into(), "f".into(), "f s".into()));
+    }
+
+    #[test]
+    fn parse_tsig_knot_minimal() {
+        let result = parse_tsig("id f\nalgorithm f\nsecret f", TsigFileFormat::Knot).unwrap();
+        assert_eq!(result, ("f".into(), "f".into(), "f".into()));
+    }
+
+    #[test]
+    fn parse_tsig_bind_minimal() {
+        let result = parse_tsig("key f\nalgorithm f\nsecret f", TsigFileFormat::Bind).unwrap();
+        assert_eq!(result, ("f".into(), "f".into(), "f".into()));
+    }
+
+    /// --- Example snippets from tools and documentation.
+
+    #[test]
+    fn parse_tsig_nsd_format() {
+        let content = r#"---
+# this is a comment
+# test.key:hmac-sha256:B22jiD30pKL541XsOZ28y+NxbcIRoGqnumH2SFC8QDE=
+tsig-key: # could also be called key
+    name: test.key #name doesn't matter
+    algorithm: hmac-sha256
+    secret: "B22jiD30pKL541XsOZ28y+NxbcIRoGqnumH2SFC8QDE=""#;
+
+        let result = parse_tsig(content, TsigFileFormat::Nsd);
+        assert_eq!(
+            result,
+            Ok((
+                "test.key".into(),
+                "hmac-sha256".into(),
+                "B22jiD30pKL541XsOZ28y+NxbcIRoGqnumH2SFC8QDE=".into(),
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_tsig_knot_format() {
+        let content = r#"---
+# DNAME:ALGORITHM:BASE64
+key:
+  - id: DNAME
+    algorithm: ALGORITHM
+    secret: BASE64"#;
+
+        let result = parse_tsig(content, TsigFileFormat::Knot);
+        assert_eq!(
+            result,
+            Ok(("DNAME".into(), "ALGORITHM".into(), "BASE64".into(),))
+        );
+    }
+
+    #[test]
+    fn parse_tsig_bind_format() {
+        let content = r#"
+// this is a comment
+// test.key:hmac-sha256:B22jiD30pKL541XsOZ28y+NxbcIRoGqnumH2SFC8QDE=
+key "tsig-key" { //name doesn't matter
+algorithm hmac-sha256;
+
+    secret "TwdyUE7Q5w6Jd/A1dmreYqINEyQWtWUAVb6p4pCQ3JI=";
+};"#;
+
+        let result = parse_tsig(content, TsigFileFormat::Bind);
+        assert_eq!(
+            result,
+            Ok((
+                "tsig-key".into(),
+                "hmac-sha256".into(),
+                "TwdyUE7Q5w6Jd/A1dmreYqINEyQWtWUAVb6p4pCQ3JI=".into(),
+            ))
+        );
     }
 }
