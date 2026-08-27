@@ -63,19 +63,16 @@ Several HSMs have been tested with Cascade by the community. Testing was limited
 usage only, not attempting to deliberately cause problems, and not attempting
 to stress or performance test the interface. The tested HSMs are\:
 
-.. table:: Supported HSMs
-   :widths: auto
+.. csv-table:: Supported HSMs
+   :header: Vendor, Model, Type, Interface, Guide
+   :widths: auto
 
-   ====================  ======================  =========  =================
-   HSM                   Type                    Interface  Integration guide
-   ====================  ======================  =========  =================
-   Fortanix DSM          Cloud                   KMIP       
-   Thales Cloud HSM      Cldud                   PKCS#11    :doc:`view <thales>`
-   Nitrokey NetHSM [1]_  Hardware, Docker image  PKCS#11    :doc:`view <nethsm>`
-   YubiHSM 2             USB key                 PKCS#11    
-   SoftHSM v2.6.1        Software                PKCS#11    :doc:`view <softhsm>`
-   SmartCard-HSM         Smart Card              PKCS#11    :doc:`view <smartcard-hsm>`
-   ====================  ======================  =========  =================
+   CardContact, SmartCard-HSM, "Smart Card", PKCS#11, :doc:`view <smartcard-hsm>`
+   Fortanix, DSM, Cloud, KMIP,
+   Nitrokey, NetHSM [1]_, "Server, Docker image", PKCS#11, :doc:`view <nethsm>`
+   Thales, "Cloud HSM", Cloud, PKCS#11, :doc:`view <thales>`
+   SoftHSM, "SoftHSM v2.6.1", Software, PKCS#11, :doc:`view <softhsm>`
+   Yubico, "YubiHSM 2", "USB key", PKCS#11,
 
 .. [1] Username and password must be specified in `p11nethsm.conf` for
     both the `operator` and `admin` user in order to use the Nitrokey
