@@ -261,8 +261,6 @@ impl Instances {
     pub fn switch(&mut self) {
         let pub_time = SystemTime::now();
 
-        // TODO: Save the current instance to a list of obsolete ones.
-
         let upcoming = self
             .upcoming
             .take()
@@ -277,7 +275,7 @@ impl Instances {
             } => {
                 let CurrentInstance {
                     loaded,
-                    signed: _,
+                    signed: old_signed,
                     pub_time: _,
                 } = current.unwrap_or_else(|| {
                     panic!("A re-sign took place but there is no current loaded instance")
@@ -285,7 +283,7 @@ impl Instances {
 
                 let UpcomingSignedInstance {
                     inner: signed,
-                    diff: _,
+                    diff: signed_diff,
                 } = signed;
 
                 self.current = Some(CurrentInstance {
@@ -293,6 +291,13 @@ impl Instances {
                     signed,
                     pub_time,
                 });
+
+                self.obsolete.instances.push_back(ObsoleteInstance::Signed(
+                    ObsoleteSignedInstance {
+                        inner: old_signed,
+                        diff: Some(signed_diff),
+                    },
+                ));
             }
 
             // A new loaded instance has appeared.
@@ -302,18 +307,39 @@ impl Instances {
             } => {
                 let UpcomingLoadedInstance {
                     inner: loaded,
-                    diff: _,
+                    diff: loaded_diff,
                 } = loaded;
                 let UpcomingSignedInstance {
                     inner: signed,
-                    diff: _,
+                    diff: signed_diff,
                 } = signed;
 
-                self.current = Some(CurrentInstance {
+                let old = self.current.replace(CurrentInstance {
                     loaded,
                     signed,
                     pub_time,
                 });
+
+                if let Some(CurrentInstance {
+                    loaded: old_loaded,
+                    signed: old_signed,
+                    pub_time: _,
+                }) = old
+                {
+                    // The loaded instance must be added first.
+                    self.obsolete.instances.push_back(ObsoleteInstance::Loaded(
+                        ObsoleteLoadedInstance {
+                            inner: old_loaded,
+                            diff: Some(loaded_diff),
+                        },
+                    ));
+                    self.obsolete.instances.push_back(ObsoleteInstance::Signed(
+                        ObsoleteSignedInstance {
+                            inner: old_signed,
+                            diff: Some(signed_diff),
+                        },
+                    ));
+                }
             }
 
             // The upcoming instance is malformed.
@@ -415,8 +441,8 @@ pub struct UpcomingLoadedInstance {
     /// The diff of these contents.
     ///
     /// This diff transforms zone contents _from the current instance_ into
-    /// those of _this instance_. If this instance is accepted, the diff will be
-    /// inverted and saved as part of the obsoleted instance.
+    /// those of _this upcoming instance_. If this instance is accepted, the
+    /// diff will be saved as part of the obsoleted instance.
     pub diff: Arc<DiffData>,
 }
 
@@ -456,8 +482,8 @@ pub struct UpcomingSignedInstance {
     /// The diff of these contents.
     ///
     /// This diff transforms zone contents _from the current instance_ into
-    /// those of _this instance_. If this instance is accepted, the diff will be
-    /// inverted and saved as part of the obsoleted instance.
+    /// those of _this upcoming instance_. If this instance is accepted, the
+    /// diff will be saved as part of the obsoleted instance.
     pub diff: Arc<DiffData>,
 }
 
