@@ -59,7 +59,7 @@ In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
 To work with an HSM using its PKCS#11 interface, Cascade requires our
 :program:`cascade-hsm-bridge`.
 
-Several HSMs have been tested with Cascade. Our testing was limited to normal
+Several HSMs have been tested with Cascade by the community. Testing was limited to normal
 usage only, not attempting to deliberately cause problems, and not attempting
 to stress or performance test the interface. The tested HSMs are\:
 
