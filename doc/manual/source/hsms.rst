@@ -53,7 +53,7 @@ to :program:`cascade-hsm-bridge`, which executes them against a loaded PKCS#11
 vendor library.
 
 Supported HSMs
-~~~~~~~~~~~~~~
+--------------
 
 In principle any HSM supporting PKCS#11 v2.40 or KMIP 1.2 should be supported.
 To work with an HSM using its PKCS#11 interface, Cascade requires our
@@ -69,23 +69,34 @@ to stress or performance test the interface. The tested HSMs are\:
 
    CardContact, SmartCard-HSM, "Smart Card", PKCS#11, :doc:`view <smartcard-hsm>`
    Fortanix, DSM, Cloud, KMIP,
-   Nitrokey, NetHSM [1]_, "Server, Docker image", PKCS#11, :doc:`view <nethsm>`
+   Nitrokey, NetHSM, "Server, Docker image", PKCS#11, :doc:`view <nethsm>`
    Thales, "Cloud HSM", Cloud, PKCS#11, :doc:`view <thales>`
    Securosys, "Primus HSM, CloudHSM", "Server, Cloud", PKCS#11, `view <https://docs.securosys.com/cascade/overview>`_
    SoftHSM, "SoftHSM v2.6.1", Software, PKCS#11, :doc:`view <softhsm>`
    Yubico, "YubiHSM 2", "USB key", PKCS#11,
-
-.. [1] Username and password must be specified in `p11nethsm.conf` for
-    both the `operator` and `admin` user in order to use the Nitrokey
-    NetHSM PKCS#11 module with Cascade-HSM-Bridge. See the
-    `Nitrokey Documentation <https://docs.nitrokey.com/nethsm/pkcs11-setup#users>`_
-    for more information.
 
 .. Note:: Cascade requires TLS 1.3 for connections to the KMIP server, even
    though KMIP 1.2 requires servers to offer support for old versions of the
    TLS protocol with known security vulnerabilities. For this reason, PyKMIP
    is **NOT** supported by Cascade as it only supports older vulnerable TLS
    versions.
+
+Known quirks
+~~~~~~~~~~~~
+
+Please be aware of the following quirks that you may run into when integrating
+Cascade with the respective HSMs.
+
+* Nitrokey NetHSM:
+
+  * Username and password must be specified in `p11nethsm.conf` for both the
+    `operator` and `admin` user. The admin role is needed so that :program:`cascade-hsm-bridge`
+    can `generate new key pairs <https://docs.nitrokey.com/nethsm/operation#generate-key>`_.
+    See the `Nitrokey documentation <https://docs.nitrokey.com/nethsm/pkcs11-setup#users>`_
+    for more information.
+  * Does `not support <https://github.com/NLnetLabs/cascade/pull/621#issuecomment-4677960984>`_
+    labels (``CKA_LABEL``). As a result, you will not see human-readable labels
+    when listing keys with ``pkcs11-tool``.
 
 Setting up cascade-hsm-bridge
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
