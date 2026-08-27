@@ -178,7 +178,7 @@ sphinx==8.2.3 \
     --hash=sha256:398ad29dee7f63a75888314e9424d40f52ce5a6a87ae88e7071e80af296ec348 \
     --hash=sha256:4405915165f13521d875a8c29c8970800a0141c14cc5416a38feca4ea5d9b9c3
     # via
-    #   manual
+    #   cascade-manual
     #   myst-parser
     #   sphinx-copybutton
     #   sphinx-notfound-page
@@ -190,27 +190,27 @@ sphinx==8.2.3 \
 sphinx-copybutton==0.5.2 \
     --hash=sha256:4cf17c82fb9646d1bc9ca92ac280813a3b605d8c421225fd9913154103ee1fbd \
     --hash=sha256:fb543fd386d917746c9a2c50360c7905b605726b9355cd26e9974857afeae06e
-    # via manual
+    # via cascade-manual
 sphinx-notfound-page==1.1.0 \
     --hash=sha256:835dc76ff7914577a1f58d80a2c8418fb6138c0932c8da8adce4d9096fbcd389 \
     --hash=sha256:913e1754370bb3db201d9300d458a8b8b5fb22e9246a816643a819a9ea2b8067
-    # via manual
+    # via cascade-manual
 sphinx-rtd-theme==3.0.2 \
     --hash=sha256:422ccc750c3a3a311de4ae327e82affdaf59eb695ba4936538552f3b00f4ee13 \
     --hash=sha256:b7457bc25dda723b20b086a670b9953c859eab60a2a03ee8eb2bb23e176e5f85
-    # via manual
+    # via cascade-manual
 sphinx-substitution-extensions==2025.6.6 \
     --hash=sha256:241ddb9f88962422a8b436243d2601f9d94616e94b520ce1a6a528d9a3b7804a \
     --hash=sha256:96206ba7a2cdf43237edec81f87770a5683a91a1de3bf93f7a22309509ecbfd8
-    # via manual
+    # via cascade-manual
 sphinx-tabs==3.4.7 \
     --hash=sha256:991ad4a424ff54119799ba1491701aa8130dd43509474aef45a81c42d889784d \
     --hash=sha256:c12d7a36fd413b369e9e9967a0a4015781b71a9c393575419834f19204bd1915
-    # via manual
+    # via cascade-manual
 sphinx-version-warning==1.1.2 \
     --hash=sha256:9924926fd3e739e32eb42ba2db092ecd7657200107146944fb3e440c9651d945 \
     --hash=sha256:e015947fe7af6c4ba2ce08bb346b1eb822d9dbd797a748757366905f8ce623f1
-    # via manual
+    # via cascade-manual
 sphinxcontrib-applehelp==2.0.0 \
     --hash=sha256:2f29ef331735ce958efa4734873f084941970894c6090408b079c61b2e1c06d1 \
     --hash=sha256:4cd3f0ec4ac5dd9c17ec65e9ab272c9b867ea77425228e68ecf08d6b28ddbdb5
@@ -242,7 +242,7 @@ sphinxcontrib-serializinghtml==2.0.0 \
 toml==0.10.2 \
     --hash=sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b \
     --hash=sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f
-    # via manual
+    # via cascade-manual
 urllib3==2.5.0 \
     --hash=sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760 \
     --hash=sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc
