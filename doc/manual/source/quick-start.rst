@@ -192,6 +192,21 @@ default policy directory is not writable by the current user.
    cascade template policy | sudo tee /etc/cascade/policies/default.toml
    cascade policy reload
 
+Creating a Test Zone
+--------------------
+
+Create a test zone file and ensure the Cascade daemon has access to it:
+
+.. code-block:: bash
+
+   $ mkdir /etc/cascade/zones
+   $ cat > /etc/cascade/zones/example.com << EOF
+   example.com.    3600    IN      SOA     ns.example.com. username.example.com. 1 86400 7200 2419200 300
+   example.com.            IN      NS      ns
+   ns                      IN      A       192.0.2.1
+   EOF
+   $ chown -R cascade: /etc/cascade/zones
+
 Signing Your First Zone
 -----------------------
 
