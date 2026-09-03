@@ -37,7 +37,7 @@ Added in version 0.1.0\-beta1.
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fB<COMMAND>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fI\%add\fP \fB<TSIG_KEY_NAME>\fP \fB<ALGORITHM>\fP \fB<SECRET>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fI\%add\fP \fB<PATH>\fP
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP tsig \fI\%list\fP
 .sp
@@ -88,54 +88,40 @@ or if the key is still referenced by other configuration.
 .SH ARGUMENTS FOR TSIG ADD
 .INDENT 0.0
 .TP
-.B <TSIG_KEY_NAME>
-.UNINDENT
-.INDENT 0.0
-.TP
-.B [<ALGORITHM>:]<TSIG_KEY_NAME>:<SECRET>
-The name of the TSIG key to add, or a complete TSIG key specification.
+.B <PATH>
+Path to the file containing the TSIG key.
 .sp
-TSIG key names must be valid domain names.
+The file format is specified by \fB\-\-format\fP\&.
 .sp
-A complete TSIG key specification consists of an optional algorithm
-(default \fBhmac\-sha256\fP), a key name and the secret key material. When a
-complete TSIG key specification is supplied, supplying the \fB<ALGORITHM>\fP
-and \fB<SECRET>\fP arguments as well will result in an error.
+Regardless of the file format the file must contain all the following
+values exactly once.
 .sp
-Secret key material must be the correct length for the specified algorithm
-and must be encoded using the \X'tty: link https://datatracker.ietf.org/doc/html/rfc4648.html'\fI\%RFC 4648\fP\X'tty: link' Base64 encoding.
+The name of the key to add, TSIG key names must be valid domain names.
 .sp
-\fBWARNING:\fP
-.INDENT 7.0
-.INDENT 3.5
-Secret key material supplied via a command\-line argument may
-be visible to other processes running on the same computer as
-the Cascade CLI.
-.UNINDENT
-.UNINDENT
-.UNINDENT
-.INDENT 0.0
-.TP
-.B <ALGORITHM>
-The TSIG algorithm of the specified TSIG key. Can be one of: \fBhmac\-sha1\fP,
+The algorithm of the specified TSIG key. Can be one of: \fBhmac\-sha1\fP,
 \fBhmac\-sha256\fP, \fBhmac\-sha384\fP or \fBhmac\-sha512\fP\&.
+.sp
+The secret key material must be the correct length for the specified algorithm
+and must be encoded using the \X'tty: link https://datatracker.ietf.org/doc/html/rfc4648.html'\fI\%RFC 4648\fP\X'tty: link' Base64 encoding.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B <SECRET>
-\X'tty: link https://datatracker.ietf.org/doc/html/rfc4648.html'\fI\%RFC 4648\fP\X'tty: link' Base64 encoded secret key material. The number of bytes prior
-to encoding must be correct for the specified \fB<ALGORITHM>\fP\&.
+.B \-\-format <FORMAT>
+Format used in the TSIG file.
 .sp
-Can also be a path to a file containing the Base64 encoded secret material.
+The \fBNSD\fP and \fBKnot\fP formats are not parsed with full YAML compliance.
 .sp
-\fBNOTE:\fP
+Possible values:
 .INDENT 7.0
-.INDENT 3.5
-Secret key material supplied via a command\-line argument may be
-visible to other processes running on the same computer as the
-Cascade CLI. Consider supplying a file name instead.
+.IP \(bu 2
+\fBnsd\fP:  \X'tty: link https://nsd.docs.nlnetlabs.nl/en/latest/running/using-tsig.html'\fI\%NSD TSIG Documentation\fP\X'tty: link'
+.IP \(bu 2
+\fBbind\fP: \X'tty: link https://bind9.readthedocs.io/en/stable/reference.html#namedconf-statement-key'\fI\%BIND TSIG Documentation\fP\X'tty: link'
+.IP \(bu 2
+\fBknot\fP: \X'tty: link https://www.knot-dns.cz/docs/latest/html/reference.html#key-section'\fI\%Knot TSIG Documentation\fP\X'tty: link'
 .UNINDENT
-.UNINDENT
+.sp
+[default: nsd]
 .UNINDENT
 .SH SEE ALSO
 .INDENT 0.0
