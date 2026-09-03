@@ -88,6 +88,16 @@ impl ZonePersistenceHandle<'_> {
     }
 
     pub fn clear(&mut self) {
+        // Clear the upcoming instance, if any.
+        if let Some(instance) = &self.state.instances.upcoming {
+            let _ = instance.remove_persistence_files(&self.zone.name, &self.center.config);
+        }
+
+        // Clear all obsolete instances.
+        for instance in &self.state.instances.obsolete.instances {
+            let _ = instance.remove_persistence_files(&self.zone.name, &self.center.config);
+        }
+
         for file_info in self
             .state
             .persistence

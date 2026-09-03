@@ -50,6 +50,7 @@ use domain::{
     },
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use tracing::{debug, error, trace};
 
 //----------- Instances --------------------------------------------------------
 
@@ -372,12 +373,14 @@ impl Instances {
     /// ## Panics
     ///
     /// Panics if an upcoming instance does not exist.
-    pub fn abandon(&mut self) {
+    pub fn abandon(&mut self, zone_name: &Name<Bytes>, config: &crate::Config) {
         // TODO: Add the upcoming instance to a list of abandoned ones.
 
-        assert!(self.upcoming.is_some(), "Nothing to abandon");
+        let Some(upcoming) = self.upcoming.take() else {
+            panic!("Nothing to abandon")
+        };
 
-        self.upcoming = None;
+        let _ = upcoming.remove_persistence_files(zone_name, config);
     }
 }
 
@@ -446,6 +449,24 @@ pub struct UpcomingInstance {
     // - The cause of initiation (e.g. reception of DNS NOTIFY).
     // - The policy used for generating the instance.
     //   (with such a field, policy changes during generation can be ignored.)
+}
+
+impl UpcomingInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        // TODO: Propagate error information **without short-circuiting**.
+        if let Some(loaded) = &self.loaded {
+            let _ = loaded.remove_persistence_files(zone_name, config);
+        }
+        if let Some(signed) = &self.signed {
+            let _ = signed.remove_persistence_files(zone_name, config);
+        }
+        Ok(())
+    }
 }
 
 //----------- UpcomingLoadedInstance -------------------------------------------
@@ -604,6 +625,20 @@ pub enum ObsoleteInstance {
     Signed(ObsoleteSignedInstance),
 }
 
+impl ObsoleteInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        match self {
+            Self::Loaded(i) => i.remove_persistence_files(zone_name, config),
+            Self::Signed(i) => i.remove_persistence_files(zone_name, config),
+        }
+    }
+}
+
 //----------- ObsoleteLoadedInstance -------------------------------------------
 
 /// An obsolete loaded instance.
@@ -755,6 +790,24 @@ pub struct LostUpcomingInstance {
     pub signed: Option<SignedInstance>,
 }
 
+impl LostUpcomingInstance {
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        // TODO: Propagate error information **without short-circuiting**.
+        if let Some(loaded) = &self.loaded {
+            let _ = loaded.remove_persistence_files(zone_name, config);
+        }
+        if let Some(signed) = &self.signed {
+            let _ = signed.remove_persistence_files(zone_name, config);
+        }
+        Ok(())
+    }
+}
+
 //----------- LoadedInstance ---------------------------------------------------
 
 /// A loaded instance of a zone.
@@ -844,6 +897,32 @@ impl LoadedInstance {
         path.push_str(".snapshot");
         path.into()
     }
+
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        for path in [
+            self.diff_into_next_path(zone_name, config),
+            self.diff_from_prev_path(zone_name, config),
+            self.snapshot_path(zone_name, config),
+        ] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    debug!(%path, "Removed persistence file");
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    trace!(%path, "Persistence file does not exist");
+                }
+                Err(err) => {
+                    error!(%path, "Persistence file could not be removed: {err}");
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -973,6 +1052,32 @@ impl SignedInstance {
         path.push_str(".snapshot");
         path.into()
     }
+
+    /// Remove persistence files associated with this instance.
+    pub fn remove_persistence_files(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> std::io::Result<()> {
+        for path in [
+            self.diff_into_next_path(zone_name, config),
+            self.diff_from_prev_path(zone_name, config),
+            self.snapshot_path(zone_name, config),
+        ] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    debug!(%path, "Removed persistence file");
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    trace!(%path, "Persistence file does not exist");
+                }
+                Err(err) => {
+                    error!(%path, "Persistence file could not be removed: {err}");
+                    return Err(err);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
