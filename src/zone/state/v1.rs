@@ -27,7 +27,7 @@ use crate::persistence::zone::{
 use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
 use crate::zone::instance::{
-    LoadedInstanceId, ObsoleteInstance, ObsoleteInstances, ObsoleteLoadedInstance,
+    CurrentInstance, LoadedInstanceId, ObsoleteInstance, ObsoleteInstances, ObsoleteLoadedInstance,
     ObsoleteSignedInstance, PersistedInstance, SignedInstanceId,
 };
 use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
@@ -764,8 +764,8 @@ impl From<NameserverCommsPolicy> for NameserverCommsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct InstancesSpec {
-    /// The persisted instance of the zone.
-    pub persisted: Option<PersistedInstanceSpec>,
+    /// The current instance of the zone (at the time of persistence).
+    pub current: Option<CurrentInstanceSpec>,
 
     /// Obsolete instances.
     pub obsolete: ObsoleteInstancesSpec,
@@ -786,7 +786,7 @@ impl InstancesSpec {
     /// Parse from this specification.
     pub fn parse(self) -> Instances {
         let Self {
-            persisted,
+            current,
             obsolete,
             next_loaded_id,
         } = self;
@@ -795,7 +795,7 @@ impl InstancesSpec {
             upcoming: None,
             current: None,
             obsolete: obsolete.parse(),
-            persisted: persisted.map(|p| p.parse()),
+            persisted: current.map(|p| p.parse()),
             next_loaded_id,
         }
     }
@@ -811,21 +811,19 @@ impl InstancesSpec {
         } = *instances;
 
         Self {
-            persisted: current
-                .as_ref()
-                .map(|i| PersistedInstanceSpec::build(&i.to_persisted())),
+            current: current.as_ref().map(CurrentInstanceSpec::build),
             obsolete: ObsoleteInstancesSpec::build(obsolete),
             next_loaded_id,
         }
     }
 }
 
-//----------- PersistedInstanceSpec --------------------------------------------
+//----------- CurrentInstanceSpec ----------------------------------------------
 
 /// The persisted instance of a zone.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PersistedInstanceSpec {
+pub struct CurrentInstanceSpec {
     /// The loaded instance.
     pub loaded: LoadedInstanceSpec,
 
@@ -836,7 +834,7 @@ pub struct PersistedInstanceSpec {
     pub pub_time: SystemTime,
 }
 
-impl PersistedInstanceSpec {
+impl CurrentInstanceSpec {
     /// Parse from this specification.
     pub fn parse(self) -> PersistedInstance {
         let Self {
@@ -853,8 +851,8 @@ impl PersistedInstanceSpec {
     }
 
     /// Build into this specification.
-    pub fn build(instance: &PersistedInstance) -> Self {
-        let PersistedInstance {
+    pub fn build(instance: &CurrentInstance) -> Self {
+        let CurrentInstance {
             ref loaded,
             ref signed,
             pub_time,
