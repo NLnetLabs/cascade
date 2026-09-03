@@ -196,7 +196,7 @@ Installing and Configuring :program:`cascade-hsm-bridge`
 
     .. code-block:: bash
 
-       $ sed -i -e 's|^lib_path =.\+|lib_path = "/usr/local/dpodclient/libs/64/libCryptoki2.so"|' /etc/cascade-hsm-bridge/config.toml
+       $ sed -i -e 's|^#lib-path =.\+|lib-path = "/usr/local/dpodclient/libs/64/libCryptoki2.so"|' /etc/cascade-hsm-bridge/config.toml
        $ sed -i -e 's|addr = .\+|addr = "0.0.0.0"|' /etc/cascade-hsm-bridge/config.toml
 
 15. Now run :program:`cascade-hsm-bridge` and send its logs to the terminal
@@ -219,7 +219,7 @@ connect to the Luna Cloud HSM, but the ``pkcs11-tool -O`` command
 we used above proved that the PKCS#11 module is able to connect and
 so :program:`cascade-hsm-bridge` can as well. To demonstrate that,
 however, you will need to setup Cascade to use this running instance of
-:program:`kmip2pksc11`.
+:program:`cascade-hsm-bridge`.
 
 Using :program:`cascade-hsm-bridge` to connect Cascade to the Thales HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
