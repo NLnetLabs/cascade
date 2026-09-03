@@ -42,9 +42,17 @@ readme = "README.md"
 
 default-run = "cascaded"
 
+[profile.dev]
+# Significantly reduces binary size.
+split-debuginfo = "unpacked"
 
 [profile.release]
 panic = "abort"
+
+
+[[test]]
+name = "integration"
+harness = false
 
 
 # --- Dependencies -------------------------------------------------------------
@@ -121,6 +129,7 @@ version = "1.40"
 version = "0.1.40"
 [workspace.dependencies.tracing-subscriber]
 version = "0.3.20"
+features = ["env-filter"]
 
 
 [dependencies]
@@ -257,6 +266,26 @@ workspace = true
 
 [dev-dependencies]
 assert-json-diff = "2.0"
+bollard = { version = "0.21", default-features = false, features = ["pipe", "buildkit", "chrono"] }
+reqwest = { version = "0.13.3", default-features = false, features = ["http2", "json"] }
+uuid = { version = "1.18.0", features = ["v4"] }
+tar = "0.4.45"
+
+# Outdated dependency due to:
+# -> `bollard v0.21` (2026-05)
+# -> `num v0.4.0` (2021-03)
+# -> `num-bigint v0.4.0` (2021-03)
+# ... which does not compile at our MSRV.
+# Bump `num` to prevent this.
+num = { version = "0.4.3", default-features = false }
+
+# Outdated dependency due to:
+# -> `bollard v0.21` (2026-05)
+# -> `bollard-stubs v1.53.1-rc.29.3.1` (2026-05)
+# -> `serde_repr v0.1.0` (2019-01)
+# ... which does not compile at our MSRV.
+# Bump `serde_repr` to prevent this.
+serde_repr = { version = "0.1.20", default-features = false }
 
 
 # --- Packaging ----------------------------------------------------------------
