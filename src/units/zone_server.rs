@@ -653,7 +653,8 @@ where
 
         // Find the right zone.
         #[allow(clippy::mutable_key_type)]
-        let zones = &self.center.state.lock().unwrap().zones;
+        let zones = { &self.center.state.lock().unwrap().zones };
+
         let Some(zone) = zones.get(&qname).map(|z| &z.0) else {
             // No such zone could be found.
             let rcode = if opcode == Opcode::QUERY && (qtype == Rtype::AXFR || qtype == Rtype::IXFR)
