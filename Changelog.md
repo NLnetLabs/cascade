@@ -41,6 +41,8 @@ Released yyyy-mm-dd.
   ([#964] by @Philip-NLnetLabs)
 - In Debian and RPM packages, don't set a home directory for the `cascade` user.
   ([#976] by @ximon18)
+- Fix and centralize access control for incoming DNS requests.
+  ([#971] by @Philip-NLnetLabs)
 
 ### Other changes
 
@@ -67,6 +69,7 @@ Thanks to @thgoebel for his contributions!
 [#938]: https://github.com/NLnetLabs/cascade/pull/938
 [#964]: https://github.com/NLnetLabs/cascade/pull/964
 [#967]: https://github.com/NLnetLabs/cascade/pull/967
+[#971]: https://github.com/NLnetLabs/cascade/pull/971
 [#972]: https://github.com/NLnetLabs/cascade/pull/972
 [#976]: https://github.com/NLnetLabs/cascade/pull/976
 [#977]: https://github.com/NLnetLabs/cascade/pull/977
