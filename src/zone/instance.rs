@@ -39,10 +39,14 @@ use std::{
     time::SystemTime,
 };
 
+use bytes::Bytes;
 use cascade_zonedata::{DiffData, SoaRecord};
-use domain::new::{
-    base::{RType, SoaSerial},
-    rdata::RecordData,
+use domain::{
+    base::Name,
+    new::{
+        base::{RType, SoaSerial},
+        rdata::RecordData,
+    },
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
@@ -369,12 +373,14 @@ impl Instances {
     /// ## Panics
     ///
     /// Panics if an upcoming instance does not exist.
-    pub fn abandon(&mut self) {
+    pub fn abandon(&mut self, zone_name: &Name<Bytes>, config: &crate::Config) {
         // TODO: Add the upcoming instance to a list of abandoned ones.
 
-        assert!(self.upcoming.is_some(), "Nothing to abandon");
+        let Some(upcoming) = self.upcoming.take() else {
+            panic!("Nothing to abandon")
+        };
 
-        self.upcoming = None;
+        let _ = upcoming.remove_persistence_files(zone_name, config);
     }
 }
 
