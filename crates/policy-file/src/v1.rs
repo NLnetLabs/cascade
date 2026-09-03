@@ -590,7 +590,7 @@ pub enum SignerDenialSpec {
         // but relatively static zones, are encouraged to not use the
         // opt-opt flag and to take advantage of DNSSEC's authenticated
         // denial of existence.
-        #[serde(rename = "opt-out")]
+        #[serde(rename = "opt-out", default)]
         opt_out: bool,
         // Missing fields:
         // - salt
