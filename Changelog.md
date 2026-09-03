@@ -27,20 +27,56 @@ Released yyyy-mm-dd.
   The `kmip-server-state-dir` configuration option has been removed and the
   default value for `kmip-credentials-store-path` has changed.
 
+- `cascade tsig add` now reads TSIG key data from a file, supporting the NSD,
+  BIND, and Knot formats. ([#938] by @withjannisNLnetLabs)
+
 ### New
+
+- Allow omitting NSEC3 opt-out setting in policy. ([#972] by @bal-e)
+
 ### Bug fixes
 
 - Fixed bugs that on reload a policy could refer to a non-existant HSM and
   the changes in default HSM to use were not propagated to the key manager.
-  ([#964])
+  ([#964] by @Philip-NLnetLabs)
+- In Debian and RPM packages, don't set a home directory for the `cascade` user.
+  ([#976] by @ximon18)
 
 ### Other changes
+
+- Check that generated man pages are up-to-date in CI. ([#984] by @thgoebel)
+- Upgrade to Ploutos v10. ([#977] by @ximon18)
+- Use `uv` and support live-building documentation. ([#979] by @thgoebel)
+
 ### Documentation improvements
+
+- Update `tsig add` documentation on the "NSD" page. ([#983] by
+  @withjannisNLnetLabs)
+- Update HSM support table. ([#981] by @thgoebel)
+- Miscellaneous fixes related to HSM documentation. ([#987] by @ximon18)
+- Add a "Creating a Test Zone" section in the "Quick Start" page. ([#980] by
+  @thgoebel)
+- Add warnings that KMIP client/server cert arguments are stubs. ([#985] by
+  @thgoebel)
+
 ### Known issues
 ### Acknowledgements
 
+Thanks to @thgoebel for his contributions!
+
+[#938]: https://github.com/NLnetLabs/cascade/pull/938
 [#964]: https://github.com/NLnetLabs/cascade/pull/964
 [#967]: https://github.com/NLnetLabs/cascade/pull/967
+[#972]: https://github.com/NLnetLabs/cascade/pull/972
+[#976]: https://github.com/NLnetLabs/cascade/pull/976
+[#977]: https://github.com/NLnetLabs/cascade/pull/977
+[#979]: https://github.com/NLnetLabs/cascade/pull/979
+[#980]: https://github.com/NLnetLabs/cascade/pull/980
+[#981]: https://github.com/NLnetLabs/cascade/pull/981
+[#983]: https://github.com/NLnetLabs/cascade/pull/983
+[#984]: https://github.com/NLnetLabs/cascade/pull/984
+[#985]: https://github.com/NLnetLabs/cascade/pull/985
+[#987]: https://github.com/NLnetLabs/cascade/pull/987
 
 ## 0.1.0-beta6 'Leonard Shelby'
 
