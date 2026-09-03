@@ -188,7 +188,9 @@ impl<'a> ZoneHandle<'a> {
         self.storage().abandon_load(builder);
 
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
     }
 
     pub(crate) fn loading_failed(&mut self, builder: LoadedZoneBuilder, err: RefreshError) {
@@ -203,7 +205,9 @@ impl<'a> ZoneHandle<'a> {
         self.storage().abandon_load(builder);
 
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
 
         self.state.record_event(
             HistoricalEvent::LoadingFailed {
@@ -281,7 +285,9 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::Waiting(loaded.soft_reject()));
         let loaded_reviewer = self.storage().abandon_loaded_review();
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -351,7 +357,9 @@ impl<'a> ZoneHandle<'a> {
 
         let loaded_reviewer = self.storage().abandon_sign(builder);
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -370,7 +378,9 @@ impl<'a> ZoneHandle<'a> {
 
         let loaded_reviewer = self.storage().abandon_sign(builder);
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
         // Stop serving the abandoned instance.
         self.storage()
             .start_rewinding_loaded_review(loaded_reviewer);
@@ -424,7 +434,9 @@ impl<'a> ZoneHandle<'a> {
         let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
 
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
 
         self.storage()
             .start_rewinding_review(loaded_reviewer, signed_reviewer);
@@ -447,7 +459,9 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::HaltSigned(review.hard_reject()));
 
         // Abandon the entire upcoming instance.
-        self.state.instances.abandon();
+        self.state
+            .instances
+            .abandon(&self.zone.name, &self.center.config);
     }
 }
 
@@ -500,7 +514,9 @@ impl<'a> ZoneHandle<'a> {
                 let waiting = halt_loaded.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
                 let loaded_reviewer = self.storage().abandon_loaded_review();
-                self.state.instances.abandon();
+                self.state
+                    .instances
+                    .abandon(&self.zone.name, &self.center.config);
                 self.storage()
                     .start_rewinding_loaded_review(loaded_reviewer);
             }
@@ -509,7 +525,9 @@ impl<'a> ZoneHandle<'a> {
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
 
                 self.signer().before_signed_abandonment();
-                self.state.instances.abandon();
+                self.state
+                    .instances
+                    .abandon(&self.zone.name, &self.center.config);
 
                 let (loaded_reviewer, signed_reviewer) = self.storage().abandon_signed_review();
                 self.storage()
@@ -519,7 +537,9 @@ impl<'a> ZoneHandle<'a> {
                 let waiting = signing_failed.reset();
                 transition.move_to(ZoneStateMachine::Waiting(waiting));
 
-                self.state.instances.abandon();
+                self.state
+                    .instances
+                    .abandon(&self.zone.name, &self.center.config);
 
                 // The signing operation has already been abandoned, so the zone
                 // data storage is already passive. Its call to `on_passive()`
