@@ -26,10 +26,7 @@ use crate::persistence::zone::{
 };
 use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
-use crate::zone::instance::{
-    CurrentInstance, LoadedInstanceId, ObsoleteInstances, ObsoleteInstancesPerLoad,
-    ObsoleteLoadedInstance, ObsoleteSignedInstance, PersistedInstance, SignedInstanceId,
-};
+use crate::zone::instance::*;
 use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
 use crate::{
     policy::{
@@ -751,6 +748,9 @@ impl From<NameserverCommsPolicy> for NameserverCommsSpec {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct InstancesSpec {
+    /// The upcoming instance (at the time of persistence), if any.
+    pub upcoming: Option<UpcomingInstanceSpec>,
+
     /// The current instance of the zone (at the time of persistence).
     pub current: Option<CurrentInstanceSpec>,
 
@@ -773,6 +773,7 @@ impl InstancesSpec {
     /// Parse from this specification.
     pub fn parse(self) -> Instances {
         let Self {
+            upcoming,
             current,
             obsolete,
             next_loaded_id,
@@ -783,6 +784,7 @@ impl InstancesSpec {
             current: None,
             obsolete: obsolete.parse(),
             persisted: current.map(|p| p.parse()),
+            lost_upcoming: upcoming.map(|p| p.parse()),
             next_loaded_id,
         }
     }
@@ -790,14 +792,16 @@ impl InstancesSpec {
     /// Build into this specification.
     pub fn build(instances: &Instances) -> Self {
         let Instances {
-            upcoming: _,
+            ref upcoming,
             ref current,
             ref obsolete,
             ref persisted,
+            lost_upcoming: _,
             next_loaded_id,
         } = *instances;
 
         Self {
+            upcoming: upcoming.as_ref().map(UpcomingInstanceSpec::build),
             current: current
                 .as_ref()
                 .map(CurrentInstanceSpec::build_current)
@@ -808,9 +812,47 @@ impl InstancesSpec {
     }
 }
 
+//----------- UpcomingInstanceSpec ---------------------------------------------
+
+/// An upcoming instance of a zone.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct UpcomingInstanceSpec {
+    /// The loaded instance.
+    pub loaded: Option<LoadedInstanceSpec>,
+
+    /// The signed instance.
+    pub signed: Option<SignedInstanceSpec>,
+}
+
+impl UpcomingInstanceSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> LostUpcomingInstance {
+        let Self { loaded, signed } = self;
+
+        LostUpcomingInstance {
+            loaded: loaded.map(|i| i.parse()),
+            signed: signed.map(|i| i.parse()),
+        }
+    }
+
+    /// Build into this specification.
+    pub fn build(instance: &UpcomingInstance) -> Self {
+        let UpcomingInstance {
+            ref loaded,
+            ref signed,
+        } = *instance;
+
+        Self {
+            loaded: loaded.as_deref().map(LoadedInstanceSpec::build),
+            signed: signed.as_deref().map(SignedInstanceSpec::build),
+        }
+    }
+}
+
 //----------- CurrentInstanceSpec ----------------------------------------------
 
-/// The persisted instance of a zone.
+/// The current instance of a zone (at the time of persistence).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CurrentInstanceSpec {
