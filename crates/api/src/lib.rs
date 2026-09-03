@@ -481,6 +481,27 @@ pub struct ZoneStatus {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneXfrStatus {
+    pub name: ZoneName,
+    pub refresh_timer_state: RefreshTimerState,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum RefreshTimerState {
+    Disabled,
+
+    Refresh {
+        previous: SystemTime,
+        scheduled: SystemTime,
+    },
+
+    Retry {
+        previous: SystemTime,
+        scheduled: SystemTime,
+    },
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct LastPublishedZone {
     pub loaded_serial: Serial,
     pub signed_serial: Serial,

@@ -1056,7 +1056,7 @@ fn to_rfc3339_ago(v: Option<SystemTime>, default: &str) -> String {
     }
 }
 
-fn to_rfc3339(v: SystemTime) -> String {
+pub fn to_rfc3339(v: SystemTime) -> String {
     jiff::Timestamp::try_from(v)
         .unwrap()
         .round(jiff::Unit::Second)
