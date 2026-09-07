@@ -268,8 +268,10 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
         let zone = zone.read();
         // The zone must be in maintenance mode, and passive/halted.
         // TODO(#871): support removing a zone during restoration.
-        if !zone.maintenance_mode || !zone.machine.is_waiting() && !zone.machine.is_halted() {
+        if !zone.maintenance_mode {
             return Err(ZoneRemoveError::NotInMaintenanceMode);
+        } else if !zone.machine.is_waiting() && !zone.machine.is_halted() {
+            return Err(ZoneRemoveError::NotPassiveOrHalted);
         }
     }
 
@@ -524,6 +526,9 @@ pub enum ZoneRemoveError {
 
     /// The zone is not in maintenance mode.
     NotInMaintenanceMode,
+
+    /// The zone is not in passive/hard-halt state.
+    NotPassiveOrHalted,
 }
 
 impl std::error::Error for ZoneRemoveError {}
@@ -533,6 +538,7 @@ impl fmt::Display for ZoneRemoveError {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
             Self::NotInMaintenanceMode => "the zone is not in maintenance mode",
+            Self::NotPassiveOrHalted => "the zone is not in passive/hard-halt state",
         })
     }
 }
@@ -542,6 +548,7 @@ impl From<ZoneRemoveError> for api::ZoneRemoveError {
         match value {
             ZoneRemoveError::NotFound => Self::NotFound,
             ZoneRemoveError::NotInMaintenanceMode => Self::NotInMaintenanceMode,
+            ZoneRemoveError::NotPassiveOrHalted => Self::NotPassiveOrHalted,
         }
     }
 }

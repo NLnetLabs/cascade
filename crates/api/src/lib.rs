@@ -354,6 +354,7 @@ pub struct ZoneRemoveResult {
 pub enum ZoneRemoveError {
     NotFound,
     NotInMaintenanceMode,
+    NotPassiveOrHalted,
 }
 
 impl fmt::Display for ZoneRemoveError {
@@ -361,6 +362,7 @@ impl fmt::Display for ZoneRemoveError {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
             Self::NotInMaintenanceMode => "the zone is not in maintenance mode",
+            Self::NotPassiveOrHalted => "the zone is not in passive/hard-halt state",
         })
     }
 }
