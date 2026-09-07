@@ -38,7 +38,6 @@ rust-version.workspace = true
 edition.workspace = true
 
 exclude = [".github", ".gitignore"]
-readme = "README.md"
 
 default-run = "cascaded"
 

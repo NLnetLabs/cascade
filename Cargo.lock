@@ -255,13 +255,11 @@ dependencies = [
 name = "cascade-policy-file"
 version = "0.1.0-beta7-dev"
 dependencies = [
- "camino",
  "domain",
  "foldhash",
  "jiff",
  "serde",
  "serde_with",
- "toml",
 ]
 
 [[package]]
