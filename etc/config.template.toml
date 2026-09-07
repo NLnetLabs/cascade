@@ -15,6 +15,13 @@
 version = "v1"
 
 
+# The path to the global state file.
+#
+# Cascade stores information like the known policies and zones here. This file
+# should not be modified manually, but it can be backed up and restored in the
+# event of filesystem corruption.
+state-file = "/var/lib/cascade/state.db"
+
 # The directory storing zone policies.
 #
 # Zone policies are user-managed files configuring groups of zones.  You can
