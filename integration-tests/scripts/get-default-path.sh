@@ -23,7 +23,7 @@ variable, which is therefore used by this script.
 Arguments:
   item            One of:
                     - config.toml
-                    - state.db
+                    - state-file
                     - policy-dir
                     - zone-state-dir
                     - tsig-store-path
