@@ -23,10 +23,6 @@ Options
           Check the configuration and exit with code 0 if the configuration
           is valid, or code 1 if the configuration is invalid.
 
-.. option:: --state <PATH>
-
-          The global state file to use.
-
 .. option:: -c, --config <PATH>
 
           The configuration file to load. Defaults to
@@ -73,6 +69,9 @@ Files
 
 /etc/cascade/policies
     Default policies directory
+
+/var/lib/cascade/state.db
+    Default path for the global state file
 
 /var/lib/cascade/zone-state
     Default zone state directory

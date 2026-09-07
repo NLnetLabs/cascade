@@ -49,6 +49,7 @@ require a restart of the server.
 .sp
 .EX
 version = \(dqv1\(dq
+state\-file = \(dq/var/lib/cascade/state.db\(dq
 policy\-dir = \(dq/etc/cascade/policies\(dq
 zone\-state\-dir = \(dq/var/lib/cascade/zone\-state\(dq
 tsig\-store\-path = \(dq/var/lib/cascade/tsig\-keys.db\(dq
@@ -96,6 +97,15 @@ future and Cascade may drop support for older versions over time.
 .IP \(bu 2
 \fBv1\fP: This format.
 .UNINDENT
+.UNINDENT
+.INDENT 0.0
+.TP
+.B state\-file = \(dq/var/lib/cascade/state.db\(dq
+The path to the global state file.
+.sp
+Cascade stores information like the known policies and zones here. This file
+should not be modified manually, but it can be backed up and restored in the
+event of filesystem corruption.
 .UNINDENT
 .INDENT 0.0
 .TP

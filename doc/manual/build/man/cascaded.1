@@ -49,11 +49,6 @@ is valid, or code 1 if the configuration is invalid.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-state <PATH>
-The global state file to use.
-.UNINDENT
-.INDENT 0.0
-.TP
 .B \-c, \-\-config <PATH>
 The configuration file to load. Defaults to
 \fB/etc/cascade/config.toml\fP\&.
@@ -104,6 +99,9 @@ Default Cascade config file
 .TP
 .B /etc/cascade/policies
 Default policies directory
+.TP
+.B /var/lib/cascade/state.db
+Default path for the global state file
 .TP
 .B /var/lib/cascade/zone\-state
 Default zone state directory

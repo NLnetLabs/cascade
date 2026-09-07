@@ -107,7 +107,7 @@ systemd features should be used instead.
 
         .. code-block:: bash
 
-            cascaded --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
+            cascaded --config /etc/cascade/config.toml
 
 Interacting with Cascade
 ------------------------
