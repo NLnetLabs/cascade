@@ -519,6 +519,7 @@ impl From<ZoneAddError> for api::ZoneAddError {
 //----------- ZoneRemoveError --------------------------------------------------
 
 /// An error removing a zone.
+#[expect(clippy::enum_variant_names, reason = "listing failure conditions")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZoneRemoveError {
     /// No such name could be found.
