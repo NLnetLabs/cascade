@@ -425,8 +425,7 @@ impl State {
         policies: &mut foldhash::HashMap<Box<str>, PolicySpec>,
         hsms: &mut foldhash::HashMap<Box<str>, HsmSpec>,
     ) -> io::Result<Self> {
-        let path = config.daemon.state_file.value();
-        let spec = crate::state::Spec::load(path)?;
+        let spec = crate::state::Spec::load(&config.state_file)?;
 
         Ok(spec.parse(zones, policies, hsms))
     }
@@ -458,7 +457,7 @@ impl State {
                     return;
                 };
 
-                path = center.config.daemon.state_file.value().clone();
+                path = center.config.state_file.clone();
                 spec = crate::state::Spec::build(&state);
             }
 

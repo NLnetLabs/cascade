@@ -36,7 +36,7 @@ pub fn save_now(center: &Center) {
     };
 
     // Save the global state.
-    let path = center.config.daemon.state_file.value();
+    let path = &center.config.state_file;
     match spec.save(path) {
         Ok(()) => debug!("Saved the global state (to '{path}')"),
         Err(err) => {
