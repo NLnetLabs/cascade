@@ -101,13 +101,11 @@ impl SimpleStorage {
 
 fn keyset_state(zone_name: &Name<Bytes>) -> KeySetState {
     let mut keyset = KeySet::new(zone_name.clone().octets_into());
-    let pubref = format!(
-        "file://{}/integration-tests/incremental-signing/keys/Kexample.+015+02835.key",
-        std::env::current_dir().unwrap().into_string().unwrap()
-    );
+    let cwd: Utf8PathBuf = std::env::current_dir().unwrap().try_into().unwrap();
+    let pubref =
+        format!("file://{cwd}/integration-tests/incremental-signing/keys/Kexample.+015+02835.key");
     let privref = format!(
-        "file://{}/integration-tests/incremental-signing/keys/Kexample.+015+02835.private",
-        std::env::current_dir().unwrap().into_string().unwrap()
+        "file://{cwd}/integration-tests/incremental-signing/keys/Kexample.+015+02835.private"
     );
     keyset
         .add_key_csk(
