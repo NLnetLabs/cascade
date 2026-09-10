@@ -57,6 +57,8 @@ pub enum ZoneCommand {
     },
 
     /// Remove a zone
+    ///
+    /// The zone must be in maintenance mode.
     #[command(name = "remove")]
     Remove { name: ZoneName },
 

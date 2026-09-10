@@ -101,6 +101,7 @@ runs:
 
     - name: Delete the zone
       run: |
+        cascade zone maintenance enable i.dont.exist
         cascade zone remove i.dont.exist
 
     # ------------------------------------------------------------------------
