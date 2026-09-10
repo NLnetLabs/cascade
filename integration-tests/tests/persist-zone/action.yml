@@ -72,7 +72,7 @@ runs:
     - name: Restart Cascade
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log" 
+        cascaded --config "${CASCADE_DIR}/config.toml" --daemonize &>"${CASCADE_DIR}/cascade-startup.log" 
 
     - name: Wait for Cascade to become healthy
       run: |
@@ -169,7 +169,7 @@ runs:
     - name: Start Cascade again
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+        cascaded --config "${CASCADE_DIR}/config.toml" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
 
     - name: Wait for Cascade to become healthy again
       run: |
@@ -249,7 +249,7 @@ runs:
     - name: Start Cascade a 3rd time
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+        cascaded --config "${CASCADE_DIR}/config.toml" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
 
     - name: Wait for Cascade to become healthy a 3rd time
       run: |
@@ -515,7 +515,7 @@ runs:
     - name: 6 Start Cascade a 4th time
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+        cascaded --config "${CASCADE_DIR}/config.toml" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
 
     - name: 6 Wait for Cascade to become healthy a 4th time
       run: |
@@ -687,7 +687,7 @@ runs:
     - name: 8 Start Cascade again
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+        cascaded --config "${CASCADE_DIR}/config.toml" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
 
     - name: 8 Wait for Cascade to become healthy again
       run: |
@@ -784,7 +784,7 @@ runs:
     - name: 9 Start Cascade again
       run: |
         CASCADE_DIR=${{ github.workspace }}/cascade-dir
-        cascaded --config "${CASCADE_DIR}/config.toml" --state "${CASCADE_DIR}/state.db" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
+        cascaded --config "${CASCADE_DIR}/config.toml" --daemonize &>"${CASCADE_DIR}/cascade-startup.log"      
 
     - name: 9 Wait for Cascade to become healthy again
       run: |

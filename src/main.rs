@@ -111,7 +111,7 @@ fn main() -> ExitCode {
         Ok(mut state) => {
             info!(
                 "Loaded the global state file (from '{}')",
-                config.daemon.state_file.value()
+                config.state_file
             );
 
             // Load the TSIG store file.
@@ -189,14 +189,14 @@ fn main() -> ExitCode {
             if err.kind() != io::ErrorKind::NotFound {
                 error!(
                     "State file '{}' could not be read: {err}",
-                    config.daemon.state_file.value()
+                    config.state_file
                 );
                 return ExitCode::FAILURE;
             }
 
             info!(
                 "State file '{}' did not exist; starting from scratch",
-                config.daemon.state_file.value()
+                config.state_file
             );
 
             // Create required subdirectories (and their parents) if they don't
