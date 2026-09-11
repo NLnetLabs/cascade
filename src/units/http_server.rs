@@ -373,7 +373,8 @@ impl HttpServer {
             // Anything below this point should be infallible.
 
             let mut handle = zone.write_handle(center);
-            let mut changes = Vec::new();
+            let mut old_source = None;
+            let mut old_policy = None;
 
             if let Some(policy) = policy {
                 let old = handle
@@ -382,7 +383,7 @@ impl HttpServer {
                     .replace(policy.latest.clone())
                     .expect("a policy was in use");
 
-                let old_name = old.name.clone();
+                let old_policy = old_policy.insert(old.name.clone());
 
                 policy.zones.insert(zone.name.clone());
 
@@ -397,12 +398,10 @@ impl HttpServer {
 
                 state
                     .policies
-                    .get_mut(&old_name)
+                    .get_mut(old_policy)
                     .expect("policy should exist")
                     .zones
                     .remove(&zone.name);
-
-                changes.push("policy");
             }
 
             if let Some(source) = source {
@@ -423,27 +422,25 @@ impl HttpServer {
                     state.tsig_store.mark_dirty(center);
                 }
 
+                old_source = Some(match &handle.state.loader.source {
+                    loader::Source::None => api::ZoneSource::None,
+                    loader::Source::Zonefile { path } => {
+                        api::ZoneSource::Zonefile { path: path.clone() }
+                    }
+                    loader::Source::Server { addr, tsig_key } => api::ZoneSource::Server {
+                        addr: *addr,
+                        tsig_key: tsig_key.as_ref().map(|k| Box::new(k.name().clone())),
+                    },
+                });
+
                 handle.loader().set_source(source);
-
-                changes.push("source")
             }
 
-            let last_change = changes.pop();
-
-            if let Some(last_change) = last_change {
-                let changes = changes.join(", ");
-                let status = if !changes.is_empty() {
-                    format!("updated {changes} and {last_change}")
-                } else {
-                    format!("updated {last_change}")
-                };
-                Ok(ZoneEditResult { name, status })
-            } else {
-                Ok(ZoneEditResult {
-                    name,
-                    status: "nothing changed".into(),
-                })
-            }
+            Ok(ZoneEditResult {
+                name,
+                old_source,
+                old_policy,
+            })
         };
 
         Json(do_zone_edit())

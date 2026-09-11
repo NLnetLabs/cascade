@@ -356,7 +356,8 @@ pub struct ZoneEdit {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneEditResult {
     pub name: ZoneName,
-    pub status: String,
+    pub old_source: Option<ZoneSource>,
+    pub old_policy: Option<Box<str>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

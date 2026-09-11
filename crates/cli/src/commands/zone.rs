@@ -284,15 +284,37 @@ impl Zone {
                     .post_json_with(
                         &format!("zone/{name}/edit"),
                         &ZoneEdit {
-                            source: source.map(|s| s.try_into().unwrap()),
-                            policy,
+                            source: source.clone().map(|s| s.into()),
+                            policy: policy.clone(),
                         },
                     )
                     .await?;
 
                 match res {
                     Ok(res) => {
-                        println!("Edited zone {}: {}", res.name, res.status);
+                        println!("Edited zone {}:", res.name);
+                        if let Some(old) = res.old_source {
+                            let old = match old {
+                                cascade_api::ZoneSource::None => "'none'".to_string(),
+                                cascade_api::ZoneSource::Zonefile { path } => {
+                                    format!("zonefile '{path}'")
+                                }
+                                cascade_api::ZoneSource::Server {
+                                    addr,
+                                    tsig_key: None,
+                                } => format!("server {addr}"),
+                                cascade_api::ZoneSource::Server {
+                                    addr,
+                                    tsig_key: Some(tsig_key),
+                                } => format!("server {addr} with TSIG key {tsig_key}"),
+                            };
+                            let new = source.unwrap();
+                            println!("- Source changed from {old} to {new}");
+                        }
+                        if let Some(old) = res.old_policy {
+                            let new = policy.unwrap();
+                            println!("- Policy changed from {old} to {new}");
+                        }
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to edit zone: {e}")),
