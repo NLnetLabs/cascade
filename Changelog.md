@@ -14,9 +14,9 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-beta7 'Gezellig'
 
-Released yyyy-mm-dd.
+Released 2026-09-11.
 
 ### Breaking changes
 
@@ -68,10 +68,10 @@ Released yyyy-mm-dd.
 - Add warnings that KMIP client/server cert arguments are stubs. ([#985] by
   @thgoebel)
 
-### Known issues
 ### Acknowledgements
 
-Thanks to @thgoebel for his contributions!
+Thanks to @jpmens, @bortzmeyer and @gryphius for testing Cascade and providing
+valuable feedback, and thanks to @thgoebel for his contributions!
 
 [#938]: https://github.com/NLnetLabs/cascade/pull/938
 [#964]: https://github.com/NLnetLabs/cascade/pull/964
