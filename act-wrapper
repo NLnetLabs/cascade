@@ -131,7 +131,7 @@ done
 if [[ "$no_build" != true ]]; then
 	if [[ "$build_inside" != true ]]; then
 		cargo build
-		cargo build --release
+		# cargo build --release
 	fi
 
 	docker buildx build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-tests-runner --build-arg MSRV=$MSRV "${args[@]}"
