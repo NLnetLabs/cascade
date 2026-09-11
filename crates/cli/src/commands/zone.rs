@@ -1,8 +1,9 @@
+use std::fmt;
 use std::net::{IpAddr, SocketAddr};
-use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
 use camino::{Utf8Path, Utf8PathBuf};
+use clap::builder::{StringValueParser, TypedValueParser, ValueParserFactory};
 
 use crate::ansi;
 use crate::api::*;
@@ -54,6 +55,23 @@ pub enum ZoneCommand {
 
         #[arg(long = "import-csk-kmip", value_names = ["server", "public_id", "private_id", "algorithm", "flags"])]
         import_csk_kmip: Vec<String>,
+    },
+
+    /// Edit the configuration for a zone
+    #[command(name = "edit")]
+    Edit {
+        name: ZoneName,
+
+        /// The source to obtain the zone content from:
+        /// `IP:[PORT][^TSIG_KEY_NAME]` (port defaults to 53) or the path to
+        /// a zone file locally available to the `cascaded` daemon.
+        // TODO: allow supplying different tcp and/or udp port?
+        #[arg(long = "source")]
+        source: Option<ZoneSource>,
+
+        /// Policy to use for this zone
+        #[arg(long = "policy")]
+        policy: Option<String>,
     },
 
     /// Remove a zone
@@ -225,7 +243,7 @@ impl Zone {
                         "zone/add",
                         &ZoneAdd {
                             name,
-                            source: source.try_into()?,
+                            source: source.into(),
                             policy,
                             key_imports,
                         },
@@ -241,6 +259,65 @@ impl Zone {
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to add zone: {e}")),
+                }
+            }
+            ZoneCommand::Edit {
+                name,
+                mut source,
+                policy,
+            } => {
+                if policy.is_none() && source.is_none() {
+                    return Err("nothing to do".into());
+                }
+
+                if let Some(ZoneSource::Zonefile { path }) = &mut source {
+                    let canonicalized_path = path.canonicalize().map_err(|err| {
+                        format!("Failed to canonicalize zonefile path '{}': {err}", path)
+                    })?;
+                    let path_str = canonicalized_path.to_str().ok_or_else(|| {
+                        format!("Failed to convert path '{}'", canonicalized_path.display())
+                    })?;
+                    *path = Utf8PathBuf::from(path_str).into_boxed_path();
+                }
+
+                let res: Result<ZoneEditResult, ZoneEditError> = client
+                    .post_json_with(
+                        &format!("zone/{name}/edit"),
+                        &ZoneEdit {
+                            source: source.clone().map(|s| s.into()),
+                            policy: policy.clone(),
+                        },
+                    )
+                    .await?;
+
+                match res {
+                    Ok(res) => {
+                        println!("Edited zone {}:", res.name);
+                        if let Some(old) = res.old_source {
+                            let old = match old {
+                                cascade_api::ZoneSource::None => "'none'".to_string(),
+                                cascade_api::ZoneSource::Zonefile { path } => {
+                                    format!("zonefile '{path}'")
+                                }
+                                cascade_api::ZoneSource::Server {
+                                    addr,
+                                    tsig_key: None,
+                                } => format!("server {addr}"),
+                                cascade_api::ZoneSource::Server {
+                                    addr,
+                                    tsig_key: Some(tsig_key),
+                                } => format!("server {addr} with TSIG key {tsig_key}"),
+                            };
+                            let new = source.unwrap();
+                            println!("- Source changed from {old} to {new}");
+                        }
+                        if let Some(old) = res.old_policy {
+                            let new = policy.unwrap();
+                            println!("- Policy changed from {old} to {new}");
+                        }
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to edit zone: {e}")),
                 }
             }
             ZoneCommand::Remove { name } => {
@@ -1168,59 +1245,102 @@ pub enum ZoneSource {
         addr: SocketAddr,
 
         /// The name of a TSIG key, if any.
-        tsig_key: Option<String>,
+        tsig_key: Option<Box<TsigKeyName>>,
     },
 }
+
+impl ValueParserFactory for ZoneSource {
+    type Parser = ZoneSourceParser;
+
+    fn value_parser() -> Self::Parser {
+        ZoneSourceParser
+    }
+}
+
+#[derive(Clone)]
+pub struct ZoneSourceParser;
 
 /// Support parsing of `-source` command line arguments.
 ///
 /// Supported forms:
 ///   - `<IP>[:<PORT>][^<TSIG_KEY_NAME>]`
 ///   - `<PATH/TO/ZONE/FILE/TO/LOAD>`
-impl From<&str> for ZoneSource {
-    fn from(s: &str) -> Self {
+impl TypedValueParser for ZoneSourceParser {
+    type Value = ZoneSource;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::Error> {
+        let Some(s) = value.to_str() else {
+            // Use `clap`'s built-in parser to format a nice error message.
+            return Err(StringValueParser::new()
+                .parse_ref(cmd, arg, value)
+                .unwrap_err());
+        };
+
         // Split out any provided TSIG key from the rest of the
         // source argument.
-        let (s, tsig_key) = s.split_once('^').unwrap_or((s, ""));
+        let (addr, tsig_key) = s.split_once('^').unwrap_or((s, ""));
 
         let tsig_key = if !tsig_key.is_empty() {
-            Some(tsig_key.to_string())
+            Some(Box::new(tsig_key.parse().map_err(|err| {
+                clap::Error::raw(clap::error::ErrorKind::InvalidValue, err).with_cmd(cmd)
+            })?))
         } else {
             None
         };
 
-        if let Ok(addr) = s.parse::<SocketAddr>() {
-            ZoneSource::Server { addr, tsig_key }
-        } else if let Ok(addr) = s.parse::<IpAddr>() {
-            ZoneSource::Server {
+        if let Ok(addr) = addr.parse::<SocketAddr>() {
+            Ok(ZoneSource::Server { addr, tsig_key })
+        } else if let Ok(addr) = addr.parse::<IpAddr>() {
+            Ok(ZoneSource::Server {
                 addr: SocketAddr::new(addr, DEFAULT_NS_PORT),
                 tsig_key,
-            }
+            })
         } else {
-            ZoneSource::Zonefile {
+            Ok(ZoneSource::Zonefile {
                 path: Utf8PathBuf::from(s).into_boxed_path(),
-            }
+            })
         }
     }
 }
 
-impl TryFrom<ZoneSource> for cascade_api::ZoneSource {
-    type Error = String;
+impl fmt::Display for ZoneSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ZoneSource::None => f.write_str("none"),
+            ZoneSource::Zonefile { path } => write!(f, "zonefile '{path}'"),
+            ZoneSource::Server {
+                addr,
+                tsig_key: None,
+            } => write!(f, "server {addr}"),
+            ZoneSource::Server {
+                addr,
+                tsig_key: Some(tsig_key),
+            } => write!(f, "server {addr} with TSIG key '{tsig_key}'"),
+        }
+    }
+}
 
-    fn try_from(source: ZoneSource) -> Result<Self, Self::Error> {
-        Ok(match source {
-            ZoneSource::None => cascade_api::ZoneSource::None,
-            ZoneSource::Zonefile { path } => cascade_api::ZoneSource::Zonefile { path },
-            ZoneSource::Server { addr, tsig_key } => {
-                let tsig_key = if let Some(tsig_key) = tsig_key {
-                    Some(TsigKeyName::from_str(&tsig_key).map_err(|err| {
-                        format!("TSIG key name '{tsig_key}' is not a valid domain name: {err}")
-                    })?)
-                } else {
-                    None
-                };
-                cascade_api::ZoneSource::Server { addr, tsig_key }
-            }
-        })
+impl From<ZoneSource> for cascade_api::ZoneSource {
+    fn from(source: ZoneSource) -> Self {
+        match source {
+            ZoneSource::None => Self::None,
+            ZoneSource::Zonefile { path } => Self::Zonefile { path },
+            ZoneSource::Server { addr, tsig_key } => Self::Server { addr, tsig_key },
+        }
+    }
+}
+
+impl From<cascade_api::ZoneSource> for ZoneSource {
+    fn from(source: cascade_api::ZoneSource) -> Self {
+        match source {
+            cascade_api::ZoneSource::None => Self::None,
+            cascade_api::ZoneSource::Zonefile { path } => Self::Zonefile { path },
+            cascade_api::ZoneSource::Server { addr, tsig_key } => Self::Server { addr, tsig_key },
+        }
     }
 }

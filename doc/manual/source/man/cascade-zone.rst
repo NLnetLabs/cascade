@@ -8,6 +8,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`add` ``[OPTIONS]`` ``--source <SOURCE>`` ``--policy <POLICY>`` ``<NAME>``
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`edit` ``[OPTIONS]`` ``<NAME>``
+
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`remove` ``<NAME>``
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`list`
@@ -45,6 +47,10 @@ Commands
 .. subcmd:: add
 
    Add a new zone.
+
+.. subcmd:: edit
+
+   Change settings for an existing zone.
 
 .. subcmd:: remove
 
@@ -192,6 +198,27 @@ Options for :subcmd:`zone add`
 .. option:: --import-csk-kmip <server> <public_id> <private_id> <algorithm> <flags>
 
    Import a CSK from an HSM.
+
+.. option:: -h, --help
+
+   Print the help text (short summary with ``-h``, long help with ``--help``).
+
+.. option:: <NAME>
+
+   The name of the zone to add.
+
+Options for :subcmd:`zone edit`
+-------------------------------
+
+Only the specified settings will be changed.
+
+.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+
+   The new source to use, in the same syntax as :subcmd:`zone add`.
+
+.. option:: --policy <POLICY>
+
+   The new policy to use.
 
 .. option:: -h, --help
 

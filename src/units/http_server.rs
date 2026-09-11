@@ -53,6 +53,7 @@ use crate::units::key_manager::KmipServerCredentialsFileMode;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
+use crate::zone::ZoneByPtr;
 use crate::zone::machine::ZoneStateMachine;
 use crate::zone::{HistoricalEvent, HistoricalEventType, ZoneByName};
 
@@ -85,6 +86,7 @@ impl HttpServer {
             .route("/tsig/{name}/remove", post(Self::tsig_key_remove))
             .route("/zone/", get(Self::zones_list))
             .route("/zone/add", post(Self::zone_add))
+            .route("/zone/{name}/edit", post(Self::zone_edit))
             // TODO: .route("/zone/{name}/", get(Self::zone_get))
             .route("/zone/{name}/remove", post(Self::zone_remove))
             .route("/zone/{name}/reset", post(Self::zone_reset))
@@ -303,6 +305,147 @@ impl HttpServer {
         }
     }
 
+    async fn zone_edit(
+        State(state): State<Arc<HttpServer>>,
+        Path(name): Path<Name<Bytes>>,
+        Json(zone_edit): Json<ZoneEdit>,
+    ) -> Json<Result<ZoneEditResult, ZoneEditError>> {
+        // Poor man's try block
+        let do_zone_edit = || {
+            let zone = center::get_zone(&state.center, &name).ok_or(ZoneEditError::NoSuchZone)?;
+
+            let center = &state.center;
+            let mut state = state.center.state.lock().unwrap();
+            let state = &mut *state;
+
+            // To ensure that all changes are made atomically, we do all the operations such as getting
+            // the zone, policy, tsig key etc. first before we make any changes to the actual zone.
+            //
+            // We can then make the required changes without worrying about rolling back anything.
+
+            let policy = zone_edit
+                .policy
+                .map(|policy| {
+                    let pol = state
+                        .policies
+                        .get_mut(&policy.into_boxed_str())
+                        .ok_or(ZoneEditError::NoSuchPolicy)?;
+
+                    if pol.mid_deletion {
+                        return Err(ZoneEditError::PolicyMidDeletion);
+                    }
+
+                    Ok(pol)
+                })
+                .transpose()?;
+
+            let source = zone_edit
+                .source
+                .map(|source| {
+                    Ok(match source {
+                        api::ZoneSource::None => crate::loader::Source::None,
+                        api::ZoneSource::Zonefile { path } => {
+                            crate::loader::Source::Zonefile { path }
+                        }
+                        api::ZoneSource::Server { addr, tsig_key } => {
+                            let tsig_key = if let Some(key_name) = tsig_key {
+                                // Lookup the key in the TSIG key store.
+                                let key = state
+                                    .tsig_store
+                                    .get_mut(&key_name)
+                                    .ok_or(ZoneEditError::NoSuchTsigKey)?;
+
+                                let key = key.inner.clone();
+
+                                // Remember the found key.
+                                Some(key)
+                            } else {
+                                None
+                            };
+
+                            crate::loader::Source::Server { addr, tsig_key }
+                        }
+                    })
+                })
+                .transpose()?;
+
+            // Now we start making actual changes.
+            // Anything below this point should be infallible.
+
+            let mut handle = zone.write_handle(center);
+            let mut old_source = None;
+            let mut old_policy = None;
+
+            if let Some(policy) = policy {
+                let old = handle
+                    .state
+                    .policy
+                    .replace(policy.latest.clone())
+                    .expect("a policy was in use");
+
+                let old_policy = old_policy.insert(old.name.clone());
+
+                policy.zones.insert(zone.name.clone());
+
+                handle.signer().after_policy_change();
+
+                center.key_manager.on_zone_policy_changed(
+                    center,
+                    &zone,
+                    Some(old),
+                    policy.latest.clone(),
+                );
+
+                state
+                    .policies
+                    .get_mut(old_policy)
+                    .expect("policy should exist")
+                    .zones
+                    .remove(&zone.name);
+            }
+
+            if let Some(source) = source {
+                if let loader::Source::Server {
+                    addr: _,
+                    tsig_key: Some(tsig_key),
+                } = &source
+                {
+                    // This seems to be the best way to do this currently.
+                    let key = state
+                        .tsig_store
+                        .get_mut(tsig_key.name())
+                        .expect("we did a lookup above");
+
+                    // Record that this zone uses this key.
+                    key.zones.insert(ZoneByPtr(zone.clone()));
+
+                    state.tsig_store.mark_dirty(center);
+                }
+
+                old_source = Some(match &handle.state.loader.source {
+                    loader::Source::None => api::ZoneSource::None,
+                    loader::Source::Zonefile { path } => {
+                        api::ZoneSource::Zonefile { path: path.clone() }
+                    }
+                    loader::Source::Server { addr, tsig_key } => api::ZoneSource::Server {
+                        addr: *addr,
+                        tsig_key: tsig_key.as_ref().map(|k| Box::new(k.name().clone())),
+                    },
+                });
+
+                handle.loader().set_source(source);
+            }
+
+            Ok(ZoneEditResult {
+                name,
+                old_source,
+                old_policy,
+            })
+        };
+
+        Json(do_zone_edit())
+    }
+
     async fn zone_remove(
         State(state): State<Arc<HttpServer>>,
         Path(name): Path<Name<Bytes>>,
@@ -396,7 +539,7 @@ impl HttpServer {
                 loader::Source::None => api::ZoneSource::None,
                 loader::Source::Zonefile { path } => api::ZoneSource::Zonefile { path },
                 loader::Source::Server { addr, tsig_key } => {
-                    let tsig_key = tsig_key.map(|k| k.name().clone());
+                    let tsig_key = tsig_key.map(|k| Box::new(k.name().clone()));
                     api::ZoneSource::Server { addr, tsig_key }
                 }
             };
