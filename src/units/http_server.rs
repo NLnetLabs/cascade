@@ -372,11 +372,10 @@ impl HttpServer {
             // Now we start making actual changes.
             // Anything below this point should be infallible.
 
+            let mut handle = zone.write_handle(center);
             let mut changes = Vec::new();
 
             if let Some(policy) = policy {
-                let mut handle = zone.write_handle(center);
-
                 let old = handle
                     .state
                     .policy
@@ -424,7 +423,7 @@ impl HttpServer {
                     state.tsig_store.mark_dirty(center);
                 }
 
-                center::change_zone_source(center, &zone, source);
+                handle.loader().set_source(source);
 
                 changes.push("source")
             }
