@@ -542,7 +542,7 @@ impl HttpServer {
                 loader::Source::None => api::ZoneSource::None,
                 loader::Source::Zonefile { path } => api::ZoneSource::Zonefile { path },
                 loader::Source::Server { addr, tsig_key } => {
-                    let tsig_key = tsig_key.map(|k| k.name().clone());
+                    let tsig_key = tsig_key.map(|k| Box::new(k.name().clone()));
                     api::ZoneSource::Server { addr, tsig_key }
                 }
             };
