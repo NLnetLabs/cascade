@@ -27,8 +27,14 @@ Released yyyy-mm-dd.
   The `kmip-server-state-dir` configuration option has been removed and the
   default value for `kmip-credentials-store-path` has changed.
 
+- The `--state` option to `cascaded` has been removed, and replaced by a
+  `state-file =` option in the configuration file. ([#989] by @bal-e)
+
 - `cascade tsig add` now reads TSIG key data from a file, supporting the NSD,
   BIND, and Knot formats. ([#938] by @withjannisNLnetLabs)
+
+- Zone removal is now only allowed on passive zones in maintenance mode. ([#968]
+  by @bal-e)
 
 ### New
 
@@ -49,6 +55,7 @@ Released yyyy-mm-dd.
 - Check that generated man pages are up-to-date in CI. ([#984] by @thgoebel)
 - Upgrade to Ploutos v10. ([#977] by @ximon18)
 - Use `uv` and support live-building documentation. ([#979] by @thgoebel)
+- Unit-test the full zone signer. ([#990] by @bal-e)
 
 ### Documentation improvements
 
@@ -69,6 +76,7 @@ Thanks to @thgoebel for his contributions!
 [#938]: https://github.com/NLnetLabs/cascade/pull/938
 [#964]: https://github.com/NLnetLabs/cascade/pull/964
 [#967]: https://github.com/NLnetLabs/cascade/pull/967
+[#968]: https://github.com/NLnetLabs/cascade/pull/968
 [#971]: https://github.com/NLnetLabs/cascade/pull/971
 [#972]: https://github.com/NLnetLabs/cascade/pull/972
 [#976]: https://github.com/NLnetLabs/cascade/pull/976
@@ -80,6 +88,8 @@ Thanks to @thgoebel for his contributions!
 [#984]: https://github.com/NLnetLabs/cascade/pull/984
 [#985]: https://github.com/NLnetLabs/cascade/pull/985
 [#987]: https://github.com/NLnetLabs/cascade/pull/987
+[#989]: https://github.com/NLnetLabs/cascade/pull/989
+[#990]: https://github.com/NLnetLabs/cascade/pull/990
 
 ## 0.1.0-beta6 'Leonard Shelby'
 
