@@ -36,6 +36,8 @@ cascade-zone \- Manage zones
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
 .sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%edit\fP \fB[OPTIONS]\fP \fB<NAME>\fP
+.sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%remove\fP \fB<NAME>\fP
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%list\fP
@@ -67,6 +69,11 @@ command.
 .TP
 .B add
 Add a new zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B edit
+Change settings for an existing zone.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -251,6 +258,29 @@ Import a ZSK from an HSM.
 .TP
 .B \-\-import\-csk\-kmip <server> <public_id> <private_id> <algorithm> <flags>
 Import a CSK from an HSM.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to add.
+.UNINDENT
+.SH OPTIONS FOR ZONE EDIT
+.sp
+Only the specified settings will be changed.
+.INDENT 0.0
+.TP
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+The new source to use, in the same syntax as \fBzone add\fP\&.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-policy <POLICY>
+The new policy to use.
 .UNINDENT
 .INDENT 0.0
 .TP
