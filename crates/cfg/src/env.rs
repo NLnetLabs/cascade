@@ -11,9 +11,6 @@ use super::{Config, LogLevel, LogTarget};
 /// Configuration-related environment variables.
 #[derive(Clone, Debug)]
 pub struct EnvSpec {
-    /// The state file to load.
-    pub state: Option<Box<Utf8Path>>,
-
     /// The configuration file to load.
     pub config: Option<Box<Utf8Path>>,
 
@@ -35,9 +32,6 @@ impl EnvSpec {
                 .map(|value| value.into_string().map_err(|_| EnvError::NonUtf8 { var }))
                 .transpose()
         }
-
-        let state =
-            var("CASCADE_STATE_PATH")?.map(|path| Utf8PathBuf::from(path).into_boxed_path());
 
         let config =
             var("CASCADE_CONFIG_PATH")?.map(|path| Utf8PathBuf::from(path).into_boxed_path());
@@ -62,7 +56,6 @@ impl EnvSpec {
             .map(|value| value.split(",").map(|s| s.into()).collect());
 
         Ok(Self {
-            state,
             config,
             log_level,
             log_target,
@@ -73,7 +66,6 @@ impl EnvSpec {
     /// Merge this into a [`Config`].
     pub fn merge(self, config: &mut Config) {
         let daemon = &mut config.daemon;
-        daemon.state_file.env = self.state;
         daemon.logging.level.env = self.log_level;
         daemon.logging.target.env = self.log_target.map(|t| t.build());
         daemon.logging.trace_targets.env = self.log_trace_targets;

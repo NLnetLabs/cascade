@@ -1,0 +1,30 @@
+name: check man pages
+
+on:
+  pull_request:
+    paths:
+      - 'doc/manual/source/man/**'
+      - 'doc/manual/Makefile'
+
+jobs:
+  check-man-pages:
+    name: Check man pages are up-to-date
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Build man pages
+        working-directory: doc/manual/
+        run: make man
+
+      - name: Fail if build output differs
+        run: |
+          if ! git diff --quiet -- doc/manual/build/man; then
+            echo "::error::doc/manual/build/man is not up-to-date! Run 'make man' and commit the changed man pages."
+            git diff -- doc/manual/build/man
+            exit 1
+          fi

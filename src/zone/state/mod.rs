@@ -85,6 +85,7 @@ impl Spec {
         match self {
             Self::V1(v1::Spec {
                 policy,
+                maintenance_mode,
                 instances,
                 source,
                 min_expiration,
@@ -116,11 +117,8 @@ impl Spec {
                 let policy = policy.map(|p| p.latest.clone());
 
                 let persistence = PersistenceState {
-                    loaded_diff_paths: persisted_loaded_diffs,
-                    signed_diff_paths: persisted_signed_diffs
-                        .into_iter()
-                        .map(|(d, s)| (d, s.map(|s| domain::new::base::Serial::from(s.0))))
-                        .collect(),
+                    loaded_diffs: persisted_loaded_diffs.parse(),
+                    signed_diffs: persisted_signed_diffs.parse(),
                     ..Default::default()
                 };
 
@@ -138,6 +136,7 @@ impl Spec {
                     loader,
                     history,
                     persistence,
+                    maintenance_mode,
                     ..Default::default()
                 })
             }

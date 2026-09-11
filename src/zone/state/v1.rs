@@ -15,20 +15,24 @@ use domain::new::base::Record;
 use domain::new::base::name::{NameBuf, RevNameBuf};
 use domain::new::base::wire::{BuildBytes, ParseBytes};
 use domain::new::rdata::Soa;
+use domain::tsig::KeyName;
 use domain::utils::dst::UnsizedCopy;
 use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
-use crate::policy::file::v1::{NameserverCommsSpec, OutboundSpec};
-use crate::policy::{AutoConfig, DsAlgorithm, KeyParameters};
+use crate::persistence::zone::{
+    PersistedDiffFileInfo, PersistedDiffManager, PersistedDiffRecordSource,
+};
+use crate::policy::{NameserverCommsPolicy, OutboundPolicy};
 use crate::tsig::TsigStore;
 use crate::zone::instance::PersistedInstance;
 use crate::zone::{HistoryItem, Instances, LoadedInstance, SignedInstance};
 use crate::{
     policy::{
-        KeyManagerPolicy, LoaderPolicy, PolicyVersion, ReviewPolicy, ServerPolicy,
-        SignerDenialPolicy, SignerPolicy, SignerSerialPolicy,
+        AutoConfig, DsAlgorithm, KeyManagerPolicy, KeyParameters, KeyValidity, LoaderPolicy,
+        PolicyVersion, ReviewPolicy, ServerPolicy, SignerDenialPolicy, SignerPolicy,
+        SignerSerialPolicy,
     },
     zone::ZoneState,
 };
@@ -46,6 +50,12 @@ pub struct Spec {
     /// The full details of the policy are stored here, as there may be a newer
     /// version of the policy that is not yet in use.
     pub policy: Option<PolicySpec>,
+
+    /// Whether the zone is in maintenance mode
+    ///
+    /// Maintenance mode means that Cascade won't start loading and signing
+    /// operations automatically.
+    pub maintenance_mode: bool,
 
     /// Instances of the zone.
     pub instances: InstancesSpec,
@@ -107,12 +117,12 @@ pub struct Spec {
     /// Locations of persisted unsigned zone diffs to enable IXFR from
     /// the upstream to resume on restart, and to enable a complete latest
     /// unsigned version of the zone to be reconstituted.
-    pub persisted_loaded_diffs: Vec<PathBuf>,
+    pub persisted_loaded_diffs: PersistedDiffsSpec,
 
     /// Locations of persisted signed zone diffs to ensure IXFR out toward
     /// downstreams is still possible after restart, and to enable a complete
     /// latest signed version of the zone to be reconsituted.
-    pub persisted_signed_diffs: Vec<(PathBuf, Option<Serial>)>,
+    pub persisted_signed_diffs: PersistedDiffsSpec,
 }
 
 //--- Conversion
@@ -122,6 +132,7 @@ impl Spec {
     pub fn build(zone: &ZoneState) -> Self {
         Self {
             policy: zone.policy.as_ref().map(|p| PolicySpec::build(p)),
+            maintenance_mode: zone.maintenance_mode,
             instances: InstancesSpec::build(&zone.instances),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
             min_expiration: zone.min_expiration,
@@ -133,13 +144,12 @@ impl Spec {
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
             history: zone.history.clone(),
-            persisted_loaded_diffs: zone.persistence.loaded_diff_paths.clone(),
-            persisted_signed_diffs: zone
-                .persistence
-                .signed_diff_paths
-                .iter()
-                .map(|(p, s)| (p.clone(), s.map(|s| domain::base::Serial(u32::from(s)))))
-                .collect(),
+            persisted_loaded_diffs: PersistedDiffsSpec::build_loaded(
+                &zone.persistence.loaded_diffs,
+            ),
+            persisted_signed_diffs: PersistedDiffsSpec::build_signed(
+                &zone.persistence.signed_diffs,
+            ),
         }
     }
 }
@@ -223,7 +233,7 @@ impl LoaderPolicySpec {
 //----------- KeyManagerSpec ---------------------------------------------------
 
 /// Policy for zone key management.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct KeyManagerPolicySpec {
     /// Whether and which HSM server is being used.
@@ -236,11 +246,11 @@ pub struct KeyManagerPolicySpec {
     algorithm: KeyParameters,
 
     /// Validity of KSKs.
-    ksk_validity: Option<u32>,
+    ksk_validity: KeyValiditySpec,
     /// Validity of ZSKs.
-    zsk_validity: Option<u32>,
+    zsk_validity: KeyValiditySpec,
     /// Validity of CSKs.
-    csk_validity: Option<u32>,
+    csk_validity: KeyValiditySpec,
 
     /// Configuration variable for automatic KSK rolls.
     auto_ksk: AutoConfig,
@@ -271,7 +281,7 @@ pub struct KeyManagerPolicySpec {
     cds_remain_time: u32,
 
     /// The DS hash algorithm.
-    ds_algorithm: DsAlgorithm,
+    ds_algorithm: DsAlgorithmSpec,
 
     /// The TTL to use when creating DNSKEY/CDS/CDNSKEY records.
     default_ttl: Ttl,
@@ -295,9 +305,9 @@ impl KeyManagerPolicySpec {
             hsm_server_id: self.hsm_server_id,
             use_csk: self.use_csk,
             algorithm: self.algorithm,
-            ksk_validity: self.ksk_validity,
-            zsk_validity: self.zsk_validity,
-            csk_validity: self.csk_validity,
+            ksk_validity: self.ksk_validity.into(),
+            zsk_validity: self.zsk_validity.into(),
+            csk_validity: self.csk_validity.into(),
             auto_ksk: self.auto_ksk,
             auto_zsk: self.auto_zsk,
             auto_csk: self.auto_csk,
@@ -308,14 +318,14 @@ impl KeyManagerPolicySpec {
             cds_inception_offset: self.cds_inception_offset,
             cds_signature_lifetime: self.cds_signature_lifetime,
             cds_remain_time: self.cds_remain_time,
-            ds_algorithm: self.ds_algorithm,
+            ds_algorithm: self.ds_algorithm.into(),
             default_ttl: self.default_ttl,
             auto_remove: self.auto_remove,
             auto_remove_delay: Duration::from_secs(self.auto_remove_delay),
             publication_nameservers: self
                 .publication_nameservers
                 .into_iter()
-                .map(|v| v.parse())
+                .map(Into::into)
                 .collect(),
         }
     }
@@ -326,9 +336,9 @@ impl KeyManagerPolicySpec {
             hsm_server_id: policy.hsm_server_id.clone(),
             use_csk: policy.use_csk,
             algorithm: policy.algorithm.clone(),
-            ksk_validity: policy.ksk_validity,
-            zsk_validity: policy.zsk_validity,
-            csk_validity: policy.csk_validity,
+            ksk_validity: policy.ksk_validity.clone().into(),
+            zsk_validity: policy.zsk_validity.clone().into(),
+            csk_validity: policy.csk_validity.clone().into(),
             auto_ksk: policy.auto_ksk.clone(),
             auto_zsk: policy.auto_zsk.clone(),
             auto_csk: policy.auto_csk.clone(),
@@ -339,15 +349,82 @@ impl KeyManagerPolicySpec {
             cds_inception_offset: policy.cds_inception_offset,
             cds_signature_lifetime: policy.cds_signature_lifetime,
             cds_remain_time: policy.cds_remain_time,
-            ds_algorithm: policy.ds_algorithm.clone(),
+            ds_algorithm: policy.ds_algorithm.clone().into(),
             default_ttl: policy.default_ttl,
             auto_remove: policy.auto_remove,
             auto_remove_delay: policy.auto_remove_delay.as_secs(),
             publication_nameservers: policy
                 .publication_nameservers
                 .iter()
-                .map(NameserverCommsSpec::build)
+                .cloned()
+                .map(Into::into)
                 .collect(),
+        }
+    }
+}
+
+//----------- KeyValiditySpec --------------------------------------------------
+
+/// The validity of a key.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum KeyValiditySpec {
+    /// The key is valid for a finite duration.
+    Finite(u32),
+
+    /// The key is valid forever.
+    Forever,
+}
+
+impl From<KeyValiditySpec> for KeyValidity {
+    fn from(value: KeyValiditySpec) -> Self {
+        match value {
+            KeyValiditySpec::Finite(span) => Self::Finite(span),
+            KeyValiditySpec::Forever => Self::Forever,
+        }
+    }
+}
+
+impl From<KeyValidity> for KeyValiditySpec {
+    fn from(value: KeyValidity) -> Self {
+        match value {
+            KeyValidity::Finite(span) => Self::Finite(span),
+            KeyValidity::Forever => Self::Forever,
+        }
+    }
+}
+
+//----------- DsAlgorithmSpec --------------------------------------------------
+
+/// The hash algorithm to use for DS records.
+///
+/// Note the RFC 8624 has (for DNSSEC delegation use) a MUST for SHA-256,
+/// a MAY for SHA-384 and a MUST NOT for SHA-1 and GOST R 34.11-94.
+/// Therefore, we only support SHA-256 and SHA-384 and the default is
+/// SHA-256.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum DsAlgorithmSpec {
+    /// Hash the public key using SHA-256.
+    Sha256,
+
+    /// Hash the public key using SHA-384.
+    Sha384,
+}
+
+impl From<DsAlgorithmSpec> for DsAlgorithm {
+    fn from(value: DsAlgorithmSpec) -> Self {
+        match value {
+            DsAlgorithmSpec::Sha256 => Self::Sha256,
+            DsAlgorithmSpec::Sha384 => Self::Sha384,
+        }
+    }
+}
+
+impl From<DsAlgorithm> for DsAlgorithmSpec {
+    fn from(value: DsAlgorithm) -> Self {
+        match value {
+            DsAlgorithm::Sha256 => Self::Sha256,
+            DsAlgorithm::Sha384 => Self::Sha384,
         }
     }
 }
@@ -543,8 +620,8 @@ impl ReviewPolicySpec {
                 ReviewPolicyMode::Script { hook } => crate::policy::ReviewMode::Script { hook },
             },
             on_reject: match self.on_reject {
-                ReviewPolicyOnReject::Discard => crate::policy::OnReject::Discard,
-                ReviewPolicyOnReject::Halt => crate::policy::OnReject::Halt,
+                ReviewPolicyOnReject::Discard => crate::policy::RejectionPolicy::Discard,
+                ReviewPolicyOnReject::Halt => crate::policy::RejectionPolicy::Halt,
             },
         }
     }
@@ -558,8 +635,8 @@ impl ReviewPolicySpec {
                 crate::policy::ReviewMode::Script { hook } => ReviewPolicyMode::Script { hook },
             },
             on_reject: match policy.on_reject {
-                crate::policy::OnReject::Discard => ReviewPolicyOnReject::Discard,
-                crate::policy::OnReject::Halt => ReviewPolicyOnReject::Halt,
+                crate::policy::RejectionPolicy::Discard => ReviewPolicyOnReject::Discard,
+                crate::policy::RejectionPolicy::Halt => ReviewPolicyOnReject::Halt,
             },
         }
     }
@@ -580,14 +657,109 @@ impl ServerPolicySpec {
     /// Parse from this specification.
     pub fn parse(self) -> ServerPolicy {
         ServerPolicy {
-            outbound: self.outbound.parse(),
+            outbound: self.outbound.into(),
         }
     }
 
     /// Build into this specification.
     pub fn build(policy: &ServerPolicy) -> Self {
         Self {
-            outbound: OutboundSpec::build(&policy.outbound),
+            outbound: policy.outbound.clone().into(),
+        }
+    }
+}
+
+//----------- OutboundSpec ---------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OutboundSpec {
+    /// The set of nameservers to which zone transfers may be provided.
+    pub provide_xfr_to: Vec<NameserverCommsSpec>,
+
+    /// The set of nameservers to which NOTIFY messages should be sent.
+    pub send_notify_to: Vec<NameserverCommsSpec>,
+
+    /// The maximum number of IXFR diffs to keep.
+    pub max_diffs: usize,
+
+    /// The maximum percentage of change allowed for a single IXFR diff.
+    pub max_diffs_size: usize,
+}
+
+impl From<OutboundSpec> for OutboundPolicy {
+    fn from(
+        OutboundSpec {
+            provide_xfr_to,
+            send_notify_to,
+            max_diffs,
+            max_diffs_size,
+        }: OutboundSpec,
+    ) -> Self {
+        Self {
+            provide_xfr_to: provide_xfr_to.into_iter().map(Into::into).collect(),
+            send_notify_to: send_notify_to.into_iter().map(Into::into).collect(),
+            max_diffs,
+            max_diffs_size,
+        }
+    }
+}
+
+impl From<OutboundPolicy> for OutboundSpec {
+    fn from(
+        OutboundPolicy {
+            provide_xfr_to,
+            send_notify_to,
+            max_diffs,
+            max_diffs_size,
+        }: OutboundPolicy,
+    ) -> Self {
+        Self {
+            provide_xfr_to: provide_xfr_to.into_iter().map(Into::into).collect(),
+            send_notify_to: send_notify_to.into_iter().map(Into::into).collect(),
+            max_diffs,
+            max_diffs_size,
+        }
+    }
+}
+
+//----------- NameserverCommsSpec --------------------------------------------
+
+/// Policy for communicating with another namesever.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct NameserverCommsSpec {
+    /// The address to send NOTIFYs to or allow XFRs from.
+    pub addr: SocketAddr,
+
+    /// An optional TSIG key to sign and authenticate messages with.
+    pub tsig_key_name: Option<KeyName>,
+}
+
+impl From<NameserverCommsSpec> for NameserverCommsPolicy {
+    fn from(
+        NameserverCommsSpec {
+            addr,
+            tsig_key_name,
+        }: NameserverCommsSpec,
+    ) -> Self {
+        Self {
+            addr,
+            tsig_key_name,
+        }
+    }
+}
+
+impl From<NameserverCommsPolicy> for NameserverCommsSpec {
+    fn from(
+        NameserverCommsPolicy {
+            addr,
+            tsig_key_name,
+        }: NameserverCommsPolicy,
+    ) -> Self {
+        Self {
+            addr,
+            tsig_key_name,
         }
     }
 }
@@ -850,6 +1022,103 @@ impl ZoneLoadSourceSpec {
                 addr,
                 tsig_key: tsig_key.map(|key| key.name().clone().into()),
             },
+        }
+    }
+}
+
+//------------ PersistedDiffsSpec --------------------------------------------
+
+/// Information about a collection of persisted diffs.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistedDiffsSpec {
+    pub is_signed: bool,
+    pub next_idx: usize,
+    pub restore_base_idx: usize,
+    pub diff_infos: Vec<PersistedDiffFileInfoSpec>,
+}
+
+impl PersistedDiffsSpec {
+    /// Parse from this specification.
+    pub fn parse(self) -> PersistedDiffManager {
+        let diff_infos = self
+            .diff_infos
+            .into_iter()
+            .map(PersistedDiffFileInfoSpec::parse)
+            .collect();
+        let is_signed = match self.is_signed {
+            true => PersistedDiffRecordSource::Signed,
+            false => PersistedDiffRecordSource::Loaded,
+        };
+        PersistedDiffManager::for_existing_diffs(
+            is_signed,
+            self.next_idx,
+            self.restore_base_idx,
+            diff_infos,
+        )
+    }
+
+    /// Build into this specification.
+    fn build_loaded(loaded_diffs: &PersistedDiffManager) -> Self {
+        Self {
+            is_signed: false,
+            next_idx: loaded_diffs.next_idx(),
+            restore_base_idx: loaded_diffs.first_diff_to_apply_on_restore(),
+            diff_infos: loaded_diffs
+                .diffs()
+                .iter()
+                .map(PersistedDiffFileInfoSpec::build)
+                .collect(),
+        }
+    }
+
+    /// Build into this specification.
+    fn build_signed(signed_diffs: &PersistedDiffManager) -> Self {
+        Self {
+            is_signed: true,
+            next_idx: signed_diffs.next_idx(),
+            restore_base_idx: signed_diffs.first_diff_to_apply_on_restore(),
+            diff_infos: signed_diffs
+                .diffs()
+                .iter()
+                .map(PersistedDiffFileInfoSpec::build)
+                .collect(),
+        }
+    }
+}
+
+/// Information a single persisted diff.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PersistedDiffFileInfoSpec {
+    id: usize,
+    path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    loaded_serial: Option<Serial>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signed_serial: Option<Serial>,
+}
+
+impl PersistedDiffFileInfoSpec {
+    /// Parse from this specification.
+    fn parse(self) -> PersistedDiffFileInfo {
+        PersistedDiffFileInfo::new(
+            self.id,
+            self.path,
+            self.loaded_serial
+                .map(|s| domain::new::base::Serial::from(s.0)),
+            self.signed_serial
+                .map(|s| domain::new::base::Serial::from(s.0)),
+        )
+    }
+
+    /// Build into this specification.
+    fn build(info: &PersistedDiffFileInfo) -> Self {
+        Self {
+            id: info.id(),
+            path: info.path().to_path_buf(),
+            loaded_serial: info.loaded_serial().map(|s| Serial(s.into())),
+            signed_serial: info.signed_serial().map(|s| Serial(s.into())),
         }
     }
 }

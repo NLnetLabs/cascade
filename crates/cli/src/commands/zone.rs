@@ -74,6 +74,8 @@ pub enum ZoneCommand {
     },
 
     /// Remove a zone
+    ///
+    /// The zone must be in maintenance mode.
     #[command(name = "remove")]
     Remove { name: ZoneName },
 
@@ -759,10 +761,12 @@ pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
         Progress::Loading => "loading",
         Progress::LoadedReview => "waiting for loaded review",
         Progress::HaltLoaded => "halted after loaded review",
+        Progress::PersistingLoaded => "persisting loaded zone",
         Progress::Signing => "signing",
         Progress::SigningFailed => "signing failed",
-        Progress::SignedReview => "waiting for siged review",
+        Progress::SignedReview => "waiting for signed review",
         Progress::HaltSigned => "halted after signed review",
+        Progress::PersistingSigned => "persisting signed zone",
     };
 
     println!("status: {}{progress}{}", ansi::BLUE, ansi::RESET);
@@ -779,6 +783,7 @@ pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
         current,
         &zone.unsigned_review_addr,
     );
+    print_persist_loaded_phase(current);
     print_sign_phase(
         current,
         zone.unsigned_serial,
@@ -792,6 +797,7 @@ pub fn print_status(zone: &ZoneStatus, policy: &PolicyInfo) {
         current,
         &zone.signed_review_addr,
     );
+    print_persist_signed_phase(current);
     print_publish_phase();
 }
 
@@ -900,6 +906,17 @@ fn print_loaded_review_phase(
     }
 }
 
+fn print_persist_loaded_phase(current: Progress) {
+    if current < Progress::PersistingLoaded {
+        println!("  {Pending} persist loaded zone");
+    } else if current > Progress::PersistingLoaded {
+        println!("  {Done} persist loaded zone");
+    } else {
+        println!("  {Ongoing} persist loaded zone");
+        println!("  |");
+    }
+}
+
 fn print_sign_phase(
     current: Progress,
     unsigned_serial: Option<Serial>,
@@ -984,6 +1001,17 @@ fn print_signed_review_phase(
         println!("  |");
     } else {
         println!("  {Done} review signed zone");
+    }
+}
+
+fn print_persist_signed_phase(current: Progress) {
+    if current < Progress::PersistingSigned {
+        println!("  {Pending} persist signed zone");
+    } else if current > Progress::PersistingSigned {
+        println!("  {Done} persist signed zone");
+    } else {
+        println!("  {Ongoing} persist signed zone");
+        println!("  |");
     }
 }
 

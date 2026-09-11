@@ -64,7 +64,7 @@ files for keys that are stored in the filesystem.
 Updating Keys 
 """""""""""""
 
-The signatures of the DNSKEY, CDS and CDNSKEY RRsets need to updated
+The signatures of the DNSKEY, CDS and CDNSKEY RRsets need to be updated
 periodically. In addition, key roll automation requires periodic invocation
 of the key manager to start new key rolls and to make progress on ones that
 are currently executing. For this purpose, Cascade invokes the key manager
@@ -99,6 +99,10 @@ is also supported.
 Finally, an algorithm roll is similar to a CSK roll, but it is designed in a
 specific way to handle the case where the new key or keys have an algorithm
 that is different from one used by the current signing keys.
+
+Cascade uses the ``double-signature-ksk-roll`` (:RFC:`7583` Double-KSK) and
+``pre-publish-zsk-roll`` (:RFC:`7583` Double-Signature) roll types as
+implemented by the :subcmd:`keyset` subcommand of :program:`dnst`.
 
 The KSK and ZSK rolls are completely independent and can run in parallel.
 Consistency checks are performed at the start of a key roll. For example, a

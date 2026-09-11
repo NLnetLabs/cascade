@@ -34,8 +34,8 @@ that :program:`cascade-hsm-bridge` runs as read-write access to the
 
 .. code-block:: bash
 
-   # sed -i -e 's|^lib_path = .\+|lib_path = "/usr/lib/softhsm/libsofthsm2.so"|' /etc/cascade-hsm-bridge/config.toml
-   # chown -R cascade-hsm-bridge: /var/lib/softhsm
+   # sed -i -e 's|^#lib-path = .\+|lib-path = "/usr/lib/softhsm/libsofthsm2.so"|' /etc/cascade-hsm-bridge/config.toml
+   # usermod -G softhsm cascade-hsm-bridge
    # systemctl start cascade-hsm-bridge
 
 Create a Cascade Policy that uses SoftHSM
@@ -53,7 +53,7 @@ Start the Cascade daemon:
 
 .. code-block:: bash
 
-   # systemctl start cascaded
+   # systemctl start cascade
    # cascade policy reload
 
 Configure a HSM in Cascade called ``cascade-hsm-bridge`` that will connect to

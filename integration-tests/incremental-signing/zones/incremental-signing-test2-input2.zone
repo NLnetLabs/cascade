@@ -53,6 +53,14 @@ to-be-occluded.new-delegation	DS	12345 13 253 05
 ; For NSEC add a new last entry in the NSEC chain.
 zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz	TXT "Last"
 
+; For NSEC add a few names with different case. This tests whether canonical
+; compare works as expected.
+a.canonical-test		TXT	"first"
+B.canonical-test		TXT	"second"
+b.b.canonical-test		TXT	"third"
+bB.canonical-test		TXT	"fourth"
+c.canonical-test		TXT	"fifth"
+
 ; Test adding a new first NSEC3 record.
 ; hash 000000kqrttushp6q101dur3od76sjl5
 qitpxpm			TXT	"new first NSEC3 hash"

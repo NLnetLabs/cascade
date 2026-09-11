@@ -59,8 +59,6 @@ use super::RefreshError;
 /// local copy of this version is not already available, it will be loaded.
 /// Where possible, an incremental zone transfer will be used to communicate
 /// more efficiently.
-///
-/// Returns `true` if a new instance of the zone was loaded.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -72,28 +70,37 @@ pub async fn refresh(
     tsig_key: Option<tsig::Key>,
     builder: &mut LoadedZoneBuilder,
     metrics: &ActiveLoadMetrics,
-) -> Result<bool, RefreshError> {
+) -> Result<(), RefreshError> {
     debug!("Refreshing {:?} from server {addr:?}", zone.name);
 
     if let Some(curr) = builder.curr() {
         // Check the SOA record upfront.
+        trace!(
+            "Querying SOA record of zone '{}' at server {addr:?}",
+            zone.name
+        );
         let new_soa = query_soa(zone, addr, tsig_key.clone()).await?;
+        trace!("Received SOA record with serial '{}'", new_soa.rdata.serial);
 
         if *curr.soa() == new_soa {
             // The local copy of the zone appears to be up-to-date.
-            return Ok(false);
+            debug!(
+                "No need to refresh the zone, we have the most recent serial {} already",
+                new_soa.rdata.serial
+            );
+            return Ok(());
         }
     }
 
     if builder.curr().is_none() {
         // Fetch the whole zone.
         axfr(zone, addr, tsig_key, builder, metrics).await?;
-
-        return Ok(true);
+        return Ok(());
     };
 
     // Fetch the zone relative to the latest local copy.
-    Ok(ixfr(zone, addr, tsig_key, builder, metrics).await?)
+    ixfr(zone, addr, tsig_key, builder, metrics).await?;
+    Ok(())
 }
 
 //----------- ixfr() -----------------------------------------------------------
@@ -104,8 +111,6 @@ pub async fn refresh(
 /// by the provided SOA record, and the latest version known to the server. The
 /// diff is transformed into a compressed representation of the _local_ version
 /// of the zone.
-///
-/// Returns `true` if a new instance of the zone was loaded.
 #[tracing::instrument(
     level = "trace",
     skip_all,
@@ -117,7 +122,7 @@ pub async fn ixfr(
     tsig_key: Option<tsig::Key>,
     builder: &mut LoadedZoneBuilder,
     metrics: &ActiveLoadMetrics,
-) -> Result<bool, IxfrError> {
+) -> Result<(), IxfrError> {
     debug!("Attempting an IXFR");
 
     let local_soa = builder.curr().unwrap().soa().clone();
@@ -178,6 +183,10 @@ pub async fn ixfr(
         };
 
     // Attempt the IXFR, possibly with TSIG.
+    debug!(
+        "Sending IXFR request for zone '{}' to server {addr:?} with serial {}",
+        zone.name, local_soa.rdata.serial
+    );
     let request = RequestMessageMulti::new(message).unwrap();
     let mut response = SendRequestMulti::send_request(&*client, request);
     let mut interpreter = XfrResponseInterpreter::new();
@@ -194,9 +203,8 @@ pub async fn ixfr(
     // If the server does not support IXFR, fall back to an AXFR.
     if initial.header().rcode() == Rcode::NOTIMP {
         trace!("The server does not support IXFR, falling back to AXFR");
-
         axfr(zone, addr, tsig_key, builder, metrics).await?;
-        return Ok(true);
+        return Ok(());
     }
 
     // Check for common short-circuit cases.
@@ -224,7 +232,7 @@ pub async fn ixfr(
         let serial = Serial::from(soa.serial().into_int());
         if local_soa.rdata.serial == serial {
             // The local copy is up-to-date.
-            return Ok(false);
+            return Ok(());
         } else {
             // The server says the local copy is up-to-date, but it's not.
             return Err(IxfrError::InconsistentUpToDate);
@@ -263,7 +271,7 @@ pub async fn ixfr(
             zone.metrics
                 .inc_xfr_requests_to_upstream_succeeded(XfrType::Ixfr);
 
-            Ok(true)
+            Ok(())
         }
 
         ZoneUpdate::BeginBatchDelete(soa) => {
@@ -301,7 +309,7 @@ pub async fn ixfr(
             zone.metrics
                 .inc_xfr_requests_to_upstream_succeeded(XfrType::Ixfr);
 
-            Ok(true)
+            Ok(())
         }
         _ => unreachable!(),
     }

@@ -1,22 +1,22 @@
 //! Persisting zone data.
 
 use std::{
-    fs::File,
-    io::{BufWriter, ErrorKind, Write},
+    io::{BufWriter, Write},
     path::Path,
     sync::Arc,
 };
 
+use cascade_zonedata::{
+    DiffData, LoadedZonePersisted, LoadedZonePersister, RegularRecord, SignedZonePersisted,
+    SignedZonePersister, SoaRecord,
+};
 use domain::new::base::wire::{BuildBytes, TruncationError};
-use tracing::{trace, warn};
+use tracing::trace;
 
 use crate::{
     center::Center,
+    persistence::discard_excess_diffs,
     zone::{Zone, save_state_now},
-    zonedata::{
-        DiffData, LoadedZonePersisted, LoadedZonePersister, SignedZonePersisted,
-        SignedZonePersister,
-    },
 };
 
 /// Persist the data for a loaded instance of a zone.
@@ -35,28 +35,14 @@ pub fn persist_loaded(
 ) -> LoadedZonePersisted {
     let loaded_diff = persister.loaded_diff();
     if !loaded_diff.is_empty() {
-        // Determine the path to write to and update the record of written
-        // paths here as we don't want to give responsibility for working with
-        // ZoneState to the persistence crate. Accumulate a set of diffs per
-        // unsigned and signed zone, each stored at a path one suffixed by an
-        // index which rises by one when persisted.
-        // TODO: Don't keep an unlimited number of diffs.
-        // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
-            let next_idx = handle.state.persistence.loaded_diff_paths.len();
-            let destination = center
-                .config
-                .zone_state_dir
-                .join(format!("{}.loaded.{next_idx}", zone.name));
-
+            let loaded_serial = loaded_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
             handle
                 .state
                 .persistence
-                .loaded_diff_paths
-                .push(destination.clone().into());
-
-            destination
+                .loaded_diffs
+                .push(zone, center, loaded_serial, None)
         };
 
         // Update the set of persisted zone data file paths BEFORE writing
@@ -84,16 +70,13 @@ pub fn persist_loaded(
         // the Option is Some the referred to path can just be deleted.
         save_state_now(center, zone);
 
-        persist_to_file(destination.as_std_path(), loaded_diff.clone());
+        persist_to_file(&destination, loaded_diff.clone());
 
-        if loaded_diff.removed_soa.is_some() && loaded_diff.removed_soa != loaded_diff.added_soa {
-            let mut handle = zone.write_handle(center);
-            handle
-                .state
-                .storage
-                .diffs
-                .store_loaded_diff(loaded_diff.clone());
-        }
+        // We don't add the loaded diff to the in-memory store used for
+        // serving IXFR responses, that is done later in persist_signed() as
+        // the store is only used for answering requests to the publication
+        // server, and because if we add it here then abandon signing for some
+        // reason we would then have to remove the loaded diff that we added.
     }
 
     persister.mark_complete()
@@ -116,33 +99,17 @@ pub fn persist_signed(
     if !persister.signed_diff().is_empty() {
         let loaded_diff = persister.loaded_diff();
         let signed_diff = persister.signed_diff();
-        let loaded_serial =
-            loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
 
-        // Determine the path to write to and update the record of written
-        // paths here as we don't want to give responsibility for working with
-        // ZoneState to the persistence crate.
-        // TODO: Don't keep an unlimited number of diffs.
-        // TODO: Compact diffs when idle?
         let destination = {
             let mut handle = zone.write_handle(center);
-            let next_idx = handle.state.persistence.signed_diff_paths.len();
-            // Determine the path to persist the diff to. The path consists
-            // of the zone name, the part of the zone that persisted records
-            // relate to (loaded or signed) and a rising index number that
-            // serves to make each path unique.
-            let destination = center
-                .config
-                .zone_state_dir
-                .join(format!("{}.signed.{next_idx}", zone.name));
-
+            let loaded_serial =
+                loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
+            let signed_serial = signed_diff.removed_soa.as_ref().map(|s| s.rdata.serial);
             handle
                 .state
                 .persistence
-                .signed_diff_paths
-                .push((destination.clone().into(), loaded_serial));
-
-            destination
+                .signed_diffs
+                .push(zone, center, loaded_serial, signed_serial)
         };
 
         // Update the set of persisted zone data file paths BEFORE writing
@@ -172,53 +139,10 @@ pub fn persist_signed(
 
         // Write the diff to disk as a binary AXFR snapshot or binary IXFR
         // diff.
-        persist_to_file(destination.as_std_path(), signed_diff.clone());
+        persist_to_file(&destination, signed_diff.clone());
 
         // Store the diffs in-memory for serving IXFR out.
-        //
-        // Only store a diff if the SOA from the previous version of the
-        // signed zone was removed and a new one added, otherwise this is not
-        // a diff to a previous version of the zone but actually a snapshot of
-        // the zone after having been signed for the first time.
-        if signed_diff.removed_soa.is_some() && signed_diff.removed_soa != signed_diff.added_soa {
-            // Store anything that changed when the zone was re-loaded, i.e.
-            // unsigned zone content changes. Note that the SOA SERIAL is not
-            // required to change unless using 'keep' policy and so we should
-            // not require the SOA to have been removed and a new one added.
-
-            // Store anything that changed when the zone was re-signed, i.e.
-            // changes DNSSEC RRs that can be caused by unsigned content
-            // changes or changing from NSEC <-> NSEC3 or using a new key
-            // to sign with or just regenerating signatures to avoid them
-            // expiring. Signed zones MUST always have a new SOA SERIAL
-            // compared to the previous version of the signed zone.
-
-            let mut handle = zone.write_handle(center);
-
-            // If we have a new signed diff to store because records in the
-            // loaded part of the zone changed, e.g. due to changes in the
-            // zone content or receipt of a changed DNSKEY set from the key
-            // manager, then the loaded diff will have been stored in-memory
-            // by loaded zone persistence, but the corresponding signed diff
-            // will not yet have been stored in-memory, we have to do that
-            // now. In this case we have to update the last stored in-memory
-            // diff. We drop the partial diff and push a replacement full
-            // diff instead.
-            //
-            // Alternatively if we have a new signed diff to store because
-            // records in the signed part of the zone changed, e.g. due to
-            // signature re-generation to ensure that existing signatures
-            // don't expire, then there will be no corresponding loaded diff
-            // yet in-memory. In this case we have to push an entirely new
-            // diff to the in-memory collection without dropping an existing
-            // diff first.
-
-            handle
-                .state
-                .storage
-                .diffs
-                .store_signed_diff(loaded_serial, signed_diff.clone());
-        }
+        store_for_ixfr_out(center, zone, loaded_diff, signed_diff);
     }
 
     persister.mark_complete()
@@ -226,39 +150,51 @@ pub fn persist_signed(
 
 //------------ persist_to_file() ----------------------------------------------
 
-fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
-    // Write the diff in AXFR / IXFR wire format to disk.
-    let f = match File::create_new(destination) {
-        Ok(f) => f,
-        Err(err) if err.kind() == ErrorKind::AlreadyExists => {
-            // This is not expected. When persisting the zone data to a file
-            // we save Cascade zone state "now" so that the persisted paths in
-            // use are known on next restart, so we should know this path was
-            // in use and be attempting to write to a different non-existing
-            // path. If for some reason zone state was not persisted after the
-            // persisted zone data file was created, e.g. a power outage in
-            // combination with a change to persistence logic compared to how
-            // it is at the time of writing so that zone state was not ensured
-            // to be persisted before proceeding, that could cause this.
-            warn!(
-                "Overwriting existing persisted zone data file at '{}'.",
-                destination.display()
-            );
-            File::create(destination).unwrap_or_else(|err| {
-                panic!(
-                    "Failed to persist zone data to '{}': {err}",
-                    destination.display()
-                );
-            })
-        }
-        Err(err) => {
+pub fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
+    persist_to_file_from_parts(
+        destination,
+        diff.removed_soa.clone(),
+        diff.added_soa.clone().unwrap(),
+        diff.removed_records.iter(),
+        diff.added_records.iter(),
+    );
+}
+
+// TODO: It would be nice to take the records by reference.
+pub fn persist_to_file_from_parts<
+    'd,
+    I: Iterator<Item = &'d RegularRecord>,
+    J: Iterator<Item = &'d RegularRecord>,
+>(
+    destination: &Path,
+    removed_soa: Option<SoaRecord>,
+    added_soa: SoaRecord,
+    removed_records: I,
+    added_records: J,
+) {
+    // Atomic writing based on crate::util::write_file().
+    let dir = destination
+        .parent()
+        .expect("'destination' must be a file, so it must have a parent");
+    std::fs::create_dir_all(dir).unwrap_or_else(|err| {
+        panic!(
+            "Failed to persist zone data to '{}': {err}",
+            destination.display()
+        );
+    });
+
+    // Obtain a temporary file in the same directory.
+    let tmp_file = tempfile::Builder::new()
+        .tempfile_in(dir)
+        .unwrap_or_else(|err| {
             panic!(
                 "Failed to persist zone data to '{}': {err}",
                 destination.display()
             );
-        }
-    };
-    let mut f = BufWriter::new(f);
+        });
+
+    // Write the diff in AXFR / IXFR wire format to disk.
+    let mut f = BufWriter::new(tmp_file);
 
     let mut buf = vec![0u8; 1024];
 
@@ -294,8 +230,6 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
         writer.write_all(&buf[0..num_bytes_to_write]).unwrap();
     }
 
-    let added_soa = diff.added_soa.clone().unwrap();
-
     // IXFR format has the form:
     //   - New SOA
     //   - Old SOA
@@ -311,19 +245,23 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
     //
     // Write AXFR if no records were deleted by the diff, else write IXFR.
 
+    let mut n_rrs_removed = 0;
+    let mut n_rr_added = 0;
+
     write_rr(&mut buf, &added_soa, &mut f);
 
     // Start deleted records block by writing the old SOA, if any.
-    if let Some(removed_soa) = &diff.removed_soa {
+    if let Some(removed_soa) = &removed_soa {
         write_rr(&mut buf, removed_soa, &mut f);
+        n_rrs_removed += 1;
 
         // Write the deleted records.
-        for r in &diff.removed_records {
+        for r in removed_records {
             if r.rname == removed_soa.rname && r.rtype == removed_soa.rtype {
                 continue;
             }
-
             write_rr(&mut buf, r, &mut f);
+            n_rrs_removed += 1;
         }
 
         // Start added records block by writing the new SOA
@@ -331,23 +269,65 @@ fn persist_to_file(destination: &Path, diff: Arc<DiffData>) {
     }
 
     // Write the added records.
-    for r in &diff.added_records {
+    for r in added_records {
         if r.rname == added_soa.rname && r.rtype == added_soa.rtype {
             continue;
         }
-
         write_rr(&mut buf, r, &mut f);
+        n_rr_added += 1;
     }
 
     // Finish the AXFR/IXFR by writing the new SOA again
     write_rr(&mut buf, &added_soa, &mut f);
+    n_rr_added += 1;
+
+    // Replace the target path with the temporary file.
+    let tmp_file = f.into_inner().unwrap();
+    let _ = tmp_file.persist(destination).unwrap_or_else(|err| {
+        panic!(
+            "Failed to persist zone data to '{}': {err}",
+            destination.display()
+        );
+    });
 
     trace!(
-        "Persisted zone to file '{}': SOA {:?} -> {:?}: {} records removed, {} records added",
+        "Persisted zone to file '{}': SOA {:?} -> {:?}: {n_rrs_removed} records removed, {n_rr_added} records added",
         destination.display(),
-        diff.removed_soa.as_ref().map(|v| v.rdata.serial),
-        diff.added_soa.as_ref().map(|v| v.rdata.serial),
-        diff.removed_records.is_empty(),
-        diff.added_records.len(),
+        removed_soa.as_ref().map(|v| v.rdata.serial),
+        added_soa.rdata.serial,
     );
+}
+
+//------------ store_for_ixfr_out() ------------------------------------------
+
+fn store_for_ixfr_out(
+    center: &Arc<Center>,
+    zone: &Arc<Zone>,
+    loaded_diff: Option<&Arc<DiffData>>,
+    signed_diff: &Arc<DiffData>,
+) {
+    // Only store a diff if the SOA from the previous version of the
+    // signed zone was removed and a new one added, otherwise this is not
+    // a diff to a previous version of the zone but actually a snapshot of
+    // the zone after having been signed for the first time.
+    // Ignore the diff if it is not acceptable, e.g. if it changes more than
+    // X% of the records in the zone or crosses some other threshold.
+    if signed_diff.removed_soa.is_some() && signed_diff.added_soa.is_some() {
+        store_diff(center, zone, loaded_diff, signed_diff);
+        discard_excess_diffs(center, zone);
+    }
+}
+
+fn store_diff(
+    center: &Arc<Center>,
+    zone: &Arc<Zone>,
+    loaded_diff: Option<&Arc<DiffData>>,
+    signed_diff: &Arc<DiffData>,
+) {
+    let loaded_serial = loaded_diff.and_then(|d| d.removed_soa.as_ref().map(|s| s.rdata.serial));
+    let diffs = &mut zone.write(center).storage.diffs;
+    if let Some(loaded_diff) = loaded_diff {
+        diffs.store_loaded_diff(loaded_diff.clone());
+    }
+    diffs.store_signed_diff(loaded_serial, signed_diff.clone());
 }

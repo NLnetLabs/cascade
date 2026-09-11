@@ -4,7 +4,7 @@ use core::ops::RangeBounds;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet, btree_map, hash_map, hash_set};
 use std::hash;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use bytes::{Bytes, BytesMut};
@@ -40,30 +40,35 @@ use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
 use domain::utils::base32;
 use domain::utils::dst::UnsizedCopy;
 use domain::zonefile::inplace::Entry;
+use domain_kmip::dep::kmip::client::pool::SyncConnPool;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
 use tracing::debug;
 use tracing::error;
 
-use crate::center::Center;
-use crate::manager::record_zone_event;
+use crate::hsm::HsmStore;
 use crate::policy::{PolicyVersion, SignerDenialPolicy};
-use crate::signer::SigningTrigger;
 use crate::signer::keys::ZoneSigningKeys;
 use crate::signer::status::SigningStatusPerZone;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::{
     KeySetState, MinTimestamp, PassThroughMode, SignerError, faketime_or_now,
 };
-use crate::zone::{HistoricalEvent, Zone};
-use crate::zonedata::{DiffData, RegularRecord, SignedZonePatcher, SignedZoneReader, SoaRecord};
+use crate::zone::{Zone, ZoneState};
+use crate::zonedata::{
+    DiffData, LoadedZoneReader, RegularRecord, SignedZonePatcher, SignedZoneReader, SoaRecord,
+};
 
+#[expect(clippy::too_many_arguments)] // TODO
 pub fn sign_incrementally(
+    config: &crate::config::Config,
+    zone_name: &Name<Bytes>,
+    policy: &PolicyVersion,
+    hsm_store: &HsmStore,
+    kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
     patch: SignedZonePatcher,
-    zone: &Arc<Zone>,
-    center: &Arc<Center>,
-    trigger: SigningTrigger,
+    local_state: &mut LocalState,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) -> Result<(), SignerError> {
     // Check what work needs to be done. If the keyset state
@@ -80,24 +85,18 @@ pub fn sign_incrementally(
         "Start incremental signing".to_string();
     let load_unsigned = patch.next_loaded().is_some();
 
-    let origin = &zone.name;
-    let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, origin);
+    let state_path = mk_dnst_keyset_state_file_path(&config.keys_dir, zone_name);
     let state = std::fs::read_to_string(&state_path)
         .map_err(|_| SignerError::CannotReadStateFile(state_path.into_string()))?;
     let keyset_state: KeySetState = serde_json::from_str(&state)
         .map_err(|e| SignerError::SigningError(format!("loading keyset state failed: {e}")))?;
 
-    let policy = zone.read().policy.clone().unwrap();
-
     let use_nsec3 = matches!(policy.signer.denial, SignerDenialPolicy::NSec3 { .. });
 
-    let local_state = LocalState::new(zone)?;
     let mut ws = WorkSpace {
         keyset_state,
         use_nsec3,
-        policy: policy.clone(),
-        zone: zone.clone(),
-        center: center.clone(),
+        policy,
         patch,
         zonemd: HashSet::new(),
         //zonemd: [(ZonemdScheme::SIMPLE, ZonemdAlgorithm::SHA384)].into(),
@@ -133,7 +132,15 @@ pub fn sign_incrementally(
         return Err(SignerError::NothingToDo);
     }
 
-    let mut iss = IncrementalSigningState::new(zone, &policy, center, &ws.keyset_state, status)?;
+    let mut iss = IncrementalSigningState::new(
+        config,
+        zone_name,
+        hsm_store,
+        kmip_servers,
+        policy,
+        &ws.keyset_state,
+        &status,
+    )?;
 
     let start = Instant::now();
     let patch_curr = ws.patch.curr();
@@ -144,7 +151,10 @@ pub fn sign_incrementally(
 
     if load_unsigned {
         let start = Instant::now();
-        iss.load_unsigned_diffs(ws.patch.unsigned_diff().expect("should be there"))?;
+        iss.load_unsigned_diffs(
+            ws.patch.unsigned_diff().expect("should be there"),
+            ws.patch.curr_loaded().expect("should be there"),
+        )?;
         debug!("loading new unsigned diffs took {:?}", start.elapsed());
     } else {
         // Re-use the signed data.
@@ -214,19 +224,6 @@ pub fn sign_incrementally(
         ws.local_state.next_min_expiration
     );
 
-    record_zone_event(
-        center,
-        zone,
-        HistoricalEvent::SigningSucceeded {
-            trigger: trigger.into(),
-        },
-        ws.local_state
-            .previous_serial
-            .map(|s| domain::base::Serial(s.into())),
-    );
-
-    ws.local_state.save(&ws.center, &ws.zone);
-
     Ok(())
 }
 
@@ -237,9 +234,7 @@ type ChangesValue = (RtypeSet, RtypeSet); // add set followed by delete set.
 struct WorkSpace<'a> {
     pub keyset_state: KeySetState,
     pub use_nsec3: bool,
-    pub policy: Arc<PolicyVersion>,
-    pub zone: Arc<Zone>,
-    pub center: Arc<Center>,
+    pub policy: &'a PolicyVersion,
     pub patch: SignedZonePatcher<'a>,
 
     // Extra fields that should go to policy.
@@ -247,7 +242,7 @@ struct WorkSpace<'a> {
     pub pass_through_mode: PassThroughMode,
 
     // Local copy of state variables we need.
-    local_state: LocalState,
+    local_state: &'a mut LocalState,
 }
 
 impl WorkSpace<'_> {
@@ -362,7 +357,7 @@ impl WorkSpace<'_> {
                     .expect("NSEC record should exist");
                 let records = [record.clone().into()];
                 sign_records(
-                    &iss.origin,
+                    iss.origin,
                     &records,
                     &iss.keys,
                     iss.inception,
@@ -377,7 +372,7 @@ impl WorkSpace<'_> {
                 let record: Zrd = record.clone().into();
                 let records = [record.clone()];
                 sign_records(
-                    &iss.origin,
+                    iss.origin,
                     &records,
                     &iss.keys,
                     iss.inception,
@@ -385,7 +380,7 @@ impl WorkSpace<'_> {
                     &mut new_sigs,
                 )?;
             } else {
-                let new_origin = old_base_name_to_revnamebuf(&iss.origin);
+                let new_origin = old_base_name_to_revnamebuf(iss.origin);
                 let records = if *key.0 == *new_origin.as_ref() {
                     iss.new_apex
                         .get(&key.1)
@@ -397,7 +392,7 @@ impl WorkSpace<'_> {
                 }
                 .expect("records should exist");
                 sign_records(
-                    &iss.origin,
+                    iss.origin,
                     &records,
                     &iss.keys,
                     iss.inception,
@@ -464,7 +459,7 @@ impl WorkSpace<'_> {
                         .expect("NSEC record should exist");
                     let records = [record.clone().into()];
                     sign_records(
-                        &iss.origin,
+                        iss.origin,
                         &records,
                         &iss.keys,
                         iss.inception,
@@ -479,7 +474,7 @@ impl WorkSpace<'_> {
                     let record: Zrd = record.clone().into();
                     let records = [record.clone()];
                     sign_records(
-                        &iss.origin,
+                        iss.origin,
                         &records,
                         &iss.keys,
                         iss.inception,
@@ -487,7 +482,7 @@ impl WorkSpace<'_> {
                         &mut new_sigs,
                     )?;
                 } else {
-                    let new_origin = old_base_name_to_revnamebuf(&iss.origin);
+                    let new_origin = old_base_name_to_revnamebuf(iss.origin);
                     let records: Vec<Zrd> = if *key.0 == *new_origin.as_ref() {
                         iss.new_apex
                             .get(&key.1)
@@ -499,7 +494,7 @@ impl WorkSpace<'_> {
                     }
                     .expect("records should exist");
                     sign_records(
-                        &iss.origin,
+                        iss.origin,
                         &records,
                         &iss.keys,
                         iss.inception,
@@ -558,7 +553,7 @@ impl WorkSpace<'_> {
                     .expect("NSEC record should exist");
                 let records = [record.clone().into()];
                 sign_records(
-                    &iss.origin,
+                    iss.origin,
                     &records,
                     &iss.keys,
                     iss.inception,
@@ -573,7 +568,7 @@ impl WorkSpace<'_> {
                 let record: Zrd = record.clone().into();
                 let records = [record.clone()];
                 sign_records(
-                    &iss.origin,
+                    iss.origin,
                     &records,
                     &iss.keys,
                     iss.inception,
@@ -581,7 +576,7 @@ impl WorkSpace<'_> {
                     &mut new_sigs,
                 )?;
             } else {
-                let new_origin = old_base_name_to_revnamebuf(&iss.origin);
+                let new_origin = old_base_name_to_revnamebuf(iss.origin);
                 let records: Vec<Zrd> = if *key.0 == *new_origin.as_ref() {
                     iss.new_apex
                         .get(&key.1)
@@ -593,7 +588,7 @@ impl WorkSpace<'_> {
                 }
                 .expect("records should exist");
                 sign_records(
-                    &iss.origin,
+                    iss.origin,
                     &records,
                     &iss.keys,
                     iss.inception,
@@ -947,7 +942,7 @@ impl WorkSpace<'_> {
         );
 
         let mut all_data: Vec<Zrd> = vec![];
-        let new_origin = old_base_name_to_revnamebuf(&iss.origin);
+        let new_origin = old_base_name_to_revnamebuf(iss.origin);
         all_data.extend(
             iss.data
                 .iter_unordered()
@@ -982,7 +977,7 @@ impl WorkSpace<'_> {
         all.extend(all_nsec3s);
 
         let mut all_rrsigs: Vec<Zrd> = vec![];
-        let new_origin = old_base_name_to_revnamebuf(&iss.origin);
+        let new_origin = old_base_name_to_revnamebuf(iss.origin);
         all_rrsigs.extend(
             iss.rrsigs
                 .iter()
@@ -1049,7 +1044,7 @@ impl WorkSpace<'_> {
         let key = (iss.origin.clone(), NewRtype::ZONEMD);
         let mut new_sigs = vec![];
         sign_records(
-            &iss.origin,
+            iss.origin,
             &zonemd_records,
             &iss.keys,
             iss.inception,
@@ -1143,7 +1138,7 @@ impl WorkSpace<'_> {
         // Delete all types in apex_remove.
         let curr_apex_remove = &self.local_state.apex_remove;
         for t in curr_apex_remove {
-            let new_origin = old_base_name_to_revnamebuf(&iss.origin);
+            let new_origin = old_base_name_to_revnamebuf(iss.origin);
             let new_t = old_base_rtype_to_new_base(*t);
             let key = (new_origin.as_ref(), new_t);
             iss.new_apex.remove(&new_t);
@@ -1236,7 +1231,7 @@ impl WorkSpace<'_> {
 
                 let nsec3 = nsec3.clone().into();
                 sign_records(
-                    &iss.origin,
+                    iss.origin,
                     &[nsec3],
                     &iss.keys,
                     iss.inception,
@@ -1253,7 +1248,7 @@ impl WorkSpace<'_> {
 
                 let nsec: Zrd = nsec.clone().into();
                 sign_records(
-                    &iss.origin,
+                    iss.origin,
                     &[nsec],
                     &iss.keys,
                     iss.inception,
@@ -1316,7 +1311,7 @@ impl WorkSpace<'_> {
 
 struct IncrementalSigningState<'zd> {
     /// DNS name of the zone we are signing.
-    origin: Name<Bytes>,
+    origin: &'zd Name<Bytes>,
 
     /// Apex RRsets of the previously signed zone. With the execption of
     /// NSEC, NSEC3 and RRSIG records. Old_apex and old_data are used
@@ -1364,13 +1359,22 @@ struct IncrementalSigningState<'zd> {
 
 impl<'a> IncrementalSigningState<'a> {
     pub fn new(
-        zone: &Zone,
+        config: &crate::config::Config,
+        zone_name: &'a Name<Bytes>,
+        hsm_store: &HsmStore,
+        kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
         policy: &PolicyVersion,
-        center: &Arc<Center>,
         keyset_state: &KeySetState,
-        status: Arc<RwLock<SigningStatusPerZone>>,
+        status: &RwLock<SigningStatusPerZone>,
     ) -> Result<Self, SignerError> {
-        let keys = ZoneSigningKeys::load(center, zone, keyset_state, &status)?;
+        let keys = ZoneSigningKeys::load(
+            config,
+            zone_name,
+            hsm_store,
+            kmip_servers,
+            keyset_state,
+            status,
+        )?;
 
         let now = faketime_or_now();
         let now_u32 = Into::<Duration>::into(now.clone()).as_secs() as u32;
@@ -1391,7 +1395,7 @@ impl<'a> IncrementalSigningState<'a> {
         }
         let nsec3param = old_base_nsec3param_to_new_base(&nsec3param);
         Ok(Self {
-            origin: zone.name.clone(),
+            origin: zone_name,
             old_apex: HashMap::new(),
             old_apex_saved: HashMap::new(),
             new_apex: HashMap::new(),
@@ -1413,7 +1417,7 @@ impl<'a> IncrementalSigningState<'a> {
         signed_reader: &'a SignedZoneReader,
     ) -> Result<(), SignerError> {
         // Loop over all records. Records do not have to be sorted.
-        let new_origin = old_base_name_to_revnamebuf(&self.origin);
+        let new_origin = old_base_name_to_revnamebuf(self.origin);
         for record in signed_reader.all_records() {
             match record.data() {
                 NewRecordData::Rrsig(_rrsig) => {
@@ -1444,8 +1448,12 @@ impl<'a> IncrementalSigningState<'a> {
         Ok(())
     }
 
-    pub fn load_unsigned_diffs(&mut self, diffs: DiffData) -> Result<(), SignerError> {
-        let origin_revnamebuf = old_base_name_to_revnamebuf(&self.origin);
+    pub fn load_unsigned_diffs(
+        &mut self,
+        diffs: DiffData,
+        curr_loaded: LoadedZoneReader,
+    ) -> Result<(), SignerError> {
+        let origin_revnamebuf = old_base_name_to_revnamebuf(self.origin);
 
         self.new_apex = self.old_apex.clone();
 
@@ -1491,6 +1499,12 @@ impl<'a> IncrementalSigningState<'a> {
             }
         }
 
+        // If there was no change in the SOA, then get the SOA directly
+        // from the loaded zone.
+        self.new_apex
+            .entry(NewRtype::SOA)
+            .or_insert_with(|| vec![curr_loaded.soa().clone().into()]);
+
         // Save a copy of the loaded new_apex to create a diff later.
         for (k, v) in &self.new_apex {
             self.new_apex_saved.insert(*k, v.clone());
@@ -1516,7 +1530,7 @@ impl<'a> IncrementalSigningState<'a> {
         let mut new_sigs = vec![];
 
         // Iterated over changes.
-        let new_origin = old_base_name_to_revnamebuf(&self.origin);
+        let new_origin = old_base_name_to_revnamebuf(self.origin);
         for (key, change) in self.data.changes_iter() {
             // XXX for compatibility with the full zone signer, always
             // ignore DNSKEY/CDS/CDNSKEY when not at apex.
@@ -1552,7 +1566,7 @@ impl<'a> IncrementalSigningState<'a> {
                     if self.rrsigs.remove(&key).is_some() {
                         let new_rrset: Vec<_> = new.iter().map(|r| (*r).clone().into()).collect();
                         sign_records(
-                            &self.origin,
+                            self.origin,
                             &new_rrset,
                             &self.keys,
                             self.inception,
@@ -1573,7 +1587,7 @@ impl<'a> IncrementalSigningState<'a> {
                 }
             }
         }
-        let new_origin = old_base_name_to_revnamebuf(&self.origin);
+        let new_origin = old_base_name_to_revnamebuf(self.origin);
         for new_rrset in self.new_apex.values_mut() {
             let owner_revnamebuf = RevNameBuf::copy_from(new_rrset[0].owner());
             let owner_boxrevname = owner_revnamebuf.unsized_copy_into();
@@ -1596,7 +1610,7 @@ impl<'a> IncrementalSigningState<'a> {
                     new_rrset.iter().map(|r| (*r).clone().into()).collect();
                 if old_rrset != *new_rrset && self.rrsigs.remove(&key).is_some() {
                     sign_records(
-                        &self.origin,
+                        self.origin,
                         &old_base_new_rrset,
                         &self.keys,
                         self.inception,
@@ -1644,7 +1658,7 @@ impl<'a> IncrementalSigningState<'a> {
         // However, we removing a delegation, the situation is reversed. For now
         // assuming that sorting is not necessary.
 
-        let new_origin = old_base_name_to_revnamebuf(&self.origin);
+        let new_origin = old_base_name_to_revnamebuf(self.origin);
 
         let changes = self.changes.clone();
         for (key, (add, delete)) in &changes {
@@ -1810,7 +1824,7 @@ impl<'a> IncrementalSigningState<'a> {
         // However, when removing a delegation, the situation is reversed.
         // For now assume that sorting is not necessary.
 
-        let new_origin = old_base_name_to_revnamebuf(&self.origin);
+        let new_origin = old_base_name_to_revnamebuf(self.origin);
 
         let opt_out_flag = self.nsec3param.opt_out_flag();
 
@@ -2075,7 +2089,7 @@ impl<'a> IncrementalSigningState<'a> {
         let records: Vec<_> = records.into_iter().map(|r| r.to_record().clone()).collect();
         let records_iter = RecordsIter::new_from_owned(&records);
         let config = GenerateNsecConfig::new();
-        let nsec_records = generate_nsecs(&self.origin, records_iter, &config)
+        let nsec_records = generate_nsecs(self.origin, records_iter, &config)
             .map_err(|e| SignerError::SigningError(format!("new_nsec_chain failed: {e}")))?;
 
         // Collect signatures here.
@@ -2091,7 +2105,7 @@ impl<'a> IncrementalSigningState<'a> {
             let new_record: RegularRecord = record.clone().into();
             self.nsecs.insert_new_record(new_record.clone());
             sign_records(
-                &self.origin,
+                self.origin,
                 &[record],
                 &self.keys,
                 self.inception,
@@ -2112,7 +2126,7 @@ impl<'a> IncrementalSigningState<'a> {
         let old_nsec3param = new_base_nsec3param_to_old_base(&self.nsec3param);
         let config = GenerateNsec3Config::<_, DefaultSorter>::new(old_nsec3param)
             .with_ttl_mode(Nsec3ParamTtlMode::SoaMinimum);
-        let nsec3_records = generate_nsec3s(&self.origin, records_iter, &config)
+        let nsec3_records = generate_nsec3s(self.origin, records_iter, &config)
             .map_err(|e| SignerError::SigningError(format!("generate_nsec3s failed: {e}")))?;
 
         // Collect signatures here.
@@ -2129,7 +2143,7 @@ impl<'a> IncrementalSigningState<'a> {
 
         // Insert in both old and new data.
         sign_records(
-            &self.origin,
+            self.origin,
             &[record],
             &self.keys,
             self.inception,
@@ -2151,7 +2165,7 @@ impl<'a> IncrementalSigningState<'a> {
             let new_record: RegularRecord = record.clone().into();
             self.nsec3s.insert_new_record(new_record.clone());
             sign_records(
-                &self.origin,
+                self.origin,
                 &[record],
                 &self.keys,
                 self.inception,
@@ -3226,10 +3240,10 @@ pub struct LocalState {
 }
 
 impl LocalState {
-    pub fn new(zone: &Arc<Zone>) -> Result<Self, SignerError> {
+    pub fn new(zone: &Arc<Zone>) -> Self {
         let zone_state = zone.read();
 
-        Ok(Self {
+        Self {
             apex_remove: zone_state.apex_remove.clone(),
             apex_extra: zone_state.apex_extra.clone(),
             last_signature_refresh: zone_state.last_signature_refresh.clone(),
@@ -3237,15 +3251,10 @@ impl LocalState {
             key_roll: zone_state.key_roll.clone(),
             previous_serial: zone_state.previous_serial,
             next_min_expiration: zone_state.next_min_expiration,
-        })
+        }
     }
 
-    pub fn save(self, center: &Arc<Center>, zone: &Arc<Zone>) {
-        // TODO: The state is always marked as dirty. We could avoid marking it
-        // as dirty in case we detect a modification has not happened. We should
-        // evaluate whether this is worthwhile.
-        let mut zone_state = zone.write(center);
-
+    pub fn save(self, zone_state: &mut ZoneState) {
         zone_state.apex_remove = self.apex_remove;
         zone_state.apex_extra = self.apex_extra;
         zone_state.last_signature_refresh = self.last_signature_refresh;
@@ -4130,7 +4139,7 @@ fn sign_rtype_set(
             panic!("Expected something for {name}/{rtype}");
         };
         sign_records(
-            &iss.origin,
+            iss.origin,
             &records,
             &iss.keys,
             iss.inception,

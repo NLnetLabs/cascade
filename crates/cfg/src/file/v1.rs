@@ -16,6 +16,10 @@ use crate::{
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct Spec {
+    /// The path to the global state file.
+    #[serde(default = "Spec::state_file_default")]
+    pub state_file: Box<Utf8Path>,
+
     /// The directory storing policy files.
     #[serde(default = "Spec::policy_dir_default")]
     pub policy_dir: Box<Utf8Path>,
@@ -39,10 +43,6 @@ pub struct Spec {
     /// The file storing KMIP server credentials.
     #[serde(default = "Spec::kmip_credentials_store_path_default")]
     pub kmip_credentials_store_path: Box<Utf8Path>,
-
-    /// The directory storing KMIP server state.
-    #[serde(default = "Spec::kmip_server_state_dir_default")]
-    pub kmip_server_state_dir: Box<Utf8Path>,
 
     /// Remote control configuration.
     pub remote_control: RemoteControlSpec,
@@ -68,13 +68,13 @@ pub struct Spec {
 impl Spec {
     /// Parse from this specification.
     pub fn parse_into(self, config: &mut Config) {
+        config.state_file = self.state_file;
         config.policy_dir = self.policy_dir;
         config.zone_state_dir = self.zone_state_dir;
         config.tsig_store_path = self.tsig_store_path;
         config.keys_dir = self.keys_dir;
         config.dnst_binary_path = self.dnst_binary_path;
         config.kmip_credentials_store_path = self.kmip_credentials_store_path;
-        config.kmip_server_state_dir = self.kmip_server_state_dir;
         self.remote_control.parse_into(&mut config.remote_control);
         self.daemon.parse_into(&mut config.daemon);
         self.loader.parse_into(&mut config.loader);
@@ -89,13 +89,13 @@ impl Spec {
 impl Default for Spec {
     fn default() -> Self {
         Self {
+            state_file: Self::state_file_default(),
             policy_dir: Self::policy_dir_default(),
             zone_state_dir: Self::zone_state_dir_default(),
             tsig_store_path: Self::tsig_store_path_default(),
             keys_dir: Self::keys_dir_default(),
             dnst_binary_path: Self::dnst_binary_path_default(),
             kmip_credentials_store_path: Self::kmip_credentials_store_path_default(),
-            kmip_server_state_dir: Self::kmip_server_state_dir_default(),
             remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
@@ -107,6 +107,11 @@ impl Default for Spec {
 }
 
 impl Spec {
+    /// The default value for `state_file`.
+    fn state_file_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/state.db".into()
+    }
+
     /// The default value for `policy_dir`.
     fn policy_dir_default() -> Box<Utf8Path> {
         "/etc/cascade/policies".into()
@@ -134,12 +139,7 @@ impl Spec {
 
     /// The default value for `kmip_credentials_store_path`.
     fn kmip_credentials_store_path_default() -> Box<Utf8Path> {
-        "/var/lib/cascade/kmip/credentials.db".into()
-    }
-
-    /// The default value for `kmip_server_state_dir`.
-    fn kmip_server_state_dir_default() -> Box<Utf8Path> {
-        "/var/lib/cascade/kmip".into()
+        "/var/lib/cascade/kmip-credentials.db".into()
     }
 }
 

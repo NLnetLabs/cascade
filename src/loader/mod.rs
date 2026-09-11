@@ -24,7 +24,7 @@ use crate::{
     common::scheduler::Scheduler,
     loader::zone::EnqueuedRefresh,
     util::AbortOnDrop,
-    zone::{HistoricalEvent, Zone, ZoneByName, ZoneByPtr},
+    zone::{Zone, ZoneByName, ZoneByPtr},
     zonedata::LoadedZoneBuilder,
 };
 
@@ -125,7 +125,7 @@ async fn refresh(
 
     // Perform the source-specific reload into the zone contents.
     let result = match source {
-        Source::None => Ok(false),
+        Source::None => Ok(()),
         Source::Zonefile { path } => {
             // Zonefile loading is a synchronous process, so it is executing on
             // its own blocking task. It cannot borrow 'builder', so 'builder'
@@ -139,13 +139,12 @@ async fn refresh(
             })
             .await
             .unwrap();
-            result.map(|()| true).map_err(Into::into)
+            result.map_err(Into::into)
         }
         Source::Server { addr, tsig_key } if force => {
             let tsig_key = tsig_key.as_deref().cloned();
             server::axfr(&zone, &addr, tsig_key, &mut builder, &metrics)
                 .await
-                .map(|()| true)
                 .map_err(Into::into)
         }
         Source::Server { addr, tsig_key } => {
@@ -162,17 +161,23 @@ async fn refresh(
 
     // Finalize the load metrics.
     let start_time = metrics.start.0;
+    debug_assert!(
+        handle
+            .state
+            .loader
+            .active_load_metrics
+            .as_ref()
+            .is_some_and(|x| Arc::ptr_eq(x, &metrics)),
+        "the active load metrics were set when starting the load"
+    );
     handle.state.loader.active_load_metrics = None;
-    handle.state.loader.last_load_metrics = Some(metrics.finish());
-
-    {
-        let loader_metrics = handle.state.loader.last_load_metrics.as_ref().unwrap();
-        // Copy generated loader metrics to prometheus metrics
-        zone.metrics
-            .zone_loaded_last_bytes(loader_metrics.num_loaded_bytes as i64);
-        zone.metrics
-            .zone_loaded_last_records(loader_metrics.num_loaded_records as i64);
-    }
+    let metrics = metrics.finish();
+    // Copy generated loader metrics to prometheus metrics
+    zone.metrics
+        .zone_loaded_last_bytes(metrics.num_loaded_bytes as i64);
+    zone.metrics
+        .zone_loaded_last_records(metrics.num_loaded_records as i64);
+    handle.state.loader.last_load_metrics = Some(metrics);
 
     // Update the SOA refresh timer state.
     //
@@ -180,11 +185,7 @@ async fn refresh(
     // (re)loaded by user request.
     if matches!(handle.state.loader.source, Source::Server { .. }) {
         // Load the SOA.
-        let soa = if matches!(result, Ok(true)) {
-            Some(builder.next().unwrap().soa().clone())
-        } else {
-            builder.curr().map(|r| r.soa().clone())
-        };
+        let soa = builder.next().or(builder.curr()).map(|r| r.soa().clone());
 
         let refresh_timer = &mut handle.state.loader.refresh_timer;
         let refresh_monitor = &center.loader.refresh_scheduler;
@@ -210,8 +211,9 @@ async fn refresh(
     );
 
     // Process the result of the reload.
+    let built = builder.diff().is_some_and(|d| !d.is_empty());
     match result {
-        Ok(false) => {
+        Ok(()) if !built => {
             debug!(
                 zone = %zone.name,
                 "The zone is up-to-date"
@@ -221,7 +223,7 @@ async fn refresh(
             handle.get().abandon_load(builder);
         }
 
-        Ok(true) => {
+        Ok(()) => {
             zone.metrics.last_successful_load_duration(duration);
 
             let soa = builder.next().unwrap().soa();
@@ -255,14 +257,7 @@ async fn refresh(
             );
 
             // Cancel the load
-            handle.get().abandon_load(builder);
-
-            handle.state.record_event(
-                HistoricalEvent::LoadingFailed {
-                    reason: err.to_string(),
-                },
-                None,
-            );
+            handle.get().loading_failed(builder, err);
         }
     }
 }

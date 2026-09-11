@@ -86,25 +86,25 @@ started.
 
        .. code-block:: bash
 
-          sudo systemctl start cascaded
+          sudo systemctl start cascade
 
        You can also configure Cascade to start at boot:
 
        .. code-block:: bash
 
-          sudo systemctl enable cascaded
+          sudo systemctl enable cascade
        
        You can check the status of Cascade with:
        
        .. code-block:: bash 
        
-          sudo systemctl status cascaded
+          sudo systemctl status cascade
        
        You can view the logs with: 
        
        .. code-block:: bash
        
-          sudo journalctl --unit=cascaded
+          sudo journalctl --unit=cascade
 
    .. group-tab:: Ubuntu
 
@@ -165,25 +165,25 @@ started.
 
        .. code-block:: bash
 
-          sudo systemctl start cascaded
+          sudo systemctl start cascade
 
        You can also configure Cascade to start at boot:
 
        .. code-block:: bash
 
-          sudo systemctl enable cascaded
+          sudo systemctl enable cascade
        
        You can check the status of Cascade with:
        
        .. code-block:: bash 
        
-          sudo systemctl status cascaded
+          sudo systemctl status cascade
        
        You can view the logs with: 
        
        .. code-block:: bash
        
-          sudo journalctl --unit=cascaded
+          sudo journalctl --unit=cascade
 
    .. group-tab:: RHEL
 
@@ -232,25 +232,25 @@ started.
 
        .. code-block:: bash
 
-          sudo systemctl start cascaded
+          sudo systemctl start cascade
 
        You can also configure Cascade to start at boot:
 
        .. code-block:: bash
 
-          sudo systemctl enable cascaded
+          sudo systemctl enable cascade
        
        You can check the status of Cascade with:
        
        .. code-block:: bash 
        
-          sudo systemctl status cascaded
+          sudo systemctl status cascade
        
        You can view the logs with: 
        
        .. code-block:: bash
        
-          sudo journalctl --unit=cascaded
+          sudo journalctl --unit=cascade
        
    .. group-tab:: Docker
 
@@ -277,7 +277,7 @@ Updating
 
    .. code-block:: bash
 
-      sudo systemctl stop cascaded.service
+      sudo systemctl stop cascade.service
 
    Or by killing the Cascade daemon process otherwise:
 

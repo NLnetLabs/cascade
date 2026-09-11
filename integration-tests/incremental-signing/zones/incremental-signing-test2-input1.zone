@@ -47,6 +47,9 @@ to-be-occluded.new-delegation	DS	12345 13 253 05
 
 ; For NSEC add a new last entry in the NSEC chain.
 
+; For NSEC add a few names with different case. This tests whether canonical
+; compare works as expected.
+
 ; Test adding a new first NSEC3 record.
 
 ; Test adding a new last NSEC3 record.

@@ -74,9 +74,9 @@ runs:
       run: |
         dig @127.0.0.1 -p 4541 example.test SOA | grep -F 'status: NOERROR'
 
-    - name: Querying the zone at the publication server should fail
+    - name: Querying the zone at the publication server should fail (1)
       run: |
-        dig @127.0.0.1 -p 4542 example.test SOA | grep -F 'status: NXDOMAIN'
+        dig @127.0.0.1 -p 4542 example.test SOA | grep -F 'status: SERVFAIL'
 
     - name: Reject the zone
       env:
@@ -90,7 +90,7 @@ runs:
 
     - name: Querying the zone at the loaded review server should fail
       run: |
-        dig @127.0.0.1 -p 4540 example.test SOA | grep -F 'status: NXDOMAIN'
+        dig @127.0.0.1 -p 4540 example.test SOA | grep -F 'status: SERVFAIL'
 
     - name: Reload the zone
       run: |
@@ -104,9 +104,9 @@ runs:
       run: |
         dig @127.0.0.1 -p 4541 example.test SOA | grep -F 'status: NOERROR'
 
-    - name: Querying the zone at the publication server should fail
+    - name: Querying the zone at the publication server should fail (2)
       run: |
-        dig @127.0.0.1 -p 4542 example.test SOA | grep -F 'status: NXDOMAIN'
+        dig @127.0.0.1 -p 4542 example.test SOA | grep -F 'status: SERVFAIL'
 
     - name: Approve the zone
       env:

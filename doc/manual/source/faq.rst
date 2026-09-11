@@ -85,7 +85,7 @@ For this reason, rolling a KSK once a year is reasonable.
    :doc:`hsms`
       Hardware Security Modules (HSMs).
 
-Installing ang Building
+Installing and Building
 -----------------------
 
 Can I build Cascade with LibreSSL?

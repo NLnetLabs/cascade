@@ -4,7 +4,16 @@ USER_ID="cascade"
 
 create_user() {
     if id ${USER_ID} > /dev/null 2>&1; then return; fi
-    adduser --system --home /var/lib/${USER_ID} --group ${USER_ID}
+
+    # Newer versions of Debian/Ubuntu adduser use /nonexistent as the home
+    # directory by default, and don't actually create it. However, the version
+    # of Lintian in these older Debian/Ubuntu versions requires --home to be
+    # specified when calling adduser with --system so we explicitly set home
+    # to /nonexistent to prevent Lintian complaining in the newer O/S versions
+    # and to prevent adduser failing due to the missing argument/to have
+    # consistent behaviour in the case of the older O/S versions.
+    # See: https://lists.debian.org/debian-lint-maint/2025/08/msg00042.html
+    adduser --system --group ${USER_ID} --home /nonexistent --no-create-home
 }
 
 case "$1" in

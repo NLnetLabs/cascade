@@ -19,23 +19,165 @@ Released yyyy-mm-dd.
 Released yyyy-mm-dd.
 
 ### Breaking changes
+
+- Information about HSMs (previously stored in one file per HSM in
+  `kmip-server-state-dir`) is now stored in the global state file.
+  ([#967] by @bal-e)
+
+  The `kmip-server-state-dir` configuration option has been removed and the
+  default value for `kmip-credentials-store-path` has changed.
+
+- `cascade tsig add` now reads TSIG key data from a file, supporting the NSD,
+  BIND, and Knot formats. ([#938] by @withjannisNLnetLabs)
+
 ### New
+
+- Allow omitting NSEC3 opt-out setting in policy. ([#972] by @bal-e)
+
 ### Bug fixes
+
+- Fixed bugs that on reload a policy could refer to a non-existant HSM and
+  the changes in default HSM to use were not propagated to the key manager.
+  ([#964] by @Philip-NLnetLabs)
+- In Debian and RPM packages, don't set a home directory for the `cascade` user.
+  ([#976] by @ximon18)
+- Fix and centralize access control for incoming DNS requests.
+  ([#971] by @Philip-NLnetLabs)
+
+### Other changes
+
+- Check that generated man pages are up-to-date in CI. ([#984] by @thgoebel)
+- Upgrade to Ploutos v10. ([#977] by @ximon18)
+- Use `uv` and support live-building documentation. ([#979] by @thgoebel)
+
+### Documentation improvements
+
+- Update `tsig add` documentation on the "NSD" page. ([#983] by
+  @withjannisNLnetLabs)
+- Update HSM support table. ([#981] by @thgoebel)
+- Miscellaneous fixes related to HSM documentation. ([#987] by @ximon18)
+- Add a "Creating a Test Zone" section in the "Quick Start" page. ([#980] by
+  @thgoebel)
+- Add warnings that KMIP client/server cert arguments are stubs. ([#985] by
+  @thgoebel)
+
+### Known issues
+### Acknowledgements
+
+Thanks to @thgoebel for his contributions!
+
+[#938]: https://github.com/NLnetLabs/cascade/pull/938
+[#964]: https://github.com/NLnetLabs/cascade/pull/964
+[#967]: https://github.com/NLnetLabs/cascade/pull/967
+[#971]: https://github.com/NLnetLabs/cascade/pull/971
+[#972]: https://github.com/NLnetLabs/cascade/pull/972
+[#976]: https://github.com/NLnetLabs/cascade/pull/976
+[#977]: https://github.com/NLnetLabs/cascade/pull/977
+[#979]: https://github.com/NLnetLabs/cascade/pull/979
+[#980]: https://github.com/NLnetLabs/cascade/pull/980
+[#981]: https://github.com/NLnetLabs/cascade/pull/981
+[#983]: https://github.com/NLnetLabs/cascade/pull/983
+[#984]: https://github.com/NLnetLabs/cascade/pull/984
+[#985]: https://github.com/NLnetLabs/cascade/pull/985
+[#987]: https://github.com/NLnetLabs/cascade/pull/987
+
+## 0.1.0-beta6 'Leonard Shelby'
+
+Released 2026-08-13.
+
+### Breaking changes
+
+- Rename `cascaded.service` to `cascade.service` ([#913] by @maertsen). If you
+  are using systemd, you will need to refer to `cascade` instead of `cascaded`
+  now.
+
+### New
+
+- Purging of excess diffs. ([#657] by @ximon18)
+- Show persistence operations in `cascade zone status`. ([#901] by
+  @tertsdiepraam)
+- Remove persisted zone files when a zone is removed. ([#942] by @ximon18)
+
+### Bug fixes
+
+- Persist the maintenance mode setting. ([#900] by @tertsdiepraam)
+- Use IDs to sort persisted diffs instead of file paths. ([#907] by
+  @tertsdiepraam, fixes [#908])
+- Improve DNS errors and add EDEs. In particular do not return NXDOMAIN for
+  SOA queries when no zone data is available. ([#934] by @Philip-NLnetLabs)
+- Don't store references to non-existing loaded IXFR diffs. ([#936] by @ximon18)
+- During incremental signing, allow re-signing a zone whose SOA record is
+  unchanged. ([#940] by @Philip-NLnetLabs)
+- Don't abort XFR transfers if the response buffer is full. ([#941] by
+  @ximon18)
+- If a zone is reloaded, and is read from a zonefile or via AXFR, check whether
+  the zone has changed and cancel the load operation if it has not. ([#945] by
+  @bal-e, fixes [#937])
+- Wrong serial requested from upstream via IXFR due to compaction bug.
+  ([#952] by @ximon18, fixes [#948])
+- Correctly restore SOAs for standalone diffs. ([#955] by @bal-e,
+  fixes [#953])
+- 'a patchset could not be applied' error during zone restoration.
+  ([#959] by @ximon18, fixes [#956])
+- Include DNSSEC records in the loaded zone when compacting.
+  ([#961] by @ximon18, fixes [#960])
+
 ### Other changes
 
 - Improve memory use for unsigned data in incremental signing. ([#866] by
   @Philip-NLnetLabs)
+- Enhance signing tests. ([#848], [#946] by @Philip-NLnetLabs)
+- Specify key roll strategies explicitly rather than using `dnst keyset`
+  defaults. ([#933] by @ximon18)
+- Add some DEBUG and TRACE logging about IXFR outbound request activity.
+  ([#947] by @ximon18)
 
 ### Documentation improvements
 
 - RST markup fixes to systemd socket activation quick start notes. ([#858] by
   @ximon18)
+- Document key roll strategies used by Cascade. ([#933] by @ximon18)
 
 ### Known issues
+
+- Removing a zone while an operation is ongoing (e.g. loading or signing) may
+  cause Cascade to crash. In the next release, we will only allow zones in
+  maintenance mode to be removed.
+
 ### Acknowledgements
 
+Thanks to @bortzmeyer and @gryphius for testing Cascade and providing valuable
+feedback!
+
+[#908]: https://github.com/NLnetLabs/cascade/issues/908
+[#937]: https://github.com/NLnetLabs/cascade/issues/937
+[#948]: https://github.com/NLnetLabs/cascade/issues/948
+[#953]: https://github.com/NLnetLabs/cascade/issues/953
+[#956]: https://github.com/NLnetLabs/cascade/issues/956
+[#960]: https://github.com/NLnetLabs/cascade/issues/960
+
+[#657]: https://github.com/NLnetLabs/cascade/pull/657
+[#848]: https://github.com/NLnetLabs/cascade/pull/848
 [#858]: https://github.com/NLnetLabs/cascade/pull/858
 [#866]: https://github.com/NLnetLabs/cascade/pull/866
+[#900]: https://github.com/NLnetLabs/cascade/pull/900
+[#901]: https://github.com/NLnetLabs/cascade/pull/901
+[#907]: https://github.com/NLnetLabs/cascade/pull/907
+[#913]: https://github.com/NLnetLabs/cascade/pull/913
+[#933]: https://github.com/NLnetLabs/cascade/pull/933
+[#933]: https://github.com/NLnetLabs/cascade/pull/933
+[#934]: https://github.com/NLnetLabs/cascade/pull/934
+[#936]: https://github.com/NLnetLabs/cascade/pull/936
+[#940]: https://github.com/NLnetLabs/cascade/pull/940
+[#941]: https://github.com/NLnetLabs/cascade/pull/941
+[#942]: https://github.com/NLnetLabs/cascade/pull/942
+[#945]: https://github.com/NLnetLabs/cascade/pull/945
+[#946]: https://github.com/NLnetLabs/cascade/pull/946
+[#947]: https://github.com/NLnetLabs/cascade/pull/947
+[#952]: https://github.com/NLnetLabs/cascade/pull/952
+[#955]: https://github.com/NLnetLabs/cascade/pull/955
+[#959]: https://github.com/NLnetLabs/cascade/pull/959
+[#961]: https://github.com/NLnetLabs/cascade/pull/961
 
 ## 0.1.0-beta5 'Got that holiday feeling'
 

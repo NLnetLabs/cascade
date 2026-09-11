@@ -643,7 +643,7 @@ fn apply_replacement(
 
     next.records.par_sort_unstable();
 
-    if curr.soa.is_some() {
+    if let Some(curr_soa) = &curr.soa {
         let mut removed_records = Vec::new();
         let mut added_records = Vec::new();
 
@@ -662,9 +662,11 @@ fn apply_replacement(
             }
         }
 
+        // Only set the SOA if it changed.
+        let soa_changed = curr_soa != soa;
         Ok(Box::new(DiffData {
-            removed_soa: curr.soa.clone(),
-            added_soa: Some(soa.clone()),
+            removed_soa: soa_changed.then_some(curr_soa.clone()),
+            added_soa: soa_changed.then_some(soa.clone()),
             removed_records,
             added_records,
         }))

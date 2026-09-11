@@ -14,12 +14,14 @@ use tracing::{debug, error, info, trace};
 
 use crate::api::{self, KeyImport, TsigAddError, TsigAddResult};
 use crate::config::RuntimeConfig;
+use crate::hsm::HsmStore;
 use crate::loader::zone::LoaderZoneHandle;
 use crate::loader::{Loader, Source};
 use crate::metrics::Metrics;
-use crate::persistence::{Persister, Restorer};
+use crate::persistence::zone::PersistenceState;
+use crate::persistence::{Compacter, Persister, Restorer};
 use crate::server::{LoadedReviewServer, PublicationServer, SignedReviewServer};
-use crate::state::PolicySpec;
+use crate::state::{HsmSpec, PolicySpec};
 use crate::tsig::ImportError;
 use crate::units::key_manager::KeyManager;
 use crate::units::zone_signer::ZoneSigner;
@@ -63,6 +65,9 @@ pub struct Center {
 
     /// The zone data restorer.
     pub restorer: Restorer,
+
+    /// The zone data compacter.
+    pub compacter: Compacter,
 
     /// The review server for loaded instances of zones.
     pub loaded_review_server: LoadedReviewServer,
@@ -272,9 +277,15 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
 
     let ZoneByName(zone) = state.zones.get(&name).ok_or(ZoneRemoveError::NotFound)?;
 
-    // TODO(#871): support removing a zone during restoration.
-    if zone.read().storage.is_restoring() {
-        return Err(ZoneRemoveError::MidRestoration);
+    {
+        let zone = zone.read();
+        // The zone must be in maintenance mode, and passive/halted.
+        // TODO(#871): support removing a zone during restoration.
+        if !zone.maintenance_mode {
+            return Err(ZoneRemoveError::NotInMaintenanceMode);
+        } else if !zone.machine.is_waiting() && !zone.machine.is_halted() {
+            return Err(ZoneRemoveError::NotPassiveOrHalted);
+        }
     }
 
     let ZoneByName(zone) = state
@@ -286,6 +297,20 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
     // The zone might not have made it to these places, but that's not an issue
     // so we just ignore any errors.
 
+    // Note: Persisted zone content files are removed first so that there
+    // is no risk of them being left behind if the process is terminated
+    // after the zone is removed from Cascade state as that would leave the
+    // persisted zone content files behind while it would appear that the
+    // zone had been fully removed. If Cascade is terminated after removal of
+    // persisted zone content files but before the zone had been fully removed
+    // from state Cascade will still know the zone but be unable to serve it,
+    // which would be no worse than operators intended effect of completely
+    // removing the zone, but with the benefit that the operator can see that
+    // zone removal didn't fully complete as expected and leaving them able to
+    // retry the zone removal at a later moment. An alternative could be to
+    // track 'mid-removal' of a zone so that we can detect an incomplete
+    // attempt to remove a zone.
+    PersistenceState::clear(center, &zone);
     LoadedReviewServer::remove_zone(center, &zone);
     SignedReviewServer::remove_zone(center, &zone);
     PublicationServer::remove_zone(center, &zone);
@@ -385,6 +410,9 @@ pub struct State {
     /// Like global configuration, these are only reloaded on user request.
     pub policies: foldhash::HashMap<Box<str>, Policy>,
 
+    /// HSMs.
+    pub hsms: HsmStore,
+
     /// The TSIG key store.
     ///
     /// TSIG keys are used for authenticating Cascade to zone sources, and for
@@ -407,15 +435,17 @@ impl State {
     /// `zones` will be set to the names of zones that need to be loaded.
     /// `policies` will be set to the set of policies from the global state
     /// file, that need to be parsed and inserted in the state.
+    /// `hsms` will be set to the set of known HSMs from the global state file,
+    /// that need to be parsed and inserted in the state.
     pub fn init_from_file(
         config: &Config,
         zones: &mut foldhash::HashSet<Name<Bytes>>,
         policies: &mut foldhash::HashMap<Box<str>, PolicySpec>,
+        hsms: &mut foldhash::HashMap<Box<str>, HsmSpec>,
     ) -> io::Result<Self> {
-        let path = config.daemon.state_file.value();
-        let spec = crate::state::Spec::load(path)?;
+        let spec = crate::state::Spec::load(&config.state_file)?;
 
-        Ok(spec.parse(zones, policies))
+        Ok(spec.parse(zones, policies, hsms))
     }
 
     /// Mark the global state as dirty.
@@ -445,7 +475,7 @@ impl State {
                     return;
                 };
 
-                path = center.config.daemon.state_file.value().clone();
+                path = center.config.state_file.clone();
                 spec = crate::state::Spec::build(&state);
             }
 
@@ -507,13 +537,17 @@ impl From<ZoneAddError> for api::ZoneAddError {
 //----------- ZoneRemoveError --------------------------------------------------
 
 /// An error removing a zone.
+#[expect(clippy::enum_variant_names, reason = "listing failure conditions")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZoneRemoveError {
     /// No such name could be found.
     NotFound,
 
-    /// The zone is being restored from disk.
-    MidRestoration,
+    /// The zone is not in maintenance mode.
+    NotInMaintenanceMode,
+
+    /// The zone is not in passive/hard-halt state.
+    NotPassiveOrHalted,
 }
 
 impl std::error::Error for ZoneRemoveError {}
@@ -522,7 +556,8 @@ impl fmt::Display for ZoneRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
-            Self::MidRestoration => "the zone is being restored from disk",
+            Self::NotInMaintenanceMode => "the zone is not in maintenance mode",
+            Self::NotPassiveOrHalted => "the zone is not in passive/hard-halt state",
         })
     }
 }
@@ -531,7 +566,8 @@ impl From<ZoneRemoveError> for api::ZoneRemoveError {
     fn from(value: ZoneRemoveError) -> Self {
         match value {
             ZoneRemoveError::NotFound => Self::NotFound,
-            ZoneRemoveError::MidRestoration => Self::MidRestoration,
+            ZoneRemoveError::NotInMaintenanceMode => Self::NotInMaintenanceMode,
+            ZoneRemoveError::NotPassiveOrHalted => Self::NotPassiveOrHalted,
         }
     }
 }

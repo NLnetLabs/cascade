@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::policy::PolicyVersion;
 
-use super::Policy;
-
 pub mod v1;
 
 //----------- FileSpec ---------------------------------------------------------
@@ -27,14 +25,8 @@ impl Spec {
     /// Parse a new [`PolicyVersion`].
     pub fn parse(self, name: &str) -> PolicyVersion {
         match self {
-            Self::V1(spec) => spec.parse(name),
+            Self::V1(spec) => v1::parse(spec, name),
         }
-    }
-
-    /// Build into this specification.
-    #[expect(dead_code, reason = "We plan to support policy serialization")]
-    pub fn build(policy: &Policy) -> Self {
-        Self::V1(v1::Spec::build(&policy.latest))
     }
 }
 
@@ -45,13 +37,5 @@ impl Spec {
     pub fn load(path: &Utf8Path) -> io::Result<Self> {
         let text = fs::read_to_string(path)?;
         toml::from_str(&text).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
-    }
-
-    /// Build and save this specification to a file.
-    #[expect(dead_code, reason = "We plan to support policy serialization")]
-    pub fn save(&self, path: &Utf8Path) -> io::Result<()> {
-        let text = toml::to_string_pretty(self)
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
-        crate::util::write_file(path, text.as_bytes())
     }
 }

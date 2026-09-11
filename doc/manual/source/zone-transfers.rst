@@ -27,8 +27,8 @@ based on the zone's SOA timers.
           signed zone review hook could be used to AXFR the signed zone to
           a file on disk to achieve this.
 
-Using zone transfers with an upstream nameserver
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Requesting zone transfers from upstream nameservers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To instruct Cascade to transfer a zone via the network instead of loading
 it from a file you must supply an upstream nameserver IP address when
@@ -42,16 +42,21 @@ Cascade can be instructed to authenticate the upstream nameserver by use of a
 TSIG key. The TSIG key to use must be provided to Cascade _before_ adding the
 zone. See :program:`cascade` :subcmd:`tsig add`.
 
-Providing zone transfers to a downstream server
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Providing zone transfers to downstream nameservers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 By default, Cascade allows downstream servers to access published zones by
 zone transfer, no configuration is needed.
 
+To restrict the downstream nameservers which may request transfer of the
+zone use the ``server.outbound.provide-xfr-to`` policy setting. As with
+upstream transfers, TSIG can also be used to authentication communication with
+downstream nameservers.
+
 To ensure timely update by secondaries, Cascade can be configured to send
 :RFC:`1996` NOTIFY messages to specified secondaries. This is done via the
-policy setting ``server.outbound.send-notify-to``, optionally specifying an
-:RFC:8945` TSIG key to use to authenticate communication.
+policy setting ``server.outbound.send-notify-to``, optionally specifying a
+TSIG key to use to authenticate communication.
 
 .. tip:: Remember to reload the policy file after changing it. See
          :program:`cascade` :subcmd:`policy reload`.
@@ -59,8 +64,51 @@ policy setting ``server.outbound.send-notify-to``, optionally specifying an
 .. tip:: Use :program:`cascade` :subcmd:`tsig add` to add a TSIG key to
          Cascade _before_ reloading policy file changes.
 
-Controlling automatic key rollover zone transfer settings
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Incremental zone transfers
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Cascade will automatically attempt to use IXFR with upstream nameservers,
+and accumulates :RFC:`1995` "sequences of differential information" (diffs)
+in memory in order to use them to respond to IXFR requests from downstream
+nameservers.
+
+.. tip:: Incremental diffs are also available from the Cascade review
+         nameservers, but only the difference between the current and previous
+         version of the zone. IXFR capable :doc:`review-hooks` could use this
+         to avoid requesting and processing the entire zone using AXFR and
+         instead review only the changes in the zone.
+
+Diffs are persisted to disk so that if Cascade is restarted that it is still
+able to respond to IXFR requests from downstream nameservers rather than
+forcing them to costly fallback to AXFR transfers.
+
+Cascade has two policy settings which limit the amount of memory and disk
+space used per zone to store diffs:
+
+.. code-block:: toml
+
+   [server.outbound]
+   max-diffs = 5
+   max-diffs-size = 20
+
+``max_diffs`` specifies the maximum numer of IXFR diffs per zone that Cascade
+may keep in memory and on disk.
+
+``max-diffs-size`` specifies the maximum number of records that all diffs for
+a zone combined that may be stored in memory per zone as a percentage of the
+number of records in the currently published version of the zone.
+
+Note that diffs on-disk are (a) lazily removed, and so may persist longer than
+expected, and (b) on-disk diffs may be needed to restore the published zone
+on restart of Cascade and will then be removed once the persisted zone record
+data has been compacted at which point it is safe for Cascade to delete them.
+
+.. caution:: Do not manually remove on-disk diff files as doing so may prevent
+             Cascade restoring the last published version of the zone if the
+             daemon process is restarted.
+
+Zone transfers and automated key rollover
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When using automatic key rollover (the default) Cascade will attempt to verify
 that certain key properties of the signed zone being served to consumers are
@@ -75,3 +123,4 @@ nameserver, or if a specific port number or TSIG key should be used
 to request the transfer, you will also need to configure the Cascade
 key manager to fetch the zone correctly. This can be done via the
 ``key-manager.publication-nameservers`` policy setting.
+

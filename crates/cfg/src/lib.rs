@@ -25,6 +25,9 @@ pub mod file;
 /// Cascade is running.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
+    /// The path to the global state file.
+    pub state_file: Box<Utf8Path>,
+
     /// The directory storing policy files.
     pub policy_dir: Box<Utf8Path>,
 
@@ -60,9 +63,6 @@ pub struct Config {
 
     /// The file storing KMIP server credentials.
     pub kmip_credentials_store_path: Box<Utf8Path>,
-
-    /// The directory storing KMIP server state.
-    pub kmip_server_state_dir: Box<Utf8Path>,
 }
 
 //--- Defaults
@@ -70,13 +70,13 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            state_file: "/var/lib/cascade/state.db".into(),
             policy_dir: "/etc/cascade/policies".into(),
             zone_state_dir: "/var/lib/cascade/zone-state".into(),
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
             dnst_binary_path: "dnst".into(),
-            kmip_credentials_store_path: "/var/lib/cascade/kmip/credentials.db".into(),
-            kmip_server_state_dir: "/var/lib/cascade/kmip".into(),
+            kmip_credentials_store_path: "/var/lib/cascade/kmip-credentials.db".into(),
             remote_control: Default::default(),
             daemon: Default::default(),
             loader: Default::default(),
@@ -150,9 +150,6 @@ impl Default for RemoteControlConfig {
 /// Daemon-related configuration for Cascade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DaemonConfig {
-    /// The location of the state file.
-    pub state_file: Setting<Box<Utf8Path>>,
-
     /// Logging configuration.
     pub logging: LoggingConfig,
 
@@ -175,7 +172,6 @@ pub struct DaemonConfig {
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
-            state_file: Setting::new("/var/lib/cascade/state.db".into()),
             logging: LoggingConfig::default(),
             config_file: Setting::new("/etc/cascade/config.toml".into()),
             daemonize: Setting::new(false),

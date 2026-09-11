@@ -98,6 +98,16 @@ runs:
         text        TXT "Hello World!"
         EOF
 
+    - name: Prepare tsig-key file.
+      run: |
+        # Prepare the tsig key.
+        cat >tsig-key.yaml <<EOL
+        key:
+          name: "tsig-key"
+          algorithm: hmac-sha256
+          secret: "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+        EOL
+
     - name: Add a custom policy
       run: |
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
@@ -109,7 +119,8 @@ runs:
           echo 'send-notify-to = ["${{ inputs.send-notify-to }}"]' >> "${POLICY_DIR}/restricted.toml"
         fi
         if [[ "${{ inputs.provide-xfr-to}}" == *"^tsig-key"* || "${{ inputs.send-notify-to }}" == *"^tsig-key"* ]]; then
-          cascade tsig add tsig-key hmac-sha256 "COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0="
+          # The --format=nsd is default.
+          cascade tsig add tsig-key.yaml
         fi
         cascade policy reload
 

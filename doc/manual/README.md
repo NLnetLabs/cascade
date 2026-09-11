@@ -11,3 +11,16 @@ guidance.
 
 [European Commission’s English Style Guide]:
     https://ec.europa.eu/info/sites/info/files/styleguide_english_dgt_en.pdf
+
+## Usage
+
+First, [install uv](https://docs.astral.sh/uv/getting-started/installation/).
+Then:
+
+```sh
+# Development server with hot reloading
+make live
+
+# Static HTML build
+make html
+```

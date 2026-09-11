@@ -11,8 +11,9 @@ use domain::base::Name;
 use domain::base::Ttl;
 use domain::tsig::KeyName;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
+use tracing::info;
 
+use crate::hsm::HsmStore;
 use crate::tsig::TsigStore;
 use crate::{api::PolicyReloadError, config::Config};
 
@@ -60,9 +61,11 @@ pub fn reload_all(
     policies: &mut foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
     tsig_store: &TsigStore,
+    hsms: &HsmStore,
     mut on_change: impl FnMut(&Box<str>, PolicyChange),
+    warnings: &mut Vec<String>,
 ) -> Result<(), PolicyReloadError> {
-    let new_versions = load_all(policies, config, tsig_store)?;
+    let new_versions = load_all(policies, config, tsig_store, hsms, warnings)?;
 
     let mut new_policies = foldhash::HashMap::default();
 
@@ -96,9 +99,9 @@ pub fn reload_all(
     for (name, policy) in policies.drain() {
         // If any zones are using this policy, keep it.
         if !policy.zones.is_empty() {
-            error!(
+            warnings.push(format!(
                 "The file backing policy '{name}' has been removed, but some zones are still using it; Cascade will preserve its internal copy"
-            );
+            ));
             let prev = new_policies.insert(name, policy);
             assert!(
                 prev.is_none(),
@@ -131,6 +134,8 @@ pub fn load_all(
     policies: &foldhash::HashMap<Box<str>, Policy>,
     config: &Config,
     tsig_store: &TsigStore,
+    hsms: &HsmStore,
+    warnings: &mut Vec<String>,
 ) -> Result<foldhash::HashMap<Box<str>, PolicyVersion>, PolicyReloadError> {
     // Write the loaded policies to a new hashmap, so policies that no longer
     // exist can be detected easily.
@@ -145,10 +150,10 @@ pub fn load_all(
 
         // Filter for UTF-8 paths.
         let Ok(path) = Utf8PathBuf::from_path_buf(entry.path()) else {
-            warn!(
+            warnings.push(format!(
                 "Ignoring potential policy '{}' as the path is non-UTF-8",
                 entry.path().display()
-            );
+            ));
             continue;
         };
 
@@ -158,7 +163,7 @@ pub fn load_all(
             .expect("this path has a known parent directory")
             .starts_with('.')
         {
-            debug!("Ignoring hidden file '{path}' among policies");
+            warnings.push(format!("Ignoring hidden file '{path}' among policies"));
             continue;
         }
 
@@ -167,7 +172,9 @@ pub fn load_all(
             .extension()
             .is_none_or(|e| !e.eq_ignore_ascii_case("toml"))
         {
-            warn!("Ignoring potential policy '{path}'; policies must end in '.toml'");
+            warnings.push(format!(
+                "Ignoring potential policy '{path}'; policies must end in '.toml'"
+            ));
             continue;
         }
 
@@ -179,7 +186,9 @@ pub fn load_all(
             Ok(spec) => spec,
             // Ignore a directory ending in '.toml'.
             Err(err) if err.kind() == io::ErrorKind::IsADirectory => {
-                warn!("Ignoring potential policy '{path}'; policies must be files");
+                warnings.push(format!(
+                    "Ignoring potential policy '{path}'; policies must be files"
+                ));
                 continue;
             }
             Err(err) => return Err(PolicyReloadError::Io(path, err.to_string())),
@@ -192,7 +201,7 @@ pub fn load_all(
 
         let policy = spec.parse(name);
 
-        check_policy(&policy, tsig_store)?;
+        check_policy(&policy, tsig_store, hsms)?;
         if policies.contains_key(name) {
             info!("Reloaded policy '{name}'");
         } else {
@@ -212,7 +221,11 @@ pub fn load_all(
 // to avoid the conversions that would be needed if Name<Bytes> were to be
 // used instead.
 #[allow(clippy::result_large_err)]
-fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), PolicyReloadError> {
+fn check_policy(
+    policy: &PolicyVersion,
+    tsig_store: &TsigStore,
+    hsms: &HsmStore,
+) -> Result<(), PolicyReloadError> {
     // Check the publication nameservers for the key manager. Any TSIG key
     // that is part of those nameservers has to exist in the TSIG key store.
     let tsig_names = policy
@@ -315,6 +328,16 @@ fn check_policy(policy: &PolicyVersion, tsig_store: &TsigStore) -> Result<(), Po
     //
     // It is fine to set this value to zero, the key roll will just complete
     // the next time the refresh timer expires.
+
+    // Check if the HSM server ID refers to a configured HSM.
+    if let Some(hsm_server_id) = &policy.key_manager.hsm_server_id
+        && !hsms.server_exists(hsm_server_id)
+    {
+        return Err(PolicyReloadError::BadValue(format!(
+            "unknown HSM server ID '{hsm_server_id}'",
+        )));
+    }
+
     Ok(())
 }
 
@@ -363,11 +386,11 @@ pub struct KeyManagerPolicy {
     pub algorithm: KeyParameters,
 
     /// Validity of KSKs.
-    pub ksk_validity: Option<u32>,
+    pub ksk_validity: KeyValidity,
     /// Validity of ZSKs.
-    pub zsk_validity: Option<u32>,
+    pub zsk_validity: KeyValidity,
     /// Validity of CSKs.
-    pub csk_validity: Option<u32>,
+    pub csk_validity: KeyValidity,
 
     /// Configuration variable for automatic KSK rolls.
     pub auto_ksk: AutoConfig,
@@ -411,6 +434,18 @@ pub struct KeyManagerPolicy {
 
     /// Nameservers to check for RRSIG propagation during a key roll.
     pub publication_nameservers: Vec<NameserverCommsPolicy>,
+}
+
+//----------- KeyValidity ------------------------------------------------------
+
+/// How long a key is valid for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyValidity {
+    /// The key is valid for a finite duration.
+    Finite(u32),
+
+    /// The key is valid forever.
+    Forever,
 }
 
 //----------- SignerPolicy -----------------------------------------------------
@@ -518,7 +553,7 @@ pub enum SignerDenialPolicy {
 pub struct ReviewPolicy {
     pub mode: ReviewMode,
 
-    pub on_reject: OnReject,
+    pub on_reject: RejectionPolicy,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -532,7 +567,7 @@ pub enum ReviewMode {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum OnReject {
+pub enum RejectionPolicy {
     #[default]
     Discard,
     Halt,
@@ -563,6 +598,19 @@ pub struct OutboundPolicy {
     ///
     /// TODO: support the RFC 1996 "Notify Set"?
     pub send_notify_to: Vec<NameserverCommsPolicy>,
+
+    /// The maximum number of IXFR diffs to keep.
+    ///
+    /// Excess diffs will be discarded.
+    pub max_diffs: usize,
+
+    /// The maximum size that in-memory diffs may reach as a percentage
+    /// of the published zone.
+    ///
+    /// IXFR diffs that describe larger changes (compared to the last
+    /// published version of the zone) than this limit will be kept in-memory
+    /// to to serve to IXFR clients.
+    pub max_diffs_size: usize,
 }
 
 //----------- NameserverCommsPolicy -------------------------------------------
@@ -605,7 +653,7 @@ impl Display for NameserverCommsPolicy {
 pub enum KeyParameters {
     /// The RSASHA256 algorithm with the key length in bits.
     RsaSha256(usize),
-    /// The RSASHA512 w algorithmith the key length in bits.
+    /// The RSASHA512 algorithm with the key length in bits.
     RsaSha512(usize),
     /// The ECDSAP256SHA256 algorithm.
     ///
@@ -672,14 +720,13 @@ impl Default for AutoConfig {
 /// a MAY for SHA-384 and a MUST NOT for SHA-1 and GOST R 34.11-94.
 /// Therefore, we only support SHA-256 and SHA-384 and the default is
 /// SHA-256.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum DsAlgorithm {
     /// Hash the public key using SHA-256.
-    #[serde(rename = "SHA-256")]
     #[default]
     Sha256,
+
     /// Hash the public key using SHA-384.
-    #[serde(rename = "SHA-384")]
     Sha384,
 }
 

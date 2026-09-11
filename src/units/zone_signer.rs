@@ -82,12 +82,11 @@ impl ZoneSigner {
 
 /// Persistent state for the keyset command.
 /// Copied from the keyset branch of dnst.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 pub struct KeySetState {
     /// Domain KeySet state.
     pub keyset: KeySet,
 
-    pub ds_rrset: Vec<String>,
     pub apex_remove: HashSet<Rtype>,
     pub apex_extra: Vec<String>,
 }

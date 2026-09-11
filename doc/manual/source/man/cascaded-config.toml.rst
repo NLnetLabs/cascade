@@ -17,12 +17,12 @@ Example
 .. code-block:: text
 
     version = "v1"
+    state-file = "/var/lib/cascade/state.db"
     policy-dir = "/etc/cascade/policies"
     zone-state-dir = "/var/lib/cascade/zone-state"
     tsig-store-path = "/var/lib/cascade/tsig-keys.db"
-    kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
+    kmip-credentials-store-path = "/var/lib/cascade/kmip-credentials.db"
     keys-dir = "/var/lib/cascade/keys"
-    kmip-server-state-dir = "/var/lib/cascade/kmip"
     dnst-binary-path = "dnst"
 
     [daemon]
@@ -65,6 +65,14 @@ Global Options
 
    - ``v1``: This format.
 
+.. option:: state-file = "/var/lib/cascade/state.db"
+
+   The path to the global state file.
+
+   Cascade stores information like the known policies and zones here. This file
+   should not be modified manually, but it can be backed up and restored in the
+   event of filesystem corruption.
+
 .. option:: policy-dir = "/etc/cascade/policies"
 
    The directory storing zone policies.
@@ -92,7 +100,7 @@ Global Options
    Note: This setting is not used at present as the alpha version of Cascade
    does not yet support TSIG keys.
 
-.. option:: kmip-credentials-store-path = "/var/lib/cascade/kmip/credentials.db"
+.. option:: kmip-credentials-store-path = "/var/lib/cascade/kmip-credentials.db"
 
    The file storing KMIP credentials.
 
@@ -113,16 +121,6 @@ Global Options
    internal implementation details.  It should not be modified manually, but it
    can be backed up and restored in the event of filesystem corruption.
    Carefully consider its security.
-
-.. option:: kmip-server-state-dir = "/var/lib/cascade/kmip"
-
-   The directory containing KMIP server state.
-
-   Information about known KMIP servers is stored in this directory.
-
-   The organization of this directory (file names and file formats) constitutes
-   internal implementation details.  It should not be modified manually, but it
-   can be backed up and restored in the event of filesystem corruption.
 
 .. option:: dnst-binary-path = "dnst"
 

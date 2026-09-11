@@ -1,11 +1,15 @@
+use crate::{
+    hsm::{Hsm, HsmState},
+    metrics::Metrics,
+    persistence::{Compacter, Persister, Restorer},
+};
+
 use self::{
     center::Center,
     config::{Config, SocketConfig},
     daemon::{PreBindError, SocketProvider, daemonize},
     loader::Loader,
     manager::Manager,
-    metrics::Metrics,
-    persistence::{Persister, Restorer},
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     units::{key_manager::KeyManager, zone_signer::ZoneSigner},
     zone::{Zone, ZoneByName},
@@ -28,6 +32,7 @@ use cascade_zonedata as zonedata;
 mod center;
 mod common;
 mod daemon;
+mod hsm;
 mod loader;
 mod log;
 mod manager;
@@ -100,12 +105,13 @@ fn main() -> ExitCode {
     // Load the global state file or build one from scratch.
     let mut zones = Default::default();
     let mut policies = Default::default();
+    let mut hsms = Default::default();
     let metrics = Metrics::new();
-    let state = match center::State::init_from_file(&config, &mut zones, &mut policies) {
+    let state = match center::State::init_from_file(&config, &mut zones, &mut policies, &mut hsms) {
         Ok(mut state) => {
             info!(
                 "Loaded the global state file (from '{}')",
-                config.daemon.state_file.value()
+                config.state_file
             );
 
             // Load the TSIG store file.
@@ -125,6 +131,15 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             }
+
+            // Restore pending HSMs.
+            state.hsms.map.extend(hsms.into_iter().map(|(name, spec)| {
+                let kmip = spec.parse(&name);
+                let hsm = Arc::new(Hsm {
+                    state: Mutex::new(HsmState { kmip }),
+                });
+                (name, hsm)
+            }));
 
             // Restore pending policies.
             state
@@ -174,14 +189,14 @@ fn main() -> ExitCode {
             if err.kind() != io::ErrorKind::NotFound {
                 error!(
                     "State file '{}' could not be read: {err}",
-                    config.daemon.state_file.value()
+                    config.state_file
                 );
                 return ExitCode::FAILURE;
             }
 
             info!(
                 "State file '{}' did not exist; starting from scratch",
-                config.daemon.state_file.value()
+                config.state_file
             );
 
             // Create required subdirectories (and their parents) if they don't
@@ -196,7 +211,6 @@ fn main() -> ExitCode {
             for dir in [
                 &*config.keys_dir,
                 config.kmip_credentials_store_path.parent().unwrap(),
-                &*config.kmip_server_state_dir,
                 &*config.policy_dir,
                 &*config.zone_state_dir,
             ] {
@@ -220,16 +234,24 @@ fn main() -> ExitCode {
                 }
             }
 
+            let mut warnings = Vec::new();
+
             // Load all policies.
             let mut updates = Vec::new();
             let res = policy::reload_all(
                 &mut state.policies,
                 &config,
                 &state.tsig_store,
+                &state.hsms,
                 |name, _| {
                     updates.push(name.clone());
                 },
+                &mut warnings,
             );
+
+            for w in warnings {
+                warn!("{w}");
+            }
 
             if let Err(err) = res {
                 error!("Cascade couldn't load all policies: {err}");
@@ -290,6 +312,7 @@ fn main() -> ExitCode {
         key_manager: KeyManager::new(),
         persister: Persister::new(),
         restorer: Restorer::new(),
+        compacter: Compacter::new(),
         loaded_review_server: LoadedReviewServer::new(),
         signed_review_server: SignedReviewServer::new(),
         publication_server: PublicationServer::new(),

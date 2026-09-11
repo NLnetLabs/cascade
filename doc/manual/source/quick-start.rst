@@ -46,12 +46,12 @@ systemd features should be used instead.
         To support binding to privileged ports without requiring elevated
         privileges Cascade supports the systemd `socket activation feature <https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html#>`_.
         To use this you will need to create a ``socket`` unit. An example
-        ``cascaded.socket`` unit might look as follows:
+        ``cascade.socket`` unit might look as follows:
 
         .. code-block::
 
           [Unit]
-          Description=Cascaded Sockets
+          Description=Cascade Sockets
           
           [Socket]
           # To prevent listening on localhost replace 127.0.0.1:53 with a
@@ -72,7 +72,7 @@ systemd features should be used instead.
         .. code-block::
 
            [Unit]
-           Requires=cascaded.socket
+           Requires=cascade.socket
 
         To start Cascade use the following command: (you may need elevated
         privileges to run this command, e.g. run it as ``root`` or use a
@@ -80,7 +80,7 @@ systemd features should be used instead.
 
         .. code-block::
 
-           systemctl start cascaded
+           systemctl start cascade
 
    .. group-tab:: Without systemd
 
@@ -107,7 +107,7 @@ systemd features should be used instead.
 
         .. code-block:: bash
 
-            cascaded --config /etc/cascade/config.toml --state /var/lib/cascade/state.db
+            cascaded --config /etc/cascade/config.toml
 
 Interacting with Cascade
 ------------------------
@@ -130,7 +130,7 @@ no zones:
 
    $ cascade zone list
 
-.. Note:: The program:`cascade` CLI connects via HTTPS to the
+.. Note:: The :program:`cascade` CLI connects via HTTPS to the
    :program:`cascaded` daemon. By default it connects to 127.0.0.1:4539.
    You can override this by passing ``--server <IP>:<PORT>`` or by defining
    an environment variable ``CASCADE_DAEMON="<IP>:<PORT>"`` to connect to a
@@ -192,6 +192,21 @@ default policy directory is not writable by the current user.
    cascade template policy | sudo tee /etc/cascade/policies/default.toml
    cascade policy reload
 
+Creating a Test Zone
+--------------------
+
+Create a test zone file and ensure the Cascade daemon has access to it:
+
+.. code-block:: bash
+
+   $ mkdir /etc/cascade/zones
+   $ cat > /etc/cascade/zones/example.com << EOF
+   example.com.    3600    IN      SOA     ns.example.com. username.example.com. 1 86400 7200 2419200 300
+   example.com.            IN      NS      ns
+   ns                      IN      A       192.0.2.1
+   EOF
+   $ chown -R cascade: /etc/cascade/zones
+
 Signing Your First Zone
 -----------------------
 
@@ -245,6 +260,12 @@ From the above you can see that the signed zone can be retrieved from
 .. code-block:: bash
 
     dig @127.0.0.1 -p 4542 AXFR example.com
+
+Ask Cascade for more detail if you want to view the state of the key manager:
+
+.. code-block:: bash
+
+   cascade zone status --detailed <zone-name>
 
 If you have the BIND `dnssec-verify
 <https://bind9.readthedocs.io/en/latest/manpages.html#std-iscman-dnssec-verify>`_

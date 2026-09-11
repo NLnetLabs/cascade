@@ -84,11 +84,13 @@ impl<V> Clone for ZoneService<V> {
 mod compat {
     use std::{pin::Pin, sync::Arc};
 
+    use domain::base::iana::ExtendedErrorCode;
+    use domain::base::opt::ExtendedError;
     use domain::{
         base::{Message, MessageBuilder, iana::Rcode},
         net::server::{
             message::Request,
-            service::{CallResult, Service, ServiceResult},
+            service::{CallResult, Service, ServiceFeedback, ServiceResult},
         },
         new::{
             base::{name::Name, wire::ParseBytesZC},
@@ -97,6 +99,7 @@ mod compat {
         tsig,
     };
     use futures::Stream;
+    use futures_util as futures;
     use tracing::{Level, debug, trace, warn};
 
     use crate::{
@@ -129,6 +132,7 @@ mod compat {
                     return Box::pin(std::future::ready(error(
                         old_request.message(),
                         Rcode::FORMERR,
+                        None,
                     )));
                 }
             };
@@ -136,25 +140,19 @@ mod compat {
             // Determine how to handle the request.
             match request.kind {
                 RequestKind::Zone(zone_request) => {
-                    // Look up the relevant zone.
+                    // Look up the relevant zone. The zone should exist,
+                    // this checked by AccessControlSvc. Return SERVFAIL
+                    // if something goes wrong.
                     let state = self.state.read().unwrap();
                     let Some(zone) = state.zones.get(&*zone_request.name) else {
                         // No such zone could be found.
-                        let rcode = match zone_request.kind {
-                            // Return NXDOMAIN for normal queries.
-                            ZoneRequestKind::Soa => Rcode::NXDOMAIN,
-                            // Return NOTAUTH for zone transfers.
-                            ZoneRequestKind::Axfr | ZoneRequestKind::Ixfr { .. } => Rcode::NOTAUTH,
-                        };
-                        return Box::pin(std::future::ready(error(old_request.message(), rcode)));
-                    };
-
-                    if self.mode == ServiceMode::Publication && !is_permitted(zone, &old_request) {
+                        let rcode = Rcode::SERVFAIL;
                         return Box::pin(std::future::ready(error(
                             old_request.message(),
-                            Rcode::REFUSED,
+                            rcode,
+                            None,
                         )));
-                    }
+                    };
 
                     match zone_request.kind {
                         ZoneRequestKind::Soa => Box::pin({
@@ -179,86 +177,25 @@ mod compat {
         }
     }
 
-    fn is_permitted<V: Viewer>(
-        zone: &ServedZone<V>,
-        request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
-    ) -> bool {
-        let zone_state = zone.handle.read();
-
-        if tracing::enabled!(Level::TRACE) {
-            let tsig_key = request.metadata().as_ref().map(|key| key.name());
-            trace!(
-                "Received request {} from {} for {} in zone {} with TSIG key {tsig_key:?}",
-                request.message().header().id(),
-                request.client_addr().ip(),
-                request
-                    .message()
-                    .qtype()
-                    .map(|rtype| rtype.to_string())
-                    .unwrap_or("<NO QTYPE>".to_string()),
-                zone.handle.name,
-            );
-        }
-
-        if let Some(acls) = zone_state
-            .policy
-            .as_ref()
-            .map(|p| &p.server.outbound.provide_xfr_to)
-        {
-            // If at least one ACL was specified, enforce it.
-            if !acls.is_empty() {
-                let wanted_tsig_key_name = request.metadata().as_ref().map(|key| key.name());
-
-                for acl in acls {
-                    // Does the client address match the allowed address?
-                    if acl.addr.ip() == request.client_addr().ip() {
-                        // Is the request signed with the right TSIG key?
-                        if acl.tsig_key_name.as_ref() == wanted_tsig_key_name {
-                            // Allow the request.
-                            return true;
-                        }
-                    }
-                }
-
-                // No ACL matched, reject the request.
-                if tracing::enabled!(Level::DEBUG) {
-                    let extra = if tracing::enabled!(Level::TRACE) {
-                        &format!(
-                            " (TSIG key={wanted_tsig_key_name:?}) [no matching ACL found: {acls:?}]"
-                        )
-                    } else {
-                        ""
-                    };
-                    debug!(
-                        "Rejecting request {} from {} for {} in zone {}: access denied{extra}",
-                        request.message().header().id(),
-                        request.client_addr().ip(),
-                        request
-                            .message()
-                            .qtype()
-                            .map(|rtype| rtype.to_string())
-                            .unwrap_or("<NO QTYPE>".to_string()),
-                        zone.handle.name,
-                    );
-                }
-
-                return false;
-            }
-        }
-
-        // No ACL defined, accept the request.
-        true
-    }
-
     /// Generate a SOA DNS message response stream for the given zone viewer.
     ///
     /// Note: Also used by [`axfr()`] and [`ixfr()`] as well as in response to
     /// a direct SOA query.
     ///
-    /// Returns an NXDOMAIN response if we have the zone but no data for it.
+    /// Returns a SERVFAIL response if we have the zone but no data for it.
     fn soa<V: Viewer>(request: &Message<Vec<u8>>, viewer: &V) -> ResponseStream {
         if viewer.is_empty() {
-            return error(request, Rcode::NXDOMAIN);
+            return error(
+                request,
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
         let soa = viewer.soa().clone();
 
@@ -279,7 +216,7 @@ mod compat {
     ) -> ResponseStream {
         // Refuse AXFR requests over UDP.
         if request.transport_ctx().is_udp() {
-            return error(request.message(), Rcode::NOTIMP);
+            return error(request.message(), Rcode::NOTIMP, None);
         }
 
         // Obtain a read lock to read the zone for an extended duration.
@@ -292,7 +229,17 @@ mod compat {
                 request.client_addr().ip(),
                 zone.handle.name,
             );
-            return error(request.message(), Rcode::SERVFAIL);
+            return error(
+                request.message(),
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
 
         // NOTE: The following code is a bit tricky. Ideally, we would elide
@@ -348,12 +295,28 @@ mod compat {
                 Some(CallResult::new(response))
             });
 
+            // Enable transaction mode so that the connection handler will
+            // block if we try to enqueue more messages than the response
+            // buffer can hold, which can happen if the responses cannot be
+            // sent to the client fast enough, rather than abort with a queue
+            // full error.
+            if tx
+                .send(ServiceFeedback::BeginTransaction.into())
+                .await
+                .is_err()
+            {
+                // The channel has closed; stop.
+                return;
+            }
+
             for message in messages {
                 if tx.send(message).await.is_err() {
                     // The channel has closed; stop.
                     break;
                 }
             }
+
+            let _ = tx.send(ServiceFeedback::EndTransaction.into()).await;
         });
 
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
@@ -385,7 +348,17 @@ mod compat {
                 request.client_addr().ip(),
                 zone.handle.name,
             );
-            return error(request.message(), Rcode::SERVFAIL);
+            return error(
+                request.message(),
+                Rcode::SERVFAIL,
+                Some(
+                    ExtendedError::<Vec<u8>>::new_with_str(
+                        ExtendedErrorCode::NOT_READY,
+                        "zone exists but no data available",
+                    )
+                    .expect("should fit"),
+                ),
+            );
         }
 
         // UDP is unlikely to work for any but the smallest of diffs,
@@ -657,12 +630,28 @@ mod compat {
                 Some(CallResult::new(response))
             });
 
+            // Enable transaction mode so that the connection handler will
+            // block if we try to enqueue more messages than the response
+            // buffer can hold, which can happen if the responses cannot be
+            // sent to the client fast enough, rather than abort with a queue
+            // full error.
+            if tx
+                .send(ServiceFeedback::BeginTransaction.into())
+                .await
+                .is_err()
+            {
+                // The channel has closed; stop.
+                return;
+            }
+
             for message in messages {
                 if tx.send(message).await.is_err() {
                     // The channel has closed; stop.
                     break;
                 }
             }
+
+            let _ = tx.send(ServiceFeedback::EndTransaction.into()).await;
         });
 
         let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx).map(|m| m.map(Ok)));
@@ -693,10 +682,19 @@ mod compat {
         trace_diff("Signed", diff_idx, signed_diff);
     }
 
-    fn error(request: &Message<Vec<u8>>, rcode: Rcode) -> ResponseStream {
-        let response = MessageBuilder::new_stream_vec()
+    fn error(
+        request: &Message<Vec<u8>>,
+        rcode: Rcode,
+        opt_ede: Option<ExtendedError<Vec<u8>>>,
+    ) -> ResponseStream {
+        let mut response = MessageBuilder::new_stream_vec()
             .start_error(request, rcode)
             .additional();
+        if let Some(ede) = opt_ede
+            && let Err(err) = response.opt(|opt_builder| opt_builder.push(&ede))
+        {
+            return Box::new(futures::stream::once(std::future::ready(Err(err.into())))) as _;
+        }
         let result = Ok(CallResult::new(response));
         Box::new(futures::stream::once(std::future::ready(result))) as _
     }
@@ -842,6 +840,16 @@ impl<V> ZoneServiceHandle<V> {
             "distinct 'Arc<Zone>'s had the same name"
         );
         let _ = viewer;
+    }
+
+    /// Get a viewer for a zone.
+    ///
+    /// If Cascade is still starting up there may not be a viewer for the zone
+    /// yet.
+    pub fn viewer(&self, zone: &Arc<Zone>) -> Option<Arc<tokio::sync::RwLock<V>>> {
+        let state = self.state.read().unwrap();
+        let name = RevNameBuf::parse_bytes(zone.name.as_slice()).unwrap();
+        state.zones.get(&*name).map(|z| z.viewer.clone())
     }
 }
 

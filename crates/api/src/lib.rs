@@ -390,14 +390,16 @@ pub struct ZoneRemoveResult {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum ZoneRemoveError {
     NotFound,
-    MidRestoration,
+    NotInMaintenanceMode,
+    NotPassiveOrHalted,
 }
 
 impl fmt::Display for ZoneRemoveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotFound => "no such zone was found",
-            Self::MidRestoration => "the zone is being restored from disk",
+            Self::NotInMaintenanceMode => "the zone is not in maintenance mode",
+            Self::NotPassiveOrHalted => "the zone is not in passive/hard-halt state",
         })
     }
 }
@@ -533,10 +535,12 @@ pub enum Progress {
     Loading,
     LoadedReview,
     HaltLoaded,
+    PersistingLoaded,
     Signing,
     SigningFailed,
     SignedReview,
     HaltSigned,
+    PersistingSigned,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -881,6 +885,7 @@ impl Display for PolicyReloadError {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PolicyChanges {
     pub changes: Vec<(String, PolicyChange)>,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -998,6 +1003,8 @@ pub struct ServerPolicyInfo {
 pub struct OutboundPolicyInfo {
     pub provide_xfr_to: Vec<NameserverCommsPolicyInfo>,
     pub send_notify_to: Vec<NameserverCommsPolicyInfo>,
+    pub max_diffs: usize,
+    pub max_diffs_size: usize,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -1051,6 +1058,7 @@ pub struct HsmServerAddResult {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum HsmServerAddError {
+    AlreadyExists,
     UnableToConnect {
         server_id: String,
         host: String,
@@ -1084,6 +1092,7 @@ pub enum HsmServerAddError {
 impl std::fmt::Display for HsmServerAddError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            HsmServerAddError::AlreadyExists => f.write_str("The named HSM already exists"),
             HsmServerAddError::UnableToConnect {
                 server_id,
                 host,
