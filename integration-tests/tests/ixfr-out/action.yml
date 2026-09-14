@@ -1,0 +1,324 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Serve manual zone modifications via IXFR to the NSD secondary.'
+description: 'Serve a zone via IXFR to the NSD secondary.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+  with-tsig:
+    description: Whether or not TSIG should be required for XFR out.
+    required: true
+    type: boolean
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+        fake-time: 1600000000
+  
+    - name: Determine the downstream secondary zone config to use
+      id: set-vars
+      run: |
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          ZONE_NAME="notify-and-xfr-tsig.test."
+          POLICY_NAME="with-tsig"
+          KEY_NAME="Knotify-and-xfr-tsig.test.+015+10995.key"
+        else
+          ZONE_NAME="example.test."
+          POLICY_NAME="without-tsig"
+          KEY_NAME="Kexample.test.+015+00580.key"
+        fi
+        echo "ZONE_NAME=${ZONE_NAME}" >> "$GITHUB_OUTPUT"
+        echo "POLICY_NAME=${POLICY_NAME}" >> "$GITHUB_OUTPUT"
+        echo "KEY_NAME=${KEY_NAME}" >> "$GITHUB_OUTPUT"
+        echo "TSIG_SPEC=hmac-sha256:tsig-key:COzoVsYQmXeXiyq1Quhp0bbVnMyxjPxsaGSoIWR98i0=" >> "$GITHUB_OUTPUT"
+
+    - name: Add the TSIG key
+      if: ${{ inputs.with-tsig }}
+      run: |
+        cascade tsig add ${{ steps.set-vars.outputs.TSIG_SPEC }}
+
+    - name: Add policy ${{ steps.set-vars.outputs.POLICY_NAME }} and reload
+      run: |
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+        cp "${TEST_DIR}/policies/${{ steps.set-vars.outputs.POLICY_NAME }}.toml" "${POLICY_DIR}/"
+        cascade policy reload
+
+    # The zone name has to match a zone configured in the downstream NSD
+    # nameserver. Zone 'notify-and-xfr-tsig.test' is a zone in the downstream
+    # NSD nameserver that is configured to expect TSIG to be used for the
+    # NOTIFY message it is sent, to use IXFR (as opposed to only AXFR) and for
+    # it to need to use TSIG to request an IXFR transfer from Cascade.
+    - name: Make a ${{ steps.set-vars.outputs.ZONE_NAME }} zone based on RFC 1995 section 7
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        cat >"${ZONE_NAME}zone" <<EOF
+        ${ZONE_NAME}       IN SOA NS.${ZONE_NAME} mail.${ZONE_NAME} (
+                                     1 60 60 3600 5)
+                           IN NS  NS.${ZONE_NAME}
+        NS.${ZONE_NAME}    IN A   133.69.136.1
+        NEZU.${ZONE_NAME}  IN A   133.69.136.5
+        EOF
+
+    - name: Add the ${{ steps.set-vars.outputs.ZONE_NAME }} zone using policy ${{ steps.set-vars.outputs.POLICY_NAME }}
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+        POLICY_NAME: ${{ steps.set-vars.outputs.POLICY_NAME }}
+        KEY_NAME: ${{ steps.set-vars.outputs.KEY_NAME }}
+      run: |
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+        KEY_FILE="${TEST_DIR}/keys/${KEY_NAME}"
+        # Use a pre-created key so that generated signatures can be matched
+        # against reference output.
+        cascade zone add --policy ${POLICY_NAME} --source "${ZONE_NAME}zone" --import-csk-file "${KEY_FILE}" ${ZONE_NAME}
+
+    - name: Check zone ${{ steps.set-vars.outputs.ZONE_NAME }} status
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status ${ZONE_NAME} | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status ${ZONE_NAME}
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Expect serial 1 of zone ${{ steps.set-vars.outputs.ZONE_NAME }} at the NSD secondary
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA | grep -q "ns.${ZONE_NAME} mail.${ZONE_NAME} 1 60 60 3600 5"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status ${ZONE_NAME}
+            dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA
+            echo "::error:: timeout: NSD did not acquire the zone changes"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Edit and reload serial 2 of zone ${{ steps.set-vars.outputs.ZONE_NAME }}
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        cat >"${ZONE_NAME}zone" <<EOF
+        ${ZONE_NAME}          IN SOA ns.${ZONE_NAME} mail.${ZONE_NAME} (
+                                     2 60 60 3600 5)
+                              IN NS  NS.${ZONE_NAME}
+        NS.${ZONE_NAME}       IN A   133.69.136.1
+        JAIN-BB.${ZONE_NAME}  IN A   133.69.136.4
+                              IN A   192.41.197.2
+        EOF
+        cascade zone reload ${ZONE_NAME}
+
+    - name: Check zone ${{ steps.set-vars.outputs.ZONE_NAME }} status after reload
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status ${ZONE_NAME} | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status ${ZONE_NAME}
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Expect serial 2 of zone ${{ steps.set-vars.outputs.ZONE_NAME }} at the NSD secondary
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA | grep -q "ns.${ZONE_NAME} mail.${ZONE_NAME} 2 60 60 3600 5"; do
+          if (($(date +%s) > (start + timeout))); then
+            dig @127.0.0.1 -p 1054 ${ZONE_NAME} SOA
+            cascade zone status ${ZONE_NAME}
+            echo "::error:: timeout: NSD did not acquire the zone changes"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Edit and reload serial 3 of zone ${{ steps.set-vars.outputs.ZONE_NAME }}
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        cat >"${ZONE_NAME}zone" <<EOF
+        ${ZONE_NAME}          IN SOA ns.${ZONE_NAME} mail.${ZONE_NAME} (
+                                     3 60 60 3600 5)
+                              IN NS  NS.${ZONE_NAME}
+        NS.${ZONE_NAME}       IN A   133.69.136.1
+        JAIN-BB.${ZONE_NAME}  IN A   133.69.136.3
+                              IN A   192.41.197.2
+        EOF
+        cascade zone reload ${ZONE_NAME}
+
+    - name: Check zone ${{ steps.set-vars.outputs.ZONE_NAME }} status after second reload
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until cascade zone status ${ZONE_NAME} | grep -q "Published zone available"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status ${ZONE_NAME}
+            echo "timeout: zone status did not report published zone available" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Expect serial 3 of zone ${{ steps.set-vars.outputs.ZONE_NAME }} at the NSD secondary
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA | grep -q "ns.${ZONE_NAME} mail.${ZONE_NAME} 3 60 60 3600 5"; do
+          if (($(date +%s) > (start + timeout))); then
+            cascade zone status ${ZONE_NAME}
+            dig +short @127.0.0.1 -p 1054 ${ZONE_NAME} SOA
+            echo "::error:: timeout: NSD did not acquire the zone changes"
+            exit 1
+          fi
+          sleep 1
+        done
+
+    # Note: There is no NSD metric that I am aware of that we can use to
+    # verify that it received IXFR from Cascade instead of AXFR, nor is there
+    # any Cascade Prometheus metric or CLI command that we can use to check
+    # this either. Increasing the NSD log level to 9 doesn't cause it to
+    # report whether it received IXFR or AXFR either.
+
+    - name: Verify that TSIG is required by Cascade
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        if [[ "${{ inputs.with-tsig }}" == "false" ]]; then
+          exit 0
+        fi
+
+        # This should not succeed as it lacks the required TSIG key.
+        # Note that dig will exit with code 0 even if the request fails,
+        # because it considers an error response still to be successful
+        # receipt of a response, so we have to check the actual output.
+        dig @127.0.0.1 +yaml -p 4542 ${ZONE_NAME} AXFR &> dig-no-tsig.log
+        grep -Fq "status: REFUSED" dig-no-tsig.log
+
+    - name: Verify Cascade AXFR out
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        EXTRA_ARGS=
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
+        fi
+        dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${EXTRA_ARGS} ${ZONE_NAME} AXFR &> cascade-axfr.log
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+        LC_COLLATE=C sort "${TEST_DIR}/reference-output/${ZONE_NAME}axfr" | egrep -v '^;|^$' > reference.output.sorted
+        LC_COLLATE=C sort cascade-axfr.log > output.sorted
+        diff -u -w output.sorted reference.output.sorted
+
+    # A UDP IXFR request should result in a single SOA response "to inform the
+    # client that a TCP query should be initiated".
+    - name: Verify that UDP is not supported
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        EXTRA_ARGS=
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
+        fi
+        SOA_RR=$(dig +short +notcp +ignore @127.0.0.1 -p 4542 ${ZONE_NAME} -t IXFR=1 ${EXTRA_ARGS} 2>&1 | tee dig-udp-ixfr.log)
+        if [[ "${SOA_RR}" != "ns.${ZONE_NAME} mail.${ZONE_NAME} 3 60 60 3600 5" ]]; then
+          exit 1
+        fi
+
+    - name: Verify Cascade IXFR serial 1..=3 out
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        EXTRA_ARGS=
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
+        fi
+        dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${ZONE_NAME} -t IXFR=1 ${EXTRA_ARGS} &> cascade-ixfr-1-3.log
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+        LC_COLLATE=C sort "${TEST_DIR}/reference-output/${ZONE_NAME}ixfr-1-3" | egrep -v '^;|^$' > reference.output.sorted
+        LC_COLLATE=C sort cascade-ixfr-1-3.log > output.sorted
+        diff -u -w output.sorted reference.output.sorted
+
+    - name: Verify Cascade IXFR serial 2..=3 out
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        EXTRA_ARGS=
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
+        fi
+        dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${ZONE_NAME} -t IXFR=2 ${EXTRA_ARGS} &> cascade-ixfr-2-3.log
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+        LC_COLLATE=C sort "${TEST_DIR}/reference-output/${ZONE_NAME}ixfr-2-3" | egrep -v '^;|^$' > reference.output.sorted
+        LC_COLLATE=C sort cascade-ixfr-2-3.log > output.sorted
+        diff -u -w output.sorted reference.output.sorted
+
+    - name: Verify Cascade IXFR serial 3..=3 out
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        EXTRA_ARGS=
+        if [[ "${{ inputs.with-tsig }}" == "true" ]]; then
+          EXTRA_ARGS="-y ${{ steps.set-vars.outputs.TSIG_SPEC }}"
+        fi
+        dig +onesoa +noall +answer @127.0.0.1 -p 4542 ${ZONE_NAME} -t IXFR=3 ${EXTRA_ARGS} &> cascade-ixfr-3-3.log
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+        LC_COLLATE=C sort "${TEST_DIR}/reference-output/${ZONE_NAME}ixfr-3-3" | egrep -v '^;|^$' > reference.output.sorted
+        LC_COLLATE=C sort cascade-ixfr-3-3.log > output.sorted
+        diff -u -w output.sorted reference.output.sorted
+
+    - name: Verify NSD AXFR out
+      env:
+        ZONE_NAME: ${{ steps.set-vars.outputs.ZONE_NAME }}
+      run: |
+        dig +onesoa +noall +answer @127.0.0.1 -p 1054 ${ZONE_NAME} AXFR &> nsd-axfr.log
+        TEST_DIR="${PWD}/integration-tests/ixfr-out"
+
+        # Pass -f to sort and -i to diff to normalize case in the Cascade and
+        # NSD output being compared, as NSD outputs lower case labels while
+        # Cascade preserves label case. -f tells sort not to order differently
+        # based on case, and -i tells diff to consider differing case to be
+        # equal.
+  
+        LC_COLLATE=C sort -f "${TEST_DIR}/reference-output/${ZONE_NAME}axfr" | egrep -v '^;|^$' > reference.output.sorted
+        LC_COLLATE=C sort -f nsd-axfr.log > output.sorted
+        diff -u -w -i output.sorted reference.output.sorted
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()
