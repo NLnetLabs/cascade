@@ -52,6 +52,7 @@ impl Hsm {
                 client_key_path,
                 insecure,
                 server_cert_path,
+                server_name,
                 ca_cert_path,
                 connect_timeout,
                 read_timeout,
@@ -69,11 +70,13 @@ impl Hsm {
                     read_binary_file(server_cert_path.as_ref()).map_err(|e| e.to_string())?;
                 let ca_cert = read_binary_file(ca_cert_path.as_ref()).map_err(|e| e.to_string())?;
 
+                println!("Requesting addition of KMIP server '{server_id}'.");
+                println!("Please wait while we verify the connection to the server.");
                 let res: Result<HsmServerAddResult, HsmServerAddError> = client
                     .post_json_with(
                         "kmip",
                         &HsmServerAdd {
-                            server_id,
+                            server_id: server_id.clone(),
                             ip_host_or_fqdn,
                             port,
                             username,
@@ -82,6 +85,7 @@ impl Hsm {
                             client_key,
                             insecure,
                             server_cert,
+                            server_name,
                             ca_cert,
                             connect_timeout,
                             read_timeout,
@@ -95,7 +99,10 @@ impl Hsm {
 
                 match res {
                     Ok(HsmServerAddResult { vendor_id }) => {
-                        println!("Added KMIP server '{vendor_id}'.")
+                        println!(
+                            "Connection verified. The KMIP server identifies itself as: {vendor_id}"
+                        );
+                        println!("KMIP server '{server_id}' has been added to Cascade.");
                     }
                     Err(err) => return Err(format!("Add KMIP server command failed: {err}")),
                 }
@@ -174,6 +181,7 @@ fn print_server(
         ip_host_or_fqdn,
         port,
         insecure,
+        server_name,
         connect_timeout,
         read_timeout,
         write_timeout,
@@ -186,6 +194,9 @@ fn print_server(
     let none = "<none>".to_string();
     println!("{server_id}:");
     println!("  address: {ip_host_or_fqdn}");
+    if let Some(server_name) = server_name {
+        println!("  sni name: {server_name}");
+    }
     println!("  port: {port}");
     println!("  insecure: {}", if *insecure { "yes" } else { "no" });
     println!("  limits:");
@@ -313,6 +324,11 @@ pub enum HsmCommand {
         /// test environment.
         #[arg(help_heading = "Server Certificate Verification", long = "insecure", default_value_t = false, action = clap::ArgAction::SetTrue)]
         insecure: bool,
+
+        /// Optional TLS server name (SNI) to use when connecting to the
+        /// server.
+        #[arg(help_heading = "Server Name", long = "server-name")]
+        server_name: Option<String>,
 
         /// Optional path to a TLS PEM certificate for the server.
         #[arg(help_heading = "Server Certificate Verification", long = "server-cert")]

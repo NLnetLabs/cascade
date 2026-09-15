@@ -22,8 +22,9 @@ use domain::base::Name;
 use domain::base::Serial;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::utils::base64;
+use domain_kmip::ClientCertificate;
+use domain_kmip::ConnectionManager;
 use domain_kmip::ConnectionSettings;
-use domain_kmip::dep::kmip::client::pool::ConnectionManager;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -36,6 +37,10 @@ use crate::api::*;
 use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
+use crate::common::kmip_creds::KmipClientCredentials;
+use crate::common::kmip_creds::KmipCredentialsManager;
+use crate::common::kmip_creds::KmipMtlsAuthData;
+use crate::common::kmip_creds::KmipServerCredentialsFileMode;
 use crate::hsm::Hsm;
 use crate::hsm::HsmState;
 use crate::hsm::KmipServerState;
@@ -47,9 +52,6 @@ use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
 use crate::server::SignedReviewServer;
 use crate::tsig::{self, RemoveError};
-use crate::units::key_manager::KmipClientCredentials;
-use crate::units::key_manager::KmipClientCredentialsFile;
-use crate::units::key_manager::KmipServerCredentialsFileMode;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
@@ -1476,11 +1478,16 @@ impl HttpServer {
 
 impl HttpServer {
     async fn kmip_server_add(
+        state: State<Arc<HttpServer>>,
+        req: Json<HsmServerAdd>,
+    ) -> Json<Result<HsmServerAddResult, HsmServerAddError>> {
+        Json(Self::do_kmip_server_add(state, req).await)
+    }
+
+    async fn do_kmip_server_add(
         State(state): State<Arc<HttpServer>>,
         Json(req): Json<HsmServerAdd>,
-    ) -> Json<Result<HsmServerAddResult, HsmServerAddError>> {
-        // TODO: Write the given certificates to disk.
-        // TODO: Create a single common way to store secrets.
+    ) -> Result<HsmServerAddResult, HsmServerAddError> {
         let server_id = req.server_id.clone();
         let config = &state.center.config;
         let kmip_credentials_store_path = config.kmip_credentials_store_path.clone();
@@ -1494,19 +1501,25 @@ impl HttpServer {
             .unwrap()
             .hsms
             .map
-            .contains_key(&*req.server_id)
+            .contains_key(&*server_id)
         {
-            return Json(Err(HsmServerAddError::AlreadyExists));
+            return Err(HsmServerAddError::AlreadyExists);
         }
 
         // Test the connection before using the HSM.
         let conn_settings = {
             let HsmServerAdd {
+                server_id: _,
                 ip_host_or_fqdn,
                 port,
                 username,
                 password,
+                client_cert,
+                client_key,
                 insecure,
+                server_cert,
+                server_name,
+                ca_cert,
                 connect_timeout,
                 read_timeout,
                 write_timeout,
@@ -1514,15 +1527,27 @@ impl HttpServer {
                 ..
             } = req.clone();
 
+            let client_cert = match (client_cert, client_key) {
+                (Some(cert_bytes), Some(key_bytes)) => Some(ClientCertificate::SeparatePem {
+                    cert_bytes,
+                    key_bytes,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err(HsmServerAddError::MissingClientCertificateOrKey);
+                }
+            };
+
             ConnectionSettings {
                 host: ip_host_or_fqdn,
                 port,
                 username,
                 password,
                 insecure,
-                client_cert: None, // TODO
-                server_cert: None, // TODO
-                ca_cert: None,     // TODO
+                client_cert,
+                server_cert,
+                server_name,
+                ca_cert,
                 connect_timeout: Some(connect_timeout),
                 read_timeout: Some(read_timeout),
                 write_timeout: Some(write_timeout),
@@ -1539,12 +1564,12 @@ impl HttpServer {
         ) {
             Ok(pool) => pool,
             Err(err) => {
-                return Json(Err(HsmServerAddError::UnableToConnect {
+                return Err(HsmServerAddError::UnableToConnect {
                     server_id,
                     host: conn_settings.host,
                     port: conn_settings.port,
                     err: format!("Error creating connection pool: {err}"),
-                }));
+                });
             }
         };
 
@@ -1552,63 +1577,83 @@ impl HttpServer {
         let conn = match pool.get() {
             Ok(conn) => conn,
             Err(err) => {
-                return Json(Err(HsmServerAddError::UnableToConnect {
+                return Err(HsmServerAddError::UnableToConnect {
                     server_id,
                     host: conn_settings.host,
                     port: conn_settings.port,
                     err: format!("Error retrieving connection from pool: {err}"),
-                }));
+                });
             }
         };
 
-        let query_res = match conn.query() {
-            Ok(query_res) => query_res,
-            Err(err) => {
-                return Json(Err(HsmServerAddError::UnableToQuery {
-                    server_id,
-                    host: conn_settings.host,
-                    port: conn_settings.port,
-                    err: err.to_string(),
-                }));
-            }
-        };
+        let query_res = conn
+            .query()
+            .map_err(|err| HsmServerAddError::UnableToQuery {
+                server_id: server_id.clone(),
+                host: conn_settings.host,
+                port: conn_settings.port,
+                err: err.to_string(),
+            })?;
 
         let vendor_id = query_res
             .vendor_identification
             .unwrap_or("Anonymous HSM vendor".to_string());
 
-        // Copy the username and password as we consume the req object below.
-        let username = req.username.clone();
-        let password = req.password.clone();
+        let mut creds_mgr = KmipCredentialsManager::new(
+            kmip_credentials_store_path.as_std_path(),
+            KmipServerCredentialsFileMode::CreateReadWrite,
+        )
+        .map_err(
+            |err| HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
+                err: err.to_string(),
+            },
+        )?;
 
-        // Add any credentials to the credentials store.
-        if let Some(username) = username {
-            let creds = KmipClientCredentials { username, password };
-            let mut creds_file = match KmipClientCredentialsFile::new(
-                kmip_credentials_store_path.as_std_path(),
-                KmipServerCredentialsFileMode::CreateReadWrite,
-            ) {
-                Ok(creds_file) => creds_file,
-                Err(err) => {
-                    return Json(Err(
-                        HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
-                            err: err.to_string(),
-                        },
-                    ));
-                }
+        if let Some(username) = conn_settings.username {
+            let creds = KmipClientCredentials {
+                username: username.clone(),
+                password: conn_settings.password.clone(),
             };
-            let _ = creds_file.insert(server_id, creds);
-            if let Err(err) = creds_file.save() {
-                return Json(Err(HsmServerAddError::CredentialsFileCouldNotBeSaved {
+            let _ = creds_mgr.insert(server_id, creds);
+            creds_mgr
+                .save()
+                .map_err(|err| HsmServerAddError::CredentialsFileCouldNotBeSaved {
                     err: err.to_string(),
-                }));
-            }
+                })?;
+        }
+
+        // Construct the KMIP server related state.
+        let mut kmip = KmipServerState::from(req.clone());
+
+        // Save any mTLS data files to disk and register the written paths
+        // in state.
+        if let Some(bytes) = req.client_cert {
+            kmip.client_cert_path = Some(
+                creds_mgr
+                    .save_mtls_data(&req.server_id, KmipMtlsAuthData::ClientCertificate(&bytes))?,
+            );
+        }
+        if let Some(bytes) = req.client_key {
+            kmip.client_key_path = Some(
+                creds_mgr.save_mtls_data(&req.server_id, KmipMtlsAuthData::ClientKey(&bytes))?,
+            );
+        }
+        if let Some(bytes) = req.server_cert {
+            kmip.server_cert_path = Some(
+                creds_mgr
+                    .save_mtls_data(&req.server_id, KmipMtlsAuthData::ServerCertificate(&bytes))?,
+            );
+        }
+        if let Some(bytes) = req.ca_cert {
+            kmip.ca_cert_path = Some(
+                creds_mgr
+                    .save_mtls_data(&req.server_id, KmipMtlsAuthData::CaCertificate(&bytes))?,
+            );
         }
 
         // Register the HSM in global state.
         {
             let name: Box<str> = req.server_id.as_str().into();
-            let kmip = KmipServerState::from(req);
             let hsm = Hsm {
                 state: Mutex::new(HsmState { kmip }),
             };
@@ -1620,7 +1665,7 @@ impl HttpServer {
         // Ensure the HSM is persisted to disk immediately.
         crate::state::save_now(&state.center);
 
-        Json(Ok(HsmServerAddResult { vendor_id }))
+        Ok(HsmServerAddResult { vendor_id })
     }
 
     async fn kmip_server_list(State(state): State<Arc<HttpServer>>) -> Json<HsmServerListResult> {

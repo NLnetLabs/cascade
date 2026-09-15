@@ -8,7 +8,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use domain::{
     base::{Name, Record, iana::SecurityAlgorithm},
     crypto::sign::{BindFormatError, SecretKeyBytes, SignError, SignRaw, Signature},
@@ -19,19 +19,16 @@ use domain::{
     rdata::Dnskey,
 };
 use domain_kmip::{
-    ConnectionSettings, KeyUrl,
-    dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool},
+    ClientCertificate, ConnectionManager, ConnectionSettings, KeyUrl, KmipConnError, SyncConnPool,
 };
 use tracing::{debug, error, warn};
 use url::Url;
 
 use crate::{
+    common::kmip_creds::{KmipCredentialsManager, KmipServerCredentialsFileMode},
     hsm::{HsmStore, KmipServerState},
     signer::status::SigningStatusPerZone,
-    units::{
-        key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode},
-        zone_signer::KeySetState,
-    },
+    units::zone_signer::KeySetState,
 };
 
 //----------- ZoneSigningKeys --------------------------------------------------
@@ -151,7 +148,7 @@ pub enum KeyPair {
     Domain(domain::crypto::sign::KeyPair),
 
     /// A KMIP keypair.
-    Kmip(domain_kmip::sign::KeyPair),
+    Kmip(domain_kmip::KeyPair),
 }
 
 //--- Signing
@@ -300,6 +297,11 @@ impl KeyPair {
                     ip_host_or_fqdn: host,
                     port,
                     insecure,
+                    server_name,
+                    client_cert_path,
+                    client_key_path,
+                    server_cert_path,
+                    ca_cert_path,
                     connect_timeout,
                     read_timeout,
                     write_timeout,
@@ -312,7 +314,7 @@ impl KeyPair {
                 let mut password = None;
                 if has_credentials {
                     let creds_path = &config.kmip_credentials_store_path;
-                    let creds_file = KmipClientCredentialsFile::new(
+                    let creds_file = KmipCredentialsManager::new(
                         creds_path.as_std_path(),
                         KmipServerCredentialsFileMode::ReadOnly,
                     )
@@ -334,15 +336,58 @@ impl KeyPair {
                     password = creds.password.clone();
                 }
 
+                // Load mTLS certificate and key content from the specified
+                // paths.
+                let mut client_cert = None;
+                let mut server_cert = None;
+                let mut ca_cert = None;
+
+                // Helper fn to convert error type.i
+                fn error_mapper<T: ToString>(path: Utf8PathBuf, error: T) -> Box<LoadError> {
+                    Box::new(LoadError::KmipClientCredentials {
+                        path: path.into_boxed_path(),
+                        error: error.to_string(),
+                    })
+                }
+
+                if let Some(path) = client_cert_path {
+                    let cert_bytes = KmipCredentialsManager::load_mtls_data(&path)
+                        .map_err(|err| error_mapper(path, err))?;
+                    if let Some(path) = client_key_path {
+                        let key_bytes = KmipCredentialsManager::load_mtls_data(&path)
+                            .map_err(|err| error_mapper(path, err))?;
+                        client_cert = Some(ClientCertificate::SeparatePem {
+                            cert_bytes,
+                            key_bytes,
+                        });
+                    } else {
+                        client_cert = Some(ClientCertificate::CombinedPkcs12 { cert_bytes });
+                    }
+                }
+                if let Some(path) = server_cert_path {
+                    server_cert = Some(
+                        KmipCredentialsManager::load_mtls_data(&path)
+                            .map_err(|err| error_mapper(path, err))?,
+                    );
+                }
+                if let Some(path) = ca_cert_path {
+                    ca_cert = Some(
+                        KmipCredentialsManager::load_mtls_data(&path)
+                            .map_err(|err| error_mapper(path, err))?,
+                    );
+                }
+
+                // Test the connection.
                 let conn_settings = ConnectionSettings {
                     host,
                     port,
                     username,
                     password,
                     insecure,
-                    client_cert: None, // TODO
-                    server_cert: None, // TODO
-                    ca_cert: None,     // TODO
+                    client_cert,
+                    server_cert,
+                    server_name: server_name.clone(),
+                    ca_cert,
                     connect_timeout: Some(connect_timeout),
                     read_timeout: Some(read_timeout),
                     write_timeout: Some(write_timeout),
@@ -377,18 +422,14 @@ impl KeyPair {
         let pub_key_url_inner = (*pub_key_url).clone();
 
         let key_pair = Self::Kmip(
-            domain_kmip::sign::KeyPair::from_urls(
-                priv_key_url,
-                pub_key_url,
-                kmip_conn_pool.clone(),
-            )
-            .map_err(|error| {
-                Box::new(LoadError::MalformedKmipKeypair {
-                    priv_key_url: priv_key_url_inner,
-                    pub_key_url: pub_key_url_inner,
-                    error: error.to_string(),
-                })
-            })?,
+            domain_kmip::KeyPair::from_urls(priv_key_url, pub_key_url, kmip_conn_pool.clone())
+                .map_err(|error| {
+                    Box::new(LoadError::MalformedKmipKeypair {
+                        priv_key_url: priv_key_url_inner,
+                        pub_key_url: pub_key_url_inner,
+                        error: error.to_string(),
+                    })
+                })?,
         );
 
         Ok(key_pair)

@@ -1,14 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::env::{self, VarError};
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use domain::base::Rtype;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::rdata::dnssec::Timestamp;
-use domain_kmip::dep::kmip::client::pool::SyncConnPool;
-use domain_kmip::{self, ClientCertificate, ConnectionSettings};
+use domain_kmip::SyncConnPool;
 use serde::{Deserialize, Serialize};
 
 use crate::center::Center;
@@ -123,114 +120,6 @@ impl std::fmt::Debug for ZoneSigner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZoneSigner").finish()
     }
-}
-
-//------------ KMIP related --------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct KmipServerConnectionSettings {
-    /// Path to the client certificate file in PEM format
-    pub client_cert_path: Option<PathBuf>,
-
-    /// Path to the client certificate key file in PEM format
-    pub client_key_path: Option<PathBuf>,
-
-    /// Path to the client certificate and key file in PKCS#12 format
-    pub client_pkcs12_path: Option<PathBuf>,
-
-    /// Disable secure checks (e.g. verification of the server certificate)
-    pub server_insecure: bool,
-
-    /// Path to the server certificate file in PEM format
-    pub server_cert_path: Option<PathBuf>,
-
-    /// Path to the server CA certificate file in PEM format
-    pub ca_cert_path: Option<PathBuf>,
-
-    /// IP address, hostname or FQDN of the KMIP server
-    pub server_addr: String,
-
-    /// The TCP port number on which the KMIP server listens
-    pub server_port: u16,
-
-    /// The user name to authenticate with the KMIP server
-    pub server_username: Option<String>,
-
-    /// The password to authenticate with the KMIP server
-    pub server_password: Option<String>,
-}
-
-impl Default for KmipServerConnectionSettings {
-    fn default() -> Self {
-        Self {
-            server_addr: "localhost".into(),
-            server_port: 5696,
-            server_insecure: false,
-            client_cert_path: None,
-            client_key_path: None,
-            client_pkcs12_path: None,
-            server_cert_path: None,
-            ca_cert_path: None,
-            server_username: None,
-            server_password: None,
-        }
-    }
-}
-
-impl From<KmipServerConnectionSettings> for ConnectionSettings {
-    fn from(cfg: KmipServerConnectionSettings) -> Self {
-        let client_cert = load_client_cert(&cfg);
-        let _server_cert = cfg.server_cert_path.map(|p| load_binary_file(&p));
-        let _ca_cert = cfg.ca_cert_path.map(|p| load_binary_file(&p));
-        ConnectionSettings {
-            host: cfg.server_addr,
-            port: cfg.server_port,
-            username: cfg.server_username,
-            password: cfg.server_password,
-            insecure: cfg.server_insecure,
-            client_cert,
-            server_cert: None,                             // TOOD
-            ca_cert: None,                                 // TODO
-            connect_timeout: Some(Duration::from_secs(5)), // TODO
-            read_timeout: None,                            // TODO
-            write_timeout: None,                           // TODO
-            max_response_bytes: None,                      // TODO
-        }
-    }
-}
-
-fn load_client_cert(opt: &KmipServerConnectionSettings) -> Option<ClientCertificate> {
-    match (
-        &opt.client_cert_path,
-        &opt.client_key_path,
-        &opt.client_pkcs12_path,
-    ) {
-        (None, None, None) => None,
-        (None, None, Some(path)) => Some(ClientCertificate::CombinedPkcs12 {
-            cert_bytes: load_binary_file(path),
-        }),
-        (Some(_), None, None) | (None, Some(_), None) => {
-            panic!("Client certificate authentication requires both a certificate and a key");
-        }
-        (_, Some(_), Some(_)) | (Some(_), _, Some(_)) => {
-            panic!(
-                "Use either but not both of: client certificate and key PEM file paths, or a PCKS#12 certficate file path"
-            );
-        }
-        (Some(cert_path), Some(key_path), None) => Some(ClientCertificate::SeparatePem {
-            cert_bytes: load_binary_file(cert_path),
-            key_bytes: load_binary_file(key_path),
-        }),
-    }
-}
-
-pub fn load_binary_file(path: &Path) -> Vec<u8> {
-    use std::{fs::File, io::Read};
-
-    let mut bytes = Vec::new();
-    File::open(path).unwrap().read_to_end(&mut bytes).unwrap();
-
-    bytes
 }
 
 pub fn faketime_or_now() -> UnixTime {

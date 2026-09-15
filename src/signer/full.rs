@@ -35,7 +35,7 @@ use domain::{
     },
     rdata::ZoneRecordData,
 };
-use domain_kmip::dep::kmip::client::pool::SyncConnPool;
+use domain_kmip::SyncConnPool;
 use rayon::{
     iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelExtend, ParallelIterator},
     slice::ParallelSliceMut,

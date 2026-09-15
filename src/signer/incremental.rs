@@ -40,7 +40,7 @@ use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
 use domain::utils::base32;
 use domain::utils::dst::UnsizedCopy;
 use domain::zonefile::inplace::Entry;
-use domain_kmip::dep::kmip::client::pool::SyncConnPool;
+use domain_kmip::SyncConnPool;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;

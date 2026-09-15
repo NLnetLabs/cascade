@@ -5,6 +5,8 @@ use std::{
     time::Duration,
 };
 
+use camino::Utf8PathBuf;
+use cascade_api::HsmServerAdd;
 use serde::{Deserialize, Serialize};
 
 use crate::api;
@@ -52,12 +54,20 @@ pub struct HsmState {
 ///
 /// Sensitive details such as certificates and credentials should be stored
 /// separately.
+//
+// TODO: Prefix all TLS related fields with tls_ or move them into a child
+// structure?
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct KmipServerState {
     pub server_id: String,
     pub ip_host_or_fqdn: String,
     pub port: u16,
     pub insecure: bool,
+    pub client_cert_path: Option<Utf8PathBuf>,
+    pub client_key_path: Option<Utf8PathBuf>,
+    pub server_cert_path: Option<Utf8PathBuf>,
+    pub server_name: Option<String>,
+    pub ca_cert_path: Option<Utf8PathBuf>,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub write_timeout: Duration,
@@ -67,13 +77,14 @@ pub struct KmipServerState {
     pub has_credentials: bool,
 }
 
-impl From<api::HsmServerAdd> for KmipServerState {
-    fn from(srv: api::HsmServerAdd) -> Self {
+impl From<HsmServerAdd> for KmipServerState {
+    fn from(srv: HsmServerAdd) -> Self {
         KmipServerState {
             server_id: srv.server_id,
             ip_host_or_fqdn: srv.ip_host_or_fqdn,
             port: srv.port,
             insecure: srv.insecure,
+            server_name: srv.server_name,
             connect_timeout: srv.connect_timeout,
             read_timeout: srv.read_timeout,
             write_timeout: srv.write_timeout,
@@ -81,6 +92,15 @@ impl From<api::HsmServerAdd> for KmipServerState {
             key_label_prefix: srv.key_label_prefix,
             key_label_max_bytes: srv.key_label_max_bytes,
             has_credentials: srv.username.is_some(),
+
+            // mTLS certificate/key paths cannot be set as HsmServerAdd has
+            // their byte content, not file paths. These should be filled in
+            // once the bytes have been written to disk and the paths to the
+            // resulting files are known, so we set them to None for now.
+            client_cert_path: None,
+            client_key_path: None,
+            server_cert_path: None,
+            ca_cert_path: None,
         }
     }
 }
@@ -92,6 +112,7 @@ impl From<KmipServerState> for api::KmipServerState {
             ip_host_or_fqdn,
             port,
             insecure,
+            server_name,
             connect_timeout,
             read_timeout,
             write_timeout,
@@ -99,6 +120,7 @@ impl From<KmipServerState> for api::KmipServerState {
             key_label_prefix,
             key_label_max_bytes,
             has_credentials,
+            ..
         } = value;
 
         Self {
@@ -106,6 +128,7 @@ impl From<KmipServerState> for api::KmipServerState {
             ip_host_or_fqdn,
             port,
             insecure,
+            server_name,
             connect_timeout,
             read_timeout,
             write_timeout,
