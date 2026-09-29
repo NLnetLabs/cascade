@@ -138,9 +138,7 @@ impl<T: Ord + Clone + Debug> Scheduler<T> {
 
                 // Extract any items we want to process immediately.
                 let latest = Instant::now() + Duration::from_secs(1);
-                #[allow(clippy::mutable_key_type)]
                 let later = schedule.split_off(&latest);
-                #[allow(clippy::mutable_key_type)]
                 let now = std::mem::replace(&mut *schedule, later);
 
                 // Update 'earliest'.

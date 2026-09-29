@@ -786,6 +786,7 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
 //----------- ZoneByName -------------------------------------------------------
 
 /// A [`Zone`] keyed by its name.
+// NOTE: `ignore-interior-mutability` in `clippy.toml`
 #[derive(Clone)]
 pub struct ZoneByName(pub Arc<Zone>);
 
@@ -830,6 +831,7 @@ impl fmt::Debug for ZoneByName {
 //----------- ZoneByPtr --------------------------------------------------------
 
 /// A [`Zone`] keyed by its address in memory.
+// NOTE: `ignore-interior-mutability` in `clippy.toml`
 #[derive(Clone)]
 pub struct ZoneByPtr(pub Arc<Zone>);
 
