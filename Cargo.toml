@@ -68,15 +68,14 @@ default-features = false
 #
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain]
-git = "https://github.com/NLnetLabs/domain"
-branch = "main"
+version = "0.12.3"
 
 # 'domain-kmip' offers KMIP support for DNSSEC signatures.
 #
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain-kmip]
 git = "https://github.com/NLnetLabs/domain-kmip"
-branch = "main"
+branch = "more-algorithm-support-and-fixes-and-cleanup"
 
 # Cascade contains many performance-sensitive hashmaps and is not expected to
 # be accessible to attackers.  'std's default hasher, which is slow but secure

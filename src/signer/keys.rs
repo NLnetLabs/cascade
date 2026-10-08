@@ -19,7 +19,11 @@ use domain::{
     rdata::Dnskey,
 };
 use domain_kmip::{
-    ClientCertificate, ConnectionManager, ConnectionSettings, KeyUrl, KmipConnError, SyncConnPool,
+    KeyUrl,
+    dep::kmip_protocol::net::{
+        ClientCertificate, ConnectionSettings,
+        sync_pool::{ConnPool, ConnectionManager, KmipConnError},
+    },
 };
 use tracing::{debug, error, warn};
 use url::Url;
@@ -60,7 +64,7 @@ impl ZoneSigningKeys {
         config: &crate::config::Config,
         zone_name: &Name<Bytes>,
         hsm_store: &HsmStore,
-        kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
+        kmip_servers: &Mutex<HashMap<String, ConnPool>>,
         keyset_state: &KeySetState,
         status: &RwLock<SigningStatusPerZone>,
     ) -> Result<Self, Box<LoadError>> {
@@ -269,7 +273,7 @@ impl KeyPair {
     pub fn load_kmip(
         config: &crate::config::Config,
         hsm_store: &HsmStore,
-        kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
+        kmip_servers: &Mutex<HashMap<String, ConnPool>>,
         priv_key_url: KeyUrl,
         pub_key_url: KeyUrl,
         status: &RwLock<SigningStatusPerZone>,

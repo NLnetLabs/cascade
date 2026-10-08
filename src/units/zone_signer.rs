@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use domain::base::Rtype;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::rdata::dnssec::Timestamp;
-use domain_kmip::SyncConnPool;
+use domain_kmip::dep::kmip_protocol::net::sync_pool::ConnPool;
 use serde::{Deserialize, Serialize};
 
 use crate::center::Center;
@@ -33,7 +33,7 @@ use crate::zone::ZoneByPtr;
 //------------ ZoneSigner ----------------------------------------------------
 
 pub struct ZoneSigner {
-    pub kmip_servers: Arc<Mutex<HashMap<String, SyncConnPool>>>,
+    pub kmip_servers: Arc<Mutex<HashMap<String, ConnPool>>>,
 
     /// The re-signing scheduler.
     pub resign_scheduler: Scheduler<ZoneByPtr>,

@@ -22,9 +22,9 @@ use domain::base::Name;
 use domain::base::Serial;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::utils::base64;
-use domain_kmip::ClientCertificate;
-use domain_kmip::ConnectionManager;
-use domain_kmip::ConnectionSettings;
+use domain_kmip::dep::kmip_protocol::net::ClientCertificate;
+use domain_kmip::dep::kmip_protocol::net::ConnectionSettings;
+use domain_kmip::dep::kmip_protocol::net::sync_pool::ConnectionManager;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -1574,7 +1574,7 @@ impl HttpServer {
         };
 
         // Test the connectivity (but not the HSM capabilities).
-        let conn = match pool.get() {
+        let mut conn = match pool.get() {
             Ok(conn) => conn,
             Err(err) => {
                 return Err(HsmServerAddError::UnableToConnect {
