@@ -35,7 +35,7 @@ use domain::{
     },
     rdata::ZoneRecordData,
 };
-use domain_kmip::dep::kmip::client::pool::SyncConnPool;
+use domain_kmip::dep::kmip_protocol::net::sync_pool::ConnPool;
 use rayon::{
     iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelExtend, ParallelIterator},
     slice::ParallelSliceMut,
@@ -60,7 +60,7 @@ pub fn sign_zone(
     zone_name: &domain::base::Name<Bytes>,
     policy: &PolicyVersion,
     hsm_store: &HsmStore,
-    kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
+    kmip_servers: &Mutex<HashMap<String, ConnPool>>,
     builder: &mut SignedZoneBuilder,
     local_state: &mut LocalState,
     keyset_state: KeySetState,

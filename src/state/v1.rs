@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use camino::Utf8Path;
 use domain::base::Name;
 use domain::base::Ttl;
 use domain::tsig::KeyName;
@@ -743,6 +744,11 @@ pub struct HsmSpec {
     pub ip_host_or_fqdn: String,
     pub port: u16,
     pub insecure: bool,
+    pub server_name: Option<String>,
+    pub client_cert_path: Option<Box<Utf8Path>>,
+    pub client_key_path: Option<Box<Utf8Path>>,
+    pub server_cert_path: Option<Box<Utf8Path>>,
+    pub ca_cert_path: Option<Box<Utf8Path>>,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub write_timeout: Duration,
@@ -761,6 +767,11 @@ impl HsmSpec {
             ip_host_or_fqdn,
             port,
             insecure,
+            server_name,
+            client_cert_path,
+            client_key_path,
+            server_cert_path,
+            ca_cert_path,
             connect_timeout,
             read_timeout,
             write_timeout,
@@ -775,6 +786,11 @@ impl HsmSpec {
             ip_host_or_fqdn,
             port,
             insecure,
+            server_name,
+            client_cert_path: client_cert_path.map(Into::into),
+            client_key_path: client_key_path.map(Into::into),
+            server_cert_path: server_cert_path.map(Into::into),
+            ca_cert_path: ca_cert_path.map(Into::into),
             connect_timeout,
             read_timeout,
             write_timeout,
@@ -792,6 +808,11 @@ impl HsmSpec {
             ip_host_or_fqdn,
             port,
             insecure,
+            server_name,
+            client_cert_path,
+            client_key_path,
+            server_cert_path,
+            ca_cert_path,
             connect_timeout,
             read_timeout,
             write_timeout,
@@ -805,6 +826,11 @@ impl HsmSpec {
             ip_host_or_fqdn,
             port,
             insecure,
+            server_name,
+            client_cert_path: client_cert_path.map(Into::into),
+            client_key_path: client_key_path.map(Into::into),
+            server_cert_path: server_cert_path.map(Into::into),
+            ca_cert_path: ca_cert_path.map(Into::into),
             connect_timeout,
             read_timeout,
             write_timeout,
