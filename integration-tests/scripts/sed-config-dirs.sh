@@ -50,7 +50,9 @@ fi
 
 source "$(dirname "$0")/common.sh"
 
-sed -e "s_^policy-dir.*_policy-dir = \"$(get-cascade-config-option "${_base_dir}" "policy-dir")\"_" \
+sed \
+  -e "s_^state-file.*_state-file = \"$(get-cascade-config-option "${_base_dir}" "state-file")\"_" \
+  -e "s_^policy-dir.*_policy-dir = \"$(get-cascade-config-option "${_base_dir}" "policy-dir")\"_" \
   -e "s_^zone-state-dir.*_zone-state-dir = \"$(get-cascade-config-option "${_base_dir}" "zone-state-dir")\"_" \
   -e "s_^tsig-store-path.*_tsig-store-path = \"$(get-cascade-config-option "${_base_dir}" "tsig-store-path")\"_" \
   -e "s_^kmip-credentials-store-path.*_kmip-credentials-store-path = \"$(get-cascade-config-option "${_base_dir}" "kmip-credentials-store-path")\"_" \

@@ -39,6 +39,7 @@ do
 				}
 			cp zones/incremental-signing-test${test}-input2.zone example.in
 			$CASCADE zone reload example
+			$CASCADE zone maintenance enable example
 			for i in 1 2 3 4 5 6 7 8 9 10
 			do
 			    dig @127.0.0.1 -p 8053 example soa |

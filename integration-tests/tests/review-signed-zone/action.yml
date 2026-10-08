@@ -74,7 +74,7 @@ runs:
       run: |
         dig @127.0.0.1 -p 4541 example.test SOA | grep -F 'status: NOERROR'
 
-    - name: Querying the zone at the publication server should fail
+    - name: Querying the zone at the publication server should fail (1)
       run: |
         dig @127.0.0.1 -p 4542 example.test SOA | grep -F 'status: SERVFAIL'
 
@@ -104,7 +104,7 @@ runs:
       run: |
         dig @127.0.0.1 -p 4541 example.test SOA | grep -F 'status: NOERROR'
 
-    - name: Querying the zone at the publication server should fail
+    - name: Querying the zone at the publication server should fail (2)
       run: |
         dig @127.0.0.1 -p 4542 example.test SOA | grep -F 'status: SERVFAIL'
 

@@ -8,7 +8,7 @@ function get-cascade-config-option() {
     config.toml)
       echo "${_base_dir}/config.toml"
       ;;
-    state.db)
+    state-file)
       echo "${_base_dir}/state.db"
       ;;
     policy-dir)

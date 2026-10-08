@@ -17,6 +17,7 @@ Example
 .. code-block:: text
 
     version = "v1"
+    state-file = "/var/lib/cascade/state.db"
     policy-dir = "/etc/cascade/policies"
     zone-state-dir = "/var/lib/cascade/zone-state"
     tsig-store-path = "/var/lib/cascade/tsig-keys.db"
@@ -63,6 +64,14 @@ Global Options
    future and Cascade may drop support for older versions over time.
 
    - ``v1``: This format.
+
+.. option:: state-file = "/var/lib/cascade/state.db"
+
+   The path to the global state file.
+
+   Cascade stores information like the known policies and zones here. This file
+   should not be modified manually, but it can be backed up and restored in the
+   event of filesystem corruption.
 
 .. option:: policy-dir = "/etc/cascade/policies"
 

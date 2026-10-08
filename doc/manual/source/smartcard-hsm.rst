@@ -102,7 +102,7 @@ application.
 
 .. code-block:: bash
 
-   # sed -i -e 's|^lib_path = .\+|lib_path = "/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"|' /etc/cascade-hsm-bridge/config.toml
+   # sed -i -e 's|^#lib-path = .\+|lib-path = "/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"|' /etc/cascade-hsm-bridge/config.toml
    # systemctl start cascade-hsm-bridge
 
 Create a Cascade Policy that uses your HSM

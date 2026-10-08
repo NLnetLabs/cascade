@@ -140,37 +140,19 @@ mod compat {
             // Determine how to handle the request.
             match request.kind {
                 RequestKind::Zone(zone_request) => {
-                    // Look up the relevant zone.
+                    // Look up the relevant zone. The zone should exist,
+                    // this checked by AccessControlSvc. Return SERVFAIL
+                    // if something goes wrong.
                     let state = self.state.read().unwrap();
                     let Some(zone) = state.zones.get(&*zone_request.name) else {
                         // No such zone could be found.
-                        let rcode = match zone_request.kind {
-                            // Return REFUSED for normal queries.
-                            ZoneRequestKind::Soa => Rcode::REFUSED,
-                            // Return NOTAUTH for zone transfers.
-                            ZoneRequestKind::Axfr | ZoneRequestKind::Ixfr { .. } => Rcode::NOTAUTH,
-                        };
-                        let opt_ede = Some(
-                            ExtendedError::<Vec<u8>>::new_with_str(
-                                ExtendedErrorCode::NOT_AUTHORITATIVE,
-                                "zone not configured",
-                            )
-                            .expect("should fit"),
-                        );
+                        let rcode = Rcode::SERVFAIL;
                         return Box::pin(std::future::ready(error(
                             old_request.message(),
                             rcode,
-                            opt_ede,
-                        )));
-                    };
-
-                    if self.mode == ServiceMode::Publication && !is_permitted(zone, &old_request) {
-                        return Box::pin(std::future::ready(error(
-                            old_request.message(),
-                            Rcode::REFUSED,
                             None,
                         )));
-                    }
+                    };
 
                     match zone_request.kind {
                         ZoneRequestKind::Soa => Box::pin({
@@ -193,77 +175,6 @@ mod compat {
                 }
             }
         }
-    }
-
-    fn is_permitted<V: Viewer>(
-        zone: &ServedZone<V>,
-        request: &Request<Vec<u8>, Option<Arc<tsig::Key>>>,
-    ) -> bool {
-        let zone_state = zone.handle.read();
-
-        if tracing::enabled!(Level::TRACE) {
-            let tsig_key = request.metadata().as_ref().map(|key| key.name());
-            trace!(
-                "Received request {} from {} for {} in zone {} with TSIG key {tsig_key:?}",
-                request.message().header().id(),
-                request.client_addr().ip(),
-                request
-                    .message()
-                    .qtype()
-                    .map(|rtype| rtype.to_string())
-                    .unwrap_or("<NO QTYPE>".to_string()),
-                zone.handle.name,
-            );
-        }
-
-        if let Some(acls) = zone_state
-            .policy
-            .as_ref()
-            .map(|p| &p.server.outbound.provide_xfr_to)
-        {
-            // If at least one ACL was specified, enforce it.
-            if !acls.is_empty() {
-                let wanted_tsig_key_name = request.metadata().as_ref().map(|key| key.name());
-
-                for acl in acls {
-                    // Does the client address match the allowed address?
-                    if acl.addr.ip() == request.client_addr().ip() {
-                        // Is the request signed with the right TSIG key?
-                        if acl.tsig_key_name.as_ref() == wanted_tsig_key_name {
-                            // Allow the request.
-                            return true;
-                        }
-                    }
-                }
-
-                // No ACL matched, reject the request.
-                if tracing::enabled!(Level::DEBUG) {
-                    let extra = if tracing::enabled!(Level::TRACE) {
-                        &format!(
-                            " (TSIG key={wanted_tsig_key_name:?}) [no matching ACL found: {acls:?}]"
-                        )
-                    } else {
-                        ""
-                    };
-                    debug!(
-                        "Rejecting request {} from {} for {} in zone {}: access denied{extra}",
-                        request.message().header().id(),
-                        request.client_addr().ip(),
-                        request
-                            .message()
-                            .qtype()
-                            .map(|rtype| rtype.to_string())
-                            .unwrap_or("<NO QTYPE>".to_string()),
-                        zone.handle.name,
-                    );
-                }
-
-                return false;
-            }
-        }
-
-        // No ACL defined, accept the request.
-        true
     }
 
     /// Generate a SOA DNS message response stream for the given zone viewer.

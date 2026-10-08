@@ -18,7 +18,7 @@ documentation = "https://cascade.docs.nlnetlabs.nl"
 repository = "https://github.com/NLnetLabs/cascade"
 license = "BSD-3-Clause"
 
-version = "0.1.0-beta7-dev"
+version = "0.1.0-beta7"
 rust-version = "1.88"
 edition = "2024"
 
@@ -38,7 +38,6 @@ rust-version.workspace = true
 edition.workspace = true
 
 exclude = [".github", ".gitignore"]
-readme = "README.md"
 
 default-run = "cascaded"
 

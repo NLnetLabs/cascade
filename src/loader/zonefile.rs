@@ -1,15 +1,11 @@
 //! Loading zones from zonefiles.
 
-use std::{
-    fmt,
-    fs::File,
-    sync::{Arc, atomic::Ordering::Relaxed},
-};
+use std::{fmt, fs::File, sync::atomic::Ordering::Relaxed};
 
-use bytes::BufMut;
+use bytes::{BufMut, Bytes};
 use camino::Utf8Path;
 use domain::{
-    base::{ToName, iana::Class},
+    base::{Name, ToName, iana::Class},
     new::{
         base::{Record, name::RevNameBuf, wire::ParseBytes},
         rdata::{BoxedRecordData, RecordData},
@@ -20,7 +16,6 @@ use domain::{
 
 use crate::{
     loader::ActiveLoadMetrics,
-    zone::Zone,
     zonedata::{LoadedZoneBuilder, RegularRecord, ReplaceError, SoaRecord},
 };
 
@@ -30,19 +25,19 @@ use crate::{
 ///
 /// This will always read the entire zone, regardless of the serial in the SOA.
 pub fn load(
-    zone: &Arc<Zone>,
+    zone_name: &Name<Bytes>,
     path: &Utf8Path,
     builder: &mut LoadedZoneBuilder,
     metrics: &ActiveLoadMetrics,
 ) -> Result<(), Error> {
-    let mut reader = make_reader(zone, path, metrics)?;
+    let mut reader = make_reader(zone_name, path, metrics)?;
     let mut writer = builder.replace().unwrap();
 
     // A scratch buffer that we can use to parse
     let mut buf = Vec::new();
 
     // Parse all the records, extracting the SOA. We always read the whole zone.
-    while let Some(record) = parse_record(&mut buf, zone, &mut reader)? {
+    while let Some(record) = parse_record(&mut buf, zone_name, &mut reader)? {
         metrics.num_loaded_records.fetch_add(1, Relaxed);
         metrics
             .num_loaded_bytes
@@ -67,7 +62,7 @@ pub fn load(
 ///
 /// It will add the size of the file to the byte count of the metrics.
 fn make_reader(
-    zone: &Arc<Zone>,
+    zone_name: &Name<Bytes>,
     path: &Utf8Path,
     metrics: &ActiveLoadMetrics,
 ) -> Result<inplace::Zonefile, Error> {
@@ -83,7 +78,7 @@ fn make_reader(
     std::io::copy(&mut file, &mut zone_file).map_err(Error::Open)?;
 
     let mut reader = zone_file.into_inner();
-    reader.set_origin(zone.name.clone());
+    reader.set_origin(zone_name.clone());
     reader.set_default_class(Class::IN);
 
     Ok(reader)
@@ -92,7 +87,7 @@ fn make_reader(
 /// Parse a single record from a zonefile
 fn parse_record(
     buf: &mut Vec<u8>,
-    zone: &Arc<Zone>,
+    zone_name: &Name<Bytes>,
     reader: &mut inplace::Zonefile,
 ) -> Result<Option<Parsed>, Error> {
     buf.clear();
@@ -115,7 +110,7 @@ fn parse_record(
     if let RecordData::Soa(new_soa) = record.rdata.get() {
         // We have to compare with an old base name here so we use the record_name
         // instead of record.name.
-        if !record_name.name_eq(&zone.name) {
+        if !record_name.name_eq(zone_name) {
             // TODO: Check this in 'UnsignedZoneReplacer'.
             return Err(Error::MismatchedOrigin);
         }

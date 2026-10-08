@@ -86,6 +86,10 @@ pub enum ZoneStateMachine {
 }
 
 impl ZoneStateMachine {
+    pub fn is_waiting(&self) -> bool {
+        matches!(self, Self::Waiting(_))
+    }
+
     pub fn is_halted(&self) -> bool {
         matches!(
             self,
