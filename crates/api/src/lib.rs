@@ -1175,19 +1175,18 @@ pub mod keyset {
     pub enum KeyRollCommand {
         /// Start a key roll.
         StartRoll,
-        /// Report that the first propagation step has completed.
-        Propagation1Complete {
-            /// The TTL that is required to be reported by the Report actions.
+        /// Report the before-ttl.
+        BeforeTtl {
+            /// The TTL that is reported.
             ttl: u32,
         },
+        /// Report that the first propagation step has completed.
+        Propagation1Complete,
         /// Cached information from before Propagation1Complete should have
         /// expired by now.
         CacheExpired1,
         /// Report that the second propagation step has completed.
-        Propagation2Complete {
-            /// The TTL that is required to be reported by the Report actions.
-            ttl: u32,
-        },
+        Propagation2Complete,
         /// Cached information from before Propagation2Complete should have
         /// expired by now.
         CacheExpired2,

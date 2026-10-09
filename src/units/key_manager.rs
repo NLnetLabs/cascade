@@ -274,14 +274,17 @@ impl KeyManager {
             api::keyset::KeyRollCommand::StartRoll => {
                 cmd.arg("start-roll");
             }
-            api::keyset::KeyRollCommand::Propagation1Complete { ttl } => {
-                cmd.arg("propagation1-complete").arg(ttl.to_string());
+            api::keyset::KeyRollCommand::BeforeTtl { ttl } => {
+                cmd.arg("before-ttl").arg(ttl.to_string());
+            }
+            api::keyset::KeyRollCommand::Propagation1Complete => {
+                cmd.arg("propagation1-complete");
             }
             api::keyset::KeyRollCommand::CacheExpired1 => {
                 cmd.arg("cache-expired1");
             }
-            api::keyset::KeyRollCommand::Propagation2Complete { ttl } => {
-                cmd.arg("propagation2-complete").arg(ttl.to_string());
+            api::keyset::KeyRollCommand::Propagation2Complete => {
+                cmd.arg("propagation2-complete");
             }
             api::keyset::KeyRollCommand::CacheExpired2 => {
                 cmd.arg("cache-expired2");
