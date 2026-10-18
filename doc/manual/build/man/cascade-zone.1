@@ -157,7 +157,7 @@ the operation completes.
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0
 .TP
-.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
 The zone source can be the IP address of an upstream nameserver (with
 or without port, defaults to port 53) or the path to a zone file locally
 available to the \fBcascaded\fP daemon.
@@ -274,7 +274,7 @@ The name of the zone to add.
 Only the specified settings will be changed.
 .INDENT 0.0
 .TP
-.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
 The new source to use, in the same syntax as \fBzone add\fP\&.
 .UNINDENT
 .INDENT 0.0
@@ -290,7 +290,7 @@ Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP
 .INDENT 0.0
 .TP
 .B <NAME>
-The name of the zone to add.
+The name of the zone to edit.
 .UNINDENT
 .SH OPTIONS FOR ZONE REMOVE
 .INDENT 0.0

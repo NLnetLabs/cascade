@@ -114,7 +114,7 @@ Commands
 Options for :subcmd:`zone add`
 ------------------------------
 
-.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
 
    The zone source can be the IP address of an upstream nameserver (with
    or without port, defaults to port 53) or the path to a zone file locally
@@ -212,7 +212,7 @@ Options for :subcmd:`zone edit`
 
 Only the specified settings will be changed.
 
-.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
 
    The new source to use, in the same syntax as :subcmd:`zone add`.
 
@@ -226,7 +226,7 @@ Only the specified settings will be changed.
 
 .. option:: <NAME>
 
-   The name of the zone to add.
+   The name of the zone to edit.
 
 Options for :subcmd:`zone remove`
 ---------------------------------
