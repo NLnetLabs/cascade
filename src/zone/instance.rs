@@ -763,10 +763,12 @@ impl LoadedInstance {
     /// If the diff for this instance (relative to the succeeding loaded
     /// instance) has been persisted, it will be stored at this path.
     pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
-        config
+        let mut path = config
             .zone_state_dir
             .join(self.persistence_basename(zone_name))
-            .with_added_extension(".diff")
+            .into_string();
+        path.push_str(".diff");
+        path.into()
     }
 }
 
@@ -850,10 +852,12 @@ impl SignedInstance {
     /// If the diff for this instance (relative to the succeeding signed
     /// instance) has been persisted, it will be stored at this path.
     pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
-        config
+        let mut path = config
             .zone_state_dir
             .join(self.persistence_basename(zone_name))
-            .with_added_extension(".diff")
+            .into_string();
+        path.push_str(".diff");
+        path.into()
     }
 }
 
