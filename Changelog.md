@@ -14,6 +14,25 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+### Breaking changes
+### New
+
+- The `cascade zone edit` command can be used to change the source and policy
+  of zones ([#906] by @tertsdiepraam and @bal-e).
+
+### Bug fixes
+### Other changes
+### Documentation improvements
+### Known issues
+### Acknowledgements
+
+[#906]: https://github.com/NLnetLabs/cascade/pull/906
+
+
 ## 0.1.0-beta7 'Gezellig'
 
 Released 2026-09-11.
