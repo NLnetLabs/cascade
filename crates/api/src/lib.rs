@@ -345,6 +345,44 @@ impl fmt::Display for ZoneAddError {
     }
 }
 
+//----------- ZoneEdit -------------------------------------------------------
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneEdit {
+    pub source: Option<ZoneSource>,
+    pub policy: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ZoneEditResult {
+    pub name: ZoneName,
+    pub old_source: Option<ZoneSource>,
+    pub old_policy: Option<Box<str>>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum ZoneEditError {
+    NoSuchZone,
+    NoSuchPolicy,
+    NoSuchTsigKey,
+    PolicyMidDeletion,
+    Other(String),
+}
+
+impl fmt::Display for ZoneEditError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NoSuchZone => "no zone with that name exists",
+            Self::NoSuchPolicy => "no policy with that name exists",
+            Self::NoSuchTsigKey => "no TSIG key with that name exists",
+            Self::PolicyMidDeletion => "the specified policy is being deleted",
+            Self::Other(reason) => reason,
+        })
+    }
+}
+
+//----------- ZoneRemove -----------------------------------------------------
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ZoneRemoveResult {
     pub name: ZoneName,
@@ -369,10 +407,6 @@ impl fmt::Display for ZoneRemoveError {
 
 /// How to load the contents of a zone.
 #[derive(Deserialize, Serialize, Debug, Clone)]
-// Allow the large enum variant caused by TsigKeyName using Name<Array<255>>
-// to avoid the conversions that would be needed if Name<Bytes> were to be
-// used instead.
-#[allow(clippy::large_enum_variant)]
 pub enum ZoneSource {
     /// Don't load the zone at all.
     None,
@@ -389,7 +423,7 @@ pub enum ZoneSource {
         addr: SocketAddr,
 
         /// The name of a TSIG key, if any.
-        tsig_key: Option<TsigKeyName>,
+        tsig_key: Option<Box<TsigKeyName>>,
     },
 }
 
