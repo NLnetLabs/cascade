@@ -25,20 +25,11 @@ impl ZoneStatus {
         let Self { detailed, zone } = self;
 
         let url = format!("zone/{}/status", zone);
-        let response: Result<cascade_api::ZoneStatus, ZoneStatusError> =
-            client.get_json(&url).await?;
+        let response = client.get_json::<Result<_, _>>(&url).await?;
+        let zone: cascade_api::ZoneStatus = response.map_err(|err: ZoneStatusError| match err {
+            ZoneStatusError::ZoneDoesNotExist => format!("zone `{zone}` does not exist"),
+        })?;
 
-        match response {
-            Ok(status) => Self::print_zone_status(client, status, detailed).await,
-            Err(ZoneStatusError::ZoneDoesNotExist) => Err(format!("zone `{zone}` does not exist")),
-        }
-    }
-
-    async fn print_zone_status(
-        client: CascadeApiClient,
-        zone: cascade_api::ZoneStatus,
-        detailed: bool,
-    ) -> Result<(), String> {
         // Fetch the policy for the zone.
         let url = format!("policy/{}", zone.policy);
         let response: Result<PolicyInfo, PolicyInfoError> = client.get_json(&url).await?;
