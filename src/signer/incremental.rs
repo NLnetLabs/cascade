@@ -325,7 +325,7 @@ impl WorkSpace<'_> {
                     let NewRecordData::Rrsig(rrsig) = r.data() else {
                         panic!("Rrsig expected");
                     };
-                    rrsig.expiration().to_system_time(now_system_time)
+                    rrsig.expiration().to_system_time(now_system_time).unwrap()
                         - Duration::from_secs(rrsig.original_ttl().as_secs() as u64)
                 })
                 .min()

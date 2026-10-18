@@ -33,7 +33,7 @@
 use std::{num::NonZeroU64, time::SystemTime};
 
 use cascade_zonedata::SoaRecord;
-use domain::new::base::Serial;
+use domain::new::base::SoaSerial;
 
 //----------- Instances --------------------------------------------------------
 
@@ -465,7 +465,7 @@ pub struct LoadedInstance {
 
 impl LoadedInstance {
     /// The SOA serial of this instance.
-    pub fn serial(&self) -> Serial {
+    pub fn serial(&self) -> SoaSerial {
         self.soa.rdata.serial
     }
 }
@@ -516,7 +516,7 @@ pub struct SignedInstance {
 
 impl SignedInstance {
     /// The SOA serial of this instance.
-    pub fn serial(&self) -> Serial {
+    pub fn serial(&self) -> SoaSerial {
         self.soa.rdata.serial
     }
 

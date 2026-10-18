@@ -24,7 +24,7 @@ use domain::{
     new::{
         base::{
             HeaderFlags, Message, MessageItem, QClass, QType, Question, RClass, RType, Record,
-            Serial,
+            SoaSerial,
             build::MessageBuilder,
             name::{Name, NameCompressor, RevNameBuf},
             wire::{AsBytes, ParseBytes, ParseBytesZC, ParseError},
@@ -229,7 +229,7 @@ pub async fn ixfr(
             ));
         };
 
-        let serial = Serial::from(soa.serial().into_int());
+        let serial = SoaSerial::from(soa.serial().into_int());
         if local_soa.rdata.serial == serial {
             // The local copy is up-to-date.
             return Ok(());
