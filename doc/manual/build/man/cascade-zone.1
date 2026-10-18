@@ -27,7 +27,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-beta7-dev" "Cascade"
+.TH "CASCADE-ZONE" "1" "Jan 01, 2026" "0.1.0-beta7" "Cascade"
 .SH NAME
 cascade-zone \- Manage zones
 .SH SYNOPSIS
@@ -35,6 +35,8 @@ cascade-zone \- Manage zones
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fB<COMMAND>\fP
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%edit\fP \fB[OPTIONS]\fP \fB<NAME>\fP
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%remove\fP \fB<NAME>\fP
 .sp
@@ -67,6 +69,11 @@ command.
 .TP
 .B add
 Add a new zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B edit
+Change settings for an existing zone.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -150,7 +157,7 @@ the operation completes.
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0
 .TP
-.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
 The zone source can be the IP address of an upstream nameserver (with
 or without port, defaults to port 53) or the path to a zone file locally
 available to the \fBcascaded\fP daemon.
@@ -261,6 +268,29 @@ Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP
 .TP
 .B <NAME>
 The name of the zone to add.
+.UNINDENT
+.SH OPTIONS FOR ZONE EDIT
+.sp
+Only the specified settings will be changed.
+.INDENT 0.0
+.TP
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
+The new source to use, in the same syntax as \fBzone add\fP\&.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-policy <POLICY>
+The new policy to use.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to edit.
 .UNINDENT
 .SH OPTIONS FOR ZONE REMOVE
 .INDENT 0.0

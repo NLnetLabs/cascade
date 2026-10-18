@@ -14,7 +14,7 @@ use cascade_zonedata::{
 use domain::{
     new::{
         base::{
-            RType, Record, Serial,
+            RType, Record, SoaSerial,
             name::{NameBuf, RevNameBuf},
             parse::{ParseMessageBytes, SplitMessageBytes},
         },
@@ -242,7 +242,7 @@ pub fn restore_signed(
     );
 
     let mut all_serials = vec![];
-    let mut diffs_to_store: Vec<(Option<Serial>, Arc<DiffData>)> = vec![];
+    let mut diffs_to_store: Vec<(Option<SoaSerial>, Arc<DiffData>)> = vec![];
 
     // Load each diff and apply it to the zone, retrieving a single DiffData
     // per signed diff. Store each signed DiffData alongside the corresponding
@@ -436,7 +436,7 @@ fn load_ixfr_wire_dump<F>(
     source: &Path,
     buf: &mut Vec<u8>,
     mut rr_handler: F,
-) -> io::Result<(Serial, Serial)>
+) -> io::Result<(SoaSerial, SoaSerial)>
 where
     F: FnMut(IxfrEvent),
 {

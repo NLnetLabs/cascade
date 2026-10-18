@@ -19,6 +19,25 @@ Released yyyy-mm-dd.
 Released yyyy-mm-dd.
 
 ### Breaking changes
+### New
+
+- The `cascade zone edit` command can be used to change the source and policy
+  of zones ([#906] by @tertsdiepraam and @bal-e).
+
+### Bug fixes
+### Other changes
+### Documentation improvements
+### Known issues
+### Acknowledgements
+
+[#906]: https://github.com/NLnetLabs/cascade/pull/906
+
+
+## 0.1.0-beta7 'Gezellig'
+
+Released 2026-09-11.
+
+### Breaking changes
 
 - Information about HSMs (previously stored in one file per HSM in
   `kmip-server-state-dir`) is now stored in the global state file.
@@ -27,8 +46,14 @@ Released yyyy-mm-dd.
   The `kmip-server-state-dir` configuration option has been removed and the
   default value for `kmip-credentials-store-path` has changed.
 
+- The `--state` option to `cascaded` has been removed, and replaced by a
+  `state-file =` option in the configuration file. ([#989] by @bal-e)
+
 - `cascade tsig add` now reads TSIG key data from a file, supporting the NSD,
   BIND, and Knot formats. ([#938] by @withjannisNLnetLabs)
+
+- Zone removal is now only allowed on passive zones in maintenance mode. ([#968]
+  by @bal-e)
 
 ### New
 
@@ -49,6 +74,7 @@ Released yyyy-mm-dd.
 - Check that generated man pages are up-to-date in CI. ([#984] by @thgoebel)
 - Upgrade to Ploutos v10. ([#977] by @ximon18)
 - Use `uv` and support live-building documentation. ([#979] by @thgoebel)
+- Unit-test the full zone signer. ([#990] by @bal-e)
 
 ### Documentation improvements
 
@@ -61,14 +87,15 @@ Released yyyy-mm-dd.
 - Add warnings that KMIP client/server cert arguments are stubs. ([#985] by
   @thgoebel)
 
-### Known issues
 ### Acknowledgements
 
-Thanks to @thgoebel for his contributions!
+Thanks to @jpmens, @bortzmeyer and @gryphius for testing Cascade and providing
+valuable feedback, and thanks to @thgoebel for his contributions!
 
 [#938]: https://github.com/NLnetLabs/cascade/pull/938
 [#964]: https://github.com/NLnetLabs/cascade/pull/964
 [#967]: https://github.com/NLnetLabs/cascade/pull/967
+[#968]: https://github.com/NLnetLabs/cascade/pull/968
 [#971]: https://github.com/NLnetLabs/cascade/pull/971
 [#972]: https://github.com/NLnetLabs/cascade/pull/972
 [#976]: https://github.com/NLnetLabs/cascade/pull/976
@@ -80,6 +107,8 @@ Thanks to @thgoebel for his contributions!
 [#984]: https://github.com/NLnetLabs/cascade/pull/984
 [#985]: https://github.com/NLnetLabs/cascade/pull/985
 [#987]: https://github.com/NLnetLabs/cascade/pull/987
+[#989]: https://github.com/NLnetLabs/cascade/pull/989
+[#990]: https://github.com/NLnetLabs/cascade/pull/990
 
 ## 0.1.0-beta6 'Leonard Shelby'
 

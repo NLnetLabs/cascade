@@ -42,7 +42,7 @@ use std::{
 use bytes::Bytes;
 use camino::Utf8PathBuf;
 use cascade_zonedata::{DiffData, SoaRecord};
-use domain::{base::Name, new::base::Serial};
+use domain::{base::Name, new::base::SoaSerial};
 
 //----------- Instances --------------------------------------------------------
 
@@ -749,7 +749,7 @@ pub struct LoadedInstance {
 
 impl LoadedInstance {
     /// The SOA serial of this instance.
-    pub fn serial(&self) -> Serial {
+    pub fn serial(&self) -> SoaSerial {
         self.soa.rdata.serial
     }
 
@@ -824,7 +824,7 @@ pub struct SignedInstance {
 
 impl SignedInstance {
     /// The SOA serial of this instance.
-    pub fn serial(&self) -> Serial {
+    pub fn serial(&self) -> SoaSerial {
         self.soa.rdata.serial
     }
 
