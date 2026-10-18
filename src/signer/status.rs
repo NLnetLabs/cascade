@@ -94,7 +94,7 @@ impl ZoneSigningStatus {
     }
 
     #[allow(clippy::result_unit_err)] // TODO
-    pub fn start(&mut self, zone_serial: domain::new::base::Serial) -> Result<(), ()> {
+    pub fn start(&mut self, zone_serial: domain::new::base::SoaSerial) -> Result<(), ()> {
         match *self {
             ZoneSigningStatus::Requested(s) => {
                 *self = Self::InProgress(InProgressStatus::new(s, zone_serial));
@@ -170,7 +170,10 @@ pub struct InProgressStatus {
 }
 
 impl InProgressStatus {
-    pub fn new(requested_status: RequestedStatus, zone_serial: domain::new::base::Serial) -> Self {
+    pub fn new(
+        requested_status: RequestedStatus,
+        zone_serial: domain::new::base::SoaSerial,
+    ) -> Self {
         Self {
             requested_at: requested_status.requested_at,
             zone_serial: domain::base::Serial(zone_serial.into()),

@@ -1106,9 +1106,9 @@ impl PersistedDiffFileInfoSpec {
             self.id,
             self.path,
             self.loaded_serial
-                .map(|s| domain::new::base::Serial::from(s.0)),
+                .map(|s| domain::new::base::SoaSerial::from(s.0)),
             self.signed_serial
-                .map(|s| domain::new::base::Serial::from(s.0)),
+                .map(|s| domain::new::base::SoaSerial::from(s.0)),
         )
     }
 
