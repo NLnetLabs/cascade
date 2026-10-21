@@ -39,3 +39,6 @@ features = ["derive"]
 # 'serde-with' provides helpers for 'serde'.
 [dependencies.serde_with]
 workspace = true
+
+[dev-dependencies.toml]
+workspace = true

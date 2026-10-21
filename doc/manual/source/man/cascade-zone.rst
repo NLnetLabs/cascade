@@ -8,6 +8,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`add` ``[OPTIONS]`` ``--source <SOURCE>`` ``--policy <POLICY>`` ``<NAME>``
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`edit` ``[OPTIONS]`` ``<NAME>``
+
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`remove` ``<NAME>``
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`list`
@@ -45,6 +47,10 @@ Commands
 .. subcmd:: add
 
    Add a new zone.
+
+.. subcmd:: edit
+
+   Change settings for an existing zone.
 
 .. subcmd:: remove
 
@@ -108,7 +114,7 @@ Commands
 Options for :subcmd:`zone add`
 ------------------------------
 
-.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
 
    The zone source can be the IP address of an upstream nameserver (with
    or without port, defaults to port 53) or the path to a zone file locally
@@ -200,6 +206,27 @@ Options for :subcmd:`zone add`
 .. option:: <NAME>
 
    The name of the zone to add.
+
+Options for :subcmd:`zone edit`
+-------------------------------
+
+Only the specified settings will be changed.
+
+.. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
+
+   The new source to use, in the same syntax as :subcmd:`zone add`.
+
+.. option:: --policy <POLICY>
+
+   The new policy to use.
+
+.. option:: -h, --help
+
+   Print the help text (short summary with ``-h``, long help with ``--help``).
+
+.. option:: <NAME>
+
+   The name of the zone to edit.
 
 Options for :subcmd:`zone remove`
 ---------------------------------
