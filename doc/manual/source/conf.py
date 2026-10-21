@@ -148,7 +148,7 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 html_logo = 'resources/Cascade_Mono_Logo_White.svg'
 html_favicon = 'resources/favicon.ico'
 html_theme_options = {
-    'logo_only': False,
+    'logo_only': True,
     'display_version': True,
     'style_external_links': False,
 }
