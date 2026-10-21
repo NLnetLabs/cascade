@@ -145,10 +145,10 @@ pygments_style = 'sphinx'
 #
 html_theme = 'sphinx_rtd_theme'
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
-# html_logo = 'resources/Routinator_Wordmark.svg'
-# html_favicon = 'resources/favicon.ico'
+html_logo = 'resources/Cascade_Mono_Logo_White.png'
+html_favicon = 'resources/favicon.ico'
 html_theme_options = {
-    'logo_only': False,
+    'logo_only': True,
     'display_version': True,
     'style_external_links': False,
 }
@@ -322,4 +322,3 @@ def setup(app):
                         parse_node=parse_cmd_args_node)
     app.add_css_file('css/dark.css')
     app.add_css_file('css/light.css')
-    
