@@ -635,7 +635,6 @@ impl KeyManager {
             // An existing call to tick() is still busy, don't do anything.
             return;
         };
-        #[allow(clippy::mutable_key_type)]
         let zones = {
             let state = center.state.lock().unwrap();
             state.zones.clone()
