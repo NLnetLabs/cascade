@@ -15,7 +15,7 @@ use crate::{
     persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState, save_state_now},
+    zone::{Zone, ZoneHandle, ZoneState},
     zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
 };
 
@@ -266,24 +266,24 @@ fn abandon_signed_restoration(
 
 fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
     PersistenceState::clear(center, zone);
-    {
-        let mut handle = zone.write_handle(center);
+    let mut handle = zone.write_handle(center);
 
-        // In case this zone was signed in the past we have to make sure that
-        // any attempt to enqueue a re-signing operation will be skipped as
-        // doing so will fail due to the lack of loaded zone content.
-        // TODO: Find a better way to prevent this issue as changing the
-        // min_expiration timestamps is a very indirect and non-obvious way of
-        // preventing re-signing.
-        handle.state.min_expiration = None;
-        handle.state.next_min_expiration = None;
+    // In case this zone was signed in the past we have to make sure that
+    // any attempt to enqueue a re-signing operation will be skipped as
+    // doing so will fail due to the lack of loaded zone content.
+    // TODO: Find a better way to prevent this issue as changing the
+    // min_expiration timestamps is a very indirect and non-obvious way of
+    // preventing re-signing.
+    handle.state.min_expiration = None;
+    handle.state.next_min_expiration = None;
 
-        // Also remove any already enqueued signing operation that is blocked
-        // by the ongoing restore as it will otherwise immediately start once
-        // the restore completes.
-        handle.signer().cancel_enqueued_signing_operations();
-    }
-    save_state_now(center, zone);
+    // Also remove any already enqueued signing operation that is blocked
+    // by the ongoing restore as it will otherwise immediately start once
+    // the restore completes.
+    handle.signer().cancel_enqueued_signing_operations();
+
+    // TODO: Handle the error?
+    let _ = handle.get().save_state_now();
 }
 
 //----------- PersistenceState -----------------------------------------------
