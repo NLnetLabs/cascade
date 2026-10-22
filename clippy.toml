@@ -1,3 +1,9 @@
+ignore-interior-mutability = [
+  "bytes::Bytes",
+  "cascaded::zone::ZoneByPtr",
+  "cascaded::zone::ZoneByName",
+]
+
 [[disallowed-macros]]
 path = "std::println"
 reason = "this macro will always print color even when that is undesidered, use cascade::println instead"

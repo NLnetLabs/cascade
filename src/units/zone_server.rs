@@ -652,7 +652,6 @@ where
         let qtype = question.qtype();
 
         // Find the right zone.
-        #[allow(clippy::mutable_key_type)]
         let zones = { &self.center.state.lock().unwrap().zones };
 
         let Some(zone) = zones.get(&qname).map(|z| &z.0) else {
