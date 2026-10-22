@@ -14,6 +14,7 @@ use domain::{
     dnssec::sign::{
         denial::{
             config::DenialConfig,
+            nsec::GenerateNsecConfig,
             nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode, Nsec3Records, generate_nsec3s},
         },
         error::SigningError,
@@ -442,7 +443,9 @@ fn signing_config(
     policy: &PolicyVersion,
 ) -> Result<SigningConfig<Bytes, MultiThreadedSorter>, SignerError> {
     let denial = match &policy.signer.denial {
-        SignerDenialPolicy::NSec => DenialConfig::Nsec(Default::default()),
+        SignerDenialPolicy::NSec => {
+            DenialConfig::Nsec(GenerateNsecConfig::new().without_assuming_dnskeys_will_be_added())
+        }
         SignerDenialPolicy::NSec3 { opt_out } => {
             let first = parse_nsec3_config(*opt_out);
             DenialConfig::Nsec3(first)
