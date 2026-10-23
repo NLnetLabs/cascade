@@ -9,6 +9,7 @@ use tracing::{debug, info, trace};
 
 use crate::{
     center::Center,
+    policy::PolicyVersion,
     signer::{
         ResigningTrigger, SigningTrigger,
         queue::{SigningPending, SigningPermit, SigningQueueLock},
@@ -138,6 +139,15 @@ impl SignerZoneHandle<'_> {
     pub fn enqueue_new_sign(&mut self, builder: SignedZoneBuilder) {
         info!("Enqueuing a sign operation");
 
+        let policy = self
+            .state
+            .instances
+            .upcoming
+            .as_ref()
+            .unwrap()
+            .policy
+            .clone();
+
         assert!(
             builder.have_next_loaded(),
             "a new loaded instance of the zone was not provided"
@@ -158,12 +168,16 @@ impl SignerZoneHandle<'_> {
             .enqueue(self.zone.clone(), &builder)
         {
             Ok(permit) => {
-                self.start_op(builder, SigningTrigger::Load, permit);
+                self.start_op(builder, SigningTrigger::Load, permit, policy);
             }
 
             Err(pending) => {
                 // Save the operation for later.
-                self.state.signer.enqueued_new_sign = Some(EnqueuedSign { builder, pending })
+                self.state.signer.enqueued_new_sign = Some(EnqueuedSign {
+                    builder,
+                    policy,
+                    pending,
+                })
             }
         }
     }
@@ -208,6 +222,9 @@ impl SignerZoneHandle<'_> {
             return;
         }
 
+        // TODO: Should we allow the caller to specify the policy?
+        let policy = self.state.policy.clone().unwrap();
+
         info!("Enqueuing a re-sign operation");
 
         // If a re-signing operation has already been enqueued, add to it.
@@ -236,13 +253,14 @@ impl SignerZoneHandle<'_> {
             {
                 Ok(permit) => {
                     // Start signing immediately.
-                    self.start_op(builder, SigningTrigger::Resign(trigger), permit);
+                    self.start_op(builder, SigningTrigger::Resign(trigger), permit, policy);
                 }
 
                 Err(pending) => {
                     // Give up and save the operation for later.
                     self.state.signer.enqueued_resign = Some(EnqueuedResign {
                         builder: Some(builder),
+                        policy,
                         pending: Some(pending),
                         trigger,
                     });
@@ -252,6 +270,7 @@ impl SignerZoneHandle<'_> {
             // Give up and save the operation for later.
             self.state.signer.enqueued_resign = Some(EnqueuedResign {
                 builder: None,
+                policy,
                 pending: None,
                 trigger,
             });
@@ -282,6 +301,7 @@ impl SignerZoneHandle<'_> {
         // Load the one enqueued re-sign operation, if it exists.
         let Some(EnqueuedResign {
             builder,
+            policy,
             pending,
             trigger,
         }) = self.state.signer.enqueued_resign.take()
@@ -326,12 +346,13 @@ impl SignerZoneHandle<'_> {
         {
             Ok(permit) => {
                 // Start signing immediately.
-                self.start_op(builder, SigningTrigger::Resign(trigger), permit);
+                self.start_op(builder, SigningTrigger::Resign(trigger), permit, policy);
             }
             Err(pending) => {
                 // Save the pending operation back in state.
                 self.state.signer.enqueued_resign = Some(EnqueuedResign {
                     builder: Some(builder),
+                    policy,
                     pending: Some(pending),
                     trigger,
                 });
@@ -353,13 +374,18 @@ impl SignerZoneHandle<'_> {
     )]
     pub fn accept_queue_permit(&mut self, lock: &mut SigningQueueLock<'_>) {
         if let Some(op) = self.state.signer.enqueued_new_sign.take() {
-            let EnqueuedSign { builder, pending } = op;
+            let EnqueuedSign {
+                builder,
+                policy,
+                pending,
+            } = op;
             let permit = self.center.signer.queue.accept(pending, lock);
 
-            self.start_op(builder, SigningTrigger::Load, permit);
+            self.start_op(builder, SigningTrigger::Load, permit, policy);
         } else if let Some(op) = self.state.signer.enqueued_resign.take() {
             let EnqueuedResign {
                 builder,
+                policy,
                 pending,
                 trigger,
             } = op;
@@ -372,7 +398,7 @@ impl SignerZoneHandle<'_> {
             };
             let permit = self.center.signer.queue.accept(pending, lock);
 
-            self.start_op(builder, SigningTrigger::Resign(trigger), permit);
+            self.start_op(builder, SigningTrigger::Resign(trigger), permit, policy);
         }
     }
 
@@ -399,12 +425,12 @@ impl SignerZoneHandle<'_> {
         builder: SignedZoneBuilder,
         trigger: SigningTrigger,
         permit: SigningPermit,
+        policy: Arc<PolicyVersion>,
     ) {
         let status = Arc::new(RwLock::new(SigningStatusPerZone {
             current_action: "Initiating signing".into(),
             status: ZoneSigningStatus::new(),
         }));
-        let policy = self.state.policy.clone().unwrap();
 
         // The current logging span is nested fairly deep within the logic for
         // initiating signing operations, and does not really matter for the
@@ -454,6 +480,9 @@ pub struct EnqueuedSign {
     /// The zone builder.
     pub builder: SignedZoneBuilder,
 
+    /// The policy to sign with.
+    pub policy: Arc<PolicyVersion>,
+
     /// The zone's position in the signing queue.
     ///
     /// If the zone can be signed immediately (i.e. a [`SigningPermit`] is
@@ -473,6 +502,9 @@ pub struct EnqueuedResign {
     /// Even if the builder is obtained, the operation might not be ready
     /// to start.
     pub builder: Option<SignedZoneBuilder>,
+
+    /// The policy to sign with.
+    pub policy: Arc<PolicyVersion>,
 
     /// The zone's position in the signing queue.
     ///
