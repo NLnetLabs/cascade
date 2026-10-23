@@ -1,0 +1,16 @@
+version = "v1"
+policy-dir = "/test/cascade/policies"
+zone-state-dir = "/test/cascade/zone-state"
+tsig-store-path = "/test/cascade/tsig-keys.db"
+kmip-credentials-store-path = "/test/cascade/kmip-credentials.db"
+keys-dir = "/test/cascade/keys"
+
+remote-control.servers = ["0.0.0.0:4539"]
+loader.review.servers = ["0.0.0.0:4540"]
+signer.review.servers = ["0.0.0.0:4541"]
+server.servers = ["0.0.0.0:4542"]
+
+[daemon]
+log-level = "trace"
+log-target = { type = "file", path = "/test/cascade/cascade.log" }
+daemonize = false
