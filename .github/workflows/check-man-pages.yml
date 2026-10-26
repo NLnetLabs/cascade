@@ -19,7 +19,7 @@ jobs:
 
       - name: Build man pages
         working-directory: doc/manual/
-        run: make deps man
+        run: make man
 
       - name: Fail if build output differs
         run: |
