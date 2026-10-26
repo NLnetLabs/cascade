@@ -23,6 +23,7 @@ Example
     tsig-store-path = "/var/lib/cascade/tsig-keys.db"
     kmip-credentials-store-path = "/var/lib/cascade/kmip-credentials.db"
     keys-dir = "/var/lib/cascade/keys"
+    attic-dir = "/var/lib/cascade/attic"
     dnst-binary-path = "dnst"
 
     [daemon]
@@ -121,6 +122,21 @@ Global Options
    internal implementation details.  It should not be modified manually, but it
    can be backed up and restored in the event of filesystem corruption.
    Carefully consider its security.
+
+.. option:: attic-dir = "/var/lib/cascade/attic"
+
+   The directory when the remains of removed zones are stored.
+
+   Currently, only the key manager state (the config and state files and any
+   on-disk key files) is moved to this directory. There is currently no
+   automatic cleanup.
+
+   When a zone is removed, a subdirectory is created in the attic directory
+   with a name that follows the following pattern:
+   ``YYYY-MM-DDThh-mm-ssZ-<zone-name>``
+   This way a zone can be removed multiple times and get a unique directory
+   each time it is removed. This format also allows for easy removal of
+   directories that were created some time ago.
 
 .. option:: dnst-binary-path = "dnst"
 

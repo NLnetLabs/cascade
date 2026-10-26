@@ -60,6 +60,10 @@ Commands
    addition, the zone must be passive (with no ongoing operations) or in a
    hard-halt state.
 
+   Key management files (state, config and on-disk key files) will be moved
+   to the attic directory. See the description of the ``attic-dir`` entry
+   in :doc:`cascaded-config.toml`.
+
    .. note:: Once removed, downstream servers will no longer be able to fetch
              the zone!
 

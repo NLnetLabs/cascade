@@ -1,6 +1,7 @@
 //! Cascade's central command.
 
 use std::collections::HashMap;
+use std::fs::create_dir;
 use std::{
     fmt, io,
     sync::{Arc, Mutex},
@@ -10,6 +11,7 @@ use std::{
 use bytes::Bytes;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::UnixTime;
+use jiff::{Timestamp, Unit};
 use tracing::{debug, error, info, trace};
 
 use crate::api::{self, KeyImport, TsigAddError, TsigAddResult};
@@ -276,6 +278,16 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
         }
     }
 
+    // Move keys to the attic.
+    let now = Timestamp::now();
+    let rounded_now = now.round(Unit::Second).expect("rounding should not fail");
+    let attic_name = format!("{}-{}", rounded_now, name);
+    let attic_path = center.config.attic_dir.join(attic_name);
+    create_dir(&attic_path).map_err(|e| ZoneRemoveError::Other {
+        err: format!("unable to create attic directory {}: {e}", attic_path),
+    })?;
+    KeyManager::move_to_attic(center, attic_path, zone)?;
+
     let ZoneByName(zone) = state
         .zones
         .take(&name)
@@ -525,7 +537,6 @@ impl From<ZoneAddError> for api::ZoneAddError {
 //----------- ZoneRemoveError --------------------------------------------------
 
 /// An error removing a zone.
-#[expect(clippy::enum_variant_names, reason = "listing failure conditions")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZoneRemoveError {
     /// No such name could be found.
@@ -536,6 +547,9 @@ pub enum ZoneRemoveError {
 
     /// The zone is not in passive/hard-halt state.
     NotPassiveOrHalted,
+
+    /// An error occured while (re)moving the zone's state.
+    Other { err: String },
 }
 
 impl std::error::Error for ZoneRemoveError {}
@@ -546,6 +560,7 @@ impl fmt::Display for ZoneRemoveError {
             Self::NotFound => "no such zone was found",
             Self::NotInMaintenanceMode => "the zone is not in maintenance mode",
             Self::NotPassiveOrHalted => "the zone is not in passive/hard-halt state",
+            Self::Other { err } => err,
         })
     }
 }
@@ -556,6 +571,7 @@ impl From<ZoneRemoveError> for api::ZoneRemoveError {
             ZoneRemoveError::NotFound => Self::NotFound,
             ZoneRemoveError::NotInMaintenanceMode => Self::NotInMaintenanceMode,
             ZoneRemoveError::NotPassiveOrHalted => Self::NotPassiveOrHalted,
+            ZoneRemoveError::Other { err } => Self::Other { err },
         }
     }
 }
