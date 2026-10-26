@@ -138,6 +138,10 @@ Global Options
    each time it is removed. This format also allows for easy removal of
    directories that were created some time ago.
 
+   For simplicity and robustness, files are moved to the attic using the
+   rename system call. This means that the attic directory has to be on the
+   same filesystem as the keys directory.
+
 .. option:: dnst-binary-path = "dnst"
 
    The path to the dnst binary Cascade should use.

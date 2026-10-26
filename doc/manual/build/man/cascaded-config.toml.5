@@ -178,6 +178,10 @@ with a name that follows the following pattern:
 This way a zone can be removed multiple times and get a unique directory
 each time it is removed. This format also allows for easy removal of
 directories that were created some time ago.
+.sp
+For simplicity and robustness, files are moved to the attic using the
+rename system call. This means that the attic directory has to be on the
+same filesystem as the keys directory.
 .UNINDENT
 .INDENT 0.0
 .TP
