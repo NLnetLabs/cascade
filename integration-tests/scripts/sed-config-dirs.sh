@@ -57,6 +57,7 @@ sed \
   -e "s_^tsig-store-path.*_tsig-store-path = \"$(get-cascade-config-option "${_base_dir}" "tsig-store-path")\"_" \
   -e "s_^kmip-credentials-store-path.*_kmip-credentials-store-path = \"$(get-cascade-config-option "${_base_dir}" "kmip-credentials-store-path")\"_" \
   -e "s_^keys-dir.*_keys-dir = \"$(get-cascade-config-option "${_base_dir}" "keys-dir")\"_" \
+  -e "s_^attic-dir.*_attic-dir = \"$(get-cascade-config-option "${_base_dir}" "attic-dir")\"_" \
   -e "s_^dnst-binary-path.*_dnst-binary-path = \"$(get-cascade-config-option "${_base_dir}" "dnst-binary-path")\"_" \
   -e "s_^log-level.*_log-level = \"${_log_level}\"_" \
   -e "s_^log-target.*_log-target = { type = \"file\", path = \"$(get-cascade-config-option "${_base_dir}" "log-target")\" }_"
