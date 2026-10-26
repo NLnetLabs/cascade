@@ -67,7 +67,7 @@ pub fn sign_zone(
     keyset_state: KeySetState,
     status: Arc<RwLock<SigningStatusPerZone>>,
 ) -> Result<(), SignerError> {
-    info!("[ZS]: Starting signing operation for zone '{zone_name}'");
+    info!("Starting signing operation for zone '{zone_name}'");
     let start = Instant::now();
 
     let previous_serial = local_state.previous_serial;
@@ -99,7 +99,7 @@ pub fn sign_zone(
     new_records.push(new_soa.clone().into());
 
     info!(
-        "[ZS]: Serials for zone '{zone_name}': last signed={previous_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
+        "Serials for zone '{zone_name}': last signed={previous_serial:?}, current={loaded_serial}, serial policy={}, new={serial}",
         policy.signer.serial_policy
     );
 
@@ -125,7 +125,7 @@ pub fn sign_zone(
     // Convert zone records into a form we can sign.
     //
     status.write().unwrap().current_action = "Collecting records to sign".to_string();
-    debug!("[ZS]: Collecting records to sign for zone '{zone_name}'.");
+    debug!("Collecting records to sign for zone '{zone_name}'.");
     let walk_start = Instant::now();
     let mut records = loaded
         .unsigned_records()
@@ -195,7 +195,7 @@ pub fn sign_zone(
     //
     // Sort them into DNSSEC order ready for NSEC(3) generation.
     //
-    debug!("[ZS]: Sorting collected records for zone '{zone_name}'.");
+    debug!("Sorting collected records for zone '{zone_name}'.");
     status.write().unwrap().current_action = "Sorting records".to_string();
     let sort_start = Instant::now();
     // Note: This may briefly use lots of CPU and many CPU cores.
@@ -214,7 +214,7 @@ pub fn sign_zone(
     //
     // Generate NSEC(3) RRs.
     //
-    debug!("[ZS]: Generating denial records for zone '{zone_name}'.");
+    debug!("Generating denial records for zone '{zone_name}'.");
     status.write().unwrap().current_action = "Generating denial records".to_string();
     let denial_start = Instant::now();
     match &signing_config.denial {
@@ -282,7 +282,7 @@ pub fn sign_zone(
     // async task which receives generated RRSIGs via a Tokio
     // mpsc::channel and accumulates them into the signed zone.
     //
-    debug!("[ZS]: Generating RRSIG records.");
+    debug!("Generating RRSIG records.");
     status.write().unwrap().current_action = "Generating signature records".to_string();
 
     // TODO: Configure Rayon's thread pool to set the number of threads. By
@@ -382,7 +382,7 @@ pub fn sign_zone(
     writer.set_soa(new_soa.clone()).unwrap();
     writer.apply().unwrap();
 
-    debug!("SIGNER: Determining min expiration time");
+    debug!("Determining min expiration time");
     let reader = builder.next_signed().unwrap();
     let min_expiration = Arc::new(MinTimestamp::new());
     let saved_min_expiration = min_expiration.clone();
