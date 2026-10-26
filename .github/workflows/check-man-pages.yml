@@ -9,17 +9,17 @@ on:
 jobs:
   check-man-pages:
     name: Check man pages are up-to-date
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Install poetry
+        run: pip install poetry
 
       - name: Build man pages
         working-directory: doc/manual/
-        run: make man
+        run: make deps man
 
       - name: Fail if build output differs
         run: |
