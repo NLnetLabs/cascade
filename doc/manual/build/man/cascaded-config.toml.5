@@ -56,6 +56,7 @@ zone\-state\-dir = \(dq/var/lib/cascade/zone\-state\(dq
 tsig\-store\-path = \(dq/var/lib/cascade/tsig\-keys.db\(dq
 kmip\-credentials\-store\-path = \(dq/var/lib/cascade/kmip\-credentials.db\(dq
 keys\-dir = \(dq/var/lib/cascade/keys\(dq
+attic\-dir = \(dq/var/lib/cascade/attic\(dq
 dnst\-binary\-path = \(dqdnst\(dq
 
 [daemon]
@@ -161,6 +162,22 @@ The organization of this directory (file names and file formats) constitutes
 internal implementation details.  It should not be modified manually, but it
 can be backed up and restored in the event of filesystem corruption.
 Carefully consider its security.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B attic\-dir = \(dq/var/lib/cascade/attic\(dq
+The directory when the remains of removed zones are stored.
+.sp
+Currently, only the key manager state (the config and state files and any
+on\-disk key files) is moved to this directory. There is currently no
+automatic cleanup.
+.sp
+When a zone is removed, a subdirectory is created in the attic directory
+with a name that follows the following pattern:
+\fBYYYY\-MM\-DDThh\-mm\-ssZ\-<zone\-name>\fP
+This way a zone can be removed multiple times and get a unique directory
+each time it is removed. This format also allows for easy removal of
+directories that were created some time ago.
 .UNINDENT
 .INDENT 0.0
 .TP
