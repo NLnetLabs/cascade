@@ -10,7 +10,7 @@
 //! See the [`crate::builder`] module for high-level types that do consider
 //! concurrent access.
 
-use std::{fmt, sync::Arc};
+use std::{collections::hash_map, fmt, sync::Arc};
 
 use domain::{
     new::base::{
@@ -161,6 +161,22 @@ pub struct LoadedZonePatcher<'d> {
     /// The upcoming instance.
     next: &'d mut InstanceData,
 
+    /// A mapping of RRset keys to their TTLs and number of records, for
+    /// verifying consistency.
+    ///
+    /// The number of records is tracked so that
+    /// [`Self::inconsistent_ttl_rrsets`] can be correctly initialized if an
+    /// inconsistency is detected later.
+    ///
+    /// If the number of records is 0, the RRset is inconsistent, and a list of
+    /// all its TTLs is stored in [`Self::inconsistent_ttl_rrsets`].
+    rrset_ttls: foldhash::HashMap<(Box<RevName>, RType), (TTL, usize)>,
+
+    /// RRsets which currently have inconsistent TTLs.
+    ///
+    /// Inconsistencies are allowed until writing finishes.
+    inconsistent_ttl_rrsets: foldhash::HashMap<(Box<RevName>, RType), Vec<TTL>>,
+
     /// The built diff.
     diff: &'d mut Option<Box<DiffData>>,
 
@@ -189,10 +205,29 @@ impl<'d> LoadedZonePatcher<'d> {
         assert!(next.soa.is_none());
         assert!(diff.is_none());
 
+        // Load information about existing TTLs.
+        let mut rrset_ttls = foldhash::HashMap::default();
+        for record in &curr.records {
+            let (ttl, count) = rrset_ttls
+                .entry((record.rname.clone(), record.rtype))
+                .or_insert((record.ttl, 0));
+            if *ttl != record.ttl {
+                let owner = NameBuf::from(RevNameBuf::copy_from(&record.rname));
+                tracing::warn!(
+                    %owner, rtype = %record.rtype,
+                    a = ?*ttl, b = ?record.ttl,
+                    "bug: inconsistent TTLs in existing zone instance");
+            }
+            *count += 1;
+        }
+        let inconsistent_ttl_rrsets = Default::default();
+
         Self {
             curr,
             next,
             diff,
+            rrset_ttls,
+            inconsistent_ttl_rrsets,
             accumulated: Box::new(DiffData::new()),
             immediate: Box::new(DiffData::new()),
         }
@@ -229,12 +264,65 @@ impl<'d> LoadedZonePatcher<'d> {
 
     /// Remove a previous regular record.
     pub fn remove(&mut self, record: RegularRecord) -> Result<(), PatchError> {
+        // Update TTL consistency data.
+        let rrset = (record.rname.clone(), record.rtype);
+        let (ttl, count) = self
+            .rrset_ttls
+            .get_mut(&rrset)
+            .ok_or(PatchError::Inconsistency)?;
+        if *count == 0 {
+            // This RRset has inconsistent TTLs.
+            let ttls = self.inconsistent_ttl_rrsets.get_mut(&rrset).unwrap();
+            let pos = ttls
+                .iter()
+                .position(|&ttl| ttl == record.ttl)
+                .ok_or(PatchError::Inconsistency)?;
+            ttls.swap_remove(pos);
+        } else {
+            if *ttl != record.ttl {
+                return Err(PatchError::Inconsistency);
+            }
+            *count -= 1;
+            if *count == 0 {
+                self.rrset_ttls.remove(&rrset).unwrap();
+            }
+        }
+
         self.immediate.removed_records.push(record);
         Ok(())
     }
 
     /// Add a new regular record.
     pub fn add(&mut self, record: RegularRecord) -> Result<(), PatchError> {
+        // Update TTL consistency data.
+        let rrset = (record.rname.clone(), record.rtype);
+        match self.rrset_ttls.entry(rrset.clone()) {
+            hash_map::Entry::Occupied(entry) => {
+                let (ttl, count) = entry.into_mut();
+                if *count == 0 {
+                    // This RRset has inconsistent TTLs.
+                    self.inconsistent_ttl_rrsets
+                        .get_mut(&rrset)
+                        .unwrap()
+                        .push(record.ttl);
+                } else if *ttl != record.ttl {
+                    // This RRset has now become inconsistent.
+                    self.inconsistent_ttl_rrsets.insert(
+                        rrset,
+                        std::iter::repeat_n(*ttl, *count)
+                            .chain([record.ttl])
+                            .collect(),
+                    );
+                    *count = 0;
+                } else {
+                    *count -= 1;
+                }
+            }
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert((record.ttl, 1));
+            }
+        }
+
         self.immediate.added_records.push(record);
         Ok(())
     }
@@ -262,6 +350,22 @@ impl<'d> LoadedZonePatcher<'d> {
         // If there are pending changes, complete them.
         if !self.immediate.is_empty() {
             self.next_patchset()?;
+        }
+
+        // Ensure all RRsets are consistent.
+        for ((owner, rtype), ttls) in self.inconsistent_ttl_rrsets.drain() {
+            let Some(&first) = ttls.first() else {
+                // All records have been removed.
+                continue;
+            };
+
+            if let Some(ttl) = ttls.into_iter().find(|&ttl| ttl != first) {
+                return Err(PatchError::InconsistentTtls(InconsistentTtlsError {
+                    owner,
+                    rtype,
+                    ttls: [first, ttl],
+                }));
+            }
         }
 
         *self.diff = Some(apply_patches(self.curr, self.next, &mut self.accumulated)?);

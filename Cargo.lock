@@ -271,6 +271,7 @@ dependencies = [
  "domain",
  "foldhash",
  "rayon",
+ "tracing",
 ]
 
 [[package]]
