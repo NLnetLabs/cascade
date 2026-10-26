@@ -3,7 +3,7 @@
 
 # You can set these variables from the command line.
 SPHINXOPTS    =
-SPHINXBUILD   = uv run sphinx-build
+SPHINXBUILD   = poetry run sphinx-build
 SPHINXPROJ    = CascadeUserManual
 SOURCEDIR     = source
 BUILDDIR      = build
