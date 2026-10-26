@@ -12,12 +12,21 @@
 
 use std::{fmt, sync::Arc};
 
-use domain::new::base::RType;
+use domain::{
+    new::base::{
+        RType, TTL,
+        name::{NameBuf, RevName, RevNameBuf},
+    },
+    utils::dst::UnsizedCopy,
+};
 use rayon::slice::ParallelSliceMut;
 
 use crate::{
     DiffData, InstanceData, LoadedZoneReader, RegularRecord, SignedZoneReader, SoaRecord, merge,
 };
+
+/// Record types for which RRsets may contain varying TTLs.
+const VARYING_TTL_RTYPES: &[RType] = &[RType::RRSIG];
 
 //----------- LoadedZoneReplacer -----------------------------------------------
 
@@ -32,6 +41,9 @@ pub struct LoadedZoneReplacer<'d> {
     /// The instance being built.
     next: &'d mut InstanceData,
 
+    /// A mapping of RRset keys to their TTLs, for verifying consistency.
+    rrset_ttls: foldhash::HashMap<(Box<RevName>, RType), TTL>,
+
     /// The built diff.
     ///
     /// This exists iff building succeeds.
@@ -44,7 +56,7 @@ impl<'d> LoadedZoneReplacer<'d> {
     /// ## Panics
     ///
     /// Panics if `next` is not empty or `diff` is [`Some`].
-    pub(crate) const fn new(
+    pub(crate) fn new(
         curr: &'d InstanceData,
         next: &'d mut InstanceData,
         diff: &'d mut Option<Box<DiffData>>,
@@ -52,7 +64,13 @@ impl<'d> LoadedZoneReplacer<'d> {
         assert!(next.soa.is_none(), "'next' is not empty");
         assert!(diff.is_none());
 
-        Self { curr, next, diff }
+        let rrset_ttls = Default::default();
+        Self {
+            curr,
+            next,
+            rrset_ttls,
+            diff,
+        }
     }
 
     /// Read the current authoritative instance data (if any).
@@ -78,6 +96,19 @@ impl<'d> LoadedZoneReplacer<'d> {
 
     /// Add a regular record.
     pub fn add(&mut self, record: RegularRecord) -> Result<(), ReplaceError> {
+        if !VARYING_TTL_RTYPES.contains(&record.rtype)
+            && let &mut prior = self
+                .rrset_ttls
+                .entry((record.rname.clone(), record.rtype))
+                .or_insert(record.ttl)
+            && prior != record.ttl
+        {
+            return Err(ReplaceError::InconsistentTtls(InconsistentTtlsError {
+                owner: record.rname.clone(),
+                rtype: record.rtype,
+                ttls: [prior, record.ttl],
+            }));
+        }
         self.next.records.push(record);
         Ok(())
     }
@@ -818,15 +849,26 @@ pub enum ReplaceError {
 
     /// The built instance contains multiple SOA records.
     MultipleSoas,
+
+    /// An RRset had inconsistent TTLs.
+    InconsistentTtls(InconsistentTtlsError),
 }
 
-impl std::error::Error for ReplaceError {}
+impl std::error::Error for ReplaceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InconsistentTtls(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 impl fmt::Display for ReplaceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ReplaceError::MissingSoa => f.write_str("a SOA record was not provided"),
-            ReplaceError::MultipleSoas => f.write_str("multiple SOA records were provided"),
+            Self::MissingSoa => f.write_str("a SOA record was not provided"),
+            Self::MultipleSoas => f.write_str("multiple SOA records were provided"),
+            Self::InconsistentTtls(error) => write!(f, "an RRset has inconsistent TTLs: {error}"),
         }
     }
 }
@@ -847,17 +889,54 @@ pub enum PatchError {
 
     /// An inconsistency was detected.
     Inconsistency,
+
+    /// An RRset had inconsistent TTLs.
+    InconsistentTtls(InconsistentTtlsError),
 }
 
-impl std::error::Error for PatchError {}
+impl std::error::Error for PatchError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InconsistentTtls(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 
 impl fmt::Display for PatchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PatchError::Empty => f.write_str("no patchsets were provided"),
-            PatchError::MissingSoaChange => f.write_str("a patchset did not change the SOA record"),
-            PatchError::MultipleSoasAdded => f.write_str("a patchset added multiple SOA records"),
-            PatchError::Inconsistency => f.write_str("a patchset could not be applied"),
+            Self::Empty => f.write_str("no patchsets were provided"),
+            Self::MissingSoaChange => f.write_str("a patchset did not change the SOA record"),
+            Self::MultipleSoasAdded => f.write_str("a patchset added multiple SOA records"),
+            Self::Inconsistency => f.write_str("a patchset could not be applied"),
+            Self::InconsistentTtls(error) => write!(f, "an RRset has inconsistent TTLs: {error}"),
         }
+    }
+}
+
+//----------- InconsistentTtlsError --------------------------------------------
+
+/// An RRset contains inconsistent TTLs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InconsistentTtlsError {
+    /// The owner name.
+    pub owner: Box<RevName>,
+
+    /// The record type.
+    pub rtype: RType,
+
+    /// The observed TTLs.
+    pub ttls: [TTL; 2],
+}
+
+impl std::error::Error for InconsistentTtlsError {}
+
+impl fmt::Display for InconsistentTtlsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { owner, rtype, ttls } = self;
+        let owner = NameBuf::from((**owner).unsized_copy_into::<RevNameBuf>());
+        let [a, b] = ttls.map(|ttl| ttl.value.get());
+        write!(f, "{rtype} records under {owner} had TTLs {a} and {b}")
     }
 }

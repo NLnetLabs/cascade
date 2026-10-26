@@ -30,6 +30,7 @@ bytes = ["dep:bytes", "domain/bytes"]
 
 [dependencies]
 rayon = "1.12.0"
+foldhash = { workspace = true }
 
 # The zone storage needs a way to represent DNS records.  'domain' is a
 # general-purpose library offering those types, that we use across Cascade.

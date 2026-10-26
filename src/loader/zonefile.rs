@@ -189,6 +189,9 @@ impl fmt::Display for Error {
             Error::Write(ReplaceError::MultipleSoas) => {
                 write!(f, "the zonefile contains multiple SOA records")
             }
+            Error::Write(ReplaceError::InconsistentTtls(error)) => {
+                write!(f, "the zonefile contains inconsistent TTLs: {error}")
+            }
         }
     }
 }
