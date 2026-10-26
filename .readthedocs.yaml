@@ -13,7 +13,7 @@ build:
     # Install dependencies via Poetry
     post_install:
       - pip install poetry
-      - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install
+      - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install -C doc/manual
 
 # Build documentation in with Sphinx
 sphinx:
