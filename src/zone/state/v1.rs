@@ -146,7 +146,10 @@ impl Spec {
             key_roll: zone.key_roll.clone(),
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
-            history: zone.history.clone(),
+            history: {
+                let offset = zone.history.len().min(1024);
+                zone.history[offset..].to_vec()
+            },
             persisted_loaded_diffs: PersistedDiffsSpec::build_loaded(
                 &zone.persistence.loaded_diffs,
             ),
