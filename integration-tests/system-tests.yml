@@ -169,6 +169,46 @@ jobs:
         with:
           log-level: ${{ inputs.log-level }}
 
+  ixfr-out:
+    name: Serve manual zone edits via IXFR to the NSD secondary.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        with-tsig: [true, false]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/ixfr-out
+        with:
+          log-level: ${{ inputs.log-level }}
+          with-tsig: ${{ matrix.with-tsig }}
+
+  ixfr-out-incremental:
+    name: Serve incremental signing changes via IXFR to the NSD secondary.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/ixfr-out-incremental
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  ixfr-out-review:
+    name: Serve manual zone edits via IXFR for review.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/ixfr-out-review
+        with:
+          log-level: ${{ inputs.log-level }}
+
   incremental-signing:
     name: Test incremental signing.
     runs-on: ubuntu-latest
