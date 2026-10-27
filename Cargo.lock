@@ -113,29 +113,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "aws-lc-rs"
-version = "1.18.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faac5829c2b74c28f830747e7818ccfb684261b5f48a1118b1e2a13d36dfab13"
-dependencies = [
- "aws-lc-sys",
- "zeroize",
-]
-
-[[package]]
-name = "aws-lc-sys"
-version = "0.46.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1622d8446a2d4b2ce0c7eefc73dd43a99779028d5ee5c2dd8073a658ba8a2bc"
-dependencies = [
- "cc",
- "cmake",
- "dunce",
- "fs_extra",
- "pkg-config",
-]
-
-[[package]]
 name = "axum"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -270,7 +247,7 @@ version = "0.1.0-beta7"
 dependencies = [
  "bytes",
  "camino",
- "domain 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "domain",
  "serde",
 ]
 
@@ -289,7 +266,7 @@ dependencies = [
 name = "cascade-policy-file"
 version = "0.1.0-beta7"
 dependencies = [
- "domain 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "domain",
  "foldhash",
  "jiff",
  "serde",
@@ -302,7 +279,7 @@ name = "cascade-zonedata"
 version = "0.1.0-beta7"
 dependencies = [
  "bytes",
- "domain 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "domain",
  "rayon",
 ]
 
@@ -320,7 +297,7 @@ dependencies = [
  "cascade-zonedata",
  "clap",
  "daemonbase",
- "domain 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "domain",
  "domain-kmip",
  "foldhash",
  "futures-util",
@@ -350,8 +327,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86e055fa6e3e40ad6187ba25b6855eeb635d5271f8e0f0e1e9a5826b8d75bea0"
 dependencies = [
  "find-msvc-tools",
- "jobserver",
- "libc",
  "shlex",
 ]
 
@@ -430,15 +405,6 @@ name = "clap_lex"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
-
-[[package]]
-name = "cmake"
-version = "0.1.58"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
-dependencies = [
- "cc",
-]
 
 [[package]]
 name = "colorchoice"
@@ -586,14 +552,13 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b68712c02bff2348323c1441ab2e8528e32af4f8f9edf29356356290328c8e6"
+source = "git+https://github.com/NLnetLabs/domain?branch=add-sha-512-digest-support#38b37b6d579a1cc86199588530e2375b5c15d403"
 dependencies = [
  "arc-swap",
  "bumpalo",
  "bytes",
  "constant_time_eq",
- "domain-macros 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "domain-macros",
  "futures-util",
  "hashbrown 0.17.1",
  "jiff",
@@ -615,29 +580,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "domain"
-version = "0.12.3"
-source = "git+https://github.com/NLnetLabs/domain.git?branch=add-sha-512-digest-support#38b37b6d579a1cc86199588530e2375b5c15d403"
-dependencies = [
- "bumpalo",
- "bytes",
- "domain-macros 0.12.3 (git+https://github.com/NLnetLabs/domain.git?branch=add-sha-512-digest-support)",
- "hashbrown 0.17.1",
- "jiff",
- "octseq",
- "openssl",
- "rand",
- "secrecy",
- "serde",
-]
-
-[[package]]
 name = "domain-kmip"
 version = "0.0.1"
 source = "git+https://github.com/NLnetLabs/domain-kmip?branch=more-algorithm-support-and-fixes-and-cleanup#045538049db82dd582148528daaab796b6ff8952"
 dependencies = [
  "bcder",
- "domain 0.12.3 (git+https://github.com/NLnetLabs/domain.git?branch=add-sha-512-digest-support)",
+ "domain",
  "kmip-protocol",
  "maybe-async",
  "tracing",
@@ -648,18 +596,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fba8fbc4580c745dfeab102232dcb729f030ac3e2c9ff5374a9dfd6dc9ddf8e"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "domain-macros"
-version = "0.12.3"
-source = "git+https://github.com/NLnetLabs/domain.git?branch=add-sha-512-digest-support#38b37b6d579a1cc86199588530e2375b5c15d403"
+source = "git+https://github.com/NLnetLabs/domain?branch=add-sha-512-digest-support#38b37b6d579a1cc86199588530e2375b5c15d403"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -671,12 +608,6 @@ name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c3cf4824e2d5f025c7b531afcb2325364084a16806f6d47fbc1f5fbd9960590"
-
-[[package]]
-name = "dunce"
-version = "1.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dyn-clone"
@@ -773,12 +704,6 @@ checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
 ]
-
-[[package]]
-name = "fs_extra"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "futures-channel"
@@ -1163,16 +1088,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "875a5a69ac2bab1a891711cf5eccbec1ce0341ea805560dcd90b7a2e925132e8"
 dependencies = [
  "jiff-tzdb",
-]
-
-[[package]]
-name = "jobserver"
-version = "0.1.35"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
-dependencies = [
- "getrandom 0.4.3",
- "libc",
 ]
 
 [[package]]
@@ -1673,9 +1588,9 @@ version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
- "aws-lc-rs",
  "log",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
@@ -1706,7 +1621,6 @@ version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
- "aws-lc-rs",
  "ring",
  "rustls-pki-types",
  "untrusted",
