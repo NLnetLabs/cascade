@@ -99,6 +99,7 @@ if versionbanner:
 intersphinx_mapping = {
     'dnst': ('https://dnst.docs.nlnetlabs.nl/en/latest/', None),
     'cascade-hsm-bridge': ('https://cascade.docs.nlnetlabs.nl/projects/cascade-hsm-bridge/en/latest/', None)
+    'ods2cascade': ('https://cascade.docs.nlnetlabs.nl/projects/ods2cascade/en/latest/', None)
 }
 
 # We recommend adding the following config value.
