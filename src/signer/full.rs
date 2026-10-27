@@ -14,6 +14,7 @@ use domain::{
     dnssec::sign::{
         denial::{
             config::DenialConfig,
+            nsec::GenerateNsecConfig,
             nsec3::{GenerateNsec3Config, Nsec3ParamTtlMode, Nsec3Records, generate_nsec3s},
         },
         error::SigningError,
@@ -30,7 +31,7 @@ use domain::{
         signatures::rrsigs::sign_sorted_zone_records,
     },
     new::{
-        base::{RType, Serial as NewBaseSerial},
+        base::{RType, SoaSerial as NewBaseSerial},
         rdata::RecordData,
     },
     rdata::ZoneRecordData,
@@ -84,7 +85,7 @@ pub fn sign_zone(
 
     let serial = super::next_signed_soa_serial(
         policy.signer.serial_policy,
-        Serial::from(loaded_serial.0.get()),
+        Serial::from(loaded_serial.get()),
         previous_serial,
     )?;
 
@@ -442,7 +443,9 @@ fn signing_config(
     policy: &PolicyVersion,
 ) -> Result<SigningConfig<Bytes, MultiThreadedSorter>, SignerError> {
     let denial = match &policy.signer.denial {
-        SignerDenialPolicy::NSec => DenialConfig::Nsec(Default::default()),
+        SignerDenialPolicy::NSec => {
+            DenialConfig::Nsec(GenerateNsecConfig::new().without_assuming_dnskeys_will_be_added())
+        }
         SignerDenialPolicy::NSec3 { opt_out } => {
             let first = parse_nsec3_config(*opt_out);
             DenialConfig::Nsec3(first)

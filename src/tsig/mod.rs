@@ -301,9 +301,6 @@ pub fn remove_key(center: &Arc<Center>, name: &tsig::KeyName) -> Result<(), Remo
     // 1. Collect the TSIG store references for which we have no way of
     //    saying why it is in use. We will remove these in favour of explicit
     //    references where possible.
-    //
-    // Allow the Clippy warning as we know that it is a false positive.
-    #[allow(clippy::mutable_key_type)]
     let mut unknown_refs = state
         .tsig_store
         .map

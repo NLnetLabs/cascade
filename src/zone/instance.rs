@@ -30,10 +30,19 @@
 //! of current instances. There may be any number of obsolete and abandoned
 //! instances.
 
-use std::{num::NonZeroU64, time::SystemTime};
+use std::{
+    collections::VecDeque,
+    fmt,
+    num::NonZeroU64,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+    time::SystemTime,
+};
 
-use cascade_zonedata::SoaRecord;
-use domain::new::base::Serial;
+use bytes::Bytes;
+use camino::Utf8PathBuf;
+use cascade_zonedata::{DiffData, SoaRecord};
+use domain::{base::Name, new::base::SoaSerial};
 
 //----------- Instances --------------------------------------------------------
 
@@ -55,6 +64,9 @@ pub struct Instances {
     /// the instance could not be restored from disk on startup.
     pub current: Option<CurrentInstance>,
 
+    /// Obsolete instances.
+    pub obsolete: ObsoleteInstances,
+
     /// The instance persisted to disk.
     ///
     /// This is set when Cascade restarts after persisting the zone to disk.
@@ -63,11 +75,11 @@ pub struct Instances {
     /// restoration fails, it remains untouched here; thus this field is never
     /// modified.
     pub persisted: Option<PersistedInstance>,
+
+    /// The next usable loaded instance ID.
+    pub next_loaded_id: u64,
     //
     // TODO:
-    // - The next usable loaded/signed instance IDs.
-    //   These increase monotonically, even if instances are abandoned.
-    // - Obsolete instances.
     // - Abandoned instances.
 }
 
@@ -165,7 +177,19 @@ impl Instances {
             NonZeroU64::new(n).expect("the zone is non-empty")
         };
 
-        upcoming.loaded = Some(LoadedInstance { soa, num_records });
+        let id = LoadedInstanceId(self.next_loaded_id);
+        self.next_loaded_id += 1;
+        let next_signed_id = 0;
+
+        upcoming.loaded = Some(UpcomingLoadedInstance {
+            inner: LoadedInstance {
+                id,
+                next_signed_id,
+                soa,
+                num_records,
+            },
+            diff: built.diff().clone(),
+        });
     }
 }
 
@@ -178,6 +202,7 @@ impl Instances {
     /// Panics if:
     /// - There is no upcoming instance of the zone.
     /// - An upcoming signed instance already exists.
+    /// - An upcoming/current loaded instance does not exist.
     pub fn finish_sign(&mut self, built: &cascade_zonedata::SignedZoneBuilt) {
         let Some(upcoming) = &mut self.upcoming else {
             panic!("There is no upcoming instance of the zone");
@@ -201,10 +226,22 @@ impl Instances {
             u64::try_from(n).unwrap()
         };
 
-        upcoming.signed = Some(SignedInstance {
-            soa,
-            num_generated_records,
-            num_loaded_records,
+        let loaded = upcoming
+            .loaded
+            .as_deref_mut()
+            .or(self.current.as_mut().map(|i| &mut i.loaded))
+            .unwrap_or_else(|| panic!("There is no current or upcoming instance!"));
+        let id = SignedInstanceId(loaded.id, loaded.next_signed_id);
+        loaded.next_signed_id += 1;
+
+        upcoming.signed = Some(UpcomingSignedInstance {
+            inner: SignedInstance {
+                id,
+                soa,
+                num_generated_records,
+                num_loaded_records,
+            },
+            diff: built.diff().clone(),
         });
     }
 }
@@ -224,8 +261,6 @@ impl Instances {
     pub fn switch(&mut self) {
         let pub_time = SystemTime::now();
 
-        // TODO: Save the current instance to a list of obsolete ones.
-
         let upcoming = self
             .upcoming
             .take()
@@ -240,17 +275,29 @@ impl Instances {
             } => {
                 let CurrentInstance {
                     loaded,
-                    signed: _,
+                    signed: old_signed,
                     pub_time: _,
                 } = current.unwrap_or_else(|| {
                     panic!("A re-sign took place but there is no current loaded instance")
                 });
+
+                let UpcomingSignedInstance {
+                    inner: signed,
+                    diff: signed_diff,
+                } = signed;
 
                 self.current = Some(CurrentInstance {
                     loaded,
                     signed,
                     pub_time,
                 });
+
+                self.obsolete.instances.push_back(ObsoleteInstance::Signed(
+                    ObsoleteSignedInstance {
+                        inner: old_signed,
+                        diff: Some(signed_diff),
+                    },
+                ));
             }
 
             // A new loaded instance has appeared.
@@ -258,11 +305,41 @@ impl Instances {
                 loaded: Some(loaded),
                 signed: Some(signed),
             } => {
-                self.current = Some(CurrentInstance {
+                let UpcomingLoadedInstance {
+                    inner: loaded,
+                    diff: loaded_diff,
+                } = loaded;
+                let UpcomingSignedInstance {
+                    inner: signed,
+                    diff: signed_diff,
+                } = signed;
+
+                let old = self.current.replace(CurrentInstance {
                     loaded,
                     signed,
                     pub_time,
                 });
+
+                if let Some(CurrentInstance {
+                    loaded: old_loaded,
+                    signed: old_signed,
+                    pub_time: _,
+                }) = old
+                {
+                    // The loaded instance must be added first.
+                    self.obsolete.instances.push_back(ObsoleteInstance::Loaded(
+                        ObsoleteLoadedInstance {
+                            inner: old_loaded,
+                            diff: Some(loaded_diff),
+                        },
+                    ));
+                    self.obsolete.instances.push_back(ObsoleteInstance::Signed(
+                        ObsoleteSignedInstance {
+                            inner: old_signed,
+                            diff: Some(signed_diff),
+                        },
+                    ));
+                }
             }
 
             // The upcoming instance is malformed.
@@ -338,19 +415,101 @@ pub struct UpcomingInstance {
     /// This describes the instance loaded from the zone source. It is [`Some`]
     /// if/when loading is complete; if a re-sign operation is happening, it is
     /// only [`None`].
-    pub loaded: Option<LoadedInstance>,
+    pub loaded: Option<UpcomingLoadedInstance>,
 
     /// The upcoming signed instance, if any.
     ///
     /// This describes the signed instance generated by Cascade. It is [`Some`]
     /// if/when signing is complete.
-    pub signed: Option<SignedInstance>,
+    pub signed: Option<UpcomingSignedInstance>,
     //
     // TODO:
     // - When the instance was initiated.
     // - The cause of initiation (e.g. reception of DNS NOTIFY).
     // - The policy used for generating the instance.
     //   (with such a field, policy changes during generation can be ignored.)
+}
+
+//----------- UpcomingLoadedInstance -------------------------------------------
+
+/// An upcoming loaded instance.
+#[derive(Clone)]
+pub struct UpcomingLoadedInstance {
+    /// The inner loaded instance.
+    pub inner: LoadedInstance,
+
+    /// The diff of these contents.
+    ///
+    /// This diff transforms zone contents _from the current instance_ into
+    /// those of _this upcoming instance_. If this instance is accepted, the
+    /// diff will be saved as part of the obsoleted instance.
+    pub diff: Arc<DiffData>,
+}
+
+impl Deref for UpcomingLoadedInstance {
+    type Target = LoadedInstance;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for UpcomingLoadedInstance {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl fmt::Debug for UpcomingLoadedInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { inner, diff: _ } = self;
+        f.debug_struct("UpcomingLoadedInstance")
+            .field("inner", inner)
+            // Hide the diff.
+            .field("diff", &format_args!("..."))
+            .finish()
+    }
+}
+
+//----------- UpcomingSignedInstance -------------------------------------------
+
+/// An upcoming signed instance.
+#[derive(Clone)]
+pub struct UpcomingSignedInstance {
+    /// The inner signed instance.
+    pub inner: SignedInstance,
+
+    /// The diff of these contents.
+    ///
+    /// This diff transforms zone contents _from the current instance_ into
+    /// those of _this upcoming instance_. If this instance is accepted, the
+    /// diff will be saved as part of the obsoleted instance.
+    pub diff: Arc<DiffData>,
+}
+
+impl Deref for UpcomingSignedInstance {
+    type Target = SignedInstance;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for UpcomingSignedInstance {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl fmt::Debug for UpcomingSignedInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { inner, diff: _ } = self;
+        f.debug_struct("UpcomingSignedInstance")
+            .field("inner", inner)
+            // Hide the diff.
+            .field("diff", &format_args!("..."))
+            .finish()
+    }
 }
 
 //----------- CurrentInstance --------------------------------------------------
@@ -392,6 +551,126 @@ impl CurrentInstance {
             signed,
             pub_time,
         }
+    }
+}
+
+//----------- ObsoleteInstances ------------------------------------------------
+
+/// Obselete instances of a zone.
+///
+/// These instances were once published, but have since been replaced by newer
+/// ones. They are recorded for history, and as a source of diffs for serving
+/// IXFRs.
+#[derive(Clone, Debug, Default)]
+pub struct ObsoleteInstances {
+    /// The instances, from oldest to newest.
+    ///
+    /// This list contains loaded and signed instances. Each loaded instance
+    /// is followed by the (zero or more) signed instances relative to it.
+    /// Thus, signed instances are relative to the _closest preceding_ loaded
+    /// instance, as confirmed by their IDs.
+    ///
+    /// A [`VecDeque`] is used so that old instances can be removed easily.
+    /// Every signed instance must be preceded by a loaded instance, so care
+    /// must be taken when removing an old loaded instance.
+    pub instances: VecDeque<ObsoleteInstance>,
+}
+
+/// An obsolete instance.
+#[derive(Debug, Clone)]
+pub enum ObsoleteInstance {
+    /// An obsolete loaded instance.
+    Loaded(ObsoleteLoadedInstance),
+
+    /// An obsolete signed instance.
+    Signed(ObsoleteSignedInstance),
+}
+
+//----------- ObsoleteLoadedInstance -------------------------------------------
+
+/// An obsolete loaded instance.
+#[derive(Clone)]
+pub struct ObsoleteLoadedInstance {
+    /// The inner loaded instance.
+    pub inner: LoadedInstance,
+
+    /// The diff of these contents, if available.
+    ///
+    /// This diff transforms zone contents _from this instance_ into those
+    /// of _the succeeding loaded instance_. It is persisted to disk (at
+    /// [`LoadedInstance::diff_path()`]) and restored when Cascade starts up.
+    ///
+    /// It may be unavailable (due to explicit removal, to preserve space, or a
+    /// failure during restoration).
+    pub diff: Option<Arc<DiffData>>,
+}
+
+impl Deref for ObsoleteLoadedInstance {
+    type Target = LoadedInstance;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for ObsoleteLoadedInstance {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl fmt::Debug for ObsoleteLoadedInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { inner, diff } = self;
+        f.debug_struct("ObsoleteLoadedInstance")
+            .field("inner", inner)
+            // Hide the diff.
+            .field("diff", &diff.as_ref().map(|_| format_args!("...")))
+            .finish()
+    }
+}
+
+//----------- ObsoleteSignedInstance -------------------------------------------
+
+/// An obsolete signed instance.
+#[derive(Clone)]
+pub struct ObsoleteSignedInstance {
+    /// The inner signed instance.
+    pub inner: SignedInstance,
+
+    /// The diff of these contents, if available.
+    ///
+    /// This diff transforms zone contents _from this instance_ into those
+    /// of _the succeeding signed instance_. It is persisted to disk (at
+    /// [`SignedInstance::diff_path()`]) and restored when Cascade starts up.
+    ///
+    /// It may be unavailable (due to explicit removal, to preserve space, or a
+    /// failure during restoration).
+    pub diff: Option<Arc<DiffData>>,
+}
+
+impl Deref for ObsoleteSignedInstance {
+    type Target = SignedInstance;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for ObsoleteSignedInstance {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl fmt::Debug for ObsoleteSignedInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { inner, diff } = self;
+        f.debug_struct("ObsoleteSignedInstance")
+            .field("inner", inner)
+            // Hide the diff.
+            .field("diff", &diff.as_ref().map(|_| format_args!("...")))
+            .finish()
     }
 }
 
@@ -441,6 +720,12 @@ impl PersistedInstance {
 /// A loaded instance of a zone.
 #[derive(Debug, Clone)]
 pub struct LoadedInstance {
+    /// The ID of this instance.
+    pub id: LoadedInstanceId,
+
+    /// The next usable signed instance ID relative to this.
+    pub next_signed_id: u64,
+
     /// The SOA record of this instance.
     ///
     /// The primary purpose of this field is to provide the SOA serial. We still
@@ -455,7 +740,6 @@ pub struct LoadedInstance {
     pub num_records: NonZeroU64,
     //
     // TODO:
-    // - Instance ID.
     // - How the instance was loaded (time, source, duration, size).
     // - Whether the zone contains DNSSEC records (for pass-through mode).
     // - Basic details of the zone:
@@ -465,16 +749,43 @@ pub struct LoadedInstance {
 
 impl LoadedInstance {
     /// The SOA serial of this instance.
-    pub fn serial(&self) -> Serial {
+    pub fn serial(&self) -> SoaSerial {
         self.soa.rdata.serial
     }
+
+    /// A base name for persisted files for this instance.
+    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
+        format!("{zone_name}.L{}-SOA{}", self.id.0, self.serial().get())
+    }
+
+    /// The path to the persisted diff file, if any.
+    ///
+    /// If the diff for this instance (relative to the succeeding loaded
+    /// instance) has been persisted, it will be stored at this path.
+    pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".diff");
+        path.into()
+    }
 }
+
+/// The ID of a loaded instance.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LoadedInstanceId(pub u64);
 
 //----------- SignedInstance ---------------------------------------------------
 
 /// A signed instance of a zone.
 #[derive(Debug, Clone)]
 pub struct SignedInstance {
+    /// The ID of this instance.
+    ///
+    /// This includes the ID of the loaded instance this is relative to.
+    pub id: SignedInstanceId,
+
     /// The SOA record of this instance.
     ///
     /// The primary purpose of this field is to provide the SOA serial. We still
@@ -499,7 +810,6 @@ pub struct SignedInstance {
     pub num_loaded_records: u64,
     //
     // TODO:
-    // - Instance ID.
     // - How the instance was signed:
     //   - time, source, duration, size
     //   - Whether re-signing occurred, and what was re-signed.
@@ -516,7 +826,7 @@ pub struct SignedInstance {
 
 impl SignedInstance {
     /// The SOA serial of this instance.
-    pub fn serial(&self) -> Serial {
+    pub fn serial(&self) -> SoaSerial {
         self.soa.rdata.serial
     }
 
@@ -526,4 +836,31 @@ impl SignedInstance {
             .checked_add(self.num_loaded_records)
             .unwrap()
     }
+
+    /// A base name for persisted files for this instance.
+    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
+        format!(
+            "{zone_name}.L{}-S{}-SOA{}",
+            self.id.0.0,
+            self.id.1,
+            self.serial().get()
+        )
+    }
+
+    /// The path to the persisted diff file, if any.
+    ///
+    /// If the diff for this instance (relative to the succeeding signed
+    /// instance) has been persisted, it will be stored at this path.
+    pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".diff");
+        path.into()
+    }
 }
+
+/// The ID of a signed instance.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SignedInstanceId(pub LoadedInstanceId, pub u64);

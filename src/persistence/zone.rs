@@ -7,7 +7,7 @@ use std::{
 };
 
 use cascade_zonedata::DiffData;
-use domain::new::base::Serial;
+use domain::new::base::SoaSerial;
 use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
     persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
-    zone::{Zone, ZoneHandle, ZoneState, save_state_now},
+    zone::{Zone, ZoneHandle, ZoneState},
     zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
 };
 
@@ -266,24 +266,24 @@ fn abandon_signed_restoration(
 
 fn reset_state_due_to_abandoned_restore(center: &Arc<Center>, zone: &Arc<Zone>) {
     PersistenceState::clear(center, zone);
-    {
-        let mut handle = zone.write_handle(center);
+    let mut handle = zone.write_handle(center);
 
-        // In case this zone was signed in the past we have to make sure that
-        // any attempt to enqueue a re-signing operation will be skipped as
-        // doing so will fail due to the lack of loaded zone content.
-        // TODO: Find a better way to prevent this issue as changing the
-        // min_expiration timestamps is a very indirect and non-obvious way of
-        // preventing re-signing.
-        handle.state.min_expiration = None;
-        handle.state.next_min_expiration = None;
+    // In case this zone was signed in the past we have to make sure that
+    // any attempt to enqueue a re-signing operation will be skipped as
+    // doing so will fail due to the lack of loaded zone content.
+    // TODO: Find a better way to prevent this issue as changing the
+    // min_expiration timestamps is a very indirect and non-obvious way of
+    // preventing re-signing.
+    handle.state.min_expiration = None;
+    handle.state.next_min_expiration = None;
 
-        // Also remove any already enqueued signing operation that is blocked
-        // by the ongoing restore as it will otherwise immediately start once
-        // the restore completes.
-        handle.signer().cancel_enqueued_signing_operations();
-    }
-    save_state_now(center, zone);
+    // Also remove any already enqueued signing operation that is blocked
+    // by the ongoing restore as it will otherwise immediately start once
+    // the restore completes.
+    handle.signer().cancel_enqueued_signing_operations();
+
+    // TODO: Handle the error?
+    let _ = handle.get().save_state_now();
 }
 
 //----------- PersistenceState -----------------------------------------------
@@ -624,8 +624,8 @@ impl PersistedDiffManager {
         &mut self,
         zone: &Arc<Zone>,
         center: &Arc<Center>,
-        loaded_serial: Option<Serial>,
-        signed_serial: Option<Serial>,
+        loaded_serial: Option<SoaSerial>,
+        signed_serial: Option<SoaSerial>,
     ) -> PathBuf {
         // Catch issues like https://github.com/NLnetLabs/cascade/issues/825:
         // If both serials are None the diff represents a snapshot which we
@@ -674,7 +674,7 @@ impl PersistedDiffManager {
         path
     }
 
-    pub fn cleanup(&mut self, serial: Option<Serial>) {
+    pub fn cleanup(&mut self, serial: Option<SoaSerial>) {
         // If no serial number is provided we can only cleanup the initial
         // snapshot, and we should only do that if we have only a snapshot
         // and no diffs.
@@ -762,20 +762,20 @@ pub struct PersistedDiffFileInfo {
     /// versions of a loaded zone but without a change in serial number, so
     /// storing diffs by serial number isn't safe as the serial number doesn't
     /// uniquely identify the version of the _loaded_ zone.
-    loaded_serial: Option<Serial>,
+    loaded_serial: Option<SoaSerial>,
 
     /// The signed serial number that the data file relates to.
     ///
     /// This can be none for a loaded diff.
-    signed_serial: Option<Serial>,
+    signed_serial: Option<SoaSerial>,
 }
 
 impl PersistedDiffFileInfo {
     pub fn new(
         id: usize,
         path: PathBuf,
-        loaded_serial: Option<Serial>,
-        signed_serial: Option<Serial>,
+        loaded_serial: Option<SoaSerial>,
+        signed_serial: Option<SoaSerial>,
     ) -> Self {
         Self {
             id,
@@ -793,11 +793,11 @@ impl PersistedDiffFileInfo {
         &self.path
     }
 
-    pub fn loaded_serial(&self) -> Option<Serial> {
+    pub fn loaded_serial(&self) -> Option<SoaSerial> {
         self.loaded_serial
     }
 
-    pub fn signed_serial(&self) -> Option<Serial> {
+    pub fn signed_serial(&self) -> Option<SoaSerial> {
         self.signed_serial
     }
 }
@@ -915,7 +915,7 @@ impl IxfrZoneDiffs {
         // necessary information to do so.
     }
 
-    pub fn store_signed_diff(&mut self, mut loaded_serial: Option<Serial>, diff: Arc<DiffData>) {
+    pub fn store_signed_diff(&mut self, mut loaded_serial: Option<SoaSerial>, diff: Arc<DiffData>) {
         let from_serial = diff.removed_soa.as_ref().map(|s| s.rdata.serial).unwrap();
         let to_serial = diff.added_soa.as_ref().map(|s| s.rdata.serial).unwrap();
 
@@ -935,7 +935,7 @@ impl IxfrZoneDiffs {
         // necessary information to do so.
     }
 
-    pub fn get(&self, from_serial: Serial) -> Vec<(Arc<DiffData>, Arc<DiffData>)> {
+    pub fn get(&self, from_serial: SoaSerial) -> Vec<(Arc<DiffData>, Arc<DiffData>)> {
         let mut diffs = vec![];
 
         let mut wanted_from: u32 = from_serial.into();
@@ -1073,7 +1073,7 @@ impl std::fmt::Display for IxfrZoneDiffs {
     }
 }
 
-fn log_stored_diff(r#type: &'static str, updating: bool, from: Serial, to: Serial) {
+fn log_stored_diff(r#type: &'static str, updating: bool, from: SoaSerial, to: SoaSerial) {
     if updating {
         trace!("Updating existing IXFR in-memory diff for SOA {type} serial -{from:?}:+{to:?}");
     } else {
@@ -1093,7 +1093,7 @@ struct RelatedSignedDiff {
 }
 
 impl RelatedSignedDiff {
-    fn new(diff: Arc<DiffData>, loaded_serial: Option<Serial>) -> Self {
+    fn new(diff: Arc<DiffData>, loaded_serial: Option<SoaSerial>) -> Self {
         Self {
             diff,
             related_loaded_serial: loaded_serial.map(Into::into),

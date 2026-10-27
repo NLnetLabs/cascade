@@ -1,4 +1,5 @@
-.\" Man page generated from reStructuredText.
+.\" Man page generated from reStructuredText
+.\" by the Docutils 0.22.4 manpage writer.
 .
 .
 .nr rst2man-indent-level 0
@@ -34,39 +35,46 @@ cascade-zone \- Manage zones
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fB<COMMAND>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%add\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBadd\fP \fB[OPTIONS]\fP \fB\-\-source <SOURCE>\fP \fB\-\-policy <POLICY>\fP \fB<NAME>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%remove\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBedit\fP \fB[OPTIONS]\fP \fB<NAME>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%list\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBremove\fP \fB<NAME>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reload\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBlist\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%approve\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBreload\fP \fB<NAME>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBapprove\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%override\fP \fB<\-\-unsigned|\-\-signed>\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBreject\fP \fB<\-\-unsigned|\-\-signed>\fP  \fB<NAME>\fP \fB<SERIAL>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%status\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBoverride\fP \fB<\-\-unsigned|\-\-signed>\fP \fB<NAME>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%reset\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBstatus\fP \fB[\-\-detailed]\fP \fB<NAME>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%history\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBreset\fP \fB<NAME>\fP
 .sp
-\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fI\%maintenance\fP \fB<enable|disable>\fP \fB<NAME>\fP
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBhistory\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBmaintenance\fP \fB<enable|disable>\fP \fB<NAME>\fP
 .SH DESCRIPTION
 .sp
 Manage Cascade\(aqs zones.
 .SH GLOBAL OPTIONS
 .sp
-See \fI\%Cascade CLI\fP for information about global options supported by every CLI
+See Cascade CLI \%<> for information about global options supported by every CLI
 command.
 .SH COMMANDS
 .INDENT 0.0
 .TP
 .B add
 Add a new zone.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B edit
+Change settings for an existing zone.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -77,7 +85,7 @@ Maintenance mode must be enabled (see \fBzone maintenance\fP). In
 addition, the zone must be passive (with no ongoing operations) or in a
 hard\-halt state.
 .sp
-\fBNOTE:\fP
+\fBNote:\fP
 .INDENT 7.0
 .INDENT 3.5
 Once removed, downstream servers will no longer be able to fetch
@@ -137,7 +145,7 @@ In maintenance mode, Cascade will not act on the zone autonomously (e.g. to
 load new zone data or refresh signatures). This quiet state is helpful for
 debugging and changing zone configuration.
 .sp
-\fBNOTE:\fP
+\fBNote:\fP
 .INDENT 7.0
 .INDENT 3.5
 If maintenance mode is enabled while a new instance of the zone
@@ -150,27 +158,27 @@ the operation completes.
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0
 .TP
-.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
 The zone source can be the IP address of an upstream nameserver (with
 or without port, defaults to port 53) or the path to a zone file locally
 available to the \fBcascaded\fP daemon.
 .sp
 When specifying an upstream nameserver you may also optionally specify
-the name of an \X'tty: link https://datatracker.ietf.org/doc/html/rfc8945.html'\fI\%RFC 8945\fP\X'tty: link' TSIG key that should be used to authenticate
+the name of an \fBRFC 8945\fP \%<https://\:datatracker\:.ietf\:.org/\:doc/\:html/\:rfc8945\:.html> TSIG key that should be used to authenticate
 communication with the upstream.
 .sp
 Zones sourced from an upstream nameserver will be automatically updated
 if a new version is detected via a SOA query, either based on the zone\(aqs
-SOA record timers, or in response to an \X'tty: link https://datatracker.ietf.org/doc/html/rfc1996.html'\fI\%RFC 1996\fP\X'tty: link' NOTIFY message from
+SOA record timers, or in response to an \fBRFC 1996\fP \%<https://\:datatracker\:.ietf\:.org/\:doc/\:html/\:rfc1996\:.html> NOTIFY message from
 the upstream.
 .sp
-Zones can also be manualy updated via \fBcascade\fP \fI\%reload\fP\&.
+Zones can also be manualy updated via \fBcascade\fP \fBreload\fP\&.
 .sp
 For zones that have already been retrieved at least once via AXFR, subsequent
 refreshes will attempt to use IXFR and fallback to AXFR if IXFR is not
 available.
 .sp
-\fBNOTE:\fP
+\fBNote:\fP
 .INDENT 7.0
 .INDENT 3.5
 When running \fBcascade\fP \fBzone add\fP from a
@@ -180,7 +188,7 @@ reachable by the Cascade daemon.
 .UNINDENT
 .UNINDENT
 .sp
-\fBNOTE:\fP
+\fBNote:\fP
 .INDENT 7.0
 .INDENT 3.5
 If using a TSIG key the key must first be added to Cascade via
@@ -261,6 +269,29 @@ Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP
 .TP
 .B <NAME>
 The name of the zone to add.
+.UNINDENT
+.SH OPTIONS FOR ZONE EDIT
+.sp
+Only the specified settings will be changed.
+.INDENT 0.0
+.TP
+.B \-\-source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
+The new source to use, in the same syntax as \fBzone add\fP\&.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-policy <POLICY>
+The new policy to use.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the help text (short summary with \fB\-h\fP, long help with \fB\-\-help\fP).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B <NAME>
+The name of the zone to edit.
 .UNINDENT
 .SH OPTIONS FOR ZONE REMOVE
 .INDENT 0.0
@@ -355,24 +386,23 @@ The name of the zone to toggle maintenance mode of.
 .SH SEE ALSO
 .INDENT 0.0
 .TP
-.B \X'tty: link https://cascade.docs.nlnetlabs.nl'\fI\%https://cascade.docs.nlnetlabs.nl\fP\X'tty: link'
+.B \%<https://\:cascade\:.docs\:.nlnetlabs\:.nl>
 Cascade online documentation
 .TP
 \fBcascade\fP(1)
-\fI\%Cascade CLI\fP
+Cascade CLI \%<>
 .TP
 \fBcascaded\fP(1)
-\fI\%Cascade Daemon\fP
+Cascade Daemon \%<>
 .TP
 \fBcascaded\-config.toml\fP(5)
-\fI\%Configuration File Format\fP
+Configuration File Format \%<>
 .TP
 \fBcascaded\-policy.toml\fP(5)
-\fI\%Policy File Format\fP
+Policy File Format \%<>
 .UNINDENT
-.SH AUTHOR
+.SH Author
 NLnet Labs <cascade@nlnetlabs.nl>
-.SH COPYRIGHT
+.SH Copyright
 2025–2026, NLnet Labs
-.\" Generated by docutils manpage writer.
-.
+.\" End of generated man page.
