@@ -552,7 +552,7 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.12.3"
-source = "git+https://github.com/NLnetLabs/domain?branch=add-sha-512-digest-support#38b37b6d579a1cc86199588530e2375b5c15d403"
+source = "git+https://github.com/NLnetLabs/domain?branch=main#f4ca391238d5d80eeaafc140f38ecdf4488903e5"
 dependencies = [
  "arc-swap",
  "bumpalo",
@@ -582,7 +582,7 @@ dependencies = [
 [[package]]
 name = "domain-kmip"
 version = "0.0.1"
-source = "git+https://github.com/NLnetLabs/domain-kmip?branch=more-algorithm-support-and-fixes-and-cleanup#045538049db82dd582148528daaab796b6ff8952"
+source = "git+https://github.com/NLnetLabs/domain-kmip?branch=more-algorithm-support-and-fixes-and-cleanup#0d8535adbfb7de9f2bd91213e1e4b48589fe6c19"
 dependencies = [
  "bcder",
  "domain",
@@ -596,7 +596,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.12.3"
-source = "git+https://github.com/NLnetLabs/domain?branch=add-sha-512-digest-support#38b37b6d579a1cc86199588530e2375b5c15d403"
+source = "git+https://github.com/NLnetLabs/domain?branch=main#f4ca391238d5d80eeaafc140f38ecdf4488903e5"
 dependencies = [
  "proc-macro2",
  "quote",

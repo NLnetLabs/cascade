@@ -68,7 +68,7 @@ default-features = false
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain]
 git = "https://github.com/NLnetLabs/domain"
-branch = "add-sha-512-digest-support"
+branch = "main"
 
 # 'domain-kmip' offers KMIP support for DNSSEC signatures.
 #
