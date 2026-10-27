@@ -1,6 +1,7 @@
 //! Zone-specific state and management.
 
 use std::collections::HashSet;
+use std::io;
 use std::{
     borrow::Borrow,
     cmp::Ordering,
@@ -236,6 +237,34 @@ impl ZoneHandle<'_> {
             state: self.state,
             center: self.center,
         }
+    }
+}
+
+impl ZoneHandle<'_> {
+    /// Persist the state of the zone immediately.
+    ///
+    /// When the function returns, the state will be saved to disk.
+    pub fn save_state_now(&mut self) -> io::Result<()> {
+        // Determine the save path from the global state.
+        let name = &self.zone.name;
+        let path = self.center.config.zone_state_dir.join(format!("{name}.db"));
+
+        // If there was an enqueued save operation, stop it.
+        if let Some(save) = self.state.enqueued_save.take() {
+            save.abort();
+        }
+
+        let spec = state::Spec::build(self.state);
+        let result = spec.save(&path);
+
+        match &result {
+            Ok(()) => debug!("Saved the state of zone '{name}' (to '{path}')"),
+            Err(err) => {
+                error!("Could not save the state of zone '{name}' to '{path}': {err}");
+            }
+        }
+
+        result
     }
 }
 
@@ -706,7 +735,6 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
         state::Spec::build(&state)
     };
 
-    // Save the global state.
     match spec.save(&path) {
         Ok(()) => debug!("Saved the state of zone '{name}' (to '{path}')"),
         Err(err) => {
@@ -786,6 +814,7 @@ pub fn save_state_now(center: &Center, zone: &Zone) {
 //----------- ZoneByName -------------------------------------------------------
 
 /// A [`Zone`] keyed by its name.
+// NOTE: `ignore-interior-mutability` in `clippy.toml`
 #[derive(Clone)]
 pub struct ZoneByName(pub Arc<Zone>);
 
@@ -830,6 +859,7 @@ impl fmt::Debug for ZoneByName {
 //----------- ZoneByPtr --------------------------------------------------------
 
 /// A [`Zone`] keyed by its address in memory.
+// NOTE: `ignore-interior-mutability` in `clippy.toml`
 #[derive(Clone)]
 pub struct ZoneByPtr(pub Arc<Zone>);
 

@@ -3,13 +3,13 @@
 
 # You can set these variables from the command line.
 SPHINXOPTS    =
-SPHINXBUILD   = uv run sphinx-build
+SPHINXBUILD   = poetry run sphinx-build
 SPHINXPROJ    = CascadeUserManual
 SOURCEDIR     = source
 BUILDDIR      = build
 BUILD_DATE    = "Jan 01, 2026"
 
-SPHINXAUTOBUILD     = uv run sphinx-autobuild
+SPHINXAUTOBUILD     = poetry run sphinx-autobuild
 SPHINXAUTOBUILDOPTS =
 AUTOBUILDDIR        = build/live
 
@@ -20,11 +20,10 @@ help:
 .PHONY: help deps update-deps live Makefile
 
 deps:
-	uv sync --group livehtml
+	poetry sync --with livehtml --no-root
 
 update-deps:
-	uv lock
-	uv export --format requirements.txt > requirements.txt
+	poetry update --sync --with livehtml
 
 live: deps
 	@$(SPHINXAUTOBUILD) $(SPHINXAUTOBUILDOPTS) "$(SOURCEDIR)" "$(AUTOBUILDDIR)" $(SPHINXOPTS) $(O)
