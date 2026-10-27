@@ -82,19 +82,18 @@ impl From<KeyGetType> for api::KeyGetType {
 pub enum KeyRollCommand {
     /// Start a key roll.
     StartRoll,
-    /// Report that the first propagation step has completed.
-    Propagation1Complete {
-        /// The TTL that is required to be reported by the Report actions.
+    /// Report the before-ttl.
+    BeforeTtl {
+        /// The TTL that is reported.
         ttl: u32,
     },
+    /// Report that the first propagation step has completed.
+    Propagation1Complete,
     /// Cached information from before Propagation1Complete should have
     /// expired by now.
     CacheExpired1,
     /// Report that the second propagation step has completed.
-    Propagation2Complete {
-        /// The TTL that is required to be reported by the Report actions.
-        ttl: u32,
-    },
+    Propagation2Complete,
     /// Cached information from before Propagation2Complete should have
     /// expired by now.
     CacheExpired2,
@@ -106,9 +105,10 @@ impl From<KeyRollCommand> for api::KeyRollCommand {
     fn from(value: KeyRollCommand) -> Self {
         match value {
             KeyRollCommand::StartRoll => Self::StartRoll,
-            KeyRollCommand::Propagation1Complete { ttl } => Self::Propagation1Complete { ttl },
+            KeyRollCommand::BeforeTtl { ttl } => Self::BeforeTtl { ttl },
+            KeyRollCommand::Propagation1Complete => Self::Propagation1Complete,
             KeyRollCommand::CacheExpired1 => Self::CacheExpired1,
-            KeyRollCommand::Propagation2Complete { ttl } => Self::Propagation2Complete { ttl },
+            KeyRollCommand::Propagation2Complete => Self::Propagation2Complete,
             KeyRollCommand::CacheExpired2 => Self::CacheExpired2,
             KeyRollCommand::RollDone => Self::RollDone,
         }

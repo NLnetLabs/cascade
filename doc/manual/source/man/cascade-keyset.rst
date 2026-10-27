@@ -57,21 +57,22 @@ Key roll commands for :subcmd:`ksk|zsk|csk|algorithm`
 
    Start a key roll.
 
-.. subcmd:: propagation1-complete <TTL>
+.. subcmd:: before-ttl <TTL>
+
+   Inform keyset of the maximum of the TTLs of the RRsets that are about the
+   get changed.
+
+.. subcmd:: propagation1-complete
 
    Inform keyset that the changed RRsets and signatures have propagated.
-
-   TTL is the maximum TTL of the zone.
 
 .. subcmd:: cache-expired1
 
    Inform keyset that enough time has passed that caches should have expired.
 
-.. subcmd:: propagation2-complete <TTL>
+.. subcmd:: propagation2-complete
 
    Inform keyset that the changed RRsets and signatures have propagated.
-
-   TTL is the maximum TTL of the zone.
 
 .. subcmd:: cache-expired2
 
