@@ -60,9 +60,14 @@ kmip-credentials-store-path = "/var/lib/cascade/kmip-credentials.db"
 # internal implementation details.  It should not be modified manually, but
 # it can be backed up and restored in the event of filesystem corruption.
 # Carefully consider its security.
-#
-# TODO: Move rollover state files to a separate directory?
 keys-dir = "/var/lib/cascade/keys"
+
+# Directory where the remains of removed zones are stored.
+#
+# Currently, only the key manager state (the config and state files and any
+# on-disk key files) is moved to this directory. There is currently no
+# automatic cleanup.
+attic-dir = "/var/lib/cascade/attic"
 
 # The path to the dnst binary Cascade should use.
 #
