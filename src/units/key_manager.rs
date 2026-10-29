@@ -167,7 +167,7 @@ use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, KeyValidity, PolicyVersion};
 use crate::signer::ResigningTrigger;
 use crate::units::zone_signer::KeySetState;
-use crate::util::AbortOnDrop;
+use crate::util::{AbortOnDrop, write_file};
 use crate::zone::{HistoricalEvent, Zone};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -180,9 +180,9 @@ use std::collections::{HashMap, HashSet};
 use std::env::{VarError, var};
 use std::ffi::OsStr;
 use std::fmt::{Display, Formatter};
-use std::fs::{File, OpenOptions, metadata, rename};
-use std::io::{BufReader, BufWriter, Error, ErrorKind, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::fs::{metadata, rename};
+use std::io::{Error, ErrorKind};
+use std::path::Path;
 use std::process::Output;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -1125,149 +1125,53 @@ pub struct KmipClientCredentials {
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct KmipClientCredentialsSet(HashMap<String, KmipClientCredentials>);
 
-//------------ KmipClientCredentialsFileMode ---------------------------------
-
-/// The access mode to use when accessing a credentials file.
-#[derive(Debug)]
-pub enum KmipServerCredentialsFileMode {
-    /// Open an existing credentials file for reading. Saving will fail.
-    ReadOnly,
-
-    /// Open an existing credentials file for reading and writing.
-    #[expect(dead_code)]
-    ReadWrite,
-
-    /// Open or create the credentials file for reading and writing.
-    CreateReadWrite,
-}
-
-//--- impl Display
-
-impl std::fmt::Display for KmipServerCredentialsFileMode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            KmipServerCredentialsFileMode::ReadOnly => write!(f, "read-only"),
-            KmipServerCredentialsFileMode::ReadWrite => write!(f, "read-write"),
-            KmipServerCredentialsFileMode::CreateReadWrite => write!(f, "create-read-write"),
-        }
-    }
-}
-
 //------------ KmipServerCredentialsFile -------------------------------------
 
 /// A KMIP server credential set file.
 #[derive(Debug)]
 pub struct KmipClientCredentialsFile {
-    /// The file from which the credentials were loaded, and will be saved
-    /// back to.
-    file: File,
-
-    /// The path from which the file was loaded. Used for generating error
-    /// messages.
-    path: PathBuf,
+    /// The path from which the file was loaded.
+    path: Utf8PathBuf,
 
     /// The actual set of loaded credentials.
     credentials: KmipClientCredentialsSet,
-
-    /// The read/write/create mode.
-    #[allow(dead_code)]
-    mode: KmipServerCredentialsFileMode,
 }
 
 impl KmipClientCredentialsFile {
     /// Load credentials from disk.
     ///
-    /// Optionally:
-    ///   - Create the file if missing.
-    ///   - Keep the file open for writing back changes. See [`Self::save()`].
-    pub fn new(path: &Path, mode: KmipServerCredentialsFileMode) -> Result<Self, String> {
-        let (read, write, create) = match mode {
-            KmipServerCredentialsFileMode::ReadOnly => (true, false, false),
-            KmipServerCredentialsFileMode::ReadWrite => (true, true, false),
-            KmipServerCredentialsFileMode::CreateReadWrite => (true, true, true),
+    /// If the file is missing and `missing_ok` is `true`, no credentials are
+    /// loaded.
+    pub fn new(path: &Utf8Path, missing_ok: bool) -> Result<Self, String> {
+        let credentials = match std::fs::read(path) {
+            Ok(data) => serde_json::from_slice(&data)
+                .map_err(|err| format!("error loading KMIP credentials file {path:?}: {err}"))?,
+
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound && missing_ok => {
+                // Just create an empty credential set.
+                KmipClientCredentialsSet::default()
+            }
+
+            Err(err) => {
+                return Err(format!(
+                    "unable to open KMIP credentials file {path:?}: {err}"
+                ));
+            }
         };
-
-        let file = OpenOptions::new()
-            .read(read)
-            .write(write)
-            .create(create)
-            .truncate(false)
-            .open(path)
-            .map_err(|e| {
-                format!(
-                    "unable to open KMIP credentials file {} in {mode} mode: {e}",
-                    path.display()
-                )
-            })?;
-
-        // Determine the length of the file as JSON parsing fails if the file
-        // is completely empty.
-        let len = file.metadata().map(|m| m.len()).map_err(|e| {
-            format!(
-                "unable to query metadata of KMIP credentials file {}: {e}",
-                path.display()
-            )
-        })?;
-
-        // Buffer reading as apparently JSON based file reading is extremely
-        // slow without buffering, even for small files.
-        let mut reader = BufReader::new(&file);
-
-        // Load or create the credential set.
-        let credentials: KmipClientCredentialsSet = if len > 0 {
-            serde_json::from_reader(&mut reader).map_err(|e| {
-                format!(
-                    "error loading KMIP credentials file {:?}: {e}\n",
-                    path.display()
-                )
-            })?
-        } else {
-            KmipClientCredentialsSet::default()
-        };
-
-        // Save the path for use in generating error messages.
-        let path = path.to_path_buf();
 
         Ok(KmipClientCredentialsFile {
-            file,
-            path,
+            path: path.to_path_buf(),
             credentials,
-            mode,
         })
     }
 
     /// Write the credential set back to the file it was loaded from.
     pub fn save(&mut self) -> std::io::Result<()> {
-        // Ensure that writing happens at the start of the file.
-        self.file.seek(SeekFrom::Start(0))?;
+        let data = serde_json::to_vec_pretty(&self.credentials).map_err(|err| {
+            std::io::Error::other(format!("error serializing KMIP credentials: {err}"))
+        })?;
 
-        // Use a buffered writer as writing JSON to a file directly is
-        // apparently very slow, even for small files.
-        //
-        // Enclose the use of the BufWriter in a block so that it is
-        // definitely no longer using the file when we next act on it.
-        {
-            let mut writer = BufWriter::new(&self.file);
-            serde_json::to_writer_pretty(&mut writer, &self.credentials).map_err(|e| {
-                std::io::Error::other(format!(
-                    "error writing KMIP credentials file {}: {e}",
-                    self.path.display()
-                ))
-            })?;
-
-            // Ensure that the BufWriter is flushed as advised by the
-            // BufWriter docs.
-            writer.flush()?;
-        }
-
-        // Truncate the file to the length of data we just wrote..
-        let pos = self.file.stream_position()?;
-        self.file.set_len(pos)?;
-
-        // Ensure that any write buffers are flushed.
-        self.file.flush()?;
-
-        Ok(())
+        write_file(&self.path, &data, 0o600)
     }
 
     /// Does this credential set include credentials for the specified KMIP

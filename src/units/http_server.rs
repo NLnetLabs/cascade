@@ -49,7 +49,6 @@ use crate::server::SignedReviewServer;
 use crate::tsig::{self, RemoveError};
 use crate::units::key_manager::KmipClientCredentials;
 use crate::units::key_manager::KmipClientCredentialsFile;
-use crate::units::key_manager::KmipServerCredentialsFileMode;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
@@ -1727,19 +1726,17 @@ impl HttpServer {
         // Add any credentials to the credentials store.
         if let Some(username) = username {
             let creds = KmipClientCredentials { username, password };
-            let mut creds_file = match KmipClientCredentialsFile::new(
-                kmip_credentials_store_path.as_std_path(),
-                KmipServerCredentialsFileMode::CreateReadWrite,
-            ) {
-                Ok(creds_file) => creds_file,
-                Err(err) => {
-                    return Json(Err(
-                        HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
-                            err: err.to_string(),
-                        },
-                    ));
-                }
-            };
+            let mut creds_file =
+                match KmipClientCredentialsFile::new(&kmip_credentials_store_path, true) {
+                    Ok(creds_file) => creds_file,
+                    Err(err) => {
+                        return Json(Err(
+                            HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
+                                err: err.to_string(),
+                            },
+                        ));
+                    }
+                };
             let _ = creds_file.insert(server_id, creds);
             if let Err(err) = creds_file.save() {
                 return Json(Err(HsmServerAddError::CredentialsFileCouldNotBeSaved {
