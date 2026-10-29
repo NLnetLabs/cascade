@@ -1,0 +1,17 @@
+$TTL 5 ; use a very short TTL for sped up keyset rolls
+test.   IN SOA ns1.test. mail.test. (
+                      1          ; serial
+                     60          ; refresh (60 seconds)
+                     60          ; retry (60 seconds)
+                   3600          ; expire (1 hour)
+                      5          ; minimum (5 seconds)
+                    )
+@           NS  test.
+@           NS  ns1.test.
+@           A   127.0.0.1
+ns1.test.   A   127.0.0.1
+
+example.test.       NS  example.test.
+example.test.       NS  ns1.example.test.
+example.test.       A   127.0.0.1
+ns1.example.test.   A   127.0.0.1

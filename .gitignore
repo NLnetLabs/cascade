@@ -3,3 +3,6 @@
 .vscode/
 .DS_Store
 Session.vim
+
+test-dump-*
+/test
