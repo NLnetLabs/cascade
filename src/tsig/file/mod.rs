@@ -1,14 +1,11 @@
 //! The TSIG keys file.
 
-use std::{
-    fs::{self, File},
-    io::{self, BufReader, BufWriter},
-};
+use std::{fs, io};
 
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
 
-use crate::tsig::TsigStore;
+use crate::{tsig::TsigStore, util::write_file};
 
 pub mod v1;
 
@@ -43,21 +40,14 @@ impl Spec {
 impl Spec {
     /// Load and parse this specification from a file.
     pub fn load(path: &Utf8Path) -> io::Result<Self> {
-        let file = BufReader::new(File::open(path)?);
-        let spec = serde_json::from_reader(file)?;
+        let data = fs::read(path)?;
+        let spec = serde_json::from_slice(&data)?;
         Ok(spec)
     }
 
     /// Build and save this specification to a file.
     pub fn save(&self, path: &Utf8Path) -> io::Result<()> {
-        let file = BufWriter::new(
-            fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(path)?,
-        );
-        serde_json::to_writer(file, self)?;
-        Ok(())
+        let data = serde_json::to_vec(self)?;
+        write_file(path, &data, 0o600)
     }
 }
