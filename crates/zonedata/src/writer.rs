@@ -10,7 +10,7 @@
 //! See the [`crate::builder`] module for high-level types that do consider
 //! concurrent access.
 
-use std::{collections::hash_map, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use domain::{
     new::base::{
@@ -25,9 +25,6 @@ use crate::{
     DiffData, InstanceData, LoadedZoneReader, RegularRecord, SignedZoneReader, SoaRecord, merge,
 };
 
-/// Record types for which RRsets may contain varying TTLs.
-const VARYING_TTL_RTYPES: &[RType] = &[RType::RRSIG];
-
 //----------- LoadedZoneReplacer -----------------------------------------------
 
 /// A writer building a loaded instance of a zone from scratch.
@@ -41,9 +38,6 @@ pub struct LoadedZoneReplacer<'d> {
     /// The instance being built.
     next: &'d mut InstanceData,
 
-    /// A mapping of RRset keys to their TTLs, for verifying consistency.
-    rrset_ttls: foldhash::HashMap<(Box<RevName>, RType), TTL>,
-
     /// The built diff.
     ///
     /// This exists iff building succeeds.
@@ -56,7 +50,7 @@ impl<'d> LoadedZoneReplacer<'d> {
     /// ## Panics
     ///
     /// Panics if `next` is not empty or `diff` is [`Some`].
-    pub(crate) fn new(
+    pub(crate) const fn new(
         curr: &'d InstanceData,
         next: &'d mut InstanceData,
         diff: &'d mut Option<Box<DiffData>>,
@@ -64,13 +58,7 @@ impl<'d> LoadedZoneReplacer<'d> {
         assert!(next.soa.is_none(), "'next' is not empty");
         assert!(diff.is_none());
 
-        let rrset_ttls = Default::default();
-        Self {
-            curr,
-            next,
-            rrset_ttls,
-            diff,
-        }
+        Self { curr, next, diff }
     }
 
     /// Read the current authoritative instance data (if any).
@@ -96,19 +84,6 @@ impl<'d> LoadedZoneReplacer<'d> {
 
     /// Add a regular record.
     pub fn add(&mut self, record: RegularRecord) -> Result<(), ReplaceError> {
-        if !VARYING_TTL_RTYPES.contains(&record.rtype)
-            && let &mut prior = self
-                .rrset_ttls
-                .entry((record.rname.clone(), record.rtype))
-                .or_insert(record.ttl)
-            && prior != record.ttl
-        {
-            return Err(ReplaceError::InconsistentTtls(InconsistentTtlsError {
-                owner: record.rname.clone(),
-                rtype: record.rtype,
-                ttls: [prior, record.ttl],
-            }));
-        }
         self.next.records.push(record);
         Ok(())
     }
@@ -129,6 +104,8 @@ impl<'d> LoadedZoneReplacer<'d> {
     /// loaded instance.
     pub fn apply(self) -> Result<(), ReplaceError> {
         *self.diff = Some(apply_replacement(self.curr, self.next)?);
+
+        check_ttl_consistency(self.next)?;
 
         Ok(())
     }
@@ -161,22 +138,6 @@ pub struct LoadedZonePatcher<'d> {
     /// The upcoming instance.
     next: &'d mut InstanceData,
 
-    /// A mapping of RRset keys to their TTLs and number of records, for
-    /// verifying consistency.
-    ///
-    /// The number of records is tracked so that
-    /// [`Self::inconsistent_ttl_rrsets`] can be correctly initialized if an
-    /// inconsistency is detected later.
-    ///
-    /// If the number of records is 0, the RRset is inconsistent, and a list of
-    /// all its TTLs is stored in [`Self::inconsistent_ttl_rrsets`].
-    rrset_ttls: foldhash::HashMap<(Box<RevName>, RType), (TTL, usize)>,
-
-    /// RRsets which currently have inconsistent TTLs.
-    ///
-    /// Inconsistencies are allowed until writing finishes.
-    inconsistent_ttl_rrsets: foldhash::HashMap<(Box<RevName>, RType), Vec<TTL>>,
-
     /// The built diff.
     diff: &'d mut Option<Box<DiffData>>,
 
@@ -205,29 +166,10 @@ impl<'d> LoadedZonePatcher<'d> {
         assert!(next.soa.is_none());
         assert!(diff.is_none());
 
-        // Load information about existing TTLs.
-        let mut rrset_ttls = foldhash::HashMap::default();
-        for record in &curr.records {
-            let (ttl, count) = rrset_ttls
-                .entry((record.rname.clone(), record.rtype))
-                .or_insert((record.ttl, 0));
-            if *ttl != record.ttl {
-                let owner = NameBuf::from(RevNameBuf::copy_from(&record.rname));
-                tracing::warn!(
-                    %owner, rtype = %record.rtype,
-                    a = ?*ttl, b = ?record.ttl,
-                    "bug: inconsistent TTLs in existing zone instance");
-            }
-            *count += 1;
-        }
-        let inconsistent_ttl_rrsets = Default::default();
-
         Self {
             curr,
             next,
             diff,
-            rrset_ttls,
-            inconsistent_ttl_rrsets,
             accumulated: Box::new(DiffData::new()),
             immediate: Box::new(DiffData::new()),
         }
@@ -264,65 +206,12 @@ impl<'d> LoadedZonePatcher<'d> {
 
     /// Remove a previous regular record.
     pub fn remove(&mut self, record: RegularRecord) -> Result<(), PatchError> {
-        // Update TTL consistency data.
-        let rrset = (record.rname.clone(), record.rtype);
-        let (ttl, count) = self
-            .rrset_ttls
-            .get_mut(&rrset)
-            .ok_or(PatchError::Inconsistency)?;
-        if *count == 0 {
-            // This RRset has inconsistent TTLs.
-            let ttls = self.inconsistent_ttl_rrsets.get_mut(&rrset).unwrap();
-            let pos = ttls
-                .iter()
-                .position(|&ttl| ttl == record.ttl)
-                .ok_or(PatchError::Inconsistency)?;
-            ttls.swap_remove(pos);
-        } else {
-            if *ttl != record.ttl {
-                return Err(PatchError::Inconsistency);
-            }
-            *count -= 1;
-            if *count == 0 {
-                self.rrset_ttls.remove(&rrset).unwrap();
-            }
-        }
-
         self.immediate.removed_records.push(record);
         Ok(())
     }
 
     /// Add a new regular record.
     pub fn add(&mut self, record: RegularRecord) -> Result<(), PatchError> {
-        // Update TTL consistency data.
-        let rrset = (record.rname.clone(), record.rtype);
-        match self.rrset_ttls.entry(rrset.clone()) {
-            hash_map::Entry::Occupied(entry) => {
-                let (ttl, count) = entry.into_mut();
-                if *count == 0 {
-                    // This RRset has inconsistent TTLs.
-                    self.inconsistent_ttl_rrsets
-                        .get_mut(&rrset)
-                        .unwrap()
-                        .push(record.ttl);
-                } else if *ttl != record.ttl {
-                    // This RRset has now become inconsistent.
-                    self.inconsistent_ttl_rrsets.insert(
-                        rrset,
-                        std::iter::repeat_n(*ttl, *count)
-                            .chain([record.ttl])
-                            .collect(),
-                    );
-                    *count = 0;
-                } else {
-                    *count -= 1;
-                }
-            }
-            hash_map::Entry::Vacant(entry) => {
-                entry.insert((record.ttl, 1));
-            }
-        }
-
         self.immediate.added_records.push(record);
         Ok(())
     }
@@ -352,23 +241,9 @@ impl<'d> LoadedZonePatcher<'d> {
             self.next_patchset()?;
         }
 
-        // Ensure all RRsets are consistent.
-        for ((owner, rtype), ttls) in self.inconsistent_ttl_rrsets.drain() {
-            let Some(&first) = ttls.first() else {
-                // All records have been removed.
-                continue;
-            };
-
-            if let Some(ttl) = ttls.into_iter().find(|&ttl| ttl != first) {
-                return Err(PatchError::InconsistentTtls(InconsistentTtlsError {
-                    owner,
-                    rtype,
-                    ttls: [first, ttl],
-                }));
-            }
-        }
-
         *self.diff = Some(apply_patches(self.curr, self.next, &mut self.accumulated)?);
+
+        check_ttl_consistency(self.next)?;
 
         Ok(())
     }
@@ -767,6 +642,31 @@ impl Drop for SignedZonePatcher<'_> {
 // The following helpers reduce code duplication right now, but will need to be
 // split once the loaded and signed instances use independent representations.
 
+/// Verify the consistency of RRset TTLs.
+fn check_ttl_consistency(instance: &InstanceData) -> Result<(), InconsistentTtlsError> {
+    /// Record types for which RRsets may contain varying TTLs.
+    const VARYING_TTL_RTYPES: &[RType] = &[RType::RRSIG];
+
+    let mut ttls: foldhash::HashMap<(Box<RevName>, RType), TTL> = Default::default();
+
+    for record in &instance.records {
+        if !VARYING_TTL_RTYPES.contains(&record.rtype)
+            && let &mut prior = ttls
+                .entry((record.rname.clone(), record.rtype))
+                .or_insert(record.ttl)
+            && prior != record.ttl
+        {
+            return Err(InconsistentTtlsError {
+                owner: record.rname.clone(),
+                rtype: record.rtype,
+                ttls: [prior, record.ttl],
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// Implementation of `{Loaded,Signed}ZoneReplacer::apply()`.
 fn apply_replacement(
     curr: &InstanceData,
@@ -977,6 +877,12 @@ impl fmt::Display for ReplaceError {
     }
 }
 
+impl From<InconsistentTtlsError> for ReplaceError {
+    fn from(error: InconsistentTtlsError) -> Self {
+        Self::InconsistentTtls(error)
+    }
+}
+
 //----------- PatchError -------------------------------------------------------
 
 /// An error when patching a zone instance.
@@ -1016,6 +922,12 @@ impl fmt::Display for PatchError {
             Self::Inconsistency => f.write_str("a patchset could not be applied"),
             Self::InconsistentTtls(error) => write!(f, "an RRset has inconsistent TTLs: {error}"),
         }
+    }
+}
+
+impl From<InconsistentTtlsError> for PatchError {
+    fn from(error: InconsistentTtlsError) -> Self {
+        Self::InconsistentTtls(error)
     }
 }
 
