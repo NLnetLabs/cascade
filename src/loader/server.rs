@@ -439,7 +439,6 @@ pub async fn axfr(
         .fetch_add(initial.as_slice().len(), Relaxed);
     let mut updates = interpreter.interpret_response(initial)?;
 
-    assert!(updates.next().unwrap()? == ZoneUpdate::DeleteAllRecords);
     let mut writer = builder.replace().unwrap();
 
     // Process the response messages.
@@ -487,6 +486,8 @@ fn process_axfr(
             ZoneUpdate::Finished(record) => {
                 return Ok(Some(record.into()));
             }
+
+            ZoneUpdate::DeleteAllRecords => {}
 
             _ => unreachable!(),
         }
