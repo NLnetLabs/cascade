@@ -3,6 +3,7 @@
 use std::{
     fmt, fs,
     io::{self, Write},
+    os::unix::fs::PermissionsExt,
     time::Duration,
 };
 
@@ -156,7 +157,7 @@ where
 /// # Panics
 ///
 /// Panics if 'path' does not have a containing directory.
-pub fn write_file(path: &Utf8Path, contents: &[u8]) -> io::Result<()> {
+pub fn write_file(path: &Utf8Path, contents: &[u8], mode: u32) -> io::Result<()> {
     // Ensure such a path _can_ exist.
     let dir = path
         .parent()
@@ -164,7 +165,9 @@ pub fn write_file(path: &Utf8Path, contents: &[u8]) -> io::Result<()> {
     fs::create_dir_all(dir)?;
 
     // Obtain a temporary file in the same directory.
-    let mut tmp_file = tempfile::Builder::new().tempfile_in(dir)?;
+    let mut tmp_file = tempfile::Builder::new()
+        .permissions(fs::Permissions::from_mode(mode))
+        .tempfile_in(dir)?;
 
     // Fill up the temporary file.
     tmp_file.as_file_mut().write_all(contents)?;
