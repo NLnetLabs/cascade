@@ -1033,15 +1033,15 @@ impl HttpServer {
         Path((name, serial)): Path<(Name<Bytes>, Serial)>,
     ) -> Json<SetLastSignedSerialResult> {
         let zone = match center::get_zone(&state.center, &name) {
-	    Some(z) => z,
-	    None => return Json(Err(SetLastSignedSerialError::NoSuchZone)),
-	};
+            Some(z) => z,
+            None => return Json(Err(SetLastSignedSerialError::NoSuchZone)),
+        };
 
         let mut zone_state = zone.write(&state.center);
 
-	zone_state.previous_serial = Some(serial);
+        zone_state.previous_serial = Some(serial);
 
-	Json(Ok(()))
+        Json(Ok(()))
     }
 
     async fn policy_list(State(state): State<Arc<HttpServer>>) -> Json<PolicyListResult> {

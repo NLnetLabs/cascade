@@ -116,8 +116,8 @@ pub enum ZoneCommand {
         name: ZoneName,
 
         /// The serial number of the zone.
-	serial: u32,
-    }
+        serial: u32,
+    },
 }
 
 #[derive(Clone, Debug, clap::Subcommand)]
@@ -366,7 +366,7 @@ impl Zone {
                         Err(format!("Zone '{name}' could not be found"))
                     }
                 }
-	    }
+            }
         }
     }
 }
