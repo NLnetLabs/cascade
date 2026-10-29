@@ -122,6 +122,10 @@ impl HttpServer {
                 "/zone/{zone}/maintenance/disable",
                 post(Self::disable_maintenance_mode),
             )
+            .route(
+                "/zone/{name}/{serial}/set-last-signed-serial",
+                post(Self::set_last_signed_serial),
+            )
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
             .route("/policy/{name}", get(Self::policy_show))
@@ -1022,6 +1026,22 @@ impl HttpServer {
 
         zone_state.maintenance_mode = enable;
         Ok(ZoneMaintenanceModeOutput { zone: name.clone() })
+    }
+
+    async fn set_last_signed_serial(
+        State(state): State<Arc<HttpServer>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+    ) -> Json<SetLastSignedSerialResult> {
+        let zone = match center::get_zone(&state.center, &name) {
+            Some(z) => z,
+            None => return Json(Err(SetLastSignedSerialError::NoSuchZone)),
+        };
+
+        let mut zone_state = zone.write(&state.center);
+
+        zone_state.previous_serial = Some(serial);
+
+        Json(Ok(()))
     }
 
     async fn policy_list(State(state): State<Arc<HttpServer>>) -> Json<PolicyListResult> {

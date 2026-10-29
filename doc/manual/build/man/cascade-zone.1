@@ -58,6 +58,8 @@ cascade-zone \- Manage zones
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBhistory\fP \fB<NAME>\fP
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBmaintenance\fP \fB<enable|disable>\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBset\-last\-signed\-serial\fP \fB<NAME>\fP \fB<SERIAL>\fP
 .SH DESCRIPTION
 .sp
 Manage Cascade\(aqs zones.
@@ -158,6 +160,14 @@ it will not be canceled; maintenance mode will go into effect once
 the operation completes.
 .UNINDENT
 .UNINDENT
+.UNINDENT
+.INDENT 0.0
+.TP
+.B set\-last\-signed\-serial
+Set the zone state variable that keeps track of the last serial number used
+for the signed zone. This serial number direct affects the next serial
+number when the counter policy is in use. Otherwise it affects which
+serial numbers are considered higher than the previous serial number.
 .UNINDENT
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0

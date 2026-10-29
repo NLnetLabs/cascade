@@ -30,6 +30,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`maintenance` ``<enable|disable>`` ``<NAME>``
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`set-last-signed-serial` ``<NAME>`` ``<SERIAL>``
+
 Description
 -----------
 
@@ -114,6 +116,13 @@ Commands
              is being built (i.e. loading, signing, review, etc. is ongoing),
              it will not be canceled; maintenance mode will go into effect once
              the operation completes.
+
+.. subcmd:: set-last-signed-serial
+
+   Set the zone state variable that keeps track of the last serial number used
+   for the signed zone. This serial number direct affects the next serial
+   number when the counter policy is in use. Otherwise it affects which
+   serial numbers are considered higher than the previous serial number.
 
 Options for :subcmd:`zone add`
 ------------------------------
