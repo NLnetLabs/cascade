@@ -413,3 +413,19 @@ jobs:
       - uses: ./integration-tests/tests/multipart-axfr
         with:
           log-level: ${{ inputs.log-level }}
+
+  set-last-serial:
+    name: Set the last serial number and check if the next serial takes it into account.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/set-last-serial
+        with:
+          log-level: ${{ inputs.log-level }}

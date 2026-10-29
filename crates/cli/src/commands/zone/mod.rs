@@ -106,6 +106,18 @@ pub enum ZoneCommand {
         #[command(subcommand)]
         maintenance: Maintenance,
     },
+
+    /// Set the variable "last-signed-serial". This affects the next serial
+    /// directly (in case of the counter policy) or affects whether the
+    /// next serial is considered larger than the previous serial.
+    #[command(name = "set-last-signed-serial")]
+    SetLastSignedSerial {
+        /// The name of the zone.
+        name: ZoneName,
+
+        /// The serial number of the zone.
+	serial: u32,
+    }
 }
 
 #[derive(Clone, Debug, clap::Subcommand)]
@@ -341,6 +353,20 @@ impl Zone {
                     },
                 }
             }
+            ZoneCommand::SetLastSignedSerial { name, serial } => {
+                let url = format!("/zone/{name}/{serial}/set-last-signed-serial");
+                let result: SetLastSignedSerialResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(()) => {
+                        println!("Set last signed serial of zone '{name}' to {serial}");
+                        Ok(())
+                    }
+                    Err(SetLastSignedSerialError::NoSuchZone) => {
+                        Err(format!("Zone '{name}' could not be found"))
+                    }
+                }
+	    }
         }
     }
 }

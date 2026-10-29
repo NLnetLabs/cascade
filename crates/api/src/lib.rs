@@ -826,6 +826,14 @@ pub struct Info {
     pub version: String,
 }
 
+/// The result of a `zone reset` command.
+pub type SetLastSignedSerialResult = Result<(), SetLastSignedSerialError>;
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum SetLastSignedSerialError {
+    NoSuchZone,
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ServerStatusResult {
     pub halted_zones: Vec<(ZoneName, String)>,

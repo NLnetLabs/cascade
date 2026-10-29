@@ -110,8 +110,6 @@ pub struct Spec {
 
     /// Record the SOA serial of the last signed version of the zone.
     /// We use a serial only once, even if the signed zone gets rejected.
-    /// It would be good to have a command where the user can set the
-    /// serial for the Increment serial policy.
     pub previous_serial: Option<Serial>,
 
     /// History of interesting events that occurred for this zone.
