@@ -161,11 +161,12 @@
 use crate::api;
 use crate::api::keyset::{KeyRollCommand, KeyRollVariant};
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{Center, ZoneAddError, get_zone};
+use crate::center::{Center, ZoneAddError, ZoneRemoveError, get_zone};
 use crate::hsm::KmipServerState;
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, KeyValidity, PolicyVersion};
 use crate::signer::ResigningTrigger;
+use crate::units::zone_signer::KeySetState;
 use crate::util::AbortOnDrop;
 use crate::zone::{HistoricalEvent, Zone};
 use bytes::Bytes;
@@ -178,14 +179,16 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::env::{VarError, var};
 use std::ffi::OsStr;
-use std::fs::metadata;
-use std::io::ErrorKind;
-use std::path::Path;
+use std::fmt::{Display, Formatter};
+use std::fs::{File, OpenOptions, metadata, rename};
+use std::io::{BufReader, BufWriter, Error, ErrorKind, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::{debug, error, warn};
+use url::Url;
 
 macro_rules! strs {
     ($($e:expr),*$(,)?) => {
@@ -512,6 +515,83 @@ impl KeyManager {
         });
     }
 
+    pub fn move_to_attic(
+        center: &Arc<Center>,
+        attic_path: Utf8PathBuf,
+        zone: &Arc<Zone>,
+    ) -> Result<(), ZoneRemoveError> {
+        // Load the state file to make sure it exists and to get
+        // access to the keys.
+        let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
+        let keyset_state = std::fs::read_to_string(&state_path)
+            .map_err(|e| KeySetToAtticError {
+                err: format!("unable to read from {}: {e}", state_path),
+            })
+            .and_then(|state| {
+                serde_json::from_str::<KeySetState>(&state).map_err(|e| KeySetToAtticError {
+                    err: format!("loading keyset state failed: {e}"),
+                })
+            });
+
+        let keyset_state = match keyset_state {
+            Err(e) => {
+                warn!(
+                    "{}",
+                    format!("unable to load keyset config for zone {}: {e}", zone.name)
+                );
+                return Ok(());
+            }
+            Ok(s) => s,
+        };
+
+        for (k, v) in keyset_state.keyset.keys() {
+            if v.decoupled() {
+                // Don't touch these keys.
+                continue;
+            }
+            if let Some(priv_key_name) = v.privref() {
+                let priv_url = Url::parse(priv_key_name).expect("valid URL expected");
+                if priv_url.scheme() == "file" {
+                    let filename = priv_url.path();
+                    let path = Utf8Path::new(filename);
+                    let basename = path.file_name().expect("filename should exist");
+                    let target = attic_path.join(basename);
+                    rename(filename, &target).map_err(|e| ZoneRemoveError::Other {
+                        err: format!("rename from {} to {} failed: {e}", filename, target),
+                    })?;
+                }
+            }
+            let pub_url = Url::parse(k).expect("valid URL expected");
+            if pub_url.scheme() == "file" {
+                let filename = pub_url.path();
+                let path = Utf8Path::new(filename);
+                rename_to_dir(path, &attic_path).map_err(|e| ZoneRemoveError::Other {
+                    err: format!(
+                        "rename from {} to directory {} failed: {e}",
+                        filename, attic_path
+                    ),
+                })?;
+            }
+        }
+
+        let cfg_path = mk_dnst_keyset_cfg_file_path(&center.config.keys_dir, &zone.name);
+        rename_to_dir(&cfg_path, &attic_path).map_err(|e| ZoneRemoveError::Other {
+            err: format!(
+                "rename from {} to directory {} failed: {e}",
+                cfg_path, attic_path
+            ),
+        })?;
+
+        rename_to_dir(&state_path, &attic_path).map_err(|e| ZoneRemoveError::Other {
+            err: format!(
+                "rename from {} to directory {} failed: {e}",
+                state_path, attic_path
+            ),
+        })?;
+
+        Ok(())
+    }
+
     async fn register_zone(
         center: &Arc<Center>,
         name: Name<Bytes>,
@@ -773,6 +853,12 @@ pub fn mk_dnst_keyset_state_file_path(keys_dir: &Utf8Path, name: &Name<Bytes>) -
     // don't handle characters that are legal in zone names but not in
     // file names.
     keys_dir.join(format!("{}.state", name.to_string().to_lowercase()))
+}
+
+fn rename_to_dir(from: &Utf8Path, to_dir: &Utf8PathBuf) -> Result<(), Error> {
+    let basename = from.file_name().expect("filename should exist");
+    let target = to_dir.join(basename);
+    rename(from, &target)
 }
 
 //------------ KeySetInfo ----------------------------------------------------
@@ -1122,6 +1208,16 @@ pub struct KeySetCommandError {
 impl From<KeySetCommandError> for String {
     fn from(err: KeySetCommandError) -> Self {
         err.err
+    }
+}
+
+pub struct KeySetToAtticError {
+    err: String,
+}
+
+impl Display for KeySetToAtticError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.err)
     }
 }
 

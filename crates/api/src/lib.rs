@@ -393,6 +393,7 @@ pub enum ZoneRemoveError {
     NotFound,
     NotInMaintenanceMode,
     NotPassiveOrHalted,
+    Other { err: String },
 }
 
 impl fmt::Display for ZoneRemoveError {
@@ -401,6 +402,7 @@ impl fmt::Display for ZoneRemoveError {
             Self::NotFound => "no such zone was found",
             Self::NotInMaintenanceMode => "the zone is not in maintenance mode",
             Self::NotPassiveOrHalted => "the zone is not in passive/hard-halt state",
+            Self::Other { err } => err,
         })
     }
 }

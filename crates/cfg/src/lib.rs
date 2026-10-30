@@ -43,6 +43,9 @@ pub struct Config {
     /// Path to the directory where the keys should be stored.
     pub keys_dir: Box<Utf8Path>,
 
+    /// Path to the directory where the removed zone keys are stored.
+    pub attic_dir: Box<Utf8Path>,
+
     /// Remote control configuration.
     pub remote_control: RemoteControlConfig,
 
@@ -75,6 +78,7 @@ impl Default for Config {
             zone_state_dir: "/var/lib/cascade/zone-state".into(),
             tsig_store_path: "/var/lib/cascade/tsig-keys.db".into(),
             keys_dir: "/var/lib/cascade/keys".into(),
+            attic_dir: "/var/lib/cascade/attic".into(),
             dnst_binary_path: "dnst".into(),
             kmip_credentials_store_path: "/var/lib/cascade/kmip-credentials.db".into(),
             remote_control: Default::default(),
