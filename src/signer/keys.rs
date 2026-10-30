@@ -346,7 +346,7 @@ impl KeyPair {
                 let mut server_cert = None;
                 let mut ca_cert = None;
 
-                // Helper fn to convert error type.i
+                // Helper fn to convert error type.
                 fn error_mapper<T: ToString>(path: Utf8PathBuf, error: T) -> Box<LoadError> {
                     Box::new(LoadError::KmipClientCredentials {
                         path: path.into_boxed_path(),
