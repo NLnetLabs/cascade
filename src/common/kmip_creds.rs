@@ -23,11 +23,6 @@ use crate::util::write_file;
 ///
 /// Note: This format is shared with `dnst keyset`. Changes to this struct or
 /// its (de)serialization need to be coordinated with `dnst keyset`.
-//
-// TODO: Maybe rename this to KmipUsernameAndPassword? I didn't do that yet
-// as this same struct appears with the same name in `dnst keyset` code. Maybe
-// "shared" should be in the name to signal its shared nature with
-// `dnst keyset`?
 #[derive(Debug, Deserialize, Serialize)]
 pub struct KmipClientCredentials {
     /// KMIP username credential.
