@@ -1765,7 +1765,8 @@ impl HttpServer {
                 })?;
         }
 
-        // Construct the KMIP server related state.
+        // Construct the KMIP server related state as much as possible, then
+        // fill in the mTLS data paths below once we know them.
         let mut kmip = KmipServerState::from(req.clone());
 
         // Save any mTLS data files to disk and register the written paths
