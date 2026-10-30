@@ -71,7 +71,7 @@ impl Hsm {
                 let ca_cert = read_binary_file(ca_cert_path.as_ref()).map_err(|e| e.to_string())?;
 
                 println!("Requesting addition of KMIP server '{server_id}'.");
-                println!("Please wait while we verify the connection to the server.");
+                println!("Please wait while the connection to the server is verified.");
                 let res: Result<HsmServerAddResult, HsmServerAddError> = client
                     .post_json_with(
                         "kmip",
