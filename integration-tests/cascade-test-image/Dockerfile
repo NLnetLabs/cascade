@@ -55,8 +55,8 @@ RUN <<EOF
   # Install dnst.
   # TODO: Switch installing release builds via apt-get install once a dnst
   # release with keyset functionality has been released.
-  cargo install --debug --git https://github.com/nlnetlabs/dnst --branch support-kmip-sni --root /root/cargo-debug --locked --bin=dnst dnst
-  cargo install --git https://github.com/nlnetlabs/dnst --branch support-kmip-sni --root /root/cargo-release --locked --bin=dnst dnst
+  cargo install --debug --git https://github.com/nlnetlabs/dnst --branch main --root /root/cargo-debug --locked --bin=dnst dnst
+  cargo install --git https://github.com/nlnetlabs/dnst --branch main --root /root/cargo-release --locked --bin=dnst dnst
 EOF
 
 RUN <<EOF
