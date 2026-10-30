@@ -159,6 +159,14 @@ Server Certificate Verification:
              This argument `is not yet used <https://github.com/NLnetLabs/cascade/issues/982>`_
              by Cascade.
 
+.. option:: --server-name <SERVER_NAME>
+
+          Optional name to send as TLS Server Name Indication (SNI) name.
+
+          Use this option when your KMIP server has a certificate for a
+          different name than the IP_HOST_OR_FQDN value that you are using
+          so that the server can select the correct certificate to present. 
+
 .. option:: --ca-cert <CA_CERT_PATH>
 
           Optional path to a TLS PEM certificate for a Certificate Authority.

@@ -75,7 +75,12 @@ branch = "main"
 # It is maintained by us (NLnet Labs).
 [workspace.dependencies.domain-kmip]
 git = "https://github.com/NLnetLabs/domain-kmip"
-branch = "main"
+branch = "more-algorithm-support-and-fixes-and-cleanup"
+# domain-kmip uses RustLS with the default aws-lc-rs crypto backend. To avoid
+# using ring and openssl AND aws-lc-rs, tell domain-kmip to use the ring
+# feature of kmip-protocol so that it will use the ring feature of rustls.
+default-features = false
+features = ["ring"]
 
 # Cascade contains many performance-sensitive hashmaps and is not expected to
 # be accessible to attackers.  'std's default hasher, which is slow but secure
@@ -219,7 +224,6 @@ features = [
 
 [dependencies.domain-kmip]
 workspace = true
-features = []
 
 [dependencies.tokio]
 workspace = true
