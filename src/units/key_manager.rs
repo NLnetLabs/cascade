@@ -1355,7 +1355,7 @@ impl KeySetCommand {
     ) -> Self {
         let cfg_path = mk_dnst_keyset_cfg_file_path(&keys_dir, &name);
         let mut cmd = std::process::Command::new(dnst_binary_path.as_std_path());
-        cmd.arg("keyset").arg("-c").arg(&cfg_path);
+        cmd.arg("keyset").arg("--cascade").arg("-c").arg(&cfg_path);
         Self {
             cmd: Some(AsyncHistoricalCommand::new(cmd)),
             name,
