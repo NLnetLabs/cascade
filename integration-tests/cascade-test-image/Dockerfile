@@ -61,8 +61,8 @@ EOF
 
 RUN <<EOF
   # Install cascade-hsm-bridge
-  cargo install --debug --git https://github.com/nlnetlabs/cascade-hsm-bridge --rev c91accb3 --root /root/cargo-debug --locked
-  cargo install --git https://github.com/nlnetlabs/cascade-hsm-bridge --rev c91accb3 --root /root/cargo-release --locked
+  cargo install --debug --git https://github.com/nlnetlabs/cascade-hsm-bridge --tag v0.2.0-beta1 --root /root/cargo-debug --locked
+  cargo install --git https://github.com/nlnetlabs/cascade-hsm-bridge --tag v0.2.0-beta1 --root /root/cargo-release --locked
 EOF
 
 RUN <<EOF
