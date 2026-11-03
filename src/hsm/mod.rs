@@ -5,7 +5,6 @@ use std::{
     time::Duration,
 };
 
-use camino::Utf8PathBuf;
 use cascade_api::HsmServerAdd;
 use serde::{Deserialize, Serialize};
 
@@ -63,11 +62,7 @@ pub struct KmipServerState {
     pub ip_host_or_fqdn: String,
     pub port: u16,
     pub insecure: bool,
-    pub client_cert_path: Option<Utf8PathBuf>,
-    pub client_key_path: Option<Utf8PathBuf>,
-    pub server_cert_path: Option<Utf8PathBuf>,
     pub server_name: Option<String>,
-    pub ca_cert_path: Option<Utf8PathBuf>,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub write_timeout: Duration,
@@ -79,6 +74,12 @@ pub struct KmipServerState {
 
 impl From<HsmServerAdd> for KmipServerState {
     fn from(srv: HsmServerAdd) -> Self {
+        let has_credentials = srv.username.is_some()
+            || srv.password.is_some()
+            || srv.client_cert.is_some()
+            || srv.client_key.is_some()
+            || srv.server_cert.is_some()
+            || srv.ca_cert.is_some();
         KmipServerState {
             server_id: srv.server_id,
             ip_host_or_fqdn: srv.ip_host_or_fqdn,
@@ -91,16 +92,7 @@ impl From<HsmServerAdd> for KmipServerState {
             max_response_bytes: srv.max_response_bytes,
             key_label_prefix: srv.key_label_prefix,
             key_label_max_bytes: srv.key_label_max_bytes,
-            has_credentials: srv.username.is_some(),
-
-            // mTLS certificate/key paths cannot be set as HsmServerAdd has
-            // their byte content, not file paths. These should be filled in
-            // once the bytes have been written to disk and the paths to the
-            // resulting files are known, so we set them to None for now.
-            client_cert_path: None,
-            client_key_path: None,
-            server_cert_path: None,
-            ca_cert_path: None,
+            has_credentials,
         }
     }
 }

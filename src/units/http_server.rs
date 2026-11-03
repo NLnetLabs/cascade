@@ -37,10 +37,6 @@ use crate::api::*;
 use crate::center;
 use crate::center::Center;
 use crate::center::get_zone;
-use crate::common::kmip_creds::KmipClientCredentials;
-use crate::common::kmip_creds::KmipCredentialsManager;
-use crate::common::kmip_creds::KmipMtlsAuthData;
-use crate::common::kmip_creds::KmipServerCredentialsFileMode;
 use crate::hsm::Hsm;
 use crate::hsm::HsmState;
 use crate::hsm::KmipServerState;
@@ -52,6 +48,9 @@ use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
 use crate::server::SignedReviewServer;
 use crate::tsig::{self, RemoveError};
+use crate::units::key_manager::KmipCredentials;
+use crate::units::key_manager::KmipCredentialsFile;
+use crate::units::key_manager::KmipCredentialsFileMode;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
@@ -1742,62 +1741,32 @@ impl HttpServer {
             .vendor_identification
             .unwrap_or("Anonymous HSM vendor".to_string());
 
-        let mut creds_mgr = KmipCredentialsManager::new(
-            kmip_credentials_store_path.as_std_path(),
-            KmipServerCredentialsFileMode::CreateReadWrite,
-        )
-        .map_err(
-            |err| HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
-                err: err.to_string(),
-            },
-        )?;
-
-        if let Some(username) = conn_settings.username {
-            let creds = KmipClientCredentials {
-                username: username.clone(),
-                password: conn_settings.password.clone(),
-            };
-            let _ = creds_mgr.insert(server_id, creds);
-            creds_mgr
+        // Add any credentials to the credentials store.
+        let creds = KmipCredentials {
+            username: conn_settings.username,
+            password: conn_settings.password,
+            client_certificate: conn_settings.client_cert.map(Into::into),
+            server_certificate: conn_settings.server_cert,
+            ca_certificate: conn_settings.ca_cert,
+        };
+        if creds.has_credentials() {
+            let mut creds_file = KmipCredentialsFile::new(
+                kmip_credentials_store_path.as_std_path(),
+                KmipCredentialsFileMode::CreateReadWrite,
+            )
+            .map_err(|err| HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting { err })?;
+            let _ = creds_file.insert(server_id, creds);
+            creds_file
                 .save()
                 .map_err(|err| HsmServerAddError::CredentialsFileCouldNotBeSaved {
                     err: err.to_string(),
                 })?;
         }
 
-        // Construct the KMIP server related state as much as possible, then
-        // fill in the mTLS data paths below once we know them.
-        let mut kmip = KmipServerState::from(req.clone());
-
-        // Save any mTLS data files to disk and register the written paths
-        // in state.
-        if let Some(bytes) = req.client_cert {
-            kmip.client_cert_path = Some(
-                creds_mgr
-                    .save_mtls_data(&req.server_id, KmipMtlsAuthData::ClientCertificate(&bytes))?,
-            );
-        }
-        if let Some(bytes) = req.client_key {
-            kmip.client_key_path = Some(
-                creds_mgr.save_mtls_data(&req.server_id, KmipMtlsAuthData::ClientKey(&bytes))?,
-            );
-        }
-        if let Some(bytes) = req.server_cert {
-            kmip.server_cert_path = Some(
-                creds_mgr
-                    .save_mtls_data(&req.server_id, KmipMtlsAuthData::ServerCertificate(&bytes))?,
-            );
-        }
-        if let Some(bytes) = req.ca_cert {
-            kmip.ca_cert_path = Some(
-                creds_mgr
-                    .save_mtls_data(&req.server_id, KmipMtlsAuthData::CaCertificate(&bytes))?,
-            );
-        }
-
         // Register the HSM in global state.
         {
             let name: Box<str> = req.server_id.as_str().into();
+            let kmip = KmipServerState::from(req);
             let hsm = Hsm {
                 state: Mutex::new(HsmState { kmip }),
             };

@@ -175,14 +175,15 @@ use core::time::Duration;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::rdata::dnssec::Timestamp;
-use serde::Deserialize;
+use domain_kmip::dep::kmip_protocol::net::ClientCertificate as KmipClientCertificate;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env::{VarError, var};
 use std::ffi::OsStr;
 use std::fmt::{Display, Formatter};
-use std::fs::{metadata, rename};
-use std::io::{Error, ErrorKind};
-use std::path::Path;
+use std::fs::{File, OpenOptions, metadata, rename};
+use std::io::{BufReader, BufWriter, Error, ErrorKind, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -1091,6 +1092,296 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
     cmds
 }
 
+//============ KMIP Credential Management ====================================
+
+//------------ KmipClientCertificate -----------------------------------------
+
+/// Certificate details in various supported formats for use with TLS client authentication.
+///
+/// A re-implementation of kmip_protocol::net::ClientCertificate with
+/// (de)serialization support.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ClientCertificate {
+    SeparatePem {
+        cert_bytes: Vec<u8>,
+        key_bytes: Vec<u8>,
+    },
+    CombinedPkcs12 {
+        cert_bytes: Vec<u8>,
+    },
+}
+
+impl From<KmipClientCertificate> for ClientCertificate {
+    fn from(c: KmipClientCertificate) -> Self {
+        match c {
+            KmipClientCertificate::SeparatePem {
+                cert_bytes,
+                key_bytes,
+            } => Self::SeparatePem {
+                cert_bytes,
+                key_bytes,
+            },
+            KmipClientCertificate::CombinedPkcs12 { cert_bytes } => {
+                Self::CombinedPkcs12 { cert_bytes }
+            }
+        }
+    }
+}
+
+impl From<ClientCertificate> for KmipClientCertificate {
+    fn from(c: ClientCertificate) -> Self {
+        match c {
+            ClientCertificate::SeparatePem {
+                cert_bytes,
+                key_bytes,
+            } => KmipClientCertificate::SeparatePem {
+                cert_bytes,
+                key_bytes,
+            },
+            ClientCertificate::CombinedPkcs12 { cert_bytes } => {
+                KmipClientCertificate::CombinedPkcs12 { cert_bytes }
+            }
+        }
+    }
+}
+
+//------------ KmipCredentials -----------------------------------------------
+
+/// Credentials for connecting to a KMIP server.
+///
+/// Intended to be read from a JSON file stored separately to the main
+/// configuration so that separate security policy can be applied to sensitive
+/// credentials.
+// Copied from dnst keyset. TODO: Share the code via a separate Rust crate.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct KmipCredentials {
+    /// KMIP username credential.
+    ///
+    /// Mandatory if the KMIP "Credential Type" is "Username and Password".
+    ///
+    /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
+    pub username: Option<String>,
+
+    /// KMIP password credential.
+    ///
+    /// Optional when KMIP "Credential Type" is "Username and Password".
+    ///
+    /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub password: Option<String>,
+
+    /// Optional path to a TLS certificate to authenticate to the KMIP server
+    /// with.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub client_certificate: Option<ClientCertificate>,
+
+    /// Optional path to a TLS PEM certificate for the server.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub server_certificate: Option<Vec<u8>>,
+
+    /// Optional path to a TLS PEM certificate for a Certificate Authority.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub ca_certificate: Option<Vec<u8>>,
+}
+
+impl KmipCredentials {
+    pub fn has_credentials(&self) -> bool {
+        self.username.is_some()
+            || self.password.is_some()
+            || self.client_certificate.is_some()
+            || self.server_certificate.is_some()
+            || self.ca_certificate.is_some()
+    }
+}
+
+//------------ KmipCredentialSet ---------------------------------------------
+
+/// A set of KMIP server credentials.
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct KmipCredentialsSet(HashMap<String, KmipCredentials>);
+
+//------------ KmipClientCredentialsFileMode ---------------------------------
+
+/// The access mode to use when accessing a credentials file.
+#[derive(Debug)]
+pub enum KmipCredentialsFileMode {
+    /// Open an existing credentials file for reading. Saving will fail.
+    ReadOnly,
+
+    /// Open an existing credentials file for reading and writing.
+    #[expect(dead_code)]
+    ReadWrite,
+
+    /// Open or create the credentials file for reading and writing.
+    CreateReadWrite,
+}
+
+//--- impl Display
+
+impl std::fmt::Display for KmipCredentialsFileMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KmipCredentialsFileMode::ReadOnly => write!(f, "read-only"),
+            KmipCredentialsFileMode::ReadWrite => write!(f, "read-write"),
+            KmipCredentialsFileMode::CreateReadWrite => write!(f, "create-read-write"),
+        }
+    }
+}
+
+//------------ KmipCredentialsFile -------------------------------------------
+
+/// A KMIP server credential set file.
+#[derive(Debug)]
+pub struct KmipCredentialsFile {
+    /// The file from which the credentials were loaded, and will be saved
+    /// back to.
+    file: File,
+
+    /// The path from which the file was loaded. Used for generating error
+    /// messages.
+    path: PathBuf,
+
+    /// The actual set of loaded credentials.
+    credentials: KmipCredentialsSet,
+
+    /// The read/write/create mode.
+    #[allow(dead_code)]
+    mode: KmipCredentialsFileMode,
+}
+
+impl KmipCredentialsFile {
+    /// Load credentials from disk.
+    ///
+    /// Optionally:
+    ///   - Create the file if missing.
+    ///   - Keep the file open for writing back changes. See [`Self::save()`].
+    pub fn new(path: &Path, mode: KmipCredentialsFileMode) -> Result<Self, String> {
+        let (read, write, create) = match mode {
+            KmipCredentialsFileMode::ReadOnly => (true, false, false),
+            KmipCredentialsFileMode::ReadWrite => (true, true, false),
+            KmipCredentialsFileMode::CreateReadWrite => (true, true, true),
+        };
+
+        let file = OpenOptions::new()
+            .read(read)
+            .write(write)
+            .create(create)
+            .truncate(false)
+            .open(path)
+            .map_err(|e| {
+                format!(
+                    "unable to open KMIP credentials file {} in {mode} mode: {e}",
+                    path.display()
+                )
+            })?;
+
+        // Determine the length of the file as JSON parsing fails if the file
+        // is completely empty.
+        let len = file.metadata().map(|m| m.len()).map_err(|e| {
+            format!(
+                "unable to query metadata of KMIP credentials file {}: {e}",
+                path.display()
+            )
+        })?;
+
+        // Buffer reading as apparently JSON based file reading is extremely
+        // slow without buffering, even for small files.
+        let mut reader = BufReader::new(&file);
+
+        // Load or create the credential set.
+        let credentials: KmipCredentialsSet = if len > 0 {
+            serde_json::from_reader(&mut reader).map_err(|e| {
+                format!(
+                    "error loading KMIP credentials file {:?}: {e}\n",
+                    path.display()
+                )
+            })?
+        } else {
+            KmipCredentialsSet::default()
+        };
+
+        // Save the path for use in generating error messages.
+        let path = path.to_path_buf();
+
+        Ok(KmipCredentialsFile {
+            file,
+            path,
+            credentials,
+            mode,
+        })
+    }
+
+    /// Write the credential set back to the file it was loaded from.
+    pub fn save(&mut self) -> std::io::Result<()> {
+        // Ensure that writing happens at the start of the file.
+        self.file.seek(SeekFrom::Start(0))?;
+
+        // Use a buffered writer as writing JSON to a file directly is
+        // apparently very slow, even for small files.
+        //
+        // Enclose the use of the BufWriter in a block so that it is
+        // definitely no longer using the file when we next act on it.
+        {
+            let mut writer = BufWriter::new(&self.file);
+            serde_json::to_writer_pretty(&mut writer, &self.credentials).map_err(|e| {
+                std::io::Error::other(format!(
+                    "error writing KMIP credentials file {}: {e}",
+                    self.path.display()
+                ))
+            })?;
+
+            // Ensure that the BufWriter is flushed as advised by the
+            // BufWriter docs.
+            writer.flush()?;
+        }
+
+        // Truncate the file to the length of data we just wrote..
+        let pos = self.file.stream_position()?;
+        self.file.set_len(pos)?;
+
+        // Ensure that any write buffers are flushed.
+        self.file.flush()?;
+
+        Ok(())
+    }
+
+    /// Does this credential set include credentials for the specified KMIP
+    /// server.
+    #[expect(dead_code)]
+    pub fn contains(&self, server_id: &str) -> bool {
+        self.credentials.0.contains_key(server_id)
+    }
+
+    pub fn get(&self, server_id: &str) -> Option<&KmipCredentials> {
+        self.credentials.0.get(server_id)
+    }
+
+    /// Add credentials for the specified KMIP server, replacing any that
+    /// previously existed for the same server.-
+    ///
+    /// Returns any previous configuration if found.
+    pub fn insert(
+        &mut self,
+        server_id: String,
+        credentials: KmipCredentials,
+    ) -> Option<KmipCredentials> {
+        self.credentials.0.insert(server_id, credentials)
+    }
+
+    /// Remove any existing configuration for the specified KMIP server.
+    ///
+    /// Returns any previous configuration if found.
+    #[expect(dead_code)]
+    pub fn remove(&mut self, server_id: &str) -> Option<KmipCredentials> {
+        self.credentials.0.remove(server_id)
+    }
+
+    #[expect(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.credentials.0.is_empty()
+    }
+}
+
 /// A process command that doesn't block and records events in history.
 struct AsyncHistoricalCommand {
     cmd: std::process::Command,
@@ -1357,10 +1648,6 @@ fn keyset_kmip_add_server_cmd(
         port,
         insecure,
         server_name,
-        client_cert_path,
-        client_key_path,
-        server_cert_path,
-        ca_cert_path,
         connect_timeout,
         read_timeout,
         write_timeout,
@@ -1400,23 +1687,9 @@ fn keyset_kmip_add_server_cmd(
         ]);
     }
 
-    if let Some(path) = client_cert_path {
-        args.append(&mut strs!["--client-cert", path]);
-    }
-    if let Some(path) = client_key_path {
-        args.append(&mut strs!["--client-key", path]);
-    }
-    if let Some(path) = server_cert_path {
-        args.append(&mut strs!["--server-cert", path]);
-    }
     if let Some(server_name) = server_name {
         args.append(&mut strs!["--server-name", server_name]);
     }
-    if let Some(path) = ca_cert_path {
-        args.append(&mut strs!["--ca-cert", path]);
-    }
-
-    // TODO: Handle TLS server name.
 
     if let Some(key_label_prefix) = key_label_prefix {
         args.append(&mut strs!["--key-label-prefix", key_label_prefix]);

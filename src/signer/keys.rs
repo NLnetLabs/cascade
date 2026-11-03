@@ -8,7 +8,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 use domain::{
     base::{Name, Record, iana::SecurityAlgorithm},
     crypto::sign::{BindFormatError, SecretKeyBytes, SignError, SignRaw, Signature},
@@ -21,7 +21,7 @@ use domain::{
 use domain_kmip::{
     KeyUrl,
     dep::kmip_protocol::net::{
-        ClientCertificate, ConnectionSettings,
+        ConnectionSettings,
         sync_pool::{ConnPool, ConnectionManager, KmipConnError},
     },
 };
@@ -29,10 +29,12 @@ use tracing::{debug, error, warn};
 use url::Url;
 
 use crate::{
-    common::kmip_creds::{KmipCredentialsManager, KmipServerCredentialsFileMode},
     hsm::{HsmStore, KmipServerState},
     signer::status::SigningStatusPerZone,
-    units::zone_signer::KeySetState,
+    units::{
+        key_manager::{KmipCredentialsFile, KmipCredentialsFileMode},
+        zone_signer::KeySetState,
+    },
 };
 
 //----------- ZoneSigningKeys --------------------------------------------------
@@ -302,10 +304,6 @@ impl KeyPair {
                     port,
                     insecure,
                     server_name,
-                    client_cert_path,
-                    client_key_path,
-                    server_cert_path,
-                    ca_cert_path,
                     connect_timeout,
                     read_timeout,
                     write_timeout,
@@ -316,11 +314,15 @@ impl KeyPair {
 
                 let mut username = None;
                 let mut password = None;
+                let mut client_cert = None;
+                let mut server_cert = None;
+                let mut ca_cert = None;
+
                 if has_credentials {
                     let creds_path = &config.kmip_credentials_store_path;
-                    let creds_file = KmipCredentialsManager::new(
+                    let creds_file = KmipCredentialsFile::new(
                         creds_path.as_std_path(),
-                        KmipServerCredentialsFileMode::ReadOnly,
+                        KmipCredentialsFileMode::ReadOnly,
                     )
                     .map_err(|error| {
                         Box::new(LoadError::KmipClientCredentials {
@@ -336,49 +338,11 @@ impl KeyPair {
                         })
                     })?;
 
-                    username = Some(creds.username.clone());
+                    username = creds.username.clone();
                     password = creds.password.clone();
-                }
-
-                // Load mTLS certificate and key content from the specified
-                // paths.
-                let mut client_cert = None;
-                let mut server_cert = None;
-                let mut ca_cert = None;
-
-                // Helper fn to convert error type.
-                fn error_mapper<T: ToString>(path: Utf8PathBuf, error: T) -> Box<LoadError> {
-                    Box::new(LoadError::KmipClientCredentials {
-                        path: path.into_boxed_path(),
-                        error: error.to_string(),
-                    })
-                }
-
-                if let Some(path) = client_cert_path {
-                    let cert_bytes = KmipCredentialsManager::load_mtls_data(&path)
-                        .map_err(|err| error_mapper(path, err))?;
-                    if let Some(path) = client_key_path {
-                        let key_bytes = KmipCredentialsManager::load_mtls_data(&path)
-                            .map_err(|err| error_mapper(path, err))?;
-                        client_cert = Some(ClientCertificate::SeparatePem {
-                            cert_bytes,
-                            key_bytes,
-                        });
-                    } else {
-                        client_cert = Some(ClientCertificate::CombinedPkcs12 { cert_bytes });
-                    }
-                }
-                if let Some(path) = server_cert_path {
-                    server_cert = Some(
-                        KmipCredentialsManager::load_mtls_data(&path)
-                            .map_err(|err| error_mapper(path, err))?,
-                    );
-                }
-                if let Some(path) = ca_cert_path {
-                    ca_cert = Some(
-                        KmipCredentialsManager::load_mtls_data(&path)
-                            .map_err(|err| error_mapper(path, err))?,
-                    );
+                    client_cert = creds.client_certificate.clone().map(Into::into);
+                    server_cert = creds.server_certificate.clone();
+                    ca_cert = creds.ca_certificate.clone();
                 }
 
                 // Test the connection.
@@ -388,10 +352,10 @@ impl KeyPair {
                     username,
                     password,
                     insecure,
-                    client_cert,
-                    server_cert,
+                    client_cert: client_cert,
+                    server_cert: server_cert,
                     server_name: server_name.clone(),
-                    ca_cert,
+                    ca_cert: ca_cert,
                     connect_timeout: Some(connect_timeout),
                     read_timeout: Some(read_timeout),
                     write_timeout: Some(write_timeout),
