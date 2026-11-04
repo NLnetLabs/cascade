@@ -71,18 +71,11 @@ RUN <<EOF
   softhsm2-util --init-token --label Cascade --pin 1234 --so-pin 1234 --free
 EOF
 
-# Copy source files into container in case we need to build from source
-COPY etc/ /cascade/etc/
-COPY Cargo.toml Cargo.lock build.rs /cascade/
-COPY src/ /cascade/src/
-COPY crates/ /cascade/crates/
-
-# Copy built the cascade binaries into the container
-# Make sure this stays at the end of the Dockerfile to make best use of image step caching
-COPY target/release/cascaded target/release/cascade /root/cargo-release/bin/
-COPY target/debug/cascaded target/debug/cascade /root/cargo-debug/bin/
-
 ARG REBUILD_INSIDE=false
+
+# Copy source files into container in case we need to build from source
+# See `.dockerignore` for includes/excludes
+COPY . /cascade/
 
 RUN <<EOF
   if [[ "$REBUILD_INSIDE" == true ]]; then

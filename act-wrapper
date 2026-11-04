@@ -132,9 +132,29 @@ if [[ "$no_build" != true ]]; then
 	if [[ "$build_inside" != true ]]; then
 		cargo build
 		cargo build --release
+
+		# Limit the local context exposed to Docker to improve caching.
+		context_dir="integration-tests/cascade-test-image"
+
+		# Mount the built binaries directly into `act`'s containers.
+		volume_opts=(
+			"-v" "$PWD/target/debug/cascade:/root/cargo-debug/bin/cascade"
+			"-v" "$PWD/target/debug/cascaded:/root/cargo-debug/bin/cascaded"
+			"-v" "$PWD/target/release/cascade:/root/cargo-release/bin/cascade"
+			"-v" "$PWD/target/release/cascaded:/root/cargo-release/bin/cascaded"
+		)
+		volume_opts="${volume_opts[@]}" # concatenate into a single string
+		act_args+=(--container-options "$volume_opts")
+	else
+		# Give Docker access to the local context for compiling Cascade inside.
+		context_dir="."
 	fi
 
-	docker buildx build . -f integration-tests/cascade-test-image/Dockerfile -t nlnetlabs/cascade-tests-runner --build-arg MSRV=$MSRV "${args[@]}"
+	docker buildx build \
+		$context_dir -f integration-tests/cascade-test-image/Dockerfile \
+		-t nlnetlabs/cascade-tests-runner \
+		--build-arg MSRV=$MSRV \
+		"${args[@]}"
 	echo "Built Cascade integration test runner based on local repository."
 fi
 
