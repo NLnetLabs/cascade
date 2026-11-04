@@ -107,9 +107,18 @@ pub enum ZoneCommand {
         maintenance: Maintenance,
     },
 
-    /// Set the variable "last-signed-serial". This affects the next serial
-    /// directly (in case of the counter policy) or affects whether the
-    /// next serial is considered larger than the previous serial.
+    /// Set the variable "last-signed-serial".
+    ///
+    /// In case of counter policy,
+    /// this causes the serial number of the next signed zone to be
+    /// the "last-signed-serial" plus one. For date-counter,
+    /// if "last-signed-serial" is the current day, then the serial number of
+    /// the next signed zone will be one higher.
+    ///
+    /// It also affects whether the next serial is considered larger than
+    /// the previous serial. This can make a difference when switching
+    /// serial policies or (in the case of the keep policy) when the
+    /// serial number of the unsigned zone went backwards.
     #[command(name = "set-last-signed-serial")]
     SetLastSignedSerial {
         /// The name of the zone.
