@@ -1,9 +1,6 @@
 Frequently Asked Questions
 ==========================
 
-.. contents::
-   :local:
-
 ..
   Frequently asked questions should be questions that actually got asked.
   Formulate them as a question and an answer.
@@ -94,13 +91,13 @@ Can I build Cascade with LibreSSL?
 No, OpenSSL 3.x is required as these versions fully support Edwards-curve
 Digital Security Algorithm (EdDSA) keys and signatures using the Ed448 curve
 (DNSSEC algorithm 16). By contrast, LibreSSL `does not yet have support
-<https://github.com/libressl/portable/issues/552>`_ for Ed448. 
+<https://github.com/libressl/portable/issues/552>`_ for Ed448.
 
 Ed448 was standardized for use with DNSSEC in February 2017 (:RFC:`8080`) and
-has been a RECOMMENDED algorithm since June 2019 (:RFC:`8624`). 
+has been a RECOMMENDED algorithm since June 2019 (:RFC:`8624`).
 
 .. seealso::
 
    :ref:`Install OpenSSL <building:openssl>`
       Installing OpenSSL on common distributions, such as Debian, Ubuntu and
-      Red Hat Enterprise Linux. 
+      Red Hat Enterprise Linux.
