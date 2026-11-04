@@ -826,7 +826,7 @@ pub struct Info {
     pub version: String,
 }
 
-/// The result of a `zone reset` command.
+/// The result of a `zone set-last-signed-serial` command.
 pub type SetLastSignedSerialResult = Result<(), SetLastSignedSerialError>;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
