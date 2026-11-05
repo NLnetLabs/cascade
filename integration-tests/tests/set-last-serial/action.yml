@@ -1,0 +1,98 @@
+# Making reusable composite actions documented at
+# https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#creating-a-composite-action-within-the-same-repository
+name: 'Test unsigned review server'
+description: 'Test unsigned review server.'
+defaults:
+  # see: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#defaultsrunshell
+  run:
+    shell: bash --noprofile --norc -eo pipefail -x {0}
+inputs:
+  log-level:
+    description: The level of logging that Cascade should output.
+    required: false
+    default: debug
+    type: choice
+    options:
+      - error
+      - warning
+      - info
+      - debug
+      - trace
+  test_idx:
+    required: true
+    type: integer
+  key:
+    required: true
+    type: string
+runs:
+  using: "composite"
+  steps:
+    # Don't prepare the system test environment as that sets up NSD, BIND and
+    # Unbound which we don't need and takes a long time compared to the rest
+    # of the test.
+    # - uses: ./.github/actions/prepare-systest-env
+    - uses: ./.github/actions/setup-and-start-cascade
+      with:
+        log-level: ${{ inputs.log-level }}
+        fake-time: 1600000000
+
+    - name: Add policy
+      id: add-policy
+      run: |
+        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        INTEGRATION_TEST_DIR="${PWD}/integration-tests/set-last-serial"
+
+        # Copy the new test policy into the Cascade policy directory.
+        cp "${INTEGRATION_TEST_DIR}/policies/counter.toml" "${POLICY_DIR}/"
+        cascade policy reload
+
+    - name: Load the test zone
+      run: |
+        TEST_DIR="${PWD}/integration-tests/set-last-serial"
+        ZONE_FILE="${TEST_DIR}/zones/serial0.zone"
+        KEY_FILE="${TEST_DIR}/keys/Kexample.+015+02835.key"
+        cp "${ZONE_FILE}"  example.in
+        cascade zone add --source example.in --policy counter --import-csk-file "${KEY_FILE}" example
+
+    - name: Wait for the zone to be signed
+      run: |
+        serial="1"
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 4542 example SOA | grep $serial; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: published SOA does not contain $serial"
+            cat /tmp/hook.out
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Set last signed serial
+      run: |
+        cascade zone set-last-signed-serial example 42
+
+    - name: Load the next test zone
+      run: |
+        TEST_DIR="${PWD}/integration-tests/set-last-serial"
+        ZONE_FILE="${TEST_DIR}/zones/serial1.zone"
+        cp "${ZONE_FILE}"  example.in
+        cascade zone reload example
+
+    - name: Wait for the zone to be signed
+      run: |
+        serial="43"
+        timeout=10 # seconds
+        start=$(date +%s)
+        until dig +short @127.0.0.1 -p 4542 example SOA | grep $serial; do
+          if (($(date +%s) > (start + timeout))); then
+            echo "::error:: timeout: published SOA does not contain $serial"
+            cat /tmp/hook.out
+            exit 1
+          fi
+          sleep 1
+        done
+
+    - name: Print log files on any failure in this job
+      uses: ./.github/actions/print-logfiles
+      if: failure()
