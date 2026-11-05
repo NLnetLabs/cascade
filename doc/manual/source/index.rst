@@ -5,7 +5,7 @@ Cascade
 
    |lastupdated| |discourse| |mastodon|
 
-   .. |lastupdated| image:: https://img.shields.io/github/last-commit/NLnetLabs/cascade?path=%2Fdoc%2Fmanual&label=last%20updated
+   .. |lastupdated| image:: https://img.shields.io/github/last-commit/NLnetLabs/cascade?path=%2Fdoc%2Fmanual&label=last%20updated&color=orange
       :alt: Last docs update
       :target: https://github.com/NLnetLabs/cascade/commits/main/doc/manual/source
 

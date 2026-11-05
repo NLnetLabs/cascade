@@ -162,7 +162,7 @@ impl Spec {
     /// Build and save this specification to a file.
     pub fn save(&self, path: &Utf8Path) -> io::Result<()> {
         let text = serde_json::to_string(self)?;
-        crate::util::write_file(path, text.as_bytes())
+        crate::util::write_file(path, text.as_bytes(), 0o644)
     }
 }
 

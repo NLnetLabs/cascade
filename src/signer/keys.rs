@@ -28,10 +28,7 @@ use url::Url;
 use crate::{
     hsm::{HsmStore, KmipServerState},
     signer::status::SigningStatusPerZone,
-    units::{
-        key_manager::{KmipClientCredentialsFile, KmipServerCredentialsFileMode},
-        zone_signer::KeySetState,
-    },
+    units::{key_manager::KmipClientCredentialsFile, zone_signer::KeySetState},
 };
 
 //----------- ZoneSigningKeys --------------------------------------------------
@@ -312,16 +309,13 @@ impl KeyPair {
                 let mut password = None;
                 if has_credentials {
                     let creds_path = &config.kmip_credentials_store_path;
-                    let creds_file = KmipClientCredentialsFile::new(
-                        creds_path.as_std_path(),
-                        KmipServerCredentialsFileMode::ReadOnly,
-                    )
-                    .map_err(|error| {
-                        Box::new(LoadError::KmipClientCredentials {
-                            path: creds_path.clone(),
-                            error,
-                        })
-                    })?;
+                    let creds_file =
+                        KmipClientCredentialsFile::new(creds_path, false).map_err(|error| {
+                            Box::new(LoadError::KmipClientCredentials {
+                                path: creds_path.clone(),
+                                error,
+                            })
+                        })?;
 
                     let creds = creds_file.get(&server_id).ok_or_else(|| {
                         Box::new(LoadError::MissingKmipClientCredentials {
