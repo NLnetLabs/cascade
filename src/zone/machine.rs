@@ -133,7 +133,8 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Loading(waiting.start_load()));
 
-        self.state.instances.start_load();
+        let policy = self.state.policy.clone().unwrap();
+        self.state.instances.start_load(policy);
 
         self.state.record_event(HistoricalEvent::StartedLoad, None);
 
@@ -164,7 +165,8 @@ impl<'a> ZoneHandle<'a> {
 
         transition.move_to(ZoneStateMachine::Signing(waiting.start_resign()));
 
-        self.state.instances.start_resign();
+        let policy = self.state.policy.clone().unwrap();
+        self.state.instances.start_resign(policy);
 
         self.state
             .record_event(HistoricalEvent::StartedResign, None);
