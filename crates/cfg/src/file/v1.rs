@@ -3,7 +3,7 @@
 use std::{fmt, net::SocketAddr, num::IntErrorKind, str::FromStr};
 
 use camino::Utf8Path;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     Config, DaemonConfig, GroupId, KeyManagerConfig, LoaderConfig, LogLevel, LogTarget,
@@ -13,7 +13,7 @@ use crate::{
 //----------- Spec -------------------------------------------------------------
 
 /// A configuration file.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct Spec {
     /// The path to the global state file.
@@ -157,7 +157,7 @@ impl Spec {
 //----------- RemoteControlSpec ----------------------------------------------
 
 /// Remote control configuration for Cascade.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct RemoteControlSpec {
     /// Where to serve our HTTP API from, e.g. for the Cascade client.
@@ -197,7 +197,7 @@ impl RemoteControlSpec {
 //----------- DaemonSpec -------------------------------------------------------
 
 /// Configuring the Cascade daemon.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct DaemonSpec {
     /// The minimum severity of messages to log.
@@ -232,7 +232,7 @@ impl DaemonSpec {
 //----------- LogLevelSpec -----------------------------------------------------
 
 /// A severity level for logging.
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LogLevelSpec {
     /// A function or variable was interacted with, for debugging.
@@ -273,7 +273,7 @@ impl LogLevelSpec {
 //----------- LogTargetSpec ----------------------------------------------------
 
 /// A logging target.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
 pub enum LogTargetSpec {
     /// Append logs to a file.
@@ -346,6 +346,23 @@ impl<'de> Deserialize<'de> for IdentitySpec {
     }
 }
 
+//--- Serialization
+
+impl fmt::Display for IdentitySpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.user, self.group)
+    }
+}
+
+impl Serialize for IdentitySpec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
 //--- Conversion
 
 impl IdentitySpec {
@@ -381,6 +398,17 @@ impl FromStr for UserIdSpec {
             }
 
             _ => Ok(Self::Named(s.into())),
+        }
+    }
+}
+
+//--- Serialization
+
+impl fmt::Display for UserIdSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Numeric(v) => write!(f, "{v}"),
+            Self::Named(v) => write!(f, "{v}"),
         }
     }
 }
@@ -427,6 +455,17 @@ impl FromStr for GroupIdSpec {
     }
 }
 
+//--- Serialization
+
+impl fmt::Display for GroupIdSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Numeric(v) => write!(f, "{v}"),
+            Self::Named(v) => write!(f, "{v}"),
+        }
+    }
+}
+
 //--- Conversion
 
 impl GroupIdSpec {
@@ -442,7 +481,7 @@ impl GroupIdSpec {
 //----------- LoaderSpec -------------------------------------------------------
 
 /// Configuring how zones are loaded.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct LoaderSpec {
     /// Configuring whether and how loaded zones are reviewed.
@@ -461,7 +500,7 @@ impl LoaderSpec {
 //----------- SignerSpec -------------------------------------------------------
 
 /// Configuring the zone signer.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct SignerSpec {
     /// Configuring whether and how signed zones are reviewed.
@@ -480,7 +519,7 @@ impl SignerSpec {
 //----------- ReviewSpec -------------------------------------------------------
 
 /// Configuring whether and how zones are reviewed.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct ReviewSpec {
     /// Where to serve zones for review.
@@ -502,7 +541,7 @@ impl ReviewSpec {
 //----------- KeyManagerSpec ---------------------------------------------------
 
 /// Configuring DNSSEC key management.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct KeyManagerSpec {}
 
@@ -518,7 +557,7 @@ impl KeyManagerSpec {
 //----------- ServerSpec -------------------------------------------------------
 
 /// Configuring how zones are published.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct ServerSpec {
     /// Where to serve zones.
@@ -540,7 +579,7 @@ impl ServerSpec {
 //----------- SocketSpec -------------------------------------------------------
 
 /// Configuration for serving / listening on a network socket.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged, expecting = "a URI string or an inline table")]
 pub enum SocketSpec {
     /// A simple socket specification.
@@ -575,7 +614,7 @@ pub enum SimpleSocketSpec {
 }
 
 /// A complex [`SocketSpec`] as a table.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, tag = "type")]
 pub enum ComplexSocketSpec {
     /// Listen exclusively over UDP.
@@ -631,6 +670,27 @@ impl<'de> Deserialize<'de> for SimpleSocketSpec {
     {
         let s = String::deserialize(deserializer)?;
         s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+//--- Serialization
+
+impl fmt::Display for SimpleSocketSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SimpleSocketSpec::UDP { addr } => write!(f, "udp://{addr}"),
+            SimpleSocketSpec::TCP { addr } => write!(f, "tcp://{addr}"),
+            SimpleSocketSpec::TCPUDP { addr } => write!(f, "{addr}"),
+        }
+    }
+}
+
+impl Serialize for SimpleSocketSpec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
     }
 }
 

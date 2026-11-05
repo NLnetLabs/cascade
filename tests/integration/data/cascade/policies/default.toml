@@ -1,0 +1,2 @@
+version = "v1"
+server.outbound.send-notify-to = ["127.0.0.1:1054"]
