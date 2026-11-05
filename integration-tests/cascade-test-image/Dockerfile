@@ -72,6 +72,7 @@ RUN <<EOF
 EOF
 
 ARG REBUILD_INSIDE=false
+ARG BUILD_PROFILE=debug
 
 # Copy source files into container in case we need to build from source
 # See `.dockerignore` for includes/excludes
@@ -82,12 +83,13 @@ RUN <<EOF
     cd /cascade/
 
     # Build Cascade
-    cargo build
-    cargo build --release
+    case "$BUILD_PROFILE" in
+      debug) cargo build ;;
+      release) cargo build --release ;;
+    esac
 
     # Save built binaries
-    cp -v -t /root/cargo-release/bin/ target/release/{cascade,cascaded}
-    cp -v -t /root/cargo-debug/bin/ target/debug/{cascade,cascaded}
+    cp -v -t /root/cargo-$BUILD_PROFILE/bin/ target/$BUILD_PROFILE/{cascade,cascaded}
 
     # Delete the repository to reduce the size of the image (and act will copy
     # the repository into the container anyway)
