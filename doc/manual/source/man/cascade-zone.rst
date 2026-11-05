@@ -120,9 +120,18 @@ Commands
 .. subcmd:: set-last-signed-serial
 
    Set the zone state variable that keeps track of the last serial number used
-   for the signed zone. This serial number direct affects the next serial
-   number when the counter policy is in use. Otherwise it affects which
-   serial numbers are considered higher than the previous serial number.
+   for the signed zone.
+
+   In case of counter policy,
+   this causes the serial number of the next signed zone to be
+   the "last-signed-serial" plus one. For date-counter,
+   if "last-signed-serial" is the current day, then the serial number of
+   the next signed zone will be one higher.
+
+   It also affects whether the next serial is considered larger than
+   the previous serial. This can make a difference when switching
+   serial policies or (in the case of the keep policy) when the
+   serial number of the unsigned zone went backwards.
 
 Options for :subcmd:`zone add`
 ------------------------------
