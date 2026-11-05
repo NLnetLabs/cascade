@@ -1041,11 +1041,11 @@ impl HttpServer {
 
         zone_state.previous_serial = Some(serial);
 
-	// Note that this sets "previous_serial" but does not cause the zone
-	// to be resigned. The main reason is that the incremental
-	// signer decides whether a new signed zone is needed or not. A change
-	// in "previous_serial" is not a change that would lead to a new
-	// signed zone.
+        // Note that this sets "previous_serial" but does not cause the zone
+        // to be resigned. The main reason is that the incremental
+        // signer decides whether a new signed zone is needed or not. A change
+        // in "previous_serial" is not a change that would lead to a new
+        // signed zone.
 
         Json(Ok(()))
     }
