@@ -1180,6 +1180,7 @@ pub struct KmipCredentials {
     ///
     /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
     pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
 
     /// KMIP password credential.
     ///
