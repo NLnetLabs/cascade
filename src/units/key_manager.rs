@@ -1191,18 +1191,19 @@ pub struct KmipCredentials {
 
     /// Optional TLS certificate bytes in PEM format.
     ///
-    /// Note: If [`tls_client_private_key_bytes`] is provided then this value
-    /// MUST also be provided as the client has to use the private key to
-    /// sign the certificate so that the server can use the public key in the
-    /// certificate to verify that we possess the correct private key, i.e. we
-    /// are who we say we are.
+    /// Note: If [`Self::tls_client_private_key_bytes`] is provided then this
+    /// value MUST also be provided as the client has to use the private key
+    /// to sign the certificate so that the server can use the public key in
+    /// the certificate to verify that we possess the correct private key,
+    /// i.e. we are who we say we are.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub tls_client_cert_bytes: Option<Vec<u8>>,
 
     /// Optional TLS private key bytes in PEM format.
     ///
-    /// Note: If [`tls_client_cert_bytes`] is provided then this value MUST
-    /// also be provided. See [`tls_client_cert_bytes`] for more details.
+    /// Note: If [`Self::tls_client_cert_bytes`] is provided then this value
+    /// MUST also be provided. See [`Self::tls_client_cert_bytes`] for more
+    /// details.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub tls_client_private_key_bytes: Option<Vec<u8>>,
 
