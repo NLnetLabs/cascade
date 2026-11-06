@@ -36,6 +36,10 @@ pub struct Spec {
     #[serde(default = "Spec::keys_dir_default")]
     pub keys_dir: Box<Utf8Path>,
 
+    /// Path to the directory where the remains of old zones should be stored.
+    #[serde(default = "Spec::attic_dir_default")]
+    pub attic_dir: Box<Utf8Path>,
+
     /// Path to the dnst binary that Cascade should use.
     #[serde(default = "Spec::dnst_binary_path_default")]
     pub dnst_binary_path: Box<Utf8Path>,
@@ -73,6 +77,7 @@ impl Spec {
         config.zone_state_dir = self.zone_state_dir;
         config.tsig_store_path = self.tsig_store_path;
         config.keys_dir = self.keys_dir;
+        config.attic_dir = self.attic_dir;
         config.dnst_binary_path = self.dnst_binary_path;
         config.kmip_credentials_store_path = self.kmip_credentials_store_path;
         self.remote_control.parse_into(&mut config.remote_control);
@@ -94,6 +99,7 @@ impl Default for Spec {
             zone_state_dir: Self::zone_state_dir_default(),
             tsig_store_path: Self::tsig_store_path_default(),
             keys_dir: Self::keys_dir_default(),
+            attic_dir: Self::attic_dir_default(),
             dnst_binary_path: Self::dnst_binary_path_default(),
             kmip_credentials_store_path: Self::kmip_credentials_store_path_default(),
             remote_control: Default::default(),
@@ -132,9 +138,14 @@ impl Spec {
         "dnst".into()
     }
 
-    /// The default value for `dnst_keyset_dir`.
+    /// The default value for `keys_dir`.
     fn keys_dir_default() -> Box<Utf8Path> {
         "/var/lib/cascade/keys".into()
+    }
+
+    /// The default value for `attic_dir`.
+    fn attic_dir_default() -> Box<Utf8Path> {
+        "/var/lib/cascade/attic".into()
     }
 
     /// The default value for `kmip_credentials_store_path`.

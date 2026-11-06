@@ -1,6 +1,8 @@
 //! Cascade's central command.
 
 use std::collections::HashMap;
+use std::fs::create_dir;
+use std::io::ErrorKind;
 use std::{
     fmt, io,
     sync::{Arc, Mutex},
@@ -8,8 +10,10 @@ use std::{
 };
 
 use bytes::Bytes;
+use camino::{Utf8Path, Utf8PathBuf};
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::UnixTime;
+use jiff::{Timestamp, Unit};
 use tracing::{debug, error, info, trace};
 
 use crate::api::{self, KeyImport, TsigAddError, TsigAddResult};
@@ -276,6 +280,13 @@ pub fn remove_zone(center: &Arc<Center>, name: Name<Bytes>) -> Result<(), ZoneRe
         }
     }
 
+    // Move keys to the attic.
+    let now = Timestamp::now();
+    let rounded_now = now.round(Unit::Second).expect("rounding should not fail");
+    let attic_name = format!("{}-{}", rounded_now, name);
+    let attic_path = create_unique_directory(&center.config.attic_dir, &attic_name)?;
+    KeyManager::move_to_attic(center, attic_path, zone)?;
+
     let ZoneByName(zone) = state
         .zones
         .take(&name)
@@ -367,6 +378,50 @@ pub async fn add_tsig_key(
     info!("Added TSIG key '{name}'");
 
     Ok(TsigAddResult)
+}
+
+fn create_unique_directory(
+    parent_dir: &Utf8Path,
+    name: &str,
+) -> Result<Utf8PathBuf, ZoneRemoveError> {
+    // Try the requested name first.
+    let attic_path = parent_dir.join(name);
+    match create_dir(&attic_path) {
+        Ok(_) => return Ok(attic_path),
+        Err(e) => {
+            if !matches!(e.kind(), ErrorKind::AlreadyExists) {
+                return Err(ZoneRemoveError::Other {
+                    err: format!("unable to create attic directory {}: {e}", attic_path),
+                });
+            }
+
+            // Continue with different variations.
+        }
+    }
+
+    // Try with different suffixes.
+    for i in 0..1000 {
+        let tmp_name = format!("{name}#{i}");
+        let attic_path = parent_dir.join(tmp_name);
+        match create_dir(&attic_path) {
+            Ok(_) => return Ok(attic_path),
+            Err(e) => {
+                if !matches!(e.kind(), ErrorKind::AlreadyExists) {
+                    return Err(ZoneRemoveError::Other {
+                        err: format!("unable to create attic directory {}: {e}", attic_path),
+                    });
+                }
+
+                // Continue with other variations.
+            }
+        }
+    }
+    Err(ZoneRemoveError::Other {
+        err: format!(
+            "unable to create attic directory {}#n after many tries",
+            attic_path
+        ),
+    })
 }
 
 //----------- State ------------------------------------------------------------
@@ -525,7 +580,6 @@ impl From<ZoneAddError> for api::ZoneAddError {
 //----------- ZoneRemoveError --------------------------------------------------
 
 /// An error removing a zone.
-#[expect(clippy::enum_variant_names, reason = "listing failure conditions")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZoneRemoveError {
     /// No such name could be found.
@@ -536,6 +590,9 @@ pub enum ZoneRemoveError {
 
     /// The zone is not in passive/hard-halt state.
     NotPassiveOrHalted,
+
+    /// An error occured while (re)moving the zone's state.
+    Other { err: String },
 }
 
 impl std::error::Error for ZoneRemoveError {}
@@ -546,6 +603,7 @@ impl fmt::Display for ZoneRemoveError {
             Self::NotFound => "no such zone was found",
             Self::NotInMaintenanceMode => "the zone is not in maintenance mode",
             Self::NotPassiveOrHalted => "the zone is not in passive/hard-halt state",
+            Self::Other { err } => err,
         })
     }
 }
@@ -556,6 +614,7 @@ impl From<ZoneRemoveError> for api::ZoneRemoveError {
             ZoneRemoveError::NotFound => Self::NotFound,
             ZoneRemoveError::NotInMaintenanceMode => Self::NotInMaintenanceMode,
             ZoneRemoveError::NotPassiveOrHalted => Self::NotPassiveOrHalted,
+            ZoneRemoveError::Other { err } => Self::Other { err },
         }
     }
 }

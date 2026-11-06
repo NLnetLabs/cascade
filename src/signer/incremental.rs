@@ -40,7 +40,7 @@ use domain::rdata::{Nsec, Nsec3, Nsec3param, Soa, ZoneRecordData, Zonemd};
 use domain::utils::base32;
 use domain::utils::dst::UnsizedCopy;
 use domain::zonefile::inplace::Entry;
-use domain_kmip::dep::kmip::client::pool::SyncConnPool;
+use domain_kmip::dep::kmip_protocol::net::sync_pool::ConnPool;
 use rayon::slice::ParallelSliceMut;
 use ring::digest;
 use tokio::time::Instant;
@@ -65,7 +65,7 @@ pub fn sign_incrementally(
     zone_name: &Name<Bytes>,
     policy: &PolicyVersion,
     hsm_store: &HsmStore,
-    kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
+    kmip_servers: &Mutex<HashMap<String, ConnPool>>,
     patch: SignedZonePatcher,
     local_state: &mut LocalState,
     keyset_state: KeySetState,
@@ -1356,7 +1356,7 @@ impl<'a> IncrementalSigningState<'a> {
         config: &crate::config::Config,
         zone_name: &'a Name<Bytes>,
         hsm_store: &HsmStore,
-        kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
+        kmip_servers: &Mutex<HashMap<String, ConnPool>>,
         policy: &PolicyVersion,
         keyset_state: &KeySetState,
         status: &RwLock<SigningStatusPerZone>,

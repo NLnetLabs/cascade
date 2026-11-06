@@ -58,6 +58,8 @@ cascade-zone \- Manage zones
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBhistory\fP \fB<NAME>\fP
 .sp
 \fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBmaintenance\fP \fB<enable|disable>\fP \fB<NAME>\fP
+.sp
+\fBcascade\fP \fB[GLOBAL OPTIONS]\fP zone \fBset\-last\-signed\-serial\fP \fB<NAME>\fP \fB<SERIAL>\fP
 .SH DESCRIPTION
 .sp
 Manage Cascade\(aqs zones.
@@ -84,6 +86,10 @@ Remove a zone.
 Maintenance mode must be enabled (see \fBzone maintenance\fP). In
 addition, the zone must be passive (with no ongoing operations) or in a
 hard\-halt state.
+.sp
+Key management files (state, config and on\-disk key files) will be moved
+to the attic directory. See the description of the \fBattic\-dir\fP entry
+in Configuration File Format \%<>\&.
 .sp
 \fBNote:\fP
 .INDENT 7.0
@@ -154,6 +160,23 @@ it will not be canceled; maintenance mode will go into effect once
 the operation completes.
 .UNINDENT
 .UNINDENT
+.UNINDENT
+.INDENT 0.0
+.TP
+.B set\-last\-signed\-serial
+Set the zone state variable that keeps track of the last serial number used
+for the signed zone.
+.sp
+In case of counter policy,
+this causes the serial number of the next signed zone to be
+the \(dqlast\-signed\-serial\(dq plus one. For date\-counter,
+if \(dqlast\-signed\-serial\(dq is the current day, then the serial number of
+the next signed zone will be one higher.
+.sp
+It also affects whether the next serial is considered larger than
+the previous serial. This can make a difference when switching
+serial policies or (in the case of the keep policy) when the
+serial number of the unsigned zone went backwards.
 .UNINDENT
 .SH OPTIONS FOR ZONE ADD
 .INDENT 0.0

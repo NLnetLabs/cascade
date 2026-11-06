@@ -26,6 +26,9 @@ function get-cascade-config-option() {
     keys-dir)
       echo "${_base_dir}/keys"
       ;;
+    attic-dir)
+      echo "${_base_dir}/attic"
+      ;;
     dnst-binary-path)
       echo "dnst"
       ;;

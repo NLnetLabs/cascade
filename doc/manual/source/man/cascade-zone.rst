@@ -30,6 +30,8 @@ Synopsis
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`maintenance` ``<enable|disable>`` ``<NAME>``
 
+:program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`set-last-signed-serial` ``<NAME>`` ``<SERIAL>``
+
 Description
 -----------
 
@@ -59,6 +61,10 @@ Commands
    Maintenance mode must be enabled (see :subcmd:`zone maintenance`). In
    addition, the zone must be passive (with no ongoing operations) or in a
    hard-halt state.
+
+   Key management files (state, config and on-disk key files) will be moved
+   to the attic directory. See the description of the ``attic-dir`` entry
+   in :doc:`cascaded-config.toml`.
 
    .. note:: Once removed, downstream servers will no longer be able to fetch
              the zone!
@@ -110,6 +116,22 @@ Commands
              is being built (i.e. loading, signing, review, etc. is ongoing),
              it will not be canceled; maintenance mode will go into effect once
              the operation completes.
+
+.. subcmd:: set-last-signed-serial
+
+   Set the zone state variable that keeps track of the last serial number used
+   for the signed zone.
+
+   In case of counter policy,
+   this causes the serial number of the next signed zone to be
+   the "last-signed-serial" plus one. For date-counter,
+   if "last-signed-serial" is the current day, then the serial number of
+   the next signed zone will be one higher.
+
+   It also affects whether the next serial is considered larger than
+   the previous serial. This can make a difference when switching
+   serial policies or (in the case of the keep policy) when the
+   serial number of the unsigned zone went backwards.
 
 Options for :subcmd:`zone add`
 ------------------------------

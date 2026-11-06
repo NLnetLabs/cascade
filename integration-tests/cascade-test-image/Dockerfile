@@ -55,14 +55,14 @@ RUN <<EOF
   # Install dnst.
   # TODO: Switch installing release builds via apt-get install once a dnst
   # release with keyset functionality has been released.
-  cargo install --debug --git https://github.com/nlnetlabs/dnst --rev 669328d704561429c9b7df7864c19fb9b671c833 --root /root/cargo-debug --locked --bin=dnst dnst
-  cargo install --git https://github.com/nlnetlabs/dnst --rev 669328d704561429c9b7df7864c19fb9b671c833 --root /root/cargo-release --locked --bin=dnst dnst
+  cargo install --debug --git https://github.com/nlnetlabs/dnst --rev bb117dee881780ee2de60450bf031b9c648afc8a --root /root/cargo-debug --locked --bin=dnst dnst
+  cargo install --git https://github.com/nlnetlabs/dnst --rev bb117dee881780ee2de60450bf031b9c648afc8a --root /root/cargo-release --locked --bin=dnst dnst
 EOF
 
 RUN <<EOF
   # Install cascade-hsm-bridge
-  cargo install --debug --git https://github.com/nlnetlabs/cascade-hsm-bridge --root /root/cargo-debug --locked
-  cargo install --git https://github.com/nlnetlabs/cascade-hsm-bridge --root /root/cargo-release --locked
+  cargo install --debug --git https://github.com/nlnetlabs/cascade-hsm-bridge --rev 1f6c85ee --root /root/cargo-debug --locked
+  cargo install --git https://github.com/nlnetlabs/cascade-hsm-bridge --rev 1f6c85ee --root /root/cargo-release --locked
 EOF
 
 RUN <<EOF

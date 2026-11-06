@@ -161,12 +161,13 @@
 use crate::api;
 use crate::api::keyset::{KeyRollCommand, KeyRollVariant};
 use crate::api::{FileKeyImport, KeyImport, KmipKeyImport};
-use crate::center::{Center, ZoneAddError, get_zone};
+use crate::center::{Center, ZoneAddError, ZoneRemoveError, get_zone};
 use crate::hsm::KmipServerState;
 use crate::manager::record_zone_event;
 use crate::policy::{KeyParameters, KeyValidity, PolicyVersion};
 use crate::signer::ResigningTrigger;
-use crate::util::AbortOnDrop;
+use crate::units::zone_signer::KeySetState;
+use crate::util::{AbortOnDrop, write_file};
 use crate::zone::{HistoricalEvent, Zone};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -178,15 +179,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env::{VarError, var};
 use std::ffi::OsStr;
-use std::fmt::Formatter;
-use std::fs::{File, OpenOptions, metadata};
-use std::io::{BufReader, BufWriter, ErrorKind, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::fmt::{Display, Formatter};
+use std::fs::{metadata, rename};
+use std::io::{Error, ErrorKind};
+use std::path::Path;
 use std::process::Output;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::{debug, error, warn};
+use url::Url;
 
 macro_rules! strs {
     ($($e:expr),*$(,)?) => {
@@ -516,6 +518,83 @@ impl KeyManager {
         });
     }
 
+    pub fn move_to_attic(
+        center: &Arc<Center>,
+        attic_path: Utf8PathBuf,
+        zone: &Arc<Zone>,
+    ) -> Result<(), ZoneRemoveError> {
+        // Load the state file to make sure it exists and to get
+        // access to the keys.
+        let state_path = mk_dnst_keyset_state_file_path(&center.config.keys_dir, &zone.name);
+        let keyset_state = std::fs::read_to_string(&state_path)
+            .map_err(|e| KeySetToAtticError {
+                err: format!("unable to read from {}: {e}", state_path),
+            })
+            .and_then(|state| {
+                serde_json::from_str::<KeySetState>(&state).map_err(|e| KeySetToAtticError {
+                    err: format!("loading keyset state failed: {e}"),
+                })
+            });
+
+        let keyset_state = match keyset_state {
+            Err(e) => {
+                warn!(
+                    "{}",
+                    format!("unable to load keyset config for zone {}: {e}", zone.name)
+                );
+                return Ok(());
+            }
+            Ok(s) => s,
+        };
+
+        for (k, v) in keyset_state.keyset.keys() {
+            if v.decoupled() {
+                // Don't touch these keys.
+                continue;
+            }
+            if let Some(priv_key_name) = v.privref() {
+                let priv_url = Url::parse(priv_key_name).expect("valid URL expected");
+                if priv_url.scheme() == "file" {
+                    let filename = priv_url.path();
+                    let path = Utf8Path::new(filename);
+                    let basename = path.file_name().expect("filename should exist");
+                    let target = attic_path.join(basename);
+                    rename(filename, &target).map_err(|e| ZoneRemoveError::Other {
+                        err: format!("rename from {} to {} failed: {e}", filename, target),
+                    })?;
+                }
+            }
+            let pub_url = Url::parse(k).expect("valid URL expected");
+            if pub_url.scheme() == "file" {
+                let filename = pub_url.path();
+                let path = Utf8Path::new(filename);
+                rename_to_dir(path, &attic_path).map_err(|e| ZoneRemoveError::Other {
+                    err: format!(
+                        "rename from {} to directory {} failed: {e}",
+                        filename, attic_path
+                    ),
+                })?;
+            }
+        }
+
+        let cfg_path = mk_dnst_keyset_cfg_file_path(&center.config.keys_dir, &zone.name);
+        rename_to_dir(&cfg_path, &attic_path).map_err(|e| ZoneRemoveError::Other {
+            err: format!(
+                "rename from {} to directory {} failed: {e}",
+                cfg_path, attic_path
+            ),
+        })?;
+
+        rename_to_dir(&state_path, &attic_path).map_err(|e| ZoneRemoveError::Other {
+            err: format!(
+                "rename from {} to directory {} failed: {e}",
+                state_path, attic_path
+            ),
+        })?;
+
+        Ok(())
+    }
+
     async fn register_zone(
         center: &Arc<Center>,
         name: Name<Bytes>,
@@ -779,6 +858,12 @@ pub fn mk_dnst_keyset_state_file_path(keys_dir: &Utf8Path, name: &Name<Bytes>) -
     keys_dir.join(format!("{}.state", name.to_string().to_lowercase()))
 }
 
+fn rename_to_dir(from: &Utf8Path, to_dir: &Utf8PathBuf) -> Result<(), Error> {
+    let basename = from.file_name().expect("filename should exist");
+    let target = to_dir.join(basename);
+    rename(from, &target)
+}
+
 //------------ KeySetInfo ----------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -1010,23 +1095,95 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
 }
 
 //============ KMIP Credential Management ====================================
-// Copied from dnst keyset. TODO: Share the code via a separate Rust crate.
 
-//------------ KmipClientCredentials -----------------------------------------
+//------------ TlsServerAuth -------------------------------------------------
+
+/// Additional certificates used to verify the identity of the server.
+///
+/// These certificates are needed when the certificate chain of the server
+/// includes certificates that are not available in the default certificate
+/// store, i.e. are not widely distributed well known certificates.
+///
+/// This can be for example because the Certificate Authority that issued the
+/// certificate is internal to the organization that deployed the KMIP server,
+/// or because the server is using a self-signed certificate but rather than
+/// trust the certificate blindly you want to verify that it is the expected
+/// self-signed certificate.
+//
+// Note: This is a re-implementation of the kmip_protocol TlsServerAuth enum
+// with added Deserialize and Serialize impls.
+//
+// Note: Copied from dnst keyset. TODO: Share the code via a separate Rust
+// crate.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub enum TlsServerAuth {
+    /// Do not verify the identify of the server.
+    None,
+
+    /// Use only certificates provided in the default trust store.
+    #[default]
+    Default,
+
+    /// The PEM encoded bytes of a certificate to trurst directly, e.g. a
+    /// self-signed certificate.
+    ///
+    /// TODO: Add support for verifying certificates by their fingerprint.
+    TrustCertificate(Vec<u8>),
+
+    /// The PEM encoded bytes of the certificate of a Certificate Authority
+    /// to add to the certificate trust store in order to be able to verify
+    /// certificates issued by this authority, e.g. an in-house custom CA
+    /// not present in the default trust store.
+    TrustCertificateAuthority(Vec<u8>),
+}
+
+impl From<TlsServerAuth> for domain_kmip::dep::kmip_protocol::net::TlsServerAuth {
+    fn from(auth: TlsServerAuth) -> Self {
+        match auth {
+            TlsServerAuth::None => Self::None,
+            TlsServerAuth::Default => Self::Default,
+            TlsServerAuth::TrustCertificate(cert_bytes) => Self::TrustCertificate(cert_bytes),
+            TlsServerAuth::TrustCertificateAuthority(ca_cert_bytes) => {
+                Self::TrustCertificateAuthority(ca_cert_bytes)
+            }
+        }
+    }
+}
+
+impl From<domain_kmip::dep::kmip_protocol::net::TlsServerAuth> for TlsServerAuth {
+    fn from(auth: domain_kmip::dep::kmip_protocol::net::TlsServerAuth) -> Self {
+        match auth {
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::None => Self::None,
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::Default => Self::Default,
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::TrustCertificate(cert_bytes) => {
+                Self::TrustCertificate(cert_bytes)
+            }
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::TrustCertificateAuthority(
+                ca_cert_bytes,
+            ) => Self::TrustCertificateAuthority(ca_cert_bytes),
+        }
+    }
+}
+
+//------------ KmipCredentials -----------------------------------------------
 
 /// Credentials for connecting to a KMIP server.
 ///
 /// Intended to be read from a JSON file stored separately to the main
 /// configuration so that separate security policy can be applied to sensitive
 /// credentials.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KmipClientCredentials {
+///
+// Note: Copied from dnst keyset. TODO: Share the code via a separate Rust
+// crate.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct KmipCredentials {
     /// KMIP username credential.
     ///
     /// Mandatory if the KMIP "Credential Type" is "Username and Password".
     ///
     /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
-    pub username: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub username: Option<String>,
 
     /// KMIP password credential.
     ///
@@ -1035,157 +1192,92 @@ pub struct KmipClientCredentials {
     /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub password: Option<String>,
+
+    /// Optional TLS certificate bytes in PEM format.
+    ///
+    /// Note: If [`Self::tls_client_private_key_bytes`] is provided then this
+    /// value MUST also be provided as the client has to use the private key
+    /// to sign the certificate so that the server can use the public key in
+    /// the certificate to verify that we possess the correct private key,
+    /// i.e. we are who we say we are.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tls_client_cert_bytes: Option<Vec<u8>>,
+
+    /// Optional TLS private key bytes in PEM format.
+    ///
+    /// Note: If [`Self::tls_client_cert_bytes`] is provided then this value
+    /// MUST also be provided. See [`Self::tls_client_cert_bytes`] for more
+    /// details.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tls_client_private_key_bytes: Option<Vec<u8>>,
+
+    /// Optional TLS server authentication details.
+    pub tls_server_auth: TlsServerAuth,
 }
 
-//------------ KmipClientCredentialSet ---------------------------------------
-
-/// A set of KMIP server credentials.
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct KmipClientCredentialsSet(HashMap<String, KmipClientCredentials>);
-
-//------------ KmipClientCredentialsFileMode ---------------------------------
-
-/// The access mode to use when accessing a credentials file.
-#[derive(Debug)]
-pub enum KmipServerCredentialsFileMode {
-    /// Open an existing credentials file for reading. Saving will fail.
-    ReadOnly,
-
-    /// Open an existing credentials file for reading and writing.
-    #[expect(dead_code)]
-    ReadWrite,
-
-    /// Open or create the credentials file for reading and writing.
-    CreateReadWrite,
-}
-
-//--- impl Display
-
-impl std::fmt::Display for KmipServerCredentialsFileMode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            KmipServerCredentialsFileMode::ReadOnly => write!(f, "read-only"),
-            KmipServerCredentialsFileMode::ReadWrite => write!(f, "read-write"),
-            KmipServerCredentialsFileMode::CreateReadWrite => write!(f, "create-read-write"),
-        }
+impl KmipCredentials {
+    pub fn has_credentials(&self) -> bool {
+        self.username.is_some()
+            || self.password.is_some()
+            || self.tls_client_cert_bytes.is_some()
+            || self.tls_client_private_key_bytes.is_some()
+            || self.tls_server_auth != TlsServerAuth::Default
     }
 }
 
-//------------ KmipServerCredentialsFile -------------------------------------
+//------------ KmipCredentialSet ---------------------------------------------
+
+/// A set of KMIP server credentials.
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct KmipCredentialsSet(HashMap<String, KmipCredentials>);
+
+//------------ KmipCredentialsFile -------------------------------------------
 
 /// A KMIP server credential set file.
 #[derive(Debug)]
-pub struct KmipClientCredentialsFile {
-    /// The file from which the credentials were loaded, and will be saved
-    /// back to.
-    file: File,
-
-    /// The path from which the file was loaded. Used for generating error
-    /// messages.
-    path: PathBuf,
+pub struct KmipCredentialsFile {
+    /// The path from which the file was loaded.
+    path: Utf8PathBuf,
 
     /// The actual set of loaded credentials.
-    credentials: KmipClientCredentialsSet,
-
-    /// The read/write/create mode.
-    #[allow(dead_code)]
-    mode: KmipServerCredentialsFileMode,
+    credentials: KmipCredentialsSet,
 }
 
-impl KmipClientCredentialsFile {
+impl KmipCredentialsFile {
     /// Load credentials from disk.
     ///
-    /// Optionally:
-    ///   - Create the file if missing.
-    ///   - Keep the file open for writing back changes. See [`Self::save()`].
-    pub fn new(path: &Path, mode: KmipServerCredentialsFileMode) -> Result<Self, String> {
-        let (read, write, create) = match mode {
-            KmipServerCredentialsFileMode::ReadOnly => (true, false, false),
-            KmipServerCredentialsFileMode::ReadWrite => (true, true, false),
-            KmipServerCredentialsFileMode::CreateReadWrite => (true, true, true),
+    /// If the file is missing and `missing_ok` is `true`, no credentials are
+    /// loaded.
+    pub fn new(path: &Utf8Path, missing_ok: bool) -> Result<Self, String> {
+        let credentials = match std::fs::read(path) {
+            Ok(data) => serde_json::from_slice(&data)
+                .map_err(|err| format!("error loading KMIP credentials file {path:?}: {err}"))?,
+
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound && missing_ok => {
+                // Just create an empty credential set.
+                KmipCredentialsSet::default()
+            }
+
+            Err(err) => {
+                return Err(format!(
+                    "unable to open KMIP credentials file {path:?}: {err}"
+                ));
+            }
         };
 
-        let file = OpenOptions::new()
-            .read(read)
-            .write(write)
-            .create(create)
-            .truncate(false)
-            .open(path)
-            .map_err(|e| {
-                format!(
-                    "unable to open KMIP credentials file {} in {mode} mode: {e}",
-                    path.display()
-                )
-            })?;
-
-        // Determine the length of the file as JSON parsing fails if the file
-        // is completely empty.
-        let len = file.metadata().map(|m| m.len()).map_err(|e| {
-            format!(
-                "unable to query metadata of KMIP credentials file {}: {e}",
-                path.display()
-            )
-        })?;
-
-        // Buffer reading as apparently JSON based file reading is extremely
-        // slow without buffering, even for small files.
-        let mut reader = BufReader::new(&file);
-
-        // Load or create the credential set.
-        let credentials: KmipClientCredentialsSet = if len > 0 {
-            serde_json::from_reader(&mut reader).map_err(|e| {
-                format!(
-                    "error loading KMIP credentials file {:?}: {e}\n",
-                    path.display()
-                )
-            })?
-        } else {
-            KmipClientCredentialsSet::default()
-        };
-
-        // Save the path for use in generating error messages.
-        let path = path.to_path_buf();
-
-        Ok(KmipClientCredentialsFile {
-            file,
-            path,
+        Ok(KmipCredentialsFile {
+            path: path.to_path_buf(),
             credentials,
-            mode,
         })
     }
 
     /// Write the credential set back to the file it was loaded from.
     pub fn save(&mut self) -> std::io::Result<()> {
-        // Ensure that writing happens at the start of the file.
-        self.file.seek(SeekFrom::Start(0))?;
+        let data = serde_json::to_vec_pretty(&self.credentials).map_err(|err| {
+            std::io::Error::other(format!("error serializing KMIP credentials: {err}"))
+        })?;
 
-        // Use a buffered writer as writing JSON to a file directly is
-        // apparently very slow, even for small files.
-        //
-        // Enclose the use of the BufWriter in a block so that it is
-        // definitely no longer using the file when we next act on it.
-        {
-            let mut writer = BufWriter::new(&self.file);
-            serde_json::to_writer_pretty(&mut writer, &self.credentials).map_err(|e| {
-                std::io::Error::other(format!(
-                    "error writing KMIP credentials file {}: {e}",
-                    self.path.display()
-                ))
-            })?;
-
-            // Ensure that the BufWriter is flushed as advised by the
-            // BufWriter docs.
-            writer.flush()?;
-        }
-
-        // Truncate the file to the length of data we just wrote..
-        let pos = self.file.stream_position()?;
-        self.file.set_len(pos)?;
-
-        // Ensure that any write buffers are flushed.
-        self.file.flush()?;
-
-        Ok(())
+        write_file(&self.path, &data, 0o600)
     }
 
     /// Does this credential set include credentials for the specified KMIP
@@ -1195,7 +1287,7 @@ impl KmipClientCredentialsFile {
         self.credentials.0.contains_key(server_id)
     }
 
-    pub fn get(&self, server_id: &str) -> Option<&KmipClientCredentials> {
+    pub fn get(&self, server_id: &str) -> Option<&KmipCredentials> {
         self.credentials.0.get(server_id)
     }
 
@@ -1206,8 +1298,8 @@ impl KmipClientCredentialsFile {
     pub fn insert(
         &mut self,
         server_id: String,
-        credentials: KmipClientCredentials,
-    ) -> Option<KmipClientCredentials> {
+        credentials: KmipCredentials,
+    ) -> Option<KmipCredentials> {
         self.credentials.0.insert(server_id, credentials)
     }
 
@@ -1215,7 +1307,7 @@ impl KmipClientCredentialsFile {
     ///
     /// Returns any previous configuration if found.
     #[expect(dead_code)]
-    pub fn remove(&mut self, server_id: &str) -> Option<KmipClientCredentials> {
+    pub fn remove(&mut self, server_id: &str) -> Option<KmipCredentials> {
         self.credentials.0.remove(server_id)
     }
 
@@ -1342,6 +1434,16 @@ pub struct KeySetCommandError {
 impl From<KeySetCommandError> for String {
     fn from(err: KeySetCommandError) -> Self {
         err.err
+    }
+}
+
+pub struct KeySetToAtticError {
+    err: String,
+}
+
+impl Display for KeySetToAtticError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.err)
     }
 }
 
@@ -1479,7 +1581,7 @@ fn keyset_kmip_add_server_cmd(
         server_id,
         ip_host_or_fqdn,
         port,
-        insecure,
+        server_name,
         connect_timeout,
         read_timeout,
         write_timeout,
@@ -1508,10 +1610,6 @@ fn keyset_kmip_add_server_cmd(
         key_label_max_bytes.to_string(),
     ];
 
-    if insecure {
-        args.push("--insecure".to_string());
-    }
-
     if has_credentials {
         args.append(&mut strs![
             "--credential-store",
@@ -1519,10 +1617,13 @@ fn keyset_kmip_add_server_cmd(
         ]);
     }
 
+    if let Some(server_name) = server_name {
+        args.append(&mut strs!["--server-name", server_name]);
+    }
+
     if let Some(key_label_prefix) = key_label_prefix {
         args.append(&mut strs!["--key-label-prefix", key_label_prefix]);
     }
 
-    // TODO: --client-cert, --client-key, --server-cert and --ca-cert
     Ok(args)
 }

@@ -213,6 +213,7 @@ fn main() -> ExitCode {
                 config.kmip_credentials_store_path.parent().unwrap(),
                 &*config.policy_dir,
                 &*config.zone_state_dir,
+                &*config.attic_dir,
             ] {
                 if let Err(e) = create_dir_all(dir) {
                     error!("Unable to create directory '{dir}': {e}",);

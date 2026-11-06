@@ -110,8 +110,6 @@ pub struct Spec {
 
     /// Record the SOA serial of the last signed version of the zone.
     /// We use a serial only once, even if the signed zone gets rejected.
-    /// It would be good to have a command where the user can set the
-    /// serial for the Increment serial policy.
     pub previous_serial: Option<Serial>,
 
     /// History of interesting events that occurred for this zone.
@@ -146,7 +144,10 @@ impl Spec {
             key_roll: zone.key_roll.clone(),
             last_signature_refresh: zone.last_signature_refresh.clone(),
             previous_serial: zone.previous_serial,
-            history: zone.history.clone(),
+            history: {
+                let offset = zone.history.len().min(1024);
+                zone.history[offset..].to_vec()
+            },
             persisted_loaded_diffs: PersistedDiffsSpec::build_loaded(
                 &zone.persistence.loaded_diffs,
             ),

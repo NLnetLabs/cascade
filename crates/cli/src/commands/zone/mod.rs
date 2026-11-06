@@ -106,6 +106,27 @@ pub enum ZoneCommand {
         #[command(subcommand)]
         maintenance: Maintenance,
     },
+
+    /// Set the variable "last-signed-serial".
+    ///
+    /// In case of counter policy,
+    /// this causes the serial number of the next signed zone to be
+    /// the "last-signed-serial" plus one. For date-counter,
+    /// if "last-signed-serial" is the current day, then the serial number of
+    /// the next signed zone will be one higher.
+    ///
+    /// It also affects whether the next serial is considered larger than
+    /// the previous serial. This can make a difference when switching
+    /// serial policies or (in the case of the keep policy) when the
+    /// serial number of the unsigned zone went backwards.
+    #[command(name = "set-last-signed-serial")]
+    SetLastSignedSerial {
+        /// The name of the zone.
+        name: ZoneName,
+
+        /// The serial number of the zone.
+        serial: u32,
+    },
 }
 
 #[derive(Clone, Debug, clap::Subcommand)]
@@ -339,6 +360,20 @@ impl Zone {
                             "maintenance mode for zone `{name}` was already {state}d"
                         )),
                     },
+                }
+            }
+            ZoneCommand::SetLastSignedSerial { name, serial } => {
+                let url = format!("/zone/{name}/{serial}/set-last-signed-serial");
+                let result: SetLastSignedSerialResult = client.post_json(&url).await?;
+
+                match result {
+                    Ok(()) => {
+                        println!("Set last signed serial of zone '{name}' to {serial}");
+                        Ok(())
+                    }
+                    Err(SetLastSignedSerialError::NoSuchZone) => {
+                        Err(format!("Zone '{name}' could not be found"))
+                    }
                 }
             }
         }

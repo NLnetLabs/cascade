@@ -357,6 +357,7 @@ jobs:
     strategy:
       matrix:
         rust: [stable]
+        algorithm: [RSASHA256, RSASHA512, ECDSAP256SHA256, ECDSAP384SHA384, ED448, ED25519]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
@@ -365,6 +366,7 @@ jobs:
       - uses: ./integration-tests/tests/sign-using-a-hsm
         with:
           log-level: ${{ inputs.log-level }}
+          algorithm: ${{ matrix.algorithm }}
 
   # Added for https://github.com/NLnetLabs/cascade/issues/105
   strip-dnssec-rrs:
@@ -411,5 +413,21 @@ jobs:
         with:
           build-profile: ${{ inputs.build-profile }}
       - uses: ./integration-tests/tests/multipart-axfr
+        with:
+          log-level: ${{ inputs.log-level }}
+
+  set-last-serial:
+    name: Set the last serial number and check if the next serial takes it into account.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/set-build-profile
+        with:
+          build-profile: ${{ inputs.build-profile }}
+      - uses: ./integration-tests/tests/set-last-serial
         with:
           log-level: ${{ inputs.log-level }}

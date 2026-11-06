@@ -112,7 +112,7 @@ impl Spec {
         }
 
         let text = serde_json::to_string(self)?;
-        crate::util::write_file(path, text.as_bytes())
+        crate::util::write_file(path, text.as_bytes(), 0o644)
     }
 }
 
