@@ -255,6 +255,15 @@ impl ZonePersistenceHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     pub fn start_loaded_persistence(&mut self, persister: LoadedZonePersister) {
+        let upcoming = self
+            .state
+            .instances
+            .upcoming
+            .as_ref()
+            .and_then(|i| i.loaded.as_ref())
+            .unwrap()
+            .clone();
+
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("loaded_persistence");
@@ -262,9 +271,8 @@ impl ZonePersistenceHandle<'_> {
             .persistence
             .ongoing
             .spawn_blocking(span, move || {
-                debug!("Persisting the loaded instance");
-                let persisted = persist_loaded(&zone, &center, persister);
-                debug!("Persisting the loaded instance completed");
+                persist_loaded(&zone, &center, &upcoming);
+                let persisted = persister.mark_complete();
 
                 // NOTE: The outer function, which is spawning the background
                 // task, has a lock of the zone state. Thus, the following lock
@@ -285,6 +293,8 @@ impl ZonePersistenceHandle<'_> {
         fields(zone = %self.zone.name),
     )]
     pub fn start_signed_persistence(&mut self, persister: SignedZonePersister) {
+        let upcoming = self.state.instances.upcoming.clone().unwrap();
+
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("signed_persistence");
@@ -292,9 +302,8 @@ impl ZonePersistenceHandle<'_> {
             .persistence
             .ongoing
             .spawn_blocking(span, move || {
-                debug!("Persisting the signed instance");
-                let persisted = persist_signed(&zone, &center, persister);
-                debug!("Persisting the signed instance completed");
+                persist_signed(&zone, &center, &upcoming);
+                let persisted = persister.mark_complete();
 
                 // NOTE: The outer function, which is spawning the background
                 // task, has a lock of the zone state. Thus, the following lock

@@ -37,7 +37,7 @@ use crate::units::zone_signer::faketime_or_now;
 mod storage;
 pub use storage::{StorageState, StorageZoneHandle};
 
-mod instance;
+pub mod instance;
 pub use instance::{Instances, LoadedInstance, SignedInstance, SignedInstanceId};
 
 pub mod machine;

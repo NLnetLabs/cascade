@@ -262,6 +262,11 @@ impl<'a> ZoneHandle<'a> {
         };
         transition.move_to(ZoneStateMachine::PersistingLoaded(loaded.approve()));
 
+        // Persist the zone state file at the new path so that information about
+        // the upcoming instance is available in case Cascade crashes while
+        // persisting the zone contents.
+        let _ = self.save_state_now();
+
         // We move to the signing state and start persisting. The actual signing
         // will be triggered by the zone storage when persisting is done.
         let persister = self.storage().accept_loaded();
@@ -479,7 +484,15 @@ impl<'a> ZoneHandle<'a> {
 
         let viewer = self.storage().finish_signed_persistence(persisted);
 
+        // If there was no current instance, a snapshot was persisted.
+        let new_snapshot = self.state.instances.current.is_none();
+
         self.state.instances.switch();
+
+        if new_snapshot {
+            self.state.persistence.snapshot_id =
+                Some(self.state.instances.current.as_ref().unwrap().signed.id);
+        }
 
         let serial = self
             .state
@@ -570,6 +583,11 @@ impl<'a> ZoneHandle<'a> {
         transition.move_to(ZoneStateMachine::PersistingLoaded(
             halt.override_rejection(),
         ));
+
+        // Persist the zone state file so that information about the upcoming
+        // instance is available in case Cascade crashes while persisting the
+        // zone contents.
+        let _ = self.save_state_now();
 
         // We move to the signing state and start persisting. The actual signing
         // will be triggered by the zone storage when persisting is done.
