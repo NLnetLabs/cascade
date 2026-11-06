@@ -35,10 +35,10 @@ runs:
     # easily reached.
     # ------------------------------------------------------------------------
 
-    - name: Increase policy setting max-diffs-size to 100%.
+    - name: Increase policy setting max-diffs-size to 150%.
       run: |
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        sed -i -e 's|#max-diffs-size.\+|max-diffs-size = 100|' "${POLICY_DIR}/default.toml"
+        sed -i -e 's|#max-diffs-size.\+|max-diffs-size = 150|' "${POLICY_DIR}/default.toml"
         cascade policy reload
 
     # ------------------------------------------------------------------------
