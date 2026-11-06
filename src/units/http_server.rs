@@ -51,7 +51,6 @@ use crate::server::SignedReviewServer;
 use crate::tsig::{self, RemoveError};
 use crate::units::key_manager::KmipCredentials;
 use crate::units::key_manager::KmipCredentialsFile;
-use crate::units::key_manager::KmipCredentialsFileMode;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
@@ -123,6 +122,10 @@ impl HttpServer {
             .route(
                 "/zone/{zone}/maintenance/disable",
                 post(Self::disable_maintenance_mode),
+            )
+            .route(
+                "/zone/{name}/{serial}/set-last-signed-serial",
+                post(Self::set_last_signed_serial),
             )
             .route("/policy/", get(Self::policy_list))
             .route("/policy/reload", post(Self::policy_reload))
@@ -1026,6 +1029,28 @@ impl HttpServer {
         Ok(ZoneMaintenanceModeOutput { zone: name.clone() })
     }
 
+    async fn set_last_signed_serial(
+        State(state): State<Arc<HttpServer>>,
+        Path((name, serial)): Path<(Name<Bytes>, Serial)>,
+    ) -> Json<SetLastSignedSerialResult> {
+        let zone = match center::get_zone(&state.center, &name) {
+            Some(z) => z,
+            None => return Json(Err(SetLastSignedSerialError::NoSuchZone)),
+        };
+
+        let mut zone_state = zone.write(&state.center);
+
+        zone_state.previous_serial = Some(serial);
+
+        // Note that this sets "previous_serial" but does not cause the zone
+        // to be resigned. The main reason is that the incremental
+        // signer decides whether a new signed zone is needed or not. A change
+        // in "previous_serial" is not a change that would lead to a new
+        // signed zone.
+
+        Json(Ok(()))
+    }
+
     async fn policy_list(State(state): State<Arc<HttpServer>>) -> Json<PolicyListResult> {
         let state = state.center.state.lock().unwrap();
 
@@ -1779,11 +1804,10 @@ impl HttpServer {
             tls_server_auth,
         };
         if creds.has_credentials() {
-            let mut creds_file = KmipCredentialsFile::new(
-                kmip_credentials_store_path.as_std_path(),
-                KmipCredentialsFileMode::CreateReadWrite,
-            )
-            .map_err(|err| HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting { err })?;
+            let mut creds_file = KmipCredentialsFile::new(&kmip_credentials_store_path, true)
+                .map_err(
+                    |err| HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting { err },
+                )?;
             let _ = creds_file.insert(server_id, creds);
             creds_file
                 .save()

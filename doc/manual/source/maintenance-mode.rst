@@ -29,7 +29,7 @@ It can similarly be disabled with:
 
 .. code-block:: bash
 
-	cascade zone maintenance disabled <zone-name>
+	cascade zone maintenance disable <zone-name>
 
 You can check whether a zone is in maintenance mode by looking at the ``zone status``
 of the zone in question. If it is in maintenance mode, then a warning will be shown

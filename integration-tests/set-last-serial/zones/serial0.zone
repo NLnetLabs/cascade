@@ -1,0 +1,6 @@
+; Empty zone with serial 0
+
+example. IN 333 SOA ns.example. hostmaster.example. 0 2222 2222 2222 2222
+
+; A zone should have an NS record.
+@ NS ns1.example.
