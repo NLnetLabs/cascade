@@ -61,7 +61,6 @@ pub struct KmipServerState {
     pub server_id: String,
     pub ip_host_or_fqdn: String,
     pub port: u16,
-    pub insecure: bool,
     pub server_name: Option<String>,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
@@ -79,12 +78,12 @@ impl From<HsmServerAdd> for KmipServerState {
             || srv.client_cert.is_some()
             || srv.client_key.is_some()
             || srv.server_cert.is_some()
-            || srv.ca_cert.is_some();
+            || srv.ca_cert.is_some()
+            || srv.insecure;
         KmipServerState {
             server_id: srv.server_id,
             ip_host_or_fqdn: srv.ip_host_or_fqdn,
             port: srv.port,
-            insecure: srv.insecure,
             server_name: srv.server_name,
             connect_timeout: srv.connect_timeout,
             read_timeout: srv.read_timeout,
@@ -103,7 +102,6 @@ impl From<KmipServerState> for api::KmipServerState {
             server_id,
             ip_host_or_fqdn,
             port,
-            insecure,
             server_name,
             connect_timeout,
             read_timeout,
@@ -119,7 +117,6 @@ impl From<KmipServerState> for api::KmipServerState {
             server_id,
             ip_host_or_fqdn,
             port,
-            insecure,
             server_name,
             connect_timeout,
             read_timeout,

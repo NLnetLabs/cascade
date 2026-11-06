@@ -22,8 +22,9 @@ use domain::base::Name;
 use domain::base::Serial;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::utils::base64;
-use domain_kmip::dep::kmip_protocol::net::ClientCertificate;
 use domain_kmip::dep::kmip_protocol::net::ConnectionSettings;
+use domain_kmip::dep::kmip_protocol::net::TlsClientAuth;
+use domain_kmip::dep::kmip_protocol::net::TlsServerAuth;
 use domain_kmip::dep::kmip_protocol::net::sync_pool::ConnectionManager;
 use serde::Deserialize;
 use tokio::net::TcpListener;
@@ -1669,10 +1670,10 @@ impl HttpServer {
                 ..
             } = req.clone();
 
-            let client_cert = match (client_cert, client_key) {
-                (Some(cert_bytes), Some(key_bytes)) => Some(ClientCertificate::SeparatePem {
+            let tls_client_auth = match (client_cert, client_key) {
+                (Some(cert_bytes), Some(private_key_bytes)) => Some(TlsClientAuth {
                     cert_bytes,
-                    key_bytes,
+                    private_key_bytes,
                 }),
                 (None, None) => None,
                 _ => {
@@ -1680,20 +1681,39 @@ impl HttpServer {
                 }
             };
 
+            let mut tls_server_auth = match (server_cert, ca_cert) {
+                (None, None) => TlsServerAuth::Default,
+                (Some(_), Some(_)) => {
+                    return Err(HsmServerAddError::ServerAndCaCertNotSupported);
+                }
+                (None, Some(ca_cert_bytes)) => {
+                    TlsServerAuth::TrustCertificateAuthority(ca_cert_bytes)
+                }
+                (Some(server_cert_bytes), None) => {
+                    TlsServerAuth::TrustCertificate(server_cert_bytes)
+                }
+            };
+
+            if insecure {
+                if tls_server_auth == TlsServerAuth::Default {
+                    tls_server_auth = TlsServerAuth::None;
+                } else {
+                    return Err(HsmServerAddError::CertAndInsecureNotSupported);
+                }
+            }
+
             ConnectionSettings {
                 host: ip_host_or_fqdn,
                 port,
                 username,
                 password,
-                insecure,
-                client_cert,
-                server_cert,
-                server_name,
-                ca_cert,
                 connect_timeout: Some(connect_timeout),
                 read_timeout: Some(read_timeout),
                 write_timeout: Some(write_timeout),
                 max_response_bytes: Some(max_response_bytes),
+                tls_client_auth,
+                tls_server_auth,
+                tls_server_name: server_name,
             }
         };
 
@@ -1741,13 +1761,22 @@ impl HttpServer {
             .vendor_identification
             .unwrap_or("Anonymous HSM vendor".to_string());
 
+        let (tls_client_cert_bytes, tls_client_private_key_bytes) =
+            if let Some(auth) = conn_settings.tls_client_auth {
+                (Some(auth.cert_bytes), Some(auth.private_key_bytes))
+            } else {
+                (None, None)
+            };
+
+        let tls_server_auth = conn_settings.tls_server_auth.into();
+
         // Add any credentials to the credentials store.
         let creds = KmipCredentials {
             username: conn_settings.username,
             password: conn_settings.password,
-            client_certificate: conn_settings.client_cert.map(Into::into),
-            server_certificate: conn_settings.server_cert,
-            ca_certificate: conn_settings.ca_cert,
+            tls_client_cert_bytes,
+            tls_client_private_key_bytes,
+            tls_server_auth,
         };
         if creds.has_credentials() {
             let mut creds_file = KmipCredentialsFile::new(

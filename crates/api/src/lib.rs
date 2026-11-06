@@ -1088,6 +1088,8 @@ pub enum HsmServerAddError {
         err: String,
     },
     MissingClientCertificateOrKey,
+    ServerAndCaCertNotSupported,
+    CertAndInsecureNotSupported,
     IoError {
         err: String,
     },
@@ -1134,6 +1136,15 @@ impl std::fmt::Display for HsmServerAddError {
             HsmServerAddError::MissingClientCertificateOrKey => {
                 write!(f, "Missing client certificate or client key")
             }
+            HsmServerAddError::ServerAndCaCertNotSupported => {
+                write!(
+                    f,
+                    "Cannot use both a server certificate AND a CA certificate"
+                )
+            }
+            HsmServerAddError::CertAndInsecureNotSupported => {
+                write!(f, "Cannot use both a server/CA cert AND the insecure flag")
+            }
             HsmServerAddError::IoError { err } => {
                 write!(f, "I/O error: {err}")
             }
@@ -1165,7 +1176,6 @@ pub struct KmipServerState {
     pub server_name: Option<String>,
     pub ip_host_or_fqdn: String,
     pub port: u16,
-    pub insecure: bool,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub write_timeout: Duration,

@@ -742,7 +742,6 @@ impl From<NameserverCommsPolicy> for NameserverCommsSpec {
 pub struct HsmSpec {
     pub ip_host_or_fqdn: String,
     pub port: u16,
-    pub insecure: bool,
     pub server_name: Option<String>,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
@@ -761,7 +760,6 @@ impl HsmSpec {
         let Self {
             ip_host_or_fqdn,
             port,
-            insecure,
             server_name,
             connect_timeout,
             read_timeout,
@@ -776,7 +774,6 @@ impl HsmSpec {
             server_id: name.into(),
             ip_host_or_fqdn,
             port,
-            insecure,
             server_name,
             connect_timeout,
             read_timeout,
@@ -794,7 +791,6 @@ impl HsmSpec {
             server_id: _,
             ip_host_or_fqdn,
             port,
-            insecure,
             server_name,
             connect_timeout,
             read_timeout,
@@ -808,7 +804,6 @@ impl HsmSpec {
         Self {
             ip_host_or_fqdn,
             port,
-            insecure,
             server_name,
             connect_timeout,
             read_timeout,

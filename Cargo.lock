@@ -90,17 +90,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-trait"
-version = "0.1.92"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.9",
-]
-
-[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -552,7 +541,7 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.12.3"
-source = "git+https://github.com/NLnetLabs/domain?branch=main#f4ca391238d5d80eeaafc140f38ecdf4488903e5"
+source = "git+https://github.com/NLnetLabs/domain?rev=f4ca391#f4ca391238d5d80eeaafc140f38ecdf4488903e5"
 dependencies = [
  "arc-swap",
  "bumpalo",
@@ -582,7 +571,7 @@ dependencies = [
 [[package]]
 name = "domain-kmip"
 version = "0.0.1"
-source = "git+https://github.com/NLnetLabs/domain-kmip?branch=more-algorithm-support-and-fixes-and-cleanup#0d8535adbfb7de9f2bd91213e1e4b48589fe6c19"
+source = "git+https://github.com/NLnetLabs/domain-kmip?branch=more-algorithm-support-and-fixes-and-cleanup#eb3d3b38b54a78a284ce051aa5427cc1411a3099"
 dependencies = [
  "bcder",
  "domain",
@@ -596,7 +585,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.12.3"
-source = "git+https://github.com/NLnetLabs/domain?branch=main#f4ca391238d5d80eeaafc140f38ecdf4488903e5"
+source = "git+https://github.com/NLnetLabs/domain?rev=f4ca391#f4ca391238d5d80eeaafc140f38ecdf4488903e5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1103,10 +1092,9 @@ dependencies = [
 
 [[package]]
 name = "kmip-protocol"
-version = "0.5.1-dev"
-source = "git+https://github.com/NLnetLabs/kmip-protocol.git?branch=bump-dependencies#1625b323f0b5fd432a26116307b17d6822ead3be"
+version = "0.5.1"
+source = "git+https://github.com/NLnetLabs/kmip-protocol.git?branch=release-prep#1b066c5fed4d0ce70bea8f0f4b40d4c0f1823528"
 dependencies = [
- "async-trait",
  "bitflags 2.13.2",
  "cfg-if",
  "enum-ordinalize",

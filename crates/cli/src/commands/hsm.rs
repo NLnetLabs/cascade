@@ -180,7 +180,6 @@ fn print_server(
         server_id,
         ip_host_or_fqdn,
         port,
-        insecure,
         server_name,
         connect_timeout,
         read_timeout,
@@ -198,7 +197,6 @@ fn print_server(
         println!("  sni name: {server_name}");
     }
     println!("  port: {port}");
-    println!("  insecure: {}", if *insecure { "yes" } else { "no" });
     println!("  limits:");
     println!("    connect timeout: {}s", connect_timeout.as_secs());
     println!("    read timeout: {}s", read_timeout.as_secs());

@@ -175,7 +175,6 @@ use core::time::Duration;
 use domain::base::Name;
 use domain::dnssec::sign::keys::keyset::{KeySet, UnixTime};
 use domain::rdata::dnssec::Timestamp;
-use domain_kmip::dep::kmip_protocol::net::ClientCertificate as KmipClientCertificate;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env::{VarError, var};
@@ -1094,53 +1093,71 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
 
 //============ KMIP Credential Management ====================================
 
-//------------ KmipClientCertificate -----------------------------------------
+//------------ TlsServerAuth -------------------------------------------------
 
-/// Certificate details in various supported formats for use with TLS client authentication.
+/// Additional certificates used to verify the identity of the server.
 ///
-/// A re-implementation of kmip_protocol::net::ClientCertificate with
-/// (de)serialization support.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ClientCertificate {
-    SeparatePem {
-        cert_bytes: Vec<u8>,
-        key_bytes: Vec<u8>,
-    },
-    CombinedPkcs12 {
-        cert_bytes: Vec<u8>,
-    },
+/// These certificates are needed when the certificate chain of the server
+/// includes certificates that are not available in the default certificate
+/// store, i.e. are not widely distributed well known certificates.
+///
+/// This can be for example because the Certificate Authority that issued the
+/// certificate is internal to the organization that deployed the KMIP server,
+/// or because the server is using a self-signed certificate but rather than
+/// trust the certificate blindly you want to verify that it is the expected
+/// self-signed certificate.
+//
+// Note: This is a re-implementation of the kmip_protocol TlsServerAuth enum
+// with added Deserialize and Serialize impls.
+//
+// Note: Copied from dnst keyset. TODO: Share the code via a separate Rust
+// crate.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub enum TlsServerAuth {
+    /// Do not verify the identify of the server.
+    None,
+
+    /// Use only certificates provided in the default trust store.
+    #[default]
+    Default,
+
+    /// The PEM encoded bytes of a certificate to trurst directly, e.g. a
+    /// self-signed certificate.
+    ///
+    /// TODO: Add support for verifying certificates by their fingerprint.
+    TrustCertificate(Vec<u8>),
+
+    /// The PEM encoded bytes of the certificate of a Certificate Authority
+    /// to add to the certificate trust store in order to be able to verify
+    /// certificates issued by this authority, e.g. an in-house custom CA
+    /// not present in the default trust store.
+    TrustCertificateAuthority(Vec<u8>),
 }
 
-impl From<KmipClientCertificate> for ClientCertificate {
-    fn from(c: KmipClientCertificate) -> Self {
-        match c {
-            KmipClientCertificate::SeparatePem {
-                cert_bytes,
-                key_bytes,
-            } => Self::SeparatePem {
-                cert_bytes,
-                key_bytes,
-            },
-            KmipClientCertificate::CombinedPkcs12 { cert_bytes } => {
-                Self::CombinedPkcs12 { cert_bytes }
+impl From<TlsServerAuth> for domain_kmip::dep::kmip_protocol::net::TlsServerAuth {
+    fn from(auth: TlsServerAuth) -> Self {
+        match auth {
+            TlsServerAuth::None => Self::None,
+            TlsServerAuth::Default => Self::Default,
+            TlsServerAuth::TrustCertificate(cert_bytes) => Self::TrustCertificate(cert_bytes),
+            TlsServerAuth::TrustCertificateAuthority(ca_cert_bytes) => {
+                Self::TrustCertificateAuthority(ca_cert_bytes)
             }
         }
     }
 }
 
-impl From<ClientCertificate> for KmipClientCertificate {
-    fn from(c: ClientCertificate) -> Self {
-        match c {
-            ClientCertificate::SeparatePem {
-                cert_bytes,
-                key_bytes,
-            } => KmipClientCertificate::SeparatePem {
-                cert_bytes,
-                key_bytes,
-            },
-            ClientCertificate::CombinedPkcs12 { cert_bytes } => {
-                KmipClientCertificate::CombinedPkcs12 { cert_bytes }
+impl From<domain_kmip::dep::kmip_protocol::net::TlsServerAuth> for TlsServerAuth {
+    fn from(auth: domain_kmip::dep::kmip_protocol::net::TlsServerAuth) -> Self {
+        match auth {
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::None => Self::None,
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::Default => Self::Default,
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::TrustCertificate(cert_bytes) => {
+                Self::TrustCertificate(cert_bytes)
             }
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::TrustCertificateAuthority(
+                ca_cert_bytes,
+            ) => Self::TrustCertificateAuthority(ca_cert_bytes),
         }
     }
 }
@@ -1152,8 +1169,10 @@ impl From<ClientCertificate> for KmipClientCertificate {
 /// Intended to be read from a JSON file stored separately to the main
 /// configuration so that separate security policy can be applied to sensitive
 /// credentials.
-// Copied from dnst keyset. TODO: Share the code via a separate Rust crate.
-#[derive(Debug, Default, Deserialize, Serialize)]
+///
+// Note: Copied from dnst keyset. TODO: Share the code via a separate Rust
+// crate.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KmipCredentials {
     /// KMIP username credential.
     ///
@@ -1170,27 +1189,34 @@ pub struct KmipCredentials {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub password: Option<String>,
 
-    /// Optional path to a TLS certificate to authenticate to the KMIP server
-    /// with.
+    /// Optional TLS certificate bytes in PEM format.
+    ///
+    /// Note: If [`tls_client_private_key_bytes`] is provided then this value
+    /// MUST also be provided as the client has to use the private key to
+    /// sign the certificate so that the server can use the public key in the
+    /// certificate to verify that we possess the correct private key, i.e. we
+    /// are who we say we are.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub client_certificate: Option<ClientCertificate>,
+    pub tls_client_cert_bytes: Option<Vec<u8>>,
 
-    /// Optional path to a TLS PEM certificate for the server.
+    /// Optional TLS private key bytes in PEM format.
+    ///
+    /// Note: If [`tls_client_cert_bytes`] is provided then this value MUST
+    /// also be provided. See [`tls_client_cert_bytes`] for more details.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub server_certificate: Option<Vec<u8>>,
+    pub tls_client_private_key_bytes: Option<Vec<u8>>,
 
-    /// Optional path to a TLS PEM certificate for a Certificate Authority.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub ca_certificate: Option<Vec<u8>>,
+    /// Optional TLS server authentication details.
+    pub tls_server_auth: TlsServerAuth,
 }
 
 impl KmipCredentials {
     pub fn has_credentials(&self) -> bool {
         self.username.is_some()
             || self.password.is_some()
-            || self.client_certificate.is_some()
-            || self.server_certificate.is_some()
-            || self.ca_certificate.is_some()
+            || self.tls_client_cert_bytes.is_some()
+            || self.tls_client_private_key_bytes.is_some()
+            || self.tls_server_auth != TlsServerAuth::Default
     }
 }
 
@@ -1646,7 +1672,6 @@ fn keyset_kmip_add_server_cmd(
         server_id,
         ip_host_or_fqdn,
         port,
-        insecure,
         server_name,
         connect_timeout,
         read_timeout,
@@ -1676,10 +1701,6 @@ fn keyset_kmip_add_server_cmd(
         key_label_max_bytes.to_string(),
     ];
 
-    if insecure {
-        args.push("--insecure".to_string());
-    }
-
     if has_credentials {
         args.append(&mut strs![
             "--credential-store",
@@ -1695,6 +1716,5 @@ fn keyset_kmip_add_server_cmd(
         args.append(&mut strs!["--key-label-prefix", key_label_prefix]);
     }
 
-    // TODO: --client-cert, --client-key, --server-cert and --ca-cert
     Ok(args)
 }
