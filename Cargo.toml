@@ -136,6 +136,7 @@ serde              = { workspace = true, features = ["derive", "rc"] }
 rayon = "1.10.0"
 serde_json         = "1.0"
 url                = { version = "2.4", features = ["serde"] }
+scheduled-thread-pool = { version = "=0.2.7" } # pin to 0.2.7 to prevent dependingb on newer parking_lot and lock_api versions which don't compile with Rust < 1.95.
 
 serde_with.workspace = true
 
