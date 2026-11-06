@@ -84,10 +84,14 @@ Start a key roll.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B propagation1\-complete <TTL>
+.B before\-ttl <TTL>
+Inform keyset of the maximum of the TTLs of the RRsets that are about the
+get changed.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B propagation1\-complete
 Inform keyset that the changed RRsets and signatures have propagated.
-.sp
-TTL is the maximum TTL of the zone.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -96,10 +100,8 @@ Inform keyset that enough time has passed that caches should have expired.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B propagation2\-complete <TTL>
+.B propagation2\-complete
 Inform keyset that the changed RRsets and signatures have propagated.
-.sp
-TTL is the maximum TTL of the zone.
 .UNINDENT
 .INDENT 0.0
 .TP

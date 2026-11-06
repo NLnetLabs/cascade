@@ -2,26 +2,26 @@ Key Management
 ==============
 
 .. note:: The key management strategy is fundamentally different than the
-   the implementation in OpenDNSSEC and for example BIND. 
-   
-   The goal is that key rolls should always go through the same sequence of 
+   the implementation in OpenDNSSEC and for example BIND.
+
+   The goal is that key rolls should always go through the same sequence of
    steps. As much as possible, we strive to get all key rolls in a single mold.
-   They will always follow the same pattern, while the details of a 
-   :term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key 
+   They will always follow the same pattern, while the details of a
+   :term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key
    (ZSK)>` roll will be different.
 
 Implementation
 --------------
 
-The key manager is responsible for two things: 
+The key manager is responsible for two things:
 
 1. For each zone, it maintains and provides key rolls for a set of keys that
-   are used to sign. 
+   are used to sign.
 2. Signing DNSKEY, CDS, and CDNSKEY :term:`RRsets <Resource Record Set
    (RRset)>`.
 
-Cascade uses an external key manager, which is part of our :program:`dnst` 
-toolset. The actual key management is provided by the :subcmd:`keyset` 
+Cascade uses an external key manager, which is part of our :program:`dnst`
+toolset. The actual key management is provided by the :subcmd:`keyset`
 subcommand of :program:`dnst`.
 
 The reason for having an external key manager is to have the flexibility to
@@ -47,7 +47,7 @@ manager has configuration parameters for key generation (which algorithm to
 use, whether to use a :term:`CSK <Combined signing key (CSK)>` or a
 :term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key (ZSK)>`
 pair), parameters for key rolls (whether key rolls are automatic or not), the
-lifetimes of keys and signatures, etc. 
+lifetimes of keys and signatures, etc.
 
 Maintaining State
 """""""""""""""""
@@ -61,7 +61,7 @@ automatic or not), the lifetimes of keys and signatures, etc.
 In addition to the configuration and state files, the key manager maintains
 files for keys that are stored in the filesystem.
 
-Updating Keys 
+Updating Keys
 """""""""""""
 
 The signatures of the DNSKEY, CDS and CDNSKEY RRsets need to be updated
@@ -70,7 +70,7 @@ of the key manager to start new key rolls and to make progress on ones that
 are currently executing. For this purpose, Cascade invokes the key manager
 periodically.
 
-New Zones and Keys 
+New Zones and Keys
 ------------------
 
 When a new zone is added to Cascade, Cascade will invoke the key manager to
@@ -88,7 +88,7 @@ Key Rolls
 ---------
 
 The key manager can perform KSK, ZSK, CSK, and algorithm rolls.
-   
+
 A KSK roll replaces one KSK with a new KSK. Similarly, a ZSK roll replaces
 one ZSK with a new ZSK. A CSK roll also replaces a CSK with a new CSK but the
 roll also treats a pair of KSK and ZSK keys as equivalent to a CSK. So, a CSK
@@ -122,11 +122,11 @@ Automatic Key Rolls
 For automatic key rolls, the key manager will check the propagation of
 changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
 signatures to all nameservers of the zone or the parent zone. To be able to
-do this, the key manager needs network access to those nameservers. 
+do this, the key manager needs network access to those nameservers.
 
-.. important:: If Cascade cannot access the nameservers of the zone and 
-   parent zone, automation will fail. In that case it is best to 
-   :ref:`disable (part of) this functionality <automation-control>`. 
+.. important:: If Cascade cannot access the nameservers of the zone and
+   parent zone, automation will fail. In that case it is best to
+   :ref:`disable (part of) this functionality <automation-control>`.
 
 To check the signatures in the zone, the key manager will issue an AXFR
 request to the primary nameserver listed in the SOA record of the zone or to
@@ -137,13 +137,13 @@ The automatic key roll checks have two limitations:
 1. They do not work in a multi-signer setup where signers use different keys
    to sign the zone.
 2. Propagation cannot be checked in an any-cast setup. The key manager may
-   continue with the key roll before all nodes in the any-cast cluster have 
+   continue with the key roll before all nodes in the any-cast cluster have
    received the new version of the zone.
 
 Future Development
 ~~~~~~~~~~~~~~~~~~
 
-.. tip:: We explicitly solicit :ref:`your input <reach-out>` on how to 
+.. tip:: We explicitly solicit :ref:`your input <reach-out>` on how to
    improve this feature.
 
 We would like to avoid time-based solutions, because that could mean that the
@@ -157,25 +157,26 @@ Internet.
 Key Roll Steps
 """"""""""""""
 
-A key roll consists of six steps:
+A key roll consists of eight steps:
 
 1. :subcmd:`start-roll`
-2. :subcmd:`propagation1-complete`
-3. :subcmd:`cache-expired1`
-4. :subcmd:`propagation2-complete`
-5. :subcmd:`cache-expired2`
-6. :subcmd:`roll-done`
-   
-For each key roll these six steps follow in the same order.
-Associated with each step is a (possibly empty) list of actions, which fall 
+2. :subcmd:`before-ttl`
+3. :subcmd:`propagation1-complete`
+4. :subcmd:`cache-expired1`
+5. :subcmd:`before-ttl`
+6. :subcmd:`propagation2-complete`
+7. :subcmd:`cache-expired2`
+8. :subcmd:`roll-done`
+
+For each key roll these eight steps follow in the same order.
+Associated with each step is a (possibly empty) list of actions, which fall
 in three categories:
 
 1. Actions that require updating the zone or the parent zone.
 2. Actions that require checking if changes have propagated to all
-   nameservers and require reporting of the TTLs of the changed RRset as seen
-   at the nameservers.
-3. Waiting for changes to propagate to all nameservers but there is no need
-   to report the TTL.
+   nameservers (for the propagation-complete steps) and that require
+   reporting the before TTLs (for the before-ttl steps).
+3. Waiting for changes to propagate to all nameservers.
 
 Typically, in a list of actions, an action of the first category is paired
 with one from the second of third category.
@@ -184,13 +185,15 @@ For example, ``UpdateDnskeyRrset`` is paired with either
 
 A key roll starts with the :subcmd:`start-roll` step, which creates new keys.
 
-The next step, :subcmd:`propagation1-complete`, has a TTL argument which is
-the maximum of the TTLs of the Report actions. The :subcmd:`cache-expired1`
+The next step, :subcmd:`before-ttl`, has a TTL argument which is
+the maximum of the TTLs of the original RRsets in the Report actions.
+The then comes the step, :subcmd:`propagation1-complete`.
+The :subcmd:`cache-expired1`
 and :subcmd:`cache-expired2` have no associated actions. They simply require
 waiting for the TTL (in seconds) reported by the preceding
-:subcmd:`propagation1-complete` or :subcmd:`propagation2-complete` steps. The
-:subcmd:`propagation2-complete` step is similar to the
-:subcmd:`propagation1-complete` step. 
+:subcmd:`before-ttl` steps.
+The :subcmd:`propagation2-complete` step is similar to the
+:subcmd:`propagation1-complete` step.
 
 Finally, the :subcmd:`roll-done` step typically has associated Wait actions.
 These actions are cleanup actions and are harmless but confusing if they are
@@ -203,10 +206,10 @@ Controlling Automation
 
 The key manager provides fine grained control over automation, which can be
 configured separately for each of the four roll types: KSK, ZSK, CSK and
-algorithm. For each roll type, there are four booleans: 
-:option:`start <ksk.auto-start = true>`, 
+algorithm. For each roll type, there are four booleans:
+:option:`start <ksk.auto-start = true>`,
 :option:`report <ksk.auto-report = true>`,
-:option:`expire <ksk.auto-expire = true>` and 
+:option:`expire <ksk.auto-expire = true>` and
 :option:`done <ksk.auto-done = true>`.
 
 These booleans make it possible to automate KSK or algorithm rolls without
@@ -214,16 +217,16 @@ starting them automatically. You can also let a key roll progress
 automatically except for doing the ``cache-expired`` steps manually, in order
 to be able to insert extra manual steps.
 
-.. important:: The :option:`report <ksk.auto-report = true>` and 
+.. important:: The :option:`report <ksk.auto-report = true>` and
    :option:`done <ksk.auto-done = true>` automations require that Cascade has
-   network access to all nameservers of the zone and all nameservers of the 
+   network access to all nameservers of the zone and all nameservers of the
    parent. If network access is unavailable, make sure to disable them.
 
 Start
 ~~~~~
 
-When set, the 
-:option:`ksk|zsk|csk|algorithm.auto-start <ksk.auto-start = true>` booleans 
+When set, the
+:option:`ksk|zsk|csk|algorithm.auto-start <ksk.auto-start = true>` booleans
 direct the key manager to start a key roll when a relevant key has expired.
 
 A KSK or a ZSK key roll can start automatically if the respective KSK or
@@ -236,29 +239,36 @@ Report
 ~~~~~~
 
 The :option:`ksk|zsk|csk|algorithm.auto-report <ksk.auto-report = true>`
-options control the automation of the :subcmd:`propagation1-complete` and
-:subcmd:`propagation2-complete` steps. When enabled, the :subcmd:`cron` 
+options control the automation of the subcmd:`before-ttl`,
+:subcmd:`propagation1-complete` and :subcmd:`propagation2-complete` steps.
+When enabled, for the subcmd:`propagation1-complete` and
+:subcmd:`propagation2-complete` steps, the :subcmd:`cron`
 subcommand contacts the nameservers of the zone or (in the case of
 ``ReportDsPropagated``, the nameservers of the parent zone) to check if
-changes have propagated to all nameservers. 
+changes have propagated to all nameservers.
 
 The check obtains the list of nameservers from the apex of the (parent) zone
 and collects all IPv4 and IPv6 addresses. For the ``ReportDnskeyPropagated``
 and ``ReportDsPropagated`` actions, each address is the queried to see if the
 DNSKEY RRset or DS RRset match the KSKs. The ``ReportRrsigPropagated`` action
-is more complex. 
+is more complex.
 
 First, the entire zone is transferred from the primary nameserver listed in
 the SOA record. Then all relevant signatures are checked if they have the
-expected key tags. The maximum TTL in the zone is recorded to be reported.
+expected key tags.
 Finally, all addresses of listed nameservers are checked to see if they have
 a SOA serial that is greater than or equal to the one that was checked.
+
+The :subcmd:`before-ttl` step is similar, except in stead of checking
+propagation, the TTL of the original RRset (or in the case of
+``ReportDnskeyPropagated``, the maximum TTL in the zone)
+is recorded to be reported.
 
 Expire
 ~~~~~~
 
 Automation of :subcmd:`cache-expired1` and :subcmd:`cache-expired2` is
-controlled by the 
+controlled by the
 :option:`ksk|zsk|csk|algorithm.auto-expire <ksk.auto-expire = true>`
 policy options. When enabled, the cron subcommand simply checks if enough
 time has passed to invoke :subcmd:`cache-expired1` or
@@ -279,12 +289,12 @@ Importing Keys
 The key manager supports importing existing keys. Both standalone public keys
 as well as public/private key pairs can be imported. A standalone public key
 can only be imported from a file whereas public/private key pairs can be
-either files or references to keys stored in an HSM. 
+either files or references to keys stored in an HSM.
 
-.. note:: The public and private key either need to be both files or both 
+.. note:: The public and private key either need to be both files or both
    stored in an HSM.
 
-There are three basic ways to import existing keys: 
+There are three basic ways to import existing keys:
 
 1. A public-key stored in a file
 2. A public/private key pair stored in files
