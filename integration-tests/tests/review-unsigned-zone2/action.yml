@@ -39,8 +39,8 @@ runs:
     - name: Add policy
       id: add-policy
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/review-unsigned-zone2"
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
+        INTEGRATION_TEST_DIR="${PWD}/review-unsigned-zone2"
         # Fix the paths to the reference output specified in the hooks.
         for hook in ${INTEGRATION_TEST_DIR}/hooks/*
         do
@@ -60,7 +60,7 @@ runs:
         TEST_IDX: "${{ inputs.test_idx }}"
         KEY: "${{ inputs.key }}"
       run: |
-        TEST_DIR="${PWD}/integration-tests/review-unsigned-zone2"
+        TEST_DIR="${PWD}/review-unsigned-zone2"
         ZONE_FILE="${TEST_DIR}/zones/test${TEST_IDX}.zone"
         KEY_FILE="${TEST_DIR}/keys/${KEY}"
         cascade zone add --source "${ZONE_FILE}" --policy review-test --import-csk-file "${KEY_FILE}" example

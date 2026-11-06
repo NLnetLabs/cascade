@@ -39,8 +39,8 @@ runs:
     - name: Add policy
       id: add-policy
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/set-last-serial"
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
+        INTEGRATION_TEST_DIR="${PWD}/set-last-serial"
 
         # Copy the new test policy into the Cascade policy directory.
         cp "${INTEGRATION_TEST_DIR}/policies/counter.toml" "${POLICY_DIR}/"
@@ -48,7 +48,7 @@ runs:
 
     - name: Load the test zone
       run: |
-        TEST_DIR="${PWD}/integration-tests/set-last-serial"
+        TEST_DIR="${PWD}/set-last-serial"
         ZONE_FILE="${TEST_DIR}/zones/serial0.zone"
         KEY_FILE="${TEST_DIR}/keys/Kexample.+015+02835.key"
         cp "${ZONE_FILE}"  example.in
@@ -74,7 +74,7 @@ runs:
 
     - name: Load the next test zone
       run: |
-        TEST_DIR="${PWD}/integration-tests/set-last-serial"
+        TEST_DIR="${PWD}/set-last-serial"
         ZONE_FILE="${TEST_DIR}/zones/serial1.zone"
         cp "${ZONE_FILE}"  example.in
         cascade zone reload example
