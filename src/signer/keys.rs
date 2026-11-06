@@ -19,8 +19,11 @@ use domain::{
     rdata::Dnskey,
 };
 use domain_kmip::{
-    ConnectionSettings, KeyUrl,
-    dep::kmip::client::pool::{ConnectionManager, KmipConnError, SyncConnPool},
+    KeyUrl,
+    dep::kmip_protocol::net::{
+        ConnectionSettings, TlsClientAuth, TlsServerAuth,
+        sync_pool::{ConnPool, ConnectionManager, KmipConnError},
+    },
 };
 use tracing::{debug, error, warn};
 use url::Url;
@@ -28,7 +31,7 @@ use url::Url;
 use crate::{
     hsm::{HsmStore, KmipServerState},
     signer::status::SigningStatusPerZone,
-    units::{key_manager::KmipClientCredentialsFile, zone_signer::KeySetState},
+    units::{key_manager::KmipCredentialsFile, zone_signer::KeySetState},
 };
 
 //----------- ZoneSigningKeys --------------------------------------------------
@@ -60,7 +63,7 @@ impl ZoneSigningKeys {
         config: &crate::config::Config,
         zone_name: &Name<Bytes>,
         hsm_store: &HsmStore,
-        kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
+        kmip_servers: &Mutex<HashMap<String, ConnPool>>,
         keyset_state: &KeySetState,
         status: &RwLock<SigningStatusPerZone>,
     ) -> Result<Self, Box<LoadError>> {
@@ -148,7 +151,7 @@ pub enum KeyPair {
     Domain(domain::crypto::sign::KeyPair),
 
     /// A KMIP keypair.
-    Kmip(domain_kmip::sign::KeyPair),
+    Kmip(domain_kmip::KeyPair),
 }
 
 //--- Signing
@@ -269,7 +272,7 @@ impl KeyPair {
     pub fn load_kmip(
         config: &crate::config::Config,
         hsm_store: &HsmStore,
-        kmip_servers: &Mutex<HashMap<String, SyncConnPool>>,
+        kmip_servers: &Mutex<HashMap<String, ConnPool>>,
         priv_key_url: KeyUrl,
         pub_key_url: KeyUrl,
         status: &RwLock<SigningStatusPerZone>,
@@ -296,7 +299,7 @@ impl KeyPair {
                     server_id,
                     ip_host_or_fqdn: host,
                     port,
-                    insecure,
+                    server_name,
                     connect_timeout,
                     read_timeout,
                     write_timeout,
@@ -307,40 +310,67 @@ impl KeyPair {
 
                 let mut username = None;
                 let mut password = None;
+                let mut tls_client_auth = None;
+                let mut tls_server_auth = TlsServerAuth::Default;
+
                 if has_credentials {
                     let creds_path = &config.kmip_credentials_store_path;
                     let creds_file =
-                        KmipClientCredentialsFile::new(creds_path, false).map_err(|error| {
-                            Box::new(LoadError::KmipClientCredentials {
+                        KmipCredentialsFile::new(creds_path, false).map_err(|error| {
+                            Box::new(LoadError::KmipCredentials {
                                 path: creds_path.clone(),
                                 error,
                             })
                         })?;
 
                     let creds = creds_file.get(&server_id).ok_or_else(|| {
-                        Box::new(LoadError::MissingKmipClientCredentials {
+                        Box::new(LoadError::MissingKmipCredentials {
                             server_id: server_id.clone().into(),
                             path: creds_path.clone(),
                         })
                     })?;
 
-                    username = Some(creds.username.clone());
+                    username = creds.username.clone();
                     password = creds.password.clone();
+
+                    match (
+                        creds.tls_client_cert_bytes.clone(),
+                        creds.tls_client_private_key_bytes.clone(),
+                    ) {
+                        (None, None) => {
+                            // Nothing to do.
+                        }
+                        (Some(cert_bytes), Some(private_key_bytes)) => {
+                            tls_client_auth = Some(TlsClientAuth {
+                                cert_bytes,
+                                private_key_bytes,
+                            })
+                        }
+                        _ => {
+                            let error = "TLS client authentication requires both a certificate and a private key".to_string();
+                            return Err(Box::new(LoadError::KmipCredentials {
+                                path: creds_path.clone(),
+                                error,
+                            }));
+                        }
+                    }
+
+                    tls_server_auth = creds.tls_server_auth.clone().into();
                 }
 
+                // Test the connection.
                 let conn_settings = ConnectionSettings {
                     host,
                     port,
                     username,
                     password,
-                    insecure,
-                    client_cert: None, // TODO
-                    server_cert: None, // TODO
-                    ca_cert: None,     // TODO
                     connect_timeout: Some(connect_timeout),
                     read_timeout: Some(read_timeout),
                     write_timeout: Some(write_timeout),
                     max_response_bytes: Some(max_response_bytes),
+                    tls_client_auth,
+                    tls_server_auth,
+                    tls_server_name: server_name,
                 };
 
                 debug!("Connecting to KMIP server '{server_id}'");
@@ -371,18 +401,14 @@ impl KeyPair {
         let pub_key_url_inner = (*pub_key_url).clone();
 
         let key_pair = Self::Kmip(
-            domain_kmip::sign::KeyPair::from_urls(
-                priv_key_url,
-                pub_key_url,
-                kmip_conn_pool.clone(),
-            )
-            .map_err(|error| {
-                Box::new(LoadError::MalformedKmipKeypair {
-                    priv_key_url: priv_key_url_inner,
-                    pub_key_url: pub_key_url_inner,
-                    error: error.to_string(),
-                })
-            })?,
+            domain_kmip::KeyPair::from_urls(priv_key_url, pub_key_url, kmip_conn_pool.clone())
+                .map_err(|error| {
+                    Box::new(LoadError::MalformedKmipKeypair {
+                        priv_key_url: priv_key_url_inner,
+                        pub_key_url: pub_key_url_inner,
+                        error: error.to_string(),
+                    })
+                })?,
         );
 
         Ok(key_pair)
@@ -468,8 +494,8 @@ pub enum LoadError {
         name: String,
     },
 
-    /// Could not load the KMIP client credentials file.
-    KmipClientCredentials {
+    /// Could not load the KMIP credentials file.
+    KmipCredentials {
         /// The path to the credentials file.
         path: Box<Utf8Path>,
 
@@ -478,7 +504,7 @@ pub enum LoadError {
     },
 
     /// Missing credentials for a KMIP server.
-    MissingKmipClientCredentials {
+    MissingKmipCredentials {
         /// The name of the KMIP server.
         server_id: Box<str>,
 
@@ -520,8 +546,8 @@ impl core::error::Error for LoadError {
             Self::MalformedOnDiskKeyPair { error, .. } => Some(error),
             Self::MalformedKmipKeyUrl { .. } => None, // TODO
             Self::HsmDisappeared { .. } => None,
-            Self::KmipClientCredentials { .. } => None, // TODO
-            Self::MissingKmipClientCredentials { .. } => None,
+            Self::KmipCredentials { .. } => None, // TODO
+            Self::MissingKmipCredentials { .. } => None,
             Self::KmipConnection { .. } => None,       // TODO
             Self::MalformedKmipKeypair { .. } => None, // TODO
         }
@@ -587,14 +613,14 @@ impl fmt::Display for LoadError {
                     "Internal error: the HSM '{name}' is not available due to a race condition"
                 )
             }
-            Self::KmipClientCredentials { path, error } => {
+            Self::KmipCredentials { path, error } => {
                 write!(
                     f,
                     "The KMIP client credentials store \
                     (at '{path}') could not be loaded: {error}"
                 )
             }
-            Self::MissingKmipClientCredentials { server_id, path } => {
+            Self::MissingKmipCredentials { server_id, path } => {
                 write!(
                     f,
                     "The KMIP server '{server_id}' requires client credentials, \

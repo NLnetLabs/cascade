@@ -192,6 +192,15 @@ by Cascade.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B \-\-server\-name <SERVER_NAME>
+Optional name to send as TLS Server Name Indication (SNI) name.
+.sp
+Use this option when your KMIP server has a certificate for a
+different name than the IP_HOST_OR_FQDN value that you are using
+so that the server can select the correct certificate to present.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B \-\-ca\-cert <CA_CERT_PATH>
 Optional path to a TLS PEM certificate for a Certificate Authority.
 .sp

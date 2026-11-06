@@ -357,6 +357,7 @@ jobs:
     strategy:
       matrix:
         rust: [stable]
+        algorithm: [RSASHA256, RSASHA512, ECDSAP256SHA256, ECDSAP384SHA384, ED448, ED25519]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/set-build-profile
@@ -365,6 +366,7 @@ jobs:
       - uses: ./integration-tests/tests/sign-using-a-hsm
         with:
           log-level: ${{ inputs.log-level }}
+          algorithm: ${{ matrix.algorithm }}
 
   # Added for https://github.com/NLnetLabs/cascade/issues/105
   strip-dnssec-rrs:

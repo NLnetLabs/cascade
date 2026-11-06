@@ -1092,23 +1092,95 @@ fn policy_to_commands(center: &Arc<Center>, policy: &PolicyVersion) -> Vec<Vec<S
 }
 
 //============ KMIP Credential Management ====================================
-// Copied from dnst keyset. TODO: Share the code via a separate Rust crate.
 
-//------------ KmipClientCredentials -----------------------------------------
+//------------ TlsServerAuth -------------------------------------------------
+
+/// Additional certificates used to verify the identity of the server.
+///
+/// These certificates are needed when the certificate chain of the server
+/// includes certificates that are not available in the default certificate
+/// store, i.e. are not widely distributed well known certificates.
+///
+/// This can be for example because the Certificate Authority that issued the
+/// certificate is internal to the organization that deployed the KMIP server,
+/// or because the server is using a self-signed certificate but rather than
+/// trust the certificate blindly you want to verify that it is the expected
+/// self-signed certificate.
+//
+// Note: This is a re-implementation of the kmip_protocol TlsServerAuth enum
+// with added Deserialize and Serialize impls.
+//
+// Note: Copied from dnst keyset. TODO: Share the code via a separate Rust
+// crate.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub enum TlsServerAuth {
+    /// Do not verify the identify of the server.
+    None,
+
+    /// Use only certificates provided in the default trust store.
+    #[default]
+    Default,
+
+    /// The PEM encoded bytes of a certificate to trurst directly, e.g. a
+    /// self-signed certificate.
+    ///
+    /// TODO: Add support for verifying certificates by their fingerprint.
+    TrustCertificate(Vec<u8>),
+
+    /// The PEM encoded bytes of the certificate of a Certificate Authority
+    /// to add to the certificate trust store in order to be able to verify
+    /// certificates issued by this authority, e.g. an in-house custom CA
+    /// not present in the default trust store.
+    TrustCertificateAuthority(Vec<u8>),
+}
+
+impl From<TlsServerAuth> for domain_kmip::dep::kmip_protocol::net::TlsServerAuth {
+    fn from(auth: TlsServerAuth) -> Self {
+        match auth {
+            TlsServerAuth::None => Self::None,
+            TlsServerAuth::Default => Self::Default,
+            TlsServerAuth::TrustCertificate(cert_bytes) => Self::TrustCertificate(cert_bytes),
+            TlsServerAuth::TrustCertificateAuthority(ca_cert_bytes) => {
+                Self::TrustCertificateAuthority(ca_cert_bytes)
+            }
+        }
+    }
+}
+
+impl From<domain_kmip::dep::kmip_protocol::net::TlsServerAuth> for TlsServerAuth {
+    fn from(auth: domain_kmip::dep::kmip_protocol::net::TlsServerAuth) -> Self {
+        match auth {
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::None => Self::None,
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::Default => Self::Default,
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::TrustCertificate(cert_bytes) => {
+                Self::TrustCertificate(cert_bytes)
+            }
+            domain_kmip::dep::kmip_protocol::net::TlsServerAuth::TrustCertificateAuthority(
+                ca_cert_bytes,
+            ) => Self::TrustCertificateAuthority(ca_cert_bytes),
+        }
+    }
+}
+
+//------------ KmipCredentials -----------------------------------------------
 
 /// Credentials for connecting to a KMIP server.
 ///
 /// Intended to be read from a JSON file stored separately to the main
 /// configuration so that separate security policy can be applied to sensitive
 /// credentials.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KmipClientCredentials {
+///
+// Note: Copied from dnst keyset. TODO: Share the code via a separate Rust
+// crate.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct KmipCredentials {
     /// KMIP username credential.
     ///
     /// Mandatory if the KMIP "Credential Type" is "Username and Password".
     ///
     /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
-    pub username: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub username: Option<String>,
 
     /// KMIP password credential.
     ///
@@ -1117,27 +1189,58 @@ pub struct KmipClientCredentials {
     /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub password: Option<String>,
+
+    /// Optional TLS certificate bytes in PEM format.
+    ///
+    /// Note: If [`Self::tls_client_private_key_bytes`] is provided then this
+    /// value MUST also be provided as the client has to use the private key
+    /// to sign the certificate so that the server can use the public key in
+    /// the certificate to verify that we possess the correct private key,
+    /// i.e. we are who we say we are.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tls_client_cert_bytes: Option<Vec<u8>>,
+
+    /// Optional TLS private key bytes in PEM format.
+    ///
+    /// Note: If [`Self::tls_client_cert_bytes`] is provided then this value
+    /// MUST also be provided. See [`Self::tls_client_cert_bytes`] for more
+    /// details.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tls_client_private_key_bytes: Option<Vec<u8>>,
+
+    /// Optional TLS server authentication details.
+    pub tls_server_auth: TlsServerAuth,
 }
 
-//------------ KmipClientCredentialSet ---------------------------------------
+impl KmipCredentials {
+    pub fn has_credentials(&self) -> bool {
+        self.username.is_some()
+            || self.password.is_some()
+            || self.tls_client_cert_bytes.is_some()
+            || self.tls_client_private_key_bytes.is_some()
+            || self.tls_server_auth != TlsServerAuth::Default
+    }
+}
+
+//------------ KmipCredentialSet ---------------------------------------------
 
 /// A set of KMIP server credentials.
 #[derive(Debug, Default, Deserialize, Serialize)]
-struct KmipClientCredentialsSet(HashMap<String, KmipClientCredentials>);
+struct KmipCredentialsSet(HashMap<String, KmipCredentials>);
 
-//------------ KmipServerCredentialsFile -------------------------------------
+//------------ KmipCredentialsFile -------------------------------------------
 
 /// A KMIP server credential set file.
 #[derive(Debug)]
-pub struct KmipClientCredentialsFile {
+pub struct KmipCredentialsFile {
     /// The path from which the file was loaded.
     path: Utf8PathBuf,
 
     /// The actual set of loaded credentials.
-    credentials: KmipClientCredentialsSet,
+    credentials: KmipCredentialsSet,
 }
 
-impl KmipClientCredentialsFile {
+impl KmipCredentialsFile {
     /// Load credentials from disk.
     ///
     /// If the file is missing and `missing_ok` is `true`, no credentials are
@@ -1149,7 +1252,7 @@ impl KmipClientCredentialsFile {
 
             Err(err) if err.kind() == std::io::ErrorKind::NotFound && missing_ok => {
                 // Just create an empty credential set.
-                KmipClientCredentialsSet::default()
+                KmipCredentialsSet::default()
             }
 
             Err(err) => {
@@ -1159,7 +1262,7 @@ impl KmipClientCredentialsFile {
             }
         };
 
-        Ok(KmipClientCredentialsFile {
+        Ok(KmipCredentialsFile {
             path: path.to_path_buf(),
             credentials,
         })
@@ -1181,7 +1284,7 @@ impl KmipClientCredentialsFile {
         self.credentials.0.contains_key(server_id)
     }
 
-    pub fn get(&self, server_id: &str) -> Option<&KmipClientCredentials> {
+    pub fn get(&self, server_id: &str) -> Option<&KmipCredentials> {
         self.credentials.0.get(server_id)
     }
 
@@ -1192,8 +1295,8 @@ impl KmipClientCredentialsFile {
     pub fn insert(
         &mut self,
         server_id: String,
-        credentials: KmipClientCredentials,
-    ) -> Option<KmipClientCredentials> {
+        credentials: KmipCredentials,
+    ) -> Option<KmipCredentials> {
         self.credentials.0.insert(server_id, credentials)
     }
 
@@ -1201,7 +1304,7 @@ impl KmipClientCredentialsFile {
     ///
     /// Returns any previous configuration if found.
     #[expect(dead_code)]
-    pub fn remove(&mut self, server_id: &str) -> Option<KmipClientCredentials> {
+    pub fn remove(&mut self, server_id: &str) -> Option<KmipCredentials> {
         self.credentials.0.remove(server_id)
     }
 
@@ -1475,7 +1578,7 @@ fn keyset_kmip_add_server_cmd(
         server_id,
         ip_host_or_fqdn,
         port,
-        insecure,
+        server_name,
         connect_timeout,
         read_timeout,
         write_timeout,
@@ -1504,10 +1607,6 @@ fn keyset_kmip_add_server_cmd(
         key_label_max_bytes.to_string(),
     ];
 
-    if insecure {
-        args.push("--insecure".to_string());
-    }
-
     if has_credentials {
         args.append(&mut strs![
             "--credential-store",
@@ -1515,10 +1614,13 @@ fn keyset_kmip_add_server_cmd(
         ]);
     }
 
+    if let Some(server_name) = server_name {
+        args.append(&mut strs!["--server-name", server_name]);
+    }
+
     if let Some(key_label_prefix) = key_label_prefix {
         args.append(&mut strs!["--key-label-prefix", key_label_prefix]);
     }
 
-    // TODO: --client-cert, --client-key, --server-cert and --ca-cert
     Ok(args)
 }

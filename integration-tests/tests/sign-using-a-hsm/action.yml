@@ -18,6 +18,11 @@ inputs:
       - info
       - debug
       - trace
+  algorithm:
+    description: The DNSSEC algorithm to sign the zone with.
+    required: false
+    default: ECDSAP256SHA256
+    type: string
 runs:
   using: "composite"
   steps:
@@ -44,11 +49,12 @@ runs:
       run: |
         cascade hsm add --insecure --username Cascade --password 1234 cascade-hsm-bridge 127.0.0.1
 
-    - name: Add a policy that uses the HSM
+    - name: Add a policy that uses the HSM with algorithm ${{ inputs.algorithm }}
       run: |
         POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
         cascade template policy > "${POLICY_DIR}/with-hsm.toml"
         sed -i -e 's/^#hsm-server-id.\+/hsm-server-id = "cascade-hsm-bridge"/' "${POLICY_DIR}/with-hsm.toml"
+        sed -i -e 's/^algorithm =.\+/algorithm = "${{ inputs.algorithm }}"/' "${POLICY_DIR}/with-hsm.toml"
         cascade policy reload
 
     - name: Add a zone served by the NSD primary

@@ -22,8 +22,10 @@ use domain::base::Name;
 use domain::base::Serial;
 use domain::dnssec::sign::keys::keyset::KeyType;
 use domain::utils::base64;
-use domain_kmip::ConnectionSettings;
-use domain_kmip::dep::kmip::client::pool::ConnectionManager;
+use domain_kmip::dep::kmip_protocol::net::ConnectionSettings;
+use domain_kmip::dep::kmip_protocol::net::TlsClientAuth;
+use domain_kmip::dep::kmip_protocol::net::TlsServerAuth;
+use domain_kmip::dep::kmip_protocol::net::sync_pool::ConnectionManager;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -47,8 +49,8 @@ use crate::policy::SignerSerialPolicy;
 use crate::server::LoadedReviewServer;
 use crate::server::SignedReviewServer;
 use crate::tsig::{self, RemoveError};
-use crate::units::key_manager::KmipClientCredentials;
-use crate::units::key_manager::KmipClientCredentialsFile;
+use crate::units::key_manager::KmipCredentials;
+use crate::units::key_manager::KmipCredentialsFile;
 use crate::units::key_manager::mk_dnst_keyset_cfg_file_path;
 use crate::units::key_manager::mk_dnst_keyset_state_file_path;
 use crate::units::zone_signer::KeySetState;
@@ -1644,11 +1646,16 @@ impl HttpServer {
 
 impl HttpServer {
     async fn kmip_server_add(
+        state: State<Arc<HttpServer>>,
+        req: Json<HsmServerAdd>,
+    ) -> Json<Result<HsmServerAddResult, HsmServerAddError>> {
+        Json(Self::do_kmip_server_add(state, req).await)
+    }
+
+    async fn do_kmip_server_add(
         State(state): State<Arc<HttpServer>>,
         Json(req): Json<HsmServerAdd>,
-    ) -> Json<Result<HsmServerAddResult, HsmServerAddError>> {
-        // TODO: Write the given certificates to disk.
-        // TODO: Create a single common way to store secrets.
+    ) -> Result<HsmServerAddResult, HsmServerAddError> {
         let server_id = req.server_id.clone();
         let config = &state.center.config;
         let kmip_credentials_store_path = config.kmip_credentials_store_path.clone();
@@ -1662,19 +1669,25 @@ impl HttpServer {
             .unwrap()
             .hsms
             .map
-            .contains_key(&*req.server_id)
+            .contains_key(&*server_id)
         {
-            return Json(Err(HsmServerAddError::AlreadyExists));
+            return Err(HsmServerAddError::AlreadyExists);
         }
 
         // Test the connection before using the HSM.
         let conn_settings = {
             let HsmServerAdd {
+                server_id: _,
                 ip_host_or_fqdn,
                 port,
                 username,
                 password,
+                client_cert,
+                client_key,
                 insecure,
+                server_cert,
+                server_name,
+                ca_cert,
                 connect_timeout,
                 read_timeout,
                 write_timeout,
@@ -1682,19 +1695,50 @@ impl HttpServer {
                 ..
             } = req.clone();
 
+            let tls_client_auth = match (client_cert, client_key) {
+                (Some(cert_bytes), Some(private_key_bytes)) => Some(TlsClientAuth {
+                    cert_bytes,
+                    private_key_bytes,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err(HsmServerAddError::MissingClientCertificateOrKey);
+                }
+            };
+
+            let mut tls_server_auth = match (server_cert, ca_cert) {
+                (None, None) => TlsServerAuth::Default,
+                (Some(_), Some(_)) => {
+                    return Err(HsmServerAddError::ServerAndCaCertNotSupported);
+                }
+                (None, Some(ca_cert_bytes)) => {
+                    TlsServerAuth::TrustCertificateAuthority(ca_cert_bytes)
+                }
+                (Some(server_cert_bytes), None) => {
+                    TlsServerAuth::TrustCertificate(server_cert_bytes)
+                }
+            };
+
+            if insecure {
+                if tls_server_auth == TlsServerAuth::Default {
+                    tls_server_auth = TlsServerAuth::None;
+                } else {
+                    return Err(HsmServerAddError::CertAndInsecureNotSupported);
+                }
+            }
+
             ConnectionSettings {
                 host: ip_host_or_fqdn,
                 port,
                 username,
                 password,
-                insecure,
-                client_cert: None, // TODO
-                server_cert: None, // TODO
-                ca_cert: None,     // TODO
                 connect_timeout: Some(connect_timeout),
                 read_timeout: Some(read_timeout),
                 write_timeout: Some(write_timeout),
                 max_response_bytes: Some(max_response_bytes),
+                tls_client_auth,
+                tls_server_auth,
+                tls_server_name: server_name,
             }
         };
 
@@ -1707,68 +1751,69 @@ impl HttpServer {
         ) {
             Ok(pool) => pool,
             Err(err) => {
-                return Json(Err(HsmServerAddError::UnableToConnect {
+                return Err(HsmServerAddError::UnableToConnect {
                     server_id,
                     host: conn_settings.host,
                     port: conn_settings.port,
                     err: format!("Error creating connection pool: {err}"),
-                }));
+                });
             }
         };
 
         // Test the connectivity (but not the HSM capabilities).
-        let conn = match pool.get() {
+        let mut conn = match pool.get() {
             Ok(conn) => conn,
             Err(err) => {
-                return Json(Err(HsmServerAddError::UnableToConnect {
+                return Err(HsmServerAddError::UnableToConnect {
                     server_id,
                     host: conn_settings.host,
                     port: conn_settings.port,
                     err: format!("Error retrieving connection from pool: {err}"),
-                }));
+                });
             }
         };
 
-        let query_res = match conn.query() {
-            Ok(query_res) => query_res,
-            Err(err) => {
-                return Json(Err(HsmServerAddError::UnableToQuery {
-                    server_id,
-                    host: conn_settings.host,
-                    port: conn_settings.port,
-                    err: err.to_string(),
-                }));
-            }
-        };
+        let query_res = conn
+            .query()
+            .map_err(|err| HsmServerAddError::UnableToQuery {
+                server_id: server_id.clone(),
+                host: conn_settings.host,
+                port: conn_settings.port,
+                err: err.to_string(),
+            })?;
 
         let vendor_id = query_res
             .vendor_identification
             .unwrap_or("Anonymous HSM vendor".to_string());
 
-        // Copy the username and password as we consume the req object below.
-        let username = req.username.clone();
-        let password = req.password.clone();
+        let (tls_client_cert_bytes, tls_client_private_key_bytes) =
+            if let Some(auth) = conn_settings.tls_client_auth {
+                (Some(auth.cert_bytes), Some(auth.private_key_bytes))
+            } else {
+                (None, None)
+            };
+
+        let tls_server_auth = conn_settings.tls_server_auth.into();
 
         // Add any credentials to the credentials store.
-        if let Some(username) = username {
-            let creds = KmipClientCredentials { username, password };
-            let mut creds_file =
-                match KmipClientCredentialsFile::new(&kmip_credentials_store_path, true) {
-                    Ok(creds_file) => creds_file,
-                    Err(err) => {
-                        return Json(Err(
-                            HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting {
-                                err: err.to_string(),
-                            },
-                        ));
-                    }
-                };
+        let creds = KmipCredentials {
+            username: conn_settings.username,
+            password: conn_settings.password,
+            tls_client_cert_bytes,
+            tls_client_private_key_bytes,
+            tls_server_auth,
+        };
+        if creds.has_credentials() {
+            let mut creds_file = KmipCredentialsFile::new(&kmip_credentials_store_path, true)
+                .map_err(
+                    |err| HsmServerAddError::CredentialsFileCouldNotBeOpenedForWriting { err },
+                )?;
             let _ = creds_file.insert(server_id, creds);
-            if let Err(err) = creds_file.save() {
-                return Json(Err(HsmServerAddError::CredentialsFileCouldNotBeSaved {
+            creds_file
+                .save()
+                .map_err(|err| HsmServerAddError::CredentialsFileCouldNotBeSaved {
                     err: err.to_string(),
-                }));
-            }
+                })?;
         }
 
         // Register the HSM in global state.
@@ -1786,7 +1831,7 @@ impl HttpServer {
         // Ensure the HSM is persisted to disk immediately.
         crate::state::save_now(&state.center);
 
-        Json(Ok(HsmServerAddResult { vendor_id }))
+        Ok(HsmServerAddResult { vendor_id })
     }
 
     async fn kmip_server_list(State(state): State<Arc<HttpServer>>) -> Json<HsmServerListResult> {
