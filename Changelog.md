@@ -18,20 +18,58 @@ Released yyyy-mm-dd.
 
 Released yyyy-mm-dd.
 
-### Breaking changes
 ### New
 
 - The `cascade zone edit` command can be used to change the source and policy
-  of zones ([#906] by @tertsdiepraam and @bal-e).
+  of zones. ([#906] by @tertsdiepraam and @bal-e)
+
+- Introduce an "attic" and move key manager files there when a zone is removed.
+  ([#1011] by @Philip-NLnetLabs)
+
+- Limit zone history to the latest 1024 items to avoid excessive growth.
+  ([#1014] by @bal-e)
+
+- Implement `cascade zone set-last-signed`, helpful for controlling serial
+  numbers generated in the `counter` and `date-counter` policies. ([#1019] by
+  @Philip-NLnetLabs)
+
+- Support mTLS authentication for KMIP servers. ([#993] by @ximon18)
 
 ### Bug fixes
+
+- Only include the DNSKEY RTYPE in the apex NSEC record if the RRset is present.
+  ([#998] by @Philip-NLnetLabs)
+
+- Use more secure file permissions. ([#1018] by @bal-e)
+
+- Verify consistency of RRset TTLs while loading zones, thereby preventing a
+  crash during signing. ([#1012] by @bal-e)
+
 ### Other changes
+
+- Use Poetry for managing Sphinx for documentation. ([#1010] by @bal-e)
+
 ### Documentation improvements
-### Known issues
+
+- Cascade logo in the docs. ([#1008] by @AlexanderBand)
+- Apply the NLnet Labs documentation theme to Cascade. ([#1020] by @AlexanderBand)
+
 ### Acknowledgements
 
-[#906]: https://github.com/NLnetLabs/cascade/pull/906
+Thanks to @jpmens, @bortzmeyer, and @thgoebel for testing Cascade and providing
+valuable feedback!
 
+[#906]: https://github.com/NLnetLabs/cascade/pull/906
+[#993]: https://github.com/NLnetLabs/cascade/pull/993
+[#998]: https://github.com/NLnetLabs/cascade/pull/998
+[#1008]: https://github.com/NLnetLabs/cascade/pull/1008
+[#1010]: https://github.com/NLnetLabs/cascade/pull/1010
+[#1011]: https://github.com/NLnetLabs/cascade/pull/1011
+[#1012]: https://github.com/NLnetLabs/cascade/pull/1012
+[#1014]: https://github.com/NLnetLabs/cascade/pull/1014
+[#1018]: https://github.com/NLnetLabs/cascade/pull/1018
+[#1019]: https://github.com/NLnetLabs/cascade/pull/1019
+[#1020]: https://github.com/NLnetLabs/cascade/pull/1020
 
 ## 0.1.0-beta7 'Gezellig'
 
