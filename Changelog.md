@@ -14,9 +14,9 @@ Released yyyy-mm-dd.
 ### Acknowledgements
 -->
 
-## Unreleased version
+## 0.1.0-beta8 'We have stickers'
 
-Released yyyy-mm-dd.
+Released 2026-11-06.
 
 ### New
 
