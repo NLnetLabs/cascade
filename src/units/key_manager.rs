@@ -1179,8 +1179,8 @@ pub struct KmipCredentials {
     /// Mandatory if the KMIP "Credential Type" is "Username and Password".
     ///
     /// See: <https://docs.oasis-open.org/kmip/spec/v1.2/os/kmip-spec-v1.2-os.html#_Toc409613458>
-    pub username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub username: Option<String>,
 
     /// KMIP password credential.
     ///
