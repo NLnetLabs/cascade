@@ -20,11 +20,11 @@ on:
           - debug
           - trace
       zone-name:
-        description: The name of a zone file (and zone) in integration-tests/benchmark/ to load.
+        description: The name of a zone file (and zone) in benchmark/ to load.
         required: true
         type: string
       policy-name:
-        description: The name of a policy file minus .toml in integration-tests/benchmark/ to use.
+        description: The name of a policy file minus .toml in benchmark/ to use.
         required: true
         type: string
       timeout-seconds:
@@ -50,14 +50,14 @@ jobs:
 
       - name: Add policy '${{ inputs.policy-name }}'
         run: |
-          TEST_DIR="${PWD}/integration-tests/benchmark"
-          POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+          TEST_DIR="${PWD}/benchmark"
+          POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
           cp "${TEST_DIR}/${{ inputs.policy-name }}.toml" "${POLICY_DIR}/"
           cascade policy reload
 
       - name: Add zone '${{ inputs.zone-name }}'
         run: |
-          TEST_DIR="${PWD}/integration-tests/benchmark"
+          TEST_DIR="${PWD}/benchmark"
           cascade zone add --policy ${{ inputs.policy-name }} --source "${TEST_DIR}/${{ inputs.zone-name }}" ${{ inputs.zone-name }}
 
       - name: Cascade should list the zone

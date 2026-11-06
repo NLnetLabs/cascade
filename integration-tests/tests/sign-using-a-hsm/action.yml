@@ -33,7 +33,7 @@ runs:
 
     - name: Start Cascade-HSM-Bridge
       run: |
-        INTEGRATION_TEST_DIR="${PWD}/integration-tests/sign-using-a-hsm"
+        INTEGRATION_TEST_DIR="${PWD}/sign-using-a-hsm"
 
         # Tell the OpenSC project PKCS11-Spy module to passthrough to the
         # SoftHSMv2 PKCS#11 module.
@@ -51,7 +51,7 @@ runs:
 
     - name: Add a policy that uses the HSM with algorithm ${{ inputs.algorithm }}
       run: |
-        POLICY_DIR=$(integration-tests/scripts/get-default-path.sh policy-dir)
+        POLICY_DIR=$(scripts/get-default-path.sh policy-dir)
         cascade template policy > "${POLICY_DIR}/with-hsm.toml"
         sed -i -e 's/^#hsm-server-id.\+/hsm-server-id = "cascade-hsm-bridge"/' "${POLICY_DIR}/with-hsm.toml"
         sed -i -e 's/^algorithm =.\+/algorithm = "${{ inputs.algorithm }}"/' "${POLICY_DIR}/with-hsm.toml"
