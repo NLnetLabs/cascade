@@ -128,25 +128,7 @@ impl Instances {
         });
     }
 
-    /// Clear the current instance.
-    ///
-    /// This method should be called if the data for the zone is being cleared.
-    /// The current instance (if any) will be abandoned.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if there is an upcoming instance of the zone. This method must be
-    /// called after the upcoming instance is resolved (applied or abandoned).
-    pub fn clear(&mut self) {
-        // TODO: Save the current instance to a list of obsolete ones.
-
-        assert!(
-            self.upcoming.is_none(),
-            "Cannot modify the current instance while an upcoming one exists"
-        );
-
-        self.current = None;
-    }
+    // TODO: Support for clearing the current instance?
 }
 
 /// # Loading operations
