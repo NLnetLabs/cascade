@@ -26,8 +26,11 @@ Released yyyy-mm-dd.
 - Introduce an "attic" and move key manager files there when a zone is removed.
   ([#1011] by @Philip-NLnetLabs)
 
-- Limit zone history to the latest 1024 items to avoid excessive growth.
-  ([#1014] by @bal-e)
+- Support signing with RSASHA512 and ECDSAP384SHA384 over KMIP. ([#993] by
+  @ximon18)
+
+- Support signing with ED25519 and ED448 over KMIP with `cascade-hsm-bridge`.
+  ([#993] by @ximon18)
 
 - Implement `cascade zone set-last-signed`, helpful for controlling serial
   numbers generated in the `counter` and `date-counter` policies. ([#1019] by
@@ -39,6 +42,9 @@ Released yyyy-mm-dd.
 
 - Only include the DNSKEY RTYPE in the apex NSEC record if the RRset is present.
   ([#998] by @Philip-NLnetLabs)
+
+- Limit zone history to the latest 1024 items to avoid excessive growth.
+  ([#1014] by @bal-e)
 
 - Use more secure file permissions. ([#1018] by @bal-e)
 
