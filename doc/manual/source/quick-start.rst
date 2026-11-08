@@ -5,10 +5,12 @@ After :doc:`installing <installation>` Cascade you can immediately start using
 it, unless you need to adjust the addresses it listens on or need to modify
 the settings relating to daemonization.
 
-.. important:: Fully automatic key rolls are enabled by default. For this to 
-   work, Cascade requires access to all nameservers of the zone and the 
-   parent zone. If this is not available, make sure to 
-   :ref:`disable automatic key rolls <automation-control>`.
+.. important:: All key-roll automation stages are enabled by default. The
+   reporting and completion stages require network access to every
+   authoritative nameserver for the zone and its parent, including IPv6 access
+   when those servers publish AAAA records. If this access is unavailable,
+   review the :ref:`key-roll automation controls <automation-control>` before
+   adding a zone.
 
 .. _cascade-config:
 
