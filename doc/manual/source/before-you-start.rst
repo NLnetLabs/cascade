@@ -27,8 +27,8 @@ It must not be exposed as an Internet-facing authoritative nameserver.
    secondary nameservers downstream to serve signed zones to the Internet.
 
 You can use any authoritative nameservers on either side of Cascade that
-supports AXFR or IXFR. An example is to use :doc:`NSD can be configured <nsd>`
-by NLnet Labs as both the upstream primary and a downstream secondary.
+supports AXFR or IXFR. An example is to configure :doc:`NSD by NLnet Labs
+<nsd>` as both the upstream primary and a downstream secondary.
 
 Is Cascade Right for Your Deployment?
 -------------------------------------
@@ -43,7 +43,7 @@ the :doc:`known limitations <limitations>` before planning a deployment. In
 particular:
 
 - Cascade is not yet intended for clustered operation.
-- Its current interfaces are better suited to a limited number of zones than 
+- Its current interfaces are better suited to a limited number of zones than
   to hosting many small zones.
 - Some OpenDNSSEC features and operational edge cases are not yet supported.
 - Memory use still has room for improvement.
@@ -70,8 +70,8 @@ Cascade does not currently write signed zones directly to local files. See
 Key storage
 ~~~~~~~~~~~
 
-**An HSM is optional.** Cascade can generate keys, store them in files on 
-disk, andsign using software cryptography. If your security policy requires 
+**An HSM is optional.** Cascade can generate keys, store them in files on
+disk, andsign using software cryptography. If your security policy requires
 an HSM, Cascade supports:
 
 - KMIP-compatible HSMs directly; and
@@ -85,9 +85,9 @@ main Cascade process. Review the tested devices and integration requirements in
 Key-roll automation
 ~~~~~~~~~~~~~~~~~~~
 
-**All key-roll automation stages are enabled by default.** The automated 
-reporting and completion stages contact every authoritative nameserver for the 
-zone and its parent to determine whether DNSSEC changes have propagated. The 
+**All key-roll automation stages are enabled by default.** The automated
+reporting and completion stages contact every authoritative nameserver for the
+zone and its parent to determine whether DNSSEC changes have propagated. The
 Cascade host therefore needs network access to each server over IPv4 and, when
 a server publishes an AAAA record, IPv6.
 
