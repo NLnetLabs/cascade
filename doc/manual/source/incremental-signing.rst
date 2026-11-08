@@ -36,6 +36,26 @@ know of any previous signatures. After the initial signing operation, a signed
 copy of the zone will always be available, so Cascade will only use incremental
 signing.
 
+Why Cascade Signs an Unchanged Zone
+-----------------------------------
+
+DNSSEC signatures must be replaced before they expire. Rather than wait and
+replace every signature at once, Cascade refreshes them gradually. The
+:option:`signature refresh interval <signature-refresh-interval = "12h">`
+controls how often Cascade starts an incremental signing operation for this
+purpose. Its default value is 12 hours.
+
+As a result, Cascade normally signs a zone every 12 hours even when the unsigned
+zone has not changed and no key roll is in progress. Each operation creates a
+new signed version, but normally replaces only a fraction of the signatures.
+This expected activity does not mean that Cascade is signing the entire zone
+again.
+
+The interval controls how often Cascade performs a batch of refresh work; it is
+not the lifetime of a signature. Increasing it makes signing operations less
+frequent but gives Cascade fewer opportunities to replace signatures before
+they expire. Keep it significantly shorter than ``signature-remain-time``.
+
 Key Rollovers
 -------------
 
