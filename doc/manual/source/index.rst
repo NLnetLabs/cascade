@@ -39,8 +39,8 @@ Why Cascade?
 Simple deployment
    The Cascade pipeline runs as a single binary and does not require separate
    database software. Install a :doc:`binary package <installation>` or
-   :doc:`build Cascade from source <building>`, then run it on-premises or in
-   the cloud.
+   :doc:`build Cascade from source <building>`, then run it in any way that
+   works for your infrastructure.
 
 Safe automation
    Cascade provides sensible defaults based on industry best practices while
@@ -104,7 +104,7 @@ You can reach us by:
   <https://www.dns-oarc.net/oarc/services/chat>`_;
 - mentioning us on `Mastodon
   <https://social.nlnetlabs.nl/@nlnetlabs/>`_; or
-- sending the Cascade teamn an `email <mailto:cascade@nlnetlabs.nl>`_.
+- sending the Cascade team an `email <mailto:cascade@nlnetlabs.nl>`_.
 
 The Community Forum is the best place to discuss operational experiences,
 share ideas, and request features. Positive reports are welcome too.
