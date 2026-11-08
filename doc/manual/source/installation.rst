@@ -4,15 +4,11 @@ Installation
 Prerequisites
 -------------
 
-To use Cascade, :program:`dnst` 0.3.0 or newer is required. The Cascade
-DEB and RPM packages automatically ensure that the appropriate version of
-:program:`dnst` is installed.
+Cascade requires :program:`dnst` 0.3.0 or newer. The Cascade DEB and RPM
+packages install a compatible version automatically.
 
-Automatic key rolls are enabled by default. To use them, the Cascade host
-must have access to all nameservers for the zone and its parent zone. It must
-also have IPv6 connectivity if any of those nameservers have AAAA records. If
-these requirements cannot be met, :ref:`disable automatic key rolls
-<automation-control>`.
+Before installing Cascade, review :doc:`before-you-start` for its deployment,
+network, and resource requirements.
 
 Binary Packages
 ---------------
