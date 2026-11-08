@@ -1,19 +1,16 @@
 Integrating with NSD
 ====================
 
-.. epigraph::
-
-   Name Server Daemon (NSD) by NLnet Labs is an authoritative DNS name server.
-
-   -- https://nsd.docs.nlnetlabs.nl/
-
-   .. seealso::
-
-      The :doc:`Zone Transfers <zone-transfers>` page explains the general
-      functionality in Cascade that is referred to below.
+NSD by NLnet Labs is an authoritative DNS name server designed with a pure
+philosophy that prioritises raw performance.
 
 Using NSD as a primary to Cascade
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. seealso::
+
+    The :doc:`Zone Transfers <zone-transfers>` page explains the general
+    functionality in Cascade that is referred to below.
 
 To use NSD as an upstream name server of Cascade you must add a zone to NSD
 that refers to Cascade as a secondary name server. If enabled in NSD, NSD will
@@ -25,7 +22,7 @@ the full zone content from NSD, or, if already fetched and IXFR is enabled in
 NSD, an IXFR transfer will be performed to fetch just the incremental changes
 since the last fetch.
 
-If NOTIFY is NOT enabled in NSD, Cascade will monitor NSD for a newer version
+If NOTIFY is not enabled in NSD, Cascade will monitor NSD for a newer version
 of the zone by periodically sending SOA queries according to the number of
 seconds defined by the REFRESH field of the zone apex SOA record.
 
