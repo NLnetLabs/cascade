@@ -1,77 +1,153 @@
 Before You Start
 ================
 
-Placement
----------
+Cascade is a DNSSEC signer, not an authoritative nameserver. Before installing
+it, make sure that its deployment model fits your DNS infrastructure and that
+you understand the current limitations of the beta release.
 
-Cascade is what is known as a "hidden signer". It is meant to run as a
-dedicated server with restricted access that takes local zones or zones
-received from an upstream primary nameserver, signs those zones and makes the
-results available to downstream, Internet facing *secondary* nameservers.
+How Cascade Fits into Your DNS Infrastructure
+----------------------------------------------
 
-.. Warning:: Do *not* run Cascade as an Internet facing service, as it is
-   designed to answer a limited subset of the DNS protocol that a full
-   authoritative nameserver must support.
+Cascade is designed to run as a *hidden signer* between the source of an
+unsigned zone and the authoritative nameservers that publish the signed zone:
 
-One possible authoritative server that could be used up and downstream of
-Cascade is `NSD <https://nlnetlabs.nl/nsd>`_, but any solution can be used
-provided that it supports transferring zones via XFR zone transfers to and
-from Cascade.
+#. An upstream primary nameserver transfers an unsigned zone to Cascade, or
+   Cascade loads the zone from a local file.
+#. Cascade checks the zone, manages its DNSSEC keys, signs it, and optionally
+   runs operator-defined :doc:`review hooks <review-hooks>`.
+#. Downstream secondary nameservers retrieve the signed zone from Cascade using
+   AXFR or IXFR and publish it to DNS clients.
 
-Intended Audience
------------------
+Cascade should run on a system with restricted network and filesystem access.
+It must not be exposed as an Internet-facing authoritative nameserver.
 
-Cascade is currently targeted for use by TLD operators, but will evolve over
-time to cater to other audiences. As a successor to OpenDNSSEC, Cascade is
-clearly intended to offer continuity and a migration path for current users,
-but Cascade will also offer superior performance, flexibility and user
-experience.
+.. important:: Cascade implements only the DNS functionality needed for its
+   role as a hidden signer. It is not a complete authoritative DNS server and
+   does not answer ordinary DNS queries. Place one or more authoritative
+   secondary nameservers downstream to serve signed zones to the Internet.
 
-.. important:: Cascade does *not* require the use of a Hardware Security
-  Module (HSM). It can make use of on-disk key files and, if desired, use
-  PKCS#11 and KMIP compatible HSMs.
+You can use any authoritative nameservers on either side of Cascade that
+supports AXFR or IXFR. An example is to use :doc:`NSD can be configured <nsd>`
+by NLnet Labs as both the upstream primary and a downstream secondary.
+
+Is Cascade Right for Your Deployment?
+-------------------------------------
+
+Cascade is currently aimed primarily at TLD operators and other operators with
+a limited number of zones. It is intended to provide continuity and an eventual
+migration path for OpenDNSSEC users, while improving performance,
+observability, configuration, and control over the signing pipeline.
+
+Cascade is currently in **beta**. Use it for testing and evaluation, and review
+the :doc:`known limitations <limitations>` before planning a deployment. In
+particular:
+
+- Cascade is not yet intended for clustered operation.
+- Its current interfaces are better suited to a limited number of zones than 
+  to hosting many small zones.
+- Some OpenDNSSEC features and operational edge cases are not yet supported.
+- Memory use still has room for improvement.
+
+If these constraints affect your intended deployment, please
+:ref:`tell us about your requirements <reach-out>`.
+
+Decisions to Make Before Installation
+-------------------------------------
+
+Zone input and publication
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Decide how Cascade will receive each unsigned zone and how downstream
+nameservers will retrieve the signed result:
+
+- **Input:** a local zone file, or an AXFR/IXFR transfer from an upstream
+  primary nameserver.
+- **Output:** AXFR/IXFR transfers to downstream secondary nameservers.
+
+Cascade does not currently write signed zones directly to local files. See
+:doc:`zone-transfers` for transfer, NOTIFY, access-control, and TSIG options.
+
+Key storage
+~~~~~~~~~~~
+
+**An HSM is optional.** Cascade can generate keys, store them in files on 
+disk, andsign using software cryptography. If your security policy requires 
+an HSM, Cascade supports:
+
+- KMIP-compatible HSMs directly; and
+- PKCS#11-compatible HSMs through the separate
+  :program:`cascade-hsm-bridge` process.
+
+Separating PKCS#11 support prevents vendor libraries from being loaded into the
+main Cascade process. Review the tested devices and integration requirements in
+:doc:`hsms`.
+
+Key-roll automation
+~~~~~~~~~~~~~~~~~~~
+
+**All key-roll automation stages are enabled by default.** The automated 
+reporting and completion stages contact every authoritative nameserver for the 
+zone and its parent to determine whether DNSSEC changes have propagated. The 
+Cascade host therefore needs network access to each server over IPv4 and, when
+a server publishes an AAAA record, IPv6.
+
+If your environment cannot provide that access, disable the ``auto-report`` and
+``auto-done`` stages and complete the corresponding key-roll steps manually.
+Review the :ref:`key-roll automation controls <automation-control>` before
+adding production-like zones.
+
+Pre-publication checks
+~~~~~~~~~~~~~~~~~~~~~~
+
+Decide whether zones may proceed directly through the signing pipeline or must
+be approved first. Cascade can pause before signing and before publication for
+manual approval or for checks performed by your own scripts and tools. See
+:doc:`review-hooks`.
 
 Components
 ----------
 
-Cascade consists of three main components and an optional fourth:
+A Cascade installation consists of three main programs and, for PKCS#11 HSM
+setups, an optional fourth:
 
-1. The :program:`cascaded` daemon for receiving zone data, signing it, and
-   serving the signed result. It supports :doc:`review-hooks` during the
-   processing pipeline, allowing you to use your preferred solutions to
-   automate verification of the unsigned and signed zone, before publishing
-   it.
+#. :program:`cascaded` is the long-running daemon. It receives and loads zone
+   data, coordinates key management, signs zones, runs configured review
+   steps, and serves signed zones to downstream nameservers.
+#. :program:`cascade` is the command-line interface used to configure, inspect,
+   and control the daemon.
+#. :program:`dnst keyset` manages DNSSEC key state and automated key rolls. The
+   :program:`cascaded` daemon invokes it when needed; operators normally do not
+   run it directly.
+#. :program:`cascade-hsm-bridge` is required only when using an HSM through
+   PKCS#11. It is not required for on-disk keys or direct KMIP connections.
 
-2. The :program:`cascade` command line interface (CLI) for controlling and
-   interacting with the :program:`cascaded` daemon.
+Capacity Planning
+-----------------
 
-3. A tool called :program:`dnst keyset`, which is responsible for the
-   :doc:`key management <key-management>` of Cascade, including automation of
-   key rolls. It is invoked as needed by the :program:`cascaded` daemon.
+Resource requirements depend on zone size, the number and type of changes,
+signing policy, and the amount of work performed in parallel. More CPU cores
+allow Cascade to run more operations concurrently, while larger zones require
+more memory.
 
-4. The *optional* :program:`cascade-hsm-bridge` daemon, which is only required
-   when using a PKCS#11 compatible :doc:`HSM <hsms>`.
+As an indication rather than a sizing guarantee, beta testing has shown memory
+use of approximately 30 GiB while signing a 1 GiB zone containing about
+25 million input records and producing roughly 10 million additional DNSSEC
+records.
 
-Supported Inputs/Outputs
-------------------------
+Test with representative zones and policies before choosing production-like
+hardware. Monitor signing duration, memory use, and queue activity using the
+:doc:`status command <man/cascade-status>`, :doc:`health checks
+<man/cascade-health>`, and :doc:`metrics`.
 
-Cascade accepts unsigned zones from local files or through AXFR/IXFR
-:term:`zone transfers <Zone transfer>`. Signed zones are published through
-AXFR/IXFR. Direct export to a local file is not supported.
+Next Steps
+----------
 
-System Requirements
--------------------
+When the deployment model and current limitations are suitable for your use
+case:
 
-Exact figures are not yet available, but in principle more CPU cores allow for
-more parallel operations and more memory makes it possible to load and sign
-larger zones.
-
-To give you some indication, the Cascade beta releases currently use about
-30GiB of RAM when signing a 1GiB zone file with about 25 million resource r
-ecords and adding roughly 10 million records while signing.
-
-Cascade's design and interface is currently catered towatds operators with
-a limited number of zones. As development progresses, it will also support
-operators with many (smaller) zones.
-
-Cascade is *not* yet intended for operation as a clustered deployment.
+#. :doc:`Install Cascade <installation>` from a package or build it from
+   source.
+#. Follow the :doc:`quick start <quick-start>` to configure the daemon, create
+   a policy, and sign a test zone.
+#. Read about :doc:`key management <key-management>` before connecting Cascade
+   to parent and downstream nameservers.
