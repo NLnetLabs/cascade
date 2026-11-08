@@ -7,11 +7,10 @@ Integrating with NSD
 
    -- https://nsd.docs.nlnetlabs.nl/
 
-Suggested reading
-~~~~~~~~~~~~~~~~~
+   .. seealso::
 
-The :ref:`Zone Transfers <zone-transfers.rst>` page explains the general
-functionality in Cascade that is referred to below.
+      The :doc:`Zone Transfers <zone-transfers>` page explains the general
+      functionality in Cascade that is referred to below.
 
 Using NSD as a primary to Cascade
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -69,8 +68,11 @@ example\:
      store-ixfr: yes
      create-ixfr: yes
 
-See https://nsd.docs.nlnetlabs.nl/en/latest/running/using-tsig.html for more
-information.
+     .. seealso::
+
+        See `Using TSIG in NSD
+        <https://nsd.docs.nlnetlabs.nl/en/latest/running/using-tsig.html>`_ for more
+        information.
 
 .. tip:: Remember to reload the NSD configuration or restart NSD so that
          changes to the configuration take effect.

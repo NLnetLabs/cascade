@@ -109,10 +109,10 @@ demonstrate that Cascade works with the Thales Luna Cloud HSM.
    The following Thales documentation pages are particularly relevant in the
    next steps:
 
-     - `Create a Docker Container to Access a Luna Cloud HSM Service <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_install/linux_minimal_client_access_dpod.htm>`_
-     - `Initializing an Application Partition <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/initialize_par.htm>`_
-     - `Partition Roles <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/partition_roles.htm>`_
-     - `Initializing the Crypto Officer Role <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/init_co_cu.htm#InitCO>`_
+   - `Create a Docker Container to Access a Luna Cloud HSM Service <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_install/linux_minimal_client_access_dpod.htm>`_
+   - `Initializing an Application Partition <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/initialize_par.htm>`_
+   - `Partition Roles <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/partition_roles.htm>`_
+   - `Initializing the Crypto Officer Role <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/admin_partition/partition_roles/init_co_cu.htm#InitCO>`_
 
 Follow the steps below to confirm that you can connect via PKCS#11 to your DPoD
 Luna Cloud HSM instance.
@@ -120,13 +120,13 @@ Luna Cloud HSM instance.
 10. Build a Docker image as described at `Create a Docker Container to Access
     a Luna Cloud HSM Service <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_install/linux_minimal_client_access_dpod.htm>`_.
 
-.. Note::
+    .. Note::
 
-   Replace ``FROM ubuntu:20.04`` in the Docker instructions with ``FROM ubuntu:22.04``.`
+       Replace ``FROM ubuntu:20.04`` in the Docker instructions with ``FROM ubuntu:22.04``.`
 
-   When following the instructions to build the Docker image, replace
-   references to ``setup-myclient.zip`` with **YOUR** service client ZIP that
-   you downloaded in step 9 above.
+       When following the instructions to build the Docker image, replace
+       references to ``setup-myclient.zip`` with **YOUR** service client ZIP that
+       you downloaded in step 9 above.
 
 11. Assuming that you have built your Docker image according to the Thales
     instructions using your downloaded service client ZIP, run a container
@@ -142,7 +142,7 @@ Luna Cloud HSM instance.
        another container.
 
     .. code-block:: bash
-    
+
        $ docker run -it \
            --name luna \
            --publish 5696:5696 \
@@ -158,7 +158,7 @@ Luna Cloud HSM instance.
     use the opensc ``pkcs11-tool`` program *from another shell terminal*:
 
     .. code-block:: bash
-   
+
        $ docker exec -it luna /bin/bash
        # apt update
        # apt install -y opensc
@@ -172,7 +172,7 @@ Luna Cloud HSM instance.
        Logging in to "MyPartition".
        Please enter User PIN: <THE PASSWORD YOU CHOSE IN STEP 11 ABOVE>
 
-Now that that works we can install :program:`cascade-hsm-bridge`.
+    Now that that works we can install :program:`cascade-hsm-bridge`.
 
 Installing and Configuring :program:`cascade-hsm-bridge`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -212,14 +212,14 @@ Installing and Configuring :program:`cascade-hsm-bridge`
        [2025-10-03T20:48:37] [WARN] Generating self-signed server identity certificate
        [2025-10-03T20:48:37] [INFO] Listening on 127.0.0.1:5696`
 
-Here we can see that the PKCS#11 module has been loaded correctly.
+    Here we can see that the PKCS#11 module has been loaded correctly.
 
-This does NOT show that :program:`cascade-hsm-bridge` is able to
-connect to the Luna Cloud HSM, but the ``pkcs11-tool -O`` command
-we used above proved that the PKCS#11 module is able to connect and
-so :program:`cascade-hsm-bridge` can as well. To demonstrate that,
-however, you will need to setup Cascade to use this running instance of
-:program:`cascade-hsm-bridge`.
+    This does NOT show that :program:`cascade-hsm-bridge` is able to
+    connect to the Luna Cloud HSM, but the ``pkcs11-tool -O`` command
+    we used above proved that the PKCS#11 module is able to connect and
+    so :program:`cascade-hsm-bridge` can as well. To demonstrate that,
+    however, you will need to setup Cascade to use this running instance of
+    :program:`cascade-hsm-bridge`.
 
 Using :program:`cascade-hsm-bridge` to connect Cascade to the Thales HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -249,4 +249,3 @@ strings.
 
 For an example of how to associate the HSM with a Cascade policy and use it to
 sign a zone see the :doc:`softhsm` page.
-
