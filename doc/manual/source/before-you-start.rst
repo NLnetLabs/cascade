@@ -71,7 +71,7 @@ Key storage
 ~~~~~~~~~~~
 
 **An HSM is optional.** Cascade can generate keys, store them in files on
-disk, andsign using software cryptography. If your security policy requires
+disk, and sign using software cryptography. If your security policy requires
 an HSM, Cascade supports:
 
 - KMIP-compatible HSMs directly; and
