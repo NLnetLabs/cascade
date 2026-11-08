@@ -94,17 +94,17 @@ understand your results.
 
 You can reach us by:
 
+- starting a discussion on the `NLnet Labs Community Forum
+  <https://community.nlnetlabs.nl/c/cascade/10/>`_;
 - creating a `GitHub issue
   <https://github.com/NLnetLabs/cascade/issues/>`_;
-- sending `email <mailto:cascade@nlnetlabs.nl>`_;
 - joining the `NLnet Labs DNS
   <https://chat.dns-oarc.net/community/channels/ldns>`_ channel on the
   `DNS OARC Mattermost server
   <https://www.dns-oarc.net/oarc/services/chat>`_;
 - mentioning us on `Mastodon
   <https://social.nlnetlabs.nl/@nlnetlabs/>`_; or
-- starting a discussion on the `NLnet Labs Community Forum
-  <https://community.nlnetlabs.nl/c/cascade/10/>`_.
+- sending the Cascade teamn an `email <mailto:cascade@nlnetlabs.nl>`_.
 
 The Community Forum is the best place to discuss operational experiences,
 share ideas, and request features. Positive reports are welcome too.
