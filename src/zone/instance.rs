@@ -32,7 +32,7 @@
 
 use std::{
     collections::VecDeque,
-    fmt,
+    fmt, mem,
     num::NonZeroU64,
     ops::{Deref, DerefMut},
     sync::Arc,
@@ -636,6 +636,180 @@ impl ObsoleteInstance {
             Self::Loaded(i) => i.remove_persistence_files(zone_name, config),
             Self::Signed(i) => i.remove_persistence_files(zone_name, config),
         }
+    }
+}
+
+impl ObsoleteInstances {
+    /// Iterate over the instances, mutably.
+    ///
+    /// Loaded instances are collated with the signed instances depending on
+    /// them.
+    pub fn iter_mut(&mut self) -> ObsoleteInstancesIterMut<'_> {
+        let (i1, i2) = self.instances.as_mut_slices();
+        ObsoleteInstancesIterMut {
+            i1: i1.iter_mut(),
+            i2: i2.iter_mut(),
+        }
+    }
+}
+
+/// A mutable iterator over obsolete instances.
+pub struct ObsoleteInstancesIterMut<'a> {
+    // Iterators over the disjoint slices in the `VecDeque`, in order.
+    // The start points to a loaded instance.
+    i1: std::slice::IterMut<'a, ObsoleteInstance>,
+    i2: std::slice::IterMut<'a, ObsoleteInstance>,
+}
+
+impl<'a> Iterator for ObsoleteInstancesIterMut<'a> {
+    type Item = (
+        &'a mut ObsoleteLoadedInstance,
+        ObsoleteSignedInstancesIterMut<'a>,
+    );
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.i1.next().or_else(|| {
+            // `i1` is empty, `i2` might not be.
+            // Swapping them doesn't break any invariants.
+            std::mem::swap(&mut self.i1, &mut self.i2);
+            self.i1.next()
+        });
+
+        // The next instance (if any) is always a loaded one.
+        let ObsoleteInstance::Loaded(loaded) = item? else {
+            unreachable!()
+        };
+
+        // Find all the succeeding signed instances.
+
+        let i1 = mem::take(&mut self.i1).into_slice();
+        if let Some(pos) = i1
+            .iter()
+            .position(|i| matches!(i, ObsoleteInstance::Loaded(_)))
+        {
+            // Split off the signed instances from `i1`.
+            let (signed, rest) = i1.split_at_mut(pos);
+            self.i1 = rest.iter_mut();
+
+            let signed = ObsoleteSignedInstancesIterMut::new(signed, &mut []);
+            return Some((loaded, signed));
+        }
+
+        let i2 = mem::take(&mut self.i2).into_slice();
+        if let Some(pos) = i2
+            .iter()
+            .position(|i| matches!(i, ObsoleteInstance::Loaded(_)))
+        {
+            // Split off the signed instances from `i2`.
+            let (signed, rest) = i2.split_at_mut(pos);
+            self.i2 = rest.iter_mut();
+
+            let signed = ObsoleteSignedInstancesIterMut::new(i1, signed);
+            return Some((loaded, signed));
+        }
+
+        // Only signed instances are left.
+        let signed = ObsoleteSignedInstancesIterMut::new(i1, i2);
+        Some((loaded, signed))
+    }
+}
+
+impl<'a> DoubleEndedIterator for ObsoleteInstancesIterMut<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        // Find the loaded instance right before the signed instances.
+
+        let i2 = mem::take(&mut self.i2).into_slice();
+        if let Some(pos) = i2
+            .iter()
+            .rposition(|i| matches!(i, ObsoleteInstance::Loaded(_)))
+        {
+            // Split off the loaded and signed instances from `i2`.
+            let (rest, [ObsoleteInstance::Loaded(loaded), signed @ ..]) = i2.split_at_mut(pos)
+            else {
+                unreachable!("`i2[pos]` exists and is `Loaded(_)`")
+            };
+            self.i2 = rest.iter_mut();
+
+            let signed = ObsoleteSignedInstancesIterMut::new(&mut [], signed);
+            return Some((loaded, signed));
+        }
+
+        let i1 = mem::take(&mut self.i1).into_slice();
+        if let Some(pos) = i1
+            .iter()
+            .rposition(|i| matches!(i, ObsoleteInstance::Loaded(_)))
+        {
+            // Split off the loaded and signed instances from `i1`.
+            let (rest, [ObsoleteInstance::Loaded(loaded), signed @ ..]) = i1.split_at_mut(pos)
+            else {
+                unreachable!("`i1[pos]` exists and is `Loaded(_)`")
+            };
+            self.i1 = rest.iter_mut();
+
+            let signed = ObsoleteSignedInstancesIterMut::new(signed, i2);
+            return Some((loaded, signed));
+        }
+
+        // No loaded instance in `i1` or `i2`.
+        assert!(i1.is_empty() && i2.is_empty());
+        None
+    }
+}
+
+/// A mutable iterator over obsolete signed instances.
+pub struct ObsoleteSignedInstancesIterMut<'a> {
+    // Iterators over the disjoint slices in the `VecDeque`, in order.
+    // Only containing signed instances that we should traverse.
+    i1: std::slice::IterMut<'a, ObsoleteInstance>,
+    i2: std::slice::IterMut<'a, ObsoleteInstance>,
+}
+
+impl<'a> ObsoleteSignedInstancesIterMut<'a> {
+    fn new(i1: &'a mut [ObsoleteInstance], i2: &'a mut [ObsoleteInstance]) -> Self {
+        Self {
+            i1: i1.iter_mut(),
+            i2: i2.iter_mut(),
+        }
+    }
+}
+
+impl<'a> Iterator for ObsoleteSignedInstancesIterMut<'a> {
+    type Item = &'a mut ObsoleteSignedInstance;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.i1.next().or_else(|| {
+            // `i1` is empty, `i2` might not be.
+            // Swapping them doesn't break any invariants.
+            std::mem::swap(&mut self.i1, &mut self.i2);
+            self.i1.next()
+        });
+
+        let ObsoleteInstance::Signed(instance) = item? else {
+            unreachable!()
+        };
+        Some(instance)
+    }
+}
+
+impl<'a> DoubleEndedIterator for ObsoleteSignedInstancesIterMut<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let item = self.i2.next_back().or_else(|| {
+            // `i2` is empty, `i1` might not be.
+            // Swapping them doesn't break any invariants.
+            std::mem::swap(&mut self.i1, &mut self.i2);
+            self.i2.next_back()
+        });
+
+        let ObsoleteInstance::Signed(instance) = item? else {
+            unreachable!()
+        };
+        Some(instance)
+    }
+}
+
+impl ExactSizeIterator for ObsoleteSignedInstancesIterMut<'_> {
+    fn len(&self) -> usize {
+        self.i1.len() + self.i2.len()
     }
 }
 
