@@ -382,24 +382,19 @@ impl HttpServer {
             let mut old_policy = None;
 
             if let Some(policy) = policy {
-                let old = handle
-                    .state
-                    .policy
-                    .replace(policy.latest.clone())
-                    .expect("a policy was in use");
-
+                let old = handle.state.policy.clone().expect("a policy was in use");
                 let old_policy = old_policy.insert(old.name.clone());
+                handle.get().set_policy(policy.latest.clone());
 
-                policy.zones.insert(zone.name.clone());
-
-                handle.signer().after_policy_change();
-
+                // TODO: Embed in `ZoneHandle::set_policy()`
                 center.key_manager.on_zone_policy_changed(
                     center,
                     &zone,
                     Some(old),
                     policy.latest.clone(),
                 );
+
+                policy.zones.insert(zone.name.clone());
 
                 state
                     .policies
@@ -1130,15 +1125,16 @@ impl HttpServer {
                     .expect("zones and policies are consistent");
 
                 {
-                    let mut handle = zone.write_handle(center);
-                    handle.state.policy = Some(pol.latest.clone());
-                    handle.signer().after_policy_change();
+                    zone.write_handle(center)
+                        .get()
+                        .set_policy(pol.latest.clone());
                 }
 
                 center
                     .persister
                     .on_zone_policy_changed(center, zone, old.clone(), new.clone());
 
+                // TODO: Embed in `ZoneHandle::set_policy()`
                 center
                     .key_manager
                     .on_zone_policy_changed(center, zone, old.clone(), new.clone());
