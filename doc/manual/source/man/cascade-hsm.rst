@@ -127,7 +127,7 @@ Client Certificate Authentication:
 .. option:: --client-key <CLIENT_KEY_PATH>
 
           Optional path to a private key for client certificate authentication.
-          THe file will be read and sent to the server.
+          The file will be read and used in the mTLS handshake to the server.
 
           The private key is needed to be able to prove to the KMIP server that
           you are the owner of the provided TLS client certificate.
