@@ -6,15 +6,17 @@ use std::{
     sync::Arc,
 };
 
+use bytes::Bytes;
+use camino::Utf8PathBuf;
 use cascade_zonedata::DiffData;
-use domain::new::base::SoaSerial;
+use domain::{base::Name, new::base::SoaSerial};
 use tracing::{debug, info, trace, trace_span, warn};
 
 use crate::{
     center::Center,
     persistence::persist::{persist_loaded, persist_signed, persist_to_file_from_parts},
     util::BackgroundTasks,
-    zone::{SignedInstanceId, Zone, ZoneHandle, ZoneState},
+    zone::{LoadedInstance, SignedInstance, SignedInstanceId, Zone, ZoneHandle, ZoneState},
     zonedata::{LoadedZonePersister, SignedZonePersister, ZoneRestorer},
 };
 
@@ -982,5 +984,120 @@ impl RelatedSignedDiff {
             diff,
             related_loaded_serial: loaded_serial.map(Into::into),
         }
+    }
+}
+
+//----------- Instances --------------------------------------------------------
+
+impl LoadedInstance {
+    /// A base name for persisted files for this instance.
+    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
+        format!("{zone_name}.L{}-SOA{}", self.id.0, self.serial().get())
+    }
+
+    /// The path to the persisted prev-diff file, if any.
+    ///
+    /// If the diff *from this instance to the succeeding one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_into_next_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".into-next.diff");
+        path.into()
+    }
+
+    /// The path to the persisted diff file from the preceding instance.
+    ///
+    /// If the diff *from the preceding instance to this one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_from_prev_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".from-prev.diff");
+        path.into()
+    }
+
+    /// The path to the persisted snapshot at this instance, if any.
+    ///
+    /// If a snapshot for this instance has been persisted, it will be stored
+    /// at this path.
+    pub fn snapshot_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".snapshot");
+        path.into()
+    }
+}
+
+impl SignedInstance {
+    /// A base name for persisted files for this instance.
+    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
+        format!(
+            "{zone_name}.L{}-S{}-SOA{}",
+            self.id.0.0,
+            self.id.1,
+            self.serial().get()
+        )
+    }
+
+    /// The path to the persisted prev-diff file, if any.
+    ///
+    /// If the diff *from this instance to the succeeding one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_into_next_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".into-next.diff");
+        path.into()
+    }
+
+    /// The path to the persisted diff file from the preceding instance.
+    ///
+    /// If the diff *from the preceding instance to this one* has been
+    /// persisted, it will be stored at this path.
+    pub fn diff_from_prev_path(
+        &self,
+        zone_name: &Name<Bytes>,
+        config: &crate::Config,
+    ) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".from-prev.diff");
+        path.into()
+    }
+
+    /// The path to the persisted snapshot at this instance, if any.
+    ///
+    /// If a snapshot for this instance has been persisted, it will be stored
+    /// at this path.
+    pub fn snapshot_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
+        let mut path = config
+            .zone_state_dir
+            .join(self.persistence_basename(zone_name))
+            .into_string();
+        path.push_str(".snapshot");
+        path.into()
     }
 }

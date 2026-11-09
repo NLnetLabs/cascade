@@ -39,15 +39,10 @@ use std::{
     time::SystemTime,
 };
 
-use bytes::Bytes;
-use camino::Utf8PathBuf;
 use cascade_zonedata::{DiffData, SoaRecord};
-use domain::{
-    base::Name,
-    new::{
-        base::{RType, SoaSerial},
-        rdata::RecordData,
-    },
+use domain::new::{
+    base::{RType, SoaSerial},
+    rdata::RecordData,
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
@@ -790,9 +785,9 @@ pub struct ObsoleteLoadedInstance {
 
     /// The diff of these contents, if available.
     ///
-    /// This diff transforms zone contents _from this instance_ into those
-    /// of _the succeeding loaded instance_. It is persisted to disk (at
-    /// [`LoadedInstance::diff_path()`]) and restored when Cascade starts up.
+    /// This diff transforms zone contents _from this instance_ into those of
+    /// _the succeeding loaded instance_. It is persisted to disk and restored
+    /// when Cascade starts up.
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
@@ -853,9 +848,9 @@ pub struct ObsoleteSignedInstance {
 
     /// The diff of these contents, if available.
     ///
-    /// This diff transforms zone contents _from this instance_ into those
-    /// of _the succeeding signed instance_. It is persisted to disk (at
-    /// [`SignedInstance::diff_path()`]) and restored when Cascade starts up.
+    /// This diff transforms zone contents _from this instance_ into those of
+    /// _the succeeding signed instance_. It is persisted to disk and restored
+    /// when Cascade starts up.
     ///
     /// It may be unavailable (due to explicit removal, to preserve space, or a
     /// failure during restoration).
@@ -992,24 +987,6 @@ impl LoadedInstance {
     pub fn serial(&self) -> SoaSerial {
         self.soa.rdata.serial
     }
-
-    /// A base name for persisted files for this instance.
-    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
-        format!("{zone_name}.L{}-SOA{}", self.id.0, self.serial().get())
-    }
-
-    /// The path to the persisted diff file, if any.
-    ///
-    /// If the diff for this instance (relative to the succeeding loaded
-    /// instance) has been persisted, it will be stored at this path.
-    pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
-        let mut path = config
-            .zone_state_dir
-            .join(self.persistence_basename(zone_name))
-            .into_string();
-        path.push_str(".diff");
-        path.into()
-    }
 }
 
 /// The ID of a loaded instance.
@@ -1080,29 +1057,6 @@ impl SignedInstance {
         self.num_generated_records
             .checked_add(self.num_loaded_records)
             .unwrap()
-    }
-
-    /// A base name for persisted files for this instance.
-    pub fn persistence_basename(&self, zone_name: &Name<Bytes>) -> String {
-        format!(
-            "{zone_name}.L{}-S{}-SOA{}",
-            self.id.0.0,
-            self.id.1,
-            self.serial().get()
-        )
-    }
-
-    /// The path to the persisted diff file, if any.
-    ///
-    /// If the diff for this instance (relative to the succeeding signed
-    /// instance) has been persisted, it will be stored at this path.
-    pub fn diff_path(&self, zone_name: &Name<Bytes>, config: &crate::Config) -> Utf8PathBuf {
-        let mut path = config
-            .zone_state_dir
-            .join(self.persistence_basename(zone_name))
-            .into_string();
-        path.push_str(".diff");
-        path.into()
     }
 }
 
