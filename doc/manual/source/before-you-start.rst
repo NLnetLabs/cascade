@@ -92,7 +92,7 @@ Cascade host therefore needs network access to each server over IPv4 and, when
 a server publishes an AAAA record, IPv6.
 
 If your environment cannot provide that access, disable the ``auto-report`` and
-``auto-done`` stages and complete the corresponding key-roll steps manually.
+``auto-done`` stages in policy and complete the corresponding key-roll steps manually.
 Review the :ref:`key-roll automation controls <automation-control>` before
 adding production-like zones.
 
@@ -137,7 +137,7 @@ records.
 Test with representative zones and policies before choosing production-like
 hardware. Monitor signing duration, memory use, and queue activity using the
 :doc:`status command <man/cascade-status>`, :doc:`health checks
-<man/cascade-health>`, and :doc:`metrics`.
+<man/cascade-health>`, and :doc:`metrics <metrics>`.
 
 Next Steps
 ----------
