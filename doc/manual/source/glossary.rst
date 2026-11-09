@@ -1,7 +1,9 @@
 Glossary
 ========
 
-.. note:: This page lists DNS-related terms used in the Cascade documentation, sourced from :RFC:`9499`.
+This page explains DNS and signing terms used in the Cascade documentation.
+Definitions are based on :RFC:`9499` and the protocol references cited below;
+Cascade-specific entries describe how these concepts apply to the signer.
 
 .. glossary::
   :sorted:
@@ -16,24 +18,24 @@ Glossary
     use, however, and one can find uses that conflict subtly with this
     definition.  :RFC:`1034` uses the term "top node of the zone" as a
     synonym of "apex", but that term is not widely used.  These days, the
-    first sense of "origin" (above) and "apex" are often used
+    first sense of "origin" and "apex" are often used
     interchangeably.
 
   Origin (Zone)
     There are two different uses for this term:
 
-      1. "The domain name that appears at the top of a zone (just
-         below the cut that separates the zone from its parent)... The
-         name of the zone is the same as the name of the domain at the
-         zone's origin."  (Quoted from :RFC:`2181#section-6`) These
-         days, this sense of "origin" and "apex" (defined below) are
-         often used interchangeably.
-      2. The domain name within which a given relative domain name appears in
-         zone files.  Generally seen in the context of "$ORIGIN", which is a
-         control entry defined in :RFC:`1035#section-5.1`, as part of the
-         master file format.  For example, if the $ORIGIN is set to
-         ``example.org.``, then a master file line for "www" is in fact an
-         entry for ``www.example.org.``.
+    1. "The domain name that appears at the top of a zone (just
+       below the cut that separates the zone from its parent)... The
+       name of the zone is the same as the name of the domain at the
+       zone's origin."  (Quoted from :RFC:`2181#section-6`) These
+       days, this sense of "origin" and "apex" are
+       often used interchangeably.
+    2. The domain name within which a given relative domain name appears in
+       zone files.  Generally seen in the context of "$ORIGIN", which is a
+       control entry defined in :RFC:`1035#section-5.1`, as part of the
+       master file format.  For example, if the $ORIGIN is set to
+       ``example.org.``, then a master file line for "www" is in fact an
+       entry for ``www.example.org.``.
 
   Resource Record Set (RRset)
     A set of resource records "with the same label, class and type, but with
@@ -42,20 +44,14 @@ Glossary
     definition means "same owner name".  In addition, :RFC:`2181` states that
     "the TTLs of all RRs in an RRSet must be the same".
 
-      Note that RRSIG resource records do not match this definition.
-      :RFC:`4035` says:
+    RRSIG records are an exception: multiple signatures can cover one RRset,
+    but RRSIG records with the same owner name do not themselves form an
+    RRset and need not share a TTL. See :RFC:`4035#section-2.2`.
 
-         "An RRset MAY have multiple RRSIG RRs associated with it. Note that
-         as RRSIG RRs are closely tied to the RRsets whose signatures they
-         contain, RRSIG RRs, unlike all other DNS RR types, do not form
-         RRsets.  In particular, the :term:`TTL` values among RRSIG RRs with
-         a common owner name do not follow the RRset rules described in
-         :RFC:`2181`."
-    
-  TTL 
+  TTL
     The maximum "time to live" of a resource record. "A TTL value is an
     unsigned number, with a minimum value of 0, and a maximum value of
-    1.           That is, a maximum of 2^31 - 1.  When transmitted, this
+    2147483647. That is, a maximum of 2^31 - 1.  When transmitted, this
     value shall be encoded in the less significant 31 bits of the 32 bit TTL
     field, with the most significant, or sign, bit set to zero."  (Quoted
     from :RFC:`2181#section-8`) Note that :RFC:`1035` erroneously stated that
@@ -85,7 +81,7 @@ Glossary
     $TTL directive in a zone file.  The ``$TTL`` directive was added to the
     master file format by :RFC:`2308`.
 
-  Recursive resolver 
+  Recursive resolver
     A resolver that acts in recursive mode.  In general, a recursive resolver
     is expected to cache the answers it receives (which would make it a
     full-service resolver), but some recursive resolvers might not cache.
@@ -97,7 +93,7 @@ Glossary
     The act of a client requesting a copy of a zone and an authoritative
     server sending the needed information. There are two common standard ways
     to do zone transfers: the AXFR ("Authoritative Transfer") mechanism to
-    copy the full zone (described in :RFC:`5936`, and the IXFR ("Incremental
+    copy the full zone (described in :RFC:`5936`), and the IXFR ("Incremental
     Transfer") mechanism to copy only parts of the zone that have changed
     (described in :RFC:`1995`). Many systems use non-standard methods for
     zone transfers outside the DNS protocol.
@@ -116,14 +112,19 @@ Glossary
     records are no longer required for signed zones: a signed zone might
     include NSEC3 records instead.  :RFC:`7129` provides additional
     background commentary and some context for the NSEC and NSEC3 mechanisms
-    used by DNSSEC to provide authenticated denial- of-existence responses.
-    NSEC and NSEC3 are described below.
+    used by DNSSEC to provide authenticated denial-of-existence responses.
+    See :term:`NSEC` and :term:`NSEC3`.
 
   Online signing
     :RFC:`4470` defines "on-line signing" (note the hyphen) as "generating
     and signing these records on demand", where "these" was defined as NSEC
     records.  The current definition expands that to generating and signing
     RRSIG, NSEC, and NSEC3 records on demand.
+
+    This does not simply mean running a signer continuously. Cascade signs
+    zones before publication and refreshes signatures through
+    :term:`incremental signing`; that is distinct from generating signatures
+    in response to individual DNS queries.
 
   Unsigned zone
     :RFC:`4033#section-2` defines this as "a zone that is not signed".
@@ -137,18 +138,18 @@ Glossary
     not be able to verify the authentication path to the child zone.  In this
     case, the resolver SHOULD treat the child zone as if it were unsigned."
 
-  NSEC 
+  NSEC
     "The NSEC record allows a security-aware resolver to authenticate a
-    negative reply for either name or type non- existence with the same
+    negative reply for either name or type non-existence with the same
     mechanisms used to authenticate other DNS replies."  (Quoted from
-    :RFC:`4033#section-3.2` In short, an NSEC record provides authenticated
+    :RFC:`4033#section-3.2`) In short, an NSEC record provides authenticated
     denial of existence.
 
     "The NSEC resource record lists two separate things: the next
     owner name (in the canonical ordering of the zone) that contains
     authoritative data or a delegation point NS RRset, and the set of
     RR types present at the NSEC RR's owner name."  (Quoted from
-    :RFC:`4034#section-4`.
+    :RFC:`4034#section-4`).
 
   NSEC3
     Like the NSEC record, the NSEC3 record also provides authenticated denial
@@ -189,11 +190,11 @@ Glossary
   Validation
     Validation, in the context of DNSSEC, refers to one of the following:
 
-      -  Checking the validity of DNSSEC signatures,
-      -  Checking the validity of DNS responses, such as those including
-         authenticated denial of existence, or
-      -  Building an authentication chain from a trust anchor to a DNS
-         response or individual DNS RRsets in a response.
+    -  Checking the validity of DNSSEC signatures,
+    -  Checking the validity of DNS responses, such as those including
+       authenticated denial of existence, or
+    -  Building an authentication chain from a trust anchor to a DNS
+       response or individual DNS RRsets in a response.
 
     The first two definitions above consider only the validity of individual
     DNSSEC components, such as the RRSIG validity or NSEC proof validity.
@@ -303,7 +304,7 @@ Glossary
     In DNSSEC, HSMs are often used to hold the private keys for KSKs and ZSKs
     and to create the signatures used in RRSIG records at periodic intervals.
 
-  Zone 
+  Zone
     "Authoritative information is organized into units called ZONEs, and
     these zones can be automatically distributed to the name servers which
     provide redundant service for the data in a zone."  (Quoted from
@@ -361,7 +362,7 @@ Glossary
 
   Indeterminate (DNSSEC State)
     :RFC:`4033#section-5` says: "There is no trust anchor that would indicate
-    that a specific portion of the tree is secure.  This is the default 
+    that a specific portion of the tree is secure.  This is the default
     operation mode."
 
     :RFC:`4035#section-4.3` says: "An RRset for which the resolver is not
@@ -386,3 +387,141 @@ Glossary
     more detail.  Although early DNS RFCs such as :RFC:`1996` referred to
     this as a "slave", the current common usage has shifted to calling it a
     "secondary".
+
+  Authoritative server
+    A DNS server that answers queries about a zone using locally held zone
+    data. See :RFC:`9499#section-6`. Cascade is not a general-purpose
+    authoritative server: downstream authoritative servers publish the
+    signed zones to DNS clients.
+
+  Hidden primary
+  Hidden master
+    A primary server that supplies zone transfers without being listed in
+    the zone's public NS records. :RFC:`9499#section-6` calls this a
+    "hidden master". In a Cascade deployment, a hidden primary can supply
+    the unsigned zone; its role is distinct from the :term:`hidden signer`.
+
+  Hidden signer
+    A signer placed between the source of an unsigned zone and the public
+    authoritative servers that serve the signed result. Cascade uses this
+    deployment model and should not receive ordinary public DNS queries.
+    See :doc:`before-you-start`.
+
+  Signing software
+    Software that creates and maintains DNSSEC signatures for zones, either
+    within an authoritative server or as a separate tool.
+    See :RFC:`9499#section-10`. Cascade is a standalone signer.
+
+  Zone file
+  Master file
+    A text representation of DNS resource records, commonly used to store
+    a zone. The format is defined in :RFC:`1035#section-5` and discussed
+    in :RFC:`9499#section-5`. Cascade can load an unsigned zone from a file
+    instead of obtaining it through a :term:`zone transfer`.
+
+  SOA
+    The Start of Authority record at the zone apex. It contains the primary
+    server name, a contact address, the zone's :term:`serial number`, and
+    the REFRESH, RETRY, EXPIRE and MINIMUM fields. These control refresh
+    timing, expiry and negative caching; MINIMUM is not a default TTL for
+    all records. See :RFC:`1035#section-3.3.13` and :RFC:`2308#section-4`.
+    Cascade uses SOA queries and timers to discover upstream changes.
+
+  Serial number
+    The version identifier in a zone's SOA record. Servers compare serial
+    numbers to determine whether zone data has changed, using the wraparound
+    arithmetic defined in :RFC:`1982`. Cascade's ``serial-policy`` controls
+    how serial numbers are assigned to its signed output.
+
+  Delegation
+    The assignment of a child zone to its authoritative servers through NS
+    records in the parent zone. See :RFC:`9499#section-7`. For DNSSEC, a DS
+    record in the parent can additionally establish trust in the child's keys.
+
+  Zone cut
+    The boundary between a parent zone and a delegated child zone.
+    See :RFC:`9499#section-7`. This boundary determines which data belongs
+    to each zone and matters when signing delegations and denial-of-existence
+    records.
+
+  Owner name
+    The domain name to which a resource record belongs, called "Owner" in
+    :RFC:`9499#section-5`. Records with the same owner name, class and type
+    form an :term:`RRset <Resource Record Set (RRset)>`.
+
+  AXFR
+    The DNS protocol for transferring a complete zone, defined in
+    :RFC:`5936`. Cascade can use AXFR to receive unsigned zones and provide
+    signed zones to downstream servers or review hooks.
+
+  IXFR
+    The DNS protocol for transferring changes between versions of a zone,
+    defined in :RFC:`1995`. Cascade supports IXFR on both sides of the signing
+    pipeline. A server may return a full transfer when the required changes
+    are unavailable. See :doc:`zone-transfers`.
+
+  NOTIFY
+    A DNS message that tells another server that a zone may have changed,
+    prompting it to check for an update. NOTIFY does not carry the updated
+    zone itself. See :RFC:`1996`. Cascade can receive upstream notifications
+    and notify downstream servers after publication.
+
+  TSIG
+    Transaction signatures that authenticate DNS messages using a shared
+    secret. TSIG protects message integrity and authenticates the peer; it
+    does not encrypt zone data or replace DNSSEC signatures. See :RFC:`8945`.
+    Cascade can use TSIG for zone transfers and NOTIFY messages.
+
+  DNSKEY
+    A DNS record containing a public key and associated parameters used for
+    DNSSEC validation. The corresponding private key produces signatures;
+    it is not published in DNS. See :RFC:`4034#section-2`.
+
+  RRSIG
+    A DNS record containing a signature over an RRset, together with metadata
+    including its algorithm, key tag, :term:`signature inception` and
+    :term:`signature expiration`. See :RFC:`4034#section-3`. Cascade creates
+    and refreshes these records during signing.
+
+  DS
+    A Delegation Signer record that identifies a child's DNSKEY using a
+    digest and associated parameters. Published in the parent zone, it links
+    the child's keys into the DNSSEC chain of trust.
+    See :RFC:`4034#section-5`. Updating the parent DS records is an important
+    part of KSK and CSK rollovers.
+
+  CDS
+    A Child DS record through which a child zone signals the desired DS
+    records to its parent. See :RFC:`7344` and :RFC:`8078`. Cascade can
+    publish CDS records, but the parent must support and accept the update
+    mechanism for the DS records to change automatically.
+
+  CDNSKEY
+    A Child DNSKEY record through which a child zone signals the keys from
+    which its parent can derive DS records. See :RFC:`7344` and
+    :RFC:`8078`. Like CDS, it depends on the parent's update procedure.
+
+  Key rollover
+  Key roll
+    The controlled replacement of DNSSEC keys while preserving validation
+    of published and cached data. See :RFC:`6781#section-4.1`. Cascade
+    coordinates publication, propagation checks and waiting periods through
+    its key-roll stages. See :doc:`key-management`.
+
+  Signature inception
+    The time from which an RRSIG is valid. See :RFC:`4034#section-3.1.5`.
+    Cascade can backdate this time using ``signature-inception-offset`` to
+    allow for clock differences between systems.
+
+  Signature expiration
+    The time after which an RRSIG is no longer valid. See
+    :RFC:`4034#section-3.1.5`. This is distinct from the record's TTL and
+    from a key's configured lifetime. Cascade refreshes signatures before
+    they expire.
+
+  Incremental signing
+    Cascade's process of updating signatures and NSEC/NSEC3 data affected
+    by zone changes, refreshing signatures approaching expiry, and spreading
+    signature changes for key rollovers over time. It is distinct from IXFR,
+    which transfers zone changes between servers. See
+    :doc:`incremental-signing`.
