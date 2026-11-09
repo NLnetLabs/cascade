@@ -133,8 +133,65 @@ Configuration with PKCS#11
 
 This section describes how to integrate an HSM with Cascade via PKCS#11.
 
-Setting up cascade-hsm-bridge
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Install the PKCS#11 module
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Install the PKCS#11 module for your HSM on the same machine as Cascade.
+You may need to edit vendor-specific config files or set certain environment
+variables for the :program:`cascade-hsm-bridge` process.
+See your vendor's documentation for details.
+
+As a result, you should have the following:
+
+* Path to the PKCS#11 module (example: ``/usr/lib/softhsm/libsofthsm2.so``)
+* PKCS#11 Token Label (string) or slot ID (numeric) or slot index (numeric)
+* PKCS#11 User PIN
+
+.. Note:: The examples below use the SoftHSM module path. Replace it with the
+   path to your HSM's PKCS#11 module.
+
+Ensure that the :program:`cascade-hsm-bridge` user has access to the
+the PKCS#11 module and all its resources (config files, environment variables, ...).
+For example, for SoftHSM you can chown the ``/var/lib/softhsm`` directory:
+
+.. code-block:: bash
+
+   chown -R cascade-hsm-bridge: /var/lib/softhsm
+
+Test the PKCS#11 connection
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+List the available slots. Note the token label and the slot ID.
+
+.. code-block:: bash
+
+   $ sudo -u cascade-hsm-bridge pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --list-slots
+   Available slots:
+   Slot 0 (0x2f5f235f): SoftHSM slot ID 0x2f5f235f
+     token label        : cascade-token
+     token manufacturer : SoftHSM project
+     token model        : SoftHSM v2
+     token flags        : login required, rng, token initialized, PIN initialized, other flags=0x20
+     hardware version   : 2.6
+     firmware version   : 2.6
+     serial num         : 0bce0b87af5f235f
+     pin min/max        : 4/255
+
+In this example, 0 is the slot index, 0x2f5f235f is the slot ID, and
+cascade-token is the token label.
+
+List the keys on the token. This command verifies that you can connect to the
+HSM via PKCS#11 and can log in.
+
+.. code-block:: bash
+
+   sudo -u cascade-hsm-bridge pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --slot 0x2f5f235f --login --pin 1234 --list-objects
+
+Observe that these commands execute ``pkcs11-tool`` as the ``cascade-hsm-bridge``
+user, which :program:`cascade-hsm-bridge` also runs as.
+
+Configure :program:`cascade-hsm-bridge`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you installed Cascade via a DEB or RPM package you should also already have
 the :program:`cascade-hsm-bridge` software installed, unless you explicitly
@@ -146,46 +203,55 @@ from source.
    :doc:`configuration file<cascade-hsm-bridge:man/cascade-hsm-bridge-config.toml>`.
 
 When installed via a package the daemon will not be run automatically. This
-is because you will need to:
+is because you first need to configure both the PKCS#11 module and :program:`cascade-hsm-bridge`.
 
-- Edit the :doc:`cascade-hsm-bridge configuration
-  file<cascade-hsm-bridge:man/cascade-hsm-bridge-config.toml>` to set the
-  location of your PKCS#11 module.
-- Depending on your PKCS#11 module, you may need to set vendor specific
-  environment variables for the :program:`cascade-hsm-bridge` process.  You
-  may also need to ensure that vendor specific configuration files and
-  possibly other software is installed and correctly configured.
-- Ensure that the :program:`cascade-hsm-bridge` user has access to the
-  resources needed by the PKCS#11 module to be loaded.
-- Use the (vendor specific) PKCS#11 module setup process to create a token
-  label and PIN that Cascade should use to authenticate with the HSM.
-- Optionally, generate a proper TLS certificate
-  for use by :program:`cascade-hsm-bridge` and
-  set the :option:`cascade-hsm-bridge:cert_path`
-  and :option:`cascade-hsm-bridge:key_path` in
-  :file:`/etc/cascade-hsm-bridge/config.toml` to point the certificate
-  file and accompanying private key. If you omit these settings,
-  :program:`cascade-hsm-bridge` will generate a long-lived self-signed TLS
-  certificate each time it starts.
+Edit the :doc:`cascade-hsm-bridge configuration file<cascade-hsm-bridge:man/cascade-hsm-bridge-config.toml>`
+to set the location of your PKCS#11 module. If you installed Cascade via a
+package, this file is located at ``/etc/cascade-hsm-bridge/config.toml``.
 
-.. note:: There is currently no way to test that the  :doc:`cascade-hsm-bridge
-   configuration<man/cascade-hsm-bridge-config.toml>` is correct other than
-   trying to use it with Cascade.
+Set the ``lib_path`` option to tell :program:`cascade-hsm-bridge` where to find
+the PKCS#11 module:
 
-When ready, start :program:`cascade-hsm-bridge` either via systemd (if
-installed from a package) or directly:
+.. code-block:: toml
+
+   [pkcs11]
+   lib_path = "/usr/lib/softhsm/libsofthsm2.so"
+
+Optionally, generate a proper TLS server certificate for use by :program:`cascade-hsm-bridge`.
+Set the :option:`cascade-hsm-bridge:cert_path` and :option:`cascade-hsm-bridge:key_path`
+to point the certificate file and accompanying private key.
+If you omit these settings, :program:`cascade-hsm-bridge` will generate a
+long-lived self-signed TLS server certificate each time it starts.
+
+Then (re)start the service:
 
 .. code-block:: bash
 
-   cascade-hsm-bridge --config /etc/cascade-hsm-bridge/config.toml -d --user <USER> --group <GROUP>
+   systemctl restart cascade-hsm-bridge
+
+Check the logs to verify that :program:`cascade-hsm-bridge` starts without errors:
+
+.. code-block:: bash
+
+   journalctl --follow --no-tail -u cascade-hsm-bridge
+
+.. note:: There is currently no way to test that the
+   :doc:`cascade-hsm-bridge configuration <man/cascade-hsm-bridge-config.toml>`
+   is correct other than trying to use it with Cascade.
+
+If not installed with systemd, start it directly:
+
+.. code-block:: bash
+
+   cascade-hsm-bridge --config /etc/cascade-hsm-bridge/config.toml --daemonize --user <USER> --group <GROUP>
 
 .. tip:: Use the :option:`cascade-hsm-bridge:--user` and
    :option:`cascade-hsm-bridge:--group` arguments to make
    :program:`cascade-hsm-bridge` run as the same user that has access to any
    necessary resources required by PKCS#11 module vendor.
 
-Using cascade-hsm-bridge with Cascade
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Use :program:`cascade-hsm-bridge` with Cascade
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To use :program:`cascade-hsm-bridge` with Cascade we must tell it that there
 is a HSM running that it can connect to. In the instructions below the PKCS#11
