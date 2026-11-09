@@ -98,6 +98,41 @@ Cascade with the respective HSMs.
     labels (``CKA_LABEL``). As a result, you will not see human-readable labels
     when listing keys with ``pkcs11-tool``.
 
+Configuration with KMIP
+-----------------------
+
+This section describes how to integrate an HSM with Cascade via KMIP.
+
+Follow your vendor's instructions to deploy, initialise, and configure the HSM
+or the KMIP server. As a result, you should have the following values:
+
+* KMIP server IP or FQDN
+* KMIP server port (default: 5696)
+* Credentials: Username/password or mTLS (client cert, client key)
+
+Add the KMIP server to Cascade using :doc:`cascade hsm add <man/cascade-hsm>`.
+Choose a server ID that helps you identify the HSM, such as ``kmip-hsm-1``.
+
+.. code-block:: bash
+
+   # With username/password
+   cascade hsm add --insecure --username <USERNAME> --password <PASSWORD> <SERVER_ID> <IP_HOST_OR_FQDN>
+
+   # With mTLS
+   cascade hsm add --client-cert client.crt --client-key client.key --ca-cert server-ca.crt <SERVER_ID> <IP_HOST_OR_FQDN>
+
+Cascade will verify that it can connect and that the target server appears to be a
+KMIP compatible HSM.
+
+.. Note:: Cascade does **not** yet verify that the target KMIP server supports
+   the :ref:`operations<cascade-hsm-bridge:index:supported operations>` needed
+   by  Cascade.
+
+Configuration with PKCS#11
+--------------------------
+
+This section describes how to integrate an HSM with Cascade via PKCS#11.
+
 Setting up cascade-hsm-bridge
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -172,8 +207,11 @@ KMIP compatible HSM.
    by  Cascade. For :program:`cascade-hsm-bridge` this isn't a problem as it
    is designed to work with Cascade.
 
-Next, we need to add the HSM to a policy so that when zones are added the keys for the
-zones will be generated using the HSM.
+Using the HSM in a policy
+-------------------------
+
+Once you have added the HSM to Cascade, you need to add the HSM to a policy,
+so that when zones are added the keys for the zones will be generated using the HSM.
 
 To do this, edit :file:`/etc/cascade/policies/<your_policy>.toml` and set:
 
@@ -184,3 +222,6 @@ To do this, edit :file:`/etc/cascade/policies/<your_policy>.toml` and set:
 
 Now when you use ``cascade zone add --policy <your_policy>`` the HSM will be used
 for key generation and signing.
+
+See the :doc:`quick start <quick-start>` for details on how to use the policy
+to sign a zone.
