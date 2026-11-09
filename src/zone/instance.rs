@@ -52,6 +52,8 @@ use domain::{
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tracing::{debug, error, trace};
 
+use crate::policy::PolicyVersion;
+
 //----------- Instances --------------------------------------------------------
 
 /// State regarding instances of the zone.
@@ -277,7 +279,7 @@ impl Instances {
     /// - There is no upcoming instance.
     /// - The upcoming instance is malformed.
     /// - A re-sign took place but there is no current loaded instance.
-    pub fn switch(&mut self) {
+    pub fn switch(&mut self, policy: &PolicyVersion) {
         let pub_time = SystemTime::now();
 
         let upcoming = self
@@ -366,6 +368,9 @@ impl Instances {
                 panic!("The upcoming instance is malformed")
             }
         }
+
+        // New obsolete diffs were added; discard excess ones.
+        self.discard_excess_diffs(policy);
     }
 
     /// Abandon the upcoming instance entirely.
@@ -408,6 +413,44 @@ impl Instances {
             .unwrap_or_else(|| panic!("There is no persisted instance"));
 
         self.current = Some(persisted.to_current());
+    }
+}
+
+impl Instances {
+    /// React to a change in zone policy.
+    pub fn after_policy_change(&mut self, old: Option<&PolicyVersion>, new: &PolicyVersion) {
+        // If the limits for in-memory diffs have narrowed, re-trim.
+        if let Some(old) = old
+            && (old.server.outbound.max_diffs <= new.server.outbound.max_diffs
+                || old.server.outbound.max_diffs_size <= new.server.outbound.max_diffs_size)
+        {
+            self.discard_excess_diffs(new);
+        }
+    }
+
+    /// Discard old in-memory diffs exceeding policy limits.
+    pub fn discard_excess_diffs(&mut self, policy: &PolicyVersion) {
+        let max_diffs = policy.server.outbound.max_diffs;
+        let max_diffs_size = policy.server.outbound.max_diffs_size as f64 / 100.0;
+
+        // Look up information about the current signed instance (or the
+        // persisted one, if it has not been restored yet), as a basis for
+        // policy limits.
+        let latest = if let Some(current) = &self.current {
+            &current.signed
+        } else if let Some(persisted) = &self.persisted {
+            &persisted.signed
+        } else {
+            // We don't have enough information.
+            return;
+        };
+
+        // Calculate the maximum number of records to store.
+        let latest_size = latest.num_records().get();
+        let max_diffs_size = (max_diffs_size * latest_size as f64) as usize;
+
+        self.obsolete
+            .discard_excess_diffs(max_diffs, max_diffs_size);
     }
 }
 
@@ -649,6 +692,72 @@ impl ObsoleteInstances {
         ObsoleteInstancesIterMut {
             i1: i1.iter_mut(),
             i2: i2.iter_mut(),
+        }
+    }
+
+    /// Discard old in-memory diffs exceeding the specified limits.
+    ///
+    /// - `max_diffs`: the maximum number of diffs to store.
+    ///
+    /// - `max_diffs_size`: the maximum number of records to store across all
+    ///   diffs.
+    pub fn discard_excess_diffs(&mut self, max_diffs: usize, max_diffs_size: usize) {
+        // Iterate from the newest to the oldest instances. Once a limit is
+        // hit, trim everything past it. `iter_mut()` handles the complicated
+        // relationship between loaded and signed instances for us.
+
+        // The aggregated values observed thus far.
+        let mut diffs = 0usize;
+        let mut diffs_size = 0usize;
+
+        let mut iter = self.iter_mut().rev().peekable();
+        // TODO: I wish `Peekable` implemented `Default`!
+        let mut signed_iter = None;
+
+        // Iterate over the instances until a limit is hit.
+        while let Some((_, signed)) = iter.next_if(|(loaded, _)| {
+            // Account for the loaded diff before the signed diffs.
+            // The signed diffs are only useful with the loaded diff.
+            // If the loaded diff can't fit, the signed diffs must be trimmed.
+            if let Some(diff) = &loaded.diff {
+                diffs += 1;
+                diffs_size += diff.num_records();
+            }
+            diffs <= max_diffs && diffs_size <= max_diffs_size
+        }) {
+            // Iterate over the signed instances until a limit is hit.
+            let signed_iter = signed_iter.insert(signed.rev().peekable());
+            while let Some(signed) = signed_iter.next_if(|signed| {
+                if let Some(diff) = &signed.diff {
+                    diffs += 1;
+                    diffs_size += diff.num_records();
+                }
+                diffs <= max_diffs && diffs_size <= max_diffs_size
+            }) {
+                // This instance does not need to be trimmed.
+                let _ = signed;
+            }
+
+            // If any instances are left over, a limit was hit.
+            if signed_iter.peek().is_some() {
+                break;
+            }
+        }
+
+        if signed_iter.is_some() || iter.peek().is_some() {
+            debug!(
+                diffs,
+                max_diffs, diffs_size, max_diffs_size, "Trimming excess diffs"
+            );
+
+            // Clear diffs for all the remaining instances.
+            if let Some(signed_iter) = signed_iter {
+                signed_iter.for_each(|signed| signed.diff = None);
+            }
+            iter.for_each(|(loaded, signed)| {
+                loaded.diff = None;
+                signed.for_each(|signed| signed.diff = None);
+            });
         }
     }
 }

@@ -487,7 +487,8 @@ impl<'a> ZoneHandle<'a> {
         // If there was no current instance, a snapshot was persisted.
         let new_snapshot = self.state.instances.current.is_none();
 
-        self.state.instances.switch();
+        let policy = self.state.policy.as_ref().unwrap();
+        self.state.instances.switch(policy);
 
         if new_snapshot {
             self.state.persistence.snapshot_id =

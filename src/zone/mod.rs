@@ -244,6 +244,9 @@ impl ZoneHandle<'_> {
     pub fn set_policy(&mut self, new: Arc<PolicyVersion>) {
         let old = self.state.policy.replace(new.clone());
         self.signer().after_policy_change();
+        self.state
+            .instances
+            .after_policy_change(old.as_deref(), &new);
     }
 
     /// Persist the state of the zone immediately.
