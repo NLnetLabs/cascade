@@ -1096,6 +1096,9 @@ pub struct SignedInstanceSpec {
 
     /// The number of records included from the loaded instance.
     pub num_loaded_records: u64,
+
+    /// The minimum signature expiration time.
+    pub min_expiration: Option<SystemTime>,
 }
 
 impl SignedInstanceSpec {
@@ -1106,6 +1109,7 @@ impl SignedInstanceSpec {
             soa,
             num_generated_records,
             num_loaded_records,
+            min_expiration,
         } = self;
 
         let id = id.parse();
@@ -1121,6 +1125,7 @@ impl SignedInstanceSpec {
             soa,
             num_generated_records,
             num_loaded_records,
+            min_expiration,
         }
     }
 
@@ -1131,6 +1136,7 @@ impl SignedInstanceSpec {
             ref soa,
             num_generated_records,
             num_loaded_records,
+            min_expiration,
         } = *instance;
 
         let id = SignedInstanceIdSpec::build(id);
@@ -1144,6 +1150,7 @@ impl SignedInstanceSpec {
             soa,
             num_generated_records,
             num_loaded_records,
+            min_expiration,
         }
     }
 }
