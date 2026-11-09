@@ -240,6 +240,12 @@ impl ZoneHandle<'_> {
 }
 
 impl ZoneHandle<'_> {
+    /// Change the zone policy.
+    pub fn set_policy(&mut self, new: Arc<PolicyVersion>) {
+        let old = self.state.policy.replace(new.clone());
+        self.signer().after_policy_change();
+    }
+
     /// Persist the state of the zone immediately.
     ///
     /// When the function returns, the state will be saved to disk.
