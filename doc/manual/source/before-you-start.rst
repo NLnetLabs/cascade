@@ -78,7 +78,7 @@ an HSM, Cascade supports:
 - PKCS#11-compatible HSMs through the separate
   :program:`cascade-hsm-bridge` process.
 
-Separating PKCS#11 support prevents vendor libraries from being loaded into the
+Separating PKCS#11 support out into a separate process avoids loading potentially unstable HSM vendor libraries into the
 main Cascade process. Review the tested devices and integration requirements in
 :doc:`hsms`.
 
