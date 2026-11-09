@@ -119,14 +119,16 @@ when it is not needed.
 Automatic Key Rolls
 """""""""""""""""""
 
-For automatic key rolls, the key manager will check the propagation of
-changes to the DNSKEY RRset, the DS RRset at the parent and the zone's
-signatures to all nameservers of the zone or the parent zone. To be able to
-do this, the key manager needs network access to those nameservers.
+During the automated reporting and completion stages of a key roll, the key
+manager checks the propagation of changes to the DNSKEY RRset, the DS RRset at
+the parent, and the zone's signatures. These checks contact every
+authoritative nameserver for the zone and its parent.
 
-.. important:: If Cascade cannot access the nameservers of the zone and
-   parent zone, automation will fail. In that case it is best to
-   :ref:`disable (part of) this functionality <automation-control>`.
+.. important:: The Cascade host needs network access to every address published
+   for those nameservers. This includes IPv6 connectivity when a nameserver has
+   an AAAA record. If Cascade cannot reach every server, disable the
+   ``auto-report`` and ``auto-done`` stages and complete the corresponding
+   steps manually. See :ref:`automation-control`.
 
 To check the signatures in the zone, the key manager will issue an AXFR
 request to the primary nameserver listed in the SOA record of the zone or to
@@ -218,9 +220,10 @@ automatically except for doing the ``cache-expired`` steps manually, in order
 to be able to insert extra manual steps.
 
 .. important:: The :option:`report <ksk.auto-report = true>` and
-   :option:`done <ksk.auto-done = true>` automations require that Cascade has
-   network access to all nameservers of the zone and all nameservers of the
-   parent. If network access is unavailable, make sure to disable them.
+   :option:`done <ksk.auto-done = true>` stages require network access to every
+   authoritative nameserver for the zone and its parent, over IPv4 and IPv6 as
+   advertised by their address records. If that access is unavailable, disable
+   these stages and complete their key-roll steps manually.
 
 Start
 ~~~~~
@@ -247,11 +250,11 @@ subcommand contacts the nameservers of the zone or (in the case of
 ``ReportDsPropagated``, the nameservers of the parent zone) to check if
 changes have propagated to all nameservers.
 
-The check obtains the list of nameservers from the apex of the (parent) zone
-and collects all IPv4 and IPv6 addresses. For the ``ReportDnskeyPropagated``
-and ``ReportDsPropagated`` actions, each address is the queried to see if the
-DNSKEY RRset or DS RRset match the KSKs. The ``ReportRrsigPropagated`` action
-is more complex.
+The check obtains the list of nameservers from the apex of the relevant zone
+and collects all their IPv4 and IPv6 addresses. For the
+``ReportDnskeyPropagated`` and ``ReportDsPropagated`` actions, each address is
+queried to see whether the DNSKEY or DS RRset matches the KSKs. The
+``ReportRrsigPropagated`` action is more complex.
 
 First, the entire zone is transferred from the primary nameserver listed in
 the SOA record. Then all relevant signatures are checked if they have the

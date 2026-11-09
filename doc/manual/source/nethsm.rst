@@ -2,16 +2,12 @@ Integrating with a Nitrokey NetHSM
 ==================================
 
 .. Note:: The instructions on this page are for a Debian 12 host and assume
-   that Cascade has already been installed using our DEB package, and that
-   Docker is installed and can run the NetHSM container.
-
-.. Note:: The instructions on this page assume you will be using the NetHSM
-   exclusively for the task at hand and for testing. Using the provided
-   test image is in no way suggested for production. Please study the
-   product documentation to find out how to do so.
-
-.. Note:: Most instructions on this page assume you will be working as a
-   normal, i.e. non-``root``, user.
+   that Cascade has already been installed using our DEB package, that Docker
+   is installed and can run the NetHSM container, and that you will be working
+   as a normal, i.e. non-``root``, user. They also assume that you will use the
+   NetHSM exclusively for the task at hand and for testing. Using the provided
+   test image is in no way suggested for production. Please study the product
+   documentation to find out how to do so.
 
 .. epigraph::
 

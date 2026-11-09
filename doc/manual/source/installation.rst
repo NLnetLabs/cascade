@@ -4,21 +4,18 @@ Installation
 Prerequisites
 -------------
 
-To use Cascade a v0.2.0 version of :program:`dnst` is required. The Cascade
-DEB and RPM packages automatically ensure that the appropriate version of
-:program:`dnst` is installed.
+Cascade requires :program:`dnst` 0.3.0 or newer. The Cascade DEB and RPM
+packages install a compatible version automatically.
 
-To use automatic keyrolls (which are on by default) the Cascade host machine
-will need to have IPv6 connectivity if any of its nameservers or parent
-nameservers have AAAA records.
+Before installing Cascade, review :doc:`before-you-start` for its deployment,
+network, and resource requirements.
 
 Binary Packages
 ---------------
 
-Getting started with Cascade is really easy by installing a binary package
-for either Debian and Ubuntu or for Red Hat Enterprise Linux (RHEL) and
-compatible systems such as Rocky Linux. Alternatively, you can run with
-Docker. 
+The easiest way to get started with Cascade is to install a binary package
+for Debian, Ubuntu, Red Hat Enterprise Linux (RHEL), or a compatible system
+such as Rocky Linux. Docker images are coming soon.
 
 You can also build Cascade from the source code using Cargo, Rust's build
 system and package manager. Cargo lets you run Cascade on almost any operating
@@ -32,13 +29,13 @@ started.
        To install a Cascade package, you need the 64-bit version of one of
        these Debian versions:
 
-         -  Debian Trixie 13
-         -  Debian Bookworm 12
-         -  Debian Bullseye 11
+       - Debian Trixie 13
+       - Debian Bookworm 12
+       - Debian Bullseye 11
 
        Packages are available for the ``amd64``/``x86_64`` architecture only.
-       
-       First update the :program:`apt` package index: 
+
+       First update the :program:`apt` package index:
 
        .. code-block:: bash
 
@@ -68,7 +65,7 @@ started.
           "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/debian \
           $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
 
-       Update the :program:`apt` package index once more: 
+       Update the :program:`apt` package index once more:
 
        .. code-block:: bash
 
@@ -93,17 +90,17 @@ started.
        .. code-block:: bash
 
           sudo systemctl enable cascade
-       
+
        You can check the status of Cascade with:
-       
-       .. code-block:: bash 
-       
-          sudo systemctl status cascade
-       
-       You can view the logs with: 
-       
+
        .. code-block:: bash
-       
+
+          sudo systemctl status cascade
+
+       You can view the logs with:
+
+       .. code-block:: bash
+
           sudo journalctl --unit=cascade
 
    .. group-tab:: Ubuntu
@@ -116,8 +113,8 @@ started.
          - Ubuntu Jammy 22.04 (LTS)
 
        Packages are available for the ``amd64``/``x86_64`` architecture only.
-       
-       First update the :program:`apt` package index: 
+
+       First update the :program:`apt` package index:
 
        .. code-block:: bash
 
@@ -147,7 +144,7 @@ started.
           "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/ubuntu \
           $(lsb_release -cs)-proposed main" | sudo tee /etc/apt/sources.list.d/nlnetlabs-proposed.list > /dev/null
 
-       Update the :program:`apt` package index once more: 
+       Update the :program:`apt` package index once more:
 
        .. code-block:: bash
 
@@ -172,17 +169,17 @@ started.
        .. code-block:: bash
 
           sudo systemctl enable cascade
-       
+
        You can check the status of Cascade with:
-       
-       .. code-block:: bash 
-       
-          sudo systemctl status cascade
-       
-       You can view the logs with: 
-       
+
        .. code-block:: bash
-       
+
+          sudo systemctl status cascade
+
+       You can view the logs with:
+
+       .. code-block:: bash
+
           sudo journalctl --unit=cascade
 
    .. group-tab:: RHEL
@@ -190,7 +187,7 @@ started.
        To install a Cascade package, you need Red Hat Enterprise Linux
        (RHEL) 8, 9 or 10 or compatible operating system such as Rocky Linux.
        Packages are available for the ``amd64``/``x86_64`` architecture only.
-       
+
        First create a file named :file:`/etc/yum.repos.d/nlnetlabs-testing.repo`,
        enter this configuration and save it:
 
@@ -199,20 +196,20 @@ started.
           On Fedora systems replace $releasever with 10 (or 8 or 9 if 10 is too
           new for your Fedora) as there is no repository with Fedora numbers, e.g.
           42, in our package repository.
-       
+
        .. code-block:: text
-       
+
           [nlnetlabs-testing]
           name=NLnet Labs Testing
           baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/proposed/$basearch
           enabled=1
-        
+
        Add the GPG key from NLnet Labs:
-       
+
        .. code-block:: bash
-       
+
           sudo rpm --import https://packages.nlnetlabs.nl/aptkey.asc
-       
+
        You can now install Cascade with:
 
        .. code-block:: bash
@@ -239,19 +236,19 @@ started.
        .. code-block:: bash
 
           sudo systemctl enable cascade
-       
+
        You can check the status of Cascade with:
-       
-       .. code-block:: bash 
-       
-          sudo systemctl status cascade
-       
-       You can view the logs with: 
-       
+
        .. code-block:: bash
-       
+
+          sudo systemctl status cascade
+
+       You can view the logs with:
+
+       .. code-block:: bash
+
           sudo journalctl --unit=cascade
-       
+
    .. group-tab:: Docker
 
        .. Note:: Docker images are coming soon.
@@ -300,7 +297,7 @@ Updating
 
    .. group-tab:: Debian
 
-       To update an existing Cascade installation, first update the 
+       To update an existing Cascade installation, first update the
        repository using:
 
        .. code-block:: text
@@ -332,7 +329,7 @@ Updating
 
    .. group-tab:: Ubuntu
 
-       To update an existing Cascade installation, first update the 
+       To update an existing Cascade installation, first update the
        repository using:
 
        .. code-block:: text
@@ -366,15 +363,15 @@ Updating
 
        To update an existing Cascade installation, you can use this
        command to get an overview of the available versions:
-        
+
        .. code-block:: bash
-        
+
           sudo yum list --showduplicates cascade
-          
+
        You can update to the latest version using:
-         
+
        .. code-block:: bash
-         
+
           sudo yum update cascade
 
        .. note: Earlier versions of the Cascade package installed a
@@ -386,8 +383,7 @@ Updating
                 .. code-block:: text
 
                    sudo yum remove cascade-dnst
-             
+
    .. group-tab:: Docker
 
        .. Note:: Docker images are coming soon.
-               

@@ -82,6 +82,29 @@ For this reason, rolling a KSK once a year is reasonable.
    :doc:`hsms`
       Hardware Security Modules (HSMs).
 
+Signing and Zones
+-----------------
+
+Why does Cascade sign an unchanged zone every 12 hours?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Cascade refreshes DNSSEC signatures gradually instead of replacing every
+signature at once. By default, it starts an incremental signing operation every
+12 hours, including when the unsigned zone has not changed and no key roll is
+in progress.
+
+Each operation creates a new signed version but normally replaces only some of
+the signatures. This is expected and does not mean that Cascade is signing the
+entire zone again. You can change the frequency with the
+:option:`signature refresh interval <signature-refresh-interval = "12h">`
+policy setting.
+
+.. seealso::
+
+   :doc:`incremental-signing`
+      How Cascade schedules signature refreshes and chooses which signatures
+      to replace.
+
 Installing and Building
 -----------------------
 

@@ -17,73 +17,97 @@ Cascade
       :alt: Mastodon
       :target: https://social.nlnetlabs.nl/@nlnetlabs
 
-A friendly, stand-alone :doc:`DNSSEC <intro>` signing solution designed to
-communicate what it's doing and is easy to interact with. 
+Cascade is a friendly, standalone :doc:`DNSSEC <intro>` signing solution
+from NLnet Labs. It automates key management and zone signing while keeping
+operators informed and in control.
 
-Cascade is currently in the **beta** development phase. We would love for
-you to :doc:`get to know Cascade <before-you-start>` and are eager to hear
-:ref:`your experiences <reach-out>` so we can improve every aspect. Please
-consider the current :doc:`limitations`.
+Cascade is currently in **beta**. It is ready for testing and evaluation,
+but you should review the current :doc:`limitations` before using it. We
+welcome :ref:`feedback about your experience <reach-out>` as we continue to
+improve its functionality, performance, and operator experience.
 
-.. tip:: To see at a glance what's new in the beta1 release read our
-         `"Cascade: Start your engines!" <https://blog.nlnetlabs.nl/cascade-beta1-release/>`_
-         blog post. For subsequent releases checkout the `release notes <https://github.com/NLnetLabs/cascade/releases/>`_.
+.. tip:: New to Cascade? Start with :doc:`before-you-start`, then follow the
+         :doc:`quick-start` to sign your first zone. To see what changed in
+         beta1, read `"Cascade: Start your engines!"
+         <https://blog.nlnetlabs.nl/cascade-beta1-release/>`_. Changes in
+         subsequent versions are listed in the `release notes
+         <https://github.com/NLnetLabs/cascade/releases/>`_.
 
-Cascade has the following design goals:
+Why Cascade?
+------------
 
-Flexibility
-   The Cascade pipeline runs as a single binary and does not require
-   additional database software. Install with ease using a :doc:`binary
-   package <installation>` or build from source. Run on-premise or in the
-   cloud, with keys on disk or a :doc:`Hardware Security Module <hsms>` of
-   your choice.
+Simple deployment
+   The Cascade pipeline runs as a single binary and does not require separate
+   database software. Install a :doc:`binary package <installation>` or
+   :doc:`build Cascade from source <building>`, then run it in any way that
+   works for your infrastructure.
 
-Sensible defaults
-   :doc:`Get started easily <quick-start>` with default settings based on 
-   industry best practices.
+Safe automation
+   Cascade provides sensible defaults based on industry best practices while
+   giving you detailed control over :doc:`key management <key-management>`
+   and the DNSSEC signing process.
 
-Controllability
-   Cascade gives you tight control over :doc:`key management 
-   <key-management>` automation and the DNSSEC signing process.
+Flexible key storage
+   Keep keys on disk or use a :doc:`Hardware Security Module <hsms>`. Cascade
+   supports several HSM integrations, so you can choose the setup that fits
+   your operational and security requirements.
 
-Observability
-   With Cascade you cut out the guesswork. :doc:`review-hooks` allow you to 
-   use your preferred solutions to automate verification of the unsigned and
-   signed zone, before publishing it.
+Observable signing
+   Cascade is designed to communicate what it is doing. Its status, health,
+   and metrics interfaces help you monitor operation, while
+   :doc:`review-hooks` let you verify unsigned and signed zones with your own
+   tooling before publication.
 
-Open-source with professional support services
-   NLnet Labs offers `professional support and consultancy services
-   <https://www.nlnetlabs.nl/services/contracts/>`_ with a service-level
-   agreement. 
+Standards-based integration
+   Integrate Cascade into an existing DNS environment using
+   :doc:`zone-transfers` and the available nameserver integrations.
+
+Open source and professionally supported
+   Cascade is open-source software developed by NLnet Labs. `Professional
+   support and consultancy services
+   <https://www.nlnetlabs.nl/services/contracts/>`_ are available with a
+   service-level agreement.
+
+Where to start
+--------------
+
+- Read :doc:`intro` for an introduction to DNSSEC and Cascade.
+- Review :doc:`before-you-start` and the current :doc:`limitations`.
+- Follow the :doc:`installation` and :doc:`quick-start` guides.
+- Learn how Cascade handles :doc:`key-management` and
+  :doc:`incremental-signing`.
+- Connect an :doc:`HSM <hsms>` or configure a :doc:`nameserver integration
+  <nsd>` when you are ready to build a production-style setup.
+- Use the :doc:`faq`, command-line manual pages, and configuration-file
+  references when operating or troubleshooting Cascade.
 
 .. _reach-out:
 
 Feedback
 --------
 
-Our goal is to gather operator feedback. Don't be shy and reach out by 
-creating a `GitHub issue <https://github.com/NLnetLabs/cascade/issues/>`_,
-sending us `an email <mailto:cascade@nlnetlabs.nl>`_, finding us in the
-`NLnet Labs DNS <https://chat.dns-oarc.net/community/channels/ldns>`_ 
-channel on the `DNS OARC Mattermost 
-server <https://www.dns-oarc.net/oarc/services/chat>`_, or
-mentioning us on `Mastodon <https://social.nlnetlabs.nl/@nlnetlabs/>`_.
-Or if you want to discuss operational experiences, if you have feedback or
-if you want to request a feature, please use the
-`NLnet Labs Community Forum <https://community.nlnetlabs.nl/c/cascade/10/>`_.
+Operator feedback is especially valuable during the beta. Please tell us
+about missing functionality, unclear documentation, unexpected behavior,
+performance, memory usage, and your overall experience. Details such as your
+operating system, HSM, and the size and number of zones in your setup help us
+understand your results.
 
-Examples of things we're interested in:
+You can reach us by:
 
-- If these documentation pages don't answer your question, tell us what we
-  missed.
-- Performance and memory usage are expected to improve but if you think it
-  won't meet your needs, tell us about your use case.
-- Not all intended functionality has been implemented at this point. If a
-  feature that you need is missing, please let us know.
-- We are actively working to shape the user experience to operator needs. We
-  have a lot more ideas for improvement and we'd love to hear yours too.
-- Do tell us about your positive experiences. We particularly appreciate
-  hearing O/S, HSM and size/number of zones you worked with.
+- starting a discussion on the `NLnet Labs Community Forum
+  <https://community.nlnetlabs.nl/c/cascade/10/>`_;
+- creating a `GitHub issue
+  <https://github.com/NLnetLabs/cascade/issues/>`_;
+- joining the `NLnet Labs DNS
+  <https://chat.dns-oarc.net/community/channels/ldns>`_ channel on the
+  `DNS OARC Mattermost server
+  <https://www.dns-oarc.net/oarc/services/chat>`_;
+- mentioning us on `Mastodon
+  <https://social.nlnetlabs.nl/@nlnetlabs/>`_; or
+- sending the Cascade team an `email <mailto:cascade@nlnetlabs.nl>`_.
+
+The Community Forum is the best place to discuss operational experiences,
+share ideas, and request features. Positive reports are welcome too.
 
 .. toctree::
    :maxdepth: 2
