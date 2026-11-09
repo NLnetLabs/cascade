@@ -1130,10 +1130,6 @@ impl HttpServer {
                         .set_policy(pol.latest.clone());
                 }
 
-                center
-                    .persister
-                    .on_zone_policy_changed(center, zone, old.clone(), new.clone());
-
                 // TODO: Embed in `ZoneHandle::set_policy()`
                 center
                     .key_manager

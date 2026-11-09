@@ -855,77 +855,6 @@ impl IxfrZoneDiffs {
 
         diffs
     }
-
-    pub fn trim(&mut self, max_diffs: usize, max_size: usize) {
-        // First check and trim excess diffs.
-        let num_signed_diffs = self.num_signed_diffs();
-        debug!(
-            "Checking for diffs to discard: {num_signed_diffs} signed diffs > max_diffs ({max_diffs})?"
-        );
-        if num_signed_diffs > max_diffs {
-            // Prune the oldest diffs so that we end up storing no more than
-            // max_diffs signed diffs.
-            let num_diffs_to_prune = num_signed_diffs - max_diffs;
-            debug!("Discarding {num_diffs_to_prune} in-memory diffs");
-            for _ in 0..num_diffs_to_prune {
-                let _ = self.discard_first_diff_pair();
-            }
-        }
-
-        // Next trim enough diffs to bring the total number of RRs stored
-        // under the specified limit.
-        let loaded_diff_sizes = self
-            .loaded_diffs
-            .values()
-            .map(Self::calc_diff_size)
-            .collect::<Vec<usize>>();
-        let signed_diff_sizes = self
-            .signed_diffs
-            .values()
-            .map(|rd| Self::calc_diff_size(&rd.diff))
-            .collect::<Vec<usize>>();
-        let mut total_rr_count =
-            loaded_diff_sizes.iter().sum::<usize>() + signed_diff_sizes.iter().sum::<usize>();
-
-        debug!("Checking for diffs to discard: {total_rr_count} RRs > max_size ({max_size}) RRs??");
-        while total_rr_count > max_size {
-            if let Some((loaded_diff, signed_diff)) = self.discard_first_diff_pair() {
-                total_rr_count -= Self::calc_diff_size(&signed_diff);
-                if let Some(loaded_diff) = loaded_diff {
-                    total_rr_count -= Self::calc_diff_size(&loaded_diff);
-                }
-                debug!("Discarded in-memory diff: updated total RR count = {total_rr_count}");
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn discard_first_diff_pair(&mut self) -> Option<(Option<Arc<DiffData>>, Arc<DiffData>)> {
-        if let Some(e) = self.signed_diffs.first_entry() {
-            trace!("Discarding in-memory signed diff for serial {}", e.key());
-            let RelatedSignedDiff {
-                diff,
-                related_loaded_serial,
-            } = e.remove();
-            if let Some(loaded_serial) = related_loaded_serial {
-                trace!("Discarding related in-memory loaded diff for serial {loaded_serial}");
-                let loaded_diff = self.loaded_diffs.remove(&loaded_serial);
-                Some((loaded_diff, diff))
-            } else {
-                Some((None, diff))
-            }
-        } else {
-            None
-        }
-    }
-
-    fn calc_diff_size(diff: &Arc<DiffData>) -> usize {
-        diff.removed_soa.as_ref().map(|_| 1).unwrap_or(0)
-            + diff.added_soa.as_ref().map(|_| 1).unwrap_or(0)
-            + diff.removed_records.len()
-            + diff.added_records.len()
-    }
 }
 
 impl std::fmt::Display for IxfrZoneDiffs {
@@ -959,14 +888,6 @@ impl std::fmt::Display for IxfrZoneDiffs {
     }
 }
 
-fn log_stored_diff(r#type: &'static str, updating: bool, from: SoaSerial, to: SoaSerial) {
-    if updating {
-        trace!("Updating existing IXFR in-memory diff for SOA {type} serial -{from:?}:+{to:?}");
-    } else {
-        trace!("Storing IXFR in-memory diff for SOA {type} serial -{from:?}:+{to:?}");
-    }
-}
-
 //------------ RelatedSignedDiff ---------------------------------------------
 
 struct RelatedSignedDiff {
@@ -976,15 +897,6 @@ struct RelatedSignedDiff {
     /// The removed serial number of the loaded diff that this signed diff
     /// relates to, if any.
     pub related_loaded_serial: Option<u32>,
-}
-
-impl RelatedSignedDiff {
-    fn new(diff: Arc<DiffData>, loaded_serial: Option<SoaSerial>) -> Self {
-        Self {
-            diff,
-            related_loaded_serial: loaded_serial.map(Into::into),
-        }
-    }
 }
 
 //----------- Instances --------------------------------------------------------

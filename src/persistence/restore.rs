@@ -21,7 +21,6 @@ use tracing::{info, trace, warn};
 
 use crate::{
     center::Center,
-    persistence::discard_excess_diffs,
     policy::PolicyVersion,
     zone::{
         InMemoryDiffLimits, InMemoryDiffTrimmer, SignedInstanceId, Zone,
@@ -537,8 +536,6 @@ fn restore_signed(
                 .discard_excess_diffs(policy, snapshot_id, &zone.name, &center.config);
         }
     }
-
-    discard_excess_diffs(center, zone);
 
     info!(
         "Restored signed zone snapshot and {num_diffs_to_restore} diffs for zone '{}'",
