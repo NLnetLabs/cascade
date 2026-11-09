@@ -225,3 +225,59 @@ for key generation and signing.
 
 See the :doc:`quick start <quick-start>` for details on how to use the policy
 to sign a zone.
+
+Inspecting the key state
+------------------------
+
+Cascade automatically creates the KSK and ZSK on the HSM.
+With :doc:`cascade zone status <man/cascade-zone>` you can inspect the DNSSEC
+key status of a zone:
+
+.. code-block:: bash
+
+   $ cascade zone status <ZONE> --detailed
+   # ...
+   DNSSEC keys:
+    KSK tagged 45285:
+     Reference: kmip://cascade-hsm-bridge-1/keys/AAA7DA60B816B3B96F6FC0518363FDD8BB74F3B6_pub?algorithm=13&flags=257
+     Actively used for signing
+    ZSK tagged 44695:
+     Reference: kmip://cascade-hsm-bridge-1/keys/ABACB17A39D21DF2012C58D31C71A49CAB2A5A4B_pub?algorithm=13&flags=256
+     Actively used for signing
+
+You can inspect your HSM key store to verify this.
+The hex string in the ``Reference`` field should be the key ID on the HSM.
+Additionally, some HSMs have audit logs that show the key generation and signing operations.
+
+For PKCS#11, you can list keys using ``pkcs11-tool``:
+
+.. code-block:: bash
+
+   $ sudo -u cascade-hsm-bridge pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --slot 0x27378f68 --list-objects --login --pin 1234
+
+   Private Key Object; EC
+     label:      rsa.example.com-45285-ksk-pri
+     ID:         aaa7da60b816b3b96f6fc0518363fdd8bb74f3b6
+     Usage:      sign
+     Access:     sensitive, always sensitive, never extractable, local
+     Allowed mechanisms: ECDSA,ECDSA-SHA1,ECDSA-SHA224,ECDSA-SHA256,ECDSA-SHA384,ECDSA-SHA512,ECDSA-SHA3-224,ECDSA-SHA3-256,ECDSA-SHA3-384,ECDSA-SHA3-512,ECDH1-DERIVE
+   Public Key Object; EC  EC_POINT 256 bits
+     EC_POINT:   044104ebfe54f2c4724c48441cc37b43752e179dfa1cd0e68886d3086b1d6255bd4c11bbbc05dcc27cb668a5969eb6fb9d286779e7f44dbb2cb37affff92e854b38afa
+     EC_PARAMS:  06082a8648ce3d030107 (OID 1.2.840.10045.3.1.7)
+     label:      rsa.example.com-45285-ksk-pub
+     ID:         aaa7da60b816b3b96f6fc0518363fdd8bb74f3b6
+     Usage:      verify
+     Access:     local
+   Private Key Object; EC
+     label:      rsa.example.com-44695-zsk-pri
+     ID:         abacb17a39d21df2012c58d31c71a49cab2a5a4b
+     Usage:      sign
+     Access:     sensitive, always sensitive, never extractable, local
+     Allowed mechanisms: ECDSA,ECDSA-SHA1,ECDSA-SHA224,ECDSA-SHA256,ECDSA-SHA384,ECDSA-SHA512,ECDSA-SHA3-224,ECDSA-SHA3-256,ECDSA-SHA3-384,ECDSA-SHA3-512,ECDH1-DERIVE
+   Public Key Object; EC  EC_POINT 256 bits
+     EC_POINT:   044104df97078194fa299788c6d2770277913d499e6050da67733bd51b573baf2d4a1ce37f8207c2e3f7052ee268e38e7384d8729986b449f51746d9793efc2e8d8caa
+     EC_PARAMS:  06082a8648ce3d030107 (OID 1.2.840.10045.3.1.7)
+     label:      rsa.example.com-44695-zsk-pub
+     ID:         abacb17a39d21df2012c58d31c71a49cab2a5a4b
+     Usage:      verify
+     Access:     local
