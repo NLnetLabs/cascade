@@ -28,7 +28,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.TH "CASCADE-HSM" "1" "Jan 01, 2026" "0.1.0-beta8" "Cascade"
+.TH "CASCADE-HSM" "1" "Jan 01, 2026" "0.1.0-beta9-dev" "Cascade"
 .SH NAME
 cascade-hsm \- Manage HSMs
 .SH SYNOPSIS
@@ -141,14 +141,6 @@ password set here will be used as the PKCS#11 PIN to login with.
 .B \-\-client\-cert <CLIENT_CERT_PATH>
 Optional path to a TLS certificate to authenticate to the KMIP server
 with. The file will be read and sent to the server.
-.sp
-\fBWarning:\fP
-.INDENT 7.0
-.INDENT 3.5
-This argument is not yet used \%<https://\:github\:.com/\:NLnetLabs/\:cascade/\:issues/\:982>
-by Cascade.
-.UNINDENT
-.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -158,14 +150,6 @@ THe file will be read and sent to the server.
 .sp
 The private key is needed to be able to prove to the KMIP server that
 you are the owner of the provided TLS client certificate.
-.sp
-\fBWarning:\fP
-.INDENT 7.0
-.INDENT 3.5
-This argument is not yet used \%<https://\:github\:.com/\:NLnetLabs/\:cascade/\:issues/\:982>
-by Cascade.
-.UNINDENT
-.UNINDENT
 .UNINDENT
 .SS Server Certificate Verification:
 .INDENT 0.0
@@ -181,14 +165,6 @@ certificate, e.g. in a test environment.
 .TP
 .B \-\-server\-cert <SERVER_CERT_PATH>
 Optional path to a TLS PEM certificate for the server.
-.sp
-\fBWarning:\fP
-.INDENT 7.0
-.INDENT 3.5
-This argument is not yet used \%<https://\:github\:.com/\:NLnetLabs/\:cascade/\:issues/\:982>
-by Cascade.
-.UNINDENT
-.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -203,14 +179,6 @@ so that the server can select the correct certificate to present.
 .TP
 .B \-\-ca\-cert <CA_CERT_PATH>
 Optional path to a TLS PEM certificate for a Certificate Authority.
-.sp
-\fBWarning:\fP
-.INDENT 7.0
-.INDENT 3.5
-This argument is not yet used \%<https://\:github\:.com/\:NLnetLabs/\:cascade/\:issues/\:982>
-by Cascade.
-.UNINDENT
-.UNINDENT
 .UNINDENT
 .SS Client Limits:
 .INDENT 0.0
