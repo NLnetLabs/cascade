@@ -14,7 +14,6 @@ use std::{
 use bytes::Bytes;
 use domain::base::{Name, Rtype, Serial};
 use domain::dnssec::sign::keys::keyset::UnixTime;
-use domain::rdata::dnssec::Timestamp;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
 
@@ -361,15 +360,6 @@ pub struct ZoneState {
     /// new save operation should be enqueued.
     pub enqueued_save: Option<tokio::task::JoinHandle<()>>,
 
-    /// The minimum expiration time in the signed zone we are serving from
-    /// the publication server.
-    pub min_expiration: Option<Timestamp>,
-
-    /// The minimum expiration time in the most recently signed zone. This
-    /// value should be move to min_expiration after the signed zone is
-    /// approved.
-    pub next_min_expiration: Option<Timestamp>,
-
     /// We expect this from the key manager. These are the types that
     /// the key manager takes control over in the apex. Use this to
     /// determine if the zone needs resigning. If what is stored here is
@@ -483,8 +473,6 @@ impl Default for ZoneState {
             policy: Default::default(),
             maintenance_mode: Default::default(),
             enqueued_save: Default::default(),
-            min_expiration: Default::default(),
-            next_min_expiration: Default::default(),
             apex_remove: Default::default(),
             apex_extra: Default::default(),
             key_tags: Default::default(),

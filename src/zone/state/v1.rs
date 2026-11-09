@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use camino::Utf8Path;
 use cascade_zonedata::SoaRecord;
+use domain::base::Name;
 use domain::base::{Rtype, Serial, Ttl};
 use domain::dep::octseq::Array;
 use domain::dnssec::sign::keys::keyset::UnixTime;
@@ -17,7 +18,6 @@ use domain::new::base::wire::{BuildBytes, ParseBytes};
 use domain::new::rdata::Soa;
 use domain::tsig::KeyName;
 use domain::utils::dst::UnsizedCopy;
-use domain::{base::Name, rdata::dnssec::Timestamp};
 use serde::{Deserialize, Serialize};
 
 use crate::loader::Source;
@@ -65,15 +65,6 @@ pub struct Spec {
 
     /// The source of the zone.
     pub source: ZoneLoadSourceSpec,
-
-    /// The minimum expiration time in the signed zone we are serving from
-    /// the publication server.
-    pub min_expiration: Option<Timestamp>,
-
-    /// The minimum expiration time in the most recently signed zone. This
-    /// value should be move to min_expiration after the signed zone is
-    /// approved.
-    pub next_min_expiration: Option<Timestamp>,
 
     /// We expect this from the key manager. These are the types that
     /// the key manager takes control over in the apex. Use this to
@@ -129,8 +120,6 @@ impl Spec {
             maintenance_mode: zone.maintenance_mode,
             instances: InstancesSpec::build(&zone.instances),
             source: ZoneLoadSourceSpec::build(&zone.loader.source),
-            min_expiration: zone.min_expiration,
-            next_min_expiration: zone.next_min_expiration,
             apex_remove: zone.apex_remove.clone(),
             apex_extra: zone.apex_extra.clone(),
             key_tags: zone.key_tags.clone(),

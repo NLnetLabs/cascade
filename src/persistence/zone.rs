@@ -78,18 +78,9 @@ impl ZonePersistenceHandle<'_> {
     fn reset_state_due_to_abandoned_restore(&mut self) {
         self.clear();
 
-        // In case this zone was signed in the past we have to make sure that
-        // any attempt to enqueue a re-signing operation will be skipped as
-        // doing so will fail due to the lack of loaded zone content.
-        // TODO: Find a better way to prevent this issue as changing the
-        // min_expiration timestamps is a very indirect and non-obvious way of
-        // preventing re-signing.
-        self.state.min_expiration = None;
-        self.state.next_min_expiration = None;
-
-        // Also remove any already enqueued signing operation that is blocked
-        // by the ongoing restore as it will otherwise immediately start once
-        // the restore completes.
+        // Remove any already enqueued signing operation that is blocked by
+        // the ongoing restore as it will otherwise immediately start once the
+        // restore completes.
         self.zone().signer().cancel_enqueued_signing_operations();
 
         // TODO: self the error?
