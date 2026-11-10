@@ -12,21 +12,21 @@ Using NSD as a primary to Cascade
     The :doc:`Zone Transfers <zone-transfers>` page explains the general
     functionality in Cascade that is referred to below.
 
-To use NSD as an upstream name server of Cascade you must add a zone to NSD
-that refers to Cascade as a secondary name server. If enabled in NSD, NSD will
-send an :RFC:`1996` DNS NOTIFY message to Cascade notifying it when changes to
-the zone occur.
+To use NSD as an upstream name server of Cascade you must add a :term:`zone` to NSD that
+refers to Cascade as a :term:`secondary name server <Secondary server>`. If enabled in
+NSD, NSD will send an :RFC:`1996` DNS :term:`NOTIFY` message to Cascade notifying it
+when changes to the zone occur.
 
-The NOTIFY message will trigger Cascade to perform an AXFR transfer to fetch
-the full zone content from NSD, or, if already fetched and IXFR is enabled in
+The NOTIFY message will trigger Cascade to perform an :term:`AXFR` transfer to fetch
+the full zone content from NSD, or, if already fetched and :term:`IXFR` is enabled in
 NSD, an IXFR transfer will be performed to fetch just the incremental changes
 since the last fetch.
 
 If NOTIFY is not enabled in NSD, Cascade will monitor NSD for a newer version
-of the zone by periodically sending SOA queries according to the number of
-seconds defined by the REFRESH field of the zone apex SOA record.
+of the zone by periodically sending :term:`SOA` queries according to the number of
+seconds defined by the REFRESH field of the :term:`zone apex <Apex (Zone)>` SOA record.
 
-Optionally NSD and Cascade can be configured with the same TSIG key to
+Optionally NSD and Cascade can be configured with the same :term:`TSIG` key to
 authenticate the NOTIFY and XFR messages.
 
 The NSD settings relevant here are:
@@ -112,7 +112,7 @@ The NSD settings relevant here are:
   - `request-xfr <https://nsd.docs.nlnetlabs.nl/en/latest/manpages/nsd.conf.html#request>`_
 
 To allow NSD to receive and respond to NOTIFY messages from Cascade, and
-to instruct NSD to fetch zone updates via zone transfer from Cascade, these
+to instruct NSD to fetch zone updates via :term:`zone transfer` from Cascade, these
 settings need to be added to the zone configuration.
 
 For example the following configures NSD for an upstream Cascade server

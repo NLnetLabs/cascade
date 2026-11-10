@@ -9,11 +9,12 @@ Cascade uses to connect to PKCS#11 compatible :doc:`hsms`) inside a Docker
 container and connect to its listen port from a server or another Docker
 container.
 
-Docker is **not** required to use Cascade or :program:`cascade-hsm-bridge`.
-This example uses Docker because the `Thales documentation
+Docker is **not** required to use Cascade or :program:`cascade-hsm-bridge`. This example
+uses Docker because the `Thales documentation
 <https://thalesdocs.com/gphsm/luna/7/docs/network/Content/install/client_insta
-ll/linux_minimal_client_access_dpod.htm>`_ describes how you can easily get
-PKCS#11 connectivity to a Thales Luna Cloud HSM working using Docker.
+ll/linux_minimal_client_access_dpod.htm>`_ describes how you can easily get PKCS#11
+connectivity to a Thales Luna Cloud :term:`HSM <Hardware security module (HSM)>` working
+using Docker.
 
 .. Warning::
 
@@ -248,4 +249,4 @@ the Thales HSM via :program:`cascade-hsm-bridge` to query its identification
 strings.
 
 For an example of how to associate the HSM with a Cascade policy and use it to
-sign a zone see the :doc:`softhsm` page.
+sign a :term:`zone` see the :doc:`softhsm` page.

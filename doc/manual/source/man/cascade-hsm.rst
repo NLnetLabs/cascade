@@ -4,7 +4,8 @@ cascade hsm
 Synopsis
 --------
 
-:program:`cascade` ``[GLOBAL OPTIONS]`` hsm ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` :term:`hsm <Hardware security module (HSM)>`
+``<COMMAND>``
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` hsm :subcmd:`add` ``<SERVER_ID>`` ``<IP_HOST_OR_FQDN>``
 

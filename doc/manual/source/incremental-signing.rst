@@ -12,9 +12,9 @@ mechanism to achieve this, a "re-signing schedule"; read on to learn more.
 Context
 -------
 
-Cascade can sign zones in either of two modes: full signing and incremental
-signing. It will automatically choose one (as explained below). Full signing
-unconditionally signs every record in the loaded zone, even if some of those
+Cascade can sign zones in either of two modes: full signing and :term:`incremental
+signing`. It will automatically choose one (as explained below). Full signing
+unconditionally signs every record in the loaded :term:`zone`, even if some of those
 records had valid signatures. Incremental signing will examine previously
 generated signatures and only sign records that are missing signatures or whose
 signatures need updating. Incremental signing is more complicated than full
@@ -25,11 +25,10 @@ signing, but it has two benefits:
    performance, especially if an :term:`HSM <Hardware Security Module (HSM)>`
    is used.
 
-2. It greatly reduces the number of records that change in the signed zone.
+2. It greatly reduces the number of records that change in the :term:`signed zone`.
    Full signing results in new signatures for *every* record. With incremental
    signing, small changes in the loaded zone will translate to small changes
-   in the signed zone. This reduces the size of :term:`IXFRs <Incremental Zone
-   Transfers (IXFRs)>`.
+   in the signed zone. This reduces the size of :term:`IXFRs <IXFR>`.
 
 Cascade uses full signing for the first time it signs a zone, as it does not
 know of any previous signatures. After the initial signing operation, a signed
@@ -45,10 +44,10 @@ replace every signature at once, Cascade refreshes them gradually. The
 controls how often Cascade starts an incremental signing operation for this
 purpose. Its default value is 12 hours.
 
-As a result, Cascade normally signs a zone every 12 hours even when the unsigned
-zone has not changed and no key roll is in progress. Each operation creates a
-new signed version, but normally replaces only a fraction of the signatures.
-This expected activity does not mean that Cascade is signing the entire zone
+As a result, Cascade normally signs a zone every 12 hours even when the :term:`unsigned
+zone` has not changed and no :term:`key roll <Key rollover>` is in progress. Each
+operation creates a new signed version, but normally replaces only a fraction of the
+signatures. This expected activity does not mean that Cascade is signing the entire zone
 again.
 
 The interval controls how often Cascade performs a batch of refresh work; it is
@@ -70,11 +69,11 @@ replacing signatures with old keys for signatures with new keys, and removing
 old keys from `DNSKEY`.
 
 Regardless of whether a key roll is occurring, the incremental signer starts by
-re-generating signatures that are expiring or whose underlying data (the RRset
-signed) has changed. In case a key roll is occurring, these signatures are
-generated with the new set of keys. Afterwards, the signer will consider other
-signatures that were signed with the previous set of keys, and update some of
-them.
+re-generating :term:`signatures that are expiring <Signature expiration>` or whose
+underlying data (the :term:`RRset <Resource Record Set (RRset)>` signed) has changed. In
+case a key roll is occurring, these signatures are generated with the new set of keys.
+Afterwards, the signer will consider other signatures that were signed with the previous
+set of keys, and update some of them.
 
 Algorithm
 ---------
@@ -82,7 +81,7 @@ Algorithm
 The incremental signer has to satisfy the following needs:
 
 1. If records in the loaded zone have changed, new signatures need to be
-   generated for them, and the NSEC/NSEC3 chain must be updated.
+   generated for them, and the :term:`NSEC`/:term:`NSEC3` chain must be updated.
 
 2. If signatures are nearing (a particular point before) expiry, they will be
    regenerated.

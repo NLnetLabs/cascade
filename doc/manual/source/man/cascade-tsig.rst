@@ -6,7 +6,7 @@ cascade tsig
 Synopsis
 --------
 
-:program:`cascade` ``[GLOBAL OPTIONS]`` tsig ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` :term:`tsig` ``<COMMAND>``
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` tsig :subcmd:`add` ``<PATH>``
 
@@ -17,8 +17,8 @@ Synopsis
 Description
 -----------
 
-Manage :RFC:`8945` (TSIG) keys for authenticating zone transfer (AXFR, IXFR) and
-related messages (SOA and NOTIFY).
+Manage :RFC:`8945` (TSIG) keys for authenticating :term:`zone transfer` (:term:`AXFR`,
+:term:`IXFR`) and related messages (:term:`SOA` and :term:`NOTIFY`).
 
 .. tip:: Cascade isn't currently able to generate TSIG keys itself.
          One way to generate a TSIG key is to use the `tsig-keygen

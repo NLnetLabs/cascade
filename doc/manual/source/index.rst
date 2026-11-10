@@ -18,7 +18,7 @@ Cascade
       :target: https://social.nlnetlabs.nl/@nlnetlabs
 
 Cascade is a friendly, standalone :doc:`DNSSEC <intro>` signing solution
-from NLnet Labs. It automates key management and zone signing while keeping
+from NLnet Labs. It automates key management and :term:`zone` signing while keeping
 operators informed and in control.
 
 Cascade is currently in **beta**. It is ready for testing and evaluation,
@@ -49,13 +49,13 @@ Safe automation
 
 Flexible key storage
    Keep keys on disk or use a :doc:`Hardware Security Module <hsms>`. Cascade
-   supports several HSM integrations, so you can choose the setup that fits
+   supports several :term:`HSM <Hardware security module (HSM)>` integrations, so you can choose the setup that fits
    your operational and security requirements.
 
 Observable signing
    Cascade is designed to communicate what it is doing. Its status, health,
    and metrics interfaces help you monitor operation, while
-   :doc:`review-hooks` let you verify unsigned and signed zones with your own
+   :doc:`review-hooks` let you verify unsigned and :term:`signed zones <Signed zone>` with your own
    tooling before publication.
 
 Standards-based integration

@@ -41,39 +41,39 @@ such, state is human-readable and easily backed up.
 Do I need to use a HSM to run Cascade?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-No, Cascade does not require a Hardware Security Module (HSM) to operate.
-While it is common practice to secure cryptographic key material using an HSM,
-not all operators use an HSM. Cascade is able to use OpenSSL and/or ring
-software cryptography to generate signing keys and to cryptographically sign
-DNS RRset data, storing the generated keys in on-disk files.
+No, Cascade does not require a :term:`Hardware Security Module <Hardware security module
+(HSM)>` (HSM) to operate. While it is common practice to secure cryptographic key
+material using an HSM, not all operators use an HSM. Cascade is able to use OpenSSL
+and/or ring software cryptography to generate signing keys and to cryptographically sign
+DNS :term:`RRset <Resource Record Set (RRset)>` data, storing the generated keys in
+on-disk files.
 
 Why is the default policy KSK/ZSK and not CSK?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Key rolls should be automatic and frequent.
-Frequent key rolls help to ensure that they become normal operational
-practice and not an exception.
-Key rolls should be automated as much as possible to avoid mistakes.
-Unfortunately, the standard for updating DS records (CDS, :RFC:`8078`) is not
-widely implemented so in many cases a KSK roll has to have a manual component,
-namely submitting and updating the DS record at the parent.
+:term:`Key rolls <Key rollover>` should be automatic and frequent. Frequent key rolls
+help to ensure that they become normal operational practice and not an exception. Key
+rolls should be automated as much as possible to avoid mistakes. Unfortunately, the
+standard for updating :term:`DS` records (:term:`CDS`, :RFC:`8078`) is not widely
+implemented so in many cases a :term:`KSK <Key signing key (KSK)>` roll has to have a
+manual component, namely submitting and updating the DS record at the parent.
 
-These factors favor the KSK/ZSK split because it makes frequent ZSK rolls
-possible and KSK rolls can be performed less frequently.
+These factors favor the KSK/ZSK split because it makes frequent :term:`ZSK <Zone signing
+key (ZSK)>` rolls possible and KSK rolls can be performed less frequently.
 
-Finally, KSK and ZSK key rolls are less complex than CSK rolls.
-Some people use a CSK and never roll the key,
-which avoids the key roll complexity but leads to a lack of operational
-practice when a situation arises that a key roll is needed.
+Finally, KSK and ZSK key rolls are less complex than :term:`CSK <Combined signing key
+(CSK)>` rolls. Some people use a CSK and never roll the key, which avoids the key roll
+complexity but leads to a lack of operational practice when a situation arises that a
+key roll is needed.
 
 Why are the default key lifetimes the way they are?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A ZSK roll requires re-signing the entire zone.
+A ZSK roll requires re-signing the entire :term:`zone`.
 For bigger zones, this should not be done too often to keep the overhead of the key roll low.
 Once a month seems a good compromise.
 
-A KSK roll requires updating the DS RRset in the parent zone.
+A KSK roll requires updating the DS RRset in the :term:`parent zone <Parent (Zone)>`.
 For this reason, rolling a KSK once a year is reasonable.
 
 
@@ -89,8 +89,8 @@ Why does Cascade sign an unchanged zone every 12 hours?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Cascade refreshes DNSSEC signatures gradually instead of replacing every
-signature at once. By default, it starts an incremental signing operation every
-12 hours, including when the unsigned zone has not changed and no key roll is
+signature at once. By default, it starts an :term:`incremental signing` operation every
+12 hours, including when the :term:`unsigned zone` has not changed and no key roll is
 in progress.
 
 Each operation creates a new signed version but normally replaces only some of

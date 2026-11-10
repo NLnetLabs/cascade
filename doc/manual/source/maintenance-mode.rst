@@ -1,7 +1,7 @@
 Maintenance Mode
 ================
 
-By default, Cascade will automatically reload and resign the zone when
+By default, Cascade will automatically reload and resign the :term:`zone` when
 necessary, but sometimes you might need a bit more control over that process.
 That is what "maintenance mode" is for. It blocks any operations on the zone,
 allowing the operator to inspect what's going wrong.

@@ -1,22 +1,22 @@
 Before You Start
 ================
 
-Cascade is a DNSSEC signer, not an authoritative nameserver. Before installing
-it, make sure that its deployment model fits your DNS infrastructure and that
-you understand the current limitations of the beta release.
+Cascade is a DNSSEC signer, not an :term:`authoritative nameserver <Authoritative
+server>`. Before installing it, make sure that its deployment model fits your DNS
+infrastructure and that you understand the current limitations of the beta release.
 
 How Cascade Fits into Your DNS Infrastructure
 ----------------------------------------------
 
-Cascade is designed to run as a *hidden signer* between the source of an
-unsigned zone and the authoritative nameservers that publish the signed zone:
+Cascade is designed to run as a :term:`hidden signer` between the source of an
+:term:`unsigned zone` and the authoritative nameservers that publish the :term:`signed zone`:
 
-#. An upstream primary nameserver transfers an unsigned zone to Cascade, or
-   Cascade loads the zone from a local file.
+#. An upstream :term:`primary nameserver <Primary server>` transfers an unsigned zone to Cascade, or
+   Cascade loads the :term:`zone` from a local file.
 #. Cascade checks the zone, manages its DNSSEC keys, signs it, and optionally
    runs operator-defined :doc:`review hooks <review-hooks>`.
-#. Downstream secondary nameservers retrieve the signed zone from Cascade using
-   AXFR or IXFR and publish it to DNS clients.
+#. Downstream :term:`secondary nameservers <Secondary server>` retrieve the signed zone from Cascade using
+   :term:`AXFR` or :term:`IXFR` and publish it to DNS clients.
 
 Cascade should run on a system with restricted network and filesystem access.
 It must not be exposed as an Internet-facing authoritative nameserver.
@@ -60,19 +60,19 @@ Zone input and publication
 Decide how Cascade will receive each unsigned zone and how downstream
 nameservers will retrieve the signed result:
 
-- **Input:** a local zone file, or an AXFR/IXFR transfer from an upstream
+- **Input:** a local :term:`zone file`, or an AXFR/IXFR transfer from an upstream
   primary nameserver.
 - **Output:** AXFR/IXFR transfers to downstream secondary nameservers.
 
 Cascade does not currently write signed zones directly to local files. See
-:doc:`zone-transfers` for transfer, NOTIFY, access-control, and TSIG options.
+:doc:`zone-transfers` for transfer, :term:`NOTIFY`, access-control, and :term:`TSIG` options.
 
 Key storage
 ~~~~~~~~~~~
 
 **An HSM is optional.** Cascade can generate keys, store them in files on
 disk, and sign using software cryptography. If your security policy requires
-an HSM, Cascade supports:
+an :term:`HSM <Hardware security module (HSM)>`, Cascade supports:
 
 - KMIP-compatible HSMs directly; and
 - PKCS#11-compatible HSMs through the separate
@@ -92,9 +92,9 @@ Cascade host therefore needs network access to each server over IPv4 and, when
 a server publishes an AAAA record, IPv6.
 
 If your environment cannot provide that access, disable the ``auto-report`` and
-``auto-done`` stages and complete the corresponding key-roll steps manually.
-Review the :ref:`key-roll automation controls <automation-control>` before
-adding production-like zones.
+``auto-done`` stages and complete the corresponding :term:`key-roll <Key rollover>`
+steps manually. Review the :ref:`key-roll automation controls <automation-control>`
+before adding production-like zones.
 
 Pre-publication checks
 ~~~~~~~~~~~~~~~~~~~~~~

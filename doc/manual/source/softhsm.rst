@@ -6,11 +6,11 @@ Integrating with SoftHSMv2
 
 .. epigraph::
 
-   SoftHSM is an implementation of a cryptographic store accessible through a
-   PKCS#11 interface. You can use it to explore PKCS#11 without having a
-   Hardware Security Module. It was originally developed as a part of the
-   OpenDNSSEC project, but is now a standalone project. SoftHSM uses Botan or
-   OpenSSL for its cryptographic operations.
+   SoftHSM is an implementation of a cryptographic store accessible through a PKCS#11
+   interface. You can use it to explore PKCS#11 without having a :term:`Hardware
+   Security Module <Hardware security module (HSM)>`. It was originally developed as a
+   part of the OpenDNSSEC project, but is now a standalone project. SoftHSM uses Botan
+   or OpenSSL for its cryptographic operations.
 
    -- https://www.softhsm.org/
 
@@ -67,7 +67,7 @@ the locally running :program:`cascade-hsm-bridge` daemon:
 Sign a Test Zone with SoftHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a test zone to load and sign and ensure the Cascade daemon has access to it:
+Create a test :term:`zone` to load and sign and ensure the Cascade daemon has access to it:
 
 .. code-block:: bash
 

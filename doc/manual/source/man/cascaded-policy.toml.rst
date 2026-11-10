@@ -126,7 +126,7 @@ How loaded zones are reviewed.
 
 The ``[loader.review]`` section.
 
-Review offers an opportunity to perform external checks on the zone contents
+Review offers an opportunity to perform external checks on the :term:`zone` contents
 loaded by Cascade.
 
 .. option:: mode = "off"
@@ -154,7 +154,7 @@ loaded by Cascade.
    It will receive the following information via environment variables:
 
    - ``CASCADE_ZONE``: The name of the zone, formatted without a trailing dot.
-   - ``CASCADE_SERIAL``: The serial number of the zone (decimal integer).
+   - ``CASCADE_SERIAL``: The :term:`serial number` of the zone (decimal integer).
    - ``CASCADE_SERVER``: The combined address and port where Cascade is serving
      the zone for review, formatted as ``<ip-addr>:<port>``.
    - ``CASCADE_SERVER_IP``: Just the address of the above server.
@@ -195,12 +195,13 @@ The ``[key-manager]`` section.
    and (if enabled) it will automatically be rolled over to a new key.  Even if
    automatic rollovers are not enabled, the key will be reported as expired.
    This is a soft condition -- DNSSEC does not have a concept of key expiry,
-   and it will not break DNSSEC validation, but it is usually important to the
+   and it will not break DNSSEC :term:`validation`, but it is usually important to the
    security of the zone.
 
-   Independent validity times are set for KSKs, ZSKs, and CSKs.  An integer
-   value will be interpreted as seconds, ``"forever"`` means keys never expire,
-   and a time string such as ``"365d"`` will be interpreted as 365 days.
+   Independent validity times are set for :term:`KSKs <Key signing key (KSK)>`,
+   :term:`ZSKs <Zone signing key (ZSK)>`, and :term:`CSKs <Combined signing key (CSK)>`.
+   An integer value will be interpreted as seconds, ``"forever"`` means keys never
+   expire, and a time string such as ``"365d"`` will be interpreted as 365 days.
    Supported suffixes include ``s``, ``m``, ``h``, ``d`` and ``w``.
 
 .. option:: ksk.auto-start = true
@@ -208,7 +209,7 @@ The ``[key-manager]`` section.
 .. option:: csk.auto-start = true
 .. option:: algorithm.auto-start = true
 
-   Whether to automatically start key rollovers.
+   Whether to automatically start :term:`key rollovers <Key rollover>`.
 
    If this is enabled, Cascade will automatically start rolling over keys when
    they expire (as per ``validity``).  When using this setting, ``validity`` must
@@ -226,13 +227,13 @@ The ``[key-manager]`` section.
    Whether to automatically check for record propagation.
 
    If this is enabled, Cascade will automatically contact public DNS servers to
-   detect when new records (e.g. DNSKEY) are visible globally.  It is necessary
+   detect when new records (e.g. :term:`DNSKEY`) are visible globally.  It is necessary
    to wait until some records are visible globally to progress key rollovers.  If
    this is disabled, the user will have to inform Cascade when these conditions
    are reached manually.
 
    For this setting to work, Cascade must have network access to the zone's
-   public nameservers and the parent zone's public nameservers.
+   public nameservers and the :term:`parent zone <Parent (Zone)>`'s public nameservers.
 
 .. option:: ksk.auto-expire = true
 .. option:: zsk.auto-expire = true
@@ -243,7 +244,7 @@ The ``[key-manager]`` section.
 
    If this is enabled, Cascade will automatically progress through key rollover
    steps that need to wait for downstream users' DNS caches to expire.  It will
-   estimate the right amount of time to wait based on record TTLs.
+   estimate the right amount of time to wait based on record :term:`TTLs <TTL>`.
 
 .. option:: ksk.auto-done = true
 .. option:: zsk.auto-done = true
@@ -262,7 +263,7 @@ The ``[key-manager]`` section.
 
 .. option:: ds-algorithm = "SHA-256"
 
-   The hash algorithm used by the parent zones' DS records.
+   The hash algorithm used by the parent zones' :term:`DS` records.
 
    Supported options:
 
@@ -273,8 +274,9 @@ The ``[key-manager]`` section.
 
    Whether to automatically remove expired keys.
 
-   If this option is set, expired keys will be removed automatically (by
-   deleting the files for on-disk keys or removing it from the HSM).
+   If this option is set, expired keys will be removed automatically (by deleting the
+   files for on-disk keys or removing it from the :term:`HSM <Hardware security module
+   (HSM)>`).
 
 .. option:: auto-remove-delay = "7d"
 
@@ -286,18 +288,18 @@ The ``[key-manager]`` section.
 
 .. option:: publication-nameservers = []
 
-   The set of nameservers to use when checking for RRSIG propagation during a
+   The set of nameservers to use when checking for :term:`RRSIG` propagation during a
    key roll.
 
    Each nameserver must be specified as a string in the form:
   
      ``"<IP>[:<PORT>][^<TSIG_KEY_NAME>]"``
   
-   If a TSIG key name is specified, a key by that name must exist in the
+   If a :term:`TSIG` key name is specified, a key by that name must exist in the
    Cascade TSIG key store and will be used to authenticate communication with
    the nameserver.
   
-   If no nameservers are specified, the nameserver specified by the SOA MNAME
+   If no nameservers are specified, the nameserver specified by the :term:`SOA` MNAME
    field will be checked.
 
 The management of DNS records by the key manager.
@@ -305,7 +307,7 @@ The management of DNS records by the key manager.
 
 The ``[key-manager.records]`` section.
 
-The key manager generates and signs several records (DNSKEY and CDS).  This
+The key manager generates and signs several records (DNSKEY and :term:`CDS`).  This
 section controls its behaviour towards them.
 
 .. option:: ttl = "1h"
@@ -315,7 +317,7 @@ section controls its behaviour towards them.
 .. option:: dnskey.signature-inception-offset = "1d"
 .. option:: cds.signature-inception-offset = "1d"
 
-   The offset for generated signature inceptions.
+   The offset for generated :term:`signature inceptions <Signature inception>`.
 
    Record signatures have a fixed inception time, from when they are considered
    valid.  An imprecise computer clock could cause signatures to be considered
@@ -423,11 +425,11 @@ zone) are signed by the key manager, rather than the zone signer; see the
 
 .. option:: serial-policy = "date-counter"
 
-   How SOA serial numbers are generated for signed zones.
+   How SOA serial numbers are generated for :term:`signed zones <Signed zone>`.
 
    Supported options:
 
-   - ``keep``: use the same serial number as the unsigned zone.
+   - ``keep``: use the same serial number as the :term:`unsigned zone`.
    - ``counter``: increment the serial number every time.
    - ``unix-time``: use the current Unix time, in seconds.
    - ``date-counter``: format the number as ``<YYYY><MM><DD><xx>`` in decimal.
@@ -514,16 +516,16 @@ The ``[signer.denial]`` section.
 
    Supported options:
 
-   - ``nsec``: Use NSEC records (:RFC:`4034`).
-   - ``nsec3``: Use NSEC3 records (:RFC:`5155`).
+   - ``nsec``: Use :term:`NSEC` records (:RFC:`4034`).
+   - ``nsec3``: Use :term:`NSEC3` records (:RFC:`5155`).
 
 .. option:: opt-out = false
 
    (Only set when using NSEC3)
 
-   Whether to skip NSEC3 records for unsigned delegations.
+   Whether to skip NSEC3 records for unsigned :term:`delegations <Delegation>`.
 
-   This enables the NSEC3 Opt-Out flag, and skips delegations to unsigned zones
+   This enables the NSEC3 :term:`Opt-Out` flag, and skips delegations to unsigned zones
    when generating NSEC3 records.  This affects the security of the zone, so be
    careful if you wish to enable it.
 
@@ -574,7 +576,7 @@ The ``[server.outbound]`` section.
 
 .. option:: send-notify-to = []
 
-   The set of nameservers to which NOTIFY messages should be sent.
+   The set of nameservers to which :term:`NOTIFY` messages should be sent.
 
    If no nameservers are specified, no NOTIFY messages will be sent.
 
@@ -588,7 +590,7 @@ The ``[server.outbound]`` section.
 
 .. option:: provide-xfr-to = []
 
-   The set of nameservers to provide zone transfers to.
+   The set of nameservers to provide :term:`zone transfers <Zone transfer>` to.
 
    If no nameservers are specified, zone transfers will be provided to any
    nameserver.
@@ -601,7 +603,7 @@ The ``[server.outbound]`` section.
 
    The maximum number of "sequences of differential information" (diffs) that
    the server may store per zone in order to respond to RFC 1995 Incremental
-   Zone Transfer (IXFR) requests.
+   Zone Transfer (:term:`IXFR`) requests.
    
    A diff is created when changes to the input zone are received and when
    re-signing alters the signed records generated when signing last occurred.
@@ -643,7 +645,7 @@ The ``[server.outbound]`` section.
 
    The default is 20%. If set to 0, or a value low enough such that the set of
    diffs for a zone always exceed the limit, then no diffs will be stored in
-   memory and IXFR requests will be responded to with an AXFR instead.
+   memory and IXFR requests will be responded to with an :term:`AXFR` instead.
 
    .. note:: The `max-diffs` limit is applied first, then additional diffs
              will be discarded as needed to meet the `max-diffs-size` limit.
