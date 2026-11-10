@@ -188,7 +188,10 @@ use crate::{
     policy::PolicyVersion,
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::AbortOnDrop,
-    zone::{OwnedZoneHandle, Zone, ZoneByName},
+    zone::{
+        OwnedZoneHandle, SignedInstanceId, Zone, ZoneByName,
+        instance::{ObsoleteInstances, PersistedInstance},
+    },
 };
 
 mod persist;
@@ -369,16 +372,33 @@ fn restore<'a>(
     zone: &'a Arc<Zone>,
     center: &'a Arc<Center>,
     mut restorer: ZoneRestorer,
+    policy: &PolicyVersion,
+    persisted: Option<&PersistedInstance>,
+    obsolete: &ObsoleteInstances,
+    snapshot_id: Option<SignedInstanceId>,
 ) -> OwnedZoneHandle<'a> {
     debug!("Attempting to restore persisted zone data");
 
     // Perform the underlying restore operation.
-    let result = restore::restore_both(zone, center, &mut restorer);
+    let result = restore::restore_both(
+        zone,
+        center,
+        &mut restorer,
+        policy,
+        persisted,
+        obsolete,
+        snapshot_id,
+    );
 
     let mut handle = zone.write_handle(center);
 
     let (loaded_reviewer, signed_reviewer, viewer) = match result {
-        Ok(true) => {
+        Ok(Some(restored)) => {
+            // Apply the collected changes to the zone state.
+            restored
+                .obsolete
+                .apply(&mut handle.state.instances.obsolete);
+
             trace!(
                 "Restored diffs: {:?}",
                 handle.state.persistence.loaded_diffs
@@ -396,7 +416,7 @@ fn restore<'a>(
             viewers
         }
 
-        Ok(false) => {
+        Ok(None) => {
             handle.persistence().reset_state_due_to_abandoned_restore();
             handle.storage().abandon_restoration(restorer)
         }
