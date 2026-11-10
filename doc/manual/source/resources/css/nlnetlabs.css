@@ -92,3 +92,8 @@ body[data-theme] .sphinx-tabs-tab[aria-selected="true"] {
 [data-linkpreview-href].tooltip > .arrow {
   background: var(--color-background-secondary);
 }
+
+/* Distinguish terms, subcommands and manpage options from ordinary links. */
+article[role="main"] a.reference.internal:has(.std-term) {
+  text-decoration-style: dotted;
+}
