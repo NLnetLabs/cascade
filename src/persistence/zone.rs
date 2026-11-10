@@ -138,11 +138,23 @@ impl ZonePersistenceHandle<'_> {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("restore");
+        let policy = self.state.policy.clone().unwrap();
+        let persisted = self.state.instances.persisted.clone();
+        let obsolete = self.state.instances.obsolete.clone();
+        let snapshot_id = self.state.persistence.snapshot_id;
         self.state
             .persistence
             .ongoing
             .spawn_blocking(span, move || {
-                let mut handle = super::restore(&zone, &center, restorer);
+                let mut handle = super::restore(
+                    &zone,
+                    &center,
+                    restorer,
+                    &policy,
+                    persisted.as_ref(),
+                    &obsolete,
+                    snapshot_id,
+                );
                 handle.state.persistence.ongoing.finish();
             });
     }

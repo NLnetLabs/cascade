@@ -773,6 +773,14 @@ impl ObsoleteInstances {
             .or(self.per_load.back().map(|is| is.loaded.id))
     }
 
+    /// All signed instances.
+    pub fn signed(&self) -> impl DoubleEndedIterator<Item = &ObsoleteSignedInstance> {
+        self.per_load
+            .iter()
+            .flat_map(|is| &is.signed)
+            .chain(&self.latest_signed)
+    }
+
     /// Discard old in-memory diffs exceeding the specified limits.
     pub fn discard_excess_diffs(&mut self, limits: InMemoryDiffLimits) {
         // Iterate from the newest to the oldest instances. Iterate loaded

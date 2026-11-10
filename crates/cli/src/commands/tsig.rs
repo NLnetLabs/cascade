@@ -429,7 +429,7 @@ mod tests {
         assert_eq!(tsig_cmd.command, tsig_expected);
     }
 
-    /// --- Command line parsing tests.
+    // --- Command line parsing tests.
 
     #[test]
     fn parse_tsig_add_command_1() {
@@ -475,7 +475,7 @@ mod tests {
         );
     }
 
-    /// --- File parsing tests in different formats.
+    // --- File parsing tests in different formats.
 
     #[test]
     fn parse_tsig_nsd_invalid_1() {
@@ -531,7 +531,7 @@ mod tests {
         assert_eq!(result, ("f".into(), "f".into(), "f".into()));
     }
 
-    /// --- Example snippets from tools and documentation.
+    // --- Example snippets from tools and documentation.
 
     #[test]
     fn parse_tsig_nsd_format() {

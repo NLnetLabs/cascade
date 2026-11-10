@@ -20,6 +20,7 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 use rayon::slice::ParallelSliceMut;
+use tracing::debug;
 
 use crate::{
     DiffData, InstanceData, LoadedZoneReader, RegularRecord, SignedZoneReader, SoaRecord, merge,
@@ -185,7 +186,7 @@ impl<'d> LoadedZonePatcher<'d> {
     /// A copy of the record **must** be removed as a regular record too.
     pub fn remove_soa(&mut self, soa: SoaRecord) -> Result<(), PatchError> {
         if self.immediate.removed_soa.is_some() {
-            return Err(PatchError::Inconsistency);
+            return Err(PatchError::MultipleSoasRemoved);
         }
 
         self.immediate.removed_soa = Some(soa);
@@ -214,6 +215,20 @@ impl<'d> LoadedZonePatcher<'d> {
     pub fn add(&mut self, record: RegularRecord) -> Result<(), PatchError> {
         self.immediate.added_records.push(record);
         Ok(())
+    }
+
+    /// Apply a whole patchset at once.
+    pub fn apply_patchset(mut self, diff: Box<DiffData>) -> Result<(), PatchError> {
+        assert!(self.accumulated.is_empty());
+        assert!(self.immediate.is_empty());
+
+        if diff.removed_soa != self.curr.soa {
+            debug!(?diff.removed_soa, ?self.curr.soa, "Removing the wrong SOA record");
+            return Err(PatchError::Inconsistency);
+        }
+
+        self.accumulated = diff;
+        self.apply()
     }
 
     /// Move to the next patchset.
@@ -561,7 +576,7 @@ impl<'d> SignedZonePatcher<'d> {
     /// A copy of the record **must** be removed as a regular record too.
     pub fn remove_soa(&mut self, soa: SoaRecord) -> Result<(), PatchError> {
         if self.immediate.removed_soa.is_some() {
-            return Err(PatchError::Inconsistency);
+            return Err(PatchError::MultipleSoasRemoved);
         }
 
         self.immediate.removed_soa = Some(soa);
@@ -590,6 +605,15 @@ impl<'d> SignedZonePatcher<'d> {
     pub fn add(&mut self, record: RegularRecord) -> Result<(), PatchError> {
         self.immediate.added_records.push(record);
         Ok(())
+    }
+
+    /// Apply a whole patchset at once.
+    pub fn apply_patchset(mut self, diff: Box<DiffData>) -> Result<(), PatchError> {
+        assert!(self.accumulated.is_empty());
+        assert!(self.immediate.is_empty());
+
+        self.accumulated = diff;
+        self.apply()
     }
 
     /// Move to the next patchset.
@@ -734,7 +758,9 @@ fn next_patchset(
         // There was no previous patchset; accumulate the current one.
 
         // Verify that this initial SOA removal is consistent.
-        if removed_soa != *curr.soa.as_ref().unwrap() {
+        let previous_soa = curr.soa.as_ref().unwrap();
+        if removed_soa != *previous_soa {
+            debug!(?removed_soa, ?previous_soa, "Wrong SOA removed");
             return Err(PatchError::Inconsistency);
         }
 
@@ -751,7 +777,9 @@ fn next_patchset(
     }
 
     // Accumulate the SOA record changes.
-    if removed_soa != *accumulated.added_soa.as_ref().unwrap() {
+    let previous_soa = accumulated.added_soa.as_ref().unwrap();
+    if removed_soa != *previous_soa {
+        debug!(?removed_soa, ?previous_soa, "Wrong SOA removed");
         return Err(PatchError::Inconsistency);
     }
     accumulated.added_soa = Some(added_soa);
@@ -769,7 +797,8 @@ fn next_patchset(
             [None, None, None, None] => unreachable!(),
 
             // A single diff cannot remove and add the same record.
-            [Some(_), Some(_), _, _] | [_, _, Some(_), Some(_)] => {
+            [Some(r), Some(_), _, _] | [_, _, Some(r), Some(_)] => {
+                debug!(?r, "Same record removed then added");
                 return Err(PatchError::Inconsistency);
             }
 
@@ -782,7 +811,12 @@ fn next_patchset(
             }
 
             // The same record cannot be added or removed twice.
-            [None, Some(_), None, Some(_)] | [Some(_), None, Some(_), None] => {
+            [None, Some(r), None, Some(_)] => {
+                debug!(?r, "Same record added twice");
+                return Err(PatchError::Inconsistency);
+            }
+            [Some(r), None, Some(_), None] => {
+                debug!(?r, "Same record removed twice");
                 return Err(PatchError::Inconsistency);
             }
 
@@ -820,10 +854,18 @@ fn apply_patches(
             [None, None, None] => unreachable!(),
 
             // Cannot remove and add a record.
-            [_, Some(_), Some(_)] => return Err(PatchError::Inconsistency),
+            [_, Some(r), Some(_)] => {
+                debug!(?r, "Diff removes and adds the same record");
+                return Err(PatchError::Inconsistency);
+            }
 
             // Cannot remove a nonexistent record or add an existing one.
-            [None, Some(_), _] | [Some(_), _, Some(_)] => {
+            [None, Some(r), _] => {
+                debug!(?r, "Removing a nonexistent record");
+                return Err(PatchError::Inconsistency);
+            }
+            [Some(r), _, Some(_)] => {
+                debug!(?r, "Adding an existing record");
                 return Err(PatchError::Inconsistency);
             }
 
@@ -897,6 +939,9 @@ pub enum PatchError {
     /// A patchset contained multiple SOA record additions.
     MultipleSoasAdded,
 
+    /// A patchset contained multiple SOA record removals.
+    MultipleSoasRemoved,
+
     /// An inconsistency was detected.
     Inconsistency,
 
@@ -919,6 +964,7 @@ impl fmt::Display for PatchError {
             Self::Empty => f.write_str("no patchsets were provided"),
             Self::MissingSoaChange => f.write_str("a patchset did not change the SOA record"),
             Self::MultipleSoasAdded => f.write_str("a patchset added multiple SOA records"),
+            Self::MultipleSoasRemoved => f.write_str("a patchset removed multiple SOA records"),
             Self::Inconsistency => f.write_str("a patchset could not be applied"),
             Self::InconsistentTtls(error) => write!(f, "an RRset has inconsistent TTLs: {error}"),
         }
