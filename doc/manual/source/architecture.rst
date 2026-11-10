@@ -7,10 +7,10 @@ and review zone versions, persist approved data, and serve published zones.
 
 Cascade has two separate models of operation going on at once:
 
-# Active units that respond to external input (DNS query, XFR, CLI command)
-  or act on a timer basis, and;
-# Passive per zone pipelines whose current state determine what is
-  or isn't allowed to happen next.
+#. Active units that respond to external input (DNS query, XFR, CLI command)
+   or act on a timer basis; and
+#. Passive per-zone pipelines whose current state determines what is or isn't
+   allowed to happen next.
 
 Each zone has its own state machine. A zone advances through one pipeline
 operation at a time, while Cascade can perform work for different zones
