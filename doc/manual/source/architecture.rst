@@ -5,11 +5,11 @@ Cascade's core pipeline runs in a single :program:`cascaded` daemon. Within
 that process, separate components load zones, coordinate key management, sign
 and review zone versions, persist approved data, and serve published zones.
 
-Cascade has two separate models of operation going on at once:
+Cascade has two separate models of operation working simultinously:
 
-#. Active units that respond to external input (DNS query, XFR, CLI command)
-   or act on a timer basis; and
-#. Passive per-zone pipelines whose current state determines what is or isn't
+#. Active units that run on timers or respond to external events, such as DNS
+   queries, zone transfers, and CLI commands.
+#. Passive per-zone pipelines whose current state determine what is or isn't
    allowed to happen next.
 
 Each zone has its own state machine. A zone advances through one pipeline
