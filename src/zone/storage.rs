@@ -798,7 +798,7 @@ pub struct StorageState {
     /// This is only used during initialization. For zones restored from state
     /// files at startup, this handle is used to initiate restores of their
     /// (presumably persisted) data. For newly created zones, this handle is
-    /// passed to [`StorageZoneHandle::abandon_loaded_restoration()`].
+    /// passed to [`StorageZoneHandle::abandon_restoration()`].
     pub restorer: Option<ZoneRestorer>,
 
     /// Diffs from one serial to another for responding to IXFR requests.

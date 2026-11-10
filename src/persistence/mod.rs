@@ -177,19 +177,22 @@
 //!   next_idx were replaced by a UUID the paths would always be unique which
 //!   would diminish or remove the need for a 'set' type.
 //! - Make compaction occur when a zone is idle, rather than periodically.
+
 use std::{sync::Arc, time::Duration};
+
+use cascade_zonedata::ZoneRestorer;
+use tracing::{debug, trace, warn};
 
 use crate::{
     center::Center,
     policy::PolicyVersion,
+    server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::AbortOnDrop,
-    zone::{Zone, ZoneByName},
+    zone::{OwnedZoneHandle, Zone, ZoneByName},
 };
 
 mod persist;
 mod restore;
-use restore::{restore_loaded, restore_signed};
-use tracing::trace;
 
 pub mod zone;
 
@@ -348,6 +351,68 @@ impl Default for Restorer {
     fn default() -> Self {
         Self::new()
     }
+}
+
+//------------ restore() -------------------------------------------------------
+
+/// Restore a zone from persisted data.
+#[tracing::instrument(
+    level = "trace",
+    skip_all,
+    fields(zone = %zone.name),
+)]
+fn restore<'a>(
+    zone: &'a Arc<Zone>,
+    center: &'a Arc<Center>,
+    mut restorer: ZoneRestorer,
+) -> OwnedZoneHandle<'a> {
+    debug!("Attempting to restore persisted zone data");
+
+    // Perform the underlying restore operation.
+    let result = restore::restore_both(zone, center, &mut restorer);
+
+    let mut handle = zone.write_handle(center);
+
+    let (loaded_reviewer, signed_reviewer, viewer) = match result {
+        Ok(true) => {
+            trace!(
+                "Restored diffs: {:?}",
+                handle.state.persistence.loaded_diffs
+            );
+
+            let restored = restorer.finish().unwrap_or_else(|_| {
+                unreachable!("Zone restoration should have built new zone data")
+            });
+            let viewers = handle.storage().finish_restoration(restored);
+
+            // Mark restoration as complete.
+            handle.state.instances.restore();
+            handle.signer().on_restoration();
+
+            viewers
+        }
+
+        Ok(false) => {
+            handle.persistence().reset_state_due_to_abandoned_restore();
+            handle.storage().abandon_restoration(restorer)
+        }
+
+        Err(error) => {
+            warn!("Abandoning restoration: {error}");
+            handle.persistence().reset_state_due_to_abandoned_restore();
+            handle.storage().abandon_restoration(restorer)
+        }
+    };
+
+    // Register the zone against the zone servers.
+    LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);
+    SignedReviewServer::add_zone(handle.center, handle.zone.clone(), signed_reviewer);
+    PublicationServer::add_zone(handle.center, handle.zone.clone(), viewer);
+
+    // Send a notification that the state machine is now passive.
+    handle.storage().on_passive();
+
+    handle
 }
 
 //------------ discard_excess_diffs() ----------------------------------------

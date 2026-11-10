@@ -21,6 +21,23 @@ use tracing::{info, trace};
 
 use crate::{center::Center, persistence::discard_excess_diffs, zone::Zone};
 
+/// Restore the persisted data of a zone.
+///
+/// Returns `true` if an instance was restored successfully.
+#[tracing::instrument(
+    level = "trace",
+    skip_all,
+    fields(zone = %zone.name),
+)]
+pub fn restore_both(
+    zone: &Arc<Zone>,
+    center: &Arc<Center>,
+    restorer: &mut ZoneRestorer,
+) -> io::Result<bool> {
+    // TODO: Inline both functions, effectively merging them together.
+    Ok(restore_loaded(zone, center, restorer)? && restore_signed(zone, center, restorer)?)
+}
+
 /// Restore the loaded instance data of a zone.
 ///
 /// Returns Ok(true) if data was stored, Ok(false) if there was nothing to
