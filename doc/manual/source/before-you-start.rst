@@ -78,7 +78,7 @@ an :term:`HSM <Hardware security module (HSM)>`, Cascade supports:
 - PKCS#11-compatible HSMs through the separate
   :program:`cascade-hsm-bridge` process.
 
-Separating PKCS#11 support prevents vendor libraries from being loaded into the
+Separating PKCS#11 support out into a separate process avoids loading potentially unstable HSM vendor libraries into the
 main Cascade process. Review the tested devices and integration requirements in
 :doc:`hsms`.
 
@@ -137,7 +137,7 @@ records.
 Test with representative zones and policies before choosing production-like
 hardware. Monitor signing duration, memory use, and queue activity using the
 :doc:`status command <man/cascade-status>`, :doc:`health checks
-<man/cascade-health>`, and :doc:`metrics`.
+<man/cascade-health>`, and :doc:`metrics <metrics>`.
 
 Next Steps
 ----------

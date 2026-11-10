@@ -80,6 +80,6 @@ Other known limitations
 - No NOTIFY "Notify Set" (:RFC:`1996`) discovery.
 - No KMIP batching support.
 - No DNS UPDATE support.
-- HSM algorithm support is limited to RSASHA256 and ECDSAP256SHA256.
+- Use of Ed448 and Ed25519 with a HSM is only supported at present with PKCS#11 HSMs via :program:`cascade-hsm-bridge`, not when connecting directly to a KMIP capable HSM.
 - Changing a policy to use an HSM will not affect existing zones.
 - Memory usage can be improved.
