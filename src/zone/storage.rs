@@ -29,9 +29,9 @@ use tracing::{info, trace, trace_span, warn};
 
 use crate::zonedata::{
     DiffData, LoadedZoneBuilder, LoadedZoneBuilt, LoadedZonePersisted, LoadedZonePersister,
-    LoadedZoneRestored, LoadedZoneRestorer, LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt,
-    SignedZonePersisted, SignedZonePersister, SignedZoneRestored, SignedZoneRestorer,
-    SignedZoneReviewer, ZoneCleaner, ZoneDataStorage, ZoneViewer,
+    LoadedZoneReviewer, SignedZoneBuilder, SignedZoneBuilt, SignedZonePersisted,
+    SignedZonePersister, SignedZoneReviewer, ZoneCleaner, ZoneDataStorage, ZoneRestored,
+    ZoneRestorer, ZoneViewer,
 };
 use crate::{
     center::Center,
@@ -488,39 +488,17 @@ impl StorageZoneHandle<'_> {
 
 /// # Persistence Tasks
 impl StorageZoneHandle<'_> {
-    /// Successfully finish loaded-instance restoration.
-    ///
-    /// A [`SignedZoneRestorer`] is returned so the signed instance can be
-    /// restored afterwards.
-    pub fn finish_loaded_restoration(
-        &mut self,
-        restored: LoadedZoneRestored,
-    ) -> SignedZoneRestorer {
-        // Examine the current state.
-        match transition(&mut self.state.storage.machine) {
-            (transition, ZoneDataStorage::RestoringLoaded(s)) => {
-                let (restorer, s) = s.finish(restored);
-                transition.move_to(ZoneDataStorage::RestoringSigned(s));
-                restorer
-            }
-
-            _ => unreachable!(
-                "A 'LoadedZoneRestored' is only available in the 'RestoringLoaded' state"
-            ),
-        }
-    }
-
-    /// Successfully finish signed-instance restoration.
+    /// Successfully finish restoration.
     ///
     /// The zone is moved to the passive state, and it is registered against
     /// Cascade's zone servers.
-    pub fn finish_signed_restoration(
+    pub fn finish_restoration(
         &mut self,
-        restored: SignedZoneRestored,
+        restored: ZoneRestored,
     ) -> (LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer) {
         // Examine the current state.
         match transition(&mut self.state.storage.machine) {
-            (transition, ZoneDataStorage::RestoringSigned(s)) => {
+            (transition, ZoneDataStorage::Restoring(s)) => {
                 let (loaded_reviewer, signed_reviewer, viewer, new_s) = s.finish(restored);
                 transition.move_to(ZoneDataStorage::Passive(new_s));
                 (loaded_reviewer, signed_reviewer, viewer)
@@ -532,47 +510,23 @@ impl StorageZoneHandle<'_> {
         }
     }
 
-    /// Abandon the ongoing loaded-instance restore.
+    /// Abandon the ongoing restore.
     ///
     /// Any intermediate zone data is cleared and the zone is moved to the
     /// passive state. It is registered against Cascade's zone servers.
-    pub fn abandon_loaded_restoration(
+    pub fn abandon_restoration(
         &mut self,
-        restorer: LoadedZoneRestorer,
+        restorer: ZoneRestorer,
     ) -> (LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer) {
         // Examine the current state.
         match transition(&mut self.state.storage.machine) {
-            (transition, ZoneDataStorage::RestoringLoaded(s)) => {
+            (transition, ZoneDataStorage::Restoring(s)) => {
                 let (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
                 transition.move_to(ZoneDataStorage::Passive(new_s));
                 (loaded_reviewer, signed_reviewer, viewer)
             }
 
-            _ => unreachable!(
-                "A 'LoadedZoneRestorer' is only available in the 'RestoringLoaded' state"
-            ),
-        }
-    }
-
-    /// Abandon the ongoing signed-instance restore.
-    ///
-    /// Any intermediate zone data is cleared and the zone is moved to the
-    /// passive state. It is registered against Cascade's zone servers.
-    pub fn abandon_signed_restoration(
-        &mut self,
-        restorer: SignedZoneRestorer,
-    ) -> (LoadedZoneReviewer, SignedZoneReviewer, ZoneViewer) {
-        // Examine the current state.
-        match transition(&mut self.state.storage.machine) {
-            (transition, ZoneDataStorage::RestoringSigned(s)) => {
-                let (loaded_reviewer, signed_reviewer, viewer, new_s) = s.abandon(restorer);
-                transition.move_to(ZoneDataStorage::Passive(new_s));
-                (loaded_reviewer, signed_reviewer, viewer)
-            }
-
-            _ => unreachable!(
-                "A 'SignedZoneRestorer' is only available in the 'RestoringSigned' state"
-            ),
+            _ => unreachable!("A 'ZoneRestorer' is only available in the 'Restoring' state"),
         }
     }
 
@@ -845,7 +799,7 @@ pub struct StorageState {
     /// files at startup, this handle is used to initiate restores of their
     /// (presumably persisted) data. For newly created zones, this handle is
     /// passed to [`StorageZoneHandle::abandon_loaded_restoration()`].
-    pub restorer: Option<LoadedZoneRestorer>,
+    pub restorer: Option<ZoneRestorer>,
 
     /// Diffs from one serial to another for responding to IXFR requests.
     pub diffs: IxfrZoneDiffs,
@@ -872,10 +826,7 @@ impl StorageState {
 
     /// Is this zone currently being restored from persistent storage?
     pub fn is_restoring(&self) -> bool {
-        matches!(
-            self.machine,
-            ZoneDataStorage::RestoringLoaded(_) | ZoneDataStorage::RestoringSigned(_)
-        )
+        matches!(self.machine, ZoneDataStorage::Restoring(_))
     }
 
     /// Get the current loaded diff, if any.

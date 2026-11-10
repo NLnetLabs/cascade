@@ -169,7 +169,7 @@ pub async fn add_zone(
                 center,
             };
             let (loaded_reviewer, signed_reviewer, viewer) =
-                handle.storage().abandon_loaded_restoration(restorer);
+                handle.storage().abandon_restoration(restorer);
 
             // Update the zone servers.
             LoadedReviewServer::add_zone(handle.center, handle.zone.clone(), loaded_reviewer);

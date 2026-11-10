@@ -65,7 +65,7 @@ struct SimpleStorage {
 impl SimpleStorage {
     fn new() -> Self {
         let (restorer, storage) = ZoneDataStorage::new();
-        let ZoneDataStorage::RestoringLoaded(storage) = storage else {
+        let ZoneDataStorage::Restoring(storage) = storage else {
             unreachable!();
         };
         let (loaded_reviewer, signed_reviewer, viewer, storage) = storage.abandon(restorer);

@@ -16,7 +16,7 @@ use crate::{
     server::{LoadedReviewServer, PublicationServer, SignedReviewServer},
     util::BackgroundTasks,
     zone::{SignedInstanceId, Zone, ZoneHandle, ZoneState},
-    zonedata::{LoadedZonePersister, LoadedZoneRestorer, SignedZonePersister, SignedZoneRestorer},
+    zonedata::{LoadedZonePersister, SignedZonePersister, ZoneRestorer},
 };
 
 //----------- ZonePersistenceHandle --------------------------------------------
@@ -43,26 +43,10 @@ impl ZonePersistenceHandle<'_> {
         }
     }
 
-    fn abandon_loaded_restoration(&mut self, restorer: LoadedZoneRestorer) {
+    fn abandon_restoration(&mut self, restorer: ZoneRestorer) {
         self.reset_state_due_to_abandoned_restore();
         let (loaded_reviewer, signed_reviewer, viewer) =
-            self.zone().storage().abandon_loaded_restoration(restorer);
-
-        // Update the zone servers.
-        LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
-        SignedReviewServer::add_zone(self.center, self.zone.clone(), signed_reviewer);
-        PublicationServer::add_zone(self.center, self.zone.clone(), viewer);
-
-        // Send a notification that the state machine is now passive.
-        self.zone().storage().on_passive();
-
-        self.state.persistence.ongoing.finish();
-    }
-
-    fn abandon_signed_restoration(&mut self, restorer: SignedZoneRestorer) {
-        self.reset_state_due_to_abandoned_restore();
-        let (loaded_reviewer, signed_reviewer, viewer) =
-            self.zone().storage().abandon_signed_restoration(restorer);
+            self.zone().storage().abandon_restoration(restorer);
 
         // Update the zone servers.
         LoadedReviewServer::add_zone(self.center, self.zone.clone(), loaded_reviewer);
@@ -147,7 +131,7 @@ impl ZonePersistenceHandle<'_> {
         skip_all,
         fields(zone = %self.zone.name),
     )]
-    pub fn start_restore(&mut self, restorer: LoadedZoneRestorer) {
+    pub fn start_restore(&mut self, restorer: ZoneRestorer) {
         let zone = self.zone.clone();
         let center = self.center.clone();
         let span = trace_span!("restore");
@@ -161,27 +145,19 @@ impl ZonePersistenceHandle<'_> {
                 let mut restorer = restorer;
                 let result = super::restore_loaded(&zone, &center, &mut restorer);
                 let mut handle = zone.write_handle(&center);
-                let restored = match result {
-                    Ok(true) => {
-                        // Data was restored. Use it.
-                        restorer.finish().unwrap_or_else(|_| {
-                            unreachable!("Loaded zone restoration should have built new zone data")
-                        })
-                    }
+                match result {
+                    Ok(true) => {}
                     Ok(false) => {
                         // There was nothing to restore.
-                        handle.persistence().abandon_loaded_restoration(restorer);
+                        handle.persistence().abandon_restoration(restorer);
                         return;
                     }
                     Err(err) => {
                         warn!("Abandoning loaded restoration: {err}");
-                        handle.persistence().abandon_loaded_restoration(restorer);
+                        handle.persistence().abandon_restoration(restorer);
                         return;
                     }
                 };
-
-                // Obtain the signed zone restorer.
-                let mut restorer = handle.storage().finish_loaded_restoration(restored);
 
                 std::mem::drop(handle);
 
@@ -197,12 +173,12 @@ impl ZonePersistenceHandle<'_> {
                     }
                     Ok(false) => {
                         // There was nothing to restore.
-                        handle.persistence().abandon_signed_restoration(restorer);
+                        handle.persistence().abandon_restoration(restorer);
                         return;
                     }
                     Err(err) => {
                         warn!("Abandoning signed restoration: {err}");
-                        handle.persistence().abandon_signed_restoration(restorer);
+                        handle.persistence().abandon_restoration(restorer);
                         return;
                     }
                 };
@@ -212,7 +188,7 @@ impl ZonePersistenceHandle<'_> {
                     handle.state.persistence.loaded_diffs
                 );
                 let (loaded_reviewer, signed_reviewer, viewer) =
-                    handle.storage().finish_signed_restoration(restored);
+                    handle.storage().finish_restoration(restored);
 
                 // The call to instances.restore() below will update current
                 // instance metadata to match restored persisted instance

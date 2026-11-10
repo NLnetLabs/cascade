@@ -8,8 +8,7 @@ use std::{
 };
 
 use cascade_zonedata::{
-    DiffData, LoadedZonePatcher, LoadedZoneRestorer, RegularRecord, SignedZonePatcher,
-    SignedZoneRestorer, SoaRecord,
+    DiffData, LoadedZonePatcher, RegularRecord, SignedZonePatcher, SoaRecord, ZoneRestorer,
 };
 use domain::{
     new::{
@@ -34,7 +33,7 @@ use crate::{center::Center, persistence::discard_excess_diffs, zone::Zone};
 pub fn restore_loaded(
     zone: &Arc<Zone>,
     center: &Arc<Center>,
-    restorer: &mut LoadedZoneRestorer,
+    restorer: &mut ZoneRestorer,
 ) -> io::Result<bool> {
     let diff_infos;
     let restore_base_idx;
@@ -72,7 +71,7 @@ pub fn restore_loaded(
             snapshot_path.display()
         ))
     })?;
-    let mut loaded_replacer = restorer.fill().ok_or(io::Error::other(
+    let mut loaded_replacer = restorer.fill_loaded().ok_or(io::Error::other(
         "Internal error: Could not acquire replacer".to_string(),
     ))?;
     loaded_replacer.set_soa(soa.clone()).unwrap();
@@ -116,7 +115,7 @@ pub fn restore_loaded(
                 diff_info.path().display()
             );
             let mut loaded_patcher = restorer
-                .patch()
+                .patch_loaded()
                 .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
 
             let (start_serial, end_serial) =
@@ -138,7 +137,7 @@ pub fn restore_loaded(
                 .apply()
                 .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
 
-            if let Some(diff) = restorer.take_diff() {
+            if let Some(diff) = restorer.take_loaded_diff() {
                 diffs_to_store.push(diff.into());
                 trace!(
                     "Extracted IXFR loaded diff for SOA serial {} from file '{}': serial {start_serial} -> {end_serial}",
@@ -185,7 +184,7 @@ pub fn restore_loaded(
 pub fn restore_signed(
     zone: &Arc<Zone>,
     center: &Arc<Center>,
-    restorer: &mut SignedZoneRestorer,
+    restorer: &mut ZoneRestorer,
 ) -> io::Result<bool> {
     let diff_infos;
     let restore_base_idx;
@@ -223,7 +222,7 @@ pub fn restore_signed(
             snapshot_path.display()
         ))
     })?;
-    let mut signed_replacer = restorer.fill().ok_or(io::Error::other(
+    let mut signed_replacer = restorer.fill_signed().ok_or(io::Error::other(
         "Internal error: Could not acquire replacer".to_string(),
     ))?;
     signed_replacer.set_soa(soa.clone()).unwrap();
@@ -276,7 +275,7 @@ pub fn restore_signed(
                 diff_info.loaded_serial()
             );
             let mut signed_patcher = restorer
-                .patch()
+                .patch_signed()
                 .ok_or(io::Error::other("Internal error: Patch failed".to_string()))?;
 
             let (start_serial, end_serial) =
@@ -298,7 +297,7 @@ pub fn restore_signed(
                 .apply()
                 .map_err(|err| io::Error::other(format!("Internal error: Apply failed: {err}")))?;
 
-            if let Some(diff) = restorer.take_diff() {
+            if let Some(diff) = restorer.take_signed_diff() {
                 diffs_to_store.push((diff_info.loaded_serial(), diff.into()));
                 trace!(
                     "Extracted IXFR signed diff for SOA serial {} from file '{}': serial {start_serial} -> {end_serial}",
