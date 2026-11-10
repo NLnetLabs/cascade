@@ -52,7 +52,10 @@ use domain::{
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tracing::{debug, error, trace};
 
-use crate::policy::PolicyVersion;
+use crate::{
+    policy::PolicyVersion,
+    zone::{InMemoryDiffLimits, InMemoryDiffTrimmer},
+};
 
 //----------- Instances --------------------------------------------------------
 
@@ -430,9 +433,6 @@ impl Instances {
 
     /// Discard old in-memory diffs exceeding policy limits.
     pub fn discard_excess_diffs(&mut self, policy: &PolicyVersion) {
-        let max_diffs = policy.server.outbound.max_diffs;
-        let max_diffs_size = policy.server.outbound.max_diffs_size as f64 / 100.0;
-
         // Look up information about the current signed instance (or the
         // persisted one, if it has not been restored yet), as a basis for
         // policy limits.
@@ -445,12 +445,15 @@ impl Instances {
             return;
         };
 
-        // Calculate the maximum number of records to store.
+        let max_diffs_size_ratio = policy.server.outbound.max_diffs_size as f64 / 100.0;
         let latest_size = latest.num_records().get();
-        let max_diffs_size = (max_diffs_size * latest_size as f64) as usize;
+        let max_diffs_size = (max_diffs_size_ratio * latest_size as f64) as u64;
 
-        self.obsolete
-            .discard_excess_diffs(max_diffs, max_diffs_size);
+        let limits = InMemoryDiffLimits {
+            max_num_diffs: Some(policy.server.outbound.max_diffs as u64),
+            max_num_records: Some(max_diffs_size),
+        };
+        self.obsolete.discard_excess_diffs(limits);
     }
 }
 
@@ -701,63 +704,94 @@ impl ObsoleteInstances {
     ///
     /// - `max_diffs_size`: the maximum number of records to store across all
     ///   diffs.
-    pub fn discard_excess_diffs(&mut self, max_diffs: usize, max_diffs_size: usize) {
-        // Iterate from the newest to the oldest instances. Once a limit is
-        // hit, trim everything past it. `iter_mut()` handles the complicated
-        // relationship between loaded and signed instances for us.
+    pub fn discard_excess_diffs(&mut self, limits: InMemoryDiffLimits) {
+        // Iterate from the newest to the oldest instances. Iterate loaded
+        // instances before the signed instances associated with them.
+        let instances = self.iter_mut().rev().flat_map(|(loaded, signed)| {
+            std::iter::once(ObsoleteInstanceMut::Loaded(loaded))
+                .chain(signed.rev().map(ObsoleteInstanceMut::Signed))
+        });
 
-        // The aggregated values observed thus far.
-        let mut diffs = 0usize;
-        let mut diffs_size = 0usize;
+        // Compute usage and skip instances that fit within limits.
+        let mut trimmer = InMemoryDiffTrimmer::new(limits);
+        let excess_instances = instances.skip_while(|instance| {
+            trimmer.account(instance.as_ref());
+            !trimmer.exceeded()
+        });
 
-        let mut iter = self.iter_mut().rev().peekable();
-        // TODO: I wish `Peekable` implemented `Default`!
-        let mut signed_iter = None;
-
-        // Iterate over the instances until a limit is hit.
-        while let Some((_, signed)) = iter.next_if(|(loaded, _)| {
-            // Account for the loaded diff before the signed diffs.
-            // The signed diffs are only useful with the loaded diff.
-            // If the loaded diff can't fit, the signed diffs must be trimmed.
-            if let Some(diff) = &loaded.diff {
-                diffs += 1;
-                diffs_size += diff.num_records();
-            }
-            diffs <= max_diffs && diffs_size <= max_diffs_size
-        }) {
-            // Iterate over the signed instances until a limit is hit.
-            let signed_iter = signed_iter.insert(signed.rev().peekable());
-            while let Some(signed) = signed_iter.next_if(|signed| {
-                if let Some(diff) = &signed.diff {
-                    diffs += 1;
-                    diffs_size += diff.num_records();
+        // Clear diffs from all remaining instances.
+        for mut instance in excess_instances {
+            if instance.diff().is_some() {
+                match &instance {
+                    ObsoleteInstanceMut::Loaded(instance) => {
+                        debug!("Trimming diff for loaded instance {:?}", instance.id)
+                    }
+                    ObsoleteInstanceMut::Signed(instance) => {
+                        debug!("Trimming diff for signed instance {:?}", instance.id)
+                    }
                 }
-                diffs <= max_diffs && diffs_size <= max_diffs_size
-            }) {
-                // This instance does not need to be trimmed.
-                let _ = signed;
             }
-
-            // If any instances are left over, a limit was hit.
-            if signed_iter.peek().is_some() {
-                break;
-            }
+            *instance.diff_mut() = None;
         }
+    }
+}
 
-        if signed_iter.is_some() || iter.peek().is_some() {
-            debug!(
-                diffs,
-                max_diffs, diffs_size, max_diffs_size, "Trimming excess diffs"
-            );
+/// A reference to an obsolete instance.
+#[derive(Debug)]
+pub enum ObsoleteInstanceRef<'a> {
+    /// An obsolete loaded instance.
+    Loaded(&'a ObsoleteLoadedInstance),
 
-            // Clear diffs for all the remaining instances.
-            if let Some(signed_iter) = signed_iter {
-                signed_iter.for_each(|signed| signed.diff = None);
-            }
-            iter.for_each(|(loaded, signed)| {
-                loaded.diff = None;
-                signed.for_each(|signed| signed.diff = None);
-            });
+    /// An obsolete signed instance.
+    Signed(&'a ObsoleteSignedInstance),
+}
+
+impl ObsoleteInstanceRef<'_> {
+    /// The diff of these contents, if available.
+    #[must_use]
+    pub const fn diff(&self) -> &Option<Arc<DiffData>> {
+        match self {
+            Self::Loaded(i) => &i.diff,
+            Self::Signed(i) => &i.diff,
+        }
+    }
+}
+
+/// A mutable reference to an obsolete instance.
+#[derive(Debug)]
+pub enum ObsoleteInstanceMut<'a> {
+    /// An obsolete loaded instance.
+    Loaded(&'a mut ObsoleteLoadedInstance),
+
+    /// An obsolete signed instance.
+    Signed(&'a mut ObsoleteSignedInstance),
+}
+
+impl ObsoleteInstanceMut<'_> {
+    /// By reference.
+    #[must_use]
+    pub const fn as_ref(&self) -> ObsoleteInstanceRef<'_> {
+        match self {
+            Self::Loaded(i) => ObsoleteInstanceRef::Loaded(i),
+            Self::Signed(i) => ObsoleteInstanceRef::Signed(i),
+        }
+    }
+
+    /// The diff of these contents, if available.
+    #[must_use]
+    pub const fn diff(&self) -> &Option<Arc<DiffData>> {
+        match self {
+            Self::Loaded(i) => &i.diff,
+            Self::Signed(i) => &i.diff,
+        }
+    }
+
+    /// The diff of these contents, if available, by mutable reference.
+    #[must_use]
+    pub const fn diff_mut(&mut self) -> &mut Option<Arc<DiffData>> {
+        match self {
+            Self::Loaded(i) => &mut i.diff,
+            Self::Signed(i) => &mut i.diff,
         }
     }
 }
