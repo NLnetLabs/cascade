@@ -2963,11 +2963,6 @@ impl<'zd> Rrsigs<'zd> {
         }
     }
 
-    #[expect(dead_code)] // TODO
-    fn values(&self) -> RrsigsValuesIter<'_> {
-        RrsigsValuesIter::new(self.old_rrsigs.iter(), &self.changes)
-    }
-
     /// Return the number of RRsets that have signatures taking inserts and
     /// deletes into account.
     fn signed_rrset_count(&self) -> usize {
@@ -3115,63 +3110,6 @@ impl<'a> Iterator for RrsigIter<'a> {
                 }
             }
             self.changes_iter = None;
-        }
-        None
-    }
-}
-
-#[allow(clippy::type_complexity)]
-struct RrsigsValuesIter<'a> {
-    iter: Option<hash_map::Iter<'a, RrsigKey<'a>, Vec<&'a RegularRecord>>>,
-    changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange<'a>>,
-    changes_values: Option<hash_map::Values<'a, (Box<RevName>, NewRtype), RrsigChange<'a>>>,
-}
-
-impl<'a> RrsigsValuesIter<'a> {
-    fn new(
-        iter: hash_map::Iter<'a, RrsigKey<'a>, Vec<&RegularRecord>>,
-        changes: &'a HashMap<(Box<RevName>, NewRtype), RrsigChange>,
-    ) -> RrsigsValuesIter<'a> {
-        RrsigsValuesIter {
-            iter: Some(iter),
-            changes,
-            changes_values: None,
-        }
-    }
-}
-
-impl<'a> Iterator for RrsigsValuesIter<'a> {
-    type Item = Vec<&'a RegularRecord>;
-
-    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        if let Some(iter) = &mut self.iter {
-            for ((name, rtype), sigs) in iter.by_ref() {
-                // Check if changes has something.
-                let key = ((*name).unsized_copy_into(), *rtype);
-                if self.changes.get(&key).is_some() {
-                    // Get it from changes if not deleted.
-                    continue;
-                }
-
-                return Some(sigs.to_vec());
-            }
-            self.iter = None;
-            self.changes_values = Some(self.changes.values());
-        }
-        if let Some(changes_values) = &mut self.changes_values {
-            for change in changes_values.by_ref() {
-                match change {
-                    RrsigChange::Delete { .. } => {
-                        // Nothing here.
-                        continue;
-                    }
-                    RrsigChange::Modified { new, .. } | RrsigChange::Insert { new, .. } => {
-                        let new: Vec<&RegularRecord> = new.iter().collect();
-                        return Some(new.to_vec());
-                    }
-                }
-            }
-            self.changes_values = None;
         }
         None
     }
