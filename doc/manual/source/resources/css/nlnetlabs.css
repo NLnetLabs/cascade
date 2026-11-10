@@ -99,5 +99,6 @@ article[role="main"] a.link-preview {
 }
 
 article[role="main"] a.reference.internal:has(.std-term) {
-  text-decoration-style: dotted;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
 }
