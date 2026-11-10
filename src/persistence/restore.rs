@@ -13,12 +13,8 @@ use cascade_zonedata::{
 };
 use domain::{
     new::{
-        base::{
-            RType, Record, SoaSerial,
-            name::{NameBuf, RevNameBuf},
-            parse::{ParseMessageBytes, SplitMessageBytes},
-        },
-        rdata::{BoxedRecordData, Soa},
+        base::{RType, Record, SoaSerial, name::RevNameBuf, parse::ParseError, wire::SplitBytes},
+        rdata::RecordData,
     },
     utils::dst::UnsizedCopy,
 };
@@ -341,39 +337,6 @@ pub fn restore_signed(
     io::Result::Ok(true)
 }
 
-fn parse_rr(
-    buf: &[u8],
-    pos: usize,
-) -> Result<(Record<RevNameBuf, BoxedRecordData>, usize), String> {
-    Record::<RevNameBuf, BoxedRecordData>::split_message_bytes(buf, pos)
-        .map_err(|err| format!("Invalid wire format RR: {err}"))
-}
-
-fn parse_soa(buf: &[u8], pos: usize) -> Result<(SoaRecord, Soa<NameBuf>, usize), String> {
-    let (first_rr, rest) = Record::<RevNameBuf, Soa<NameBuf>>::split_message_bytes(buf, pos)
-        .map_err(|err| {
-            format!("Failed to parse record of persisted XFR dump as a SOA record: {err}")
-        })?;
-
-    if first_rr.rtype != RType::SOA {
-        return Err(format!(
-            "Persisted XFR dump record has RTYPE '{}' which is not a SOA RR.",
-            first_rr.rtype.code
-        ));
-    }
-
-    // Save the SOA rdata for comparison later, before we convert it from
-    // using NameBuf typed fields to having Box<Name> typed fields (which
-    // is the format we store resource records in longer term in memory).
-    let soa_rdata = first_rr.rdata.clone();
-    let soa_rr = SoaRecord(first_rr.transform_ref(
-        |name: &RevNameBuf| (*name).unsized_copy_into(),
-        |data: &Soa<NameBuf>| data.map_names_by_ref(|name| (*name).unsized_copy_into()),
-    ));
-
-    Ok((soa_rr, soa_rdata, rest))
-}
-
 fn load_file_into_memory(source: &Path, buf: &mut Vec<u8>) -> std::io::Result<usize> {
     buf.clear();
     BufReader::new(File::open(source)?).read_to_end(buf)
@@ -384,52 +347,44 @@ fn load_axfr_wire_dump(
     buf: &mut Vec<u8>,
 ) -> io::Result<(SoaRecord, Vec<RegularRecord>)> {
     load_file_into_memory(source, buf)?;
+    let mut records = parse_records(buf);
 
-    let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0).map_err(|err| {
-        io::Error::other(format!(
-            "Failed to parse persisted snapshot initial SOA: {err}"
-        ))
-    })?;
-
-    let mut records = vec![];
-    loop {
-        // Parse remaining resource records from the current read
-        // index in the buffer, each time receiving back the 'rest'
-        // index at which parsing should start on the next iteration
-        // of the loop.
-        let r;
-        (r, rest) = parse_rr(buf, rest).map_err(|err| {
-            io::Error::other(format!(
-                "Failed to parse persisted snapshot resource record at pos {rest}: {err}"
-            ))
-        })?;
-
-        // If the parsed record is a SOA it should be identical to
-        // the SOA record that started the AXFR dump and signals the
-        // end of the dump.
-        //
-        // TODO: If the SOA is not at the apex should we keep it and
-        // keep going?
-        if r.rtype == RType::SOA {
-            // An AXFR ends with a SOA RR identical to the start SOA.
-            // Since we persisted the AXFR wire dump to disk it is a
-            // very unexpected error if it does not match the starting
-            // SOA.
-            if (r.rname.as_ref() == &*start_soa.0.rname
-                || r.rclass == start_soa.0.rclass
-                || r.ttl == start_soa.ttl)
-                && let Ok(soa_rdata) = Soa::<NameBuf>::parse_message_bytes(r.rdata.bytes(), 0)
-                && soa_rdata == start_soa_rdata
-            {
-                break;
-            }
-        }
-
-        let r = r.transform(|name| name.unsized_copy_into(), |data| data);
-        records.push(RegularRecord(r));
+    // Parse the SOA record.
+    let soa = records
+        .next()
+        .unwrap_or(Err(ParseError))
+        .map_err(|err| io::Error::other(err.to_string()))?;
+    if soa.rtype != RType::SOA {
+        return Err(io::Error::other(format!(
+            "First record has type '{}' but should be 'SOA'",
+            soa.rtype.code
+        )));
     }
 
-    Ok((start_soa, records))
+    let mut regular = Vec::new();
+    let mut record;
+    loop {
+        record = records
+            .next()
+            .unwrap_or(Err(ParseError))
+            .map_err(|err| io::Error::other(err.to_string()))?;
+        if record.rtype == RType::SOA {
+            break;
+        }
+        regular.push(record);
+    }
+
+    // Ensure the file ended with the top-level SOA.
+    if record != soa {
+        return Err(io::Error::other("file does not end with top-level SOA"));
+    }
+
+    // Check for trailing data.
+    if records.next().is_some() {
+        return Err(io::Error::other("unexpected trailing data in file"));
+    }
+
+    Ok((soa.into(), regular))
 }
 
 fn load_ixfr_wire_dump<F>(
@@ -441,106 +396,101 @@ where
     F: FnMut(IxfrEvent),
 {
     load_file_into_memory(source, buf)?;
+    let mut records = parse_records(buf);
 
-    let buf = buf.as_slice();
-    let (start_soa, start_soa_rdata, mut rest) = parse_soa(buf, 0).map_err(|err| {
-        io::Error::other(format!("Failed to parse persisted diff initial SOA: {err}"))
-    })?;
+    // Parse the new SOA record.
+    let top_soa = records
+        .next()
+        .unwrap_or(Err(ParseError))
+        .map_err(|err| io::Error::other(err.to_string()))?;
+    if top_soa.rtype != RType::SOA {
+        return Err(io::Error::other(format!(
+            "First record has type '{}' but should be 'SOA'",
+            top_soa.rtype.code
+        )));
+    }
 
-    let mut oldest_soa = None;
+    // Parse the SOA record removal from the first diff sequence.
+    let earliest_removed_soa = records
+        .next()
+        .unwrap_or(Err(ParseError))
+        .map_err(|err| io::Error::other(err.to_string()))?;
+    let RecordData::Soa(earliest_removed_soa_data) = earliest_removed_soa.rdata.get() else {
+        return Err(io::Error::other(format!(
+            "First patchset record has type '{}' but should be 'SOA'",
+            earliest_removed_soa.rtype.code
+        )));
+    };
+    let earliest_removed_serial = earliest_removed_soa_data.serial;
+    let mut latest_added_soa;
 
-    // Parse one or more diff sequences.
+    let mut next_soa = earliest_removed_soa;
     loop {
-        // Parse one diff sequence:
-        //   "Each difference sequence represents one update to the
-        //    zone (one SOA serial change) consisting of deleted RRs
-        //    and added RRs.  The first RR of the deleted RRs is the
-        //    older SOA RR and the first RR of the added RRs is the
-        //    newer SOA RR."
-        // Iterate over a sequence of resource records to remove
-        // followed by a sequence of resource records to add,
+        // Parse a diff sequence.
 
-        // Read the first deleted RR which should be a SOA RR.
-        let r;
-        (r, rest) = parse_rr(buf, rest).map_err(|err| {
-            io::Error::other(format!(
-                "Failed to parse persisted diff resource record at pos {rest}: {err}"
-            ))
-        })?;
+        // The SOA record removal for this diff.
+        let removed_soa = next_soa; // from the previous iteration
+        (rr_handler)(IxfrEvent::Remove(removed_soa));
 
-        if r.rtype != RType::SOA {
-            // If this is the first RR of the sequence it MUST
-            // be a SOA RR.
-            return Err(io::Error::other(format!(
-                "Expected first record of persisted diff remove sequence to be a SOA RR but found RTYPE {}",
-                r.rtype.code
-            )));
-        }
-
-        if oldest_soa.is_none() {
-            let soa = Soa::<NameBuf>::parse_message_bytes(r.rdata.bytes(), 0).unwrap();
-            oldest_soa = Some(soa);
-        }
-
-        let r = RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data));
-        rr_handler(IxfrEvent::Remove(r));
-
-        // Read more removed RRs until a SOA signals the end of the
-        // removed RRs and the start of the added RRs.
+        // Parse regular record removals.
+        let mut record;
         loop {
-            let r;
-            (r, rest) = parse_rr(buf, rest).map_err(|err| {
-                io::Error::other(format!(
-                    "Failed to parse persisted diff removed resource record at pos {rest}: {err}"
-                ))
-            })?;
-
-            let r = RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data));
-            if r.rtype == RType::SOA {
-                rr_handler(IxfrEvent::Add(r));
+            record = records
+                .next()
+                .unwrap_or(Err(ParseError))
+                .map_err(|err| io::Error::other(err.to_string()))?;
+            if record.rtype == RType::SOA {
+                next_soa = record;
                 break;
-            } else {
-                rr_handler(IxfrEvent::Remove(r));
             }
+
+            (rr_handler)(IxfrEvent::Remove(record));
         }
 
-        // Read more added RRs until a SOA signals the end of added RRs.
+        // The SOA record addition for this diff.
+        let added_soa = next_soa;
+        latest_added_soa = added_soa.clone();
+        (rr_handler)(IxfrEvent::Add(added_soa));
+
+        // Parse regular record additions.
+        let mut record;
         loop {
-            let r;
-            (r, rest) = parse_rr(buf, rest).map_err(|err| {
-                io::Error::other(format!(
-                    "Failed to parse persisted diff added resource record at pos {rest}: {err}"
-                ))
-            })?;
-
-            let r =
-                RegularRecord(r.transform(|name| name.unsized_copy_into(), |data| data.clone()));
-            if r.rtype == RType::SOA {
-                if is_same_soa(&start_soa, &start_soa_rdata, &r) {
-                    // This SOA signals the end of the IXFR dump.
-                    return Ok((oldest_soa.unwrap().serial, start_soa.rdata.serial));
-                }
-
-                rr_handler(IxfrEvent::EndOfUpdate);
-                rr_handler(IxfrEvent::Remove(r));
+            record = records
+                .next()
+                .unwrap_or(Err(ParseError))
+                .map_err(|err| io::Error::other(err.to_string()))?;
+            if record.rtype == RType::SOA {
+                next_soa = record;
                 break;
-            } else {
-                rr_handler(IxfrEvent::Add(r));
             }
-        }
-    }
-}
 
-fn is_same_soa(start_soa: &SoaRecord, start_soa_rdata: &Soa<NameBuf>, r: &RegularRecord) -> bool {
-    if (r.rtype == RType::SOA
-        && r.rname.as_ref() == &*start_soa.0.rname
-        && r.rclass == start_soa.0.rclass
-        && r.ttl == start_soa.ttl)
-        && let Ok(soa_rdata) = Soa::<NameBuf>::parse_message_bytes(r.rdata.bytes(), 0)
-    {
-        return &soa_rdata == start_soa_rdata;
+            (rr_handler)(IxfrEvent::Add(record));
+        }
+
+        // The SOA record removal for the next diff, or the top-level SOA.
+        if next_soa == top_soa {
+            break;
+        }
+        (rr_handler)(IxfrEvent::EndOfUpdate);
+        // `next_soa` gets processed in the next iteration.
     }
-    false
+
+    // Ensure the latest added SOA matches the top-level SOA.
+    if latest_added_soa != top_soa {
+        return Err(io::Error::other("top-level SOA was not added by last diff"));
+    }
+
+    // Check for trailing data.
+    if records.next().is_some() {
+        return Err(io::Error::other("unexpected trailing data in file"));
+    }
+
+    let latest_added_serial = match latest_added_soa.rdata.get() {
+        RecordData::Soa(soa) => soa.serial,
+        _ => unreachable!(),
+    };
+
+    Ok((earliest_removed_serial, latest_added_serial))
 }
 
 enum IxfrEvent {
@@ -595,4 +545,22 @@ fn apply_ixfr_event_to_diff_data(diff: &mut Box<DiffData>, event: IxfrEvent) {
         IxfrEvent::Add(r) => diff.added_records.push(r),
         IxfrEvent::EndOfUpdate => {}
     }
+}
+
+/// Parse records in the wire format from `data`.
+fn parse_records(mut data: &[u8]) -> impl Iterator<Item = Result<RegularRecord, ParseError>> {
+    // TODO: Add parsing functionality in `domain::new` that can tell us whether
+    // a partial input contains a full record or not, so that we can stream the
+    // file through a small buffer.
+
+    std::iter::from_fn(move || {
+        if data.is_empty() {
+            return None;
+        }
+
+        Some(Record::split_bytes(data).map(|(record, rest)| {
+            data = rest;
+            RegularRecord(record.transform(|n: RevNameBuf| n.unsized_copy_into(), |d| d))
+        }))
+    })
 }
