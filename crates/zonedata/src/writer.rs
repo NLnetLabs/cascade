@@ -217,6 +217,20 @@ impl<'d> LoadedZonePatcher<'d> {
         Ok(())
     }
 
+    /// Apply a whole patchset at once.
+    pub fn apply_patchset(mut self, diff: Box<DiffData>) -> Result<(), PatchError> {
+        assert!(self.accumulated.is_empty());
+        assert!(self.immediate.is_empty());
+
+        if diff.removed_soa != self.curr.soa {
+            debug!(?diff.removed_soa, ?self.curr.soa, "Removing the wrong SOA record");
+            return Err(PatchError::Inconsistency);
+        }
+
+        self.accumulated = diff;
+        self.apply()
+    }
+
     /// Move to the next patchset.
     ///
     /// The records added and removed (including SOA) since the last call to
@@ -591,6 +605,15 @@ impl<'d> SignedZonePatcher<'d> {
     pub fn add(&mut self, record: RegularRecord) -> Result<(), PatchError> {
         self.immediate.added_records.push(record);
         Ok(())
+    }
+
+    /// Apply a whole patchset at once.
+    pub fn apply_patchset(mut self, diff: Box<DiffData>) -> Result<(), PatchError> {
+        assert!(self.accumulated.is_empty());
+        assert!(self.immediate.is_empty());
+
+        self.accumulated = diff;
+        self.apply()
     }
 
     /// Move to the next patchset.
