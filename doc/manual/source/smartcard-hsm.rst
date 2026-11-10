@@ -9,11 +9,11 @@ Integrating with a SmartCard-HSM
 
 .. epigraph::
 
-   SmartCard-HSM is a lightweight Hardware Security Module in a Smart Card,
-   MicroSD or USB form factors and protect your RSA and ECC keys in hardware.
-   They are accessible through a PKCS #11 interface. You can use them to
-   experiment with PKCS #11 without having to purchase an expensive HSM.
-   (Hint: do not expect wonders in terms of performance.)
+   SmartCard-HSM is a lightweight :term:`Hardware Security Module <Hardware security
+   module (HSM)>` in a Smart Card, MicroSD or USB form factors and protect your RSA and
+   ECC keys in hardware. They are accessible through a PKCS #11 interface. You can use
+   them to experiment with PKCS #11 without having to purchase an expensive HSM. (Hint:
+   do not expect wonders in terms of performance.)
 
    -- https://www.smartcard-hsm.com
 
@@ -141,7 +141,7 @@ token label which in our above example is the complete string ``NL-smartcard
 Sign a Test Zone with SmartCard-HSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a test zone to load and sign and ensure the Cascade daemon has access to it:
+Create a test :term:`zone` to load and sign and ensure the Cascade daemon has access to it:
 
 .. code-block:: bash
 

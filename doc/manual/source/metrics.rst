@@ -12,18 +12,18 @@ These metrics apply to Cascade as a whole.
 - ``zones_configured`` (gauge): Number of zones known to Cascade.
 - ``zones_loaded`` (gauge): Number of zones loaded by Cascade.
 - ``zones_active`` (gauge): Number of active zones.
-- ``zones_unsigned`` (gauge): Number of unsigned zones.
-- ``zones_signed`` (gauge): Number of signed zones.
+- ``zones_unsigned`` (gauge): Number of :term:`unsigned zones <Unsigned zone>`.
+- ``zones_signed`` (gauge): Number of :term:`signed zones <Signed zone>`.
 - ``zones_published`` (gauge): Number of published zones.
 - ``zones_halted`` (gauge): Number of halted zones.
 
 Per Zone Metrics
 ----------------
 
-These metrics are available for each zone. The metrics have a label that
+These metrics are available for each :term:`zone`. The metrics have a label that
 specifies the zone name.
 
-- ``xfr_requests_to_upstream_attempted`` (gauge): Number of zone transfers
+- ``xfr_requests_to_upstream_attempted`` (gauge): Number of :term:`zone transfers <Zone transfer>`
   attempted by Cascade towards the upstream primary.
 - ``xfr_requests_to_upstream_succeeded`` (gauge): Number of succesful zone
   transfers by Cascade towards the upstream primary.

@@ -76,7 +76,7 @@ Global Options
 
 .. option:: policy-dir = "/etc/cascade/policies"
 
-   The directory storing zone policies.
+   The directory storing :term:`zone` policies.
 
    Zone policies are user-managed files configuring groups of zones.  You can
    modify them as you like, then ask Cascade to reload them with ``cascade
@@ -92,7 +92,7 @@ Global Options
 
 .. option:: tsig-store-path = "/var/lib/cascade/tsig-keys.db"
 
-   The file storing TSIG key secrets.
+   The file storing :term:`TSIG` key secrets.
 
    This is an internal state file containing sensitive cryptographic material.
    It should not be modified manually, but it can be backed up and restored in
@@ -312,7 +312,7 @@ The ``[signer.review]`` section.
 
 .. option:: servers = ["127.0.0.1:4541", "[::1]:4541"]
 
-   Where to serve signed zones for review.
+   Where to serve :term:`signed zones <Signed zone>` for review.
 
    A DNS server will be bound to these addresses, and will serve the contents
    of all signed (but not necessarily published) zones.  This can be used to

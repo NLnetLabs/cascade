@@ -4,20 +4,20 @@ Key Management
 .. note:: The key management strategy is fundamentally different than the
    the implementation in OpenDNSSEC and for example BIND.
 
-   The goal is that key rolls should always go through the same sequence of
-   steps. As much as possible, we strive to get all key rolls in a single mold.
-   They will always follow the same pattern, while the details of a
-   :term:`KSK <Key signing key (KSK)>` and :term:`ZSK <Zone signing key
-   (ZSK)>` roll will be different.
+   The goal is that :term:`key rolls <Key rollover>` should always go through the same
+   sequence of steps. As much as possible, we strive to get all key rolls in a single
+   mold. They will always follow the same pattern, while the details of a :term:`KSK
+   <Key signing key (KSK)>` and :term:`ZSK <Zone signing key (ZSK)>` roll will be
+   different.
 
 Implementation
 --------------
 
 The key manager is responsible for two things:
 
-1. For each zone, it maintains and provides key rolls for a set of keys that
+1. For each :term:`zone`, it maintains and provides key rolls for a set of keys that
    are used to sign.
-2. Signing DNSKEY, CDS, and CDNSKEY :term:`RRsets <Resource Record Set
+2. Signing :term:`DNSKEY`, :term:`CDS`, and :term:`CDNSKEY` :term:`RRsets <Resource Record Set
    (RRset)>`.
 
 Cascade uses an external key manager, which is part of our :program:`dnst`
@@ -35,12 +35,12 @@ setups, though it does not do that at the moment.
 Operations
 ----------
 
-User interaction with the key manager is designed to be done through Cascade.
-The key manager manages a set of DNSSEC (:RFC:`9364`) signing keys and
-generates a signed DNSKEY RRset. The key manager expects a separate signer,
-in this case Cascade, to use the zone signing keys in the key set, sign the
-zone and include the DNSKEY RRset (as well as the CDS and CDNSKEY RRsets).
-The key manager supports keys stored in files and keys stored in an HSM.
+User interaction with the key manager is designed to be done through Cascade. The key
+manager manages a set of DNSSEC (:RFC:`9364`) signing keys and generates a signed DNSKEY
+RRset. The key manager expects a separate signer, in this case Cascade, to use the zone
+signing keys in the key set, sign the zone and include the DNSKEY RRset (as well as the
+CDS and CDNSKEY RRsets). The key manager supports keys stored in files and keys stored
+in an :term:`HSM <Hardware security module (HSM)>`.
 
 The key manager operates on one zone at a time. For each zone, the key
 manager has configuration parameters for key generation (which algorithm to
@@ -80,9 +80,9 @@ signer.
 
 When the key manager creates new keys, it will start an algorithm roll
 instead of using the new keys directly. The reason for this is that the new
-zone may be an existing unsigned zone that now needs to become a DNSSEC
-signed zone. The algorithm roll makes sure that the DNSKEY RRset and the zone
-signatures have propagated before adding the DS record at the parent.
+zone may be an existing :term:`unsigned zone` that now needs to become a DNSSEC
+:term:`signed zone`. The algorithm roll makes sure that the DNSKEY RRset and the zone
+signatures have propagated before adding the :term:`DS` record at the parent.
 
 Key Rolls
 ---------
@@ -122,7 +122,7 @@ Automatic Key Rolls
 During the automated reporting and completion stages of a key roll, the key
 manager checks the propagation of changes to the DNSKEY RRset, the DS RRset at
 the parent, and the zone's signatures. These checks contact every
-authoritative nameserver for the zone and its parent.
+:term:`authoritative nameserver <Authoritative server>` for the zone and its parent.
 
 .. important:: The Cascade host needs network access to every address published
    for those nameservers. This includes IPv6 connectivity when a nameserver has
@@ -130,9 +130,10 @@ authoritative nameserver for the zone and its parent.
    ``auto-report`` and ``auto-done`` stages and complete the corresponding
    steps manually. See :ref:`automation-control`.
 
-To check the signatures in the zone, the key manager will issue an AXFR
-request to the primary nameserver listed in the SOA record of the zone or to
-a configurable nameserver with configurable TSIG keys for authentication.
+To check the signatures in the zone, the key manager will issue an :term:`AXFR` request
+to the :term:`primary nameserver <Primary server>` listed in the :term:`SOA` record of
+the zone or to a configurable nameserver with configurable :term:`TSIG` keys for
+authentication.
 
 The automatic key roll checks have two limitations:
 
@@ -174,10 +175,10 @@ For each key roll these eight steps follow in the same order.
 Associated with each step is a (possibly empty) list of actions, which fall
 in three categories:
 
-1. Actions that require updating the zone or the parent zone.
+1. Actions that require updating the zone or the :term:`parent zone <Parent (Zone)>`.
 2. Actions that require checking if changes have propagated to all
    nameservers (for the propagation-complete steps) and that require
-   reporting the before TTLs (for the before-ttl steps).
+   reporting the before :term:`TTLs <TTL>` (for the before-ttl steps).
 3. Waiting for changes to propagate to all nameservers.
 
 Typically, in a list of actions, an action of the first category is paired

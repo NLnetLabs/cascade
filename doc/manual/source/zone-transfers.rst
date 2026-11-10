@@ -2,26 +2,26 @@ Zone Transfers
 ==============
 
 Cascade is expected to be deployed between a hidden upstream nameserver and
-public downstream nameservers. The hidden upstream serves the unsigned zone,
-Cascade signs it, and serves the signed zone to downstream nameservers for publication
+public downstream nameservers. The hidden upstream serves the :term:`unsigned zone`,
+Cascade signs it, and serves the :term:`signed zone` to downstream nameservers for publication
 to consumers.
 
-Communication of changed zone records from upstream to downstream will
-be done via the network using the :RFC:`5936` (AXFR) and :RFC:`1995` (IXFR)
+Communication of changed :term:`zone` records from upstream to downstream will
+be done via the network using the :RFC:`5936` (:term:`AXFR`) and :RFC:`1995` (:term:`IXFR`)
 protocols.
 
-Authentication of transferring parties can be done using :RFC:`8945` (TSIG)
+Authentication of transferring parties can be done using :RFC:`8945` (:term:`TSIG`)
 keys, using a shared secret communicated out of band to the nameservers
 sending and receiving the zone records.
 
-Cascade supports timely discovery of zone changes by sending SOA queries to
-the upstream nameserver, either in response to an :RFC:`1996` NOTIFY message or
+Cascade supports timely discovery of zone changes by sending :term:`SOA` queries to
+the upstream nameserver, either in response to an :RFC:`1996` :term:`NOTIFY` message or
 based on the zone's SOA timers.
 
 .. note:: Cascade also supports loading the zone from a file. However, if
           only a small fraction of the records in the zone change from one
-          version to the next, loading the entire file every time the zone
-          file changes will require more time, CPU and memory compared to
+          version to the next, loading the entire file every time the :term:`zone
+          file` changes will require more time, CPU and memory compared to
           processing only the differences when using IXFR. Cascade doesn't
           yet support direct writing of signed zones to a file, though a
           signed zone review hook could be used to AXFR the signed zone to
@@ -46,7 +46,7 @@ Providing zone transfers to downstream nameservers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 By default, Cascade allows downstream servers to access published zones by
-zone transfer, no configuration is needed.
+:term:`zone transfer`, no configuration is needed.
 
 To restrict the downstream nameservers which may request transfer of the
 zone use the ``server.outbound.provide-xfr-to`` policy setting. As with
@@ -110,7 +110,7 @@ data has been compacted at which point it is safe for Cascade to delete them.
 Zone transfers and automated key rollover
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-When using automatic key rollover (the default) Cascade will attempt to verify
+When using automatic :term:`key rollover` (the default) Cascade will attempt to verify
 that certain key properties of the signed zone being served to consumers are
 correct.
 

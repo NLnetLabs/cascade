@@ -1,10 +1,10 @@
 Known Limitations
 =================
 
-.. important:: Cascade is a hidden signer. As such, it is *not* a complete
+.. important:: Cascade is a :term:`hidden signer`. As such, it is *not* a complete
    authoritative DNS server. Cascade will not reply with the AA or AD flag
    set, nor can it reply to DNSSEC queries. Instead, Cascade is intended to
-   be used with a proper secondary serving the signed zones to actual
+   be used with a proper secondary serving the :term:`signed zones <Signed zone>` to actual
    clients.
 
 Expectations for the Beta Release
@@ -15,7 +15,7 @@ Expectations for the Beta Release
    to us.
 
 - The included functionality should work correctly for simple scenarios with
-  correct inputs when running on setups (O/S, HSM) that we have tested on.
+  correct inputs when running on setups (O/S, :term:`HSM <Hardware security module (HSM)>`) that we have tested on.
 - Handling of incorrect inputs, edge cases, more complex scenarios, non-default
   policy settings, and so on *may be incomplete or incorrect*. Please
   :ref:`report any bugs you find <reach-out>`
@@ -76,7 +76,7 @@ OpenDNSSEC that will be added in a future release:
 Other known limitations
 -----------------------
 
-- No NOTIFY retry support.
+- No :term:`NOTIFY` retry support.
 - No NOTIFY "Notify Set" (:RFC:`1996`) discovery.
 - No KMIP batching support.
 - No DNS UPDATE support.

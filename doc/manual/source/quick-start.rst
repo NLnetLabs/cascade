@@ -5,9 +5,9 @@ After :doc:`installing <installation>` Cascade you can immediately start using
 it, unless you need to adjust the addresses it listens on or need to modify
 the settings relating to daemonization.
 
-.. important:: All key-roll automation stages are enabled by default. The
+.. important:: All :term:`key-roll <Key rollover>` automation stages are enabled by default. The
    reporting and completion stages require network access to every
-   authoritative nameserver for the zone and its parent, including IPv6 access
+   :term:`authoritative nameserver <Authoritative server>` for the :term:`zone` and its parent, including IPv6 access
    when those servers publish AAAA records. If this access is unavailable,
    review the :ref:`key-roll automation controls <automation-control>` before
    adding a zone.
@@ -197,7 +197,7 @@ default policy directory is not writable by the current user.
 Creating a Test Zone
 --------------------
 
-Create a test zone file and ensure the Cascade daemon has access to it:
+Create a test :term:`zone file` and ensure the Cascade daemon has access to it:
 
 .. code-block:: bash
 
@@ -256,7 +256,7 @@ For example:
 
     Published zone available at 127.0.0.1:4542
 
-From the above you can see that the signed zone can be retrieved from
+From the above you can see that the :term:`signed zone` can be retrieved from
 ``127.0.0.1:4542`` using a DNS client, e.g.:
 
 .. code-block:: bash

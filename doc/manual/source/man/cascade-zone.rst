@@ -4,7 +4,7 @@ cascade zone
 Synopsis
 --------
 
-:program:`cascade` ``[GLOBAL OPTIONS]`` zone ``<COMMAND>``
+:program:`cascade` ``[GLOBAL OPTIONS]`` :term:`zone` ``<COMMAND>``
 
 :program:`cascade` ``[GLOBAL OPTIONS]`` zone :subcmd:`add` ``[OPTIONS]`` ``--source <SOURCE>`` ``--policy <POLICY>`` ``<NAME>``
 
@@ -119,8 +119,8 @@ Commands
 
 .. subcmd:: set-last-signed-serial
 
-   Set the zone state variable that keeps track of the last serial number used
-   for the signed zone.
+   Set the zone state variable that keeps track of the last :term:`serial number` used
+   for the :term:`signed zone`.
 
    In case of counter policy,
    this causes the serial number of the next signed zone to be
@@ -131,7 +131,7 @@ Commands
    It also affects whether the next serial is considered larger than
    the previous serial. This can make a difference when switching
    serial policies or (in the case of the keep policy) when the
-   serial number of the unsigned zone went backwards.
+   serial number of the :term:`unsigned zone` went backwards.
 
 Options for :subcmd:`zone add`
 ------------------------------
@@ -139,22 +139,22 @@ Options for :subcmd:`zone add`
 .. option:: --source <IP>[:<PORT>][^<TSIG_KEY_NAME>]|<ZONEFILE_PATH>
 
    The zone source can be the IP address of an upstream nameserver (with
-   or without port, defaults to port 53) or the path to a zone file locally
+   or without port, defaults to port 53) or the path to a :term:`zone file` locally
    available to the ``cascaded`` daemon.
 
    When specifying an upstream nameserver you may also optionally specify
-   the name of an :RFC:`8945` TSIG key that should be used to authenticate
+   the name of an :RFC:`8945` :term:`TSIG` key that should be used to authenticate
    communication with the upstream.
 
    Zones sourced from an upstream nameserver will be automatically updated
-   if a new version is detected via a SOA query, either based on the zone's
-   SOA record timers, or in response to an :RFC:`1996` NOTIFY message from
+   if a new version is detected via a :term:`SOA` query, either based on the zone's
+   SOA record timers, or in response to an :RFC:`1996` :term:`NOTIFY` message from
    the upstream.
 
    Zones can also be manualy updated via :program:`cascade` :subcmd:`reload`.
 
-   For zones that have already been retrieved at least once via AXFR, subsequent
-   refreshes will attempt to use IXFR and fallback to AXFR if IXFR is not
+   For zones that have already been retrieved at least once via :term:`AXFR`, subsequent
+   refreshes will attempt to use :term:`IXFR` and fallback to AXFR if IXFR is not
    available.
 
    .. note:: When running :program:`cascade` :subcmd:`zone add` from a
@@ -169,19 +169,20 @@ Options for :subcmd:`zone add`
 
    Policy to use for this zone.
 
-   Note: At present to use a HSM with a zone the HSM must exist and be
-   configured in the policy used by the zone when the zone is added. It is not
-   possible to change it later in this alpha version of Cascade.
+   Note: At present to use a :term:`HSM <Hardware security module (HSM)>` with a zone
+   the HSM must exist and be configured in the policy used by the zone when the zone is
+   added. It is not possible to change it later in this alpha version of Cascade.
 
 .. option:: --import-public-key <IMPORT_PUBLIC_KEY>
 
-   Import a public key to be included in the DNSKEY RRset.
+   Import a public key to be included in the :term:`DNSKEY` :term:`RRset <Resource
+   Record Set (RRset)>`.
 
    This needs to be a file path accessible by the Cascade daemon.
 
 .. option:: --import-ksk-file <IMPORT_KSK_FILE>
 
-   Import a key pair as a KSK.
+   Import a key pair as a :term:`KSK <Key signing key (KSK)>`.
 
    The file path needs to either be a public key file of the KSK with
    extension .key, or a private key file of the KSK with extension .private.
@@ -191,7 +192,7 @@ Options for :subcmd:`zone add`
 
 .. option:: --import-zsk-file <IMPORT_ZSK_FILE>
 
-   Import a key pair as a ZSK.
+   Import a key pair as a :term:`ZSK <Zone signing key (ZSK)>`.
 
    The file path needs to either be a public key file of the ZSK with
    extension .key, or a private key file of the ZSK with extension .private.
@@ -201,7 +202,7 @@ Options for :subcmd:`zone add`
 
 .. option:: --import-csk-file <IMPORT_CSK_FILE>
 
-   Import a key pair as a CSK.
+   Import a key pair as a :term:`CSK <Combined signing key (CSK)>`.
 
    The file path needs to either be a public key file of the CSK with
    extension .key, or a private key file of the CSK with extension .private.
@@ -313,8 +314,8 @@ Options for :subcmd:`zone status`
 .. _zone-status-detailed:
 .. option:: --detailed
 
-   Print detailed information about the zone, including a zone's DNSSEC key
-   identifiers in use, as well as the new DNSKEY records during key rolls.
+   Print detailed information about the zone, including a zone's DNSSEC key identifiers
+   in use, as well as the new DNSKEY records during :term:`key rolls <Key rollover>`.
 
 .. option:: <NAME>
 

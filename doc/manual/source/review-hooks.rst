@@ -2,7 +2,7 @@ Review Hooks
 ============
 
 Cascade offers two review hook points in its signing pipeline for automated
-zone validation by user provided review scripts. These review hooks can be
+:term:`zone` :term:`validation` by user provided review scripts. These review hooks can be
 used to perform any validation the user requires to ensure their zone is
 correct at all stages, using any (third-party) tools desired.
 
@@ -27,7 +27,7 @@ operations to the zone until an operator resolves the issue.
 A review script receives relevant information about the zone in environment
 variables listed in the :ref:`policy file manual <policy-loaded-review-cmd>`.
 The review script then needs to use the address provided in the environment
-variables to fetch the zone via AXFR :term:`zone transfer <Zone transfer>`
+variables to fetch the zone via :term:`AXFR` :term:`zone transfer <Zone transfer>`
 and perform the required checks.
 
 .. note::
@@ -115,11 +115,10 @@ discard the loaded instance.
 Example
 -------
 
-In this example we will use `validns
-<https://codeberg.org/DNS-OARC/validns>`_ to validate the unsigned zone, and
-`dnssec-verify
+In this example we will use `validns <https://codeberg.org/DNS-OARC/validns>`_ to
+validate the :term:`unsigned zone`, and `dnssec-verify
 <https://bind9.readthedocs.io/en/v9.20.13/manpages.html#dnssec-verify-dnssec-zone-verification-tool>`_
-to validate the signed zone.
+to validate the :term:`signed zone`.
 
 To do this, we need to write a shell script that fetches the zone using AXFR 
 and performs the relevant checks. Let's save the following review 

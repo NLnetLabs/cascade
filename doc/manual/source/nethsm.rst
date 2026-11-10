@@ -11,14 +11,13 @@ Integrating with a Nitrokey NetHSM
 
 .. epigraph::
 
-   NetHSM is an open hardware security module created and distributed by
-   Nitrokey. It's a secure store for cryptographic keys powered by open
-   source, which enables people to verify exactly how it works. The HSM
-   is accessible through a REST interface, and a PKCS #11 shared object
-   interfaces that with Cascade's :program:`cascade-hsm-bridge`. The software
-   is also provided as an OCI image (used here for demonstration purposes)
-   which can be used with Docker or Podman for experimentation without having
-   to purchase the device proper.
+   NetHSM is an open :term:`hardware security module <Hardware security module (HSM)>`
+   created and distributed by Nitrokey. It's a secure store for cryptographic keys
+   powered by open source, which enables people to verify exactly how it works. The HSM
+   is accessible through a REST interface, and a PKCS #11 shared object interfaces that
+   with Cascade's :program:`cascade-hsm-bridge`. The software is also provided as an OCI
+   image (used here for demonstration purposes) which can be used with Docker or Podman
+   for experimentation without having to purchase the device proper.
 
    -- https://www.nitrokey.com/products/nethsm
 
@@ -333,7 +332,7 @@ we'll connect to the NetHSM has been configured in ``p11nethsm.conf`` above.
 Sign a Test Zone with NetHSM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create a test zone to load and sign and ensure the Cascade daemon has access to it:
+Create a test :term:`zone` to load and sign and ensure the Cascade daemon has access to it:
 
 .. code-block:: bash
 

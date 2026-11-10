@@ -13,7 +13,7 @@ Synopsis
 Description
 -----------
 
-Execute manual key roll or key removal commands.
+Execute manual :term:`key roll <Key rollover>` or key removal commands.
 
 Global Options
 --------------
@@ -26,15 +26,15 @@ Commands
 
 .. subcmd:: ksk
 
-   Command for KSK rolls.
+   Command for :term:`KSK <Key signing key (KSK)>` rolls.
 
 .. subcmd:: zsk
 
-   Command for ZSK rolls.
+   Command for :term:`ZSK <Zone signing key (ZSK)>` rolls.
 
 .. subcmd:: csk
 
-   Command for CSK rolls.
+   Command for :term:`CSK <Combined signing key (CSK)>` rolls.
 
 .. subcmd:: algorithm
 
@@ -46,7 +46,8 @@ Commands
 
 .. subcmd:: get
 
-   Get the key or keys for a zone as DS, DNSKEY, or CDS RRsets.
+   Get the key or keys for a :term:`zone` as :term:`DS`, :term:`DNSKEY`, or :term:`CDS`
+   :term:`RRsets <Resource Record Set (RRset)>`.
 
 
 Key roll commands for :subcmd:`ksk|zsk|csk|algorithm`
@@ -59,7 +60,7 @@ Key roll commands for :subcmd:`ksk|zsk|csk|algorithm`
 
 .. subcmd:: before-ttl <TTL>
 
-   Inform keyset of the maximum of the TTLs of the RRsets that are about the
+   Inform keyset of the maximum of the :term:`TTLs <TTL>` of the RRsets that are about the
    get changed.
 
 .. subcmd:: propagation1-complete
@@ -112,7 +113,7 @@ Arguments for :subcmd:`keyset get`
 
    The RRset to print. ``ds``, ``dnskey``, or ``cds``.
 
-   The CDS RRset includes the CDNSKEY RRset and signatures.
+   The CDS RRset includes the :term:`CDNSKEY` RRset and signatures.
 
    .. note:: The DS and CDS RRset is only available during the appropriate
        step of a key roll. So, if the output is empty, check the zone's key

@@ -216,8 +216,8 @@ started.
 
           sudo yum install -y cascade
 
-       If you want to use a PKCS#11-based HSM, also install cascade-hsm-bridge
-       with:
+       If you want to use a PKCS#11-based :term:`HSM <Hardware security module (HSM)>`,
+       also install cascade-hsm-bridge with:
 
        .. code-block:: bash
 

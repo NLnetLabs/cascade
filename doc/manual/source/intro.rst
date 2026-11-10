@@ -31,7 +31,7 @@ DNS data. These can be categorised into roughly four types:
    vulnerabilities to forge an "unauthenticated" response to a non-existent
    record (NXDOMAIN). DNSSEC uses :term:`NSEC` or :term:`NSEC3` records to
    provide a cryptographically signed proof that a record does not exist,
-   making the zone resistant to this type of attack. 
+   making the :term:`zone` resistant to this type of attack.
 
 DNSSEC uses digital signatures to ensure the response is authentic and has
 not been tampered with. By verifying DNS responses, DNSSEC prevents malicious
@@ -54,13 +54,13 @@ be kept secret all all times.
 
 DNSSEC adds these record types:
 
-- RRSIG, which contains a cryptographic signature over an :term:`Resource
+- :term:`RRSIG`, which contains a cryptographic signature over an :term:`Resource
   Record Set (RRset)`
-- DNSKEY, which contains a public signing key
-- DS, which stores a hashed representation of a DNSKEY record
+- :term:`DNSKEY`, which contains a public signing key
+- :term:`DS`, which stores a hashed representation of a DNSKEY record
 - NSEC and NSEC3, which offer proof that a DNS record *doesn't*
   exist
-- CDNSKEY and CDS, allowing a child zone to request updates to DS record(s)
+- :term:`CDNSKEY` and :term:`CDS`, allowing a child zone to request updates to DS record(s)
   in the parent zone
 
 Each DNSSEC-enabled zone, including the root ``(.)``, a Top-Level Domain
@@ -119,8 +119,8 @@ ship with DNS resolver software. Without a chain of trust, a
 DNSSEC-validating resolver wouldn't know where to begin trusting DNS data.
 
 The chain of trust works though the interaction of two key DNSSEC record
-types: DNSKEY records and Delegation Signer (DS) records. The DNSSEC Trust
-Anchor is the top of this chain, representing a public :term:`Key signing key
+types: DNSKEY records and :term:`Delegation` Signer (DS) records. The DNSSEC :term:`Trust
+Anchor` is the top of this chain, representing a public :term:`Key signing key
 (KSK)` that is implicitly trusted by a DNSSEC-validating resolver. 
 
 A parent zone doesn't directly sign the data in a child zone. To establish a
@@ -131,7 +131,7 @@ To do this, the operator of a :term:`child zone <Child (Zone)>` (such as
 example.com) generates a KSK and then calculates a hash over it. This hash
 (aka digest) is then given to the :term:`parent zone <Parent (Zone)>` (in
 this case .com). The parent zone publishes this digest as a DS record within
-its own zone file and signs it with its own Zone Signing Key. This DS record
+its own :term:`zone file` and signs it with its own Zone Signing Key. This DS record
 effectively acts as a secure pointer to the child zone's KSK. This process is
 repeated all the way down the hierarchy. 
 

@@ -60,15 +60,15 @@ Commands
 
         :doc:`cascade-keyset <cascade-keyset>`\ (1)
 
-          Execute manual key roll or key removal commands.
+          Execute manual :term:`key roll <Key rollover>` or key removal commands.
 
         :doc:`cascade-tsig <cascade-tsig>`\ (1)
 
-          Manage TSIG keys.
+          Manage :term:`TSIG` keys.
 
         :doc:`cascade-hsm <cascade-hsm>`\ (1)
 
-          Manage HSMs.
+          Manage :term:`HSMs <Hardware security module (HSM)>`.
 
         :doc:`cascade-debug <cascade-debug>`\ (1)
 

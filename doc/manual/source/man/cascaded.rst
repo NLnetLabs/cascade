@@ -74,10 +74,10 @@ Files
     Default path for the global state file
 
 /var/lib/cascade/zone-state
-    Default zone state directory
+    Default :term:`zone` state directory
 
 /var/lib/cascade/tsig-keys.db
-    Default file for stored TSIG keys
+    Default file for stored :term:`TSIG` keys
 
 /var/lib/cascade/keys
     Default directory for on-disk zone keys
