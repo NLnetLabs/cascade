@@ -5,7 +5,7 @@ Cascade's core pipeline runs in a single :program:`cascaded` daemon. Within
 that process, separate components load zones, coordinate key management, sign
 and review zone versions, persist approved data, and serve published zones.
 
-Cascade has two separate models of operation working simultinously:
+Cascade has two separate models of operation working simultaniously:
 
 #. Active units that run on timers or respond to external events, such as DNS
    queries, zone transfers, and CLI commands.
