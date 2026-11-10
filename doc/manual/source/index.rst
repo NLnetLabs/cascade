@@ -49,13 +49,13 @@ Safe automation
 
 Flexible key storage
    Keep keys on disk or use a :doc:`Hardware Security Module <hsms>`. Cascade
-   supports several :term:`HSM <Hardware security module (HSM)>` integrations, so you can choose the setup that fits
+   supports several HSM integrations, so you can choose the setup that fits
    your operational and security requirements.
 
 Observable signing
    Cascade is designed to communicate what it is doing. Its status, health,
    and metrics interfaces help you monitor operation, while
-   :doc:`review-hooks` let you verify unsigned and :term:`signed zones <Signed zone>` with your own
+   :doc:`review-hooks` let you verify unsigned and signed zones with your own
    tooling before publication.
 
 Standards-based integration
